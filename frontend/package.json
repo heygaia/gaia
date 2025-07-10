@@ -164,7 +164,7 @@
     "redux": "^5.0.1",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
-    "sharp": "^0.33.5",
+    "sharp": "^0.34.2",
     "sonner": "^2.0.3",
     "source-map-js": "^1.2.1",
     "tailwind-merge": "^3.2.0",
