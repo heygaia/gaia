@@ -42,7 +42,7 @@ dependencies = [
   "markdown-it-py==3.0.0",
   "markupsafe==3.0.2",
   "mdurl==0.1.2",
-  "more-itertools==10.6.0",
+  "more-itertools==10.7.0",
   "motor==3.6.0",
   "openai>=1.69.0",
   "pendulum>=3.0.0",
