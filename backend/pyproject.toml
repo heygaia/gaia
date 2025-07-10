@@ -18,7 +18,7 @@ dependencies = [
   "google-api-core==2.24.0",
   "google-api-python-client>=2.162.0",
   "google-auth==2.38.0",
-  "googleapis-common-protos==1.66.0",
+  "googleapis-common-protos==1.70.0",
   "groq==0.15.0",
   "html2text>=2024.2.26",
   "httpx==0.28.1",
