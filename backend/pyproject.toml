@@ -11,7 +11,7 @@ dependencies = [
   "beautifulsoup4==4.12.3",
   "browser-use>=0.1.40",
   "bs4==0.0.2",
-  "cloudinary==1.41.0",
+  "cloudinary==1.44.1",
   "deepgram-sdk>=3.10.0",
   "docx2txt>=0.9",
   "fastapi[standard]==0.115.6",
