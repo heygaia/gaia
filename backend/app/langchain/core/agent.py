@@ -3,6 +3,20 @@ import json
 from datetime import datetime, timezone
 from typing import List
 
+from app.config.loggers import llm_logger as logger
+from app.langchain.core.graph_manager import GraphManager
+from app.langchain.core.messages import construct_langchain_messages
+from app.langchain.prompts.proactive_agent_prompt import (
+    PROACTIVE_MAIL_AGENT_MESSAGE_PROMPT,
+    PROACTIVE_MAIL_AGENT_SYSTEM_PROMPT,
+    PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT,
+    PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
+)
+from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
+from app.langchain.tools.core.categories import get_tool_category
+from app.models.message_models import MessageRequestWithHistory
+from app.models.reminder_models import ReminderProcessingAgentResult
+from app.utils.memory_utils import store_user_message_memory
 from langchain_core.messages import (
     AIMessage,
     AIMessageChunk,
@@ -12,21 +26,7 @@ from langchain_core.messages import (
 )
 from langchain_core.output_parsers import PydanticOutputParser
 from langsmith import traceable
-
-from app.config.loggers import llm_logger as logger
-from app.langchain.core.graph_manager import GraphManager
-from app.langchain.core.messages import construct_langchain_messages
-from app.langchain.tools.core.categories import get_tool_category
-from app.langchain.prompts.proactive_agent_prompt import (
-    PROACTIVE_MAIL_AGENT_MESSAGE_PROMPT,
-    PROACTIVE_MAIL_AGENT_SYSTEM_PROMPT,
-    PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT,
-    PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
-)
-from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
-from app.models.message_models import MessageRequestWithHistory
-from app.models.reminder_models import ReminderProcessingAgentResult
-from app.utils.memory_utils import store_user_message_memory
+from pytz import timezone as timezone_pytz
 
 
 @traceable
@@ -34,7 +34,7 @@ async def call_agent(
     request: MessageRequestWithHistory,
     conversation_id,
     user,
-    user_time: datetime,
+    timezone_name: str,
     access_token=None,
     refresh_token=None,
 ):
@@ -92,7 +92,7 @@ async def call_agent(
                     "access_token": access_token,
                     "refresh_token": refresh_token,
                     "email": user.get("email"),
-                    "user_time": user_time.isoformat(),
+                    "user_time": datetime.now(tz=timezone_pytz(timezone_name)),
                 },
                 "recursion_limit": 15,
                 "metadata": {"user_id": user_id},

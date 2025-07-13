@@ -16,9 +16,9 @@ from app.services.conversation_service import (
     get_or_create_system_conversation,
     update_messages,
 )
-from app.services.email_importance_service import process_email_comprehensive_analysis
 from app.services.mail_service import (
     get_gmail_service,
+    process_email_comprehensive_analysis,
 )
 from app.services.user_service import get_user_by_email, get_user_by_id
 from app.utils.notification.sources import AIProactiveNotificationSource
@@ -651,7 +651,7 @@ def extract_sender(message: dict) -> str:
     return ""
 
 
-def extract_date(message: dict) -> str:
+def extract_date(message: dict) -> datetime:
     """
     Extracts the date from a Gmail message.
     Args:
@@ -662,8 +662,10 @@ def extract_date(message: dict) -> str:
     headers = message.get("payload", {}).get("headers", [])
     for header in headers:
         if header.get("name") == "Date":
-            return header.get("value", "")
-    return ""
+            date_string = header.get("value", "")
+            date_object = datetime.strptime(date_string, "%a, %d %b %Y %H:%M:%S %z")
+            return date_object if date_string else datetime.now(timezone.utc)
+    return datetime.now(timezone.utc)
 
 
 def extract_labels(message: dict) -> list[str]:

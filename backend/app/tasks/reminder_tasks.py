@@ -7,10 +7,11 @@ from datetime import datetime, timezone
 from typing import List, Union
 from uuid import uuid4
 
-from langchain_core.messages import AIMessage, HumanMessage
-
+import pytz
 from app.config.loggers import general_logger as logger
+from app.db.mongodb.collections import mail_collection
 from app.langchain.core.agent import call_reminder_agent
+from app.langchain.llm.client import init_gemini_llm
 from app.models.chat_models import (
     MessageModel,
     SystemPurpose,
@@ -29,8 +30,12 @@ from app.services.conversation_service import (
 )
 from app.services.notification_service import notification_service
 from app.services.reminder_service import update_reminder
+from app.services.user_service import get_user_by_id
 from app.utils.notification.sources import AIProactiveNotificationSource
 from app.utils.oauth_utils import get_tokens_by_user_id
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+
+gemini_model = init_gemini_llm()
 
 
 async def _get_conversation_history(
@@ -100,7 +105,7 @@ async def _create_conversation_for_reminder(
     return conversation["conversation_id"]
 
 
-async def _log_reminder_execution(
+async def _store_reminder_execution(
     conversation_id: str,
     instructions: str,
     ai_response: str,
@@ -220,16 +225,17 @@ async def _execute_ai_agent_reminder(reminder: ReminderModel) -> None:
         )
 
     # Prepare notification
-    notification = AIProactiveNotificationSource.create_reminder_notification(
+    notification = await AIProactiveNotificationSource.create_reminder_notification(
         title=notification_data.title,
         body=notification_data.body,
         reminder_id=reminder.id,
         user_id=reminder.user_id,
         actions=[],
+        send=True,  # Send notification immediately
     )
 
     # Log execution and send notification
-    await _log_reminder_execution(
+    await _store_reminder_execution(
         conversation_id=conversation_id,
         instructions=reminder.payload.instructions,  # Use original instructions for logging
         ai_response=notification_data.message,
@@ -246,24 +252,141 @@ async def _execute_static_reminder(reminder: ReminderModel) -> None:
         reminder: The static reminder to execute
     """
     if not isinstance(reminder.payload, StaticReminderPayload):
-        raise ValueError("Invalid payload type for static reminder")
+        logger.error(f"Invalid payload type for static reminder {reminder.id}")
+        raise TypeError("Invalid payload type for static reminder")
 
     if not reminder.id:
-        raise ValueError("Reminder must have an ID")
+        logger.error("Reminder has no ID, skipping execution")
+        raise ValueError("Reminder has no ID, skipping execution")
 
-    notification = AIProactiveNotificationSource.create_reminder_notification(
+    await AIProactiveNotificationSource.create_reminder_notification(
         title=reminder.payload.title,
         body=reminder.payload.body,
         reminder_id=reminder.id,
         user_id=reminder.user_id,
         actions=[],
+        send=True,  # Send notification immediately
     )
 
-    await notification_service.create_notification(notification)
 
-    logger.info(
-        f"Static reminder {reminder.id} sent notification to user {reminder.user_id}"
-    )
+async def _execute_email_summary_reminder(reminder: ReminderModel) -> None:
+    """
+    Execute an email summary reminder that collects and summarizes user's emails.
+
+    Args:
+        reminder: The email summary reminder to execute
+    """
+
+    if not reminder.id:
+        logger.error("Reminder has no ID, skipping execution")
+        raise ValueError("Reminder has no ID, skipping execution")
+
+    if not reminder.agent == AgentType.EMAIL_SUMMARY:
+        logger.error(f"Invalid agent type for email summary reminder {reminder.id}")
+        raise TypeError("Invalid agent type for email summary reminder")
+
+    # Get user info
+    user_id = reminder.user_id
+
+    try:
+        user = await get_user_by_id(user_id=user_id)
+
+        if not user:
+            logger.error(
+                f"User {user_id} not found for email summary reminder {reminder.id}"
+            )
+            raise ValueError(f"User {user_id} not found")
+
+        user_timezone = user.get("timezone", "UTC")
+        today_user_timezone = datetime.now(pytz.timezone(user_timezone))
+
+        user_mails = mail_collection.find(
+            {
+                "user_id": user_id,
+                "date": {
+                    "$gte": today_user_timezone.replace(
+                        hour=0, minute=0, second=0, microsecond=0
+                    ),
+                    "$lte": today_user_timezone.replace(
+                        hour=23, minute=59, second=59, microsecond=999999
+                    ),
+                },
+            }
+        )
+        emails = await user_mails.to_list(length=None)
+
+        if not emails:
+            logger.info(
+                f"No emails found for user {user_id} on {today_user_timezone.date()}"
+            )
+            return
+
+        # Format emails into a string and pass it to the ai
+        emails_str = "\n".join(
+            f"""
+            From: {email.get("sender", "Unknown Sender")}\n
+            Date: {email.get("date", "Unknown Date")}\n
+            Subject: {email.get("subject", "No Subject")}\n
+            Summary: {email.get("summary", "No Summary")}\n
+            Important Level: {email.get("important_level", "Not Specified")}\n
+            """
+            for email in emails
+        )
+
+        res = await gemini_model.ainvoke(
+            input=[
+                SystemMessage(
+                    content="You are an AI assistant that summarizes emails for users. "
+                    "Your task is to provide a concise summary of the user's emails for today, "
+                    "highlighting important messages and key information."
+                    "Do not include any greetings or salutations, "
+                    "just provide the summary in a clear and concise manner."
+                ),
+                HumanMessage(
+                    content=f"""
+                    Here are the emails for today:\n{emails_str}\n
+                    Please summarize the key points and important messages from these emails.
+                    """
+                ),
+            ]
+        )
+
+        if not res or not res.content:
+            logger.error(
+                f"AI model returned no content for email summary reminder {reminder.id} for user {user_id}"
+            )
+            raise ValueError(
+                f"AI model returned no content for email summary reminder {reminder.id}"
+            )
+
+        # Prepare notification
+        notification = await AIProactiveNotificationSource.create_reminder_notification(
+            title="Today's Email Summary",
+            body=res.text(),
+            reminder_id=reminder.id,
+            user_id=user_id,
+            actions=[],
+            send=True,  # Send notification immediately
+        )
+
+        # Create a system conversation for logging
+        conversation = await create_system_conversation(
+            user_id=user_id,
+            description="Email Summary",
+            system_purpose=SystemPurpose.REMINDER_PROCESSING,
+        )
+
+        await _store_reminder_execution(
+            conversation_id=conversation["conversation_id"],
+            instructions="Summarize today's emails",
+            ai_response=res.text(),
+            user_dict={"user_id": user_id},
+            notification_request=notification,
+        )
+
+    except Exception as e:
+        logger.error(f"Failed to fetch emails for user {user_id}: {str(e)}")
+        raise ValueError(f"Failed to fetch emails for user {user_id}")
 
 
 async def execute_reminder_by_agent(
@@ -278,6 +401,7 @@ async def execute_reminder_by_agent(
     - STATIC: Sends simple notification
 
     Args:
+
         reminder: The reminder to execute
         access_token: OAuth access token (for compatibility, retrieved automatically)
         refresh_token: OAuth refresh token (for compatibility, retrieved automatically)
@@ -293,6 +417,8 @@ async def execute_reminder_by_agent(
             await _execute_ai_agent_reminder(reminder)
         elif reminder.agent == AgentType.STATIC:
             await _execute_static_reminder(reminder)
+        elif reminder.agent == AgentType.EMAIL_SUMMARY:
+            await _execute_email_summary_reminder(reminder)
         else:
             raise ValueError(f"Unknown agent type: {reminder.agent}")
 

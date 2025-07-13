@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from fastapi import APIRouter, BackgroundTasks, Depends
 from fastapi.responses import StreamingResponse
 
@@ -20,7 +18,7 @@ async def chat_stream_endpoint(
     body: MessageRequestWithHistory,
     background_tasks: BackgroundTasks,
     user: dict = Depends(get_current_user),
-    user_time: datetime = Depends(get_user_timezone),
+    timezone_name: str = Depends(get_user_timezone),
 ) -> StreamingResponse:
     """
     Stream chat messages in real time.
@@ -28,7 +26,10 @@ async def chat_stream_endpoint(
 
     return StreamingResponse(
         chat_stream(
-            body=body, user=user, background_tasks=background_tasks, user_time=user_time
+            body=body,
+            user=user,
+            background_tasks=background_tasks,
+            timezone_name=timezone_name,
         ),
         media_type="text/event-stream",
     )

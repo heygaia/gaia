@@ -228,15 +228,16 @@ class AIProactiveNotificationSource:
         )
 
     @staticmethod
-    def create_reminder_notification(
+    async def create_reminder_notification(
         user_id: str,
         reminder_id: str,
         title: str,
         body: str,
         actions: List[NotificationAction],
+        send: bool = False,
     ) -> NotificationRequest:
         """Create notification for AI-generated reminders"""
-        return NotificationRequest(
+        notification = NotificationRequest(
             user_id=user_id,
             source=NotificationSourceEnum.AI_REMINDER,
             type=NotificationType.INFO,
@@ -252,6 +253,10 @@ class AIProactiveNotificationSource:
                 "created_at": datetime.now(timezone.utc).isoformat(),
             },
         )
+
+        if send:
+            await notification_service.create_notification(notification)
+        return notification
 
     @staticmethod
     async def create_proactive_notification(

@@ -1,19 +1,7 @@
-from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode, urlparse
 
 import httpx
-from fastapi import (
-    APIRouter,
-    BackgroundTasks,
-    Depends,
-    File,
-    Form,
-    HTTPException,
-    UploadFile,
-)
-from fastapi.responses import JSONResponse, RedirectResponse
-
 from app.api.v1.dependencies.oauth_dependencies import (
     get_current_user,
     get_user_timezone,
@@ -25,6 +13,7 @@ from app.config.oauth_config import (
     get_integration_scopes,
 )
 from app.config.settings import settings
+from app.db.redis import delete_cache
 from app.models.user_models import (
     OnboardingPreferences,
     OnboardingRequest,
@@ -42,6 +31,16 @@ from app.services.user_service import update_user_profile
 # from app.tasks.mail_tasks import fetch_last_week_emails
 from app.utils.oauth_utils import fetch_user_info_from_google, get_tokens_from_code
 from app.utils.watch_mail import watch_mail
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    File,
+    Form,
+    HTTPException,
+    UploadFile,
+)
+from fastapi.responses import JSONResponse, RedirectResponse
 
 router = APIRouter()
 
@@ -440,7 +439,7 @@ async def update_me(
 async def complete_user_onboarding(
     onboarding_data: OnboardingRequest,
     user: dict = Depends(get_current_user),
-    user_time: datetime = Depends(get_user_timezone),
+    timezone_name: str = Depends(get_user_timezone),
 ):
     """
     Complete user onboarding by storing preferences.
@@ -448,7 +447,7 @@ async def complete_user_onboarding(
     """
     try:
         updated_user = await complete_onboarding(
-            user["user_id"], onboarding_data, user_timezone=user_time
+            user["user_id"], onboarding_data, timezone_name=timezone_name
         )
 
         return OnboardingResponse(
@@ -517,7 +516,9 @@ async def update_user_name(
 
 
 @router.post("/logout")
-async def logout():
+async def logout(
+    user: dict = Depends(get_current_user),
+):
     response = JSONResponse(content={"detail": "Logged out successfully"})
     env = settings.ENV
 
@@ -551,5 +552,11 @@ async def logout():
         response.set_cookie(
             key="refresh_token", value="", expires=0, path="/", samesite="lax"
         )
+
+    user_email = user.get("email")
+
+    if user_email:
+        await delete_cache(f"user_cache:{user_email}")
+        await delete_cache(f"user_refresh:{user_email}")
 
     return response

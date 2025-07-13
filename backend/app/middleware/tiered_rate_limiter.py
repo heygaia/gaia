@@ -13,25 +13,25 @@ Usage:
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Callable, Optional
 from functools import wraps
+from typing import Callable, Dict, Optional
 
-from fastapi import HTTPException
-from pydantic import BaseModel
-
-from app.db.redis import redis_cache
-from app.models.payment_models import PlanType
-from app.services.payments.subscriptions import get_user_subscription_status
 from app.config.rate_limits import (
+    FEATURE_LIMITS,
     RateLimitPeriod,
+    get_feature_info,
     get_limits_for_plan,
     get_reset_time,
     get_time_window_key,
-    get_feature_info,
-    FEATURE_LIMITS,
 )
-from app.models.usage_models import UserUsageSnapshot, FeatureUsage, UsagePeriod
 from app.db.mongodb.collections import usage_snapshots_collection
+from app.db.redis import redis_cache
+from app.models.payment_models import PlanType
+from app.models.usage_models import FeatureUsage, UsagePeriod, UserUsageSnapshot
+from app.services.payments.subscriptions import get_user_subscription_status
+from fastapi import HTTPException
+from pydantic import BaseModel
+from redis import WatchError
 
 
 class UsageInfo(BaseModel):
@@ -119,6 +119,9 @@ class TieredRateLimiter:
             redis_key = self._get_redis_key(user_id, feature_key, period)
             ttl = self._get_ttl(period)
 
+            if not self.redis.redis:
+                raise RuntimeError("Redis connection is not properly initialized")
+
             # Use Redis pipeline with WATCH for atomic check-and-increment
             async with self.redis.redis.pipeline() as pipe:
                 while True:
@@ -147,7 +150,7 @@ class TieredRateLimiter:
                         await pipe.execute()
                         break  # Success, exit retry loop
 
-                    except redis_cache.redis.WatchError:
+                    except WatchError:
                         # Key was modified, retry the transaction
                         continue
 

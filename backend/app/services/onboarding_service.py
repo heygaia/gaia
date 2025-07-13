@@ -1,10 +1,6 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from bson import ObjectId
-from fastapi import HTTPException
-from pymongo import ReturnDocument
-
 from app.config.loggers import app_logger as logger
 from app.db.mongodb.collections import users_collection
 from app.models.user_models import (
@@ -12,14 +8,17 @@ from app.models.user_models import (
     OnboardingPreferences,
     OnboardingRequest,
 )
-from app.utils.timezone import get_timezone_from_datetime
+from app.utils.reminder_utils import create_email_summary_reminder
 from app.utils.user_preferences_utils import format_user_preferences_for_agent
+from bson import ObjectId
+from fastapi import HTTPException
+from pymongo import ReturnDocument
 
 
 async def complete_onboarding(
     user_id: str,
     onboarding_data: OnboardingRequest,
-    user_timezone: Optional[datetime] = None,
+    timezone_name: str,
 ) -> Dict[str, Any]:
     """
     Complete user onboarding by storing preferences and updating user profile.
@@ -67,17 +66,8 @@ async def complete_onboarding(
             "name": onboarding_data.name.strip(),
             "onboarding": onboarding.model_dump(),
             "updated_at": datetime.now(timezone.utc),
+            "timezone": timezone_name,
         }
-
-        # Extract and add timezone if available
-        if user_timezone:
-            try:
-                timezone_name = get_timezone_from_datetime(user_timezone)
-                update_fields["timezone"] = timezone_name
-            except Exception as e:
-                logger.warning(
-                    f"Could not determine timezone name for user {user_id}: {e}"
-                )
 
         # Atomic update with conditions to prevent race conditions and duplicate onboarding
         updated_user = await users_collection.find_one_and_update(
@@ -110,6 +100,20 @@ async def complete_onboarding(
         updated_user["user_id"] = updated_user["_id"]
 
         logger.info(f"Onboarding completed successfully for user {user_id}")
+
+        # Create the email summary reminder
+        try:
+            await create_email_summary_reminder(
+                user_id=user_id, user_timezone=timezone_name
+            )
+            logger.info(
+                f"Created email summary reminder for user {user_id} with timezone {timezone_name}"
+            )
+        except Exception as e:
+            # Log the error but don't fail the onboarding process
+            logger.error(
+                f"Failed to create email summary reminder for user {user_id}: {str(e)}"
+            )
 
         return updated_user
 

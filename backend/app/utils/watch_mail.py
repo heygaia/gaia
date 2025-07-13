@@ -1,13 +1,20 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 
+import httpx
+
 from app.config.loggers import app_logger as logger
+from app.config.oauth_config import (
+    get_integration_by_id,
+)
 from app.config.settings import settings
 from app.db.mongodb.collections import users_collection
 from app.db.redis import set_cache
 from app.services.mail_service import get_gmail_service
 from app.services.user_service import update_user_profile
 from app.utils.oauth_utils import get_tokens_by_user_id
+
+http_async_client = httpx.AsyncClient()
 
 
 async def watch_mail(
@@ -22,6 +29,29 @@ async def watch_mail(
     """
     try:
         logger.info(f"Starting to watch emails for user ({email})")
+
+        # Get scopes from access_token
+        authorized_scopes = []
+        token_info_response = await http_async_client.get(
+            f"https://www.googleapis.com/oauth2/v1/tokeninfo?access_token={access_token}"
+        )
+        if token_info_response.status_code == 200:
+            token_data = token_info_response.json()
+            authorized_scopes = token_data.get("scope", "").split()
+
+        gmail_integration = get_integration_by_id(integration_id="gmail")
+
+        if not gmail_integration:
+            raise ValueError("Gmail integration not found in settings")
+
+        is_connected = all(
+            scope.scope in authorized_scopes for scope in gmail_integration.scopes
+        )
+
+        if not is_connected:
+            raise ValueError(
+                "Gmail integration is not connected. Please connect Gmail integration first."
+            )
 
         # Build Credentials object from access token
         # Build Gmail API client

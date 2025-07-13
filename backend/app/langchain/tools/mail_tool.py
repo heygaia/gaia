@@ -1,9 +1,5 @@
 from typing import Annotated, Any, Dict, List, Optional
 
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langgraph.config import get_stream_writer
-
 from app.config.loggers import chat_logger as logger
 from app.docstrings.langchain.tools.mail_tool_docs import (
     APPLY_LABELS_TO_EMAILS,
@@ -46,6 +42,9 @@ from app.services.mail_service import (
     update_label,
 )
 from app.utils.general_utils import transform_gmail_message
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 
 
 def get_auth_from_config(config: RunnableConfig) -> Dict[str, str]:
@@ -293,14 +292,6 @@ async def compose_email(
                 writer({"progress": f"Contact search failed for '{recipient_query}'"})
                 # Continue with empty resolved_emails if contact resolution fails
 
-        # Prepare email data
-        email_data = {
-            "to": resolved_emails if resolved_emails else [],
-            "subject": subject,
-            "body": body,
-            "recipient_query": recipient_query,
-        }
-
         # Check if initiated by backend
         # configurable = config.get("configurable", {})
         # if configurable.get("initiator") == "backend":
@@ -327,7 +318,15 @@ async def compose_email(
         # Regular frontend flow
         # Progress update for drafting
         writer({"progress": "Drafting email..."})
-        writer(email_data)
+        writer(
+            {
+                "email_compose_data": {
+                    "to": resolved_emails if resolved_emails else [],
+                    "subject": subject,
+                    "body": body,
+                }
+            }
+        )
 
         # Generate summary of the composed email
         return COMPOSE_EMAIL_TEMPLATE.format(subject=subject, body=body)

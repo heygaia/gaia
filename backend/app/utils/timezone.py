@@ -7,7 +7,7 @@ the actual time values (not converting them across timezones).
 
 from datetime import datetime, tzinfo
 from datetime import timezone as builtin_timezone
-from typing import Union, Optional
+from typing import Optional, Union
 
 import pytz
 
@@ -227,7 +227,7 @@ def get_timezone_from_datetime(target_datetime: Union[str, datetime]) -> str:
         target_datetime: The datetime to extract timezone from (string or datetime object)
 
     Returns:
-        str: The name of the timezone (e.g., 'UTC', 'Asia/Kolkata')
+        str: The ISO datetime string
 
     Raises:
         ValueError: If the datetime has no timezone info

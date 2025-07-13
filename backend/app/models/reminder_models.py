@@ -23,6 +23,7 @@ class AgentType(str, Enum):
 
     STATIC = "static"
     AI_AGENT = "ai_agent"
+    EMAIL_SUMMARY = "email_summary"
 
 
 class StaticReminderPayload(BaseModel):
@@ -37,6 +38,14 @@ class AIAgentReminderPayload(BaseModel):
 
     instructions: str = Field(
         ..., description="Special instructions for reminder generation"
+    )
+
+
+class EmailSummaryReminderPayload(BaseModel):
+    """Payload for EMAIL_SUMMARY agent reminders."""
+
+    important_only: bool = Field(
+        default=True, description="Whether to include only important emails"
     )
 
 
@@ -72,9 +81,12 @@ class ReminderModel(BaseModel):
     conversation_id: Optional[str] = Field(
         None, description="Conversation ID for AI agent reminders to track outputs"
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload, Dict[str, Any]] = (
-        Field(..., description="Task-specific data based on agent type")
-    )
+    payload: Union[
+        StaticReminderPayload,
+        AIAgentReminderPayload,
+        EmailSummaryReminderPayload,
+        Dict[str, Any],
+    ] = Field(..., description="Task-specific data based on agent type")
     created_at: datetime = Field(
         default_factory=lambda: datetime.now(timezone.utc),
         description="Creation timestamp",
@@ -123,9 +135,9 @@ class CreateReminderRequest(BaseModel):
     stop_after: Optional[datetime] = Field(
         None, description="Stop executing after this date (optional)"
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload] = Field(
-        ..., description="Task-specific data based on agent type"
-    )
+    payload: Union[
+        StaticReminderPayload, AIAgentReminderPayload, EmailSummaryReminderPayload
+    ] = Field(..., description="Task-specific data based on agent type")
     base_time: Optional[datetime] = Field(
         None,
         description="Base time for handling time zones and scheduling (optional, defaults to None)",
@@ -263,9 +275,12 @@ class ReminderResponse(BaseModel):
     stop_after: Optional[datetime] = Field(
         None, description="Stop executing after this date"
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload, Dict[str, Any]] = (
-        Field(..., description="Task-specific data")
-    )
+    payload: Union[
+        StaticReminderPayload,
+        AIAgentReminderPayload,
+        EmailSummaryReminderPayload,
+        Dict[str, Any],
+    ] = Field(..., description="Task-specific data")
     conversation_id: Optional[str] = Field(
         None, description="Conversation ID for AI agent reminders"
     )

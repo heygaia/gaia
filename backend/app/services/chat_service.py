@@ -2,8 +2,6 @@ import json
 from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
-from fastapi import BackgroundTasks
-
 from app.config.loggers import chat_logger as logger
 from app.langchain.core.agent import call_agent
 from app.models.chat_models import MessageModel, UpdateMessagesRequest
@@ -11,13 +9,14 @@ from app.models.message_models import MessageRequestWithHistory
 from app.services.conversation_service import update_messages
 from app.services.file_service import get_files
 from app.utils.chat_utils import create_conversation
+from fastapi import BackgroundTasks
 
 
 async def chat_stream(
     body: MessageRequestWithHistory,
     user: dict,
     background_tasks: BackgroundTasks,
-    user_time: datetime,
+    timezone_name: str,
 ) -> AsyncGenerator:
     """
     Stream chat messages in real-time.
@@ -54,7 +53,7 @@ async def chat_stream(
         conversation_id=conversation_id,
         access_token=user.get("access_token"),
         refresh_token=user.get("refresh_token"),
-        user_time=user_time,
+        timezone_name=timezone_name,
     ):
         # Process complete message marker
         if chunk.startswith("nostream: "):
