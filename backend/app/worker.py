@@ -6,9 +6,9 @@ from aio_pika import connect_robust
 from aio_pika.abc import AbstractIncomingMessage
 from aiolimiter import AsyncLimiter
 
+from app.config.logger.mail_processing import create_session, end_session
 from app.config.loggers import worker_logger as logger
 from app.config.settings import settings
-from app.utils.session_logger.email_session_logger import create_session, end_session
 
 # TODO: Analyze the rate limit and adjust based on actual LLM performance
 llm_limiter = AsyncLimiter(10, 1)  # 10 tasks per second
@@ -17,7 +17,7 @@ stop_event = asyncio.Event()
 
 
 async def on_email_message(message: AbstractIncomingMessage):
-    import app.worker_node.process_email as process_emails
+    import app.worker_node.process_email as email_processor
 
     async with message.process():
         async with llm_limiter:
@@ -40,7 +40,7 @@ async def on_email_message(message: AbstractIncomingMessage):
                 )
 
                 # Process emails with session
-                result = await process_emails.process_emails(
+                result = await email_processor.email_processor.process_emails_by_email_address(
                     history_id=history_id, email=email_address, session=session
                 )
 

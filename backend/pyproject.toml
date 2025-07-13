@@ -95,6 +95,7 @@ dependencies = [
   "types-redis>=4.6.0.20241004",
   "types-requests>=2.32.4.20250611",
   "types-pytz>=2025.2.0.20250516",
+  "loguru>=0.7.3",
 ]
 
 [dependency-groups]
