@@ -148,7 +148,7 @@ export default function ChatOptionsDropdown({
           >
             <div className="flex flex-row items-center justify-between gap-2">
               <PencilRenameIcon color="white" width={16} />
-              Rename chat
+              Rename
             </div>
           </DropdownItem>
           <DropdownItem
@@ -162,7 +162,7 @@ export default function ChatOptionsDropdown({
           >
             <div className="flex flex-row items-center justify-between gap-2">
               <Trash color={dangerStateHovered ? "white" : "red"} width={16} />
-              Delete chat
+              Delete
             </div>
           </DropdownItem>
         </DropdownMenu>

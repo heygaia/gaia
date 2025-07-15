@@ -17,13 +17,25 @@ import {
 } from "@/components/shared/icons";
 import { Separator } from "@/components/ui";
 import { useConversation } from "@/features/chat/hooks/useConversation";
+import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
+import { NotificationStatus } from "@/types/features/notificationTypes";
 
 export default function SidebarTopButtons() {
   const router = useRouter();
   const pathname = usePathname();
   const { clearMessages } = useConversation();
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
+
+  // Get unread notifications count
+  const { notifications } = useNotifications({
+    status: NotificationStatus.DELIVERED,
+    limit: 50,
+  });
+
+  const unreadCount = notifications.filter(
+    (n) => n.status === NotificationStatus.DELIVERED,
+  ).length;
 
   const buttonData = [
     {
@@ -95,19 +107,28 @@ export default function SidebarTopButtons() {
 
       <div className="flex flex-col gap-0.5">
         {buttonData.map(({ route, icon, label }, index) => (
-          <Button
-            key={index}
-            className="w-full justify-start text-sm"
-            size="sm"
-            variant="light"
-            color={pathname === route ? "primary" : "default"}
-            onPress={() => router.push(route)}
-            startContent={React.cloneElement(icon, {
-              color: undefined,
-            })}
-          >
-            {label}
-          </Button>
+          <div key={index} className="relative">
+            <Button
+              className="w-full justify-start text-sm"
+              size="sm"
+              variant="light"
+              color={pathname === route ? "primary" : "default"}
+              onPress={() => router.push(route)}
+              startContent={React.cloneElement(icon, {
+                color: pathname === route ? "#00bbff" : "#9b9b9b",
+              })}
+            >
+              {label}
+            </Button>
+            {/* Show unread badge for notifications */}
+            {route === "/notifications" && unreadCount > 0 && (
+              <div className="absolute top-0 right-2 flex h-full items-center justify-center">
+                <div className="flex aspect-square h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-zinc-950">
+                  {unreadCount > 99 ? "9+" : unreadCount}
+                </div>
+              </div>
+            )}
+          </div>
         ))}
       </div>
 
@@ -115,10 +136,20 @@ export default function SidebarTopButtons() {
         className="flex w-full justify-start text-sm"
         size="sm"
         variant="light"
-        color={pathname.startsWith("/c") ? "primary" : "default"}
+        color={
+          pathname == "/c" || pathname.startsWith("/c/") ? "primary" : "default"
+        }
         onPress={createNewChat}
         startContent={
-          <ChatBubbleAddIcon color={undefined} width={19} height={19} />
+          <ChatBubbleAddIcon
+            color={
+              pathname == "/c" || pathname.startsWith("/c/")
+                ? "#00bbff"
+                : "#9b9b9b"
+            }
+            width={19}
+            height={19}
+          />
         }
       >
         New Chat

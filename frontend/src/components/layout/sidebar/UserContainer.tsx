@@ -1,8 +1,9 @@
+import Image from "next/image";
+
 import SettingsMenu from "@/components/layout/sidebar/settings/SettingsMenu";
 import { useUser } from "@/features/auth/hooks/useUser";
 
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/shadcn/avatar";
-// import Spinner from "@/components/ui/spinner";
 
 export default function UserContainer() {
   const user = useUser();
@@ -12,14 +13,15 @@ export default function UserContainer() {
       <div className="user_container_inner rounded-xl bg-zinc-900 px-3">
         <div className="flex items-center gap-2">
           <Avatar className="size-7 rounded-full bg-black">
-            <AvatarImage
-              src={
-                user?.profilePicture ||
-                "https://links.aryanranderiya.com/l/default_user"
-              }
-              alt="Avatar"
-            />
-            <AvatarFallback>User</AvatarFallback>
+            <AvatarImage src={user?.profilePicture} alt="User Avatar" />
+            <AvatarFallback>
+              <Image
+                src={"/media/default.webp"}
+                width={28}
+                height={28}
+                alt="Default profile picture"
+              />
+            </AvatarFallback>
           </Avatar>
           <span className="text-sm">{user?.name}</span>
         </div>

@@ -1,6 +1,6 @@
 "use client";
 
-import { Tab, Tabs } from "@heroui/react";
+import { Badge,Tab, Tabs } from "@heroui/react";
 import { Bell, BellRing } from "lucide-react";
 import { useState } from "react";
 
@@ -73,7 +73,7 @@ export default function NotificationsPage() {
   };
 
   return (
-    <div className="flex w-full flex-col items-center justify-center overflow-y-auto p-5">
+    <div className="flex w-full flex-col items-center justify-center overflow-y-auto p-5 py-2">
       <Tabs
         aria-label="Notifications"
         color="primary"
@@ -92,10 +92,18 @@ export default function NotificationsPage() {
             <div className="flex items-center space-x-2">
               <BellRing className="h-4 w-4" />
               <span>Unread</span>
-              {unreadNotifications.length != 0 && (
-                <span className="my-2 flex aspect-square items-center rounded-full bg-zinc-600 px-2 text-xs text-foreground">
-                  {unreadNotifications.length}
-                </span>
+              {unreadNotifications.length > 0 && (
+                <Badge
+                  color="primary"
+                  content={
+                    unreadNotifications.length > 99
+                      ? "99+"
+                      : unreadNotifications.length.toString()
+                  }
+                  size="sm"
+                >
+                  <span></span>
+                </Badge>
               )}
             </div>
           }

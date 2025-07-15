@@ -18,6 +18,15 @@ import {
 
 import { ChatTab } from "./ChatTab";
 
+// Reusable accordion item styles
+const accordionItemStyles = {
+  item: "my-1 flex min-h-fit w-full flex-col items-start justify-start overflow-hidden border-none py-1",
+  trigger:
+    "w-full px-2 pt-0 pb-1 text-xs text-foreground-400 hover:no-underline hover:text-foreground-500",
+  content: "w-full p-0!",
+  chatContainer: "flex w-full flex-col",
+};
+
 const getTimeFrame = (dateString: string): string => {
   const date = new Date(dateString);
 
@@ -151,102 +160,105 @@ export default function ChatsList() {
           <Loader className="animate-spin text-[#00bbff]" />
         </div>
       ) : (
-        <>
+        <Accordion
+          type="multiple"
+          className="w-full p-0"
+          defaultValue={[
+            ...(systemConversations.length > 0 ? ["system-conversations"] : []),
+            ...(starredConversations.length > 0 ? ["starred-chats"] : []),
+            ...(sortedTimeFrames.length > 0 ? ["today"] : []),
+            ...(sortedTimeFrames.length > 0 ? ["previous-7-days"] : []),
+          ]}
+        >
           {/* System-generated conversations */}
           {systemConversations.length > 0 && (
-            <Accordion
-              type="single"
-              collapsible
-              className="w-full p-0"
-              defaultValue="system-conversations"
+            <AccordionItem
+              value="system-conversations"
+              className={accordionItemStyles.item}
             >
-              <AccordionItem
-                value="system-conversations"
-                className="my-1 flex min-h-fit w-full flex-col items-start justify-start overflow-hidden rounded-lg border border-b-0 border-blue-500/30 bg-blue-900/20 px-1 py-2"
-              >
-                <AccordionTrigger className="w-full px-2 pt-0 pb-1 text-xs text-blue-300">
-                  🤖 System Actions
-                </AccordionTrigger>
-                <AccordionContent className="w-full p-0!">
-                  <div className="-mr-4 flex w-full flex-col">
-                    {systemConversations
-                      .sort(
-                        (a: Conversation, b: Conversation) =>
-                          new Date(b.createdAt).getTime() -
-                          new Date(a.createdAt).getTime(),
-                      )
-                      .map((conversation: Conversation) => (
-                        <ChatTab
-                          key={conversation.conversation_id}
-                          id={conversation.conversation_id}
-                          name={conversation.description || "System Actions"}
-                          starred={conversation.starred || false}
-                          isSystemGenerated={
-                            conversation.is_system_generated || false
-                          }
-                          systemPurpose={conversation.system_purpose}
-                        />
-                      ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+              <AccordionTrigger className={accordionItemStyles.trigger}>
+                Created by GAIA
+              </AccordionTrigger>
+              <AccordionContent className={accordionItemStyles.content}>
+                <div className={accordionItemStyles.chatContainer}>
+                  {systemConversations
+                    .sort(
+                      (a: Conversation, b: Conversation) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                    )
+                    .map((conversation: Conversation) => (
+                      <ChatTab
+                        key={conversation.conversation_id}
+                        id={conversation.conversation_id}
+                        name={conversation.description || "System Actions"}
+                        starred={conversation.starred || false}
+                        isSystemGenerated={
+                          conversation.is_system_generated || false
+                        }
+                        systemPurpose={conversation.system_purpose}
+                      />
+                    ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           )}
 
           {/* Starred conversations */}
           {starredConversations.length > 0 && (
-            <Accordion
-              type="single"
-              collapsible
-              className="w-full p-0"
-              defaultValue="item-1"
+            <AccordionItem
+              value="starred-chats"
+              className={accordionItemStyles.item}
             >
-              <AccordionItem
-                value="item-1"
-                className="my-1 flex min-h-fit w-full flex-col items-start justify-start overflow-hidden rounded-lg border-b-0 bg-zinc-900 px-1 py-2"
-              >
-                <AccordionTrigger className="w-full px-2 pt-0 pb-1 text-xs">
-                  Starred Chats
-                </AccordionTrigger>
-                <AccordionContent className="w-full p-0!">
-                  <div className="-mr-4 flex w-full flex-col">
-                    {starredConversations.map((conversation: Conversation) => (
-                      <ChatTab
-                        key={conversation.conversation_id}
-                        id={conversation.conversation_id}
-                        name={conversation.description || "New chat"}
-                        starred={conversation.starred || false}
-                      />
-                    ))}
-                  </div>
-                </AccordionContent>
-              </AccordionItem>
-            </Accordion>
+              <AccordionTrigger className={accordionItemStyles.trigger}>
+                Starred Chats
+              </AccordionTrigger>
+              <AccordionContent className={accordionItemStyles.content}>
+                <div className="-mr-4 flex w-full flex-col">
+                  {starredConversations.map((conversation: Conversation) => (
+                    <ChatTab
+                      key={conversation.conversation_id}
+                      id={conversation.conversation_id}
+                      name={conversation.description || "New chat"}
+                      starred={conversation.starred || false}
+                    />
+                  ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           )}
 
           {/* Grouped Conversations by Time Frame */}
           {sortedTimeFrames.map(([timeFrame, conversationsGroup]) => (
-            <div key={timeFrame}>
-              <div className="sticky top-0 z-1 bg-zinc-950 px-2 py-1 text-xs text-foreground-500">
+            <AccordionItem
+              key={timeFrame}
+              value={timeFrame.toLowerCase().replace(/\s+/g, "-")}
+              className={accordionItemStyles.item}
+            >
+              <AccordionTrigger className={accordionItemStyles.trigger}>
                 {timeFrame}
-              </div>
-              {conversationsGroup
-                .sort(
-                  (a: Conversation, b: Conversation) =>
-                    new Date(b.createdAt).getTime() -
-                    new Date(a.createdAt).getTime(),
-                )
-                .map((conversation: Conversation, index: number) => (
-                  <ChatTab
-                    key={index}
-                    id={conversation.conversation_id}
-                    name={conversation.description || "New chat"}
-                    starred={conversation.starred}
-                  />
-                ))}
-            </div>
+              </AccordionTrigger>
+              <AccordionContent className={accordionItemStyles.content}>
+                <div className={accordionItemStyles.chatContainer}>
+                  {conversationsGroup
+                    .sort(
+                      (a: Conversation, b: Conversation) =>
+                        new Date(b.createdAt).getTime() -
+                        new Date(a.createdAt).getTime(),
+                    )
+                    .map((conversation: Conversation, index: number) => (
+                      <ChatTab
+                        key={index}
+                        id={conversation.conversation_id}
+                        name={conversation.description || "New chat"}
+                        starred={conversation.starred}
+                      />
+                    ))}
+                </div>
+              </AccordionContent>
+            </AccordionItem>
           ))}
-        </>
+        </Accordion>
       )}
 
       {/* Sentinel element for the IntersectionObserver */}
