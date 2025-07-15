@@ -1,14 +1,12 @@
+import json
 import math
 import uuid
-import json
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, Dict, List, Optional
 
-from bson import ObjectId
-from pymongo import ReturnDocument
-from app.db.rabbitmq import publisher
 from app.config.loggers import todos_logger
 from app.db.mongodb.collections import projects_collection, todos_collection
+from app.db.rabbitmq import publisher
 from app.db.redis import (
     CACHE_TTL,
     STATS_CACHE_TTL,
@@ -49,6 +47,8 @@ from app.utils.todo_vector_utils import (
 from app.utils.todo_vector_utils import (
     semantic_search_todos as vector_search,
 )
+from bson import ObjectId
+from pymongo import ReturnDocument
 
 # Special constants
 INBOX_PROJECT_ID = "inbox"
@@ -172,7 +172,7 @@ class TodoService:
     ) -> Dict[str, Any]:
         """Generate a workflow plan for a TODO item using structured LLM output."""
         try:
-            from app.langchain.tools.workflow_tool import generate_workflow_for_todo
+            from app.utils.todo_vector_utils import generate_workflow_for_todo
 
             return await generate_workflow_for_todo(todo_title, todo_description or "")
         except Exception as e:

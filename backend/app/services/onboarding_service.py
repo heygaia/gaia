@@ -8,7 +8,7 @@ from app.models.user_models import (
     OnboardingPreferences,
     OnboardingRequest,
 )
-from app.utils.reminder_utils import create_email_summary_reminder
+from app.utils.event_utils import create_email_summary_workflow
 from app.utils.user_preferences_utils import format_user_preferences_for_agent
 from bson import ObjectId
 from fastapi import HTTPException
@@ -103,7 +103,7 @@ async def complete_onboarding(
 
         # Create the email summary reminder
         try:
-            await create_email_summary_reminder(
+            await create_email_summary_workflow(
                 user_id=user_id, user_timezone=timezone_name
             )
             logger.info(

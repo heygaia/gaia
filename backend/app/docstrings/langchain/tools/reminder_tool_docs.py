@@ -1,111 +1,93 @@
-"""Docstrings for reminder-related LangChain tools."""
-
-# TODO: Improve this prompt to be more concise and focused on the tool's purpose, LLM still sometimes misses that it has capabilities to create reminders with tools, not just static notifications.
+"""LangChain tools for managing scheduled reminders (STATIC only)."""
 
 CREATE_REMINDER = """
-Create a new reminder (static or agent-based) for the user.
+Create a static reminder — a scheduled notification with a title and body.
 
-WORKFLOW:
-1. Determine reminder type:
-   • STATIC – simple title+body notification.
-   • AI_AGENT – LLM-triggered task using available tools.
+⚠️ IMPORTANT:
+- This is for **simple alerts or reminders only**, with no AI processing or actions.
+- Use this when the user just wants to be **notified** about something with a title and message.
+- This is NOT for tasks that involve summarization, tool usage, or AI actions. For those, use `CREATE_WORKFLOW` tool.
 
-2. Schedule:
-   • One-time: use `scheduled_at` (ISO 8601).
-   • Recurring: use `repeat` (cron syntax).
-   • If “start now” but repeat is out of sync, set `scheduled_at` to align first run.
+Example Use Cases:
+- "Remind me to call mom at 7PM."
+- "Notify me about my flight check-in tomorrow at 6AM."
+- "Every Sunday at 8PM, remind me to prepare for Monday."
 
-3. Limits (only when user asks, explicitly or implicitly):
-   • If user says “stop after 5 days” (daily reminders), set `max_occurrences=5`.
-   • Or use `stop_after` (ISO 8601) to cut off after a date.
+Scheduling:
+- Use `scheduled_at` (ISO 8601) for first run (optional if using `repeat`). Should be in future
+- Use `repeat` (cron format) for recurring reminders.
+- Optionally limit recurrence:
+    • `max_occurrences`: number of times to run
+    • `stop_after`: ISO timestamp after which reminder stops. Should be in future
 
-4. AI_AGENT only:
-   • Before creating, verify you have the tools needed.
-   • If not, refuse and explain the limitation.
-   • Instructions must be fully self-contained: include context, tool names, inputs, and exact output format.
-   • Each time the reminder fires, its `instructions` become the “user” message in a new conversation thread (AI_AGENT reminders only).
-
-PAYLOAD:
-  STATIC → {"title": str, "body": str}
-  AI_AGENT → {"instructions": str}
+Payload:
+- Format: {"title": str, "body": str}
 
 Args:
-    agent: "static" or "ai_agent"
-    repeat: cron string (e.g. "0 9 * * *", "0 */2 * * *", "30 18 * * 1-5")
-    scheduled_at: ISO 8601 timestamp for first run (optional)
-    max_occurrences: int (optional)
-    stop_after: ISO 8601 cutoff datetime (optional)
-    payload: Required reminder content (see above)
+    repeat (str, optional): Cron string for recurrence
+    scheduled_at (str, optional): ISO start time
+    max_occurrences (int, optional): Max number of runs
+    stop_after (str, optional): End time
+    payload (dict): Reminder content (title and body)
 
 Returns:
-    str: success message or error message.
+    str: Success or error message
 """
-
 
 LIST_USER_REMINDERS = """
-List all scheduled reminders for a user.
-
-Use this to retrieve all upcoming or past reminders for a user. It returns both static and agent-based reminders, optionally filtered by status.
+List all static reminders created by the user.
 
 Args:
-    status (str, optional): Filter by state (e.g., "scheduled", "completed").
+    status (str, optional): Filter by state (e.g., "scheduled", "completed")
 
 Returns:
-    list[dict]: List of reminder objects.
+    list[dict]: All matching static reminders
 """
-
 
 GET_REMINDER = """
-Get full details of a specific reminder by ID.
-
-Use this to inspect a reminder's type, schedule, payload, and current state. Especially useful before editing or cancelling.
+Fetch the details of a static reminder by ID.
 
 Args:
-    reminder_id (str): The ID of the reminder to fetch.
+    reminder_id (str): ID of the reminder
 
 Returns:
-    dict: Full reminder object or error.
+    dict: Reminder details or error
 """
-
 
 DELETE_REMINDER = """
-Cancel a scheduled reminder.
+Cancel a static reminder.
 
-Use this when a user no longer wants a reminder to run. It marks the reminder as cancelled and prevents future execution.
+Prevents future execution.
 
 Args:
-    reminder_id (str): The ID of the reminder to cancel.
+    reminder_id (str): ID of the reminder to cancel
 
 Returns:
-    dict: Confirmation of cancellation or error.
+    dict: Success or error confirmation
 """
-
 
 UPDATE_REMINDER = """
-Update an existing reminder’s configuration.
-
-Use this to modify reminder schedule, recurrence, or payload. Useful for rescheduling or changing agent behavior dynamically.
+Update an existing static reminder’s timing or content.
 
 Args:
-    reminder_id (str): The ID of the reminder to update.
-    repeat (str, optional): New cron pattern for recurrence.
-    max_occurrences (int, optional): New limit on runs.
-    stop_after (str, optional): New expiration timestamp.
-    payload (dict, optional): New metadata/context for the reminder.
+    reminder_id (str): ID of the reminder
+    repeat (str, optional): New cron pattern
+    max_occurrences (int, optional): New run limit
+    stop_after (str, optional): New end timestamp
+    payload (dict, optional): New title/body content
 
 Returns:
-    dict: Update status or error.
+    dict: Update result or error
 """
 
-
 SEARCH_REMINDERS = """
-Search through user's reminders using text query.
+Search static reminders using a text query.
 
-Use this to semantically search reminders using keywords found in their title, type, or payload. It works across static and agent-based reminders.
+Searches titles and body fields.
 
 Args:
-    query (str): Natural language query or keyword (e.g., "doctor", "follow up").
+    query (str): Search term (e.g., "meeting", "medication")
 
 Returns:
-    list[dict]: Matching reminders or error.
+    list[dict]: Matching reminders or error
 """

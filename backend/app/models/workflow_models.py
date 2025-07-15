@@ -1,85 +1,80 @@
-"""Structured models for workflow generation using Pydantic."""
+"""
+Workflow models for task scheduling system.
+"""
 
-from typing import Dict, List, Any, Optional
+from typing import Optional
+
+from app.models.arq_event_models import (
+    CreateEventRequestModel,
+    EventModel,
+    UpdateEventRequestModel,
+)
 from pydantic import BaseModel, Field
-import uuid
 
 
-class WorkflowStep(BaseModel):
-    """A single step in a workflow."""
+class WorkflowPayload(BaseModel):
+    """Payload for STATIC agent workflows."""
 
-    id: str = Field(description="Unique identifier for the step")
-    title: str = Field(description="Clear, actionable title for the step")
-    tool_name: str = Field(
-        description="Specific tool to be used (e.g., 'web_search_tool', 'create_todo')"
+    instructions: str = Field(
+        ...,
+        description="Detailed instructions for the workflow task",
     )
-    tool_category: str = Field(
-        description="Category of the tool (mail, calendar, search, productivity, documents, weather, goal_tracking)"
-    )
-    description: str = Field(
-        description="Detailed description of what this step accomplishes"
-    )
-    tool_inputs: Dict[str, Any] = Field(
-        default_factory=dict, description="Expected inputs for the tool"
+    context: Optional[str] = Field(
+        None,
+        description="Optional context or additional information for the workflow",
     )
 
-    @classmethod
-    def create_step(
-        cls,
-        step_number: int,
-        title: str,
-        tool_name: str,
-        tool_category: str,
-        description: str,
-        tool_inputs: Optional[Dict[str, Any]] = None,
-    ):
-        """Create a workflow step with auto-generated ID."""
-        return cls(
-            id=f"step_{step_number}",
-            title=title,
-            tool_name=tool_name,
-            tool_category=tool_category,
-            description=description,
-            tool_inputs=tool_inputs or {},
-        )
 
+class WorkflowModel(EventModel):
+    """
+    Workflow document model for MongoDB.
 
-class WorkflowPlan(BaseModel):
-    """Complete workflow plan for a TODO item."""
+    Represents a scheduled task that can be one-time or recurring.
+    """
 
-    workflow_id: str = Field(
-        default_factory=lambda: f"wf_{uuid.uuid4().hex[:8]}",
-        description="Unique identifier for the workflow",
-    )
-    title: str = Field(description="Title of the workflow")
-    steps: List[WorkflowStep] = Field(
-        description="List of workflow steps to complete the todo",
-        min_length=2,
-        max_length=4,
+    payload: WorkflowPayload = Field(
+        ..., description="Task-specific data based on agent type"
     )
 
-    class Config:
-        json_schema_extra = {
-            "example": {
-                "workflow_id": "wf_abc12345",
-                "title": "Workflow for: Plan vacation",
-                "steps": [
-                    {
-                        "id": "step_1",
-                        "title": "Research vacation destinations",
-                        "tool_name": "web_search_tool",
-                        "tool_category": "search",
-                        "description": "Search for popular vacation destinations and travel guides",
-                        "tool_inputs": {"query": "best vacation destinations 2025"},
-                    },
-                    {
-                        "id": "step_2",
-                        "title": "Check weather forecast",
-                        "tool_name": "get_weather",
-                        "tool_category": "weather",
-                        "description": "Get weather information for potential destinations",
-                        "tool_inputs": {"location": "destination_city"},
-                    },
-                ],
-            }
-        }
+
+class CreateWorkflowRequest(CreateEventRequestModel):
+    """Request model for creating a new workflow."""
+
+    payload: WorkflowPayload = Field(
+        ..., description="Task-specific data based on agent type"
+    )
+
+
+class UpdateWorkflowRequest(UpdateEventRequestModel):
+    """Request model for updating an existing workflow."""
+
+    payload: Optional[WorkflowPayload] = Field(
+        None, description="Task-specific data (optional)"
+    )
+
+
+class WorkflowResponse(EventModel):
+    """Response model for workflow operations."""
+
+    payload: WorkflowPayload = Field(..., description="Task-specific data")
+
+
+class WorkflowProcessingAgentResult(BaseModel):
+    """Result model for workflow processing by AI agents."""
+
+    title: str = Field(
+        ...,
+        description="Short, clear title for the user-facing notification. No filler—just the key point.",
+    )
+    body: str = Field(
+        ...,
+        description="Notification body shown to the user. Keep it direct, informative, and useful. Avoid fluff like 'Here's what you asked for.'",
+    )
+    message: str = Field(
+        ...,
+        description=(
+            "The complete message that will be added to the user’s conversation thread. "
+            "It should contain the actual output or summary of the workflow task. "
+            "Be professional and helpful—avoid filler phrases like 'Sure, here's the thing' or conversational fluff."
+        ),
+    )

@@ -45,38 +45,46 @@ LIST_GMAIL_MESSAGES = """
     """
 
 SEARCH_GMAIL_MESSAGES = """
-    Search Gmail messages using advanced, flexible query parameters.
+Search Gmail messages — from basic inbox listing to advanced filtering.
 
-    This tool enables powerful email searches across the entire mailbox with a wide
-    range of filters — including sender, subject, date, attachment status, and more.
+This tool retrieves messages from the user's Gmail account. It supports everything from simply listing recent inbox emails to executing advanced, fine-grained searches using Gmail-style queries and structured filters.
 
-    When to use:
-    - When the user wants to locate specific emails
-    - When filtering emails by sender, recipient, subject, or date
-    - When the user is looking for messages with attachments
-    - When keywords or specific phrases are mentioned
-    - When general inbox listing doesn't meet the user's need
+When to use:
+- User wants to see their recent or unread emails
+- User asks for a summary or overview of the inbox
+- You need to fetch message IDs for further actions (e.g., mark as read)
+- Filtering by sender, subject, recipient, or keywords
+- Searching for emails within a specific date range
+- Locating messages with or without attachments
+- Finding specific content in the entire mailbox, not just inbox
 
-    Usage Tips:
-    - Don't rely on a single query or calling this tool only once — if no results are found, try refining or altering the search terms.
-    - Experiment with different filters like subject, date range, or attachment status.
-    - Consider using Gmail-style query syntax (e.g., `from:someone@example.com has:attachment`) for more precise control.
+Input parameters:
+- query: Optional Gmail-style search string (e.g., `from:alice`, `subject:invoice`)
+- sender / recipient / subject: Optional structured filters
+- has_attachment: True/False to filter emails with or without attachments
+- date_from / date_to: Optional date range filter (YYYY/MM/DD)
+    - `date_from` is exclusive (starts after this date at 23:59:59)
+    - `date_to` is inclusive (includes up to this date at 23:59:59)
+    - Dates are adjusted to the user's timezone
+- is_read: Optional True/False to filter by read/unread status
+- max_results: Optional, defaults to 20
+- page_token: Optional for pagination
 
-    Input:
-    - query: Freeform search string (Gmail-style syntax supported)
-    - sender / recipient / subject: Optional structured filters
-    - has_attachment: True/False to filter messages with attachments
-    - date_from / date_to: Filter by date range (YYYY/MM/DD)
-    - is_read: True/False to filter by read/unread status
-    - max_results / page_token: For pagination control
+Output:
+- A dictionary with:
+    - "messages": List of matched messages (sender, subject, snippet, timestamp, etc.)
+    - "nextPageToken": Present if there are more results
+    - "error": Present if the operation fails
 
-    Output:
-    - A dictionary with "messages" that match the search
-    - nextPageToken if more results are available
-    - An error message if the search fails
+Usage tips:
+- For a simple inbox fetch, leave all filters empty (or just set `max_results`)
+- If no messages are found, try adjusting filters or simplifying the query
+- You can combine freeform queries with structured filters for better results
 
-    Note: If results are empty, iterate with variations — this tool is most effective when you try multiple queries or adjust filters based on feedback.
-    """
+Limitations:
+- Message previews (snippets) are short and may not show full content
+- Some advanced filters may require trial and error for best results
+"""
 
 COMPOSE_EMAIL = """
     Compose, write, or draft an email message based on the user's request.

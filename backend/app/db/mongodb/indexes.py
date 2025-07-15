@@ -26,11 +26,11 @@ from app.db.mongodb.collections import (
     payments_collection,
     plans_collection,
     projects_collection,
-    reminders_collection,
     subscriptions_collection,
     todos_collection,
     usage_snapshots_collection,
     users_collection,
+    workflow_collection,
 )
 
 
@@ -402,13 +402,13 @@ async def create_reminder_indexes():
     """Create indexes for the reminders collection."""
     try:
         await asyncio.gather(
-            reminders_collection.create_index([("user_id", 1)]),
-            reminders_collection.create_index([("status", 1)]),
-            reminders_collection.create_index([("scheduled_at", 1)]),
-            reminders_collection.create_index([("type", 1)]),
-            reminders_collection.create_index([("user_id", 1), ("status", 1)]),
-            reminders_collection.create_index([("status", 1), ("scheduled_at", 1)]),
-            reminders_collection.create_index([("user_id", 1), ("type", 1)]),
+            workflow_collection.create_index([("user_id", 1)]),
+            workflow_collection.create_index([("status", 1)]),
+            workflow_collection.create_index([("scheduled_at", 1)]),
+            workflow_collection.create_index([("type", 1)]),
+            workflow_collection.create_index([("user_id", 1), ("status", 1)]),
+            workflow_collection.create_index([("status", 1), ("scheduled_at", 1)]),
+            workflow_collection.create_index([("user_id", 1), ("type", 1)]),
         )
         logger.info("Reminder indexes created successfully")
     except Exception as e:
@@ -511,7 +511,7 @@ async def get_index_status() -> Dict[str, List[str]]:
             "calendar": calendars_collection,
             "blog": blog_collection,
             "notifications": notifications_collection,
-            "reminders": reminders_collection,
+            "reminders": workflow_collection,
         }
 
         # Get all collection indexes concurrently

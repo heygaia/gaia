@@ -1,7 +1,5 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
-
 from app.config.cloudinary import init_cloudinary
 from app.config.loggers import app_logger as logger
 from app.db.chromadb import init_chroma
@@ -10,6 +8,7 @@ from app.langchain.core.graph_builder.build_graph import build_graph
 from app.langchain.core.graph_manager import GraphManager
 from app.utils.nltk_utils import download_nltk_resources
 from app.utils.text_utils import get_zero_shot_classifier
+from fastapi import FastAPI
 
 
 @asynccontextmanager
@@ -37,13 +36,11 @@ async def lifespan(app: FastAPI):
 
         # Initialize reminder scheduler and scan for pending reminders
         try:
-            from app.services.reminder_service import initialize_scheduler
+            from app.utils.arq_event import scheduler
 
-            scheduler = await initialize_scheduler()
-            await scheduler.scan_and_schedule_pending_reminders()
-            logger.info(
-                "Reminder scheduler initialized and pending reminders scheduled"
-            )
+            await scheduler.initialize()
+            await scheduler.scan_and_schedule_pending_events()
+            logger.info("Reminder scheduler initialized and pending events scheduled")
         except Exception as e:
             logger.error(f"Failed to initialize reminder scheduler: {e}")
 
@@ -65,9 +62,9 @@ async def lifespan(app: FastAPI):
 
         # Close reminder scheduler
         try:
-            from app.services.reminder_service import close_scheduler
+            from app.utils.arq_event import scheduler
 
-            await close_scheduler()
+            await scheduler.close()
             logger.info("Reminder scheduler closed")
         except Exception as e:
             logger.error(f"Error closing reminder scheduler: {e}")

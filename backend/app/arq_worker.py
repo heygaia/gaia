@@ -11,16 +11,16 @@ from arq.connections import RedisSettings
 from app.config.loggers import arq_worker_logger as logger
 from app.config.settings import settings
 from app.langchain.llm.client import init_llm
-from app.services.reminder_service import process_reminder_task
+from app.models.arq_event_models import EventType
 
 
 async def startup(ctx: dict):
     from app.langchain.core.graph_builder.build_graph import build_graph
     from app.langchain.core.graph_manager import GraphManager
-    from app.langchain.tools.reminder_tool import (
-        create_reminder_tool,
-        delete_reminder_tool,
-        update_reminder_tool,
+    from app.langchain.tools.workflow_tool import (
+        create_workflow_tool,
+        delete_workflow_tool,
+        update_workflow_tool,
     )
 
     """ARQ worker startup function."""
@@ -37,13 +37,13 @@ async def startup(ctx: dict):
     async with build_graph(
         chat_llm=llm,  # type: ignore[call-arg]
         exclude_tools=[
-            create_reminder_tool.name,
-            update_reminder_tool.name,
-            delete_reminder_tool.name,
+            create_workflow_tool.name,
+            delete_workflow_tool.name,
+            update_workflow_tool.name,
         ],
         in_memory_checkpointer=True,
     ) as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="reminder_processing")
+        GraphManager.set_graph(built_graph, graph_name="workflow_processing")
 
 
 async def shutdown(ctx: dict):
@@ -56,7 +56,7 @@ async def shutdown(ctx: dict):
     logger.info(f"ARQ worker ran for {runtime:.2f} seconds")
 
 
-async def process_reminder(ctx: dict, reminder_id: str) -> str:
+async def process_event(ctx: dict, event_id: str) -> str:
     """
     Process a reminder task.
 
@@ -67,53 +67,26 @@ async def process_reminder(ctx: dict, reminder_id: str) -> str:
     Returns:
         Processing result message
     """
-    logger.info(f"Processing reminder task: {reminder_id}")
+    logger.info(f"Processing reminder task: {event_id}")
 
     try:
-        # Process the reminder
-        await process_reminder_task(reminder_id)
+        [event_type, event_id] = event_id.split(":")
 
-        result = f"Successfully processed reminder {reminder_id}"
+        if event_type == EventType.REMINDER:
+            from app.services.reminder_service import process_reminder_task
+
+            await process_reminder_task(event_id)
+        elif event_type == EventType.WORKFLOW:
+            from app.services.workflow_service import process_workflow_task
+
+            await process_workflow_task(event_id)
+
+        result = f"Successfully processed reminder {event_id}"
         logger.info(result)
         return result
 
     except Exception as e:
-        error_msg = f"Failed to process reminder {reminder_id}: {str(e)}"
-        logger.error(error_msg)
-        raise
-
-
-async def cleanup_expired_reminders(ctx: dict) -> str:
-    """
-    Cleanup expired or completed reminders (scheduled task).
-
-    Args:
-        ctx: ARQ context
-
-    Returns:
-        Cleanup result message
-    """
-    from app.db.mongodb.collections import reminders_collection
-
-    logger.info("Running cleanup of expired reminders")
-
-    try:
-        # Remove completed reminders older than 30 days
-        cutoff_date = datetime.now(timezone.utc) - timedelta(days=30)
-
-        result = await reminders_collection.delete_many(
-            {
-                "status": {"$in": ["completed", "cancelled"]},
-                "updated_at": {"$lt": cutoff_date},
-            }
-        )
-
-        message = f"Cleaned up {result.deleted_count} expired reminders"
-        logger.info(message)
-        return message
-
-    except Exception as e:
-        error_msg = f"Failed to cleanup expired reminders: {str(e)}"
+        error_msg = f"Failed to process reminder {event_id}: {str(e)}"
         logger.error(error_msg)
         raise
 
@@ -193,18 +166,11 @@ class WorkerSettings:
 
     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
     functions = [
-        process_reminder,
-        cleanup_expired_reminders,
+        process_event,
         check_inactive_users,
         renew_gmail_watch_subscriptions,
     ]
     cron_jobs = [
-        cron(
-            cleanup_expired_reminders,
-            hour=0,  # At midnight
-            minute=0,  # At the start of the hour
-            second=0,  # At the start of the minute
-        ),
         cron(
             check_inactive_users,
             hour=9,  # At 9 AM

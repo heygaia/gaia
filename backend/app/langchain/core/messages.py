@@ -1,17 +1,18 @@
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
-
+import pytz
 from app.config.loggers import llm_logger as logger
 from app.langchain.templates.agent_template import AGENT_PROMPT_TEMPLATE
-from app.services.memory_service import memory_service
 from app.models.message_models import FileData, MessageDict
+from app.services.memory_service import memory_service
 from app.services.onboarding_service import get_user_preferences_for_agent
+from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, SystemMessage
 
 
 async def construct_langchain_messages(
     messages: List[MessageDict],
+    user_timezone_name: str,
     files_data: List[FileData] | None = None,
     currently_uploaded_file_ids: Optional[List[str]] = [],
     user_id: Optional[str] = None,
@@ -112,6 +113,13 @@ async def construct_langchain_messages(
                             content += f"\n\nPlease use the {tool_display_name} tool to handle this request."
                         else:  # If the message is empty
                             content = f"Use the {tool_display_name} tool."
+
+                    # Add system's time and user time
+                    system_time = datetime.now(timezone.utc)
+                    user_time = datetime.now(pytz.timezone(user_timezone_name))
+
+                    content += f"\n\nSystem Time: {system_time.isoformat()}"
+                    content += f"\nUser Time: {user_time.isoformat()}"
 
                 chain_msgs.append(HumanMessage(content=content))
             elif role in ("assistant", "bot"):

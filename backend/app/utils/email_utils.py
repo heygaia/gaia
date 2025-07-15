@@ -10,7 +10,9 @@ All emails use Jinja2 templates for HTML generation and Resend for email deliver
 """
 
 import os
-from typing import Optional
+from datetime import datetime, time
+from typing import List, Optional
+from zoneinfo import ZoneInfo
 
 import resend
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -319,3 +321,43 @@ def generate_inactive_user_email_html(user_name: Optional[str] = None) -> str:
     except Exception as e:
         logger.error(f"Error generating inactive user email HTML: {str(e)}")
         raise
+
+
+async def build_gmail_query_with_epoch(
+    user_id: str,
+    start_from: Optional[str],  # format: "YYYY/MM/DD"
+    end_to: Optional[str],  # format: "YYYY/MM/DD"
+) -> List[str]:
+    """
+    Build Gmail search query with epoch-based after/before.
+
+    - If `start_from` is provided, it is treated as:
+        'start_from 23:59:59' in user timezone → used as `after:<epoch>` (exclusive)
+    - If `end_to` is provided, it is treated as:
+        'end_to 23:59:59' in user timezone → used as `before:<epoch>` (inclusive)
+
+    Gmail treats `after:` as exclusive and `before:` as exclusive,
+    so to make end inclusive, we add 1 second to the before epoch.
+    """
+    from app.services.user_service import get_user_by_id
+
+    user = await get_user_by_id(user_id)
+    if not user:
+        raise ValueError(f"User {user_id} not found for building Gmail query")
+    user_tz = ZoneInfo(user.get("timezone", "UTC"))
+
+    query_parts = []
+
+    if start_from:
+        date = datetime.strptime(start_from, "%Y/%m/%d")
+        dt = datetime.combine(date, time(23, 59, 59), tzinfo=user_tz)
+        after_epoch = int(dt.timestamp())
+        query_parts.append(f"after:{after_epoch}")
+
+    if end_to:
+        date = datetime.strptime(end_to, "%Y/%m/%d")
+        dt = datetime.combine(date, time(23, 59, 59), tzinfo=user_tz)
+        before_epoch = int(dt.timestamp()) + 1  # to make it inclusive
+        query_parts.append(f"before:{before_epoch}")
+
+    return query_parts

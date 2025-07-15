@@ -41,6 +41,7 @@ from app.services.mail_service import (
     unstar_messages,
     update_label,
 )
+from app.utils.email_utils import build_gmail_query_with_epoch
 from app.utils.general_utils import transform_gmail_message
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -57,6 +58,7 @@ def get_auth_from_config(config: RunnableConfig) -> Dict[str, str]:
     return {
         "access_token": configurable.get("access_token", ""),
         "refresh_token": configurable.get("refresh_token", ""),
+        "user_id": configurable.get("user_id", ""),
     }
 
 
@@ -175,8 +177,9 @@ async def search_gmail_messages(
             f"Gmail Tool: Searching messages with criteria: query={query}, sender={sender}, etc."
         )
         auth = get_auth_from_config(config)
+        user_id = auth.get("user_id")
 
-        if not auth["access_token"] or not auth["refresh_token"]:
+        if not auth["access_token"] or not auth["refresh_token"] or not user_id:
             return {
                 "error": "Authentication credentials not provided",
                 "messages": [],
@@ -204,14 +207,17 @@ async def search_gmail_messages(
             )
         if attachment_type:
             query_parts.append(f"filename:{attachment_type}")
-        if date_from:
-            query_parts.append(f"after:{date_from}")
-        if date_to:
-            query_parts.append(f"before:{date_to}")
         if label:
             query_parts.append(f"label:{label}")
         if is_read is not None:
             query_parts.append("is:read" if is_read else "is:unread")
+
+        # Build epoch timestamp for date filters
+        epoch_query_parts = await build_gmail_query_with_epoch(
+            start_from=date_from, end_to=date_to, user_id=user_id
+        )
+        if epoch_query_parts:
+            query_parts.extend(epoch_query_parts)
 
         # Combine all query parts
         gmail_query = " ".join(query_parts)
@@ -685,7 +691,7 @@ async def get_mail_contacts(
 
 tools = [
     # list_gmail_labels,
-    fetch_gmail_messages,
+    # fetch_gmail_messages,
     search_gmail_messages,
     compose_email,
     # star_emails,

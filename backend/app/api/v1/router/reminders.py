@@ -11,10 +11,10 @@ from app.api.v1.dependencies.oauth_dependencies import (
 )
 from app.config.loggers import general_logger as logger
 from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.models.arq_event_models import EventStatus
 from app.models.reminder_models import (
     CreateReminderRequest,
     ReminderResponse,
-    ReminderStatus,
     UpdateReminderRequest,
 )
 from app.services.reminder_service import (
@@ -229,7 +229,7 @@ async def cancel_reminder_endpoint(
 @router.get("/", response_model=List[ReminderResponse])
 async def list_reminders_endpoint(
     user: dict = Depends(get_current_user),
-    status: Optional[ReminderStatus] = Query(None, description="Filter by status"),
+    status: Optional[EventStatus] = Query(None, description="Filter by status"),
     limit: int = Query(100, ge=1, le=1000, description="Maximum number of results"),
     skip: int = Query(0, ge=0, description="Number of results to skip"),
 ):
@@ -296,7 +296,7 @@ async def pause_reminder_endpoint(
 
         # Update status to paused
         success = await update_reminder(
-            reminder_id, {"status": ReminderStatus.PAUSED}, user_id=user_id
+            reminder_id, {"status": EventStatus.PAUSED}, user_id=user_id
         )
 
         if not success:
@@ -355,14 +355,14 @@ async def resume_reminder_endpoint(
                 detail=f"Reminder {reminder_id} not found",
             )
 
-        if existing_reminder.status != ReminderStatus.PAUSED:
+        if existing_reminder.status != EventStatus.PAUSED:
             raise HTTPException(
                 status_code=http_status.HTTP_400_BAD_REQUEST,
                 detail=f"Reminder {reminder_id} is not paused (current status: {existing_reminder.status})",
             )
 
         # Update status to scheduled and reschedule if needed
-        update_data: dict = {"status": ReminderStatus.SCHEDULED}
+        update_data: dict = {"status": EventStatus.SCHEDULED}
 
         # If it's a recurring reminder, calculate next run time
         if existing_reminder.repeat:

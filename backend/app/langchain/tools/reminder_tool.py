@@ -2,13 +2,9 @@
 
 import json
 from datetime import datetime
-from typing import Annotated, Any, Optional, Union
-
-from langchain_core.runnables.config import RunnableConfig
-from langchain_core.tools import tool
+from typing import Annotated, Any, Optional
 
 from app.config.loggers import reminders_logger as logger
-from app.middleware.langchain_rate_limiter import with_rate_limiting
 from app.docstrings.langchain.tools.reminder_tool_docs import (
     CREATE_REMINDER,
     DELETE_REMINDER,
@@ -18,12 +14,11 @@ from app.docstrings.langchain.tools.reminder_tool_docs import (
     UPDATE_REMINDER,
 )
 from app.docstrings.utils import with_doc
+from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.models.arq_event_models import EventStatus
 from app.models.reminder_models import (
-    AgentType,
-    AIAgentReminderPayload,
     CreateReminderRequest,
-    ReminderStatus,
-    StaticReminderPayload,
+    ReminderPayload,
 )
 from app.services.reminder_service import (
     cancel_reminder as svc_delete_reminder,
@@ -41,6 +36,8 @@ from app.services.reminder_service import (
     update_reminder as svc_update_reminder,
 )
 from app.utils.timezone import replace_timezone_info
+from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import tool
 
 
 @tool()
@@ -49,12 +46,9 @@ from app.utils.timezone import replace_timezone_info
 async def create_reminder_tool(
     config: RunnableConfig,
     payload: Annotated[
-        Union[AIAgentReminderPayload, StaticReminderPayload],
+        ReminderPayload,
         "Additional data for the reminder task",
     ],
-    agent: Annotated[
-        AgentType, "The agent type creating the reminder"
-    ] = AgentType.STATIC,
     repeat: Annotated[Optional[str], "Cron expression for recurring reminders"] = None,
     scheduled_at: Annotated[
         Optional[str],
@@ -75,15 +69,17 @@ async def create_reminder_tool(
         if not user_id:
             return {"error": "User ID is required to create a reminder"}
 
-        user_time_str: str = config.get("configurable", {}).get("user_time", "")
-        if not user_time_str:
-            return {"error": "User time is required to create a reminder"}
+        user_time: Optional[datetime] = config.get("configurable", {}).get(
+            "user_time", ""
+        )
+        if not user_time:
+            return {"error": "User Time is required to create a reminder"}
 
         if scheduled_at:
             try:
                 scheduled_at = replace_timezone_info(
                     scheduled_at,
-                    timezone_source=user_time_str,
+                    timezone_source=user_time,
                 ).isoformat()
             except ValueError:
                 logger.error(f"Invalid scheduled_at format: {scheduled_at}")
@@ -93,14 +89,13 @@ async def create_reminder_tool(
             try:
                 stop_after = replace_timezone_info(
                     stop_after,
-                    timezone_source=user_time_str,
+                    timezone_source=user_time,
                 ).isoformat()
             except ValueError:
                 logger.error(f"Invalid stop_after format {stop_after}")
                 return {"error": "Invalid stop_after format. Use ISO 8601 format."}
 
         data: dict[str, Any] = {
-            "agent": agent,
             "payload": payload,
             "repeat": repeat,
             "max_occurrences": max_occurrences,
@@ -108,7 +103,7 @@ async def create_reminder_tool(
             "scheduled_at": (
                 datetime.fromisoformat(scheduled_at) if scheduled_at else None
             ),
-            "base_time": datetime.fromisoformat(user_time_str),
+            "base_time": user_time,
         }
 
         request_model = CreateReminderRequest(**data)
@@ -127,7 +122,7 @@ async def create_reminder_tool(
 async def list_user_reminders_tool(
     config: RunnableConfig,
     status: Annotated[
-        Optional[ReminderStatus],
+        Optional[EventStatus],
         "Filter by reminder status (scheduled, completed, cancelled, paused)",
     ] = None,
 ) -> Any:
@@ -213,7 +208,7 @@ async def update_reminder_tool(
         "ISO 8601 formatted date/time after which no more runs (optional)",
     ] = None,
     payload: Annotated[
-        Optional[dict], "Additional data for the reminder task (optional)"
+        Optional[ReminderPayload], "Additional data for the reminder task (optional)"
     ] = None,
 ) -> Any:
     """Update attributes of an existing reminder"""

@@ -1,12 +1,11 @@
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel
-
 from app.models.calendar_models import EventCreateRequest
 from app.models.message_models import FileData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
+from pydantic import BaseModel
 
 
 class ImageData(BaseModel):
@@ -57,9 +56,9 @@ class MessageModel(BaseModel):
     google_docs_data: Optional[dict] = None  # Google Docs data from google_docs_tool
 
 
-class SystemPurpose(str, Enum):
+class SystemConversationPurpose(str, Enum):
     EMAIL_PROCESSING = "email_processing"
-    REMINDER_PROCESSING = "reminder_processing"
+    WORKFLOW_PROCESSING = "workflow_processing"
     OTHER = "other"  # Default or other purposes
 
 
@@ -67,7 +66,7 @@ class ConversationModel(BaseModel):
     conversation_id: str
     description: str = "New Chat"
     is_system_generated: Optional[bool] = False
-    system_purpose: Optional[SystemPurpose] = None
+    system_purpose: Optional[SystemConversationPurpose] = None
 
 
 class UpdateMessagesRequest(BaseModel):

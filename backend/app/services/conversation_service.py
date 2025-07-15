@@ -1,15 +1,14 @@
 import asyncio
 from datetime import datetime, timezone
 
-from bson import ObjectId
-from fastapi import HTTPException, status
-
 from app.db.mongodb.collections import conversations_collection
 from app.models.chat_models import (
     ConversationModel,
-    SystemPurpose,
+    SystemConversationPurpose,
     UpdateMessagesRequest,
 )
+from bson import ObjectId
+from fastapi import HTTPException, status
 
 
 async def create_conversation_service(
@@ -306,7 +305,7 @@ async def get_starred_messages(user: dict) -> dict:
 
 
 async def create_system_conversation(
-    user_id: str, description: str, system_purpose: SystemPurpose
+    user_id: str, description: str, system_purpose: SystemConversationPurpose
 ) -> dict:
     """
     Create a system-generated conversation with proper flags.
@@ -360,7 +359,9 @@ async def create_system_conversation(
 
 
 async def get_or_create_system_conversation(
-    user_id: str, system_purpose: SystemPurpose, description: str | None = None
+    user_id: str,
+    system_purpose: SystemConversationPurpose,
+    description: str | None = None,
 ) -> dict:
     """
     Get existing system conversation for a purpose or create a new one.
