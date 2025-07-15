@@ -72,6 +72,7 @@ export default function GenerateImage({
         response: `Generate Image:\n${imagePrompt}`,
         date: fetchDate(),
         message_id: userMessageId,
+        isConvoSystemGenerated: false,
       };
 
       // Create initial image_data for the loading state
@@ -87,6 +88,7 @@ export default function GenerateImage({
         loading: true,
         image_data: initialImageData,
         message_id: botMessageId,
+        isConvoSystemGenerated: false,
       };
 
       updateConvoMessages([...convoMessages, userMessage, botLoadingMessage]);
@@ -108,6 +110,7 @@ export default function GenerateImage({
         image_data: finalImageData,
         loading: false,
         message_id: botMessageId,
+        isConvoSystemGenerated: false,
       };
 
       updateConvoMessages([...convoMessages, userMessage, finalBotMessage]);

@@ -6,28 +6,7 @@ import { InternetIcon } from "@/components/shared/icons";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
 import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResultsTabs";
 import CustomAnchor from "@/features/chat/components/code-block/CustomAnchor";
-import {
-  hasCalendarDeleteOptions,
-  hasCalendarEditOptions,
-  hasCalendarOptions,
-  hasCodeData,
-  hasDeepSearchResults,
-  hasDocumentData,
-  hasEmailComposeData,
-  hasEmailFetchData,
-  hasGoalData,
-  hasGoogleDocsData,
-  hasSearchResults,
-  hasTextContent,
-  hasTodoData,
-  hasWeatherData,
-  shouldShowDeepSearchIndicator,
-  shouldShowDisclaimer,
-  shouldShowPageFetchURLs,
-  shouldShowTextBubble,
-  shouldShowWebSearchIndicator,
-} from "@/features/chat/utils/messageContentUtils";
-import EmailListCard from "@/features/mail/components/EmailListCard";
+import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 
@@ -66,19 +45,17 @@ export default function TextBubble({
 }: ChatBubbleBotProps) {
   return (
     <>
-      {hasSearchResults(search_results) && (
+      {!!search_results && (
         <SearchResultsTabs search_results={search_results!} />
       )}
 
-      {hasDeepSearchResults(deep_research_results) && (
+      {!!deep_research_results && (
         <DeepResearchResultsTabs
           deep_research_results={deep_research_results!}
         />
       )}
 
-      {hasWeatherData(weather_data) && (
-        <WeatherCard weatherData={weather_data!} />
-      )}
+      {!!weather_data && <WeatherCard weatherData={weather_data!} />}
 
       {shouldShowTextBubble(
         text,
@@ -90,7 +67,7 @@ export default function TextBubble({
       ) && (
         <div className="chat_bubble bg-zinc-800">
           <div className="flex flex-col gap-3">
-            {shouldShowWebSearchIndicator(searchWeb, search_results) && (
+            {!!(searchWeb || search_results) && (
               <Chip
                 color="primary"
                 startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -102,10 +79,7 @@ export default function TextBubble({
               </Chip>
             )}
 
-            {shouldShowDeepSearchIndicator(
-              deepSearchWeb,
-              deep_research_results,
-            ) && (
+            {!!(deepSearchWeb || deep_research_results) && (
               <Chip
                 color="primary"
                 startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -117,7 +91,7 @@ export default function TextBubble({
               </Chip>
             )}
 
-            {shouldShowPageFetchURLs(pageFetchURLs) &&
+            {!!(pageFetchURLs && pageFetchURLs.length > 0) &&
               pageFetchURLs!.map((pageFetchURL, index) => (
                 <Chip
                   key={index}
@@ -134,11 +108,9 @@ export default function TextBubble({
                 </Chip>
               ))}
 
-            {hasTextContent(text) && (
-              <MarkdownRenderer content={text.toString()} />
-            )}
+            {!!text && <MarkdownRenderer content={text.toString()} />}
 
-            {shouldShowDisclaimer(disclaimer) && (
+            {!!disclaimer && (
               <Chip
                 className="text-xs font-medium text-warning-500"
                 color="warning"
@@ -155,29 +127,25 @@ export default function TextBubble({
         </div>
       )}
 
-      {hasCalendarOptions(calendar_options) && (
+      {!!calendar_options && (
         <CalendarEventSection calendar_options={calendar_options!} />
       )}
 
-      {hasCalendarDeleteOptions(calendar_delete_options) && (
+      {!!calendar_delete_options && (
         <CalendarDeleteSection
           calendar_delete_options={calendar_delete_options!}
         />
       )}
 
-      {hasCalendarEditOptions(calendar_edit_options) && (
+      {!!calendar_edit_options && (
         <CalendarEditSection calendar_edit_options={calendar_edit_options!} />
       )}
 
-      {hasEmailComposeData(email_compose_data) && (
+      {!!email_compose_data && (
         <EmailComposeSection email_compose_data={email_compose_data!} />
       )}
 
-      {hasEmailFetchData(email_fetch_data) && (
-        <EmailListCard emails={email_fetch_data} />
-      )}
-
-      {hasTodoData(todo_data) && (
+      {!!todo_data && (
         <TodoSection
           todos={todo_data!.todos}
           projects={todo_data!.projects}
@@ -187,15 +155,13 @@ export default function TextBubble({
         />
       )}
 
-      {hasDocumentData(document_data) && (
-        <DocumentSection document_data={document_data!} />
-      )}
+      {!!document_data && <DocumentSection document_data={document_data!} />}
 
-      {hasGoogleDocsData(google_docs_data) && (
+      {!!google_docs_data && (
         <GoogleDocsSection google_docs_data={google_docs_data!} />
       )}
 
-      {hasGoalData(goal_data) && (
+      {!!goal_data && (
         <GoalSection
           goals={goal_data!.goals}
           stats={goal_data!.stats}
@@ -207,9 +173,7 @@ export default function TextBubble({
         />
       )}
 
-      {hasCodeData(code_data) && (
-        <CodeExecutionSection code_data={code_data!} />
-      )}
+      {!!code_data && <CodeExecutionSection code_data={code_data!} />}
     </>
   );
 }

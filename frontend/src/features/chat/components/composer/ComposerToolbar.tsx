@@ -7,8 +7,6 @@ import SearchbarRightSendBtn from "./ComposerRight";
 
 interface SearchbarToolbarProps {
   selectedMode: Set<SearchMode>;
-  openPageFetchModal: () => void;
-  openGenerateImageModal: () => void;
   openFileUploadModal: () => void;
   handleFormSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
   handleSelectionChange: (mode: SearchMode) => void;
@@ -20,8 +18,6 @@ interface SearchbarToolbarProps {
 
 const ComposerToolbar: React.FC<SearchbarToolbarProps> = ({
   selectedMode,
-  openPageFetchModal,
-  openGenerateImageModal,
   openFileUploadModal,
   handleFormSubmit,
   handleSelectionChange,
@@ -35,8 +31,6 @@ const ComposerToolbar: React.FC<SearchbarToolbarProps> = ({
       <div className="flex items-center justify-start gap-2">
         <ComposerLeft
           selectedMode={selectedMode}
-          openPageFetchModal={openPageFetchModal}
-          openGenerateImageModal={openGenerateImageModal}
           openFileUploadModal={openFileUploadModal}
           handleSelectionChange={handleSelectionChange}
           onOpenSlashCommandDropdown={onToggleSlashCommandDropdown}

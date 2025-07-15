@@ -20,8 +20,6 @@ import { SearchMode } from "@/types/shared";
 
 interface SearchbarLeftDropdownProps {
   selectedMode: Set<SearchMode>;
-  openPageFetchModal: () => void;
-  openGenerateImageModal: () => void;
   openFileUploadModal: () => void;
   handleSelectionChange: (mode: SearchMode) => void;
   onOpenSlashCommandDropdown?: () => void;
@@ -40,8 +38,6 @@ interface DropdownItemConfig {
 
 export default function ComposerLeft({
   selectedMode,
-  openPageFetchModal: _openPageFetchModal,
-  openGenerateImageModal: _openGenerateImageModal,
   openFileUploadModal,
   handleSelectionChange,
   onOpenSlashCommandDropdown,

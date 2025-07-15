@@ -46,6 +46,7 @@ export const useChatStream = () => {
       searchWeb: false,
       deepSearchWeb: false,
       date: fetchDate(),
+      isConvoSystemGenerated: false,
       loading: true,
     };
 

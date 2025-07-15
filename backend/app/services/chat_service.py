@@ -85,73 +85,50 @@ def extract_tool_data(json_str: str) -> Dict[str, Any]:
     """
     Parse and extract structured tool output from an agent's JSON response chunk.
 
-     This function is responsible for detecting and extracting specific tool-related data (e.g., calendar options, search results, weather data,
-     image generation outputs) from a JSON string sent during streaming.
+    This function is responsible for detecting and extracting specific tool-related data (e.g., calendar options, search results, weather data,
+    image generation outputs) from a JSON string sent during streaming.
 
-     Returns:
-         Dict[str, Any]: A dictionary containing extracted structured data.
+    Returns:
+        Dict[str, Any]: A dictionary containing extracted structured data.
 
-     Notes:
-         - This is meant to handle tool response metadata during streaming.
-         - If the JSON is malformed or does not match known tool structures, an empty dict is returned.
-         - This function is tolerant to missing keys and safe for runtime use in an async stream.
+    Notes:
+        - This is meant to handle tool response metadata during streaming.
+        - If the JSON is malformed or does not match known tool structures, an empty dict is returned.
+        - This function is tolerant to missing keys and safe for runtime use in an async stream.
     """
     try:
         data = json.loads(json_str)
-        tool_data: Dict[str, Any] = {}
 
-        # Extract calendar data
-        if "calendar_options" in data:
-            tool_data["calendar_options"] = data["calendar_options"]
+        # Extract all tool keys dynamically from MessageModel
+        # Exclude basic message fields and only include tool-related fields
+        excluded_fields = {
+            "type",
+            "response",
+            "date",
+            "searchWeb",
+            "deepSearchWeb",
+            "pageFetchURLs",
+            "disclaimer",
+            "subtype",
+            "file",
+            "filename",
+            "filetype",
+            "message_id",
+            "fileIds",
+            "fileData",
+            "selectedTool",
+            "toolCategory",
+        }
 
-        # Extract search results
-        elif "search_results" in data:
-            tool_data["search_results"] = data["search_results"]
+        tool_keys = {
+            field_name
+            for field_name in MessageModel.model_fields.keys()
+            if field_name not in excluded_fields
+        }
 
-        # Extract deep research results
-        elif "deep_research_results" in data:
-            tool_data["deep_research_results"] = data["deep_research_results"]
+        # Extract any matching tool data
+        return {key: data[key] for key in tool_keys if key in data}
 
-        # Extract weather data
-        elif "weather_data" in data:
-            tool_data["weather_data"] = data["weather_data"]
-
-        # Extract image generation data
-        elif "image_data" in data:
-            tool_data["image_data"] = data["image_data"]
-
-        # Extract email compose data
-        elif "email_compose_data" in data:
-            tool_data["email_compose_data"] = data["email_compose_data"]
-
-        # Extract memory data
-        elif "memory_data" in data:
-            tool_data["memory_data"] = data["memory_data"]
-
-        # Extract todo data
-        elif "todo_data" in data:
-            tool_data["todo_data"] = data["todo_data"]
-
-        # Extract code execution data
-        elif "code_data" in data:
-            tool_data["code_data"] = data["code_data"]
-
-        # Extract document tool data
-        elif "document_data" in data:
-            tool_data["document_data"] = data["document_data"]
-
-        # Extract goal data
-        elif "goal_data" in data:
-            tool_data["goal_data"] = data["goal_data"]
-
-        # Extract Google Docs data
-        elif "google_docs_data" in data:
-            tool_data["google_docs_data"] = data["google_docs_data"]
-
-        elif "email_fetch_data" in data:
-            tool_data["email_fetch_data"] = data["email_fetch_data"]
-
-        return tool_data
     except json.JSONDecodeError:
         return {}
 

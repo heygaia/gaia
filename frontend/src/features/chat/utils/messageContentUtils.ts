@@ -3,33 +3,6 @@ import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { MessageType } from "@/types/features/convoTypes";
 
 /**
- * Check if search results content exists
- */
-export const hasSearchResults = (
-  search_results?: ChatBubbleBotProps["search_results"],
-): boolean => {
-  return !!search_results;
-};
-
-/**
- * Check if deep search results content exists
- */
-export const hasDeepSearchResults = (
-  deep_research_results?: ChatBubbleBotProps["deep_research_results"],
-): boolean => {
-  return !!deep_research_results;
-};
-
-/**
- * Check if weather data content exists
- */
-export const hasWeatherData = (
-  weather_data?: ChatBubbleBotProps["weather_data"],
-): boolean => {
-  return !!weather_data;
-};
-
-/**
  * Check if text bubble should be shown (considering system-generated conversations)
  */
 export const shouldShowTextBubble = (
@@ -48,144 +21,12 @@ export const shouldShowTextBubble = (
     return false;
   }
 
-  const hasContent =
+  return (
     !!searchWeb ||
     !!deepSearchWeb ||
     (!!pageFetchURLs && pageFetchURLs.length > 0) ||
-    !!text.trim();
-
-  return hasContent;
-};
-
-/**
- * Check if calendar options content exists
- */
-export const hasCalendarOptions = (
-  calendar_options?: ChatBubbleBotProps["calendar_options"],
-): boolean => {
-  return !!calendar_options;
-};
-
-/**
- * Check if calendar delete options content exists
- */
-export const hasCalendarDeleteOptions = (
-  calendar_delete_options?: ChatBubbleBotProps["calendar_delete_options"],
-): boolean => {
-  return !!calendar_delete_options;
-};
-
-/**
- * Check if calendar edit options content exists
- */
-export const hasCalendarEditOptions = (
-  calendar_edit_options?: ChatBubbleBotProps["calendar_edit_options"],
-): boolean => {
-  return !!calendar_edit_options;
-};
-
-/**
- * Check if email compose data content exists
- */
-export const hasEmailComposeData = (
-  email_compose_data?: ChatBubbleBotProps["email_compose_data"],
-): boolean => {
-  return !!email_compose_data;
-};
-
-/**
- * Check if email fetch data content exists
- */
-export const hasEmailFetchData = (
-  email_fetch_data?: ChatBubbleBotProps["email_fetch_data"],
-): boolean => {
-  return !!email_fetch_data;
-};
-
-/**
- * Check if todo data content exists
- */
-export const hasTodoData = (
-  todo_data?: ChatBubbleBotProps["todo_data"],
-): boolean => {
-  return !!todo_data;
-};
-
-/**
- * Check if document data content exists
- */
-export const hasDocumentData = (
-  document_data?: ChatBubbleBotProps["document_data"],
-): boolean => {
-  return !!document_data;
-};
-
-/**
- * Check if Google Docs data content exists
- */
-export const hasGoogleDocsData = (
-  google_docs_data?: ChatBubbleBotProps["google_docs_data"],
-): boolean => {
-  return !!google_docs_data;
-};
-
-/**
- * Check if goal data content exists
- */
-export const hasGoalData = (
-  goal_data?: ChatBubbleBotProps["goal_data"],
-): boolean => {
-  return !!goal_data;
-};
-
-/**
- * Check if code execution data content exists
- */
-export const hasCodeData = (
-  code_data?: ChatBubbleBotProps["code_data"],
-): boolean => {
-  return !!code_data;
-};
-
-/**
- * Check if web search indicators should be shown
- */
-export const shouldShowWebSearchIndicator = (
-  searchWeb?: boolean,
-  search_results?: ChatBubbleBotProps["search_results"],
-): boolean => {
-  return !!(searchWeb || search_results);
-};
-
-/**
- * Check if deep search indicators should be shown
- */
-export const shouldShowDeepSearchIndicator = (
-  deepSearchWeb?: boolean,
-  deep_research_results?: ChatBubbleBotProps["deep_research_results"],
-): boolean => {
-  return !!(deepSearchWeb || deep_research_results);
-};
-
-/**
- * Check if page fetch URLs should be shown
- */
-export const shouldShowPageFetchURLs = (pageFetchURLs?: string[]): boolean => {
-  return !!(pageFetchURLs && pageFetchURLs.length > 0);
-};
-
-/**
- * Check if text content exists
- */
-export const hasTextContent = (text: string): boolean => {
-  return !!text;
-};
-
-/**
- * Check if disclaimer should be shown
- */
-export const shouldShowDisclaimer = (disclaimer?: string): boolean => {
-  return !!disclaimer;
+    !!text.trim()
+  );
 };
 
 /**
@@ -220,15 +61,13 @@ export const isBotMessageEmpty = (props: ChatBubbleBotProps): boolean => {
 
   // If the message is currently loading, it should never be considered empty
   // This ensures streaming messages remain visible during the streaming process
-  if (loading) {
-    return false;
-  }
+  if (loading) return false;
 
   // Check all possible content types
   const hasAnyContent =
-    hasSearchResults(search_results) ||
-    hasDeepSearchResults(deep_research_results) ||
-    hasWeatherData(weather_data) ||
+    !!search_results ||
+    !!deep_research_results ||
+    !!weather_data ||
     shouldShowTextBubble(
       text,
       searchWeb,
@@ -237,67 +76,19 @@ export const isBotMessageEmpty = (props: ChatBubbleBotProps): boolean => {
       isConvoSystemGenerated,
       systemPurpose,
     ) ||
-    hasCalendarOptions(calendar_options) ||
-    hasCalendarDeleteOptions(calendar_delete_options) ||
-    hasCalendarEditOptions(calendar_edit_options) ||
-    hasEmailComposeData(email_compose_data) ||
-    hasEmailFetchData(email_fetch_data) ||
-    hasTodoData(todo_data) ||
-    hasDocumentData(document_data) ||
-    hasGoogleDocsData(google_docs_data) ||
-    hasGoalData(goal_data) ||
-    hasCodeData(code_data) ||
+    !!calendar_options ||
+    !!calendar_delete_options ||
+    !!calendar_edit_options ||
+    !!email_compose_data ||
+    !!todo_data ||
+    !!document_data ||
+    !!google_docs_data ||
+    !!goal_data ||
+    !!code_data ||
     !!image_data ||
     !!memory_data;
 
   return !hasAnyContent;
-};
-
-/**
- * Check if a message pair (user + bot) should be filtered out
- * This checks if the bot message is completely empty of content
- */
-export const shouldFilterMessagePair = (
-  userMessage: MessageType,
-  botMessage: MessageType,
-): boolean => {
-  // Only filter if this is actually a bot message
-  if (botMessage.type !== "bot") {
-    return false;
-  }
-
-  // Create a mock ChatBubbleBotProps from MessageType
-  const botProps: ChatBubbleBotProps = {
-    message_id: botMessage.message_id || "",
-    text: botMessage.response || "",
-    loading: botMessage.loading,
-    searchWeb: botMessage.searchWeb,
-    deepSearchWeb: botMessage.deepSearchWeb,
-    disclaimer: botMessage.disclaimer,
-    date: botMessage.date,
-    setOpenImage: () => { }, // Mock function
-    setImageData: () => { }, // Mock function
-    pageFetchURLs: botMessage.pageFetchURLs,
-    pinned: botMessage.pinned,
-    calendar_options: botMessage.calendar_options,
-    calendar_delete_options: botMessage.calendar_delete_options,
-    calendar_edit_options: botMessage.calendar_edit_options,
-    email_compose_data: botMessage.email_compose_data,
-    weather_data: botMessage.weather_data,
-    search_results: botMessage.search_results,
-    deep_research_results: botMessage.deep_research_results,
-    document_data: botMessage.document_data,
-    image_data: botMessage.image_data,
-    todo_data: botMessage.todo_data,
-    code_data: botMessage.code_data,
-    memory_data: botMessage.memory_data,
-    goal_data: botMessage.goal_data,
-    google_docs_data: botMessage.google_docs_data,
-    isConvoSystemGenerated: false, // This will be set by the calling component
-    systemPurpose: undefined, // This will be set by the calling component
-  };
-
-  return isBotMessageEmpty(botProps);
 };
 
 /**
@@ -328,8 +119,8 @@ export const filterEmptyMessagePairs = (
           deepSearchWeb: nextMessage.deepSearchWeb,
           disclaimer: nextMessage.disclaimer,
           date: nextMessage.date,
-          setOpenImage: () => { }, // Mock function
-          setImageData: () => { }, // Mock function
+          setOpenImage: () => {}, // Mock function
+          setImageData: () => {}, // Mock function
           pageFetchURLs: nextMessage.pageFetchURLs,
           pinned: nextMessage.pinned,
           calendar_options: nextMessage.calendar_options,
@@ -374,8 +165,8 @@ export const filterEmptyMessagePairs = (
         deepSearchWeb: currentMessage.deepSearchWeb,
         disclaimer: currentMessage.disclaimer,
         date: currentMessage.date,
-        setOpenImage: () => { }, // Mock function
-        setImageData: () => { }, // Mock function
+        setOpenImage: () => {}, // Mock function
+        setImageData: () => {}, // Mock function
         pageFetchURLs: currentMessage.pageFetchURLs,
         pinned: currentMessage.pinned,
         calendar_options: currentMessage.calendar_options,
