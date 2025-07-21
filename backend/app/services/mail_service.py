@@ -1045,7 +1045,7 @@ async def get_single_email_importance_summary(
 
 async def process_email_comprehensive_analysis(
     subject: str, sender: str, date: datetime, content: str
-) -> Optional[EmailComprehensiveAnalysis]:
+) -> EmailComprehensiveAnalysis:
     """
     Process email to determine importance, generate summary, and create semantic labels in one go.
     This is more efficient than separate API calls for importance and semantic analysis.
@@ -1099,7 +1099,7 @@ async def process_email_comprehensive_analysis(
 
     except Exception as e:
         logger.error(f"Error processing email comprehensive analysis with Gemini: {e}")
-        return None
+        raise e
 
 
 async def get_bulk_email_importance_summaries(

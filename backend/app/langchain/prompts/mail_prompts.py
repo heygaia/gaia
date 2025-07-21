@@ -161,7 +161,12 @@ Do not include the actual subject or body content in your response, just summari
 
 # Combined email analysis prompt for importance, summary, and semantic labeling
 EMAIL_COMPREHENSIVE_ANALYSIS = """
-Analyze this email comprehensively to determine its importance and generate semantic labels for categorization.
+You are a personal AI assistant analyzing a user's incoming email. Your job is to evaluate:
+
+1. The email's **importance** — based on relevance, urgency, and whether it contains meaningful, time-sensitive actions the user might care about.
+2. A set of **semantic labels** — to help categorize and understand the email's content, tone, and context.
+
+---
 
 Email Details:
 Subject: {subject}
@@ -169,87 +174,51 @@ From: {sender}
 Date: {date}
 Content: {content}
 
-Analysis Requirements:
+---
 
-1. IMPORTANCE ANALYSIS - BE STRICT AND SELECTIVE:
-   - You MUST classify most emails as NOT IMPORTANT by default
-   - CRITICAL RULE: An email can ONLY be marked as important if it contains CLEAR, SPECIFIC ACTIONABLE ITEMS for the recipient
-   - Only mark an email as important if it STRICTLY meets ALL of these criteria:
-     * Requires SPECIFIC AND TIMELY action from the recipient with explicit deadlines or consequences
-     * Contains clearly stated actionable items that the recipient must personally complete
-     * The required actions have definite due dates or time sensitivity
-     * Is personally directed to the recipient (not a mass email with general action items)
-     * The actionable items cannot be easily delegated or ignored without consequences
+## 1. IMPORTANCE CLASSIFICATION
 
-   - AUTOMATICALLY mark as NOT IMPORTANT if ANY of these apply:
-     * Does not contain specific actionable items for the recipient
-     * Contains only information with no required action
-     * The actions are vague, general, or without clear deadlines
-     * Marketing or promotional content
-     * Newsletters or subscriptions
-     * Mass communications or general announcements
-     * Social media notifications
-     * Automated system alerts (unless security-critical)
-     * FYI-only emails that require no action
-     * Routine updates without time-sensitive content
-     * Any email that can be handled later without consequences
-     * Actions that can be deferred for more than 48 hours without negative impact
+Classify the email into one of the following levels:
 
-   - IMPORTANCE DISTRIBUTION GUIDELINE:
-     * URGENT: ~5% of emails (immediate attention required, serious consequences if ignored)
-     * HIGH: ~15% of emails (timely action needed, important but not critical)
-     * MEDIUM: ~30% of emails (relevant but can be addressed later)
-     * LOW: ~50% of emails (informational, routine, no action needed)
+- **URGENT**: Requires immediate attention. Delay could cause serious consequences.
+- **HIGH**: Needs timely follow-up (within 1-2 days). Personally relevant and action-worthy.
+- **MEDIUM**: Useful, may involve follow-up, but not time-sensitive.
+- **LOW**: Informational, promotional, general notification, or non-actionable.
 
-   - Provide a brief summary if important, empty string if not important
+### Evaluation Guidance:
 
-   - EXAMPLES OF EMAIL CLASSIFICATION:
+This is a **personal assistant**, not a spam filter. Do NOT be overly strict.
 
-     1. URGENT Example:
-        Subject: "Urgent: Security Breach Detected in Production Database"
-        From: Security Team Lead
-        Content: "Our monitoring system detected an active breach in the production database. Customer data may be exposed. Please implement emergency protocols and contact the security team immediately."
-        Classification: URGENT (security-critical, requires immediate action)
+An email can be marked HIGH or MEDIUM if it includes:
+- Bill or subscription reminders
+- Calendar-related scheduling or RSVPs
+- Time-sensitive personal requests (from family, services, etc.)
+- Emails that mention action items like replying, calling, paying, downloading, confirming
+- Content that may involve adding a task, reminder, or event
 
-     2. HIGH Example:
-        Subject: "Project Deadline Change: Presentation Due Tomorrow"
-        From: Your Manager
-        Content: "The client has moved up the deadline for the Johnson project. Your presentation is now due tomorrow at 9 AM. Please prepare the slides with the latest figures and send them to me for review tonight."
-        Classification: HIGH (from manager, requires timely action with deadline)
+Mark as LOW only if it's:
+- Generic or promotional
+- Has no time-bound or user-relevant content
+- Clearly informational with no follow-up expected
 
-     3. MEDIUM Example:
-        Subject: "Update on Office Renovation Schedule"
-        From: Facilities Management
-        Content: "The office renovation will start next week. Please clean out your desk by Friday. The temporary workspaces will be assigned on Monday morning. You must move your belongings by Friday 5PM or they may be relocated for you."
-        Classification: MEDIUM (contains specific actionable item with deadline, but still has a few days to complete)
+**Do NOT filter out emails that could be helpful or timely just because they're not work-related.**
 
-     4. LOW Example:
-        Subject: "Monthly Team Newsletter"
-        From: HR Department
-        Content: "Here's this month's company newsletter with updates on new hires, birthdays, and the upcoming company picnic. Also attached is information about the new optional dental plan."
-        Classification: LOW (informational, no action required)
+Return a brief, 1-2 line **summary** ONLY if importance is MEDIUM or above. Leave it empty for LOW.
 
-     5. NOT IMPORTANT Examples:
-        - Marketing email about a sale
-        - LinkedIn connection request notification
-        - Blog subscription newsletter
-        - Weekly automated system status report (no issues reported)
-        - "FYI" email copy of a memo sent to another department
-        - Email with subject "Team Update" that only provides information without specific tasks
-        - Message stating "Please review the attached document when you have time" with no deadline
-        - Company-wide announcement about a future event with no immediate required action
+---
 
-2. SEMANTIC LABELING:
-   - Generate semantic labels that capture:
-     * Content topics and themes
-     * Business context (if applicable)
-     * Action requirements
-     * People/organizations mentioned
-     * Technical domains
-     * Emotional tone
-     * Urgency indicators
-   - Assign primary category (work, personal, newsletter, support, etc.)
-   - Identify primary intent (request, information, notification, meeting, etc.)
+## 2. SEMANTIC LABELING:
+  - Generate semantic labels that capture:
+    * Content topics and themes
+    * Business context (if applicable)
+    * Action requirements
+    * People/organizations mentioned
+    * Technical domains
+    * Emotional tone
+    * Urgency indicators
+  - Assign primary category (work, personal, newsletter, support, etc.)
+  - Identify primary intent (request, information, notification, meeting, etc.)
+---
 
 {format_instructions}
 """

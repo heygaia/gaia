@@ -198,7 +198,7 @@ async def _execute_workflow(workflow: WorkflowModel) -> None:
     notification_data = await call_workflow_agent(
         instruction=workflow.payload.instructions,
         user_id=workflow.user_id,
-        reminder_id=workflow.id,
+        workflow_id=workflow.id,
         access_token=access_token,
         refresh_token=refresh_token,
         old_messages=formatted_conversation_history,

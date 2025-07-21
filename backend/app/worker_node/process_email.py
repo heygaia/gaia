@@ -12,6 +12,8 @@ from app.models.chat_models import (
     MessageModel,
     UpdateMessagesRequest,
 )
+from app.models.mail_models import EmailComprehensiveAnalysis
+from app.models.notification.notification_models import NotificationSourceEnum
 from app.services.conversation_service import (
     get_or_create_system_conversation,
     update_messages,
@@ -21,6 +23,7 @@ from app.services.mail_service import (
     process_email_comprehensive_analysis,
 )
 from app.services.user_service import get_user_by_email, get_user_by_id
+from app.utils.notification.sources import AIProactiveNotificationSource
 from app.utils.oauth_utils import get_tokens_by_user_id
 from bs4 import BeautifulSoup
 from bson import ObjectId
@@ -371,6 +374,10 @@ class ConversationManager:
                 type="user",
                 response=conversation_data["user_message_content"],
                 date=datetime.now(timezone.utc).isoformat(),
+            )
+            session.log_milestone(
+                "user_message created",
+                {"conversation_id": conversation_id, "user_id": user_id},
             )
 
             bot_message = MessageModel(
@@ -774,7 +781,6 @@ class EmailProcessor:
                 session.log_milestone(
                     f"Email comprehensive analysis completed for {message_id}",
                     {
-                        "is_important": analysis_result.is_important,
                         "importance_level": analysis_result.importance_level,
                         "has_summary": bool(analysis_result.summary),
                         "labels_count": len(analysis_result.semantic_labels),
@@ -783,8 +789,8 @@ class EmailProcessor:
 
                 # Update email metadata
                 email_metadata["comprehensive_analysis"] = {
-                    "is_important": analysis_result.is_important,
                     "importance_level": analysis_result.importance_level,
+                    "is_important": analysis_result.is_important,
                     "summary": analysis_result.summary,
                     "semantic_labels": analysis_result.semantic_labels,
                     "analyzed_at": datetime.now(timezone.utc).isoformat(),
@@ -831,9 +837,9 @@ class EmailProcessor:
                 session.log_milestone(
                     f"Email {message_id} is not important - skipping mail processing agent",
                     {
-                        "is_important": (
-                            analysis_result.is_important if analysis_result else False
-                        ),
+                        "is_important": analysis_result.is_important
+                        if analysis_result
+                        else False,
                         "message_id": message_id,
                     },
                 )
@@ -847,7 +853,11 @@ class EmailProcessor:
 
             # Handle conversation creation and notifications
             await self._handle_conversation_and_notifications(
-                result, user_id, subject, analysis_result, session
+                result=result,
+                user_id=user_id,
+                subject=subject,
+                analysis_result=analysis_result,
+                session=session,
             )
 
             session.log_message_result(message_id, result)
@@ -915,7 +925,7 @@ class EmailProcessor:
         result: dict,
         user_id: str,
         subject: str,
-        analysis_result: Any,
+        analysis_result: EmailComprehensiveAnalysis,
         session: EmailProcessingSession,
     ):
         """Handle conversation creation and notifications based on processing result."""
@@ -931,13 +941,9 @@ class EmailProcessor:
                     "system_purpose": "email_processing",
                     "description": "Email Actions & Notifications",
                     "user_message_content": f"New important email received: {subject}",
-                    "tool_data": {
-                        "email_subject": subject,
-                        "email_sender": analysis_result.sender,
-                        "email_date": analysis_result.date.isoformat(),
-                        "email_labels": analysis_result.labels,
-                        "email_content": analysis_result.content,
-                    },
+                    "tool_data": result.get("conversation_data", {}).get(
+                        "tool_data", {}
+                    ),
                 }
 
                 (
@@ -955,6 +961,31 @@ class EmailProcessor:
                             "user_message_id": user_message_id,
                         },
                     )
+
+                    try:
+                        await AIProactiveNotificationSource.create_proactive_notification(
+                            user_id=user_id,
+                            conversation_id=conversation_id,
+                            message_id=user_message_id,
+                            title="Important Email Processed",
+                            body=f"I've processed an important email: {subject}. Check the conversation for actions taken.",
+                            source=NotificationSourceEnum.EMAIL_TRIGGER,
+                            send=True,
+                        )
+                        session.log_milestone(
+                            f"Proactive notification sent for {user_id}",
+                            {
+                                "conversation_id": conversation_id,
+                                "subject": subject,
+                            },
+                        )
+                    except Exception as notification_error:
+                        session.log_error(
+                            "NOTIFICATION_CREATION_FAILED",
+                            f"Failed to create notification for {user_id}: {notification_error}",
+                            {"conversation_id": conversation_id},
+                        )
+
                 else:
                     session.log_error(
                         "CONVERSATION_CREATION_FAILED",

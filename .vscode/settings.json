@@ -31,5 +31,5 @@
   "python.analysis.autoSearchPaths": true,
   "python.analysis.useLibraryCodeForTypes": true,
   "ruff.organizeImports": true,
-  "explorer.excludeGitIgnore": true
+  "explorer.excludeGitIgnore": false
 }

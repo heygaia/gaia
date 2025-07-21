@@ -1,10 +1,11 @@
 import base64
 import json
 from datetime import datetime
-from enum import Enum
+from enum import IntEnum
 from typing import List, Optional, Union
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
+from pydantic_settings import SettingsConfigDict
 
 
 class EmailRequest(BaseModel):
@@ -155,27 +156,19 @@ class EmailProcessingReplanResult(BaseModel):
     )
 
 
-class EmailImportanceLevelEnum(str, Enum):
+class EmailImportanceLevelEnum(IntEnum):
     """Enumeration for email importance levels."""
 
-    URGENT = "URGENT"
-    HIGH = "HIGH"
-    MEDIUM = "MEDIUM"
-    LOW = "LOW"
-
-    @classmethod
-    def list(cls) -> List[str]:
-        """Return a list of all importance levels."""
-        return [level.value for level in cls]
+    URGENT = 1
+    HIGH = 2
+    MEDIUM = 3
+    LOW = 4
 
 
 class EmailComprehensiveAnalysis(BaseModel):
     """Combined response model for email importance and semantic analysis."""
 
     # Importance analysis fields
-    is_important: bool = Field(
-        description="Whether the email is important and requires attention"
-    )
     importance_level: EmailImportanceLevelEnum = Field(
         description="Importance level: URGENT, HIGH, MEDIUM, or LOW"
     )
@@ -186,4 +179,14 @@ class EmailComprehensiveAnalysis(BaseModel):
     # Semantic labeling fields
     semantic_labels: List[str] = Field(
         description="List of semantic labels that categorize the email content and context"
+    )
+
+    @computed_field  # type: ignore
+    @property
+    def is_important(self) -> bool:
+        """Computed field to determine if the email is important based on importance level."""
+        return self.importance_level <= EmailImportanceLevelEnum.MEDIUM
+
+    model_config = SettingsConfigDict(
+        extra="ignore",
     )
