@@ -52,13 +52,13 @@ class EmailContentExtractor:
             data = payload.get("body", {}).get("data", "")
             if data:
                 decoded_bytes = base64.urlsafe_b64decode(data)
-                html_data = decoded_bytes.decode("utf-8")
-                soup = BeautifulSoup(unescape(html_data), "html.parser")
-                content += soup.get_text()
+                html_content = decoded_bytes.decode("utf-8")
+                # Convert HTML to plain text using BeautifulSoup
+                soup = BeautifulSoup(html_content, "html.parser")
+                content += soup.get_text().strip()
         elif mime_type.startswith("multipart/"):
             parts = payload.get("parts", [])
-            if parts:
-                content += EmailContentExtractor._parse_mail_parts(parts)
+            content += EmailContentExtractor._parse_mail_parts(parts)
 
         return content.strip()
 
@@ -369,10 +369,12 @@ class ConversationManager:
                 },
             )
 
-            # Create messages
+            # Create user message
             user_message = MessageModel(
                 type="user",
-                response=conversation_data["user_message_content"],
+                response=conversation_data.get(
+                    "user_message_content", "New email received"
+                ),
                 date=datetime.now(timezone.utc).isoformat(),
             )
             session.log_milestone(
@@ -380,19 +382,25 @@ class ConversationManager:
                 {"conversation_id": conversation_id, "user_id": user_id},
             )
 
+            # Create bot message with response content
+            bot_message_content = conversation_data.get(
+                "bot_message_content", "Email processed successfully."
+            )
             bot_message = MessageModel(
                 type="bot",
-                response="",
+                response=bot_message_content,
                 date=datetime.now(timezone.utc).isoformat(),
             )
 
-            # Apply tool data to bot message
+            # Apply tool data to bot message if available
             tool_data = conversation_data.get("tool_data", {})
             if tool_data:
                 for key, value in tool_data.items():
-                    setattr(bot_message, key, value)
+                    # Safely set attributes on the bot message
+                    if hasattr(bot_message, key):
+                        setattr(bot_message, key, value)
 
-            # Update conversation
+            # Update conversation with both messages
             res = await update_messages(
                 UpdateMessagesRequest(
                     conversation_id=conversation_id,
@@ -401,15 +409,30 @@ class ConversationManager:
                 user={"user_id": user_id},
             )
 
-            user_message_id = res["message_ids"][0]
+            # Get the user message ID from the response
+            message_ids = res.get("message_ids", [])
+            if not message_ids or len(message_ids) < 1:
+                session.log_error(
+                    "MESSAGE_ID_ERROR",
+                    f"No message IDs returned for user {user_id}",
+                    {"user_id": user_id, "conversation_id": conversation_id},
+                )
+                raise ValueError(f"No message IDs returned for user {user_id}")
+
+            user_message_id = message_ids[0]
             session.log_milestone(
-                f"Email processing conversation updated for user {user_id} with {len(tool_data)} tool outputs"
+                f"Email processing conversation updated for user {user_id} with {len(tool_data)} tool outputs",
+                {
+                    "conversation_id": conversation_id,
+                    "user_message_id": user_message_id,
+                    "tool_data_count": len(tool_data),
+                },
             )
 
             if not user_message_id or not isinstance(user_message_id, str):
                 session.log_error(
                     "MESSAGE_ID_ERROR",
-                    f"Failed to get user message_id for user {user_id}",
+                    f"Invalid user_message_id: {user_message_id} for user {user_id}",
                     {"user_id": user_id, "conversation_id": conversation_id},
                 )
                 raise ValueError(
@@ -442,21 +465,13 @@ class EmailProcessor:
     ) -> dict:
         """Process emails for a user identified by email address."""
         try:
-            session.log_milestone("Input validation started")
+            session.log_milestone("Email processing started", {"email": email})
 
+            # Basic validation
             if not email or not history_id:
                 error_msg = "Email address or history ID is missing"
-                session.log_error(
-                    "VALIDATION_ERROR",
-                    error_msg,
-                    {
-                        "email_provided": bool(email),
-                        "history_id_provided": bool(history_id),
-                    },
-                )
+                session.log_error("VALIDATION_ERROR", error_msg)
                 return {"error": error_msg, "status": "failed"}
-
-            session.log_milestone("User lookup started", {"email": email})
 
             # Get user by email
             user = await get_user_by_email(email)
@@ -473,10 +488,7 @@ class EmailProcessor:
                 return {"error": "User ID not found", "status": "failed"}
 
             session.set_user_id(user_id)
-            session.log_milestone(
-                "User resolved successfully",
-                {"user_id": user_id, "user_name": user.get("name", "Unknown")},
-            )
+            session.log_milestone("User resolved", {"user_id": user_id})
 
             # Delegate to user_id based processing
             return await self.process_emails_by_user_id(
@@ -485,9 +497,7 @@ class EmailProcessor:
 
         except Exception as e:
             error_msg = f"Error processing email: {e}"
-            session.log_error(
-                "UNEXPECTED_ERROR", error_msg, {"exception_type": type(e).__name__}
-            )
+            session.log_error("UNEXPECTED_ERROR", error_msg)
             return {"error": str(e), "status": "failed"}
 
     async def process_emails_by_user_id(
@@ -930,71 +940,98 @@ class EmailProcessor:
     ):
         """Handle conversation creation and notifications based on processing result."""
         try:
-            if result.get("status") == "success" and analysis_result.is_important:
+            # Only handle important emails that were successfully processed
+            if (
+                result.get("status") == "success"
+                and analysis_result
+                and analysis_result.is_important
+                and result.get("conversation_data")
+            ):
                 session.log_milestone(
                     "Creating email processing conversation",
                     {"user_id": user_id, "subject": subject},
                 )
 
-                conversation_data = {
-                    "user_id": user_id,
-                    "system_purpose": "email_processing",
-                    "description": "Email Actions & Notifications",
-                    "user_message_content": f"New important email received: {subject}",
-                    "tool_data": result.get("conversation_data", {}).get(
-                        "tool_data", {}
-                    ),
-                }
-
-                (
-                    user_message_id,
-                    conversation_id,
-                ) = await self.conversation_manager.create_email_processing_conversation(
-                    conversation_data, user_id, session
+                # Extract conversation data from the LLM agent result
+                conversation_data = result.get("conversation_data", {})
+                user_message_content = conversation_data.get(
+                    "user_message_content", f"New important email received: {subject}"
                 )
+                bot_message_content = conversation_data.get("bot_message_content", "")
+                tool_data = conversation_data.get("tool_data", {})
 
-                if user_message_id and conversation_id:
-                    session.log_milestone(
-                        f"Conversation created successfully for {user_id}",
+                # Create conversation with simplified data
+                try:
+                    (
+                        user_message_id,
+                        conversation_id,
+                    ) = await self.conversation_manager.create_email_processing_conversation(
                         {
-                            "conversation_id": conversation_id,
-                            "user_message_id": user_message_id,
+                            "user_message_content": user_message_content,
+                            "bot_message_content": bot_message_content,
+                            "tool_data": tool_data,
+                            "system_purpose": "email_processing",
+                            "description": "Email Actions & Notifications",
                         },
+                        user_id,
+                        session,
                     )
 
-                    try:
-                        await AIProactiveNotificationSource.create_proactive_notification(
-                            user_id=user_id,
-                            conversation_id=conversation_id,
-                            message_id=user_message_id,
-                            title="Important Email Processed",
-                            body=f"I've processed an important email: {subject}. Check the conversation for actions taken.",
-                            source=NotificationSourceEnum.EMAIL_TRIGGER,
-                            send=True,
-                        )
+                    if user_message_id and conversation_id:
                         session.log_milestone(
-                            f"Proactive notification sent for {user_id}",
+                            f"Conversation created successfully for {user_id}",
                             {
                                 "conversation_id": conversation_id,
-                                "subject": subject,
+                                "user_message_id": user_message_id,
                             },
                         )
-                    except Exception as notification_error:
+
+                        # Send notification only if conversation creation was successful
+                        try:
+                            await AIProactiveNotificationSource.create_proactive_notification(
+                                user_id=user_id,
+                                conversation_id=conversation_id,
+                                message_id=user_message_id,
+                                title="Important Email Processed",
+                                body=f"I've processed an important email: {subject}. Check the conversation for actions taken.",
+                                source=NotificationSourceEnum.EMAIL_TRIGGER,
+                                send=True,
+                            )
+                            session.log_milestone(
+                                f"Proactive notification sent for {user_id}",
+                                {
+                                    "conversation_id": conversation_id,
+                                    "subject": subject,
+                                },
+                            )
+                        except Exception as notification_error:
+                            session.log_error(
+                                "NOTIFICATION_CREATION_FAILED",
+                                f"Failed to create notification for {user_id}: {notification_error}",
+                                {"conversation_id": conversation_id},
+                            )
+                    else:
                         session.log_error(
-                            "NOTIFICATION_CREATION_FAILED",
-                            f"Failed to create notification for {user_id}: {notification_error}",
-                            {"conversation_id": conversation_id},
+                            "CONVERSATION_CREATION_FAILED",
+                            f"Failed to create conversation for {user_id} - invalid IDs returned",
                         )
 
-                else:
+                except Exception as conv_error:
                     session.log_error(
-                        "CONVERSATION_CREATION_FAILED",
-                        f"Failed to create conversation for {user_id}",
+                        "CONVERSATION_CREATION_ERROR",
+                        f"Error creating conversation for {user_id}: {conv_error}",
+                        {"user_id": user_id},
                     )
             else:
                 session.log_milestone(
-                    f"No conversation created for {user_id} - email not important",
-                    {"is_important": analysis_result.is_important},
+                    f"No conversation created for {user_id}",
+                    {
+                        "status": result.get("status"),
+                        "is_important": analysis_result.is_important
+                        if analysis_result
+                        else False,
+                        "has_conversation_data": bool(result.get("conversation_data")),
+                    },
                 )
 
         except Exception as e:
@@ -1003,7 +1040,6 @@ class EmailProcessor:
                 f"Error handling conversation for {user_id}: {e}",
                 {"user_id": user_id, "exception_type": type(e).__name__},
             )
-            raise e
 
 
 # Initialize the email processor

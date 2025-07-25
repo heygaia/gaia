@@ -2,7 +2,7 @@
 Workflow models for task scheduling system.
 """
 
-from typing import Optional
+from typing import List, Optional
 
 from app.models.arq_event_models import (
     CreateEventRequestModel,
@@ -12,9 +12,31 @@ from app.models.arq_event_models import (
 from pydantic import BaseModel, Field
 
 
-class WorkflowPayload(BaseModel):
-    """Payload for STATIC agent workflows."""
+class WorkflowProcessingPlan(BaseModel):
+    """Plan to follow for workflow processing with structured output"""
 
+    steps: List[str] = Field(
+        description="Different steps to follow for processing the workflow, should be in sorted order"
+    )
+
+
+class WorkflowProcessingReplanResult(BaseModel):
+    """Result model for workflow processing replanning step"""
+
+    action: str = Field(
+        description="Action to take: 'continue' to continue with remaining steps, 'complete' to finish processing"
+    )
+    steps: Optional[List[str]] = Field(
+        default=None,
+        description="Remaining steps to execute if action is 'continue'. Not needed if action is 'complete'",
+    )
+    response: Optional[str] = Field(
+        default=None,
+        description="Final response to user if action is 'complete'. Not needed if action is 'continue'",
+    )
+
+
+class WorkflowPayloadLLM(BaseModel):
     instructions: str = Field(
         ...,
         description="Detailed instructions for the workflow task",
@@ -22,6 +44,19 @@ class WorkflowPayload(BaseModel):
     context: Optional[str] = Field(
         None,
         description="Optional context or additional information for the workflow",
+    )
+
+
+class WorkflowPayload(WorkflowPayloadLLM):
+    """Payload for STATIC agent workflows."""
+
+    plan: Optional[WorkflowProcessingPlan] = Field(
+        None,
+        description="The generated workflow plan with steps to execute",
+    )
+    results: Optional[list] = Field(
+        None,
+        description="Results of executed workflow steps",
     )
 
 

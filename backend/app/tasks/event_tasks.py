@@ -206,10 +206,10 @@ async def _execute_workflow(workflow: WorkflowModel) -> None:
 
     if not notification_data:
         logger.error(
-            f"AI agent reminder {workflow.id} returned no notification data for user {workflow.user_id}"
+            f"AI agent workflow {workflow.id} returned no notification data for user {workflow.user_id}"
         )
         raise ValueError(
-            f"AI agent reminder {workflow.id} returned no notification data"
+            f"AI agent workflow {workflow.id} returned no notification data"
         )
 
     # Create conversation if this is the first execution
@@ -264,24 +264,21 @@ async def execute_event(
     event: EventModel,
 ):
     """
-    Execute a reminder task based on its type.
+    Execute an event task based on its type.
 
-    This is the main entry point for reminder execution. It routes to the appropriate
-    handler based on the reminder's agent type:
-    - AI_AGENT: Executes with conversation tracking and history context
-    - STATIC: Sends simple notification
+    This is the main entry point for event execution. It routes to the appropriate
+    handler based on the event's type:
+    - WorkflowModel: Executes workflow with conversation tracking and history context
+    - ReminderModel: Sends simple notification
 
     Args:
-
-        reminder: The reminder to execute
-        access_token: OAuth access token (for compatibility, retrieved automatically)
-        refresh_token: OAuth refresh token (for compatibility, retrieved automatically)
+        event: The event to execute
     """
     logger.info(f"Executing event: {event.id}")
 
     if not event.id:
-        logger.error(f"Reminder {event.id} has no ID, skipping execution.")
-        raise ValueError(f"Reminder {event.id} has no ID, skipping execution.")
+        logger.error(f"Event {event.id} has no ID, skipping execution.")
+        raise ValueError(f"Event {event.id} has no ID, skipping execution.")
 
     try:
         if isinstance(event, WorkflowModel):
@@ -293,5 +290,5 @@ async def execute_event(
 
         logger.info(f"Event {event.id} executed successfully")
     except Exception as e:
-        logger.error(f"Failed to execute reminder {event.id}: {str(e)}")
+        logger.error(f"Failed to execute event {event.id}: {str(e)}")
         raise

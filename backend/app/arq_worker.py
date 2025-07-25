@@ -15,7 +15,11 @@ from app.models.arq_event_models import EventType
 
 
 async def startup(ctx: dict):
+    """ARQ worker startup function."""
     from app.langchain.core.graph_builder.build_graph import build_graph
+    from app.langchain.core.graph_builder.build_workflow_processing_graph import (
+        build_workflow_processing_graph,
+    )
     from app.langchain.core.graph_manager import GraphManager
     from app.langchain.tools.workflow_tool import (
         create_workflow_tool,
@@ -23,7 +27,6 @@ async def startup(ctx: dict):
         update_workflow_tool,
     )
 
-    """ARQ worker startup function."""
     logger.info("ARQ worker starting up...")
 
     # Initialize any resources needed by worker
@@ -33,7 +36,7 @@ async def startup(ctx: dict):
 
     llm = init_llm()
 
-    # Register and Build the processing graph
+    # Register and Build the general processing graph
     async with build_graph(
         chat_llm=llm,  # type: ignore[call-arg]
         exclude_tools=[
@@ -43,7 +46,11 @@ async def startup(ctx: dict):
         ],
         in_memory_checkpointer=True,
     ) as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="workflow_processing")
+        GraphManager.set_graph(built_graph, graph_name="default")
+
+    # Register and Build the workflow processing graph with runtime conditional edges
+    async with build_workflow_processing_graph() as workflow_graph:
+        GraphManager.set_graph(workflow_graph, graph_name="workflow_processing")
 
 
 async def shutdown(ctx: dict):
@@ -58,16 +65,16 @@ async def shutdown(ctx: dict):
 
 async def process_event(ctx: dict, event_id: str) -> str:
     """
-    Process a reminder task.
+    Process an event task (reminder or workflow).
 
     Args:
         ctx: ARQ context
-        reminder_id: ID of the reminder to process
+        event_id: ID of the event to process in format "type:id"
 
     Returns:
         Processing result message
     """
-    logger.info(f"Processing reminder task: {event_id}")
+    logger.info(f"Processing event task: {event_id}")
 
     try:
         [event_type, event_id] = event_id.split(":")
@@ -76,19 +83,23 @@ async def process_event(ctx: dict, event_id: str) -> str:
             from app.services.reminder_service import process_reminder_task
 
             await process_reminder_task(event_id)
+            result = f"Successfully processed reminder {event_id}"
         elif event_type == EventType.WORKFLOW:
             from app.services.workflow_service import process_workflow_task
 
             await process_workflow_task(event_id)
+            result = f"Successfully processed workflow {event_id}"
+        else:
+            result = f"Unknown event type: {event_type}"
+            logger.error(result)
 
-        result = f"Successfully processed reminder {event_id}"
         logger.info(result)
         return result
 
     except Exception as e:
-        error_msg = f"Failed to process reminder {event_id}: {str(e)}"
+        error_msg = f"Error processing event {event_id}: {str(e)}"
         logger.error(error_msg)
-        raise
+        return error_msg
 
 
 async def check_inactive_users(ctx: dict) -> str:

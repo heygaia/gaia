@@ -59,7 +59,7 @@ class EventScheduler:
             return
 
         job = await self.arq_pool.enqueue_job(
-            "process_event", f"{type}:{event_id}", _defer_until=scheduled_at
+            "process_event", f"{type.value}:{event_id}", _defer_until=scheduled_at
         )
 
         if not job:

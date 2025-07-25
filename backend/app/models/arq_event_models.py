@@ -175,7 +175,7 @@ class UpdateEventRequestModel(BaseModel):
         return None
 
     class Config:
-        extra = "forbid"
+        extra = "ignore"
 
 
 class EventModel(BaseModel):

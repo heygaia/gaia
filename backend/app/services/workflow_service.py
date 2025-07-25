@@ -18,6 +18,9 @@ async def create_workflow(workflow_data: CreateWorkflowRequest, user_id: str) ->
 
     workflow_dict = workflow.model_dump(by_alias=True)
 
+    # Removing _id to let mongodb auto assign it in ObjectId format
+    workflow_dict.pop("_id")
+
     result = await workflow_collection.insert_one(workflow_dict)
     workflow_id = str(result.inserted_id)
 
@@ -64,7 +67,7 @@ async def update_workflow(
 ) -> WorkflowModel:
     """Update workflow in DB and reschedule if applicable."""
     update_data_model = UpdateWorkflowRequest(**update_data)
-    update_data = update_data_model.model_dump(by_alias=True)
+    update_data = update_data_model.model_dump(by_alias=True, exclude_unset=True)
 
     filters = {"_id": ObjectId(workflow_id), "user_id": user_id}
     result = await workflow_collection.update_one(filters, {"$set": update_data})

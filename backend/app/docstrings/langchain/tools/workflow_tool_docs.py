@@ -24,10 +24,25 @@ Scheduling:
     • `max_occurrences`: how many times to run
     • `stop_after`: ISO timestamp cutoff. Should be in future
 
+🔧 CRON SYNTAX REFERENCE:
+Format: "minute hour day_of_month month day_of_week"
+- minute: 0-59
+- hour: 0-23 (24-hour format)
+- day_of_month: 1-31
+- month: 1-12
+- day_of_week: 0-7 (0 and 7 are Sunday)
+
+Special Characters:
+- * : any value
+- , : value list separator
+- - : range of values
+- / : step values
+
 Instructions:
 - Must be fully self-contained
 - Include all necessary context, tool usage, input formats, and output expectations
 - If required tools aren’t available, creation must fail with a clear error
+- Ensure that cron job is correct and is following the syntax above. Do not include seconds in the cron expression.
 
 Payload:
 - Format: {"instructions": str}

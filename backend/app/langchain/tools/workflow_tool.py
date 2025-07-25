@@ -16,7 +16,11 @@ from app.docstrings.langchain.tools.workflow_tool_docs import (
 from app.docstrings.utils import with_doc
 from app.middleware.langchain_rate_limiter import with_rate_limiting
 from app.models.arq_event_models import EventStatus
-from app.models.workflow_models import CreateWorkflowRequest, WorkflowPayload
+from app.models.workflow_models import (
+    CreateWorkflowRequest,
+    WorkflowPayload,
+    WorkflowPayloadLLM,
+)
 from app.services.workflow_service import (
     cancel_workflow as svc_delete_workflow,
 )
@@ -42,7 +46,7 @@ from langchain_core.tools import tool
 @with_doc(CREATE_WORKFLOW)
 async def create_workflow_tool(
     config: RunnableConfig,
-    payload: Annotated[WorkflowPayload, "Additional data for the workflow task"],
+    payload: Annotated[WorkflowPayloadLLM, "Additional data for the workflow task"],
     repeat: Annotated[Optional[str], "Cron expression for recurring workflows"] = None,
     scheduled_at: Annotated[
         Optional[str],

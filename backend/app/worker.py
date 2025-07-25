@@ -95,6 +95,9 @@ async def start_worker():
     from app.langchain.core.graph_builder.build_mail_processing_graph import (
         build_mail_processing_graph,
     )
+    from app.langchain.core.graph_builder.build_workflow_processing_graph import (
+        build_workflow_processing_graph,
+    )
     from app.langchain.core.graph_manager import GraphManager
 
     connection = await connect_robust(settings.RABBITMQ_URL, timeout=10)
@@ -109,11 +112,16 @@ async def start_worker():
     workflow_queue = await channel.declare_queue("workflow-generation", durable=True)
     await workflow_queue.consume(on_workflow_message)
 
-    # Build the processing graph
-    async with build_mail_processing_graph() as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="mail_processing")
+    # Build and register the mail processing graph
+    async with build_mail_processing_graph() as mail_graph:
+        GraphManager.set_graph(mail_graph, graph_name="mail_processing")
+
+    # Build and register the workflow processing graph with runtime conditional edges
+    async with build_workflow_processing_graph() as workflow_graph:
+        GraphManager.set_graph(workflow_graph, graph_name="workflow_processing")
 
     logger.info("Worker started on queues: email-events, workflow-generation")
+    logger.info("Graphs registered: mail_processing, workflow_processing")
 
     # Handle shutdown signals
     loop = asyncio.get_running_loop()

@@ -20,6 +20,23 @@ Scheduling:
     • `max_occurrences`: number of times to run
     • `stop_after`: ISO timestamp after which reminder stops. Should be in future
 
+🔧 CRON SYNTAX REFERENCE:
+Format: "minute hour day_of_month month day_of_week"
+- minute: 0-59
+- hour: 0-23 (24-hour format)
+- day_of_month: 1-31
+- month: 1-12
+- day_of_week: 0-7 (0 and 7 are Sunday)
+
+Special Characters:
+- * : any value
+- , : value list separator
+- - : range of values
+- / : step values
+
+Instructions:
+- Ensure that cron job is correct and is following the syntax above. Do not include seconds in the cron expression.
+
 Payload:
 - Format: {"title": str, "body": str}
 
