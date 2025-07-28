@@ -2,6 +2,7 @@ import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Kbd } from "@heroui/react";
+import { useEffect, useRef } from "react";
 
 import { CountrySelector } from "@/components/country-selector";
 import { SentIcon } from "@/components/shared/icons";
@@ -29,6 +30,9 @@ export const OnboardingInput = ({
   onProfessionInputChange,
   inputRef,
 }: OnboardingInputProps) => {
+  const countryRef = useRef<HTMLInputElement>(null);
+  const professionRef = useRef<HTMLInputElement>(null);
+
   const currentQuestion =
     onboardingState.currentQuestionIndex < questions.length
       ? questions[onboardingState.currentQuestionIndex]
@@ -36,18 +40,56 @@ export const OnboardingInput = ({
 
   if (!currentQuestion) return null;
 
+  // Focus the appropriate input when the question changes
+  useEffect(() => {
+    const focusTimeout = setTimeout(() => {
+      switch (currentQuestion.fieldName) {
+        // case FIELD_NAMES.COUNTRY:
+        //   // CountrySelector uses a ComboBox with an input that we can focus
+        //   const countryInput = document.querySelector(
+        //     '[data-slot="combobox"] input',
+        //   ) as HTMLInputElement;
+        //   if (countryInput) {
+        //     countryInput.focus();
+        //   }
+        //   break;
+        case FIELD_NAMES.PROFESSION:
+          // Autocomplete uses an input that we can focus
+          const professionInput = document.querySelector(
+            '[data-slot="autocomplete"] input',
+          ) as HTMLInputElement;
+          if (professionInput) {
+            professionInput.focus();
+          }
+          break;
+        default:
+          // Regular input
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+          break;
+      }
+    }, 150); // Small delay to ensure the input is rendered
+
+    return () => clearTimeout(focusTimeout);
+  }, [
+    currentQuestion.fieldName,
+    onboardingState.currentQuestionIndex,
+    inputRef,
+  ]);
+
   const renderInput = () => {
     switch (currentQuestion.fieldName) {
-      case FIELD_NAMES.COUNTRY:
-        return (
-          <CountrySelector
-            key={`country-${onboardingState.currentQuestionIndex}`}
-            selectedKey={onboardingState.currentInputs.selectedCountry}
-            onSelectionChange={onCountrySelect}
-            placeholder="Search for your country..."
-            label=""
-          />
-        );
+      // case FIELD_NAMES.COUNTRY:
+      //   return (
+      //     <CountrySelector
+      //       key={`country-${onboardingState.currentQuestionIndex}`}
+      //       selectedKey={onboardingState.currentInputs.selectedCountry}
+      //       onSelectionChange={onCountrySelect}
+      //       placeholder="Search for your country..."
+      //       label=""
+      //     />
+      //   );
 
       case FIELD_NAMES.PROFESSION:
         return (
@@ -69,6 +111,7 @@ export const OnboardingInput = ({
             size="lg"
             radius="full"
             allowsCustomValue
+            autoFocus
             classNames={{
               base: "w-full",
             }}
@@ -92,6 +135,7 @@ export const OnboardingInput = ({
             placeholder={currentQuestion.placeholder}
             variant="faded"
             size="lg"
+            autoFocus
             classNames={{ inputWrapper: "pr-1" }}
             endContent={
               <Button

@@ -25,11 +25,11 @@ export default function Onboarding() {
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-black backdrop-blur-2xl">
-      <OnboardingBackground />
+      <OnboardingBackground speed={7} opacity={[1, 0.4, 1]} />
 
       {/* Messages Container */}
       <div className="relative z-10 flex-1 overflow-y-auto px-4 py-32">
-        <div className="relative mx-auto max-w-2xl">
+        <div className="relative mx-auto max-w-3xl">
           <OnboardingMessages
             messages={onboardingState.messages}
             messagesEndRef={messagesEndRef}

@@ -1,5 +1,6 @@
 import { Button } from "@heroui/button";
 import { motion } from "framer-motion";
+import { ArrowRight } from "lucide-react";
 
 interface OnboardingCompleteProps {
   onLetsGo: () => void;
@@ -8,7 +9,7 @@ interface OnboardingCompleteProps {
 export const OnboardingComplete = ({ onLetsGo }: OnboardingCompleteProps) => {
   return (
     <motion.div
-      className="mx-auto w-full max-w-2xl text-center"
+      className="mx-auto mb-7 w-full max-w-2xl text-center"
       initial={{ opacity: 0, scale: 0.9, y: 15 }}
       animate={{ opacity: 1, scale: 1, y: 0 }}
       transition={{
@@ -20,9 +21,8 @@ export const OnboardingComplete = ({ onLetsGo }: OnboardingCompleteProps) => {
       <Button
         onPress={onLetsGo}
         color="primary"
-        size="lg"
-        radius="full"
-        className="font-medium transition-transform duration-400 hover:scale-125 hover:bg-primary/90"
+        endContent={<ArrowRight width={17} height={17} />}
+        className="transition-all! hover:-translate-y-1 hover:scale-110 hover:bg-primary/90"
       >
         <span className="flex items-center gap-2">Let's Go!</span>
       </Button>

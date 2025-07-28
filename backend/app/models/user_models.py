@@ -81,8 +81,8 @@ class OnboardingPreferences(BaseModel):
     def validate_response_style(cls, v):
         if v is not None:
             valid_styles = {"brief", "detailed", "casual", "professional"}
-            # Allow custom response styles (anything that's not in the predefined list)
-            if v not in valid_styles and len(v.strip()) == 0:
+            # Allow empty string (when user skips) or custom response styles
+            if v not in valid_styles and v != "" and len(v.strip()) == 0:
                 raise ValueError("Response style cannot be empty")
         return v
 
@@ -112,8 +112,8 @@ class OnboardingRequest(BaseModel):
     name: str = Field(
         ..., min_length=1, max_length=100, description="User's preferred name"
     )
-    country: str = Field(
-        ..., min_length=2, max_length=2, description="ISO 3166-1 alpha-2 country code"
+    country: Optional[str] = Field(
+        None, min_length=2, max_length=2, description="ISO 3166-1 alpha-2 country code"
     )
     profession: str = Field(
         ..., min_length=1, max_length=50, description="User's profession"
@@ -138,12 +138,13 @@ class OnboardingRequest(BaseModel):
     @field_validator("country")
     @classmethod
     def validate_country(cls, v):
-        # Ensure country code is uppercase and valid format
-        v = v.upper().strip()
-        if not re.match(r"^[A-Z]{2}$", v):
-            raise ValueError(
-                "Country must be a valid ISO 3166-1 alpha-2 code (e.g., US, GB, DE)"
-            )
+        if v is not None:
+            # Ensure country code is uppercase and valid format
+            v = v.upper().strip()
+            if not re.match(r"^[A-Z]{2}$", v):
+                raise ValueError(
+                    "Country must be a valid ISO 3166-1 alpha-2 code (e.g., US, GB, DE)"
+                )
         return v
 
     @field_validator("profession")
@@ -158,8 +159,8 @@ class OnboardingRequest(BaseModel):
     @classmethod
     def validate_response_style(cls, v):
         valid_styles = {"brief", "detailed", "casual", "professional"}
-        # Allow custom response styles (anything that's not in the predefined list)
-        if v not in valid_styles and len(v.strip()) == 0:
+        # Allow empty string (when user skips) or custom response styles
+        if v not in valid_styles and v != "" and len(v.strip()) == 0:
             raise ValueError("Response style cannot be empty")
         return v
 

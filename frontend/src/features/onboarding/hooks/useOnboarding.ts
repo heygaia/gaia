@@ -31,17 +31,38 @@ export const useOnboarding = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
 
+  const focusInput = () => {
+    // Focus the input after a short delay to ensure rendering is complete
+    setTimeout(() => {
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    }, 100);
+  };
+
   useEffect(() => {
     scrollToBottom();
-  }, [onboardingState.messages]);
+
+    // Focus input after each message, especially bot messages
+    if (onboardingState.messages.length > 0) {
+      const lastMessage =
+        onboardingState.messages[onboardingState.messages.length - 1];
+      if (lastMessage.type === "bot" && !onboardingState.isOnboardingComplete) {
+        // Focus input after bot messages (after scroll completes)
+        setTimeout(() => {
+          focusInput();
+        }, 300); // Wait for scroll to complete
+      }
+    }
+  }, [onboardingState.messages, onboardingState.isOnboardingComplete]);
 
   const getDisplayText = useCallback(
     (fieldName: string, value: string): string => {
       switch (fieldName) {
-        case FIELD_NAMES.COUNTRY:
-          return (
-            countries.find((c: Country) => c.code === value)?.name || value
-          );
+        // case FIELD_NAMES.COUNTRY:
+        //   return (
+        //     countries.find((c: Country) => c.code === value)?.name || value
+        //   );
         case FIELD_NAMES.PROFESSION:
           return (
             professionOptions.find((p) => p.value === value)?.label || value
@@ -161,17 +182,10 @@ export const useOnboarding = () => {
     ],
   );
 
-  const handleCountrySelect = useCallback(
-    (countryCode: string | null) => {
-      if (onboardingState.isProcessing || !countryCode) return;
-
-      // Ensure country code is uppercase for consistency
-      const normalizedCode = countryCode.toUpperCase();
-      const countryName = getDisplayText("country", normalizedCode);
-      submitResponse(countryName, normalizedCode);
-    },
-    [onboardingState.isProcessing, submitResponse, getDisplayText],
-  );
+  const handleCountrySelect = useCallback((countryCode: string | null) => {
+    // Deprecated: Country selection removed from onboarding
+    console.warn("Country selection is no longer supported in onboarding");
+  }, []);
 
   const handleProfessionSelect = useCallback(
     (professionKey: React.Key | null) => {
@@ -227,32 +241,28 @@ export const useOnboarding = () => {
 
       const currentQuestion = questions[onboardingState.currentQuestionIndex];
       const { fieldName } = currentQuestion;
+      const { text } = onboardingState.currentInputs;
 
-      if (
-        fieldName === FIELD_NAMES.COUNTRY &&
-        onboardingState.currentInputs.selectedCountry
-      ) {
-        handleCountrySelect(onboardingState.currentInputs.selectedCountry);
-      } else if (
-        fieldName !== FIELD_NAMES.COUNTRY &&
-        fieldName !== FIELD_NAMES.PROFESSION
-      ) {
-        if (fieldName === FIELD_NAMES.INSTRUCTIONS) {
-          submitResponse(
-            onboardingState.currentInputs.text.trim() ||
-              "No specific instructions",
-            "",
-          );
-        } else if (onboardingState.currentInputs.text.trim()) {
-          submitResponse(onboardingState.currentInputs.text.trim());
-        }
+      // Handle different field types
+      switch (fieldName) {
+        // case FIELD_NAMES.COUNTRY:
+        // if (selectedCountry) handleCountrySelect(selectedCountry);
+        // break;
+
+        case FIELD_NAMES.INSTRUCTIONS:
+          submitResponse(text.trim() || "No specific instructions", "");
+          break;
+
+        default:
+          if (text.trim()) {
+            submitResponse(text.trim());
+          }
+          break;
       }
     },
     [
       onboardingState.currentQuestionIndex,
-      onboardingState.currentInputs.selectedCountry,
       onboardingState.currentInputs.text,
-      handleCountrySelect,
       submitResponse,
     ],
   );
@@ -266,7 +276,12 @@ export const useOnboarding = () => {
       setOnboardingState((prev) => ({ ...prev, isProcessing: true }));
 
       // Validate required fields
-      const requiredFields = ["name", "country", "profession", "responseStyle"];
+      const requiredFields = [
+        "name",
+        // "country",
+        "profession",
+        "responseStyle",
+      ];
       const missingFields = requiredFields.filter(
         (field) => !onboardingState.userResponses[field],
       );
@@ -282,66 +297,36 @@ export const useOnboarding = () => {
       const instructions = onboardingState.userResponses.instructions?.trim();
       const onboardingData = {
         name: onboardingState.userResponses.name.trim(),
-        country: onboardingState.userResponses.country.toUpperCase(), // Ensure uppercase
         profession: onboardingState.userResponses.profession,
         response_style: onboardingState.userResponses.responseStyle,
         instructions: instructions || null,
       };
 
-      // Send onboarding data to backend with retry logic
-      let retryCount = 0;
-      const maxRetries = 3;
-      let response;
-
-      while (retryCount < maxRetries) {
-        try {
-          response = await authApi.completeOnboarding(onboardingData);
-          break; // Success, exit retry loop
-        } catch (error: unknown) {
-          retryCount++;
-          if (retryCount >= maxRetries) {
-            throw error; // Re-throw if max retries reached
-          }
-
-          // Wait before retrying (exponential backoff)
-          await new Promise((resolve) =>
-            setTimeout(resolve, 1000 * retryCount),
-          );
-        }
-      }
+      // Send onboarding data to backend
+      const response = await authApi.completeOnboarding(onboardingData);
 
       if (response?.success) {
         toast.success("Welcome! Your preferences have been saved.");
-
-        // Navigate to the main chat page
         router.push("/c");
       } else {
         throw new Error("Failed to complete onboarding");
       }
-    } catch (error: unknown) {
+    } catch (error: any) {
       console.error("Error completing onboarding:", error);
 
-      // Provide specific error messages
-      const errorObj = error as {
-        response?: { status?: number };
-        message?: string;
-        code?: string;
-      };
+      const status = error?.response?.status;
 
-      if (errorObj?.response?.status === 409) {
-        toast.error("Onboarding has already been completed.");
-        router.push("/c");
-      } else if (errorObj?.response?.status === 422) {
-        toast.error("Please check your input and try again.");
-      } else if (
-        errorObj?.message?.includes("network") ||
-        errorObj?.code === "NETWORK_ERROR"
-      ) {
-        toast.error(
-          "Network error. Please check your connection and try again.",
-        );
-      } else {
-        toast.error("Failed to save your preferences. Please try again.");
+      switch (status) {
+        case 409:
+          toast.error("Onboarding has already been completed.");
+          router.push("/c");
+          break;
+        case 422:
+          toast.error("Please check your input and try again.");
+          break;
+        default:
+          toast.error("Failed to save your preferences. Please try again.");
+          break;
       }
     } finally {
       // Clear loading state
@@ -361,6 +346,11 @@ export const useOnboarding = () => {
         },
       ],
     }));
+
+    // Focus input after initial message is loaded
+    setTimeout(() => {
+      focusInput();
+    }, 500);
   }, []);
 
   return {

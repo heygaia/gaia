@@ -48,10 +48,15 @@ async def complete_onboarding(
         if custom_instructions == "":
             custom_instructions = None
 
+        # Handle "skip" for response_style - convert to empty string for storage
+        response_style = onboarding_data.response_style
+        if response_style == "skip":
+            response_style = ""
+
         preferences = OnboardingPreferences(
             country=onboarding_data.country,
             profession=onboarding_data.profession,
-            response_style=onboarding_data.response_style,
+            response_style=response_style,
             custom_instructions=custom_instructions,
         )
 
