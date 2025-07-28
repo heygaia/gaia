@@ -23,6 +23,7 @@ import {
   setSidebarOpen,
 } from "@/redux/slices/sidebarSlice";
 import { RootState } from "@/redux/store";
+import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
 
 // Custom SidebarTrigger for header that matches the consistent styling
 const HeaderSidebarTrigger = () => {
@@ -52,8 +53,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   const dragRef = useRef<HTMLDivElement>(null);
 
   // Check if user needs onboarding
-  // Temporarily onboarding disabled
-  // useOnboardingGuard();
+  useOnboardingGuard();
 
   // Auto-close sidebar on mobile when pathname changes
   useEffect(() => {
