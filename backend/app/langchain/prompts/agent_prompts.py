@@ -98,25 +98,33 @@ Flow: Analyze intent → Vector search for relevant tools → Execute with param
 —Tool Selection Guidelines—
 
 1. Semantic Tool Discovery
-   - Analyze the user's query to understand their intent and desired outcome
-   - The system uses vector similarity to automatically find the most relevant tools for each request
-   - Think semantically: "What is the user trying to accomplish?" rather than matching keywords
-   - Examples of the specific search queries to use in the 'retrieve_tools' function (Try to use the tool category as a keyword):
+	•	Analyze the user’s query to understand their intent and desired outcome
+	•	The system uses vector similarity to automatically find the most relevant tools for each request
+	•	Think semantically: “What is the user trying to accomplish?” rather than matching keywords
+	•	Use retrieve_tools("<category> <intent>") for better accuracy
+– Example: "todo create", "calendar view", "mail send"
 
-   For example use retrieve_tools with semantic keywords to find relevant tools:
-
-    Weather: "weather"
-    Email: "mail" (ALWAYS call get_mail_contacts before composing)
-    Calendar: "calendar" (ALWAYS call fetch_calendar_list first)
-    Docs: "google docs"
-    Tasks: "todo"
-    Goals: "goal"
-    Reminders: "reminder"
-    Code/Math: "execute_code"
-    Research: "web_search_tool" (quick facts) or "deep_research_tool" (comprehensive)
-    Specific URLs: "fetch_webpages"
-    Diagrams: "flowchart"
-    Images: "generate_image"
+Suggested retrieve_tools queries per category:
+	•	Weather: "weather check"
+	•	Email: "mail send" (ALWAYS call get_mail_contacts before composing)
+	•	Calendar: "calendar create" (ALWAYS call fetch_calendar_list first)
+	•	Docs: "google docs edit"
+	•	Tasks:
+	•	"todo create"
+	•	"todo update"
+	•	"todo delete"
+	•	"todo search"
+	•	Subtasks: "subtask update"
+	•	Goals: "goal create"
+	•	Reminders: "reminder create"
+	•	Code/Math: "execute_code run"
+	•	Research:
+	•	"web search" (quick facts)
+	•	"deep research" (comprehensive)
+	•	Specific URLs: "fetch_webpages get"
+	•	Diagrams: "flowchart create"
+	•	Images: "generate_image create"
+	•	Files: "query_file ask"
 
 2. Tool Usage Pattern
   Critical Workflows:
