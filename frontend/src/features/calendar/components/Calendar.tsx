@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 
+import { Calendar01Icon } from "@/components";
 import Spinner from "@/components/ui/shadcn/spinner";
 import CalendarCard from "@/features/calendar/components/CalendarCard";
 import CalendarEventDialog from "@/features/calendar/components/CalendarEventDialog";
@@ -94,36 +95,53 @@ export default function Calendar() {
         )}
 
         <div className="mx-auto w-full max-w-(--breakpoint-sm)">
-          {groupedEventsByMonth &&
-            Object.entries(groupedEventsByMonth).map(([month, days]) => (
-              <div key={month}>
-                <div className="sticky top-0 z-10 rounded-xl bg-zinc-800 p-2">
-                  <div className="text-md text-center font-medium">{month}</div>
-                </div>
-                {Object.entries(days).map(([day, events]) => (
-                  <div key={day} className="my-2 flex gap-7">
-                    <div className="flex max-h-[60px] min-h-[60px] max-w-[60px] min-w-[60px] flex-col items-center justify-center rounded-full bg-zinc-800 text-center text-lg leading-none font-bold text-foreground-500">
-                      <div className="text-md font-normal">
-                        {day.split(" ")[1]}
-                      </div>
-                      <div className="text-foreground-600">
-                        {day.split(" ")[0]}
-                      </div>
-                    </div>
-                    <div className="flex w-full flex-wrap justify-center gap-4">
-                      {events.map((event) => (
-                        <CalendarCard
-                          key={event.id}
-                          calendars={calendars}
-                          event={event}
-                          onClick={() => handleEventClick(event)}
-                        />
-                      ))}
+          {groupedEventsByMonth && Object.keys(groupedEventsByMonth).length > 0
+            ? Object.entries(groupedEventsByMonth).map(([month, days]) => (
+                <div key={month}>
+                  <div className="sticky top-0 z-10 rounded-xl bg-zinc-800 p-2">
+                    <div className="text-md text-center font-medium">
+                      {month}
                     </div>
                   </div>
-                ))}
-              </div>
-            ))}
+                  {Object.entries(days).map(([day, events]) => (
+                    <div key={day} className="my-2 flex gap-7">
+                      <div className="flex max-h-[60px] min-h-[60px] max-w-[60px] min-w-[60px] flex-col items-center justify-center rounded-full bg-zinc-800 text-center text-lg leading-none font-bold text-foreground-500">
+                        <div className="text-md font-normal">
+                          {day.split(" ")[1]}
+                        </div>
+                        <div className="text-foreground-600">
+                          {day.split(" ")[0]}
+                        </div>
+                      </div>
+                      <div className="flex w-full flex-wrap justify-center gap-4">
+                        {events.map((event) => (
+                          <CalendarCard
+                            key={event.id}
+                            calendars={calendars}
+                            event={event}
+                            onClick={() => handleEventClick(event)}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ))
+            : !loading.events &&
+              selectedCalendars.length > 0 && (
+                <div className="flex h-[60vh] flex-col items-center justify-center text-center">
+                  <div className="mb-6 flex h-24 w-24 items-center justify-center rounded-full bg-zinc-800/50">
+                    <Calendar01Icon className="h-12 w-12 text-zinc-400" />
+                  </div>
+                  <h3 className="mb-2 text-xl font-semibold text-zinc-300">
+                    No events scheduled
+                  </h3>
+                  <p className="max-w-md text-zinc-500">
+                    You don't have any events in your selected calendars yet.
+                    Events will appear here once you add them.
+                  </p>
+                </div>
+              )}
         </div>
 
         {loading.events && (
