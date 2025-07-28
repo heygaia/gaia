@@ -283,7 +283,7 @@ export const useOnboarding = () => {
         "responseStyle",
       ];
       const missingFields = requiredFields.filter(
-        (field) => !onboardingState.userResponses[field],
+        (field) => onboardingState.userResponses[field] === undefined,
       );
 
       if (missingFields.length > 0) {
@@ -307,7 +307,7 @@ export const useOnboarding = () => {
 
       if (response?.success) {
         toast.success("Welcome! Your preferences have been saved.");
-        router.push("/c");
+        router.replace("/c");
       } else {
         throw new Error("Failed to complete onboarding");
       }

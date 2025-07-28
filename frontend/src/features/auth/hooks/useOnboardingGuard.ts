@@ -16,7 +16,7 @@ export const useOnboardingGuard = () => {
       if (pathname === "/onboarding") {
         // If on onboarding page but already completed, redirect to main app
         if (isOnboardingCompleted) {
-          router.push("/c");
+          router.replace("/c");
         }
       } else {
         // If not on onboarding page but onboarding is not completed, redirect to onboarding

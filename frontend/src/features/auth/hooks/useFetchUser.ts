@@ -40,7 +40,7 @@ const useFetchUser = () => {
           !needsOnboarding &&
           (currentPath === "/onboarding" || publicPages.includes(currentPath))
         ) {
-          router.push("/c");
+          router.replace("/c");
         }
       }
     } catch (e: unknown) {
