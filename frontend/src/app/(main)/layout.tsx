@@ -53,7 +53,8 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   const dragRef = useRef<HTMLDivElement>(null);
 
   // Check if user needs onboarding
-  useOnboardingGuard();
+  // Temporarily onboarding disabled
+  // useOnboardingGuard();
 
   // Auto-close sidebar on mobile when pathname changes
   useEffect(() => {

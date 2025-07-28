@@ -17,7 +17,6 @@ import { toast } from "sonner";
 import {
   Brain02Icon,
   BubbleChatQuestionIcon,
-  ConnectIcon,
   CustomerService01Icon,
   DiscordIcon,
   Logout02Icon,

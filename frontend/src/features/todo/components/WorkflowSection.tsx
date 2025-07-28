@@ -7,8 +7,8 @@ import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { todoApi } from "@/features/todo/api/todoApi";
 import {
-  WorkflowStatus,
   Workflow as WorkflowType,
+  WorkflowStatus,
 } from "@/types/features/todoTypes";
 
 import WorkflowEmptyState from "./WorkflowEmptyState";

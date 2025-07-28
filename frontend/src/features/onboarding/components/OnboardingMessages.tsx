@@ -1,14 +1,14 @@
 import { motion } from "framer-motion";
+import Image from "next/image";
 
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
+import { useUser } from "@/features/auth/hooks/useUser";
 import {
   SimpleChatBubbleBot,
   SimpleChatBubbleUser,
 } from "@/features/landing/components/demo/SimpleChatBubbles";
 
 import { Message } from "../types";
-import Image from "next/image";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
-import { useUser } from "@/features/auth/hooks/useUser";
 
 interface OnboardingMessagesProps {
   messages: Message[];

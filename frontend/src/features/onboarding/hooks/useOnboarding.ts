@@ -2,7 +2,6 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { countries, Country } from "@/components/country-selector";
 import { authApi } from "@/features/auth/api/authApi";
 
 import { FIELD_NAMES, professionOptions, questions } from "../constants";
@@ -302,32 +301,16 @@ export const useOnboarding = () => {
         instructions: instructions || null,
       };
 
-      // Send onboarding data to backend
-      const response = await authApi.completeOnboarding(onboardingData);
+      router.replace("/c");
 
-      if (response?.success) {
-        toast.success("Welcome! Your preferences have been saved.");
-        router.replace("/c");
-      } else {
-        throw new Error("Failed to complete onboarding");
-      }
-    } catch (error: any) {
+      // Send onboarding data to backend
+      await authApi.completeOnboarding(onboardingData);
+    } catch (error) {
       console.error("Error completing onboarding:", error);
 
-      const status = error?.response?.status;
-
-      switch (status) {
-        case 409:
-          toast.error("Onboarding has already been completed.");
-          router.push("/c");
-          break;
-        case 422:
-          toast.error("Please check your input and try again.");
-          break;
-        default:
-          toast.error("Failed to save your preferences. Please try again.");
-          break;
-      }
+      toast.error(
+        `Error. Failed to save your preferences. Please try again. ${error}`,
+      );
     } finally {
       // Clear loading state
       setOnboardingState((prev) => ({ ...prev, isProcessing: false }));

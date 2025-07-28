@@ -4,7 +4,6 @@ import { Input } from "@heroui/input";
 import { Kbd } from "@heroui/react";
 import { useEffect, useRef } from "react";
 
-import { CountrySelector } from "@/components/country-selector";
 import { SentIcon } from "@/components/shared/icons";
 import { cn } from "@/lib/utils";
 
@@ -43,32 +42,15 @@ export const OnboardingInput = ({
   // Focus the appropriate input when the question changes
   useEffect(() => {
     const focusTimeout = setTimeout(() => {
-      switch (currentQuestion.fieldName) {
-        // case FIELD_NAMES.COUNTRY:
-        //   // CountrySelector uses a ComboBox with an input that we can focus
-        //   const countryInput = document.querySelector(
-        //     '[data-slot="combobox"] input',
-        //   ) as HTMLInputElement;
-        //   if (countryInput) {
-        //     countryInput.focus();
-        //   }
-        //   break;
-        case FIELD_NAMES.PROFESSION:
-          // Autocomplete uses an input that we can focus
-          const professionInput = document.querySelector(
-            '[data-slot="autocomplete"] input',
-          ) as HTMLInputElement;
-          if (professionInput) {
-            professionInput.focus();
-          }
-          break;
-        default:
-          // Regular input
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-          break;
-      }
+      if (currentQuestion.fieldName === FIELD_NAMES.PROFESSION) {
+        // Autocomplete uses an input that we can focus
+        const professionInput = document.querySelector(
+          '[data-slot="autocomplete"] input',
+        ) as HTMLInputElement;
+        if (professionInput) professionInput.focus();
+      } else if (inputRef.current)
+        // Regular input
+        inputRef.current.focus();
     }, 150); // Small delay to ensure the input is rendered
 
     return () => clearTimeout(focusTimeout);

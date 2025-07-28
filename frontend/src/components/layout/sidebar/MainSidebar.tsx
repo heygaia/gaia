@@ -1,8 +1,8 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 
 import ChatsList from "@/components/layout/sidebar/ChatsList";
 import CalendarSidebar from "@/components/layout/sidebar/variants/CalendarSidebar";
@@ -10,8 +10,6 @@ import EmailSidebar from "@/components/layout/sidebar/variants/MailSidebar";
 import SettingsSidebar from "@/components/layout/sidebar/variants/SettingsSidebar";
 import TodoSidebar from "@/components/layout/sidebar/variants/TodoSidebar";
 import { PlusSignIcon } from "@/components/shared/icons";
-import ComingSoonModal from "@/features/coming-soon/components/ComingSoonModal";
-import Link from "next/link";
 
 export default function Sidebar() {
   // const [open, setOpen] = useState<boolean>(false);

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ChatOptionsDropdown from "@/components/layout/sidebar/ChatOptionsDropdown";
@@ -10,7 +11,6 @@ import {
 } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
-import Link from "next/link";
 
 export default function ChatHeader() {
   const { conversations } = useConversationList();

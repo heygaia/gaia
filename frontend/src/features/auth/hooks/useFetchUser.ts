@@ -13,7 +13,7 @@ const useFetchUser = () => {
   const { setUser, clearUser } = useUserActions();
   const searchParams = useSearchParams();
   const router = useRouter();
-  const fetchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const navigationHandledRef = useRef<boolean>(false);
 
   const fetchUserInfo = useCallback(async () => {
     try {
@@ -30,22 +30,24 @@ const useFetchUser = () => {
         onboarding: data?.onboarding,
       });
 
-      // Check if onboarding is needed and prevent navigation loops
-      if (accessToken && refreshToken) {
-        const needsOnboarding = !data?.onboarding?.completed;
+      // Only run navigation logic if we have OAuth tokens (i.e., just logged in)
+      // and navigation hasn't been handled yet for this session
+      // if (accessToken && refreshToken && !navigationHandledRef.current) {
+      //   navigationHandledRef.current = true;
+      //   const needsOnboarding = !data?.onboarding?.completed;
 
-        if (needsOnboarding && currentPath !== "/onboarding") {
-          router.push("/onboarding");
-        } else if (
-          !needsOnboarding &&
-          (currentPath === "/onboarding" || publicPages.includes(currentPath))
-        ) {
-          router.replace("/c");
-        }
-      }
+      //   if (needsOnboarding && currentPath !== "/onboarding")
+      //     router.push("/onboarding");
+      //   else if (
+      //     !needsOnboarding &&
+      //     (currentPath === "/onboarding" || publicPages.includes(currentPath))
+      //   )
+      //     router.replace("/c");
+      // }
     } catch (e: unknown) {
       console.error("Error fetching user info:", e);
       clearUser();
+      navigationHandledRef.current = false;
     }
   }, [searchParams, setUser, clearUser, router]);
 

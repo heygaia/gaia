@@ -1,9 +1,10 @@
 "use client";
 
+import Link from "next/link";
+
 import { ChatBubbleAddIcon, Target02Icon } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 
-import Link from "next/link";
 import HeaderComponent from "./HeaderComponent";
 
 export default function GoalsHeader() {

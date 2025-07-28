@@ -70,7 +70,7 @@ export const authApi = {
     instructions?: string | null;
   }): Promise<{ success: boolean; message: string; user?: UserInfo }> => {
     return apiService.post("/oauth/onboarding", onboardingData, {
-      successMessage: "Onboarding completed successfully",
+      successMessage: "Welcome to GAIA!",
       errorMessage: "Failed to complete onboarding",
     });
   },
