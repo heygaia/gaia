@@ -9,18 +9,22 @@ from app.utils.oauth_utils import upload_user_picture
 from app.utils.email_utils import send_welcome_email
 
 
-async def store_user_info(name: str, email: str, picture_url: str):
+async def store_user_info(
+    name: str, email: str, picture_url: str, user_timezone: str = "UTC"
+):
     """
     Stores user info from Google callback with Cloudinary-hosted profile pictures.
 
     - Downloads and uploads external images to Cloudinary
     - Updates existing users or creates new ones
     - Ensures profile pictures are always stored on Cloudinary
+    - Stores user timezone during initial signup
 
     Args:
         name (str): The user's name.
         email (str): The user's email.
         picture_url (str): The URL of the profile picture from Google.
+        user_timezone (str): The user's timezone identifier (e.g., "America/New_York"). Defaults to "UTC".
 
     Returns:
         The user's MongoDB _id.
@@ -107,10 +111,22 @@ async def store_user_info(name: str, email: str, picture_url: str):
         await users_collection.update_one({"email": email}, {"$set": update_data})
         return existing_user["_id"]
     else:
+        # Validate timezone before storing
+        try:
+            from zoneinfo import ZoneInfo
+
+            ZoneInfo(user_timezone)  # This will raise an exception if invalid
+        except Exception as e:
+            logger.warning(
+                f"Invalid timezone '{user_timezone}' for user {email}, using UTC: {e}"
+            )
+            user_timezone = "UTC"
+
         user_data = {
             "name": name,
             "email": email,
             "picture": cloudinary_picture_url or "",
+            "timezone": user_timezone,
             "created_at": current_time,
             "updated_at": current_time,
         }

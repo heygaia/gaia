@@ -1,4 +1,3 @@
-from datetime import datetime
 from typing import Optional
 from urllib.parse import urlencode, urlparse
 
@@ -16,7 +15,6 @@ from fastapi.responses import JSONResponse, RedirectResponse
 
 from app.api.v1.dependencies.oauth_dependencies import (
     get_current_user,
-    get_user_timezone,
 )
 from app.config.loggers import auth_logger as logger
 from app.config.oauth_config import (
@@ -439,16 +437,13 @@ async def update_me(
 async def complete_user_onboarding(
     onboarding_data: OnboardingRequest,
     user: dict = Depends(get_current_user),
-    user_time: datetime = Depends(get_user_timezone),
 ):
     """
     Complete user onboarding by storing preferences.
     This endpoint should be called when the user completes the onboarding flow.
     """
     try:
-        updated_user = await complete_onboarding(
-            user["user_id"], onboarding_data, user_timezone=user_time
-        )
+        updated_user = await complete_onboarding(user["user_id"], onboarding_data)
 
         return OnboardingResponse(
             success=True, message="Onboarding completed successfully", user=updated_user

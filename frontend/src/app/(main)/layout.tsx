@@ -15,7 +15,6 @@ import {
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
-import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
 import { NotificationProvider } from "@/hooks/providers/NotificationContext";
 import { useIsMobile } from "@/hooks/ui/useMobile";
 import SidebarLayout from "@/layouts/SidebarLayout";

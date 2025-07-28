@@ -37,12 +37,10 @@ export const OnboardingInput = ({
       ? questions[onboardingState.currentQuestionIndex]
       : null;
 
-  if (!currentQuestion) return null;
-
   // Focus the appropriate input when the question changes
   useEffect(() => {
     const focusTimeout = setTimeout(() => {
-      if (currentQuestion.fieldName === FIELD_NAMES.PROFESSION) {
+      if (currentQuestion?.fieldName === FIELD_NAMES.PROFESSION) {
         // Autocomplete uses an input that we can focus
         const professionInput = document.querySelector(
           '[data-slot="autocomplete"] input',
@@ -55,10 +53,12 @@ export const OnboardingInput = ({
 
     return () => clearTimeout(focusTimeout);
   }, [
-    currentQuestion.fieldName,
+    currentQuestion?.fieldName,
     onboardingState.currentQuestionIndex,
     inputRef,
   ]);
+
+  if (!currentQuestion) return null;
 
   const renderInput = () => {
     switch (currentQuestion.fieldName) {

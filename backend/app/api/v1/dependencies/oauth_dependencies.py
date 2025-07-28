@@ -164,6 +164,7 @@ async def get_cached_refresh_token(user_email: Optional[str]) -> Optional[str]:
 async def get_current_user(
     access_token: Optional[str] = Cookie(None),
     refresh_token: Optional[str] = Cookie(None),
+    x_timezone: Optional[str] = Header(None, alias="x-timezone"),
 ):
     """
     Retrieves the current user by validating or refreshing the access token.
@@ -258,10 +259,23 @@ async def get_current_user(
         if not user_data:
             raise HTTPException(status_code=404, detail="User not found")
 
-        # Update user's last activity
-        await users_collection.update_one(
-            {"email": user_email}, {"$set": {"last_active_at": datetime.now(tz.utc)}}
-        )
+        # Update user's last activity and set timezone if not present
+        update_data: dict = {"last_active_at": datetime.now(tz.utc)}
+
+        # If user doesn't have timezone set and we have one from header, update it
+        if not user_data.get("timezone") and x_timezone:
+            try:
+                from zoneinfo import ZoneInfo
+
+                ZoneInfo(x_timezone)  # Validate timezone
+                update_data["timezone"] = x_timezone
+                logger.info(f"Updated timezone for user {user_email}: {x_timezone}")
+            except Exception as e:
+                logger.warning(
+                    f"Invalid timezone '{x_timezone}' for user {user_email}: {e}"
+                )
+
+        await users_collection.update_one({"email": user_email}, {"$set": update_data})
 
         user_info_to_cache = {
             "user_id": str(user_data.get("_id")),
