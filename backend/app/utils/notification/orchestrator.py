@@ -263,7 +263,9 @@ class NotificationOrchestrator:
             await self.storage.update_notification(
                 notification_id, result.update_notification
             )
-            logger.info(f"Broadcasting notification {notification.id} to user {notification.user_id}")
+            logger.info(
+                f"Broadcasting notification {notification.id} to user {notification.user_id}"
+            )
             # Broadcast update to user via websocket
             await websocket_manager.broadcast_to_user(
                 user_id,

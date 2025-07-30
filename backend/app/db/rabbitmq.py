@@ -27,7 +27,6 @@ class RabbitMQPublisher:
         await self.declare_queue(queue_name)
         message = Message(body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT)
 
-
         await self.channel.default_exchange.publish(message, routing_key=queue_name)
 
     async def close(self):
