@@ -1,3 +1,5 @@
+import { ChevronRight } from "lucide-react";
+import Image from "next/image";
 import { useParams } from "next/navigation";
 import React, {
   useEffect,
@@ -6,39 +8,42 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { toast } from "sonner";
 
+import { Button } from "@/components";
 import FilePreview, {
   UploadedFilePreview,
 } from "@/features/chat/components/files/FilePreview";
 import FileUpload from "@/features/chat/components/files/FileUpload";
-import GenerateImage from "@/features/chat/components/image/GenerateImage";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
+import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import { FileData, SearchMode } from "@/types/shared";
 
 import ComposerInput, { ComposerInputRef } from "./ComposerInput";
 import ComposerToolbar from "./ComposerToolbar";
-import FetchPageModal from "./FetchPageModal";
 import SelectedToolIndicator from "./SelectedToolIndicator";
 
 interface MainSearchbarProps {
   scrollToBottom: () => void;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
-  fileUploadRef?: React.MutableRefObject<{
+  fileUploadRef?: React.RefObject<{
     openFileUploadModal: () => void;
     handleDroppedFiles: (files: File[]) => void;
   } | null>;
+  appendToInputRef?: React.RefObject<((text: string) => void) | null>;
   droppedFiles?: File[];
   onDroppedFilesProcessed?: () => void;
+  hasMessages: boolean;
 }
 
 const Composer: React.FC<MainSearchbarProps> = ({
   scrollToBottom,
   inputRef,
   fileUploadRef,
+  appendToInputRef,
   droppedFiles,
   onDroppedFilesProcessed,
+  hasMessages,
 }) => {
   const { id: convoIdParam } = useParams<{ id: string }>();
   const [currentHeight, setCurrentHeight] = useState<number>(24);
@@ -51,9 +56,6 @@ const Composer: React.FC<MainSearchbarProps> = ({
   const [selectedToolCategory, setSelectedToolCategory] = useState<
     string | null
   >(null);
-  const [pageFetchURLs, setPageFetchURLs] = useState<string[]>([]);
-  const [fetchPageModal, setFetchPageModal] = useState<boolean>(false);
-  const [generateImageModal, setGenerateImageModal] = useState<boolean>(false);
   const [fileUploadModal, setFileUploadModal] = useState<boolean>(false);
   const [uploadedFiles, setUploadedFiles] = useState<UploadedFilePreview[]>([]);
   const [uploadedFileData, setUploadedFileData] = useState<FileData[]>([]);
@@ -62,6 +64,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     useState(false);
   const sendMessage = useSendMessage(convoIdParam ?? null);
   const { isLoading, setIsLoading } = useLoading();
+  const { integrations, isLoading: integrationsLoading } = useIntegrations();
   const currentMode = useMemo(
     () => Array.from(selectedMode)[0],
     [selectedMode],
@@ -80,7 +83,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     localStorage.setItem("gaia-searchbar-text", searchbarText);
   }, [searchbarText]);
 
-  // Expose functions to parent component via ref
+  // Expose file upload functions to parent component via ref
   useImperativeHandle(
     fileUploadRef,
     () => ({
@@ -114,43 +117,16 @@ const Composer: React.FC<MainSearchbarProps> = ({
     }
   }, [droppedFiles]);
 
-  const isValidURL = (url: string) => {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
-    }
-  };
-
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
-    if (
-      currentMode === "fetch_webpage" &&
-      (!pageFetchURLs.length || !pageFetchURLs.every(isValidURL))
-    ) {
-      toast.error("Please enter valid URLs to fetch webpage content");
-      return;
-    }
     // Only prevent submission if there's no text AND no files AND no selected tool
-    if (
-      !searchbarText &&
-      currentMode !== "fetch_webpage" &&
-      uploadedFiles.length === 0 &&
-      !selectedTool
-    ) {
+    if (!searchbarText && uploadedFiles.length === 0 && !selectedTool) {
       return;
     }
     setIsLoading(true);
 
-    // Send the message with complete file data
-    // If a tool is selected via slash command, include it in the message
-    const messageText = selectedTool ? searchbarText : searchbarText;
-
     sendMessage(
-      messageText,
-      currentMode,
-      currentMode === "fetch_webpage" ? pageFetchURLs : [],
+      searchbarText,
       uploadedFileData,
       selectedTool, // Pass the selected tool name
       selectedToolCategory, // Pass the selected tool category
@@ -188,14 +164,6 @@ const Composer: React.FC<MainSearchbarProps> = ({
     }
   };
 
-  const openPageFetchModal = () => {
-    setFetchPageModal(true);
-  };
-
-  const openGenerateImageModal = () => {
-    setGenerateImageModal(true);
-  };
-
   const openFileUploadModal = () => {
     setFileUploadModal(true);
   };
@@ -207,11 +175,10 @@ const Composer: React.FC<MainSearchbarProps> = ({
     setSelectedTool(null);
     setSelectedToolCategory(null);
     // If the user selects upload_file mode, open the file selector immediately
-    if (mode === "upload_file") {
+    if (mode === "upload_file")
       setTimeout(() => {
         openFileUploadModal();
       }, 100);
-    }
   };
 
   const handleSlashCommandSelect = (toolName: string, toolCategory: string) => {
@@ -264,36 +231,34 @@ const Composer: React.FC<MainSearchbarProps> = ({
     if (tempFiles) {
       // These are temporary files with loading state, just set them
       setUploadedFiles(files);
-    } else {
-      // These are the final uploaded files, replace temp files with final versions
-      setUploadedFiles((prev) => {
-        // Map through the previous files
-        const updatedFiles = prev.map((prevFile) => {
-          // Find the corresponding final file (if any)
-          const finalFile = files.find((f) => f.tempId === prevFile.id);
-          // If found, return the final file, otherwise keep the previous file
-          return finalFile || prevFile;
-        });
-        return updatedFiles;
-      });
-
-      // Now process the complete file data from the response
-      const fileDataArray = files.map((file) => {
-        // For files that have complete response data (not temp files):
-        // Use the data from the API response, including description and message
-        return {
-          fileId: file.id,
-          url: file.url,
-          filename: file.name,
-          description: file.description || `File: ${file.name}`,
-          type: file.type,
-          message: file.message || "File uploaded successfully",
-        } as FileData;
-      });
-
-      // Store the complete file data
-      setUploadedFileData(fileDataArray);
+      return;
     }
+    // These are the final uploaded files, replace temp files with final versions
+    setUploadedFiles((prev) => {
+      return prev.map((prevFile) => {
+        // Find the corresponding final file (if any)
+        const finalFile = files.find((f) => f.tempId === prevFile.id);
+        // If found, return the final file, otherwise keep the previous file
+        return finalFile || prevFile;
+      });
+    });
+
+    // Now process the complete file data from the response
+    const fileDataArray = files.map((file) => {
+      // For files that have complete response data (not temp files):
+      // Use the data from the API response, including description and message
+      return {
+        fileId: file.id,
+        url: file.url,
+        filename: file.name,
+        description: file.description || `File: ${file.name}`,
+        type: file.type,
+        message: file.message || "File uploaded successfully",
+      } as FileData;
+    });
+
+    // Store the complete file data
+    setUploadedFileData(fileDataArray);
   };
 
   const removeUploadedFile = (fileId: string) => {
@@ -331,62 +296,90 @@ const Composer: React.FC<MainSearchbarProps> = ({
     };
   }, []);
 
+  // Function to append text to the input
+  const appendToInput = (text: string) => {
+    const currentText = searchbarText;
+    const newText = currentText ? `${currentText} ${text}` : text;
+    setSearchbarText(newText);
+    // Focus the input after appending
+    if (inputRef.current) {
+      inputRef.current.focus();
+    }
+  };
+
+  // Expose appendToInput function to parent via ref
+  useImperativeHandle(appendToInputRef, () => appendToInput, [appendToInput]);
+
   return (
-    <>
-      <div className="searchbar_container relative pb-1">
-        <div className="searchbar rounded-3xl bg-zinc-800 px-1 pt-1 pb-2">
-          <FilePreview files={uploadedFiles} onRemove={removeUploadedFile} />
-          <SelectedToolIndicator
-            toolName={selectedTool}
-            toolCategory={selectedToolCategory}
-            onRemove={handleRemoveSelectedTool}
-          />
-          <ComposerInput
-            ref={composerInputRef}
-            searchbarText={searchbarText}
-            onSearchbarTextChange={setSearchbarText}
-            handleFormSubmit={handleFormSubmit}
-            handleKeyDown={handleKeyDown}
-            currentHeight={currentHeight}
-            onHeightChange={setCurrentHeight}
-            inputRef={inputRef}
-            onSlashCommandSelect={handleSlashCommandSelect}
-          />
-          <ComposerToolbar
-            selectedMode={selectedMode}
-            openPageFetchModal={openPageFetchModal}
-            openGenerateImageModal={openGenerateImageModal}
-            openFileUploadModal={openFileUploadModal}
-            handleFormSubmit={handleFormSubmit}
-            searchbarText={searchbarText}
-            handleSelectionChange={handleSelectionChange}
-            selectedTool={selectedTool}
-            onToggleSlashCommandDropdown={handleToggleSlashCommandDropdown}
-            isSlashCommandDropdownOpen={isSlashCommandDropdownOpen}
-          />
-        </div>
+    <div className="searchbar_container relative pb-1">
+      {!integrationsLoading && integrations.length > 0 && !hasMessages && (
+        <Button
+          className="absolute -top-4 z-[0] flex h-fit w-[92%] rounded-full bg-zinc-800/40 px-4 py-2 pb-8 text-xs text-foreground-300 hover:bg-zinc-800/70 hover:text-zinc-400 sm:w-[46%]"
+          onClick={handleToggleSlashCommandDropdown}
+        >
+          <div className="flex w-full items-center justify-between">
+            <span className="text-xs">Connect your tools to GAIA</span>
+            <div className="ml-3 flex items-center gap-1">
+              {integrations.slice(0, 8).map((integration) => (
+                <div
+                  key={integration.id}
+                  className="opacity-60 transition duration-200 hover:scale-150 hover:rotate-6 hover:opacity-120"
+                  title={integration.name}
+                >
+                  <Image
+                    width={14}
+                    height={14}
+                    src={integration.icon}
+                    alt={integration.name}
+                    className="h-[14px] w-[14px] object-contain"
+                  />
+                </div>
+              ))}
+
+              <ChevronRight width={18} height={18} className="ml-3" />
+            </div>
+          </div>
+        </Button>
+      )}
+      <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pt-1 pb-2">
+        <FilePreview files={uploadedFiles} onRemove={removeUploadedFile} />
+        <SelectedToolIndicator
+          toolName={selectedTool}
+          toolCategory={selectedToolCategory}
+          onRemove={handleRemoveSelectedTool}
+        />
+        <ComposerInput
+          ref={composerInputRef}
+          searchbarText={searchbarText}
+          onSearchbarTextChange={setSearchbarText}
+          handleFormSubmit={handleFormSubmit}
+          handleKeyDown={handleKeyDown}
+          currentHeight={currentHeight}
+          onHeightChange={setCurrentHeight}
+          inputRef={inputRef}
+          onSlashCommandSelect={handleSlashCommandSelect}
+        />
+        <ComposerToolbar
+          selectedMode={selectedMode}
+          openFileUploadModal={openFileUploadModal}
+          handleFormSubmit={handleFormSubmit}
+          searchbarText={searchbarText}
+          handleSelectionChange={handleSelectionChange}
+          selectedTool={selectedTool}
+          onToggleSlashCommandDropdown={handleToggleSlashCommandDropdown}
+          isSlashCommandDropdownOpen={isSlashCommandDropdownOpen}
+        />
       </div>
-      <FetchPageModal
-        open={fetchPageModal}
-        onOpenChange={setFetchPageModal}
-        pageFetchURLs={pageFetchURLs}
-        onPageFetchURLsChange={setPageFetchURLs}
-        handleSelectionChange={handleSelectionChange}
-      />
-      <GenerateImage
-        openImageDialog={generateImageModal}
-        setOpenImageDialog={setGenerateImageModal}
-      />
       <FileUpload
         open={fileUploadModal}
         onOpenChange={setFileUploadModal}
         onFilesUploaded={handleFilesUploaded}
         initialFiles={pendingDroppedFiles}
-        isPastedFile={pendingDroppedFiles.some(
-          (file) => file.type.indexOf("image") !== -1,
+        isPastedFile={pendingDroppedFiles.some((file) =>
+          file.type.includes("image"),
         )}
       />
-    </>
+    </div>
   );
 };
 

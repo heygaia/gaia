@@ -7,7 +7,7 @@ This module contains endpoints for creating, retrieving, updating, and deleting 
 from fastapi import APIRouter, Depends, status
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.notes_models import NoteModel, NoteResponse
 from app.services.notes_service import (
     create_note_service,

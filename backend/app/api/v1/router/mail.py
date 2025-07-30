@@ -3,9 +3,9 @@ from typing import Any, List, Optional
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 
-from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.api.v1.dependencies.google_scope_dependencies import require_google_integration
 from app.langchain.prompts.mail_prompts import EMAIL_COMPOSER, EMAIL_SUMMARIZER
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.mail_models import (
     ApplyLabelRequest,
     DraftRequest,
@@ -59,7 +59,7 @@ router = APIRouter()
 
 
 @router.get("/gmail/labels", summary="List Gmail Labels")
-def list_labels(current_user: dict = Depends(get_current_user)):
+def list_labels(current_user: dict = Depends(require_google_integration("gmail"))):
     try:
         service = get_gmail_service(
             access_token=current_user.get("access_token", ""),
@@ -76,7 +76,7 @@ def list_labels(current_user: dict = Depends(get_current_user)):
 def list_messages(
     max_results: int = 20,
     pageToken: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     try:
         service = get_gmail_service(
@@ -107,7 +107,7 @@ def list_messages(
 @router.get("/gmail/message/{message_id}", summary="Get Gmail Message by ID")
 async def get_email_by_id(
     message_id: str,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Get a Gmail message by its ID.
@@ -150,7 +150,7 @@ async def search_emails(
     is_read: Optional[bool] = None,
     max_results: int = 20,
     page_token: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Search Gmail messages with advanced query parameters.
@@ -221,7 +221,7 @@ async def search_emails(
 @tiered_rate_limit("mail_actions")
 async def process_email(
     request: EmailRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ) -> Any:
     try:
         user_id = current_user.get("user_id")
@@ -274,7 +274,7 @@ async def send_email_route(
     cc: Optional[str] = Form(None),
     bcc: Optional[str] = Form(None),
     attachments: Optional[List[UploadFile]] = File(None),
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Send an email using the Gmail API.
@@ -329,7 +329,8 @@ async def send_email_route(
 @router.post("/gmail/send-json", summary="Send an email using JSON payload")
 @tiered_rate_limit("mail_actions")
 async def send_email_json(
-    request: SendEmailRequest, current_user: dict = Depends(get_current_user)
+    request: SendEmailRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Send an email using the Gmail API with JSON payload (no attachments).
@@ -374,7 +375,7 @@ async def send_email_json(
 @router.post("/gmail/summarize", summary="Summarize an email using LLM")
 async def summarize_email(
     request: EmailSummaryRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ) -> Any:
     """
     Summarize an email using the LLM service.
@@ -437,7 +438,8 @@ async def summarize_email(
 @router.post("/gmail/mark-as-read", summary="Mark emails as read")
 @tiered_rate_limit("mail_actions")
 async def mark_as_read(
-    request: EmailReadStatusRequest, current_user: dict = Depends(get_current_user)
+    request: EmailReadStatusRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Mark Gmail messages as read by removing the UNREAD label.
@@ -468,7 +470,8 @@ async def mark_as_read(
 @router.post("/gmail/mark-as-unread", summary="Mark emails as unread")
 @tiered_rate_limit("mail_actions")
 async def mark_as_unread(
-    request: EmailReadStatusRequest, current_user: dict = Depends(get_current_user)
+    request: EmailReadStatusRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Mark Gmail messages as unread by adding the UNREAD label.
@@ -499,7 +502,8 @@ async def mark_as_unread(
 @router.post("/gmail/star", summary="Star emails")
 @tiered_rate_limit("mail_actions")
 async def star_emails(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Star Gmail messages by adding the STARRED label.
@@ -530,7 +534,8 @@ async def star_emails(
 @router.post("/gmail/unstar", summary="Unstar emails")
 @tiered_rate_limit("mail_actions")
 async def unstar_emails(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Unstar Gmail messages by removing the STARRED label.
@@ -561,7 +566,8 @@ async def unstar_emails(
 @router.post("/gmail/trash", summary="Move emails to trash")
 @tiered_rate_limit("mail_actions")
 async def trash_emails(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Move Gmail messages to trash.
@@ -592,7 +598,8 @@ async def trash_emails(
 @router.post("/gmail/untrash", summary="Restore emails from trash")
 @tiered_rate_limit("mail_actions")
 async def untrash_emails(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Restore Gmail messages from trash.
@@ -623,7 +630,8 @@ async def untrash_emails(
 @router.post("/gmail/archive", summary="Archive emails")
 @tiered_rate_limit("mail_actions")
 async def archive_emails(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Archive Gmail messages by removing the INBOX label.
@@ -654,7 +662,8 @@ async def archive_emails(
 @router.post("/gmail/move-to-inbox", summary="Move emails to inbox")
 @tiered_rate_limit("mail_actions")
 async def move_emails_to_inbox(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Move Gmail messages to inbox by adding the INBOX label.
@@ -683,7 +692,9 @@ async def move_emails_to_inbox(
 
 
 @router.get("/gmail/thread/{thread_id}", summary="Get complete email thread")
-async def get_thread(thread_id: str, current_user: dict = Depends(get_current_user)):
+async def get_thread(
+    thread_id: str, current_user: dict = Depends(require_google_integration("gmail"))
+):
     """
     Fetch a complete email thread with all messages.
 
@@ -712,7 +723,8 @@ async def get_thread(thread_id: str, current_user: dict = Depends(get_current_us
 @router.post("/gmail/labels", summary="Create a new Gmail label")
 @tiered_rate_limit("mail_actions")
 async def create_label_route(
-    request: LabelRequest, current_user: dict = Depends(get_current_user)
+    request: LabelRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Create a new Gmail label.
@@ -748,7 +760,7 @@ async def create_label_route(
 async def update_label_route(
     label_id: str,
     request: LabelRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Update an existing Gmail label.
@@ -784,7 +796,7 @@ async def update_label_route(
 @router.delete("/gmail/labels/{label_id}", summary="Delete a Gmail label")
 @tiered_rate_limit("mail_actions")
 async def delete_label_route(
-    label_id: str, current_user: dict = Depends(get_current_user)
+    label_id: str, current_user: dict = Depends(require_google_integration("gmail"))
 ):
     """
     Delete a Gmail label.
@@ -810,7 +822,8 @@ async def delete_label_route(
 @router.post("/gmail/messages/apply-label", summary="Apply labels to messages")
 @tiered_rate_limit("mail_actions")
 async def apply_labels_route(
-    request: ApplyLabelRequest, current_user: dict = Depends(get_current_user)
+    request: ApplyLabelRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Apply one or more labels to specified messages.
@@ -844,7 +857,8 @@ async def apply_labels_route(
 @router.post("/gmail/messages/remove-label", summary="Remove labels from messages")
 @tiered_rate_limit("mail_actions")
 async def remove_labels_route(
-    request: ApplyLabelRequest, current_user: dict = Depends(get_current_user)
+    request: ApplyLabelRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Remove one or more labels from specified messages.
@@ -878,7 +892,8 @@ async def remove_labels_route(
 @router.post("/gmail/drafts", summary="Create a new draft email")
 @tiered_rate_limit("mail_actions")
 async def create_draft_route(
-    request: DraftRequest, current_user: dict = Depends(get_current_user)
+    request: DraftRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Create a new Gmail draft email.
@@ -926,7 +941,7 @@ async def create_draft_route(
 async def list_drafts_route(
     max_results: int = 20,
     page_token: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     List all Gmail draft emails.
@@ -954,7 +969,7 @@ async def list_drafts_route(
 
 @router.get("/gmail/drafts/{draft_id}", summary="Get a specific draft email")
 async def get_draft_route(
-    draft_id: str, current_user: dict = Depends(get_current_user)
+    draft_id: str, current_user: dict = Depends(require_google_integration("gmail"))
 ):
     """
     Get a specific Gmail draft email.
@@ -980,7 +995,7 @@ async def get_draft_route(
 async def update_draft_route(
     draft_id: str,
     request: DraftRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ):
     """
     Update an existing Gmail draft email.
@@ -1029,7 +1044,7 @@ async def update_draft_route(
 @router.delete("/gmail/drafts/{draft_id}", summary="Delete a draft email")
 @tiered_rate_limit("mail_actions")
 async def delete_draft_route(
-    draft_id: str, current_user: dict = Depends(get_current_user)
+    draft_id: str, current_user: dict = Depends(require_google_integration("gmail"))
 ):
     """
     Delete a Gmail draft email.
@@ -1056,7 +1071,7 @@ async def delete_draft_route(
 @router.post("/gmail/drafts/{draft_id}/send", summary="Send a draft email")
 @tiered_rate_limit("mail_actions")
 async def send_draft_route(
-    draft_id: str, current_user: dict = Depends(get_current_user)
+    draft_id: str, current_user: dict = Depends(require_google_integration("gmail"))
 ):
     """
     Send an existing Gmail draft email.
@@ -1085,7 +1100,7 @@ async def send_draft_route(
 async def get_email_importance_summaries(
     limit: int = 50,
     important_only: bool = False,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("gmail")),
 ) -> dict:
     """
     Get email importance summaries for the current user.
@@ -1113,7 +1128,7 @@ async def get_email_importance_summaries(
     summary="Get single email importance summary",
 )
 async def get_single_email_importance_summary(
-    message_id: str, current_user: dict = Depends(get_current_user)
+    message_id: str, current_user: dict = Depends(require_google_integration("gmail"))
 ) -> dict:
     """
     Get importance summary for a specific email.
@@ -1146,7 +1161,8 @@ async def get_single_email_importance_summary(
     "/gmail/importance-summaries/bulk", summary="Get bulk email importance summaries"
 )
 async def get_bulk_email_importance_summaries(
-    request: EmailActionRequest, current_user: dict = Depends(get_current_user)
+    request: EmailActionRequest,
+    current_user: dict = Depends(require_google_integration("gmail")),
 ) -> dict:
     """
     Get importance summaries for multiple emails in bulk.

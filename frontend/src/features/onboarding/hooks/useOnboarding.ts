@@ -311,7 +311,6 @@ export const useOnboarding = () => {
       }
 
       if (response?.success) {
-        toast.success("Welcome! Your preferences have been saved.");
 
         // Navigate to the main chat page
         router.push("/c");
@@ -329,7 +328,6 @@ export const useOnboarding = () => {
       };
 
       if (errorObj?.response?.status === 409) {
-        toast.error("Onboarding has already been completed.");
         router.push("/c");
       } else if (errorObj?.response?.status === 422) {
         toast.error("Please check your input and try again.");

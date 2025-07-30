@@ -14,7 +14,6 @@ export interface Integration {
     | "development"
     | "creative";
   status: "connected" | "not_connected" | "error";
-  features: string[];
   loginEndpoint?: string;
   disconnectEndpoint?: string;
   settingsPath?: string;

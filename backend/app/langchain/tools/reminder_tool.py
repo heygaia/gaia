@@ -8,7 +8,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool
 
 from app.config.loggers import reminders_logger as logger
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_rate_limiting, with_doc
 from app.docstrings.langchain.tools.reminder_tool_docs import (
     CREATE_REMINDER,
     DELETE_REMINDER,
@@ -17,7 +17,6 @@ from app.docstrings.langchain.tools.reminder_tool_docs import (
     SEARCH_REMINDERS,
     UPDATE_REMINDER,
 )
-from app.docstrings.utils import with_doc
 from app.models.reminder_models import (
     AgentType,
     AIAgentReminderPayload,

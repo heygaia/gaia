@@ -1,4 +1,4 @@
-import { formatRelativeDate } from "@/utils/dateUtils";
+import { formatRelativeDate } from "@/utils/date/dateUtils";
 
 import { type Author, AuthorTooltip } from "./AuthorTooltip";
 import CopyLinkButton from "./CopyLinkButton";

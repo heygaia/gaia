@@ -1,18 +1,23 @@
 "use client";
 
-import { formatDistanceToNow } from "date-fns";
-import { Bell, Check, X } from "lucide-react";
-import { useMemo, useState } from "react";
-import { toast } from "sonner";
-
-import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
-import { Badge } from "@/components/ui/shadcn/badge";
-import { Button } from "@/components/ui/shadcn/button";
+import { Button } from "@heroui/button";
 import {
+  Badge,
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from "@/components/ui/shadcn/popover";
+  Tab,
+  Tabs,
+  Tooltip,
+} from "@heroui/react";
+import { formatDistanceToNow } from "date-fns";
+import { CheckCheck } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
+import { toast } from "sonner";
+
+import { Button as ShadcnButton } from "@/components/";
+import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useConfirmation } from "@/hooks/useConfirmation";
@@ -22,6 +27,7 @@ import {
   NotificationRecord,
   NotificationStatus,
 } from "../../types/features/notificationTypes";
+import { NotificationIcon } from "../shared";
 
 interface NotificationCenterProps {
   className?: string;
@@ -48,53 +54,48 @@ const NotificationItem = ({
 
   const isUnread = notification.status === NotificationStatus.DELIVERED;
 
-  // const handleSnoozeClick = () => {
-  //   const snoozeTime = new Date();
-  //   snoozeTime.setHours(snoozeTime.getHours() + 1); // Snooze for 1 hour
-  //   onSnooze(notification.id, snoozeTime);
-  // };
-
   return (
-    <div
-      className={`p-4 transition-all duration-200 hover:bg-zinc-800/10 ${isUnread ? "border-l-2 border-l-zinc-800 bg-zinc-800/5" : ""}`}
-    >
-      <div className="flex items-start justify-between gap-3">
+    <div className={`rounded-2xl bg-zinc-900 p-4`}>
+      <div className="flex items-start justify-between gap-1">
         <div className="min-w-0 flex-1">
-          <div className="mb-2 flex items-center gap-2">
-            <h4 className="truncate text-sm font-medium text-zinc-900">
+          <div className="flex items-center gap-2">
+            <h4 className="truncate text-sm font-medium text-zinc-100">
               {content.title}
             </h4>
             {isUnread && (
-              <div className="h-1.5 w-1.5 rounded-full bg-zinc-800" />
+              <div className="h-1.5 w-1.5 rounded-full bg-primary" />
             )}
           </div>
-          <p className="mb-3 line-clamp-2 text-sm leading-relaxed text-zinc-700">
+          <p className="my-1 line-clamp-2 text-left text-sm font-light text-zinc-400">
             {content.body}
           </p>
-          <div className="flex items-center gap-2 text-xs text-zinc-500">
-            <span>
+          <div className="mt-1 flex items-center gap-2 text-xs text-zinc-600">
+            <span className="capitalize">
               {formatDistanceToNow(new Date(notification.created_at), {
                 addSuffix: true,
               })}
             </span>
-            <span>•</span>
-            <span className="rounded-full bg-zinc-800/10 px-2 py-0.5 text-xs text-zinc-700">
+            <span className="rounded-full bg-zinc-800 px-2 py-0.5 text-xs text-zinc-400 capitalize">
               {notification.metadata?.reminder_id ? "reminder" : "system"}
             </span>
           </div>
         </div>
 
-        <div className="flex items-center gap-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => onMarkAsRead(notification.id)}
-            className="h-7 w-7 p-0 text-zinc-500 hover:bg-zinc-800/10 hover:text-zinc-800"
-            title="Mark as read"
-          >
-            <Check className="h-3.5 w-3.5" />
-          </Button>
-        </div>
+        {isUnread && (
+          <div className="flex items-center gap-1">
+            <Tooltip content="Mark as Read">
+              <Button
+                variant="flat"
+                size="sm"
+                isIconOnly
+                onPress={() => onMarkAsRead(notification.id)}
+                title="Mark as read"
+              >
+                <CheckCheck className="h-3.5 w-3.5" />
+              </Button>
+            </Tooltip>
+          </div>
+        )}
       </div>
 
       {/* Actions buttons if present */}
@@ -111,13 +112,13 @@ const NotificationItem = ({
               return (
                 <Button
                   key={action.id}
-                  variant={action.style === "primary" ? "default" : "outline"}
+                  variant={action.style === "primary" ? "solid" : "flat"}
                   size="sm"
-                  className={`h-7 border-zinc-800/20 bg-zinc-800/5 text-xs text-zinc-800 hover:border-zinc-800/30 hover:bg-zinc-800/10 ${
+                  className={`h-7 bg-zinc-800/50 text-xs text-zinc-200 hover:bg-zinc-800/70 ${
                     isExecuted ? "cursor-not-allowed opacity-50" : ""
                   }`}
                   disabled={isDisabled}
-                  onClick={async () => {
+                  onPress={async () => {
                     if (isDisabled) return;
 
                     try {
@@ -193,7 +194,8 @@ export function NotificationCenter({
   className = "",
 }: NotificationCenterProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<"all" | "unread">("unread");
+  const [activeTab, setActiveTab] = useState<"unread" | "all">("unread");
+  const router = useRouter();
 
   const notificationOptions = useMemo(
     () => ({
@@ -239,104 +241,81 @@ export function NotificationCenter({
 
   return (
     <div className={`relative ${className}`}>
-      <Popover open={isOpen} onOpenChange={setIsOpen}>
+      <Popover
+        // open={isOpen} onOpenChange={setIsOpen}
+        backdrop="blur"
+      >
         <PopoverTrigger asChild>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="group relative h-9 w-9 rounded-lg transition-all duration-200 hover:bg-zinc-100/50"
-            aria-label="Notifications"
-          >
-            <Bell className="min-h-[18px] min-w-[18px] text-zinc-500 transition-all group-hover:text-zinc-700" />
+          <div className="relative">
+            <ShadcnButton
+              className={`group rounded-lg hover:bg-[#00bbff]/20`}
+              variant="ghost"
+              size="icon"
+              aria-label="Notifications"
+            >
+              <NotificationIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
+            </ShadcnButton>
             {unreadCount > 0 && (
-              <Badge
-                variant="destructive"
-                className="absolute -top-1 -right-1 flex h-4 w-4 items-center justify-center rounded-full bg-zinc-900 p-0 text-xs text-white"
-              >
-                {unreadCount > 99 ? "9+" : unreadCount}
-              </Badge>
+              <div className="absolute -right-1 bottom-3 flex h-full items-center justify-center">
+                <div className="flex aspect-square h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-zinc-950">
+                  {unreadCount > 99 ? "99+" : unreadCount}
+                </div>
+              </div>
             )}
-          </Button>
+          </div>
         </PopoverTrigger>
 
-        <PopoverContent
-          className="mr-4 w-96 border-zinc-800/20 bg-white p-0 shadow-xl shadow-zinc-900/5"
-          align="end"
-          sideOffset={8}
-        >
-          <div className="flex items-center justify-between border-b border-zinc-800/10 bg-zinc-900/5 p-4">
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 w-7 p-0 text-zinc-500 hover:bg-zinc-800/10 hover:text-zinc-800"
-                onClick={() => setIsOpen(false)}
-              >
-                <X className="h-3.5 w-3.5" />
-              </Button>
-            </div>
-          </div>
-
-          {/* Tabs */}
-          <div className="flex border-b border-zinc-800/20">
-            <button
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeTab === "unread"
-                  ? "border-b-2 border-zinc-800 bg-zinc-800/5 text-zinc-900"
-                  : "text-zinc-600 hover:bg-zinc-800/5 hover:text-zinc-800"
-              }`}
-              onClick={() => setActiveTab("unread")}
-            >
-              Unread ({unreadCount})
-            </button>
-            <button
-              className={`flex-1 px-4 py-3 text-sm font-medium transition-all duration-200 ${
-                activeTab === "all"
-                  ? "border-b-2 border-zinc-800 bg-zinc-800/5 text-zinc-900"
-                  : "text-zinc-600 hover:bg-zinc-800/5 hover:text-zinc-800"
-              }`}
-              onClick={() => setActiveTab("all")}
-            >
-              All ({notifications.length})
-            </button>
-          </div>
-
-          {/* Actions bar */}
-          {unreadCount > 0 && (
-            <div className="border-b border-zinc-800/20 bg-zinc-900/5 p-3">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={handleMarkAllAsRead}
-                className="h-7 border-zinc-800/20 bg-white text-xs text-zinc-800 hover:border-zinc-800/30 hover:bg-zinc-800/5"
-              >
-                Mark all as read
-              </Button>
-            </div>
-          )}
+        <PopoverContent className="mr-4 w-96 rounded-2xl border-1 border-zinc-700 bg-zinc-800 p-0 shadow-xl">
+          <Tabs
+            selectedKey={activeTab}
+            onSelectionChange={(key) => setActiveTab(key as "unread" | "all")}
+            variant="underlined"
+            fullWidth
+          >
+            <Tab
+              key="unread"
+              title={
+                <div className="flex items-center gap-4">
+                  <span>Unread</span>
+                  {unreadCount > 0 && (
+                    <Badge
+                      className="border-0"
+                      color="primary"
+                      content={
+                        unreadCount > 99 ? "99+" : unreadCount.toString()
+                      }
+                    >
+                      <span />
+                    </Badge>
+                  )}
+                </div>
+              }
+            />
+            <Tab key="all" title={"All"} />
+          </Tabs>
 
           {/* Notifications list */}
           <ScrollArea className="h-96">
             {loading ? (
               <div className="flex items-center justify-center p-8">
-                <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-800/20 border-t-zinc-800" />
+                <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-50" />
               </div>
             ) : filteredNotifications.length === 0 ? (
-              <div className="flex flex-col items-center justify-center p-8 text-center">
-                <Bell className="mb-4 h-10 w-10 text-zinc-800/30" />
-                <p className="font-medium text-zinc-700">
+              <div className="flex h-full flex-col items-center justify-center p-8 text-center">
+                <NotificationIcon className="mb-4 h-10 w-10 text-zinc-600" />
+                <p className="font-medium text-zinc-300">
                   {activeTab === "unread"
                     ? "No unread notifications"
                     : "No notifications yet"}
                 </p>
-                <p className="mt-1 text-sm text-zinc-500">
+                <p className="mt-1 text-sm text-zinc-400">
                   {activeTab === "unread"
                     ? "All caught up!"
                     : "Notifications will appear here when you receive them"}
                 </p>
               </div>
             ) : (
-              <div className="divide-y divide-zinc-800/10">
+              <div className="divide-y divide-zinc-800 p-3">
                 {filteredNotifications.map((notification) => (
                   <NotificationItem
                     key={notification.id}
@@ -349,15 +328,20 @@ export function NotificationCenter({
           </ScrollArea>
 
           {/* Footer */}
-          <div className="border-t border-zinc-800/20 bg-zinc-900/5 p-3">
+          <div className="flex w-full items-center justify-evenly gap-3 p-3">
+            {unreadCount > 0 && (
+              <Button size="sm" fullWidth onPress={handleMarkAllAsRead}>
+                Mark all as read
+              </Button>
+            )}
+
             <Button
-              variant="ghost"
+              fullWidth
               size="sm"
-              className="w-full text-sm text-zinc-600 hover:bg-zinc-800/5 hover:text-zinc-900"
-              onClick={() => {
+              variant={unreadCount > 0 ? "bordered" : "solid"}
+              onPress={() => {
                 setIsOpen(false);
-                // Navigate to full notifications page using Next.js router
-                window.location.href = "/notifications";
+                router.push("/notifications");
               }}
             >
               View all notifications

@@ -8,7 +8,7 @@ import { EmailsResponse } from "@/types/features/mailTypes";
  * Hook for handling infinite loading of emails
  */
 export const useInfiniteEmails = () => {
-  const { data, isLoading, fetchNextPage, hasNextPage } = useInfiniteQuery<
+  const { data, isLoading, fetchNextPage, hasNextPage, error } = useInfiniteQuery<
     EmailsResponse,
     Error,
     InfiniteData<EmailsResponse>,
@@ -18,6 +18,11 @@ export const useInfiniteEmails = () => {
     queryFn: fetchEmails,
     getNextPageParam: (lastPage) => lastPage.nextPageToken || undefined,
     initialPageParam: undefined,
+    retry: 0, // Explicitly set to 0 to override global retry settings
+    refetchOnWindowFocus: false, // Prevent refetch on window focus
+    refetchOnReconnect: false, // Prevent refetch on network reconnect
+    refetchOnMount: false, // Prevent refetch on component mount
+    staleTime: Infinity, // Keep data fresh to prevent background refetching
   });
 
   const emails = data
@@ -31,9 +36,17 @@ export const useInfiniteEmails = () => {
 
   const loadMoreItems = useCallback(
     async (_startIndex: number, _stopIndex: number) => {
-      if (hasNextPage) await fetchNextPage();
+      // Only attempt to fetch more if we have a next page and no current error
+      if (hasNextPage && !error) {
+        try {
+          await fetchNextPage();
+        } catch (fetchError) {
+          // Log the error but don't throw it to prevent infinite retry loops
+          console.error("Failed to fetch more emails:", fetchError);
+        }
+      }
     },
-    [hasNextPage, fetchNextPage],
+    [hasNextPage, fetchNextPage, error],
   );
 
   return {
@@ -44,5 +57,6 @@ export const useInfiniteEmails = () => {
     hasNextPage,
     isItemLoaded,
     loadMoreItems,
+    error, // Expose error state so components can handle it
   };
 };

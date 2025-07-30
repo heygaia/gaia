@@ -1,3 +1,10 @@
+"""
+Documentation decorators for functions and methods.
+
+This module provides decorators for applying documentation to functions.
+"""
+
+
 def with_doc(docstring):
     """
     Decorator that applies a docstring to a function.

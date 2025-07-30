@@ -29,7 +29,7 @@ from app.models.reminder_models import ReminderProcessingAgentResult
 from app.utils.memory_utils import store_user_message_memory
 
 
-@traceable
+@traceable(run_type="llm", name="Call Agent")
 async def call_agent(
     request: MessageRequestWithHistory,
     conversation_id,
@@ -73,12 +73,10 @@ async def call_agent(
         initial_state = {
             "query": request.message,
             "messages": history,
-            "force_web_search": request.search_web,
-            "force_deep_research": request.deep_research,
             "current_datetime": datetime.now(timezone.utc).isoformat(),
             "mem0_user_id": user_id,
             "conversation_id": conversation_id,
-            "selected_tool": request.selectedTool,  # Add selectedTool to agent state
+            "selected_tool": request.selectedTool,
         }
 
         # Begin streaming the AI output
@@ -99,6 +97,7 @@ async def call_agent(
             },
         ):
             stream_mode, payload = event
+
             if stream_mode == "messages":
                 chunk, metadata = payload
                 if chunk is None:

@@ -4,6 +4,7 @@ from typing import List, Optional
 from pydantic import BaseModel
 
 from app.models.calendar_models import EventCreateRequest
+from app.models.mail_models import EmailComposeRequest
 from app.models.message_models import FileData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
@@ -15,52 +16,75 @@ class ImageData(BaseModel):
     improved_prompt: Optional[str] = None
 
 
+class EmailFetchData(BaseModel):
+    from_: str
+    subject: str
+    time: str
+
+
+class CalendarFetchData(BaseModel):
+    summary: str
+    start_time: str
+    calendar_name: str
+
+
+class CalendarListFetchData(BaseModel):
+    name: str
+    id: str
+    description: str
+    backgroundColor: Optional[str] = None
+
+
+class IntegrationConnectionData(BaseModel):
+    """Data structure for integration connection prompts."""
+
+    integration_id: str
+    integration_name: str
+    integration_icon: str
+    integration_description: str
+    integration_category: str
+    message: str
+    connect_url: str
+    settings_url: Optional[str] = None
+
+
 class MessageModel(BaseModel):
-    type: str  # "user" or "bot"
-    response: str  # Content of the message
-    date: Optional[str] = None  # Date of the message or empty
-    # Legacy fields - kept for backward compatibility
-    # imagePrompt: Optional[str] = None  # The user prompt for the image
-    # improvedImagePrompt: Optional[str] = None  # Improved user prompt for the image
-    # imageUrl: Optional[str] = None  # URL for the image
-    # New structured field for image data
+    type: str
+    response: str
+    date: Optional[str] = None
     image_data: Optional[ImageData] = None
-    searchWeb: Optional[bool] = False  # Whether it's a web search request
-    deepSearchWeb: Optional[bool] = False  # Whether it's a deep research request
-    pageFetchURLs: Optional[List] = []
-    # Any disclaimer associated with the message
     disclaimer: Optional[str] = None
-    # Type of file if it contains a file (image, pdf, etc.)
     subtype: Optional[str] = None
-    file: Optional[bytes] = None  # Binary data for the file
-    filename: Optional[str] = None  # Name of the file, if any
-    filetype: Optional[str] = None  # Name of the file, if any
-    message_id: Optional[str] = None  # Message ID
-    fileIds: Optional[List[str]] = []  # List of file IDs associated with the message
-    fileData: Optional[List[FileData]] = []  # Complete file metadata
-    selectedTool: Optional[str] = None  # Tool selected via slash commands
-    toolCategory: Optional[str] = None  # Category of the selected tool
+    file: Optional[bytes] = None
+    filename: Optional[str] = None
+    filetype: Optional[str] = None
+    message_id: Optional[str] = None
+    fileIds: Optional[List[str]] = []
+    fileData: Optional[List[FileData]] = []
+    selectedTool: Optional[str] = None
+    toolCategory: Optional[str] = None
     calendar_options: Optional[List[EventCreateRequest]] = None
     search_results: Optional[SearchResults] = None
-    deep_research_results: Optional[DeepResearchResults] = (
-        None  # Results from deep research
-    )
-    weather_data: Optional[WeatherData] = None  # Weather data from OpenWeatherMap API
-    email_compose_data: Optional[dict] = None  # Email compose data from mail_tool
-    memory_data: Optional[dict] = None  # Complete memory operation data
-    todo_data: Optional[dict] = None  # Data related to todo operations
-    document_data: Optional[dict] = None  # Data related to todo operations
-    goal_data: Optional[dict] = None  # Data related to goal operations
-    code_data: Optional[dict] = (
-        None  # Code execution data with language, code, and output
-    )
-    google_docs_data: Optional[dict] = None  # Google Docs data from google_docs_tool
+    deep_research_results: Optional[DeepResearchResults] = None
+    weather_data: Optional[WeatherData] = None
+    email_compose_data: Optional[List[EmailComposeRequest]] = None
+    email_fetch_data: Optional[List[EmailFetchData]] = None
+    calendar_fetch_data: Optional[List[CalendarFetchData]] = None
+    calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
+    memory_data: Optional[dict] = None
+    todo_data: Optional[dict] = None
+    document_data: Optional[dict] = None
+    goal_data: Optional[dict] = None
+    code_data: Optional[dict] = None
+    google_docs_data: Optional[dict] = None
+    follow_up_actions: Optional[List[str]] = []
+    integration_connection_required: Optional[IntegrationConnectionData] = None
 
 
 class SystemPurpose(str, Enum):
     EMAIL_PROCESSING = "email_processing"
     REMINDER_PROCESSING = "reminder_processing"
-    OTHER = "other"  # Default or other purposes
+    OTHER = "other"
 
 
 class ConversationModel(BaseModel):
@@ -73,7 +97,6 @@ class ConversationModel(BaseModel):
 class UpdateMessagesRequest(BaseModel):
     conversation_id: str
     messages: List[MessageModel]
-    # new_messages: List[MessageModel]
 
 
 class StarredUpdate(BaseModel):

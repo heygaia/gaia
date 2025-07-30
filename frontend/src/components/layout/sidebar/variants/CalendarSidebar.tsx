@@ -20,10 +20,15 @@ export default function CalendarSidebar() {
   }
 
   return (
-    <CalendarSelector
-      calendars={calendars}
-      selectedCalendars={selectedCalendars}
-      onCalendarSelect={handleCalendarSelect}
-    />
+    <div>
+      <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
+        Your Calendars
+      </div>
+      <CalendarSelector
+        calendars={calendars}
+        selectedCalendars={selectedCalendars}
+        onCalendarSelect={handleCalendarSelect}
+      />
+    </div>
   );
 }

@@ -21,14 +21,10 @@ class MessageRequestWithHistory(BaseModel):
     message: str
     conversation_id: Optional[str] = None
     messages: List[MessageDict]
-    search_web: Optional[bool] = False
-    deep_research: Optional[bool] = False
-    pageFetchURLs: Optional[List[str]] = []
     fileIds: Optional[List[str]] = []
     fileData: Optional[List[FileData]] = []
     selectedTool: Optional[str] = None  # Tool selected via slash commands
     toolCategory: Optional[str] = None  # Category of the selected tool
-    # TODO: Remove fileIds, fileData and messages, we should not get them from the client
 
 
 class MessageRequest(BaseModel):

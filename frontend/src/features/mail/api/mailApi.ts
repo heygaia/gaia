@@ -18,9 +18,7 @@ export const mailApi = {
     const data = await apiService.get<{
       messages: EmailData[];
       nextPageToken?: string;
-    }>(url, {
-      errorMessage: "Failed to fetch emails",
-    });
+    }>(url);
     return { emails: data.messages, nextPageToken: data.nextPageToken };
   },
 

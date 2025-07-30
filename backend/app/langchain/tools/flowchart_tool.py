@@ -4,8 +4,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool
 
 from app.docstrings.langchain.tools.flowchart_tool_docs import CREATE_FLOWCHART
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.langchain.templates.flowchart_template import FLOWCHART_PROMPT_TEMPLATE
 
 

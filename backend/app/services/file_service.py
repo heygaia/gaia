@@ -16,7 +16,7 @@ from langchain_core.documents import Document
 from app.config.loggers import app_logger as logger
 from app.db.chromadb import ChromaClient
 from app.db.mongodb.collections import files_collection
-from app.db.redis import Cacheable, CacheInvalidator
+from app.decorators.caching import Cacheable, CacheInvalidator
 from app.db.utils import serialize_document
 from app.models.files_models import DocumentSummaryModel
 from app.models.message_models import FileData

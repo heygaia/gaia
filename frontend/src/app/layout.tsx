@@ -1,6 +1,7 @@
 import "./styles/globals.css";
 import "./styles/tailwind.css";
 
+import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 
@@ -67,7 +68,7 @@ export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en" className={`${getAllFontVariables()} dark`}>
+    <html lang="en" className={`${getAllFontVariables()}! dark`}>
       <body className={`dark ${defaultFont.className}`}>
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>
@@ -94,13 +95,16 @@ export default function RootLayout({
           type="text/javascript"
         />
 
-        {/* Analytics */}
+        {/* Rybbit Analytics */}
         <Script
           src="https://analytics.heygaia.io/api/script.js"
           data-site-id="1"
           defer
           data-session-replay="true"
         />
+
+        {/* Google Analytics */}
+        <GoogleAnalytics gaId="G-R6EGV9FG2Q" />
       </body>
     </html>
   );

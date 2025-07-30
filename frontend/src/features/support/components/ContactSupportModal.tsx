@@ -147,7 +147,7 @@ export default function ContactSupportModal({
         {() => (
           <>
             <ModalHeader className="flex flex-col gap-1">
-              Contact Support
+              Get in Touch
             </ModalHeader>
 
             <ModalBody className="gap-4">

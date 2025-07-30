@@ -8,7 +8,7 @@ from fastapi import HTTPException, status
 
 from app.config.loggers import blogs_logger as logger
 from app.db.mongodb.collections import blog_collection
-from app.db.redis import Cacheable, CacheInvalidator
+from app.decorators.caching import Cacheable, CacheInvalidator
 from app.db.utils import serialize_document
 from app.models.blog_models import BlogPost, BlogPostCreate, BlogPostUpdate
 

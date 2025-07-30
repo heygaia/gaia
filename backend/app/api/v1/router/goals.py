@@ -6,7 +6,7 @@ from fastapi.websockets import WebSocketState
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.loggers import goals_logger as logger
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.db.mongodb.collections import goals_collection
 from app.models.goals_models import (
     GoalCreate,

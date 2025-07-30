@@ -9,7 +9,7 @@ import re
 from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.search_models import URLRequest, URLResponse
 from app.services.search_service import search_messages
 from app.utils.internet_utils import fetch_url_metadata

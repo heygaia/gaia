@@ -5,7 +5,7 @@ from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
 
 from app.config.loggers import chat_logger as logger
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_rate_limiting, require_integration, with_doc
 from app.docstrings.langchain.tools.google_docs_tool_docs import (
     CREATE_GOOGLE_DOC,
     LIST_GOOGLE_DOCS,
@@ -15,7 +15,6 @@ from app.docstrings.langchain.tools.google_docs_tool_docs import (
     SHARE_GOOGLE_DOC,
     SEARCH_GOOGLE_DOCS,
 )
-from app.docstrings.utils import with_doc
 
 from app.langchain.templates.google_docs_templates import (
     GOOGLE_DOCS_CREATE_TEMPLATE,
@@ -53,6 +52,7 @@ def get_auth_from_config(config: RunnableConfig) -> Dict[str, str]:
 @tool
 @with_rate_limiting("google_docs_operations")
 @with_doc(CREATE_GOOGLE_DOC)
+@require_integration("google_docs")
 async def create_google_doc_tool(
     config: RunnableConfig,
     title: Annotated[str, "Title of the new Google Doc"],
@@ -117,6 +117,7 @@ async def create_google_doc_tool(
 @tool
 @with_rate_limiting("google_docs_operations")
 @with_doc(LIST_GOOGLE_DOCS)
+@require_integration("google_docs")
 async def list_google_docs_tool(
     config: RunnableConfig,
     limit: Annotated[int, "Maximum number of documents to return"] = 50,

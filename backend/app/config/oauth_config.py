@@ -26,7 +26,6 @@ class OAuthIntegration(BaseModel):
     category: str
     provider: str  # 'google', 'github', 'figma', 'notion', etc.
     scopes: List[OAuthScope]
-    features: List[str]
     available: bool = True
     oauth_endpoints: Optional[Dict[str, str]] = None
 
@@ -51,7 +50,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
                 description="View calendar events",
             ),
         ],
-        features=["Create events", "View schedule", "Update events", "Set reminders"],
     ),
     OAuthIntegration(
         id="google_docs",
@@ -66,7 +64,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
                 description="Create and edit documents",
             ),
         ],
-        features=["Create documents", "Edit content", "Format text", "Share documents"],
     ),
     OAuthIntegration(
         id="gmail",
@@ -81,7 +78,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
                 description="Read, compose, and send emails",
             ),
         ],
-        features=["Send emails", "Read messages", "Search inbox", "Manage labels"],
     ),
     OAuthIntegration(
         id="google_drive",
@@ -96,12 +92,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
                 description="Create and manage files",
             ),
         ],
-        features=[
-            "Upload files",
-            "Search documents",
-            "Share files",
-            "Organize folders",
-        ],
     ),
     # Coming soon integrations
     OAuthIntegration(
@@ -112,7 +102,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         category="development",
         provider="github",
         scopes=[],
-        features=["Create issues", "Review PRs", "Search repos", "Manage projects"],
         available=False,
     ),
     OAuthIntegration(
@@ -123,7 +112,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         category="creative",
         provider="figma",
         scopes=[],
-        features=["Create designs", "Export assets", "Share prototypes", "Collaborate"],
         available=False,
     ),
     OAuthIntegration(
@@ -134,12 +122,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         category="productivity",
         provider="notion",
         scopes=[],
-        features=[
-            "Create pages",
-            "Search content",
-            "Update databases",
-            "Append content",
-        ],
         available=False,
     ),
     OAuthIntegration(
@@ -150,13 +132,6 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         category="communication",
         provider="facebook",
         scopes=[],
-        features=[
-            "Send messages",
-            "Receive messages",
-            "Manage templates",
-            "Access conversation history",
-            "Auto-respond to users",
-        ],
         available=False,
     ),
 ]

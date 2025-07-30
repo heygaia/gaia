@@ -49,7 +49,6 @@ export default function RedirectPage() {
       const refreshToken = searchParams.get("refresh_token");
 
       if (accessToken || refreshToken) {
-        // Successful OAuth, show success toast
         toast.success(
           "Successfully connected! You can now access your integrations.",
         );

@@ -1,11 +1,10 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Input } from "@heroui/input";
-import { ArrowUpRight, SearchIcon } from "lucide-react";
+import { SearchIcon } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { InternetIcon } from "@/components/shared/icons";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import Spinner from "@/components/ui/shadcn/spinner";
 import { parseDate } from "@/utils/date/dateUtils";
@@ -72,48 +71,6 @@ export default function Search() {
                             : "From You"}
                         </Chip>
 
-                        <div>
-                          {result.message?.searchWeb && (
-                            <Chip
-                              color="primary"
-                              size="sm"
-                              startContent={
-                                <InternetIcon color="#00bbff" height={20} />
-                              }
-                              variant="flat"
-                            >
-                              <div className="flex items-center gap-1 font-medium text-primary">
-                                Live Search Results from the Web
-                              </div>
-                            </Chip>
-                          )}
-
-                          {!!result.message?.pageFetchURL && (
-                            <Chip
-                              color="primary"
-                              size="sm"
-                              startContent={
-                                <ArrowUpRight color="#00bbff" height={20} />
-                              }
-                              variant="flat"
-                            >
-                              <div className="flex items-center gap-1 font-medium text-primary">
-                                Fetched
-                                <a
-                                  className="font-medium text-[#00bbff]! transition-colors hover:text-white!"
-                                  href={result.message.pageFetchURL}
-                                  rel="noreferrer"
-                                  target="_blank"
-                                >
-                                  {result.message.pageFetchURL.replace(
-                                    /^https?:\/\//,
-                                    "",
-                                  )}
-                                </a>
-                              </div>
-                            </Chip>
-                          )}
-                        </div>
                         <div className="max-h-[140px] overflow-hidden text-sm">
                           {result.message?.response?.slice(0, 350)}
                           {result?.message?.response?.length > 350 ? "..." : ""}

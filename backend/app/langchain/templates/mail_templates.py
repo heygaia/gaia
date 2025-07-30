@@ -31,6 +31,7 @@ def minimal_message_template(email_data: Dict[str, Any]) -> Dict[str, Any]:
         "time": email_data.get("time", ""),
         "isRead": "UNREAD" not in email_data.get("labelIds", []),
         "hasAttachment": "HAS_ATTACHMENT" in email_data.get("labelIds", []),
+        "body": email_data.get("body", ""),
         "labels": email_data.get("labelIds", []),
     }
 
@@ -89,6 +90,39 @@ def thread_template(thread_data: Dict[str, Any]) -> Dict[str, Any]:
             minimal_message_template(msg) for msg in thread_data.get("messages", [])
         ],
         "messageCount": len(thread_data.get("messages", [])),
+        "instructions": """
+
+        Understand the mail and output your response based on the following analysis Framework:
+        When fetching and analyzing email threads, always include:
+
+        ✓ Urgent Action Required:
+        - Identify any time-sensitive items that need immediate attention
+        - Flag deadlines, urgent requests, or critical decisions needed
+        - Highlight any escalations or priority communications
+
+        ✓ Key Issues Identified:
+        - Extract main problems, concerns, or challenges discussed
+        - Identify blockers, conflicts, or unresolved matters
+        - Note any recurring issues or patterns in the conversation
+
+        ✓ Required Actions:
+        - List specific tasks, deliverables, or next steps mentioned
+        - Identify who is responsible for each action item
+        - Extract any commitments, agreements, or promises made
+
+        ✓ Timeline:
+        - Extract all dates, deadlines, and time-sensitive milestones
+        - Identify project phases, meeting schedules, or delivery dates
+        - Note any timeline changes or delays discussed
+
+        ✓ Current Status:
+        - Summarize the current state of projects or discussions
+        - Identify what has been completed vs. what remains pending
+        - Note any status updates, progress reports, or milestone achievements
+
+        Do not include them if they're not specified in the email, it's fine. Summarise the body and the information instead of showing the details manually, ensure its concise and easy to understand.
+        don't just copy paste the details of the mail. Do not provide unnecessary information to the user about the mail that they cannot discertain certain information from
+ """,
     }
 
 

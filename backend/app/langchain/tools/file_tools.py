@@ -8,8 +8,7 @@ from app.config.loggers import chat_logger as logger
 from app.db.chromadb import ChromaClient
 from app.db.mongodb.collections import files_collection
 from app.docstrings.langchain.tools.file_tool_docs import QUERY_FILE
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 
 
 @tool

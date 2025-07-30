@@ -70,7 +70,7 @@ export const authApi = {
     instructions?: string | null;
   }): Promise<{ success: boolean; message: string; user?: UserInfo }> => {
     return apiService.post("/oauth/onboarding", onboardingData, {
-      successMessage: "Onboarding completed successfully",
+      successMessage: "Welcome! Your preferences have been saved.",
       errorMessage: "Failed to complete onboarding",
     });
   },
@@ -84,7 +84,6 @@ export const authApi = {
   }): Promise<{ success: boolean; message: string; user?: UserInfo }> => {
     return apiService.patch("/oauth/onboarding/preferences", preferences, {
       silent: true,
-      errorMessage: "Failed to update preferences",
     });
   },
 };

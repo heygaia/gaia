@@ -1,0 +1,103 @@
+import { ScrollShadow } from "@heroui/scroll-shadow";
+
+import { Gmail } from "@/components";
+import { EmailFetchData } from "@/types/features/mailTypes";
+
+interface EmailListProps {
+  emails?: EmailFetchData[] | null;
+}
+
+function extractSenderName(from: string): string {
+  // Extract name before email or use email if no name
+  const match = from.match(/^"?([^"<]+)"?\s*</);
+  if (match) {
+    return match[1].trim();
+  }
+
+  // If no angle brackets, check for name before space
+  const spaceMatch = from.match(/^([^<]+)\s+</);
+  if (spaceMatch) {
+    return spaceMatch[1].trim();
+  }
+
+  // Extract just the email part if no name
+  const emailMatch = from.match(/<([^>]+)>/);
+  if (emailMatch) {
+    return emailMatch[1].split("@")[0];
+  }
+
+  return from.split("@")[0] || from;
+}
+
+function formatTime(time: string | null): string {
+  if (!time) return "Yesterday";
+
+  const date = new Date(time);
+  const now = new Date();
+  const diffInHours = (now.getTime() - date.getTime()) / (1000 * 60 * 60);
+
+  if (diffInHours < 24) {
+    return date.toLocaleTimeString("en-US", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  } else if (diffInHours < 48) {
+    return "Yesterday";
+  } else {
+    return date.toLocaleDateString("en-US", {
+      month: "short",
+      day: "numeric",
+    });
+  }
+}
+
+export default function EmailListCard({ emails }: EmailListProps) {
+  if (!!emails)
+    return (
+      <div className="mx-auto mt-3 w-full max-w-2xl rounded-3xl bg-zinc-800 p-3 text-white">
+        {/* Header */}
+        <div className="flex items-center justify-between px-3 py-1">
+          <div className="flex items-center gap-2">
+            <Gmail width={20} height={20} />
+            <span className="text-sm font-medium">
+              Fetched {emails.length} Email{emails.length > 0 ? "s" : ""}
+            </span>
+          </div>
+        </div>
+
+        {/* Email List */}
+        <ScrollShadow className="max-h-[300px] divide-y divide-gray-700">
+          {!!emails &&
+            emails.length > 0 &&
+            emails.map((email, index) => (
+              <div
+                key={index}
+                className="group flex cursor-pointer items-center gap-4 p-3 transition-colors hover:bg-zinc-700"
+              >
+                {/* Sender Name */}
+                <div className="w-40 flex-shrink-0">
+                  <span className="block truncate text-sm font-medium text-gray-300">
+                    {extractSenderName(email.from)}
+                  </span>
+                </div>
+
+                {/* Subject */}
+                <div className="min-w-0 flex-1">
+                  <span className="block truncate text-sm text-white group-hover:text-gray-100">
+                    {email.subject}
+                  </span>
+                </div>
+
+                {/* Time */}
+                <div className="w-20 flex-shrink-0 text-right">
+                  <span className="text-xs text-gray-400">
+                    {formatTime(email.time)}
+                  </span>
+                </div>
+              </div>
+            ))}
+        </ScrollShadow>
+      </div>
+    );
+}

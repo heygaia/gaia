@@ -1,22 +1,16 @@
 """
-Rate limiting decorator for LangChain tools.
+Rate limiting decorators for API endpoints and LangChain tools.
 
-Difference from normal rate limiter:
-- Normal (@tiered_rate_limit): For FastAPI endpoints, uses Depends(get_current_user)
-- LangChain (@with_rate_limiting): For @tool functions, uses context variables
-
-Usage:
-    @tool
-    @with_rate_limiting()  # Auto-derives feature key from function name
-    async def my_tool(input: str):
-        return result
+This module provides decorators for rate limiting based on user subscription plans.
 """
 
 import json
+import inspect
 from contextvars import ContextVar
 from functools import wraps
-from typing import Optional, Dict, Any
-import inspect
+from typing import Optional, Dict, Any, Callable
+
+from fastapi import HTTPException
 
 from app.middleware.tiered_rate_limiter import (
     tiered_limiter,
@@ -26,6 +20,7 @@ from app.services.payments.subscriptions import get_user_subscription_status
 from app.models.payment_models import PlanType
 from app.config.loggers import app_logger
 from app.db.redis import redis_cache
+from app.config.rate_limits import get_limits_for_plan
 
 # Context variables to avoid parameter pollution
 user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
@@ -184,6 +179,69 @@ def with_rate_limiting(
         return wrapper
 
     return rate_limit_decorator
+
+
+def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
+    """Rate limiting decorator for API endpoints."""
+
+    def decorator(func: Callable) -> Callable:
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            # Extract request and user from dependencies
+            user = None
+
+            for arg in args:
+                if isinstance(arg, dict) and "user_id" in arg:
+                    user = arg
+
+            if not user:
+                user = kwargs.get("user")
+                if not user:
+                    # If no user found, skip rate limiting (for public endpoints)
+                    return await func(*args, **kwargs)
+
+            user_id = user.get("user_id")
+            if not user_id:
+                raise HTTPException(status_code=401, detail="User ID not found")
+
+            # Get user subscription
+            subscription = await get_user_subscription_status(user_id)
+            user_plan = subscription.plan_type or PlanType.FREE
+
+            # Check rate limits before executing function
+            await tiered_limiter.check_and_increment(
+                user_id=user_id,
+                feature_key=feature_key,
+                user_plan=user_plan,
+                tokens_used=0,  # Will be handled post-execution if count_tokens=True
+            )
+
+            # Execute the original function
+            result = await func(*args, **kwargs)
+
+            # Handle token counting post-execution
+            if count_tokens and isinstance(result, dict):
+                tokens_used = result.get("tokens_used", 0)
+                if tokens_used > 0:
+                    # Validate token limits
+                    current_limits = get_limits_for_plan(feature_key, user_plan)
+                    if (
+                        current_limits.tokens_per_request > 0
+                        and tokens_used > current_limits.tokens_per_request
+                    ):
+                        plan_required = "pro" if user_plan == PlanType.FREE else None
+                        raise RateLimitExceededException(
+                            f"{feature_key} (token limit)", plan_required
+                        )
+
+            return result
+
+        # Store metadata for usage tracking
+        setattr(wrapper, "_rate_limit_metadata", {"feature_key": feature_key})
+
+        return wrapper
+
+    return decorator
 
 
 class LangChainRateLimitException(Exception):

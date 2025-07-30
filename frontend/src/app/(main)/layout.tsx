@@ -132,15 +132,15 @@ export default function MainLayout({ children }: { children: ReactNode }) {
               <Sidebar />
             </SidebarLayout>
 
-            <SidebarInset className="flex h-screen flex-col">
+            <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
               <header
-                className="z-10 flex flex-shrink-0 items-start justify-between bg-zinc-900/80 px-4 pt-3 backdrop-blur-sm"
+                className="z-10 flex flex-shrink-0 items-start justify-between px-4 pt-3 backdrop-blur-sm"
                 onClick={closeOnTouch}
               >
                 {!currentOpen && <HeaderSidebarTrigger />}
                 <HeaderManager />
               </header>
-              <main className="flex flex-1 flex-col overflow-hidden bg-zinc-900/80">
+              <main className="flex flex-1 flex-col overflow-hidden">
                 {children}
               </main>
             </SidebarInset>

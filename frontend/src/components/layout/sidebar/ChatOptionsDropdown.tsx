@@ -23,7 +23,6 @@ import { toast } from "sonner";
 
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";
-import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 
 export default function ChatOptionsDropdown({
@@ -44,7 +43,6 @@ export default function ChatOptionsDropdown({
   const fetchConversations = useFetchConversations();
   const [dangerStateHovered, setDangerStateHovered] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
-  const { clearMessages } = useConversation();
   const [newName, setNewName] = useState(chatName);
   const router = useRouter();
   const [modalAction, setModalAction] = useState<"edit" | "delete" | null>(
@@ -58,17 +56,9 @@ export default function ChatOptionsDropdown({
         starred === undefined ? true : !starred,
       );
       setIsOpen(false);
-      toast.success(
-        starred === undefined
-          ? "Conversation added to starred"
-          : starred
-            ? "Conversation removed from starred"
-            : "Conversation added to starred",
-      );
 
       await fetchConversations();
     } catch (error) {
-      toast.error("Could not rename conversation ");
 
       console.error("Failed to update star", error);
     }
@@ -79,10 +69,8 @@ export default function ChatOptionsDropdown({
     try {
       await chatApi.renameConversation(chatId, newName);
       setIsOpen(false);
-      toast.success("Successfully renamed conversation");
       await fetchConversations(1, 20, false);
     } catch (error) {
-      toast.error("Could not rename conversation ");
       console.error("Failed to update chat name", error);
     }
   };
@@ -90,7 +78,6 @@ export default function ChatOptionsDropdown({
   const handleDelete = async () => {
     try {
       router.push("/c");
-      clearMessages();
       await chatApi.deleteConversation(chatId);
       setIsOpen(false);
       // Toast is already shown by the API service
@@ -148,7 +135,7 @@ export default function ChatOptionsDropdown({
           >
             <div className="flex flex-row items-center justify-between gap-2">
               <PencilRenameIcon color="white" width={16} />
-              Rename chat
+              Rename
             </div>
           </DropdownItem>
           <DropdownItem
@@ -162,7 +149,7 @@ export default function ChatOptionsDropdown({
           >
             <div className="flex flex-row items-center justify-between gap-2">
               <Trash color={dangerStateHovered ? "white" : "red"} width={16} />
-              Delete chat
+              Delete
             </div>
           </DropdownItem>
         </DropdownMenu>

@@ -1,7 +1,7 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useRouter,useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import AccountSettings from "@/components/layout/sidebar/settings/AccountSettings";
 import LogoutModal from "@/components/layout/sidebar/settings/LogoutModal";
@@ -14,8 +14,16 @@ import UsageSettings from "@/features/settings/components/UsageSettings";
 
 export default function SettingsPage() {
   const searchParams = useSearchParams();
-  const section = searchParams.get("section") || "general";
+  const router = useRouter();
+  const section = searchParams.get("section");
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
+
+  // Redirect to /settings?section=account if no section is specified
+  useEffect(() => {
+    if (!section) {
+      router.replace("?section=account");
+    }
+  }, [section, router]);
 
   const renderContent = () => {
     switch (section) {

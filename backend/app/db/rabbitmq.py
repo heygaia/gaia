@@ -22,11 +22,11 @@ class RabbitMQPublisher:
             self.declared_queues.add(queue_name)
 
     async def publish(self, queue_name: str, body: bytes):
+        if not self.channel:
+            raise RuntimeError("Channel is not connected. Call connect() first.")
         await self.declare_queue(queue_name)
         message = Message(body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT)
 
-        if not self.channel:
-            raise RuntimeError("Channel is not connected. Call connect() first.")
 
         await self.channel.default_exchange.publish(message, routing_key=queue_name)
 

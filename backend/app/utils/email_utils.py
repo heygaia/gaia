@@ -18,10 +18,10 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.models.support_models import SupportEmailNotification, SupportRequestType
+from app.db.mongodb.collections import users_collection
+from datetime import datetime, timezone
+from bson import ObjectId
 
-# ============================================================================
-# EMAIL SERVICE CONFIGURATION
-# ============================================================================
 
 # Initialize Resend with API key
 resend.api_key = settings.RESEND_API_KEY
@@ -35,10 +35,10 @@ jinja_env = Environment(
     autoescape=select_autoescape(["html", "xml"]),
 )
 
-
-# ============================================================================
-# SUPPORT & FEATURE REQUEST EMAILS
-# ============================================================================
+CONTACT_EMAIL = "aryan@heygaia.io"
+DISCORD_URL = "https://discord.heygaia.io"
+WHATSAPP_URL = "https://whatsapp.heygaia.io"
+TWITTER_URL = "https://twitter.com/_heygaia"
 
 
 async def send_support_team_notification(
@@ -190,9 +190,9 @@ def generate_support_to_user_email_html(data: SupportEmailNotification) -> str:
 async def send_pro_subscription_email(
     user_name: str,
     user_email: str,
-    discord_url: str = "https://discord.heygaia.io",
-    whatsapp_url: str = "https://whatsapp.heygaia.io",
-    twitter_url: str = "https://twitter.com/_heygaia",
+    discord_url: str = DISCORD_URL,
+    whatsapp_url: str = WHATSAPP_URL,
+    twitter_url: str = TWITTER_URL,
 ) -> None:
     """Send welcome email to user who upgraded to Pro subscription."""
     try:
@@ -206,11 +206,11 @@ async def send_pro_subscription_email(
 
         resend.Emails.send(
             {
-                "from": "Aryan from GAIA <aryan@heygaia.io>",
+                "from": f"Aryan from GAIA <{CONTACT_EMAIL}>",
                 "to": [user_email],
                 "subject": subject,
                 "html": html_content,
-                "reply_to": "aryan@heygaia.io",
+                "reply_to": CONTACT_EMAIL,
             }
         )
         logger.info(f"Pro subscription welcome email sent to {user_email}")
@@ -230,11 +230,11 @@ async def send_welcome_email(user_email: str, user_name: Optional[str] = None) -
 
         resend.Emails.send(
             {
-                "from": "Aryan from GAIA <aryan@heygaia.io>",
+                "from": f"Aryan from GAIA <{CONTACT_EMAIL}>",
                 "to": [user_email],
                 "subject": subject,
                 "html": html_content,
-                "reply_to": "aryan@heygaia.io",
+                "reply_to": CONTACT_EMAIL,
             }
         )
         logger.info(f"Welcome email sent to {user_email}")
@@ -251,10 +251,10 @@ def generate_welcome_email_html(user_name: Optional[str] = None) -> str | None:
         # Render template with data
         html_content = template.render(
             user_name=user_name,
-            contact_email="aryan@heygaia.io",
-            discord_url="https://discord.gg/gaia",
-            whatsapp_url="https://chat.whatsapp.com/gaia",
-            twitter_url="https://twitter.com/heygaia",
+            contact_email=CONTACT_EMAIL,
+            discord_url=DISCORD_URL,
+            whatsapp_url=WHATSAPP_URL,
+            twitter_url=TWITTER_URL,
         )
 
         return html_content
@@ -264,23 +264,68 @@ def generate_welcome_email_html(user_name: Optional[str] = None) -> str | None:
 
 
 async def send_inactive_user_email(
-    user_email: str, user_name: Optional[str] = None
-) -> None:
-    """Send email to inactive user using Jinja2 template."""
+    user_email: str, user_name: Optional[str] = None, user_id: Optional[str] = None
+) -> bool:
+    """
+    Send email to inactive user and track when sent to prevent spam.
+
+    Args:
+        user_email: Email address of the inactive user
+        user_name: Name of the user (optional)
+        user_id: User ID for tracking (optional)
+
+    Returns:
+        True if email was sent, False if skipped
+    """
+
     try:
+        # If user_id provided, check if we should send email
+        if user_id:
+            user = await users_collection.find_one({"_id": ObjectId(user_id)})
+            if not user:
+                logger.error(f"User {user_id} not found")
+                return False
+
+            now = datetime.now(timezone.utc)
+            last_active = user.get("last_active_at")
+            last_email_sent = user.get("last_inactive_email_sent")
+
+            # Check if user is inactive long enough (7+ days)
+            if not last_active or (now - last_active).days < 7:
+                return False
+
+            # Skip if email sent in last 7 days
+            if last_email_sent and (now - last_email_sent).days < 7:
+                return False
+
+            # Max 2 emails: first after 7 days, second after 14 days
+            days_inactive = (now - last_active).days
+            if last_email_sent and days_inactive >= 14:
+                return False  # Already sent 2 emails, stop
+
         subject = "We miss you at GAIA 🌱"
         html_content = generate_inactive_user_email_html(user_name)
 
         resend.Emails.send(
             {
-                "from": "Aryan from GAIA <aryan@heygaia.io>",
+                "from": f"Aryan from GAIA <{CONTACT_EMAIL}>",
                 "to": [user_email],
                 "subject": subject,
                 "html": html_content,
-                "reply_to": "aryan@heygaia.io",
+                "reply_to": CONTACT_EMAIL,
             }
         )
+
+        # Update tracking if user_id provided
+        if user_id:
+            await users_collection.update_one(
+                {"_id": ObjectId(user_id)},
+                {"$set": {"last_inactive_email_sent": datetime.now(timezone.utc)}},
+            )
+
         logger.info(f"Inactive user email sent to {user_email}")
+        return True
+
     except Exception as e:
         logger.error(f"Failed to send inactive user email to {user_email}: {str(e)}")
         raise
@@ -312,7 +357,7 @@ def generate_inactive_user_email_html(user_name: Optional[str] = None) -> str:
         # Render template with data
         html_content = template.render(
             user_name=user_name,
-            contact_email="aryan@heygaia.io",
+            contact_email=CONTACT_EMAIL,
         )
 
         return html_content

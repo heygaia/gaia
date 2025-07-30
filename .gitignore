@@ -90,3 +90,5 @@ dist/
 .idea
 
 .pnpm-store/
+
+.vscode/settings.json

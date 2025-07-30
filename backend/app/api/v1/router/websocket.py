@@ -37,11 +37,14 @@ async def websocket_endpoint(
             # Keep the connection open
             await websocket.receive_text()
     except WebSocketDisconnect:
-        # Handle disconnection
+        # Handle disconnection - WebSocket is already closed, so just clean up
         connection_manager.remove_connection(user_id=user_id, websocket=websocket)
-        await websocket.close(code=status.WS_1000_NORMAL_CLOSURE)
     except Exception as e:
         # Handle any other exceptions
-        await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
         connection_manager.remove_connection(user_id=user_id, websocket=websocket)
+        try:
+            await websocket.close(code=status.WS_1011_INTERNAL_ERROR)
+        except Exception:
+            # Ignore if WebSocket is already closed
+            pass  # nosec B110
         raise e

@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Dict, Callable, Optional
 from functools import wraps
 
+import redis.asyncio as redis
 from fastapi import HTTPException
 from pydantic import BaseModel
 
@@ -147,7 +148,7 @@ class TieredRateLimiter:
                         await pipe.execute()
                         break  # Success, exit retry loop
 
-                    except redis_cache.redis.WatchError:
+                    except redis.WatchError:
                         # Key was modified, retry the transaction
                         continue
 

@@ -18,8 +18,6 @@ export interface MessageSearchResult {
   message: {
     message_id: string;
     response: string;
-    searchWeb: boolean;
-    pageFetchURL: string;
     date: string;
     type: string;
   };
@@ -37,8 +35,6 @@ export interface SearchMessageResult {
     message_id: string;
     type: "bot" | "user";
     date: string;
-    searchWeb?: boolean;
-    pageFetchURL?: string;
   };
   snippet: string;
 }
@@ -75,8 +71,6 @@ export const searchApi = {
         message: {
           message_id: msg.message.message_id,
           response: msg.snippet,
-          searchWeb: msg.message.searchWeb || false,
-          pageFetchURL: msg.message.pageFetchURL || "",
           date: msg.message.date,
           type: msg.message.type,
         },

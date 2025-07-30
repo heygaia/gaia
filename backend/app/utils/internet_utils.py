@@ -4,6 +4,7 @@ import time
 from typing import Any, Dict, Optional
 from urllib.parse import urljoin, urlparse
 
+from fastapi import HTTPException, status
 import httpx
 from bs4 import BeautifulSoup
 from langgraph.config import get_stream_writer
@@ -303,6 +304,11 @@ async def fetch_and_process_url(
 
 async def fetch_url_metadata(url: str) -> URLResponse:
     """Fetch metadata for a URL, with caching and database fallback."""
+    if not is_valid_url(url):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid URL provided.",
+        )
 
     cache_key = f"url_metadata:{url}"
     metadata = await get_cache(cache_key) or await search_urls_collection.find_one(
@@ -313,7 +319,6 @@ async def fetch_url_metadata(url: str) -> URLResponse:
         return URLResponse(**metadata)
 
     metadata = await scrape_url_metadata(url)
-
     await search_urls_collection.insert_one(metadata)
     await set_cache(cache_key, serialize_document(metadata), 864000)
 

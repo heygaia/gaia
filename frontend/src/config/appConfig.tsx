@@ -149,6 +149,12 @@ export const appConfig = {
         icon: <WhatsappIcon width={19} />,
         external: true,
       },
+      {
+        href: "https://youtube.com/@heygaia_io",
+        label: "YouTube",
+        icon: <WhatsappIcon width={19} />,
+        external: true,
+      },
     ] as AppLink[],
 
     // Authentication related links

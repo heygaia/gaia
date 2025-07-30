@@ -109,7 +109,7 @@ export const IntegrationsCard: React.FC<IntegrationsCardProps> = ({
         isCompact
         defaultExpandedKeys={["integrations"]}
         itemClasses={{ base: "py-2 px-2" }}
-        className="rounded-xl bg-zinc-950/50 backdrop-blur-2xl"
+        className="rounded-xl bg-zinc-900/50"
       >
         <AccordionItem
           key={"integrations"}

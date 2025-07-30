@@ -7,7 +7,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
     get_current_user,
     get_user_timezone,
 )
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.message_models import MessageRequestWithHistory
 from app.services.chat_service import chat_stream
 

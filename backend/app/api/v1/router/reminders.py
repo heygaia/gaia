@@ -13,7 +13,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
     get_user_timezone,
 )
 from app.config.loggers import general_logger as logger
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.reminder_models import (
     CreateReminderRequest,
     ReminderResponse,

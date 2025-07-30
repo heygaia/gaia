@@ -178,3 +178,17 @@ export type CalendarEditOptions = {
   is_all_day?: boolean;
   timezone?: string;
 };
+
+// Calendar fetch data types for streaming components
+export type CalendarFetchData = {
+  summary: string;
+  start_time: string;
+  calendar_name: string;
+};
+
+export type CalendarListFetchData = {
+  name: string;
+  id: string;
+  description: string;
+  backgroundColor?: string;
+};

@@ -1,6 +1,7 @@
 "use client";
 
-import { useParams, useRouter } from "next/navigation";
+import Link from "next/link";
+import { useParams } from "next/navigation";
 
 import ChatOptionsDropdown from "@/components/layout/sidebar/ChatOptionsDropdown";
 import { NotificationCenter } from "@/components/Notifications/NotificationCenter";
@@ -9,14 +10,11 @@ import {
   ChatBubbleAddIcon,
 } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
-import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 
 export default function ChatHeader() {
-  const router = useRouter();
   const { conversations } = useConversationList();
   const { id: convoIdParam } = useParams<{ id: string }>();
-  const { clearMessages } = useConversation();
 
   return (
     <div className="flex w-full justify-between pb-3">
@@ -50,18 +48,16 @@ export default function ChatHeader() {
         )}
       </div>
       <div className="flex gap-2">
-        <Button
-          aria-label="Create new chat"
-          className={`group rounded-lg hover:bg-[#00bbff]/20`}
-          size="icon"
-          variant={"ghost"}
-          onClick={() => {
-            router.push("/c");
-            clearMessages();
-          }}
-        >
-          <ChatBubbleAddIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
-        </Button>
+        <Link href={"/c"}>
+          <Button
+            aria-label="Create new chat"
+            className={`group rounded-lg hover:bg-[#00bbff]/20`}
+            size="icon"
+            variant={"ghost"}
+          >
+            <ChatBubbleAddIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
+          </Button>
+        </Link>
         <NotificationCenter />
       </div>
     </div>

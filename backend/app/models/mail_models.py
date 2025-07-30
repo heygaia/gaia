@@ -187,3 +187,37 @@ class EmailComprehensiveAnalysis(BaseModel):
     semantic_labels: List[str] = Field(
         description="List of semantic labels that categorize the email content and context"
     )
+
+
+class EmailComposeRequest(BaseModel):
+    """Model for email composition requests."""
+
+    body: str = Field(
+        ...,
+        min_length=1,
+        max_length=10000,
+        description="Body content of the email",
+    )
+    subject: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Subject line for the email",
+    )
+    to: List[str] = Field(
+        ...,
+        description="List of recipient email addresses",
+    )
+
+    @model_validator(mode="after")
+    def validate_emails(self) -> "EmailComposeRequest":
+        """Validate that all email addresses are valid."""
+        import re
+
+        email_pattern = r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$"
+
+        for email in self.to:
+            if not re.match(email_pattern, email.strip()):
+                raise ValueError(f"Invalid email address: {email}")
+
+        return self

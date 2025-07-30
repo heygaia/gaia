@@ -11,12 +11,17 @@ repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
     hooks:
-      - id: trailing-whitespace # Removes trailing whitespace on all lines
-      - id: check-yaml # Validates that YAML files are correctly formatted
-      - id: check-merge-conflict # Prevents committing unresolved merge conflicts
-      - id: check-added-large-files # Blocks large files from being added to commits (defaults to 500KB)
+      - id: trailing-whitespace
+        files: ^backend/ # Only run on backend/
+      - id: check-yaml
+        files: ^backend/
+      - id: check-merge-conflict
+        files: ^backend/
+      - id: check-added-large-files
+        files: ^backend/
         exclude: ^mcp\.txt$
-      - id: check-ast # Checks that Python files are syntactically correct (AST parseable)
+      - id: check-ast
+        files: ^backend/
 
   - repo: https://github.com/PyCQA/bandit
     rev: 1.8.3

@@ -18,7 +18,7 @@ from app.config.rate_limits import (
 )
 from app.services.payments.subscriptions import get_user_subscription_status
 from app.models.payment_models import PlanType
-from app.middleware.tiered_rate_limiter import tiered_limiter
+from app.decorators.rate_limiting import tiered_limiter
 
 
 router = APIRouter(prefix="/usage", tags=["usage"])

@@ -43,7 +43,7 @@ export default function RightSide({
         <Button
           isIconOnly
           aria-label="Send message"
-          className={`${isLoading && "cursor-wait"}`}
+          className={`${isLoading && "cursor-wait"} h-9 min-h-9 w-9 max-w-9 min-w-9`}
           color={hasText || hasSelectedTool ? "primary" : "default"}
           disabled={isDisabled}
           isLoading={isLoading}

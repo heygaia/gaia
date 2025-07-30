@@ -1,11 +1,10 @@
 import { Tooltip } from "@heroui/tooltip";
-import { Check } from "lucide-react";
+import { Check, WrenchIcon } from "lucide-react";
 import React from "react";
 
 import {
   AttachmentIcon,
   PlusSignIcon,
-  ToolsIcon,
 } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import {
@@ -20,8 +19,6 @@ import { SearchMode } from "@/types/shared";
 
 interface SearchbarLeftDropdownProps {
   selectedMode: Set<SearchMode>;
-  openPageFetchModal: () => void;
-  openGenerateImageModal: () => void;
   openFileUploadModal: () => void;
   handleSelectionChange: (mode: SearchMode) => void;
   onOpenSlashCommandDropdown?: () => void;
@@ -40,8 +37,6 @@ interface DropdownItemConfig {
 
 export default function ComposerLeft({
   selectedMode,
-  openPageFetchModal: _openPageFetchModal,
-  openGenerateImageModal: _openGenerateImageModal,
   openFileUploadModal,
   handleSelectionChange,
   onOpenSlashCommandDropdown,
@@ -111,7 +106,7 @@ export default function ComposerLeft({
           <Button
             size="icon"
             className={cn(
-              "group relative h-10 w-10 rounded-full border-none bg-zinc-700 p-0 hover:bg-zinc-600/90",
+              "group relative h-9 w-9 rounded-full border-none bg-zinc-700 p-0 hover:bg-zinc-600/90",
               isLoading && "cursor-wait",
             )}
             disabled={isLoading}
@@ -179,7 +174,7 @@ export default function ComposerLeft({
           <Button
             size="icon"
             className={cn(
-              "group relative h-10 w-10 rounded-full border-none bg-zinc-700 p-0 text-zinc-400 hover:bg-zinc-600/90",
+              "group w- relative h-9 rounded-full border-none bg-zinc-700 p-0 text-zinc-400 hover:bg-zinc-600/90",
               isLoading && "cursor-wait",
               isSlashCommandDropdownOpen &&
                 "border-primary/50 bg-primary/20 text-primary",
@@ -187,7 +182,7 @@ export default function ComposerLeft({
             disabled={isLoading}
             onClick={onOpenSlashCommandDropdown}
           >
-            <ToolsIcon
+            <WrenchIcon
               className="min-h-[20px] min-w-[20px]"
               color={undefined}
             />

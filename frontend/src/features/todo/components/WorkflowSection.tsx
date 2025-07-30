@@ -3,7 +3,6 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { todoApi } from "@/features/todo/api/todoApi";
@@ -43,7 +42,6 @@ export default function WorkflowSection({
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
   const router = useRouter();
-  const { clearMessages } = useConversation();
   const sendMessage = useSendMessage(null);
 
   // Poll for workflow completion when generating
@@ -86,7 +84,6 @@ export default function WorkflowSection({
     try {
       // Navigate to new chat
       router.push("/c");
-      clearMessages();
 
       // Create workflow execution message
       const workflowMessage = `I want to execute a workflow for my todo: "${todoTitle}".
@@ -101,7 +98,7 @@ ${workflow.steps
 
 Please execute these steps in order and use the appropriate tools for each step.`;
 
-      await sendMessage(workflowMessage, null);
+      await sendMessage(workflowMessage);
     } catch (error) {
       console.error("Failed to run workflow:", error);
     } finally {

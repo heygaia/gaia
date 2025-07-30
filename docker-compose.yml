@@ -102,8 +102,6 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres # pragma: allowlist secret
       POSTGRES_DB: langgraph
-    ports:
-      - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     restart: on-failure
@@ -123,8 +121,6 @@ services:
     volumes:
       - redis_data:/data
     restart: on-failure
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -138,8 +134,6 @@ services:
     image: mongo:latest
     container_name: mongo
     profiles: ["", "backend-only"]
-    ports:
-      - "27017:27017"
     volumes:
       - mongo_data:/data/db
     restart: on-failure

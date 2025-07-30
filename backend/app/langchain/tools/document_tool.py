@@ -10,8 +10,7 @@ from langgraph.config import get_stream_writer
 
 from app.config.loggers import chat_logger as logger
 from app.docstrings.langchain.tools.document_tool_docs import GENERATE_DOCUMENT
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.services.upload_service import upload_file_to_cloudinary
 
 

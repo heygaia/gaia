@@ -132,6 +132,7 @@ export function useModalForm<T extends Record<string, unknown>>({
     if (Array.isArray(validate)) {
       for (const rule of validate) {
         const error = validateField(rule.field);
+        toast.error(error)
         if (error) {
           newErrors[rule.field] = error;
         }

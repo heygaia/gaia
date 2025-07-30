@@ -213,12 +213,8 @@ export default function GoalPage() {
         updatedIsComplete,
       );
 
-      toast.success(
-        updatedIsComplete ? "Marked as completed!" : "Marked as not completed!",
-      );
     } catch (error) {
       console.error("Error updating node status:", error);
-      toast.error("Could not mark as complete");
 
       // Revert the change if the update fails
       setNodes((prevNodes) =>

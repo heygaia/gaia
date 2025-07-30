@@ -8,21 +8,29 @@ import {
   DropdownTrigger,
 } from "@heroui/dropdown";
 import { Modal, ModalBody, ModalContent, ModalHeader } from "@heroui/modal";
+import { CircleArrowUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
 import { useDispatch } from "react-redux";
 import { toast } from "sonner";
 
 import {
+  Brain02Icon,
+  BubbleChatQuestionIcon,
+  CustomerService01Icon,
+  DiscordIcon,
   Logout02Icon,
   Settings01Icon,
   ThreeDotsMenu,
+  WhatsappIcon,
 } from "@/components/shared/icons";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
+import { ContactSupportModal } from "@/features/support";
 import { clearConversations } from "@/redux/slices/conversationsSlice";
 
 // Only allow these values in our modal state.
@@ -42,6 +50,8 @@ export default function SettingsMenu() {
   const fetchConversations = useFetchConversations();
   const { updateConvoMessages } = useConversation();
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
+  const [supportModalOpen, setSupportModalOpen] = useState(false);
+  const { data: subscriptionStatus } = useUserSubscriptionStatus();
   // either "clear_chats", "logout", or null (closed)
 
   // Confirm logout action.
@@ -49,9 +59,7 @@ export default function SettingsMenu() {
     try {
       await authApi.logout();
       clearUser();
-      toast.success("Successfully logged out!");
     } catch (error) {
-      toast.error("Could not log out. Please try again.");
       console.error("Error during logout:", error);
     } finally {
       setModalAction(null);
@@ -83,11 +91,77 @@ export default function SettingsMenu() {
   };
 
   const items: MenuItem[] = [
+    // Only show Upgrade to Pro if user doesn't have active subscription
+    ...(subscriptionStatus?.is_subscribed
+      ? []
+      : [
+          {
+            key: "upgrade_to_pro",
+            label: (
+              <div className="flex items-center gap-2 text-primary">
+                <CircleArrowUp width={18} height={18} color="#00bbff" />
+                Upgrade to Pro
+              </div>
+            ),
+            action: () => router.push("/pricing"),
+          },
+        ]),
+
+    {
+      key: "contact_support",
+      label: (
+        <div className="flex items-center gap-2">
+          <CustomerService01Icon color={"#9b9b9b"} width={18} />
+          Contact Support
+        </div>
+      ),
+      action: () => setSupportModalOpen(true),
+    },
+    {
+      key: "feature_request",
+      label: (
+        <div className="flex items-center gap-2">
+          <BubbleChatQuestionIcon color={"#9b9b9b"} width={18} />
+          Feature Request
+        </div>
+      ),
+      action: () => setSupportModalOpen(true),
+    },
+    {
+      key: "manage_memories",
+      label: (
+        <div className="flex items-center gap-2">
+          <Brain02Icon color="#9b9b9b" width={18} />
+          Memories
+        </div>
+      ),
+      action: () => router.push("/settings?section=memory"),
+    },
+    {
+      key: "discord",
+      label: (
+        <div className="flex items-center gap-2 text-[#5865F2]">
+          <DiscordIcon color="#5865F2" width={18} />
+          Join our Discord
+        </div>
+      ),
+      action: () => window.open("https://discord.heygaia.io", "_blank"),
+    },
+    {
+      key: "whatsapp",
+      label: (
+        <div className="flex items-center gap-2 text-[#25d366]">
+          <WhatsappIcon color="#25d366" width={18} />
+          WhatsApp Community
+        </div>
+      ),
+      action: () => window.open("https://whatsapp.heygaia.io", "_blank"),
+    },
     {
       key: "settings",
       label: (
-        <div className="flex items-center gap-4">
-          <Settings01Icon color="text-foreground" width={20} />
+        <div className="flex items-center gap-2">
+          <Settings01Icon color="#9b9b9b" width={18} />
           Settings
         </div>
       ),
@@ -96,8 +170,8 @@ export default function SettingsMenu() {
     {
       key: "logout",
       label: (
-        <div className="flex items-center gap-4">
-          <Logout02Icon color={undefined} width={20} />
+        <div className="flex items-center gap-2">
+          <Logout02Icon color={undefined} width={18} />
           Logout
         </div>
       ),
@@ -146,7 +220,7 @@ export default function SettingsMenu() {
         </ModalContent>
       </Modal>
 
-      <Dropdown className="text-foreground dark">
+      <Dropdown className="text-foreground dark" backdrop="blur">
         <DropdownTrigger>
           <Button isIconOnly aria-label="Three Dots Menu" variant="light">
             <ThreeDotsMenu />
@@ -166,6 +240,11 @@ export default function SettingsMenu() {
           ))}
         </DropdownMenu>
       </Dropdown>
+
+      <ContactSupportModal
+        isOpen={supportModalOpen}
+        onOpenChange={() => setSupportModalOpen(false)}
+      />
     </>
   );
 }

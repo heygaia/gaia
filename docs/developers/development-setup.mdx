@@ -1,7 +1,7 @@
 ---
-title: 'Development Setup'
-description: 'How to set up your local development environment for GAIA.'
-icon: 'laptop-code'
+title: "Development Setup"
+description: "How to set up your local development environment for GAIA."
+icon: "laptop-code"
 ---
 
 ## Who This Guide Is For
@@ -10,16 +10,20 @@ This development setup guide is designed for:
 
 <CardGroup cols={2}>
   <Card title="Contributors" icon="git-branch">
-    Developers who want to contribute to the GAIA project by fixing bugs, adding features, or improving documentation
+    Developers who want to contribute to the GAIA project by fixing bugs, adding
+    features, or improving documentation
   </Card>
   <Card title="Customizers" icon="wrench">
-    Developers who want to modify GAIA for their specific use cases or integrate it with custom systems
+    Developers who want to modify GAIA for their specific use cases or integrate
+    it with custom systems
   </Card>
   <Card title="Open Source Enthusiasts" icon="heart">
-    Developers who want to learn from the codebase, understand the architecture, or build upon GAIA
+    Developers who want to learn from the codebase, understand the architecture,
+    or build upon GAIA
   </Card>
   <Card title="Enterprise Teams" icon="building">
-    Development teams who need to customize GAIA for enterprise deployment and integration
+    Development teams who need to customize GAIA for enterprise deployment and
+    integration
   </Card>
 </CardGroup>
 
@@ -35,13 +39,13 @@ Before you begin, ensure you have the following installed:
     - 10GB of free disk space
   </Accordion>
 
-  <Accordion icon="code" title="Development Tools">
-    - Git (for version control)
-    - Python 3.11+ (for backend development)
-    - Node.js 18+ (for frontend development)
-    - pnpm (for frontend package management)
-    - uv (for Python package management)
-  </Accordion>
+{" "}
+
+<Accordion icon="code" title="Development Tools">
+  - Git (for version control) - Python 3.11+ (for backend development) - Node.js
+  18+ (for frontend development) - pnpm (for frontend package management) - uv
+  (for Python package management)
+</Accordion>
 
   <Accordion icon="terminal" title="System Requirements">
     - macOS, Linux, or Windows with WSL2
@@ -76,13 +80,31 @@ We provide a script that automates the entire setup process. This is the recomme
     ```
 
     This script will:
+    - Copy environment configuration files from examples (`.env.example` → `.env`).
     - Start the required services with Docker Compose.
     - Create a Python virtual environment.
     - Install backend dependencies with `uv`.
     - Install frontend dependencies with `pnpm`.
+
+  </Step>
+  <Step title="Configure Environment Variables">
+    After the script completes, you'll need to configure your environment variables:
+
+    <Note>
+      The script creates `.env` files from examples, but you need to add your API keys and secrets.
+    </Note>
+
+    Edit the created configuration files:
+    - `backend/.env` - Add your API keys (OpenAI, Google OAuth, etc.)
+    - `frontend/.env` - Configure API URLs and tokens
+
+    For detailed configuration instructions, see:
+    - [Environment Variables Reference](/configuration/environment-variables)
+    - [Infisical Setup Guide](/configuration/infisical-setup) (recommended for production)
+
   </Step>
   <Step title="You're Ready!">
-    Once the script finishes, your development environment is ready to go!
+    Once you've configured your environment variables, your development environment is ready to go!
   </Step>
 </Steps>
 
@@ -102,11 +124,13 @@ Before you start the services, you need to configure your environment variables.
     cp backend/.env.example backend/.env
     cp frontend/.env.example frontend/.env
     ```
+
   </Step>
   <Step title="Fill in Your Secrets">
     Edit the newly created `.env` files and fill in your API keys and other secrets.
 
     For a detailed explanation of all the available environment variables, see the [Environment Variables Reference](/configuration/environment-variables).
+
   </Step>
 </Steps>
 
@@ -131,6 +155,7 @@ Before you start the services, you need to configure your environment variables.
 
       Running the frontend in Docker can introduce slight latency and slower hot reloading. For the best development experience, we recommend using the `backend-only` profile and running the frontend manually with `pnpm dev` (see Frontend Setup below).
     </Note>
+
   </Step>
   <Step title="Create Virtual Environment">
     Create and activate a Python virtual environment:
@@ -139,13 +164,15 @@ Before you start the services, you need to configure your environment variables.
     python3 -m venv .venv
     source .venv/bin/activate
     ```
+
   </Step>
   <Step title="Install Backend Dependencies">
     We use `uv` for fast dependency management. Install the required packages:
 
     ```bash
-    uv pip install -r backend/requirements.txt
+    uv sync
     ```
+
   </Step>
 </Steps>
 
@@ -163,6 +190,7 @@ Before you start the services, you need to configure your environment variables.
     ```bash
     pnpm install
     ```
+
   </Step>
   <Step title="Start Development Server (Recommended)">
     For the best development experience with fast hot reloading, run the frontend manually:
@@ -176,6 +204,7 @@ Before you start the services, you need to configure your environment variables.
     <Tip>
       **Performance Tip:** Running the frontend outside Docker provides faster hot reloading and better performance during development. The frontend will automatically connect to the backend services running in Docker.
     </Tip>
+
   </Step>
   <Step title="Return to Root Directory">
     ```bash
@@ -207,6 +236,7 @@ After completing the setup, here's how to start your development environment:
     - **rabbitmq** - Message queue (port 5672, management UI on 15672)
     - **arq_worker** - Background task worker
     - **worker** - Scheduler worker
+
   </Step>
 
   <Step title="Start Frontend Development Server">
@@ -218,6 +248,7 @@ After completing the setup, here's how to start your development environment:
     ```
 
     The frontend will be available at `http://localhost:3000` with optimized hot reloading.
+
   </Step>
 
   <Step title="Verify Setup">
@@ -238,7 +269,9 @@ docker compose up -d
 ```
 
 <Warning>
-  **Performance Note:** This approach may result in slower hot reloading for frontend development compared to running the frontend manually with `pnpm dev`.
+  **Performance Note:** This approach may result in slower hot reloading for
+  frontend development compared to running the frontend manually with `pnpm
+  dev`.
 </Warning>
 
 ### Stopping Services

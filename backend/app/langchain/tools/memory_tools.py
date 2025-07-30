@@ -15,7 +15,7 @@ from app.docstrings.langchain.tools.memory_tool_docs import (
     SEARCH_MEMORY,
     GET_ALL_MEMORY,
 )
-from app.docstrings.utils import with_doc
+from app.decorators import with_doc
 from app.services.memory_service import memory_service
 
 

@@ -1,5 +1,4 @@
 import { Chip } from "@heroui/chip";
-import { ArrowUpRight, GlobeIcon } from "lucide-react";
 import Link from "next/link";
 import React from "react";
 
@@ -18,8 +17,6 @@ interface SearchMessageResult {
     message_id: string;
     type: "bot" | "user";
     date: string;
-    searchWeb?: boolean;
-    pageFetchURL?: string;
   };
   snippet: string;
 }
@@ -67,26 +64,6 @@ const messageConfig: SearchCardConfig<SearchMessageResult> = {
         >
           {result.message.type === "bot" ? "From GAIA" : "From You"}
         </Chip>
-        {result.message.searchWeb && (
-          <Chip
-            color="primary"
-            size="sm"
-            startContent={<GlobeIcon color="#00bbff" height={20} />}
-            variant="flat"
-          >
-            Live Search Results from the Web
-          </Chip>
-        )}
-        {!!result.message.pageFetchURL && (
-          <Chip
-            color="primary"
-            size="sm"
-            startContent={<ArrowUpRight color="#00bbff" height={20} />}
-            variant="flat"
-          >
-            Fetched Webpage
-          </Chip>
-        )}
       </div>
       <CommandItem className="w-full cursor-pointer truncate px-0! py-1! data-[selected='true']:bg-transparent!">
         {result.snippet}

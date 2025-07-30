@@ -121,6 +121,7 @@ async def cleanup_expired_reminders(ctx: dict) -> str:
 async def check_inactive_users(ctx: dict) -> str:
     """
     Check for inactive users and send emails to those inactive for more than 7 days.
+    Emails are sent only once after 7 days and once more after 14 days to avoid spam.
 
     Args:
         ctx: ARQ context
@@ -134,24 +135,34 @@ async def check_inactive_users(ctx: dict) -> str:
     logger.info("Checking for inactive users")
 
     try:
-        # Find users inactive for more than 7 days
-        seven_days_ago = datetime.now(timezone.utc) - timedelta(days=7)
+        now = datetime.now(timezone.utc)
+        seven_days_ago = now - timedelta(days=7)
 
+        # Find users inactive for 7+ days who haven't gotten email recently
         inactive_users = await users_collection.find(
             {
                 "last_active_at": {"$lt": seven_days_ago},
-                "is_active": {"$ne": False},  # Only active users
+                "is_active": {"$ne": False},
+                "$or": [
+                    {"last_inactive_email_sent": {"$exists": False}},
+                    {"last_inactive_email_sent": {"$lt": seven_days_ago}},
+                ],
             }
         ).to_list(length=None)
 
         email_count = 0
         for user in inactive_users:
             try:
-                await send_inactive_user_email(
-                    user_email=user["email"], user_name=user.get("name")
+                sent = await send_inactive_user_email(
+                    user_email=user["email"],
+                    user_name=user.get("name"),
+                    user_id=str(user["_id"]),
                 )
-                email_count += 1
-                logger.info(f"Sent inactive user email to {user['email']}")
+
+                if sent:
+                    email_count += 1
+                    logger.info(f"Sent inactive email to {user['email']}")
+
             except Exception as e:
                 logger.error(f"Failed to send email to {user['email']}: {str(e)}")
 

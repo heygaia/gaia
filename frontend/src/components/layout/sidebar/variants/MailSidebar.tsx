@@ -59,13 +59,13 @@ export default function EmailSidebar() {
   return (
     <>
       <div className="flex h-full flex-col gap-1">
-        <div className="w-full">
+        <div className="flex w-full justify-center">
           <Button
             color="primary"
             size="sm"
-            className="flex w-full justify-start text-sm text-primary"
-            variant="flat"
+            className="mx-2 mb-4 flex w-full justify-start text-sm font-medium text-primary"
             onPress={() => setOpen(true)}
+            variant="flat"
           >
             <QuillWrite01Icon color={undefined} width={18} height={18} />
             Compose Email

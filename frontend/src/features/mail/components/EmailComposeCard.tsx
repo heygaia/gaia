@@ -2,11 +2,13 @@ import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Input, Textarea } from "@heroui/input";
 import { Modal, ModalBody, ModalContent } from "@heroui/modal";
-import { Edit, Plus, Send, User, X } from "lucide-react";
+import { ScrollShadow } from "@heroui/react";
+import { Plus, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { z } from "zod";
 
+import { Gmail, PencilEdit01Icon, Separator } from "@/components";
 import { mailApi } from "@/features/mail/api/mailApi";
 
 // Email validation schema
@@ -238,24 +240,28 @@ export default function EmailComposeCard({
   const [editData, setEditData] = useState<EmailData>(emailData);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
-  // Suggestions come from emailData.to - these are the initial suggestions
+  // Suggestions come from emailData.to - these are resolved email addresses from the agent
   const [suggestions, setSuggestions] = useState<string[]>(emailData.to || []);
 
-  // Selected emails state - starts empty, user must select
-  const [selectedEmails, setSelectedEmails] = useState<string[]>([]);
+  // Selected emails state - starts with emails from emailData (resolved by agent)
+  const [selectedEmails, setSelectedEmails] = useState<string[]>(
+    emailData.to || [],
+  );
 
   // Custom email input state
   const [customEmailInput, setCustomEmailInput] = useState("");
   const [customEmailError, setCustomEmailError] = useState("");
 
-  // search/filter state
-  const [_searchTerm, _setSearchTerm] = useState("");
-
   // Initialize with empty emails array - user must select recipients
+  // If there's only one email, select it by default
   useEffect(() => {
+    const suggestions = emailData.to || [];
     setEditData((prev) => ({ ...prev, to: [] }));
-    setSelectedEmails([]);
-    setSuggestions(emailData.to || []);
+    setSuggestions(suggestions);
+
+    // If there's exactly one email suggestion, select it by default
+    if (suggestions.length === 1) setSelectedEmails([suggestions[0]]);
+    else setSelectedEmails([]);
   }, [emailData.to]);
 
   const validateForm = () => {
@@ -315,8 +321,6 @@ export default function EmailComposeCard({
       formData.append("body", editData.body);
 
       await mailApi.sendEmail(formData);
-
-      toast.success("Email sent successfully!");
       onSent?.();
     } catch (error) {
       console.error("Failed to send email:", error);
@@ -379,14 +383,13 @@ export default function EmailComposeCard({
     toast.success(`Added ${trimmedEmail}`);
   };
 
-  const handleRemoveSelectedEmail = (email: string) => {
-    setSelectedEmails((prev) => prev.filter((e) => e !== email));
-  };
+  // const handleRemoveSelectedEmail = (email: string) => {
+  //   setSelectedEmails((prev) => prev.filter((e) => e !== email));
+  // };
 
   const handleConfirmRecipients = () => {
     setEditData((prev) => ({ ...prev, to: selectedEmails }));
     setIsRecipientModalOpen(false);
-    toast.success(`Selected ${selectedEmails.length} recipient(s)`);
   };
 
   // Filter suggestions based on search term - commented out as not used
@@ -396,97 +399,82 @@ export default function EmailComposeCard({
 
   return (
     <>
-      {/* Main Email Card */}
-      <div className="mx-auto w-full max-w-md overflow-hidden rounded-3xl bg-zinc-800 shadow-lg backdrop-blur-sm">
-        <div className="absolute top-2 right-2 flex gap-1">
-          <Button isIconOnly variant="light" onPress={handleEditClick}>
-            <Edit className="h-5 w-5" />
-          </Button>
-        </div>
-
-        {/* Content */}
-        <div className="space-y-3 p-4">
-          {/* Recipients Section */}
-          <div className="flex items-start gap-2">
-            <div className="flex-1">
-              <div className="flex flex-col gap-2">
-                {/* Select Recipients Button */}
-                <Button
-                  size="sm"
-                  color="primary"
-                  onPress={() => setIsRecipientModalOpen(true)}
-                  className="h-8 w-fit rounded-full px-3 py-1 text-xs font-normal"
-                  startContent={<User className="h-3 w-3" />}
-                >
-                  {selectedEmails.length === 0
-                    ? "Select Recipients"
-                    : `${selectedEmails.length} Selected`}
-                </Button>
-
-                {/* Selected Email Chips */}
-                {selectedEmails.length > 0 && (
-                  <div className="flex flex-wrap gap-1">
-                    {selectedEmails.slice(0, 3).map((email) => (
-                      <Chip
-                        key={email}
-                        size="sm"
-                        variant="flat"
-                        color="primary"
-                        className="text-xs"
-                        endContent={
-                          <button
-                            onClick={() => handleRemoveSelectedEmail(email)}
-                            className="ml-1 rounded-full p-0.5 hover:bg-primary-200"
-                          >
-                            <X className="h-3 w-3" />
-                          </button>
-                        }
-                      >
-                        {email}
-                      </Chip>
-                    ))}
-                    {selectedEmails.length > 3 && (
-                      <Chip size="sm" variant="flat" className="text-xs">
-                        +{selectedEmails.length - 3} more
-                      </Chip>
-                    )}
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-
-          <div className="relative rounded-r-xl bg-zinc-900 p-3 pl-5">
-            <div className="absolute top-0 left-0 h-full min-w-1 rounded-full bg-primary" />
-            <div className="mb-0.5 text-xs font-bold text-gray-500">
-              Subject
-            </div>
-            <div className="text-sm text-gray-200">{editData.subject}</div>
-          </div>
-
-          <div className="relative rounded-r-xl bg-zinc-900 p-3 pl-5">
-            <div className="absolute top-0 left-0 h-full min-w-1 rounded-full bg-primary" />
-            <div className="mb-0.5 text-xs font-bold text-gray-500">Body</div>
-            <div className="max-h-24 overflow-y-auto text-sm leading-relaxed text-gray-200">
-              {editData.body}
-            </div>
+      {/* Main Email Card - Redesigned UI */}
+      <div className="w-full max-w-xl overflow-hidden rounded-3xl bg-zinc-800">
+        {/* Header with status chip */}
+        <div className="flex items-center justify-between px-6 py-1">
+          <div className="flex flex-row items-center gap-2 pt-3 pb-2">
+            <Gmail width={18} height={18} />
+            <span className="text-sm font-medium">Email Draft</span>
           </div>
         </div>
+        <div className="flex flex-col gap-1 px-6">
+          <div className="flex items-center gap-2 text-sm text-zinc-400">
+            <span>To:</span>
+            <span className="flex w-full items-center justify-between font-medium text-zinc-200">
+              {selectedEmails.join(", ") || ""}
+              <Button
+                size="sm"
+                onPress={() => setIsRecipientModalOpen(true)}
+                variant={selectedEmails.length === 0 ? "flat" : "light"}
+                isIconOnly={selectedEmails.length === 0 ? false : true}
+                endContent={
+                  selectedEmails.length === 0 ? (
+                    ""
+                  ) : (
+                    <PencilEdit01Icon className="h-5 w-5 text-zinc-500" />
+                  )
+                }
+              >
+                {selectedEmails.length === 0 ? "Add Recipients" : ``}
+              </Button>
+            </span>
+          </div>
+          <Separator className="my-1.5 bg-zinc-700" />
+          <div className="flex w-full items-center justify-between text-sm text-gray-400">
+            <div className="flex items-center gap-2">
+              <span>Subject:</span>
+              <span className="font-medium text-gray-200">
+                {editData.subject}
+              </span>
+            </div>
 
-        <div className="px-4 pb-4">
-          <div className="flex justify-end">
             <Button
-              color="primary"
-              onPress={handleSend}
-              isLoading={isSending}
-              isDisabled={selectedEmails.length === 0}
-              startContent={
-                isSending ? undefined : <Send className="h-3.5 w-3.5" />
-              }
+              variant="light"
+              size="sm"
+              isIconOnly
+              onPress={handleEditClick}
             >
-              {isSending ? "Sending..." : "Send"}
+              <PencilEdit01Icon className="h-5 w-5 text-zinc-500" />
             </Button>
           </div>
+          <Separator className="my-1.5 bg-zinc-700" />
+
+          <ScrollShadow className="relative z-[1] max-h-46 overflow-y-auto text-sm leading-relaxed whitespace-pre-line text-zinc-200">
+            <div className="absolute top-0 right-0 z-[2] flex w-full justify-end">
+              <Button
+                variant="light"
+                size="sm"
+                isIconOnly
+                onPress={handleEditClick}
+              >
+                <PencilEdit01Icon className="h-5 w-5 text-zinc-500" />
+              </Button>
+            </div>
+            {editData.body}
+          </ScrollShadow>
+        </div>
+        <div className="flex justify-end px-6 pb-5">
+          <Button
+            color="primary"
+            onPress={handleSend}
+            isLoading={isSending}
+            isDisabled={selectedEmails.length === 0}
+            radius="full"
+            className="font-medium"
+          >
+            {isSending ? "Sending..." : "Send"}
+          </Button>
         </div>
       </div>
 

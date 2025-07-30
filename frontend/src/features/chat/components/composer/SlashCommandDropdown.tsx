@@ -106,7 +106,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
           }}
           className="slash-command-dropdown fixed z-[100] overflow-hidden rounded-2xl border-1 border-zinc-700 bg-zinc-900/60 shadow-2xl backdrop-blur-2xl"
           style={{
-            bottom: "125px",
+            bottom: "117px",
             left: position.left,
             width: position.width,
             boxShadow: "0px -18px 30px 5px rgba(0, 0, 0, 0.5)",

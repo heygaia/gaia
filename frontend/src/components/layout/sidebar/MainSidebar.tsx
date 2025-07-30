@@ -1,17 +1,18 @@
 "use client";
 
+import { Button } from "@heroui/button";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
 
 import ChatsList from "@/components/layout/sidebar/ChatsList";
 import CalendarSidebar from "@/components/layout/sidebar/variants/CalendarSidebar";
 import EmailSidebar from "@/components/layout/sidebar/variants/MailSidebar";
 import SettingsSidebar from "@/components/layout/sidebar/variants/SettingsSidebar";
 import TodoSidebar from "@/components/layout/sidebar/variants/TodoSidebar";
-import ComingSoonModal from "@/features/coming-soon/components/ComingSoonModal";
+import { PlusSignIcon } from "@/components/shared/icons";
 
 export default function Sidebar() {
-  const [open, setOpen] = useState<boolean>(false);
+  // const [open, setOpen] = useState<boolean>(false);
   const pathname = usePathname();
 
   // Determine which sidebar to show based on the current route
@@ -23,8 +24,22 @@ export default function Sidebar() {
   // Default to chat sidebar
   return (
     <div>
+      <div className="flex w-full justify-center">
+        <Button
+          color="primary"
+          size="sm"
+          fullWidth
+          as={Link}
+          href="/c"
+          className="mb-4 flex justify-start text-sm font-medium text-primary"
+          variant="flat"
+        >
+          <PlusSignIcon color={undefined} width={18} height={18} />
+          New Chat
+        </Button>
+      </div>
       <ChatsList />
-      <ComingSoonModal isOpen={open} setOpen={setOpen} />
+      {/* <ComingSoonModal isOpen={open} setOpen={setOpen} /> */}
     </div>
   );
 }

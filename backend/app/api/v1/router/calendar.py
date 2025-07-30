@@ -2,7 +2,7 @@ from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.calendar_models import (
     EventCreateRequest,
     EventDeleteRequest,
@@ -13,16 +13,16 @@ from app.services.calendar_service import (
     delete_calendar_event,
     update_calendar_event,
 )
-from app.api.v1.dependencies.oauth_dependencies import (
-    get_current_user,
-)
+from app.api.v1.dependencies.google_scope_dependencies import require_google_integration
 from app.services import calendar_service
 
 router = APIRouter()
 
 
 @router.get("/calendar/list", summary="Get Calendar List")
-async def get_calendar_list(current_user: dict = Depends(get_current_user)):
+async def get_calendar_list(
+    current_user: dict = Depends(require_google_integration("calendar")),
+):
     """
     Retrieve the list of calendars for the authenticated user.
 
@@ -45,7 +45,7 @@ async def get_events(
     selected_calendars: Optional[List[str]] = Query(None),
     time_min: Optional[str] = None,
     time_max: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Retrieve events from the user's selected calendars. If no calendars are provided,
@@ -78,7 +78,7 @@ async def get_events_by_calendar(
     time_min: Optional[str] = None,
     time_max: Optional[str] = None,
     page_token: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Fetch events for a specific calendar identified by its ID.
@@ -112,7 +112,7 @@ async def get_events_by_calendar(
 @tiered_rate_limit("calendar_management")
 async def create_event(
     event: EventCreateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Create a new calendar event. This endpoint accepts non-canonical timezone names
@@ -139,7 +139,7 @@ async def create_event(
 async def get_all_events(
     time_min: Optional[str] = None,
     time_max: Optional[str] = None,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Retrieve events from every calendar associated with the user concurrently.
@@ -159,7 +159,9 @@ async def get_all_events(
 
 
 @router.get("/calendar/preferences", summary="Get User Calendar Preferences")
-async def get_calendar_preferences(current_user: dict = Depends(get_current_user)):
+async def get_calendar_preferences(
+    current_user: dict = Depends(require_google_integration("calendar")),
+):
     """
     Retrieve the user's selected calendar preferences from the database.
 
@@ -183,7 +185,7 @@ async def get_calendar_preferences(current_user: dict = Depends(get_current_user
 @tiered_rate_limit("calendar_management")
 async def update_calendar_preferences(
     preferences: CalendarPreferencesUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Update the user's selected calendar preferences in the database.
@@ -209,7 +211,7 @@ async def update_calendar_preferences(
 @tiered_rate_limit("calendar_management")
 async def delete_event(
     event: EventDeleteRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Delete a calendar event. This endpoint requires the event ID and optionally the calendar ID.
@@ -233,7 +235,7 @@ async def delete_event(
 @tiered_rate_limit("calendar_management")
 async def update_event(
     event: EventUpdateRequest,
-    current_user: dict = Depends(get_current_user),
+    current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
     Update a calendar event. This endpoint allows partial updates of event fields.

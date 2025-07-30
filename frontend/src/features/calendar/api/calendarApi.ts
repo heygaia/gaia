@@ -76,9 +76,6 @@ export const calendarApi = {
   fetchCalendars: async (): Promise<CalendarItem[]> => {
     const response = await apiService.get<{ items: GoogleCalendar[] }>(
       "/calendar/list",
-      {
-        errorMessage: "Failed to fetch calendars",
-      },
     );
 
     // Map Google Calendar API response to our Calendar type

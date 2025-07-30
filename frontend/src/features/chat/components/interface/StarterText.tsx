@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
 import { useUser } from "@/features/auth/hooks/useUser";
-import { getCompleteTimeBasedGreeting } from "@/utils/greeting/greetingUtils";
+import { getCompleteTimeBasedGreeting } from "@/utils/greetingUtils";
 
 // import {
 //   BlushBrush02Icon,

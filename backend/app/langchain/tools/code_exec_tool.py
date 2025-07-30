@@ -10,8 +10,7 @@ from e2b_code_interpreter import Sandbox
 from app.config.loggers import chat_logger as logger
 from app.config.settings import settings
 from app.docstrings.langchain.tools.code_exec_docs import CODE_EXECUTION_TOOL
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.utils.chart_utils import process_chart_results, validate_chart_data
 
 

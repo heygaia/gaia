@@ -1,4 +1,3 @@
-import logging
 import time
 from datetime import datetime
 from datetime import timezone as tz
@@ -11,8 +10,7 @@ from fastapi import Cookie, Header, HTTPException
 from app.config.settings import settings
 from app.db.mongodb.collections import users_collection
 from app.db.redis import get_cache, set_cache
-
-logger = logging.getLogger(__name__)
+from app.config.loggers import auth_logger as logger
 
 http_async_client = httpx.AsyncClient()
 

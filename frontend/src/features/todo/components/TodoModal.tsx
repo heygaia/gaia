@@ -105,10 +105,6 @@ export default function TodoModal({
         onOpenChange(false);
         onSuccess?.();
       },
-      successMessage:
-        mode === "edit"
-          ? "Task updated successfully"
-          : "Task created successfully",
       resetOnSuccess: mode === "add",
     });
 

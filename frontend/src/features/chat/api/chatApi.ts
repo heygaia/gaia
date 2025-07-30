@@ -169,9 +169,6 @@ export const chatApi = {
   // Fetch chat stream
   fetchChatStream: async (
     inputText: string,
-    enableSearch: boolean,
-    enableDeepSearch: boolean,
-    pageFetchURLs: string[],
     convoMessages: MessageType[],
     conversationId: string | null,
     onMessage: (event: EventSourceMessage) => void,
@@ -200,9 +197,6 @@ export const chatApi = {
         body: JSON.stringify({
           conversation_id: conversationId,
           message: inputText,
-          search_web: enableSearch || false,
-          deep_research: enableDeepSearch || false,
-          pageFetchURLs,
           fileIds, // For backward compatibility
           fileData, // Send complete file data
           selectedTool, // Add selectedTool to the request body

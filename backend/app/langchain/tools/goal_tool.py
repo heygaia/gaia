@@ -19,8 +19,7 @@ from app.docstrings.langchain.tools.goal_tool_docs import (
     SEARCH_GOALS,
     UPDATE_GOAL_NODE,
 )
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.models.goals_models import GoalCreate, UpdateNodeRequest
 from app.services.goals_service import (
     delete_goal_service,

@@ -21,10 +21,11 @@ LIST_GMAIL_LABELS = """
 
 
 LIST_GMAIL_MESSAGES = """
-    List Gmail messages in the user's inbox.
+    List Gmail messages in the user's inbox with comprehensive analysis.
 
     This tool fetches messages from the Gmail inbox with details like sender,
-    subject, snippet, and timestamp.
+    subject, snippet, and timestamp. When analyzing retrieved emails, provide
+    a structured analysis covering key business aspects.
 
     When to use:
     - When user wants to check their recent emails
@@ -32,12 +33,41 @@ LIST_GMAIL_MESSAGES = """
     - When you need email IDs for other operations (like marking as read)
     - When user asks about their inbox contents
 
+    Analysis Framework:
+    When fetching and analyzing inbox messages, always include:
+
+    ✓ Urgent Action Required:
+    - Identify any time-sensitive items that need immediate attention
+    - Flag deadlines, urgent requests, or critical decisions needed
+    - Highlight any escalations or priority communications
+
+    ✓ Key Issues Identified:
+    - Extract main problems, concerns, or challenges discussed
+    - Identify blockers, conflicts, or unresolved matters
+    - Note any recurring issues or patterns across emails
+
+    ✓ Required Actions:
+    - List specific tasks, deliverables, or next steps mentioned
+    - Identify who is responsible for each action item
+    - Extract any commitments, agreements, or promises made
+
+    ✓ Timeline:
+    - Extract all dates, deadlines, and time-sensitive milestones
+    - Identify project phases, meeting schedules, or delivery dates
+    - Note any timeline changes or delays discussed
+
+    ✓ Current Status:
+    - Summarize the current state of projects or discussions
+    - Identify what has been completed vs. what remains pending
+    - Note any status updates, progress reports, or milestone achievements
+
     Input:
     - max_results: Optional, number of messages to return (default: 20)
     - page_token: Optional, for pagination through large inboxes
 
     Output:
     - Dictionary with "messages" containing email details
+    - Structured analysis covering the five key areas above
     - nextPageToken for pagination if more results exist
     - Error message if operation fails
 
@@ -79,29 +109,75 @@ SEARCH_GMAIL_MESSAGES = """
     """
 
 COMPOSE_EMAIL = """
-    Compose, write, or draft an email message based on the user's request.
+    Compose, write, or draft multiple email messages based on the user's request.
 
-    This tool helps create emails of any type - from simple personal messages to detailed professional communications.
+    This tool helps create one or more emails of any type - from simple personal messages to detailed professional communications.
+
+    IMPORTANT WORKFLOW:
+    1. First, call get_mail_contacts to find recipient email addresses if user provides names/queries
+    2. Then use this tool with ALL the resolved email addresses from get_mail_contacts
+
+    CRITICAL: Always include ALL email addresses returned by get_mail_contacts in the 'to' field:
+    - If get_mail_contacts returns 1 contact → include that 1 email address
+    - If get_mail_contacts returns multiple contacts → include ALL email addresses
+    This ensures the user can see all matching contacts and choose which one(s) to send to from the frontend interface.
 
     When to use:
-    - User wants to compose, write, send, or draft any email
+    - User wants to compose, write, send, or draft any email(s)
     - User mentions writing to someone via email
     - User asks to email someone (e.g., "email John", "send an email to Sarah")
     - User provides email content or instructions (e.g., "tell her I love her", "ask about the meeting")
     - User needs help with any email-related task
+    - User wants to send similar emails to multiple recipients
 
     The tool will:
     - Create appropriate email content based on the context
     - Handle both brief personal messages and detailed professional emails
-    - Automatically resolve recipient names to email addresses when possible
     - Adapt tone and style to match the user's intent
+    - Support composing multiple emails at once
+    - Validate email addresses
 
     Input requirements:
-    - Body content or instructions for what to write
-    - Subject line or topic
-    - Optional: recipient name or query to search for their email
+    - emails: Array of EmailComposeRequest objects, each containing:
+      - body: Email content or instructions for what to write (required, 1-10000 chars)
+      - subject: Subject line or topic (required, 1-200 chars)
+      - to: List of recipient email addresses (required, must be valid email addresses)
 
-    Note: The tool can handle any email request, from "email mom happy birthday" to complex business proposals.
+    Example workflow with multiple contacts:
+    1. User says: "Email John about the meeting"
+    2. Call get_mail_contacts("John") returns: [
+           {"name": "John Smith", "email": "john.smith@company.com"},
+           {"name": "John Doe", "email": "john.doe@startup.com"}
+       ]
+    3. Call compose_email with ALL found emails:
+       [
+           EmailComposeRequest(
+               body="Meeting scheduled for tomorrow at 2 PM.",
+               subject="Tomorrow's Meeting",
+               to=["john.smith@company.com", "john.doe@startup.com"]  # Include ALL contacts
+           )
+       ]
+    4. Frontend will show both contacts, allowing user to select which John(s) to email
+
+    Example input structure:
+    [
+        EmailComposeRequest(
+            body="Happy birthday! Hope you have a great day.",
+            subject="Happy Birthday!",
+            to=["mom@example.com"]
+        ),
+        EmailComposeRequest(
+            body="Meeting scheduled for tomorrow at 2 PM.",
+            subject="Tomorrow's Meeting",
+            to=["john.doe@company.com", "sarah@company.com"]
+        )
+    ]
+
+    Important: Always call this tool only ONCE per request, even when composing multiple emails.
+    The tool is designed to handle multiple emails in a single call through the emails array parameter.
+    Do not make separate tool calls for each email - batch them all together.
+
+    Note: The tool expects valid email addresses. Use get_mail_contacts first if you need to resolve names to emails.
     """
 
 STAR_EMAILS = """
@@ -171,10 +247,11 @@ ARCHIVE_EMAILS = """
     """
 
 GET_EMAIL_THREAD = """
-    Get complete email thread.
+    Get complete email thread with comprehensive analysis.
 
     This tool fetches all messages in a specified Gmail thread, showing the complete
-    conversation history in chronological order.
+    conversation history in chronological order. When analyzing email threads,
+    provide a structured analysis covering key business aspects.
 
     When to use:
     - When user wants to see an entire email conversation
@@ -183,11 +260,19 @@ GET_EMAIL_THREAD = """
     - When user asks about previous messages in a thread
     - When summarizing multi-message conversations
 
+    IMPORTANT - Getting Thread IDs:
+    - DO NOT use dummy or placeholder thread IDs
+    - First use the `fetch_gmail_messages` or `search_gmail_messages` tool to get actual thread IDs
+    - Each email message contains a thread_id field - use that exact value
+    - Only call this tool with real thread IDs obtained from those email listing tools
+    - If you already have a specific thread ID from a previous tool call, use that directly
+
     Input:
     - thread_id: Required, the Gmail thread ID to fetch
 
     Output:
     - Dictionary with thread_id and messages array containing all emails
+    - Structured analysis covering the five key areas above
     - Error message if operation fails
 
     Limitations: Long threads may contain large amounts of data; specific messages

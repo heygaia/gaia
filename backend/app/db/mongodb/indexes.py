@@ -133,6 +133,8 @@ async def create_user_indexes():
             users_collection.create_index("cached_at", sparse=True),
             # Activity tracking index for inactive user queries
             users_collection.create_index("last_active_at", sparse=True),
+            # Inactive email tracking index (sparse since not all users have this field)
+            users_collection.create_index("last_inactive_email_sent", sparse=True),
         )
 
         logger.info("Created user indexes")

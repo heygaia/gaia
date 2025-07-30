@@ -16,4 +16,5 @@ export * from "./ui/useMediaQuery";
 export * from "./ui/useMobile";
 export * from "./ui/useModalForm";
 export * from "./useConfirmation";
+export * from "./useGitHubStars";
 export * from "./useNotificationActions";

@@ -1,17 +1,12 @@
-import { Chip } from "@heroui/chip";
-import { ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 import React from "react";
 
-import { InternetIcon } from "@/components/shared/icons";
 import { parseDate } from "@/utils/date/dateUtils";
 
 interface PinCardProps {
   message: {
     message_id: string;
     response: string;
-    searchWeb?: boolean;
-    pageFetchURL?: string;
     date: string | Date;
     type: string;
   };
@@ -41,42 +36,6 @@ export const PinCard: React.FC<PinCardProps> = ({
       {/* <div className="absolute right-1 top-1">
         <PinIcon color="#00bbff" fill="#00bbff" height={25} width={25} />
       </div> */}
-
-      <div>
-        {message.searchWeb && (
-          <Chip
-            color="primary"
-            size="sm"
-            startContent={<InternetIcon color="#00bbff" height={20} />}
-            variant="flat"
-          >
-            <div className="flex items-center gap-1 font-medium text-primary">
-              Web Search Results
-            </div>
-          </Chip>
-        )}
-
-        {message.pageFetchURL && (
-          <Chip
-            color="primary"
-            size="sm"
-            startContent={<ArrowUpRight color="#00bbff" height={20} />}
-            variant="flat"
-          >
-            <div className="flex items-center gap-1 font-medium text-primary">
-              Fetched
-              <a
-                className="font-medium text-[#00bbff]! transition-colors hover:text-white!"
-                href={message.pageFetchURL}
-                rel="noreferrer"
-                target="_blank"
-              >
-                {message.pageFetchURL.replace(/^https?:\/\//, "")}
-              </a>
-            </div>
-          </Chip>
-        )}
-      </div>
 
       <div className="max-h-[135px] overflow-hidden text-sm">
         {message.response.slice(0, 350)}

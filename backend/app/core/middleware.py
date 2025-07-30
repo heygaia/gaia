@@ -11,8 +11,7 @@ from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
 
 from app.config.settings import settings
-from app.middleware.profiler import ProfilingMiddleware
-from app.middleware.logger import LoggingMiddleware
+from app.decorators import ProfilingMiddleware, LoggingMiddleware
 from app.middleware.rate_limiter import limiter
 
 

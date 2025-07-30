@@ -1,6 +1,7 @@
 from typing import List, Optional
 from fastapi import HTTPException
 from langchain_core.messages import HumanMessage, SystemMessage, AnyMessage
+from langsmith import traceable
 from uuid_extensions import uuid7str
 
 from app.langchain.prompts.convo_prompts import CONVERSATION_DESCRIPTION_GENERATOR
@@ -15,6 +16,7 @@ from app.services.conversation_service import (
 )
 
 
+@traceable(name="Create Conversation")
 async def create_conversation(
     last_message: MessageDict | None, user: dict, selectedTool: Optional[str] | None
 ) -> dict:
@@ -26,8 +28,6 @@ async def create_conversation(
         if last_message and "content" in last_message
         else "New conversation started"
     )
-
-    print(selectedTool, "selectedTool")
 
     response = await do_prompt_no_stream(
         prompt=CONVERSATION_DESCRIPTION_GENERATOR.format(

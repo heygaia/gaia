@@ -11,7 +11,7 @@ from app.services.image_service import (
     generate_image_stream,
     image_to_text_endpoint,
 )
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 
 router = APIRouter()

@@ -12,8 +12,7 @@ from app.docstrings.langchain.tools.search_tool_docs import (
     WEB_SEARCH_TOOL,
     DEEP_RESEARCH_TOOL,
 )
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.utils.internet_utils import perform_deep_research
 from app.utils.search_utils import format_results_for_llm, perform_search
 

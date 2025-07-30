@@ -21,7 +21,7 @@ from app.docstrings.langchain.tools.mail_tool_docs import (
     UNSTAR_EMAILS,
     UPDATE_GMAIL_LABEL,
 )
-from app.docstrings.utils import with_doc
+from app.decorators import with_doc, with_rate_limiting, require_integration
 from app.langchain.templates.mail_templates import (
     COMPOSE_EMAIL_TEMPLATE,
     process_get_thread_response,
@@ -29,7 +29,7 @@ from app.langchain.templates.mail_templates import (
     process_list_messages_response,
     process_search_messages_response,
 )
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.models.mail_models import EmailComposeRequest
 from app.services.contact_service import get_gmail_contacts
 from app.services.mail_service import (
     apply_labels,
@@ -88,6 +88,7 @@ async def list_gmail_labels(config: RunnableConfig) -> Dict[str, Any]:
 
 @tool
 @with_doc(LIST_GMAIL_MESSAGES)
+@require_integration("mail")
 async def fetch_gmail_messages(
     config: RunnableConfig,
     max_results: Annotated[
@@ -126,10 +127,22 @@ async def fetch_gmail_messages(
         # Use batching to fetch full details for each message
         detailed_messages = fetch_detailed_messages(service, messages)
 
-        # Transform messages to standard format first, then process to minimize
-        transformed_messages = [
-            transform_gmail_message(msg) for msg in detailed_messages
-        ]
+        # Build array of {from, subject, time} for all messages
+        email_fetch_data = []
+        transformed_messages = []
+        for msg in detailed_messages:
+            transformed = transform_gmail_message(msg)
+            transformed_messages.append(transformed)
+            email_fetch_data.append(
+                {
+                    "from": transformed.get("from"),
+                    "subject": transformed.get("subject"),
+                    "time": transformed.get("date"),
+                }
+            )
+
+        writer = get_stream_writer()
+        writer({"email_fetch_data": email_fetch_data})
 
         # Process to minimize data for LLM
         return process_list_messages_response(
@@ -235,102 +248,54 @@ async def search_gmail_messages(
 @tool
 @with_rate_limiting("mail_actions")
 @with_doc(COMPOSE_EMAIL)
+@require_integration("mail")
 async def compose_email(
     config: RunnableConfig,
-    body: Annotated[str, "Body content of the email"],
-    subject: Annotated[str, "Subject line for the email"],
-    recipient_query: Annotated[
-        Optional[str],
-        "Name or partial information about the recipient to search for their email address. Leave empty if no recipient information is provided.",
-    ] = None,
+    emails: Annotated[
+        List[EmailComposeRequest],
+        "Array of email objects to compose. Each email should have 'body', 'subject', and 'to' (list of recipient email addresses)",
+    ],
 ) -> Dict[str, Any] | str:
     try:
         writer = get_stream_writer()
-        resolved_emails = []
+        composed_emails = []
 
-        # If recipient_query is provided, try to resolve contact emails
-        if recipient_query and recipient_query.strip():
-            writer({"progress": f"Searching contacts for '{recipient_query}'..."})
-            try:
-                auth = get_auth_from_config(config)
+        # Process each email in the array
+        for email_index, email in enumerate(emails):
+            subject = email.subject
+            body = email.body
+            recipient_emails = email.to
 
-                if not auth["access_token"] or not auth["refresh_token"]:
-                    logger.warning(
-                        "Missing authentication credentials for contact resolution"
-                    )
-                else:
-                    service = get_gmail_service(
-                        access_token=auth["access_token"],
-                        refresh_token=auth["refresh_token"],
-                    )
+            writer(
+                {
+                    "progress": f"Processing email {email_index + 1}/{len(emails)}: Preparing email..."
+                }
+            )
 
-                    # Use the service function directly instead of calling the tool
-                    contacts_result = get_gmail_contacts(
-                        service=service,
-                        query=recipient_query,
-                    )
+            # Prepare email data for this email
+            email_data = {
+                "to": recipient_emails,
+                "subject": subject,
+                "body": body,
+            }
 
-                    if contacts_result.get("success") and contacts_result.get(
-                        "contacts"
-                    ):
-                        resolved_emails = [
-                            contact["email"] for contact in contacts_result["contacts"]
-                        ]
-                        writer(
-                            {
-                                "progress": f"Found {len(resolved_emails)} contact(s) for '{recipient_query}'"
-                            }
-                        )
-                    else:
-                        writer(
-                            {"progress": f"No contacts found for '{recipient_query}'"}
-                        )
-                    logger.info(f"Resolved emails: {resolved_emails}")
-            except Exception as contact_error:
-                logger.warning(
-                    f"Failed to resolve contacts for '{recipient_query}': {contact_error}"
-                )
-                writer({"progress": f"Contact search failed for '{recipient_query}'"})
-                # Continue with empty resolved_emails if contact resolution fails
+            composed_emails.append(email_data)
 
-        # Prepare email data
-        email_data = {
-            "to": resolved_emails if resolved_emails else [],
-            "subject": subject,
-            "body": body,
-            "recipient_query": recipient_query,
-        }
-
-        # Check if initiated by backend
-        # configurable = config.get("configurable", {})
-        # if configurable.get("initiator") == "backend":
-        #     user_id = configurable.get("user_id")
-        #     if not user_id:
-        #         logger.error(
-        #             "Missing user_id in configuration for backend-initiated email composition"
-        #         )
-        #         return {
-        #             "error": "User ID is required to create email composition notification"
-        #         }
-
-        #     # Create a notification for the user
-        #     notification = (
-        #         AIProactiveNotificationSource.create_mail_composition_notification(
-        #             user_id=user_id,
-        #             email_data=email_data,
-        #         )
-        #     )
-        #     await notification_service.create_notification(notification)
-
-        #     return "Email composition notification created successfully. Please check your frontend for the draft."
-
-        # Regular frontend flow
         # Progress update for drafting
-        writer({"progress": "Drafting email..."})
-        writer(email_data)
+        writer({"progress": f"Drafting {len(composed_emails)} email(s)..."})
+        writer({"email_compose_data": composed_emails})
 
-        # Generate summary of the composed email
-        return COMPOSE_EMAIL_TEMPLATE.format(subject=subject, body=body)
+        # Generate summary of the composed emails
+        if len(composed_emails) == 1:
+            email = composed_emails[0]
+            return COMPOSE_EMAIL_TEMPLATE.format(
+                subject=email["subject"], body=email["body"]
+            )
+        else:
+            summary = f"Composed {len(composed_emails)} emails:\n"
+            for i, email in enumerate(composed_emails, 1):
+                summary += f"{i}. Subject: {email['subject']}\n"
+            return summary
 
     except Exception as e:
         error_msg = f"Error composing email: {str(e)}"

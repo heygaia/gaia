@@ -92,25 +92,6 @@ const IntegrationCard: React.FC<{
               )}
             </div>
           </div>
-
-          {/* Features */}
-          {isConnected && integration.features.length > 0 && (
-            <div className="mt-2 flex flex-wrap gap-1">
-              {integration.features.slice(0, 3).map((feature) => (
-                <span
-                  key={feature}
-                  className="inline-block rounded-full bg-blue-500/10 px-2 py-0.5 text-xs text-blue-400"
-                >
-                  {feature}
-                </span>
-              ))}
-              {integration.features.length > 3 && (
-                <span className="inline-block text-xs text-zinc-500">
-                  +{integration.features.length - 3} more
-                </span>
-              )}
-            </div>
-          )}
         </div>
       </div>
     </motion.div>

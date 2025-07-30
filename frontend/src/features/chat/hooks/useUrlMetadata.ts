@@ -16,6 +16,8 @@ interface UrlMetadataError {
   code?: number;
 }
 
+const isEmail = (str: string) => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(str);
+
 /**
  * Custom hook to fetch URL metadata with React Query optimization
  * Features:
@@ -26,7 +28,9 @@ interface UrlMetadataError {
  * - Conditional fetching based on URL validity
  */
 export const useUrlMetadata = (url: string | undefined | null) => {
-  return useQuery<UrlMetadata, UrlMetadataError>({
+  const isValidUrl = url && !isEmail(url) && !url.startsWith("mailto:");
+
+  const result = useQuery<UrlMetadata, UrlMetadataError>({
     queryKey: ["url-metadata", url],
     queryFn: async () => {
       if (!url) {
@@ -36,11 +40,9 @@ export const useUrlMetadata = (url: string | undefined | null) => {
       const response = await api.post("/fetch-url-metadata", { url });
       return response.data;
     },
-    enabled: !!url && url.length > 0,
     staleTime: 5 * 60 * 1000, // 5 minutes - metadata rarely changes
     gcTime: 30 * 60 * 1000, // 30 minutes - keep in cache for longer
     retry: (failureCount, error) => {
-      // Don't retry on 4xx errors (bad URL, not found, etc.)
       if (
         error &&
         "code" in error &&
@@ -50,14 +52,20 @@ export const useUrlMetadata = (url: string | undefined | null) => {
       ) {
         return false;
       }
-      return failureCount < 2; // Retry up to 2 times for network errors
+      return failureCount < 2;
     },
-    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000), // Exponential backoff
-    refetchOnWindowFocus: false, // URL metadata doesn't change often
-    refetchOnMount: false, // Use cached data if available
-    // Only refetch if data is older than staleTime and user interacts
+    retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 5000),
+    refetchOnWindowFocus: false,
+    refetchOnMount: false,
     refetchOnReconnect: "always",
   });
+
+  // Return early state for invalid URLs, but after calling useQuery
+  if (!isValidUrl) {
+    return { data: null, isLoading: false, isError: false, error: null };
+  }
+
+  return result;
 };
 
 /**

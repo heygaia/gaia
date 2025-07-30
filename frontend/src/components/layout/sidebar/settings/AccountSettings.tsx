@@ -42,11 +42,9 @@ export default function AccountSection({
         profilePicture: response.picture,
       });
 
-      toast.success("Name updated successfully!", { id: "update-name" });
       setIsEditing(false);
     } catch (error) {
       console.error("Profile update error:", error);
-      toast.error("Failed to update name", { id: "update-name" });
     } finally {
       setIsLoading(false);
     }
@@ -72,14 +70,12 @@ export default function AccountSection({
         profilePicture: response.picture,
       });
 
-      toast.success("Profile picture updated successfully!", {
-        id: "update-picture",
-      });
+    
     } catch (error) {
       console.error("Profile picture update error:", error);
-      toast.error("Failed to update profile picture", { id: "update-picture" });
     } finally {
       setIsLoading(false);
+      toast.dismiss("update-picture");
     }
   };
 

@@ -22,7 +22,6 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
-import { useConversation } from "@/features/chat/hooks/useConversation";
 import SearchCommand from "@/features/search/components/SearchCommand";
 
 interface SidebarLayoutProps {
@@ -66,15 +65,18 @@ const CustomSidebarTrigger = () => {
 };
 
 export default function SidebarLayout({ children }: SidebarLayoutProps) {
-  const { clearMessages } = useConversation();
   const router = useRouter();
   const pathname = usePathname();
   const [openSearchDialog, setOpenSearchDialog] = useState(false);
 
   return (
-    <Sidebar variant="sidebar" collapsible="offcanvas" className="border-none!">
+    <Sidebar
+      variant="sidebar"
+      collapsible="offcanvas"
+      className="sidebar border-none!"
+    >
       {pathname.startsWith("/c") && (
-        <div className="pointer-events-none absolute right-0 bottom-16 left-0 z-1 h-1/3 w-full bg-gradient-to-b from-transparent to-black" />
+        <div className="pointer-events-none absolute right-0 bottom-26 left-0 z-1 h-1/4 w-full bg-gradient-to-b from-transparent to-[#141414]" />
       )}
 
       <SearchCommand
@@ -104,10 +106,7 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
             </SidebarHeaderButton>
             {!pathname.startsWith("/c") && (
               <SidebarHeaderButton
-                onClick={() => {
-                  router.push("/c");
-                  clearMessages();
-                }}
+                onClick={() => router.push("/c")}
                 aria-label="New chat"
               >
                 <ChatBubbleAddIcon
@@ -123,7 +122,7 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
 
       <SidebarContent className="flex-1">
         <SidebarGroup>
-          <SidebarGroupContent className="space-y-1">
+          <SidebarGroupContent className="space-y-1 overflow-hidden">
             <SidebarTopButtons />
 
             {children}

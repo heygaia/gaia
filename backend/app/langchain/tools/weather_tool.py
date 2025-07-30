@@ -3,8 +3,7 @@ from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
 from app.docstrings.langchain.tools.weather_tool_docs import GET_WEATHER
-from app.docstrings.utils import with_doc
-from app.middleware.langchain_rate_limiter import with_rate_limiting
+from app.decorators import with_doc, with_rate_limiting
 from app.utils.weather_utils import user_weather
 
 

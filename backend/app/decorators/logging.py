@@ -1,3 +1,9 @@
+"""
+Logging decorators and middleware for request logging functionality.
+
+This module provides middleware classes for logging HTTP requests and responses.
+"""
+
 import time
 from http import HTTPStatus
 
