@@ -202,6 +202,7 @@ def update_conversation_messages(
         response=user_content,
         date=datetime.now(timezone.utc).isoformat(),
         fileIds=body.fileIds,
+        fileData=body.fileData,
         selectedTool=body.selectedTool,
         toolCategory=body.toolCategory,
     )
