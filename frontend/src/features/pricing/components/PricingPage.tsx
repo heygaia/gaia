@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import { Chip } from "@heroui/chip";
 import { Tab, Tabs } from "@heroui/tabs";
+import { useEffect, useState } from "react";
 
 import type { Plan } from "@/features/pricing/api/pricingApi";
 import { pricingApi } from "@/features/pricing/api/pricingApi";
