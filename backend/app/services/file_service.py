@@ -12,6 +12,7 @@ import cloudinary
 import cloudinary.uploader
 from fastapi import HTTPException, UploadFile
 from langchain_core.documents import Document
+import time
 
 from app.config.loggers import app_logger as logger
 from app.db.chromadb import ChromaClient
@@ -29,85 +30,57 @@ from app.utils.file_utils import generate_file_summary
         "files:{user_id}:*",
     ]
 )
+
 async def upload_file_service(
     file: UploadFile,
     user_id: str,
     conversation_id: Optional[str] = None,
 ) -> dict:
-    """
-    Upload a file to Cloudinary, generate embeddings, and store metadata in MongoDB and ChromaDB.
-
-    Args:
-        file (UploadFile): The file to upload
-        user_id (str): The ID of the user uploading the file
-        conversation_id (str, optional): The conversation ID to associate with the file
-
-    Returns:
-        dict: File metadata including file_id and url
-
-    Raises:
-        HTTPException: If file upload fails
-    """
-    # Validate inputs early
     if not file.filename:
         logger.error("Missing filename in file upload")
-        raise HTTPException(
-            status_code=400, detail="Invalid file name. Filename is required."
-        )
-
+        raise HTTPException(status_code=400, detail="Invalid file name. Filename is required.")
     if not file.content_type:
         logger.error("Missing content_type in file upload")
-        raise HTTPException(
-            status_code=400, detail="Invalid file type. Content type is required."
-        )
+        raise HTTPException(status_code=400, detail="Invalid file type. Content type is required.")
 
     file_id = str(uuid.uuid4())
     public_id = f"file_{file_id}_{file.filename.replace(' ', '_')}"
 
     try:
-        # Read file content once
         content = await file.read()
+
         file_size = len(content)
-
-        if file.size and file.size > 10 * 1024 * 1024:  # 10 MB limit
+        if file_size > 10 * 1024 * 1024:
             logger.error("File size exceeds the 10 MB limit")
-            raise HTTPException(
-                status_code=400, detail="File size exceeds the 10 MB limit"
-            )
+            raise HTTPException(status_code=400, detail="File size exceeds the 10 MB limit")
 
-        # Start file description generation and upload in parallel
-        summary_task = asyncio.create_task(
-            generate_file_summary(
-                file_content=content,
-                content_type=file.content_type,
-                filename=file.filename,
-            )
-        )
-
-        # Upload to Cloudinary
-        upload_result = cloudinary.uploader.upload(
-            io.BytesIO(content),
+        cloudinary_task = asyncio.to_thread(
+            cloudinary.uploader.upload,
+            io.BytesIO(content),  
             resource_type="auto",
             public_id=public_id,
             overwrite=True,
         )
 
+        summary_task = generate_file_summary(
+            file_content=content,
+            content_type=file.content_type,
+            filename=file.filename,
+        )
+   
+        upload_result, summary_result = await asyncio.gather(
+            cloudinary_task,
+            summary_task,
+        )
+
+
         file_url = upload_result.get("secure_url")
         if not file_url:
             logger.error("Missing secure_url in Cloudinary upload response")
-            raise HTTPException(
-                status_code=500, detail="Invalid response from file upload service"
-            )
+            raise HTTPException(status_code=500, detail="Invalid response from file upload service")
 
-        logger.info(f"File uploaded to Cloudinary: {file_url}")
+        summary, formatted_file_content = _process_file_summary(summary_result)
 
-        # Wait for description generation to complete
-        file_summary = await summary_task
-
-        # Process file description
-        summary, formatted_file_content = _process_file_summary(file_summary)
-
-        # Create metadata object
         current_time = datetime.now(timezone.utc)
         file_metadata = {
             "file_id": file_id,
@@ -122,11 +95,10 @@ async def upload_file_service(
             "created_at": current_time,
             "updated_at": current_time,
         }
-
         if conversation_id:
-            file_metadata["conversation_id"] = (
-                conversation_id  # Store in MongoDB and ChromaDB concurrently
-            )
+            file_metadata["conversation_id"] = conversation_id
+
+        # Store in DB (Mongo + Chroma)
         await asyncio.gather(
             _store_in_mongodb(file_metadata),
             _store_in_chromadb(
@@ -135,11 +107,10 @@ async def upload_file_service(
                 filename=file.filename,
                 content_type=file.content_type,
                 conversation_id=conversation_id,
-                file_description=file_summary,
+                file_description=summary_result,
             ),
-        )  # Cache invalidation handled by the CacheInvalidator decorator
+        )
 
-        logger.info(f"File uploaded successfully. ID: {file_id}, URL: {file_url}")
 
         return {
             "file_id": file_id,
@@ -150,12 +121,10 @@ async def upload_file_service(
         }
 
     except HTTPException:
-        # Re-raise HTTP exceptions without wrapping
         raise
     except Exception as e:
-        logger.error(f"Failed to upload file: {str(e)}", exc_info=True)
+        logger.error(f"[🔥] Failed to upload file: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
-
 
 def _process_file_summary(
     file_summary: str | list[DocumentSummaryModel] | DocumentSummaryModel,
