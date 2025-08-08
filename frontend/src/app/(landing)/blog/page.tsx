@@ -1,42 +1,46 @@
-import type { Metadata } from "next";
-
 import { Separator } from "@/components";
 import { blogApi, type BlogPost } from "@/features/blog/api/blogApi";
 import { BlogCard } from "@/features/blog/components/BlogCard";
 import { BlogHeader } from "@/features/blog/components/BlogHeader";
 import { BlogListItem } from "@/features/blog/components/BlogListItem";
 
-export const metadata: Metadata = {
-  title: "Blog",
-  description:
-    "Explore the latest posts from GAIA, the creators of the AI personal assistant",
+interface Blog {
+  slug: string;
+  title: string;
+  category: string;
+  date: string;
+  image: string;
+  authors: Array<{
+    name: string;
+    role: string;
+    avatar: string;
+    linkedin?: string;
+    twitter?: string;
+  }>;
+}
 
-  openGraph: {
-    title: "Blog",
-    description:
-      "Explore the latest posts from GAIA, the creators of the AI personal assistant",
-    url: "https://heygaia.io/blog",
-    images: ["/landing/screenshot.webp"],
-    siteName: "GAIA - Your Personal Assistant",
-    type: "website",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Blog",
-    description:
-      "Explore the latest posts from GAIA, the creators of the AI personal assistant",
-    images: ["/landing/screenshot.webp"],
-  },
-};
+export default function BlogList() {
+  const [blogs, setBlogs] = useState<BlogPost[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-export default async function BlogList() {
-  let blogs: BlogPost[] = [];
+  useEffect(() => {
+    const fetchBlogs = async () => {
+      try {
+        setLoading(true);
+        const blogsData = await blogApi.getBlogs(false); // Don't include content for list view - better performance
+        setBlogs(blogsData);
+        setError(null);
+      } catch (err) {
+        console.error("Error fetching blogs:", err);
+        setError(err instanceof Error ? err.message : "Failed to fetch blogs");
+      } finally {
+        setLoading(false);
+      }
+    };
 
-  try {
-    blogs = await blogApi.getBlogs(false); // Don't include content for list view - better performance
-  } catch (error) {
-    console.error("Error fetching blogs:", error);
-  }
+    fetchBlogs();
+  }, []);
 
   // Convert BlogPost to Blog format for compatibility
   const displayBlogs = blogs.map((blog) => ({

@@ -11,9 +11,14 @@ import {
 } from "@heroui/modal";
 import { useEffect, useMemo } from "react";
 
-import { useTodos } from "@/features/todo/hooks/useTodos";
+import { todoApi } from "@/features/todo/api/todoApi";
 import { useModalForm } from "@/hooks/ui/useModalForm";
-import { Priority, Todo, TodoCreate } from "@/types/features/todoTypes";
+import {
+  Priority,
+  Project,
+  Todo,
+  TodoCreate,
+} from "@/types/features/todoTypes";
 
 import SubtaskManager from "./shared/SubtaskManager";
 import TodoFieldsRow from "./shared/TodoFieldsRow";
@@ -25,6 +30,7 @@ interface TodoModalProps {
   mode: "add" | "edit";
   todo?: Todo; // Required when mode is "edit"
   initialProjectId?: string; // Used when mode is "add"
+  projects: Project[]; // Pass projects as props instead of using Redux
 }
 
 function getChangedFields<T extends object>(
@@ -57,9 +63,8 @@ export default function TodoModal({
   mode,
   todo,
   initialProjectId,
+  projects,
 }: TodoModalProps) {
-  const { projects, addTodo, modifyTodo } = useTodos();
-
   const initialData = useMemo(() => {
     if (mode === "edit" && todo) {
       return {
@@ -92,12 +97,12 @@ export default function TodoModal({
           const updates = getChangedFields(todo, data);
 
           if (Object.keys(updates).length > 0) {
-            await modifyTodo(todo.id, updates);
+            await todoApi.updateTodo(todo.id, updates);
           }
           return;
         }
 
-        await addTodo(data);
+        await todoApi.createTodo(data);
       },
       validate: [
         {
@@ -123,7 +128,7 @@ export default function TodoModal({
   // Set default project when modal opens in add mode
   useEffect(() => {
     if (open && mode === "add" && projects.length > 0 && !formData.project_id) {
-      const inboxProject = projects.find((p) => p.is_default);
+      const inboxProject = projects.find((p: Project) => p.is_default);
       if (inboxProject) {
         updateField("project_id", inboxProject.id);
       }

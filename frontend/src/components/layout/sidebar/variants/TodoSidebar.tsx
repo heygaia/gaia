@@ -14,10 +14,10 @@ import {
   LabelImportantIcon,
 } from "@/components/shared/icons";
 import Spinner from "@/components/ui/shadcn/spinner";
+import { todoApi } from "@/features/todo/api/todoApi";
 import AddProjectModal from "@/features/todo/components/AddProjectModal";
 import TodoModal from "@/features/todo/components/TodoModal";
-import { useTodos } from "@/features/todo/hooks/useTodos";
-import { Priority } from "@/types/features/todoTypes";
+import { Priority, Project } from "@/types/features/todoTypes";
 
 type MenuItem = {
   label: string;
@@ -113,25 +113,39 @@ export default function TodoSidebar() {
   const [addProjectOpen, setAddProjectOpen] = useState(false);
   // const [searchQuery, setSearchQuery] = useState("");
 
-  const {
-    projects,
-    labels,
-    counts,
-    loading,
-    loadProjects,
-    loadLabels,
-    loadCounts,
-    // refreshAllData,
-  } = useTodos();
+  // Local state management instead of Redux
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [labels, setLabels] = useState<{ name: string; count: number }[]>([]);
+  const [counts, setCounts] = useState({
+    inbox: 0,
+    today: 0,
+    upcoming: 0,
+    completed: 0,
+  });
+  const [loading, setLoading] = useState(true);
 
   // Load initial data on mount
   useEffect(() => {
     const loadData = async () => {
-      await Promise.all([loadProjects(), loadCounts(), loadLabels()]);
+      setLoading(true);
+      try {
+        const [projectsData, countsData, labelsData] = await Promise.all([
+          todoApi.getAllProjects(),
+          todoApi.getTodoCounts(),
+          todoApi.getAllLabels(),
+        ]);
+        setProjects(projectsData);
+        setCounts(countsData);
+        setLabels(labelsData);
+      } catch (error) {
+        console.error("Failed to load sidebar data:", error);
+      } finally {
+        setLoading(false);
+      }
     };
 
     loadData();
-  }, [loadProjects, loadCounts, loadLabels]);
+  }, []);
 
   const handleNavigation = (href: string) => {
     router.push(href);
@@ -202,7 +216,7 @@ export default function TodoSidebar() {
   // Label items - show top 5 most used labels or empty state
   const labelMenuItems: MenuItem[] =
     labels.length > 0
-      ? labels.slice(0, 5).map((label) => ({
+      ? labels.slice(0, 5).map((label: { name: string; count: number }) => ({
           label: label.name,
           icon: () => <Tag className="w-[20px]" strokeWidth={1.5} />,
           href: `/todos/label/${encodeURIComponent(label.name)}`,
@@ -221,8 +235,8 @@ export default function TodoSidebar() {
 
   // Project items - convert projects to menu items or empty state
   const projectMenuItems: MenuItem[] = projects
-    .filter((p) => !p.is_default)
-    .map((project) => ({
+    .filter((p: Project) => !p.is_default)
+    .map((project: Project) => ({
       label: project.name,
       icon: () => <ProjectIcon color={project.color} />,
       href: `/todos/project/${project.id}`,
@@ -323,13 +337,27 @@ export default function TodoSidebar() {
         )}
       </div>
 
-      <TodoModal mode="add" open={addTodoOpen} onOpenChange={setAddTodoOpen} />
+      <TodoModal
+        mode="add"
+        open={addTodoOpen}
+        onOpenChange={setAddTodoOpen}
+        projects={projects}
+      />
       <AddProjectModal
         open={addProjectOpen}
         onOpenChange={setAddProjectOpen}
-        onSuccess={() => {
-          loadCounts();
-          loadProjects();
+        onSuccess={async () => {
+          // Reload data after adding a project
+          try {
+            const [projectsData, countsData] = await Promise.all([
+              todoApi.getAllProjects(),
+              todoApi.getTodoCounts(),
+            ]);
+            setProjects(projectsData);
+            setCounts(countsData);
+          } catch (error) {
+            console.error("Failed to reload data:", error);
+          }
         }}
       />
     </>
