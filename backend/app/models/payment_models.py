@@ -1,5 +1,5 @@
 """
-Payment and subscription related models for Razorpay integration.
+Payment and subscription related models for Dodo Payments integration.
 """
 
 from datetime import datetime
@@ -27,35 +27,22 @@ class PaymentStatus(str, Enum):
     """Payment status."""
 
     PENDING = "pending"
-    AUTHORIZED = "authorized"
-    PAID = "paid"
-    CAPTURED = "captured"
-    FAILED = "failed"
-    REFUNDED = "refunded"
-    CANCELLED = "cancelled"
-
-
-class SubscriptionStatus(str, Enum):
-    """Subscription status."""
-
-    CREATED = "created"
-    AUTHENTICATED = "authenticated"
     ACTIVE = "active"
-    PAUSED = "paused"
-    HALTED = "halted"
+    ON_HOLD = "on_hold"
     CANCELLED = "cancelled"
-    COMPLETED = "completed"
+    FAILED = "failed"
     EXPIRED = "expired"
 
 
-class PaymentMethod(str, Enum):
-    """Payment methods."""
+class SubscriptionStatus(str, Enum):
+    """Subscription status with clear definitions."""
 
-    CARD = "card"
-    NETBANKING = "netbanking"
-    WALLET = "wallet"
-    UPI = "upi"
-    EMI = "emi"
+    PENDING = "pending"  # Payment link created, waiting for payment
+    ACTIVE = "active"  # Active with successful payment
+    ON_HOLD = "on_hold"  # Temporarily paused
+    CANCELLED = "cancelled"  # Cancelled by user or system
+    FAILED = "failed"  # Payment failed
+    EXPIRED = "expired"  # Expired subscription
 
 
 class Currency(str, Enum):
@@ -80,47 +67,10 @@ class CreatePlanRequest(BaseModel):
 
 
 class CreateSubscriptionRequest(BaseModel):
-    """Request model for creating a subscription."""
+    """Simplified request model for creating a subscription - backend handles security."""
 
-    plan_id: str = Field(..., description="Plan ID to subscribe to")
+    product_id: str = Field(..., description="Product ID to subscribe to")
     quantity: int = Field(1, description="Quantity of subscriptions")
-    customer_notify: bool = Field(True, description="Whether to notify customer")
-    addons: Optional[List[Dict[str, Any]]] = Field(
-        default_factory=list, description="Add-ons"
-    )
-    notes: Optional[Dict[str, str]] = Field(default_factory=dict, description="Notes")
-
-
-class CreatePaymentRequest(BaseModel):
-    """Request model for creating a payment."""
-
-    amount: int = Field(..., description="Amount in smallest currency unit")
-    currency: Currency = Field(Currency.USD, description="Currency")
-    description: Optional[str] = Field(None, description="Payment description")
-    notes: Optional[Dict[str, str]] = Field(default_factory=dict, description="Notes")
-
-
-class PaymentCallbackRequest(BaseModel):
-    """Request model for payment callback/webhook."""
-
-    razorpay_payment_id: str = Field(..., description="Razorpay payment ID")
-    razorpay_order_id: Optional[str] = Field(None, description="Razorpay order ID")
-    razorpay_subscription_id: Optional[str] = Field(
-        None, description="Razorpay subscription ID"
-    )
-    razorpay_signature: str = Field(
-        ..., description="Razorpay signature for verification"
-    )
-
-
-class UpdateSubscriptionRequest(BaseModel):
-    """Request model for updating subscription."""
-
-    plan_id: Optional[str] = Field(None, description="New plan ID")
-    quantity: Optional[int] = Field(None, description="New quantity")
-    remaining_count: Optional[int] = Field(None, description="Remaining billing cycles")
-    replace_items: Optional[bool] = Field(False, description="Replace all items")
-    prorate: Optional[bool] = Field(True, description="Prorate the subscription")
 
 
 # Response Models
@@ -128,6 +78,7 @@ class PlanResponse(BaseModel):
     """Response model for subscription plan."""
 
     id: str = Field(..., description="Plan ID")
+    dodo_product_id: str = Field(..., description="Dodo product ID")
     name: str = Field(..., description="Plan name")
     description: Optional[str] = Field(None, description="Plan description")
     amount: int = Field(..., description="Plan amount")
@@ -143,25 +94,15 @@ class PlanResponse(BaseModel):
 class SubscriptionResponse(BaseModel):
     """Response model for subscription."""
 
-    id: str = Field(..., description="Subscription ID")
-    razorpay_subscription_id: str = Field(..., description="Razorpay subscription ID")
+    id: str = Field(..., description="Internal subscription ID")
+    dodo_subscription_id: str = Field(..., description="Dodo subscription ID")
     user_id: str = Field(..., description="User ID")
-    plan_id: str = Field(..., description="Plan ID")
+    product_id: str = Field(..., description="Product ID")
     status: SubscriptionStatus = Field(..., description="Subscription status")
     quantity: int = Field(..., description="Quantity")
-    current_start: Optional[datetime] = Field(None, description="Current period start")
-    current_end: Optional[datetime] = Field(None, description="Current period end")
-    ended_at: Optional[datetime] = Field(None, description="Subscription end time")
-    charge_at: Optional[datetime] = Field(None, description="Next charge time")
-    start_at: Optional[datetime] = Field(None, description="Subscription start time")
-    end_at: Optional[datetime] = Field(None, description="Subscription end time")
-    auth_attempts: int = Field(0, description="Authentication attempts")
-    total_count: int = Field(..., description="Total billing cycles")
-    paid_count: int = Field(0, description="Paid billing cycles")
-    customer_notify: bool = Field(True, description="Customer notification enabled")
+    payment_link: Optional[str] = Field(None, description="Payment link URL")
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Update timestamp")
-    notes: Optional[Dict[str, str]] = Field(default_factory=dict, description="Notes")
 
 
 class PaymentResponse(BaseModel):
@@ -170,24 +111,11 @@ class PaymentResponse(BaseModel):
     id: str = Field(..., description="Payment ID")
     user_id: str = Field(..., description="User ID")
     subscription_id: Optional[str] = Field(None, description="Subscription ID")
-    order_id: Optional[str] = Field(None, description="Order ID")
     amount: int = Field(..., description="Payment amount")
     currency: str = Field(..., description="Currency")
     status: PaymentStatus = Field(..., description="Payment status")
-    method: Optional[PaymentMethod] = Field(None, description="Payment method")
     description: Optional[str] = Field(None, description="Payment description")
-    international: bool = Field(False, description="International payment")
-    refund_status: Optional[str] = Field(None, description="Refund status")
-    amount_refunded: int = Field(0, description="Refunded amount")
-    captured: bool = Field(False, description="Payment captured")
-    email: Optional[str] = Field(None, description="Customer email")
-    contact: Optional[str] = Field(None, description="Customer contact")
-    fee: Optional[int] = Field(None, description="Processing fee")
-    tax: Optional[int] = Field(None, description="Tax")
-    error_code: Optional[str] = Field(None, description="Error code")
-    error_description: Optional[str] = Field(None, description="Error description")
     created_at: datetime = Field(..., description="Creation timestamp")
-    notes: Optional[Dict[str, str]] = Field(default_factory=dict, description="Notes")
 
 
 class UserSubscriptionStatus(BaseModel):
@@ -219,12 +147,6 @@ class UserSubscriptionStatus(BaseModel):
     status: Optional[SubscriptionStatus] = Field(
         None, description="Legacy field - check subscription"
     )
-    current_period_start: Optional[datetime] = Field(None, description="Legacy field")
-    current_period_end: Optional[datetime] = Field(None, description="Legacy field")
-    cancel_at_period_end: Optional[bool] = Field(None, description="Legacy field")
-    trial_end: Optional[datetime] = Field(None, description="Legacy field")
-    subscription_id: Optional[str] = Field(None, description="Legacy field")
-    plan_id: Optional[str] = Field(None, description="Legacy field")
 
 
 class PaymentHistoryResponse(BaseModel):
@@ -238,13 +160,35 @@ class PaymentHistoryResponse(BaseModel):
 
 
 class WebhookEvent(BaseModel):
-    """Webhook event model."""
+    """Webhook event model for Dodo Payments."""
 
-    entity: str = Field(..., description="Entity type")
-    account_id: str = Field(..., description="Account ID")
-    event: str = Field(..., description="Event type")
-    created_at: int = Field(..., description="Creation timestamp")
-    payload: Dict[str, Any] = Field(..., description="Event payload")
+    addons: List[Dict[str, Any]] = Field(default_factory=list, description="Addons")
+    billing: Dict[str, Any] = Field(..., description="Billing address")
+    cancel_at_next_billing_date: bool = Field(..., description="Cancel at next billing")
+    created_at: str = Field(..., description="Creation timestamp")
+    currency: str = Field(..., description="Currency")
+    customer: Dict[str, Any] = Field(..., description="Customer details")
+    metadata: Dict[str, Any] = Field(..., description="Metadata")
+    next_billing_date: str = Field(..., description="Next billing date")
+    on_demand: bool = Field(..., description="On demand subscription")
+    payment_frequency_count: int = Field(..., description="Payment frequency count")
+    payment_frequency_interval: str = Field(
+        ..., description="Payment frequency interval"
+    )
+    previous_billing_date: str = Field(..., description="Previous billing date")
+    product_id: str = Field(..., description="Product ID")
+    quantity: int = Field(..., description="Quantity")
+    recurring_pre_tax_amount: int = Field(..., description="Recurring pre-tax amount")
+    status: str = Field(..., description="Subscription status")
+    subscription_id: str = Field(..., description="Subscription ID")
+    subscription_period_count: int = Field(..., description="Subscription period count")
+    subscription_period_interval: str = Field(
+        ..., description="Subscription period interval"
+    )
+    tax_inclusive: bool = Field(..., description="Tax inclusive")
+    trial_period_days: int = Field(..., description="Trial period days")
+    cancelled_at: Optional[str] = Field(None, description="Cancelled at")
+    discount_id: Optional[str] = Field(None, description="Discount ID")
 
 
 # Database Models (Internal)
@@ -252,7 +196,7 @@ class PlanDB(BaseModel):
     """Database model for subscription plan."""
 
     id: Optional[str] = Field(None, alias="_id")
-    razorpay_plan_id: str = Field(..., description="Razorpay plan ID")
+    dodo_product_id: str = Field(..., description="Dodo product ID")
     name: str = Field(..., description="Plan name")
     description: Optional[str] = Field(None, description="Plan description")
     amount: int = Field(..., description="Plan amount")
@@ -268,60 +212,62 @@ class PlanDB(BaseModel):
         default_factory=datetime.utcnow, description="Update timestamp"
     )
 
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
+
 
 class SubscriptionDB(BaseModel):
     """Database model for subscription."""
 
     id: Optional[str] = Field(None, alias="_id")
-    razorpay_subscription_id: str = Field(..., description="Razorpay subscription ID")
+    dodo_subscription_id: str = Field(..., description="Dodo subscription ID")
     user_id: str = Field(..., description="User ID")
-    plan_id: str = Field(..., description="Plan ID")
+    product_id: str = Field(..., description="Product ID")
     status: str = Field(..., description="Subscription status")
     quantity: int = Field(1, description="Quantity")
-    current_start: Optional[datetime] = Field(None, description="Current period start")
-    current_end: Optional[datetime] = Field(None, description="Current period end")
-    ended_at: Optional[datetime] = Field(None, description="Subscription end time")
-    charge_at: Optional[datetime] = Field(None, description="Next charge time")
-    start_at: Optional[datetime] = Field(None, description="Subscription start time")
-    end_at: Optional[datetime] = Field(None, description="Subscription end time")
-    auth_attempts: int = Field(0, description="Authentication attempts")
-    total_count: int = Field(..., description="Total billing cycles")
-    paid_count: int = Field(0, description="Paid billing cycles")
-    customer_notify: bool = Field(True, description="Customer notification")
+    payment_link: Optional[str] = Field(None, description="Payment link URL")
+    webhook_processed_at: Optional[datetime] = Field(
+        None, description="Webhook processing timestamp"
+    )
     created_at: datetime = Field(
         default_factory=datetime.utcnow, description="Creation timestamp"
     )
     updated_at: datetime = Field(
         default_factory=datetime.utcnow, description="Update timestamp"
     )
-    notes: Dict[str, str] = Field(default_factory=dict, description="Notes")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional data"
+    )
+
+    class Config:
+        populate_by_name = True
+        allow_population_by_field_name = True
 
 
 class PaymentDB(BaseModel):
     """Database model for payment."""
 
     id: Optional[str] = Field(None, alias="_id")
-    razorpay_payment_id: str = Field(..., description="Razorpay payment ID")
+    dodo_subscription_id: str = Field(..., description="Dodo subscription ID")
     user_id: str = Field(..., description="User ID")
-    subscription_id: Optional[str] = Field(None, description="Subscription ID")
-    order_id: Optional[str] = Field(None, description="Order ID")
+    subscription_id: Optional[str] = Field(None, description="Internal subscription ID")
     amount: int = Field(..., description="Payment amount")
     currency: str = Field(..., description="Currency")
     status: str = Field(..., description="Payment status")
-    method: Optional[str] = Field(None, description="Payment method")
     description: Optional[str] = Field(None, description="Payment description")
-    international: bool = Field(False, description="International payment")
-    refund_status: Optional[str] = Field(None, description="Refund status")
-    amount_refunded: int = Field(0, description="Refunded amount")
-    captured: bool = Field(False, description="Payment captured")
-    email: Optional[str] = Field(None, description="Customer email")
-    contact: Optional[str] = Field(None, description="Customer contact")
-    fee: Optional[int] = Field(None, description="Processing fee")
-    tax: Optional[int] = Field(None, description="Tax")
-    error_code: Optional[str] = Field(None, description="Error code")
-    error_description: Optional[str] = Field(None, description="Error description")
-    webhook_verified: bool = Field(False, description="Webhook verification status")
+    webhook_processed_at: Optional[datetime] = Field(
+        None, description="Webhook processing timestamp"
+    )
     created_at: datetime = Field(
         default_factory=datetime.utcnow, description="Creation timestamp"
     )
-    notes: Dict[str, str] = Field(default_factory=dict, description="Notes")
+    metadata: Dict[str, Any] = Field(
+        default_factory=dict, description="Additional data"
+    )
+
+
+class PaymentVerificationResponse(BaseModel):
+    payment_completed: bool
+    subscription_id: str | None = None
+    message: str

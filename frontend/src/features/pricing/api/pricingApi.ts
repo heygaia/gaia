@@ -4,6 +4,7 @@ import { apiService } from "@/lib/api";
 
 export interface Plan {
   id: string;
+  dodo_product_id: string; // Add Dodo product ID field
   name: string;
   description?: string;
   amount: number;
@@ -16,48 +17,34 @@ export interface Plan {
   updated_at: string;
 }
 
-export interface PaymentConfig {
-  razorpay_key_id: string;
-  currency: string;
-  company_name: string;
-  theme_color: string;
-}
-
 export interface CreateSubscriptionRequest {
-  plan_id: string;
-  quantity?: number;
-  customer_notify?: boolean;
-  addons?: Array<Record<string, unknown>>;
-  notes?: Record<string, string>;
+  product_id: string;
 }
 
-export interface PaymentCallbackData {
-  razorpay_payment_id: string;
-  razorpay_order_id?: string;
-  razorpay_subscription_id?: string;
-  razorpay_signature: string;
+export interface CreateSubscriptionResponse {
+  subscription_id: string;
+  payment_link: string;
+  status: string;
+}
+
+export interface PaymentVerificationResponse {
+  payment_completed: boolean;
+  subscription_id?: string;
+  message: string;
 }
 
 export interface Subscription {
   id: string;
-  razorpay_subscription_id: string;
+  dodo_subscription_id: string;
   user_id: string;
-  plan_id: string;
+  product_id: string;
   status: string;
   quantity: number;
-  current_start?: string;
-  current_end?: string;
-  ended_at?: string;
-  charge_at?: string;
-  start_at?: string;
-  end_at?: string;
-  auth_attempts: number;
-  total_count: number;
-  paid_count: number;
-  customer_notify: boolean;
+  payment_link?: string;
+  webhook_verified: boolean;
   created_at: string;
   updated_at: string;
-  notes?: Record<string, string>;
+  metadata?: Record<string, unknown>;
 }
 
 export interface UserSubscriptionStatus {
@@ -71,18 +58,15 @@ export interface UserSubscriptionStatus {
 }
 
 // Helper function for consistent error handling
-// Error response interface from backend
 interface ApiErrorResponse {
   detail?: string;
   message?: string;
 }
 
-// Helper function for consistent error handling
 const handleApiError = (error: unknown, context: string): never => {
   let errorMessage = "An unexpected error occurred";
   let status: number | undefined;
 
-  // Check if it's an AxiosError
   if (error && typeof error === "object" && "isAxiosError" in error) {
     const axiosError = error as AxiosError<ApiErrorResponse>;
     errorMessage =
@@ -115,30 +99,12 @@ class PricingApi {
     }
   }
 
-  // Get specific plan by ID
-  async getPlan(planId: string): Promise<Plan> {
-    try {
-      return await apiService.get<Plan>(`/payments/plans/${planId}`);
-    } catch (error) {
-      return handleApiError(error, "Get plan");
-    }
-  }
-
-  // Get payment configuration
-  async getPaymentConfig(): Promise<PaymentConfig> {
-    try {
-      return await apiService.get<PaymentConfig>("/payments/config");
-    } catch (error) {
-      return handleApiError(error, "Get payment config");
-    }
-  }
-
-  // Create subscription
+  // Create subscription and get payment link
   async createSubscription(
     data: CreateSubscriptionRequest,
-  ): Promise<Subscription> {
+  ): Promise<CreateSubscriptionResponse> {
     try {
-      return await apiService.post<Subscription>(
+      return await apiService.post<CreateSubscriptionResponse>(
         "/payments/subscriptions",
         data,
       );
@@ -147,63 +113,26 @@ class PricingApi {
     }
   }
 
-  // Get user subscription status
-  async getUserSubscriptionStatus(): Promise<UserSubscriptionStatus> {
+  // Verify payment completion after redirect
+  async verifyPayment(): Promise<PaymentVerificationResponse> {
     try {
-      return await apiService.get<UserSubscriptionStatus>(
-        "/payments/subscriptions/status",
+      return await apiService.post<PaymentVerificationResponse>(
+        "/payments/verify-payment",
+        {},
       );
-    } catch (error) {
-      return handleApiError(error, "Get subscription status");
-    }
-  }
-
-  // Verify payment
-  async verifyPayment(callbackData: PaymentCallbackData): Promise<{
-    id: string;
-    user_id: string;
-    subscription_id?: string;
-    order_id?: string;
-    amount: number;
-    currency: string;
-    status: string;
-  }> {
-    try {
-      return await apiService.post("/payments/verify", callbackData);
     } catch (error) {
       return handleApiError(error, "Verify payment");
     }
   }
 
-  // Update subscription
-  async updateSubscription(data: {
-    plan_id?: string;
-    quantity?: number;
-    remaining_count?: number;
-    replace_items?: boolean;
-    prorate?: boolean;
-  }): Promise<Subscription> {
+  // Get user subscription status
+  async getSubscriptionStatus(): Promise<UserSubscriptionStatus> {
     try {
-      return await apiService.put<Subscription>(
-        "/payments/subscriptions",
-        data,
+      return await apiService.get<UserSubscriptionStatus>(
+        "/payments/subscription-status",
       );
     } catch (error) {
-      return handleApiError(error, "Update subscription");
-    }
-  }
-
-  // Cancel subscription
-  async cancelSubscription(cancelAtCycleEnd = true): Promise<{
-    message: string;
-    cancel_at_cycle_end: boolean;
-  }> {
-    try {
-      return await apiService.delete(
-        `/payments/subscriptions?cancel_at_cycle_end=${cancelAtCycleEnd}`,
-      );
-    } catch (error) {
-      return handleApiError(error, "Cancel subscription");
+      return handleApiError(error, "Get subscription status");
     }
   }
 }

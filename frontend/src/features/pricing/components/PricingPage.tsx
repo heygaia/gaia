@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Tab, Tabs } from "@heroui/tabs";
+import { useEffect, useState } from "react";
 
 import type { Plan } from "@/features/pricing/api/pricingApi";
 import { pricingApi } from "@/features/pricing/api/pricingApi";
@@ -48,12 +49,7 @@ export default function PricingPage() {
         <div className="flex flex-col items-center gap-4">
           <span className="text-danger">Error loading pricing plans</span>
           <span className="text-sm text-foreground-500">{error}</span>
-          <button
-            onClick={() => window.location.reload()}
-            className="rounded bg-primary px-4 py-2 text-white hover:bg-primary-600"
-          >
-            Retry
-          </button>
+          <Button onPress={() => window.location.reload()}>Retry</Button>
         </div>
       </div>
     );

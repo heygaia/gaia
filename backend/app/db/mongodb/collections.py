@@ -24,10 +24,10 @@ projects_collection = mongodb_instance.get_collection("projects")
 reminders_collection = mongodb_instance.get_collection("reminders")
 support_collection = mongodb_instance.get_collection("support_requests")
 
-# Payment collections
-plans_collection = mongodb_instance.get_collection("subscription_plans")
-subscriptions_collection = mongodb_instance.get_collection("subscriptions")
+# Payment-related collections
 payments_collection = mongodb_instance.get_collection("payments")
+subscriptions_collection = mongodb_instance.get_collection("subscriptions")
+plans_collection = mongodb_instance.get_collection("subscription_plans")
 
 # Usage
 usage_snapshots_collection = mongodb_instance.get_collection("usage_snapshots")

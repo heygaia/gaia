@@ -11,13 +11,16 @@ export function SubscriptionActivationBanner() {
   const [lastChecked, setLastChecked] = useState<string | null>(null);
 
   useEffect(() => {
-    // Check if we should show the activation banner
-    // Show if subscription exists but is not active (pending activation)
+    // Only show banner for subscriptions that are created but payment is being processed
+    // Don't show for cancelled or failed payments
     const subscription = subscriptionStatus?.subscription;
     const shouldShow =
       subscription &&
       subscription.status === "created" &&
-      !subscriptionStatus.is_subscribed;
+      !subscriptionStatus.is_subscribed &&
+      // Only show if subscription was created recently (within last hour)
+      subscription.created_at &&
+      new Date(subscription.created_at).getTime() > Date.now() - 3600000;
 
     if (shouldShow && lastChecked !== subscription?.id) {
       setShowBanner(true);

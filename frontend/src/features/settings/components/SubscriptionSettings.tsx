@@ -3,14 +3,12 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Skeleton } from "@heroui/skeleton";
+import { Tooltip } from "@heroui/tooltip";
 import { CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
-import { toast } from "sonner";
 
 import { CreditCardIcon } from "@/components";
 import { SettingsCard } from "@/components/shared/SettingsCard";
-import { pricingApi } from "@/features/pricing/api/pricingApi";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import {
   convertToUSDCents,
@@ -23,30 +21,7 @@ export function SubscriptionSettings() {
     isLoading,
     refetch,
   } = useUserSubscriptionStatus();
-  const [isCancelling, setIsCancelling] = useState(false);
   const router = useRouter();
-
-  const handleCancelSubscription = async () => {
-    if (
-      !confirm(
-        "Are you sure you want to cancel your subscription? You'll continue to have access until the end of your current billing period.",
-      )
-    ) {
-      return;
-    }
-
-    setIsCancelling(true);
-    try {
-      await pricingApi.cancelSubscription(true);
-      toast.success("Subscription cancelled successfully.");
-      refetch();
-    } catch (error) {
-      console.error("Failed to cancel subscription:", error);
-      toast.error("Failed to cancel subscription. Please try again.");
-    } finally {
-      setIsCancelling(false);
-    }
-  };
 
   const handleUpgrade = () => {
     router.push("/pricing");
@@ -174,14 +149,6 @@ export function SubscriptionSettings() {
               {priceFormatted} / {plan.duration}
             </span>
           </div>
-          {subscription?.current_end && (
-            <div className="flex justify-between">
-              <span className="text-sm text-zinc-400">Next billing</span>
-              <span className="font-medium text-white">
-                {formatDate(subscription.current_end)}
-              </span>
-            </div>
-          )}
           {subscriptionStatus.days_remaining !== undefined && (
             <div className="flex justify-between">
               <span className="text-sm text-zinc-400">Days remaining</span>
@@ -205,16 +172,16 @@ export function SubscriptionSettings() {
             </Button>
 
             {subscription?.status === "active" && (
-              <Button
-                color="danger"
-                variant="light"
-                onPress={handleCancelSubscription}
-                isLoading={isCancelling}
-                disabled={isCancelling}
-                className="w-full"
-              >
-                Cancel Subscription
-              </Button>
+              <Tooltip content="Please contact support to cancel your subscription for now">
+                <Button
+                  color="danger"
+                  variant="light"
+                  isDisabled
+                  className="w-full"
+                >
+                  Cancel Subscription
+                </Button>
+              </Tooltip>
             )}
           </div>
         </div>
