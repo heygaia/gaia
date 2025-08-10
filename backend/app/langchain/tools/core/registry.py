@@ -15,6 +15,7 @@ from app.langchain.tools import (
     weather_tool,
     webpage_tool,
 )
+from app.services.composio_service import composio_service  
 
 # Organize tools by categories for better organisation when fetching tools on client side
 TOOLS_BY_CATEGORY = {
@@ -55,6 +56,12 @@ TOOLS_BY_CATEGORY = {
     ],
     "weather": [
         weather_tool.get_weather,
+    ],
+     "notion": [
+        *composio_service.get_notion_tools(user_id="688bc1c38769a8edbc71954a")
+    ],
+     "google_sheet": [
+        *composio_service.get_google_sheet_tools(user_id="688bc1c38769a8edbc71954a")
     ],
 }
 
