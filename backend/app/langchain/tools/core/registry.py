@@ -63,6 +63,9 @@ TOOLS_BY_CATEGORY = {
      "google_sheet": [
         *composio_service.get_google_sheet_tools(user_id="688bc1c38769a8edbc71954a")
     ],
+     "twitter": [
+        *composio_service.get_x_tools(user_id="688bc1c38769a8edbc71954a")
+    ],
 }
 
 # Map categories to their required integrations
@@ -70,8 +73,9 @@ CATEGORY_INTEGRATION_REQUIREMENTS = {
     "mail": "gmail",
     "calendar": "google_calendar",
     "google_docs": "google_docs",
-    # "productivity", "goal_tracking", "documents", "search", "memory", "development", "creative", "weather" don't require integrations
-}
+  
+
+} 
 
 # Define tools that should always be accessible to the agent directly
 ALWAYS_AVAILABLE_TOOLS = [

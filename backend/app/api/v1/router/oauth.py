@@ -30,6 +30,7 @@ from app.services.onboarding_service import (
 from app.services.user_service import update_user_profile
 from app.utils.oauth_utils import fetch_user_info_from_google, get_tokens_from_code
 from app.utils.watch_mail import watch_mail
+from app.services.composio_service import composio_service
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -156,6 +157,10 @@ async def login_integration(
     """Dynamic OAuth login for any configured integration."""
     # Get the integration configuration
     integration = get_integration_by_id(integration_id)
+
+    if integration.provider == "notion":
+        return RedirectResponse(url=composio_service.connect_account("notion", user["user_id"])["redirect_url"])
+
     if not integration:
         raise HTTPException(
             status_code=404, detail=f"Integration {integration_id} not found"
@@ -165,6 +170,11 @@ async def login_integration(
         raise HTTPException(
             status_code=400, detail=f"Integration {integration_id} is not available yet"
         )
+    if integration.provider == "twitter":
+        return RedirectResponse(url=composio_service.connect_account("twitter", user["user_id"])["redirect_url"])
+
+    if integration.provider == "linkedin":
+        return RedirectResponse(url=composio_service.connect_account("linkedin", user["user_id"])["redirect_url"])
 
     # Handle different OAuth providers
     if integration.provider == "google":

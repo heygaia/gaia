@@ -95,6 +95,7 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
+    COMPOSIO_KEY: str
 
     # Blog Management
     BLOG_BEARER_TOKEN: str  # Bearer token for blog management operations
