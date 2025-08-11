@@ -66,6 +66,9 @@ export const integrationsApi = {
           { integrationId: "github", connected: false },
           { integrationId: "figma", connected: false },
           { integrationId: "notion", connected: false },
+          { integrationId: "twitter", connected: false },
+          { integrationId: "linkedin", connected: false },
+          { integrationId: "google sheet", connected: false },
         ],
       };
     }
