@@ -122,20 +122,16 @@ export default function CreateWorkflowModal({
   };
 
   const renderTriggerTab = () => (
-    <div className="space-y-2">
-      <div>
+    <div className="w-full">
+      <div className="w-full">
         <Select
-          fullWidth
           placeholder="Choose a trigger for your workflow"
-          classNames={{
-            innerWrapper: "min-w-fit pr-7",
-            listboxWrapper: "min-w-fit!",
-            base: "min-w-fit",
-          }}
+          fullWidth
           selectedKeys={formData.trigger ? [formData.trigger] : []}
           onSelectionChange={(keys) =>
             updateFormData({ trigger: Array.from(keys)[0] as string })
           }
+          // className="min-w-full"
           startContent={
             selectedTriggerOption && (
               <Image
@@ -316,8 +312,8 @@ export default function CreateWorkflowModal({
         if (!open) resetForm();
         onOpenChange(open);
       }}
-      size="5xl"
-      className="min-h-[50vh]"
+      size="3xl"
+      className="min-h-fit"
       scrollBehavior="inside"
       backdrop="blur"
     >
@@ -342,8 +338,8 @@ export default function CreateWorkflowModal({
               placeholder="Describe what this workflow does"
               value={formData.description}
               onChange={(e) => updateFormData({ description: e.target.value })}
-              maxRows={10}
-              minRows={10}
+              maxRows={3}
+              minRows={3}
               variant="underlined"
               className="text-sm"
             />
@@ -353,7 +349,7 @@ export default function CreateWorkflowModal({
             {/* Trigger/Schedule Tabs. rounded-2xl bg-zinc-800/50 p-1 pb-0 */}
 
             <div className="flex items-center gap-3">
-              <div className="flex min-w-28 items-center justify-between gap-1.5 text-sm font-medium text-foreground-500">
+              <div className="flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-foreground-500">
                 <span>When to Run</span>
                 <Tooltip
                   content={
@@ -385,11 +381,12 @@ export default function CreateWorkflowModal({
                 <Tabs
                   color="primary"
                   classNames={{
-                    tabList: "flex flex-row max-w-md",
+                    tabList: "flex flex-row",
                     base: "flex items-start",
+                    tabWrapper: "w-full",
+                    panel: "min-w-full",
                   }}
                   selectedKey={formData.activeTab}
-                  //   variant="bordered"
                   placement="start"
                   onSelectionChange={(key) =>
                     updateFormData({ activeTab: key as "trigger" | "schedule" })
@@ -404,91 +401,6 @@ export default function CreateWorkflowModal({
                 </Tabs>
               </div>
             </div>
-
-            <div className="flex items-center gap-3">
-              <div className="flex min-w-28 items-center justify-between gap-1.5 text-sm font-medium text-foreground-500">
-                <span>Integrations</span>
-                <Tooltip
-                  content={
-                    <div className="px-1 py-2">
-                      <p className="text-sm font-medium">Integrations</p>
-                      <p className="mt-1 text-xs text-foreground-400">
-                        Select which tools and services GAIA will interact with
-                        in this workflow.
-                      </p>
-                      <ul className="mt-2 space-y-1 text-xs text-foreground-400">
-                        <li>• Connect to your favorite productivity apps</li>
-                        <li>• Automate tasks across multiple platforms</li>
-                        <li>
-                          • Each integration provides specific capabilities
-                        </li>
-                      </ul>
-                    </div>
-                  }
-                  placement="top"
-                  delay={500}
-                >
-                  <Info className="h-3.5 w-3.5 cursor-help text-foreground-400 hover:text-foreground-600" />
-                </Tooltip>
-              </div>
-
-              <Select
-                placeholder="Choose integrations GAIA will use in this workflow"
-                selectionMode="multiple"
-                className="max-w-md"
-                selectedKeys={formData.integrations}
-                onSelectionChange={(keys) =>
-                  updateFormData({ integrations: Array.from(keys) as string[] })
-                }
-                renderValue={(items) => (
-                  <div className="flex flex-wrap gap-2">
-                    {items.map((item) => {
-                      const integration = integrationOptions.find(i => i.id === item.key);
-                      return integration ? (
-                        <Chip
-                          key={item.key}
-                          size="sm"
-                          variant="flat"
-                          startContent={
-                            <Image
-                              src={integration.icon}
-                              alt={integration.name}
-                              width={16}
-                              height={16}
-                              className="h-4 w-4 object-contain"
-                            />
-                          }
-                        >
-                          {integration.name}
-                        </Chip>
-                      ) : null;
-                    })}
-                  </div>
-                )}
-              >
-                {integrationOptions.map((integration) => (
-                  <SelectItem
-                    key={integration.id}
-                    startContent={
-                      <Image
-                        src={integration.icon}
-                        alt={integration.name}
-                        width={20}
-                        height={20}
-                        className="h-5 w-5 object-contain"
-                      />
-                    }
-                    endContent={
-                      <Chip size="sm" variant="flat" className="capitalize">
-                        {integration.category}
-                      </Chip>
-                    }
-                  >
-                    {integration.name}
-                  </SelectItem>
-                ))}
-              </Select>
-            </div>
           </div>
         </ModalBody>
 
@@ -501,7 +413,6 @@ export default function CreateWorkflowModal({
             onPress={handleCreate}
             isDisabled={
               !formData.name ||
-              formData.integrations.length === 0 ||
               (formData.activeTab === "trigger" && !formData.trigger)
             }
           >
