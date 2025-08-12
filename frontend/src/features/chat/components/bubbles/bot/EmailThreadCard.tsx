@@ -1,6 +1,5 @@
 import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Chip } from "@heroui/chip";
-import { Selection } from "@heroui/react";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 import DOMPurify from "dompurify";
 import { useEffect, useRef, useState } from "react";
@@ -82,32 +81,16 @@ function EmailBodyRenderer({ body }: { body: string }) {
   );
 }
 
-interface EmailThreadCardProps {
-  emailThreadData: EmailThreadData;
-  isExpandedDefault?: boolean;
-}
-
 export default function EmailThreadCard({
   emailThreadData,
-  isExpandedDefault = true,
-}: EmailThreadCardProps) {
-  const [isExpanded, setIsExpanded] = useState(isExpandedDefault);
-
-  const handleSelectionChange = (keys: Selection) => {
-    const expanded =
-      keys === "all" || (keys instanceof Set && keys.has("email-thread"));
-    setIsExpanded(expanded);
-  };
-
+}: {
+  emailThreadData: EmailThreadData;
+}) {
   return (
     <div
       className={`mx-auto mb-3 w-full rounded-2xl bg-zinc-800 p-3 py-0 text-white transition-all duration-300`}
     >
-      <Accordion
-        variant="light"
-        defaultExpandedKeys={["email-thread"]}
-        onSelectionChange={handleSelectionChange}
-      >
+      <Accordion variant="light" defaultExpandedKeys={["email-thread"]}>
         <AccordionItem
           key="email-thread"
           aria-label="Email Thread"

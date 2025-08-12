@@ -27,6 +27,16 @@ class MessageRequestWithHistory(BaseModel):
     toolCategory: Optional[str] = None  # Category of the selected tool
 
 
+class SaveIncompleteConversationRequest(BaseModel):
+    message: str
+    conversation_id: Optional[str] = None
+    fileIds: Optional[List[str]] = []
+    fileData: Optional[List[FileData]] = []
+    selectedTool: Optional[str] = None
+    toolCategory: Optional[str] = None
+    incomplete_response: str = ""  # The partial response from the bot
+
+
 class MessageRequest(BaseModel):
     message: str
 

@@ -53,7 +53,12 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
       selectedIndex: 0,
       commandStart: -1,
       commandEnd: -1,
-      dropdownPosition: { top: 0, left: 0, width: 0 },
+      dropdownPosition: { top: 0, left: 0, width: 0 } as {
+        top?: number;
+        bottom?: number;
+        left: number;
+        width: number;
+      },
       openedViaButton: false, // Track if dropdown was opened via button
     });
 
@@ -85,10 +90,9 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
               const rect =
                 composerContainer?.getBoundingClientRect() ||
                 textarea.getBoundingClientRect();
-              // Height calculation no longer needed for bottom positioning
 
               const position = {
-                top: rect.top, // Position above the composer
+                bottom: rect.top, // Position dropdown bottom at composer top
                 left: rect.left,
                 width: rect.width, // Match the composer width
               };
@@ -123,7 +127,6 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
             const rect =
               composerContainer?.getBoundingClientRect() ||
               textarea.getBoundingClientRect();
-            // Height calculation no longer needed for bottom positioning
 
             setSlashCommandState({
               isActive: true,
@@ -132,7 +135,7 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
               commandStart: detection.commandStart,
               commandEnd: detection.commandEnd,
               dropdownPosition: {
-                top: rect.top - 400, // Position above the composer
+                bottom: rect.top, // Position dropdown bottom at composer top
                 left: rect.left,
                 width: rect.width, // Match the composer width
               },
@@ -359,7 +362,6 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
               openedViaButton: false,
             }))
           }
-          hasMessages={hasMessages}
           position={slashCommandState.dropdownPosition}
           isVisible={slashCommandState.isActive}
           openedViaButton={slashCommandState.openedViaButton}

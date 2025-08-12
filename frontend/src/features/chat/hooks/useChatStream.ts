@@ -8,6 +8,7 @@ import { chatApi } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import { streamController } from "@/features/chat/utils/streamController";
 import { MessageType } from "@/types/features/convoTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
@@ -16,7 +17,7 @@ import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
 
 export const useChatStream = () => {
-  const { setIsLoading } = useLoading();
+  const { setIsLoading, setAbortController } = useLoading();
   const { updateConvoMessages, convoMessages } = useConversation();
   const router = useRouter();
   const fetchConversations = useFetchConversations();
@@ -38,6 +39,31 @@ export const useChatStream = () => {
   useEffect(() => {
     refs.current.convoMessages = convoMessages;
   }, [convoMessages]);
+
+  const saveIncompleteConversation = async () => {
+    if (!refs.current.botMessage || !refs.current.accumulatedResponse) {
+      return;
+    }
+
+    try {
+      const response = await chatApi.saveIncompleteConversation(
+        refs.current.userPrompt,
+        refs.current.newConversation.id || null,
+        refs.current.accumulatedResponse,
+        refs.current.botMessage.fileData || [],
+        refs.current.botMessage.selectedTool || null,
+        refs.current.botMessage.toolCategory || null,
+      );
+
+      // Handle navigation for incomplete conversations
+      if (response.conversation_id && !refs.current.newConversation.id) {
+        router.push(`/c/${response.conversation_id}`);
+        fetchConversations();
+      }
+    } catch (saveError) {
+      console.error("Failed to save incomplete conversation:", saveError);
+    }
+  };
 
   const updateBotMessage = (overrides: Partial<MessageType>) => {
     const baseMessage: MessageType = {
@@ -139,7 +165,9 @@ export const useChatStream = () => {
 
     setIsLoading(false);
     resetLoadingText();
+    streamController.clear();
 
+    // Only navigate for successful completions (manual aborts are handled in the save callback)
     if (refs.current.newConversation.id) {
       // If a new conversation was created, update the URL and fetch conversations
       // Using replaceState to avoid reloading the page that would happen with pushState
@@ -151,9 +179,6 @@ export const useChatStream = () => {
       );
       fetchConversations();
     }
-
-    // Clear the saved input text since the message was sent successfully
-    localStorage.removeItem("gaia-searchbar-text");
 
     refs.current.botMessage = null;
     refs.current.currentStreamingMessages = []; // Reset streaming messages
@@ -188,6 +213,24 @@ export const useChatStream = () => {
       fileData,
     };
 
+    // Create abort controller for this stream
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    // Register the save callback for when user clicks stop
+    streamController.setSaveCallback(() => {
+      // Update the UI immediately when stop is clicked
+      if (refs.current.botMessage) {
+        updateBotMessage({
+          response: refs.current.accumulatedResponse,
+          loading: false,
+        });
+      }
+
+      // Save the incomplete conversation
+      saveIncompleteConversation();
+    });
+
     await chatApi.fetchChatStream(
       inputText,
       [...refs.current.convoMessages, ...currentMessages],
@@ -197,15 +240,21 @@ export const useChatStream = () => {
       (err) => {
         setIsLoading(false);
         resetLoadingText();
-        toast.error("Error in chat stream.");
-        console.error("Stream error:", err);
+        streamController.clear();
 
-        // Save the user's input text for restoration on error
-        localStorage.setItem("gaia-searchbar-text", inputText);
+        // Handle non-abort errors
+        if (err.name !== "AbortError") {
+          toast.error(`Error while streaming: ${err}`);
+          console.error("Stream error:", err);
+          // Save the user's input text for restoration on error
+          localStorage.setItem("gaia-searchbar-text", inputText);
+        }
+        // Abort errors are now handled in handleStreamClose
       },
       fileData,
       selectedTool,
       toolCategory,
+      controller,
     );
   };
 };

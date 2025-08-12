@@ -12,6 +12,7 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import Composer from "@/features/chat/components/composer/Composer";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import ChatRenderer from "@/features/chat/components/interface/ChatRenderer";
+import ScrollToBottomButton from "@/features/chat/components/interface/ScrollToBottomButton";
 import StarterText from "@/features/chat/components/interface/StarterText";
 import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import { useConversation } from "@/features/chat/hooks/useConversation";
@@ -32,6 +33,7 @@ const ChatPage = React.memo(function MainChat() {
   const messageId = searchParams.get("messageId");
 
   const chatRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   // const [isAtBottom, setIsAtBottom] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
@@ -77,8 +79,12 @@ const ChatPage = React.memo(function MainChat() {
     // This is to prevent the chat from scrolling to the bottom when a user is redirected to a specific message.
     // Scrolling to message is handled in ChatRenderer.
     if (messageId) return;
-    if (chatRef.current)
-      chatRef.current.scrollIntoView({ behavior: "smooth", block: "end" });
+    if (scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTo({
+        top: scrollContainerRef.current.scrollHeight,
+        behavior: "smooth",
+      });
+    }
   };
 
   // Drag and drop functionality
@@ -160,6 +166,7 @@ const ChatPage = React.memo(function MainChat() {
           // Layout with messages: Chat at top, composer at bottom
           <>
             <div
+              ref={scrollContainerRef}
               className={`${dragContainerClass} flex-1 justify-center overflow-y-auto`}
               {...dragHandlers}
             >
@@ -171,6 +178,11 @@ const ChatPage = React.memo(function MainChat() {
                 <ChatRenderer />
               </div>
             </div>
+            <ScrollToBottomButton
+              containerRef={scrollContainerRef}
+              onScrollToBottom={scrollToBottom}
+              threshold={150}
+            />
             <div className="flex-shrink-0 pb-2">
               <Composer {...composerProps} />
             </div>
@@ -178,7 +190,7 @@ const ChatPage = React.memo(function MainChat() {
         ) : (
           // Layout without messages: Centered composer
           <div
-            className={`${dragContainerClass} h-[calc(100%-80px)] items-center justify-center`}
+            className={`${dragContainerClass} h-[calc(100%-50px)] items-center justify-center`}
             {...dragHandlers}
           >
             <FileDropModal isDragging={isDragging} />

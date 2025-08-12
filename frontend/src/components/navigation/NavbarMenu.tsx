@@ -5,10 +5,11 @@ import Link from "next/link";
 import React from "react";
 
 import {
-  companyNavLinks,
-  connectNavLinks,
-  productNavLinks,
-  resourcesNavLinks,
+  company,
+  connect,
+  getLinkDescription,
+  product,
+  resources,
 } from "@/config/appConfig";
 import { cn } from "@/lib/utils";
 
@@ -65,41 +66,20 @@ const ListItem = React.forwardRef<
 ListItem.displayName = "ListItem";
 
 export function NavbarMenu({ activeMenu, onClose }: NavbarMenuProps) {
-  const descriptions = {
-    Features: "Discover all the powerful capabilities of GAIA",
-    Roadmap: "See what's coming next",
-    Status: "Check the status of GAIA",
-    "Use Cases": "Learn how GAIA can transform your workflow",
-    Blog: "Read the latest updates and insights",
-    Docs: "Comprehensive documentation and guides",
-    Pricing: "Choose the perfect plan for your needs",
-    "Feature Request": "Request new features and vote on ideas",
-    About: "Learn about our mission",
-    Contact: "Get in touch with our team",
-    Terms: "Terms of service and usage",
-    Privacy: "Our privacy policy",
-    Discord: "Join the Community Discord",
-    "Twitter (X)": "Follow us for updates",
-    GitHub: "Check out our open source projects",
-    WhatsApp: "Join our WhatsApp Community",
-    LinkedIn: "Follow our LinkedIn Company Page",
-    YouTube: "Subscribe to our YouTube Channel",
-  } as const;
-
   const getDescription = (label: string): string => {
-    return descriptions[label as keyof typeof descriptions] || "";
+    return getLinkDescription(label);
   };
 
   const getMenuLinks = () => {
     switch (activeMenu) {
       case "product":
-        return productNavLinks;
+        return product;
       case "resources":
-        return resourcesNavLinks;
+        return resources;
       case "company":
-        return companyNavLinks;
+        return company;
       case "socials":
-        return connectNavLinks;
+        return connect;
       default:
         return [];
     }
@@ -180,20 +160,6 @@ export function NavbarMenu({ activeMenu, onClose }: NavbarMenuProps) {
 
         {activeMenu === "socials" && (
           <div className="grid w-full grid-cols-3 gap-4 md:grid-cols-3">
-            <div className="col-span-1">
-              <Link
-                className="relative flex h-full w-full flex-col justify-end overflow-hidden rounded-2xl border border-zinc-800/80 bg-gradient-to-b from-zinc-900 to-zinc-950 p-3 no-underline transition-all duration-500 select-none hover:from-zinc-800 hover:to-zinc-950"
-                href="/contact"
-                onClick={onClose}
-              >
-                <div className="relative z-[1] mt-4 text-lg font-medium text-zinc-100">
-                  Need help?
-                </div>
-                <p className="relative z-[1] text-sm leading-tight text-zinc-400">
-                  Contact our support team directly
-                </p>
-              </Link>
-            </div>
             {links.map((link) => (
               <ListItem
                 key={link.href}

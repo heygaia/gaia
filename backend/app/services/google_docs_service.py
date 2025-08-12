@@ -1,6 +1,7 @@
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
+from app.config.oauth_config import get_integration_scopes
 from app.config.settings import settings
 from app.utils.document_utils import create_temp_docx_file
 from google.oauth2.credentials import Credentials
@@ -11,36 +12,36 @@ from googleapiclient.http import MediaFileUpload
 
 def get_docs_service(refresh_token: str, access_token: str):
     """Create and return Google Docs API service instance."""
+    # Get combined scopes for both docs and drive access
+    docs_scopes = get_integration_scopes("google_docs")
+    drive_scopes = get_integration_scopes("google_drive")
+    combined_scopes = list(set(docs_scopes + drive_scopes))
+
     creds = Credentials(
         token=access_token,
         refresh_token=refresh_token,
         token_uri=settings.GOOGLE_TOKEN_URL,
         client_id=settings.GOOGLE_CLIENT_ID,
         client_secret=settings.GOOGLE_CLIENT_SECRET,
-        scopes=[
-            "https://www.googleapis.com/auth/documents",
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/drive.file",
-            "https://www.googleapis.com/auth/drive.readonly",
-        ],
+        scopes=combined_scopes,
     )
     return build("docs", "v1", credentials=creds)
 
 
 def get_drive_service(refresh_token: str, access_token: str):
     """Create and return Google Drive API service instance for file management."""
+    # Get combined scopes for both docs and drive access
+    docs_scopes = get_integration_scopes("google_docs")
+    drive_scopes = get_integration_scopes("google_drive")
+    combined_scopes = list(set(docs_scopes + drive_scopes))
+
     creds = Credentials(
         token=access_token,
         refresh_token=refresh_token,
         token_uri=settings.GOOGLE_TOKEN_URL,
         client_id=settings.GOOGLE_CLIENT_ID,
         client_secret=settings.GOOGLE_CLIENT_SECRET,
-        scopes=[
-            "https://www.googleapis.com/auth/documents",
-            "https://www.googleapis.com/auth/drive",
-            "https://www.googleapis.com/auth/drive.file",
-            "https://www.googleapis.com/auth/drive.readonly",
-        ],
+        scopes=combined_scopes,
     )
     return build("drive", "v3", credentials=creds)
 

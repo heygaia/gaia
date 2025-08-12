@@ -46,7 +46,6 @@ export function PaymentSummary() {
   }
 
   const plan = subscriptionStatus.current_plan;
-  const subscription = subscriptionStatus.subscription;
 
   // Convert to USD and format
   const priceInUSDCents = convertToUSDCents(plan.amount, plan.currency);

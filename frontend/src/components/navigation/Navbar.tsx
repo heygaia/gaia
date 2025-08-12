@@ -6,7 +6,7 @@ import { ChevronDown } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect,useState } from "react";
+import { useEffect, useState } from "react";
 
 import MobileMenu from "@/components/navigation/MobileMenu";
 import { LinkButton } from "@/components/shared/LinkButton";
@@ -54,14 +54,6 @@ export default function Navbar() {
       setActiveDropdown(menu);
       setHoveredItem(menu);
       toggleBackdrop(true);
-    }
-  };
-
-  const handleMouseLeave = () => {
-    if (!isMobileScreen) {
-      setActiveDropdown(null);
-      setHoveredItem(null);
-      toggleBackdrop(false);
     }
   };
 

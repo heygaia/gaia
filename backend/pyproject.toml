@@ -100,6 +100,7 @@ dependencies = [
   "authlib>=1.6.1",
   "dodopayments>=1.44.0",
   "standardwebhooks>=1.0.0",
+  "sentry-sdk[fastapi]>=2.32.0",
 ]
 
 [dependency-groups]

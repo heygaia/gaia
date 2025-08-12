@@ -16,6 +16,10 @@ export interface UseIntegrationsReturn {
     integrationId: string,
   ) => IntegrationStatus | undefined;
   getIntegrationsWithStatus: () => Integration[];
+  // New helper functions for unified integrations
+  getSpecialIntegrations: () => Integration[];
+  getRegularIntegrations: () => Integration[];
+  isUnifiedIntegrationConnected: (unifiedId: string) => boolean;
 }
 
 /**
@@ -66,13 +70,23 @@ export const useIntegrations = (): UseIntegrationsReturn => {
 
   // Get integrations with their current status
   const getIntegrationsWithStatus = useCallback((): Integration[] => {
-    return integrationConfigs.map((integration) => {
-      const status = getIntegrationStatus(integration.id);
-      return {
-        ...integration,
-        status: status?.connected ? "connected" : "not_connected",
-      };
-    });
+    return integrationConfigs
+      .map((integration) => {
+        const status = getIntegrationStatus(integration.id);
+        return {
+          ...integration,
+          status: (status?.connected
+            ? "connected"
+            : "not_connected") as Integration["status"],
+        };
+      })
+      .sort((a, b) => {
+        // Sort by display priority (higher first), then by name
+        const priorityDiff =
+          (b.displayPriority || 0) - (a.displayPriority || 0);
+        if (priorityDiff !== 0) return priorityDiff;
+        return a.name.localeCompare(b.name);
+      });
   }, [integrationConfigs, getIntegrationStatus]);
 
   // Connect an integration
@@ -116,6 +130,40 @@ export const useIntegrations = (): UseIntegrationsReturn => {
     [getIntegrationsWithStatus],
   );
 
+  // Get special/unified integrations
+  const getSpecialIntegrations = useCallback((): Integration[] => {
+    return integrationsWithStatus.filter(
+      (integration) => integration.isSpecial,
+    );
+  }, [integrationsWithStatus]);
+
+  // Get regular integrations (non-special)
+  const getRegularIntegrations = useCallback((): Integration[] => {
+    return integrationsWithStatus.filter(
+      (integration) => !integration.isSpecial,
+    );
+  }, [integrationsWithStatus]);
+
+  // Check if a unified integration is connected (all its included integrations are connected)
+  const isUnifiedIntegrationConnected = useCallback(
+    (unifiedId: string): boolean => {
+      const unifiedIntegration = integrationsWithStatus.find(
+        (integration) => integration.id === unifiedId && integration.isSpecial,
+      );
+
+      if (!unifiedIntegration || !unifiedIntegration.includedIntegrations) {
+        return false;
+      }
+
+      // Check if all included integrations are connected
+      return unifiedIntegration.includedIntegrations.every((includedId) => {
+        const status = getIntegrationStatus(includedId);
+        return status?.connected === true;
+      });
+    },
+    [integrationsWithStatus, getIntegrationStatus],
+  );
+
   return {
     integrations: integrationsWithStatus,
     integrationStatuses,
@@ -126,5 +174,8 @@ export const useIntegrations = (): UseIntegrationsReturn => {
     refreshStatus,
     getIntegrationStatus,
     getIntegrationsWithStatus,
+    getSpecialIntegrations,
+    getRegularIntegrations,
+    isUnifiedIntegrationConnected,
   };
 };

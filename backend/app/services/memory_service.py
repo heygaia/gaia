@@ -1,10 +1,9 @@
 """Memory service layer for handling all memory operations."""
 
-import asyncio
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import llm_logger as logger
-from app.memory.client import get_memory_client
+from app.memory.client import memory_client_manager
 from app.models.memory_models import (
     MemoryEntry,
     MemorySearchResult,
@@ -17,8 +16,11 @@ class MemoryService:
 
     def __init__(self):
         """Initialize the memory service."""
-        self.client = get_memory_client()
         self.logger = logger
+
+    async def _get_client(self):
+        """Get the configured async memory client."""
+        return await memory_client_manager.get_client()
 
     def _validate_user_id(self, user_id: Optional[str]) -> Optional[str]:
         """
@@ -55,29 +57,26 @@ class MemoryService:
             self.logger.warning(f"Expected dict, got {type(result)}: {result}")
             return None
 
-        # Handle both memory structure formats
-        content = (
-            result.get("memory") or result.get("text") or result.get("content", "")
-        )
+        # Extract memory content - all API responses use "memory" field
+        content = result.get("memory", "")
 
         if not content:
-            self.logger.warning(f"No content found in memory result: {result}")
+            self.logger.warning(f"No memory content found in result: {result}")
             return None
 
         try:
-            # Extract all the fields that match the output structure
             memory_entry = MemoryEntry(
                 id=result.get("id"),
                 content=content,
                 user_id=result.get("user_id", ""),
-                metadata=result.get("metadata") or {},
-                categories=result.get("categories", []),
+                metadata=result.get("metadata") or {},  # Handle None values
+                categories=result.get("categories") or [],  # Handle None values
                 created_at=result.get("created_at"),
                 updated_at=result.get("updated_at"),
                 expiration_date=result.get("expiration_date"),
-                internal_metadata=result.get("internal_metadata"),
-                deleted_at=result.get("deleted_at"),
-                relevance_score=result.get("score") or result.get("relevance_score"),
+                immutable=result.get("immutable", False),
+                organization=result.get("organization"),
+                owner=result.get("owner"),
             )
 
             self.logger.debug(f"Successfully parsed memory: {memory_entry.id}")
@@ -117,34 +116,44 @@ class MemoryService:
         )
         return parsed_memories
 
-    def _extract_memories_from_response(self, response: Any) -> List[Dict[str, Any]]:
+    def _parse_add_result(self, result: Dict[str, Any]) -> Optional[MemoryEntry]:
         """
-        Extract memories list from various response formats.
+        Parse add operation result from Mem0 API.
 
         Args:
-            response: API response in various formats
+            result: Add result dictionary with format:
+                    {"id": "...", "memory": "...", "event": "ADD", "structured_attributes": {...}}
 
         Returns:
-            List of memory dictionaries
+            MemoryEntry or None if parsing fails
         """
-        if isinstance(response, list):
-            return response
+        if not isinstance(result, dict):
+            self.logger.warning(f"Expected dict, got {type(result)}: {result}")
+            return None
 
-        if isinstance(response, dict):
-            # Check for 'memories' key (v1.1 format with graph data)
-            if "memories" in response:
-                return response["memories"]
+        # Extract memory content directly from result
+        content = result.get("memory", "")
 
-            # Check for 'results' key (standard format)
-            if "results" in response:
-                return response["results"]
+        if not content:
+            self.logger.warning(f"No memory content found in add result: {result}")
+            return None
 
-            # Check if response itself is a single memory
-            if "id" in response and ("memory" in response or "content" in response):
-                return [response]
+        try:
+            memory_entry = MemoryEntry(
+                id=result.get("id"),
+                content=content,
+                metadata=result.get("structured_attributes", {}),
+                # Model now has defaults for all optional fields
+            )
 
-        self.logger.warning(f"Unexpected response format: {type(response)}")
-        return []
+            self.logger.debug(f"Successfully parsed add result: {memory_entry.id}")
+            return memory_entry
+
+        except Exception as e:
+            self.logger.error(
+                f"Error creating MemoryEntry from add result: {e}, raw data: {result}"
+            )
+            return None
 
     def _extract_relationships_from_response(
         self, response: Any
@@ -153,23 +162,35 @@ class MemoryService:
         Extract relationships list from API response.
 
         Args:
-            response: API response in various formats
+            response: API response which might contain relationships
 
         Returns:
             List of relationship dictionaries
         """
-        if isinstance(response, dict) and "relations" in response:
-            return response.get("relations", [])
+        # For Mem0 API v2, relationships are in the 'entities' format
+        if isinstance(response, dict):
+            # v2 API returns relationships as 'entities'
+            entities = response.get("entities", [])
+            if entities:
+                return entities
+
+            # Fallback to older formats if needed
+            return (
+                response.get("relations", [])
+                or response.get("relationships", [])
+                or response.get("graph", {}).get("relationships", [])
+            )
         return []
 
     def _parse_relationships(
         self, relations: List[Dict[str, Any]]
     ) -> List[MemoryRelation]:
         """
-        Parse relationships from Mem0 API response.
+        Parse relationships from Mem0 API v2 response.
 
         Args:
-            relations: List of relationship dictionaries
+            relations: List of relationship dictionaries in v2 'entities' format:
+                      [{"source": "alice123", "relation": "likes", "destination": "hiking"}]
 
         Returns:
             List of MemoryRelation objects
@@ -177,14 +198,37 @@ class MemoryService:
         parsed_relations = []
         for relation_data in relations:
             try:
-                relation = MemoryRelation(
-                    source=relation_data.get("source", ""),
-                    source_type=relation_data.get("source_type", ""),
-                    relationship=relation_data.get("relationship", ""),
-                    target=relation_data.get("target", ""),
-                    target_type=relation_data.get("target_type", ""),
-                )
-                parsed_relations.append(relation)
+                # Handle v2 API format with 'entities'
+                if (
+                    "source" in relation_data
+                    and "relation" in relation_data
+                    and "destination" in relation_data
+                ):
+                    relation = MemoryRelation(
+                        source=relation_data.get("source", ""),
+                        source_type="entity",  # v2 API doesn't specify types, default to 'entity'
+                        relationship=relation_data.get("relation", ""),
+                        target=relation_data.get("destination", ""),
+                        target_type="entity",  # v2 API doesn't specify types, default to 'entity'
+                    )
+                    parsed_relations.append(relation)
+                # Fallback to old format if available
+                elif (
+                    "source" in relation_data
+                    and "relationship" in relation_data
+                    and "target" in relation_data
+                ):
+                    relation = MemoryRelation(
+                        source=relation_data.get("source", ""),
+                        source_type=relation_data.get("source_type", "entity"),
+                        relationship=relation_data.get("relationship", ""),
+                        target=relation_data.get("target", ""),
+                        target_type=relation_data.get("target_type", "entity"),
+                    )
+                    parsed_relations.append(relation)
+                else:
+                    self.logger.warning(f"Unknown relationship format: {relation_data}")
+
             except Exception as e:
                 self.logger.warning(f"Failed to parse relationship: {e}")
                 continue
@@ -198,6 +242,7 @@ class MemoryService:
         self,
         content: str,
         user_id: Optional[str],
+        conversation_id: Optional[str] = None,
         metadata: Optional[Dict[str, Any]] = None,
     ) -> Optional[MemoryEntry]:
         """
@@ -217,40 +262,42 @@ class MemoryService:
 
         try:
             # Store as a simple user message for mem0 to infer memory from
-            # Use asyncio.to_thread to run synchronous Mem0 client in thread pool
-            result = await asyncio.to_thread(
-                self.client.add,
+            client = await self._get_client()
+            result = await client.add(
                 messages=[{"role": "user", "content": content}],
                 user_id=user_id,
                 metadata=metadata or {},
                 infer=True,
+                version="v2",
+                run_id=conversation_id,
             )
 
             self.logger.info(f"Memory stored for user {user_id}")
-
-            # Mem0 cloud API returns a dict with 'results' array
-            if not isinstance(result, dict) or "results" not in result:
-                self.logger.warning(f"Unexpected response format from mem0: {result}")
+            # Mem0 add API returns a dict with 'results' key containing list of result objects
+            if isinstance(result, dict) and "results" in result:
+                results_list = result["results"]
+            elif isinstance(result, list):
+                results_list = result
+            else:
+                self.logger.warning(
+                    f"Unexpected response format from mem0 add: {result}"
+                )
                 return None
 
-            results = result.get("results", [])
-            if not results:
+            if not results_list:
+                self.logger.warning("No results returned from mem0 add")
                 return None
 
-            # Get the first result (usually only one when inferring)
-            first_result = results[0]
+            # Get the first result (usually only one when adding)
+            first_result = results_list[0]
 
-            # Use the standardized parsing method for consistency
-            memory_entry = self._parse_memory_result(first_result)
+            # Parse the add result
+            memory_entry = self._parse_add_result(first_result)
 
-            # Ensure the user_id is set correctly
+            # Set the user_id and metadata
             if memory_entry:
                 memory_entry.user_id = user_id
-                # If the memory doesn't have content, use the original content
-                if not memory_entry.content:
-                    memory_entry.content = content
-                # Ensure metadata is preserved
-                if not memory_entry.metadata and metadata:
+                if metadata:
                     memory_entry.metadata = metadata
 
             return memory_entry
@@ -281,14 +328,24 @@ class MemoryService:
             return MemorySearchResult()
 
         try:
-            results = await asyncio.to_thread(
-                self.client.search,
+            client = await self._get_client()
+            results = await client.search(
                 query=query,
-                user_id=user_id,
+                filters={"AND": [{"user_id": user_id}, {"run_id": "*"}]},
                 limit=limit,
+                keyword_search=True,
+                rerank=True,
+                version="v2",
             )
 
-            memories = self._parse_memory_list(memories=results, user_id=user_id)
+            # Response is a list of memory objects
+            if not isinstance(results, list):
+                self.logger.warning(
+                    f"Unexpected response format from mem0 search: {type(results)}"
+                )
+                return MemorySearchResult()
+
+            memories = self._parse_memory_list(results, user_id)
 
             return MemorySearchResult(
                 memories=memories,
@@ -323,23 +380,34 @@ class MemoryService:
             return MemorySearchResult()
 
         try:
-            response = await asyncio.to_thread(
-                self.client.get_all,
-                enable_graph=True,
-                user_id=user_id,
-                output_format="v1.1",
+            client = await self._get_client()
+            # Request with graph enabled to get relationships
+            response = await client.get_all(
+                filters={"AND": [{"user_id": user_id}, {"run_id": "*"}]},
+                version="v2",
+                output_format="v1.1",  # Use format that includes graph data
             )
 
-            memories_list = self._extract_memories_from_response(response)
+            # Check if response has graph data
+            memories_list = []
+            relationships_list = []
 
-            # Extract relationships from response (if available)
-            relations_list = self._extract_relationships_from_response(response)
-
-            logger.info(relations_list)
+            if isinstance(response, dict):
+                # v1.1 format with potential graph data
+                memories_list = response.get("memories", response.get("results", []))
+                relationships_list = self._extract_relationships_from_response(response)
+            elif isinstance(response, list):
+                # Simple list format
+                memories_list = response
+            else:
+                self.logger.warning(
+                    f"Unexpected response format from mem0 get_all: {type(response)}"
+                )
+                return MemorySearchResult()
 
             # Parse memories and relationships
             memory_entries = self._parse_memory_list(memories_list, user_id)
-            relationships = self._parse_relationships(relations_list)
+            relationships = self._parse_relationships(relationships_list)
 
             # Calculate pagination
             start_index = (page - 1) * page_size
@@ -381,7 +449,8 @@ class MemoryService:
 
         try:
             # Mem0 cloud API doesn't require user_id for delete
-            await asyncio.to_thread(self.client.delete, memory_id=memory_id)
+            client = await self._get_client()
+            await client.delete(memory_id=memory_id)
             self.logger.info(f"Memory {memory_id} deleted for user {user_id}")
             return True
 

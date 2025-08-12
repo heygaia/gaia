@@ -1,4 +1,5 @@
 from datetime import datetime
+from functools import lru_cache
 from typing import Optional
 from urllib.parse import urlencode
 
@@ -10,6 +11,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
 from app.config.loggers import auth_logger as logger
 from app.config.oauth_config import (
     OAUTH_INTEGRATIONS,
+    IntegrationConfigResponse,
     get_integration_by_id,
     get_integration_scopes,
 )
@@ -49,6 +51,44 @@ http_async_client = httpx.AsyncClient()
 workos = WorkOSClient(
     api_key=settings.WORKOS_API_KEY, client_id=settings.WORKOS_CLIENT_ID
 )
+
+
+@lru_cache(maxsize=1)
+def _build_integrations_config():
+    """
+    Build and cache the integrations configuration response.
+    This function is cached using lru_cache for performance.
+    """
+    integration_configs = []
+    for integration in OAUTH_INTEGRATIONS:
+        config = IntegrationConfigResponse(
+            id=integration.id,
+            name=integration.name,
+            description=integration.description,
+            icons=integration.icons,
+            category=integration.category,
+            provider=integration.provider,
+            available=integration.available,
+            loginEndpoint=(
+                f"oauth/login/integration/{integration.id}"
+                if integration.available
+                else None
+            ),
+            isSpecial=integration.is_special,
+            displayPriority=integration.display_priority,
+            includedIntegrations=integration.included_integrations,
+        )
+        integration_configs.append(config.model_dump())
+
+    return {"integrations": integration_configs}
+
+
+def clear_integrations_cache():
+    """
+    Clear the integrations configuration cache.
+    Call this function when the integration configuration changes.
+    """
+    _build_integrations_config.cache_clear()
 
 
 # @router.get("/login/google")
@@ -121,7 +161,9 @@ async def workos_callback(
 
         # Extract user information
         email = auth_response.user.email
-        name = f"{auth_response.user.first_name} {auth_response.user.last_name}"
+        first = auth_response.user.first_name or ""
+        last = auth_response.user.last_name or ""
+        name = f"{first} {last}".strip()
         picture_url = auth_response.user.profile_picture_url
 
         # Store user info in our database
@@ -320,28 +362,10 @@ async def get_integrations_config():
     """
     Get the configuration for all integrations.
     This endpoint is public and returns integration metadata.
+    Uses lru_cache for improved performance.
     """
-    return JSONResponse(
-        content={
-            "integrations": [
-                {
-                    "id": integration.id,
-                    "name": integration.name,
-                    "description": integration.description,
-                    "icon": integration.icon,
-                    "category": integration.category,
-                    "provider": integration.provider,
-                    "available": integration.available,
-                    "loginEndpoint": (
-                        f"oauth/login/integration/{integration.id}"
-                        if integration.available
-                        else None
-                    ),
-                }
-                for integration in OAUTH_INTEGRATIONS
-            ]
-        }
-    )
+    cached_config = _build_integrations_config()
+    return JSONResponse(content=cached_config)
 
 
 @router.get("/integrations/status")
@@ -382,6 +406,24 @@ async def get_integrations_status(
                 is_connected = all(
                     scope in authorized_scopes for scope in required_scopes
                 )
+
+                # Special handling for unified integrations
+                if integration.is_special and integration.included_integrations:
+                    # For unified integrations, check if ALL included integrations are connected
+                    included_connected = []
+                    for included_id in integration.included_integrations:
+                        included_integration = get_integration_by_id(included_id)
+                        if included_integration:
+                            included_scopes = get_integration_scopes(included_id)
+                            included_is_connected = all(
+                                scope in authorized_scopes for scope in included_scopes
+                            )
+                            included_connected.append(included_is_connected)
+
+                    # Unified integration is connected only if ALL included ones are connected
+                    is_connected = (
+                        all(included_connected) if included_connected else False
+                    )
 
             # Add other provider checks here (GitHub, Notion, etc.)
 

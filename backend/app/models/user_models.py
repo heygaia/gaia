@@ -36,13 +36,9 @@ class UserUpdateResponse(BaseModel):
 
 
 class OnboardingPreferences(BaseModel):
-    country: Optional[str] = Field(
-        None, min_length=2, max_length=2, description="ISO 3166-1 alpha-2 country code"
-    )
+    country: Optional[str] = Field(None, description="ISO 3166-1 alpha-2 country code")
     profession: Optional[str] = Field(
         None,
-        min_length=1,
-        max_length=50,
         description="User's profession or main area of focus",
     )
     response_style: Optional[str] = Field(
@@ -56,44 +52,53 @@ class OnboardingPreferences(BaseModel):
     @field_validator("country")
     @classmethod
     def validate_country(cls, v):
-        if v is not None:
+        if v is not None and v != "":
             # Ensure country code is uppercase and valid format
             v = v.upper().strip()
-            if not re.match(r"^[A-Z]{2}$", v):
+            if len(v) != 2 or not v.isalpha():
                 raise ValueError(
                     "Country must be a valid ISO 3166-1 alpha-2 code (e.g., US, GB, DE)"
                 )
-        return v
+            return v
+        # Return None for empty strings to normalize the data
+        return None if v == "" else v
 
     @field_validator("profession")
     @classmethod
     def validate_profession(cls, v):
-        if v is not None:
+        if v is not None and v != "":
             v = v.strip()
             if not v:
                 raise ValueError("Profession cannot be empty")
             if len(v) > 50:
                 raise ValueError("Profession must be 50 characters or less")
-        return v
+            return v
+        # Return None for empty strings to normalize the data
+        return None if v == "" else v
 
     @field_validator("response_style")
     @classmethod
     def validate_response_style(cls, v):
-        if v is not None:
+        if v is not None and v != "":
             valid_styles = {"brief", "detailed", "casual", "professional"}
+            v = v.strip()
             # Allow custom response styles (anything that's not in the predefined list)
-            if v not in valid_styles and len(v.strip()) == 0:
+            if v not in valid_styles and len(v) == 0:
                 raise ValueError("Response style cannot be empty")
-        return v
+            return v
+        # Return None for empty strings to normalize the data
+        return None if v == "" else v
 
     @field_validator("custom_instructions")
     @classmethod
     def validate_custom_instructions(cls, v):
-        if v is not None:
+        if v is not None and v != "":
             v = v.strip()
             if len(v) > 500:
                 raise ValueError("Custom instructions must be 500 characters or less")
-        return v
+            return v
+        # Return None for empty strings to normalize the data
+        return None if v == "" else v
 
 
 class OnboardingData(BaseModel):

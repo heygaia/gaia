@@ -170,7 +170,10 @@ async def update_onboarding_preferences(
         user_object_id = ObjectId(user_id)
 
         # Sanitize and prepare preferences
-        sanitized_preferences = preferences.model_dump(exclude_none=True)
+        # First, validate using the Pydantic model which will handle empty string normalization
+        validated_preferences = OnboardingPreferences(**preferences.model_dump())
+        sanitized_preferences = validated_preferences.model_dump(exclude_none=True)
+
         if "custom_instructions" in sanitized_preferences:
             # Basic sanitization - remove potentially harmful content
             sanitized_preferences["custom_instructions"] = sanitized_preferences[

@@ -24,6 +24,7 @@ async def lifespan(app: FastAPI):
     """
     try:
         logger.info("Starting up the API...")
+
         await init_chroma(app)
         download_nltk_resources()
         get_zero_shot_classifier()

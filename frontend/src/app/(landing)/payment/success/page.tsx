@@ -15,7 +15,6 @@ export default function PaymentSuccessPage() {
   const { verifyPayment } = usePricing();
 
   const [isVerifying, setIsVerifying] = useState(true);
-  const [paymentCompleted, setPaymentCompleted] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
 
@@ -25,7 +24,6 @@ export default function PaymentSuccessPage() {
         const result = await verifyPayment();
 
         if (result.payment_completed) {
-          setPaymentCompleted(true);
           setShowSuccessModal(true);
           toast.success("Payment completed successfully!");
         } else {

@@ -33,6 +33,7 @@ async def construct_langchain_messages(
     Returns:
         List of LangChain message objects (SystemMessage + HumanMessage only)
     """
+
     # Format current time for the system prompt
     formatted_time = datetime.now(timezone.utc).strftime("%A, %B %d, %Y, %H:%M:%S UTC")
 

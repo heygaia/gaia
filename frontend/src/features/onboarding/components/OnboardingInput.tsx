@@ -2,7 +2,7 @@ import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Kbd } from "@heroui/react";
-import { useEffect,useRef } from "react";
+import { useEffect } from "react";
 
 import { SentIcon } from "@/components/shared/icons";
 import { cn } from "@/lib/utils";
@@ -27,8 +27,6 @@ export const OnboardingInput = ({
   onProfessionInputChange,
   inputRef,
 }: OnboardingInputProps) => {
-  const autocompleteRef = useRef<HTMLInputElement>(null);
-
   const currentQuestion =
     onboardingState.currentQuestionIndex < questions.length
       ? questions[onboardingState.currentQuestionIndex]

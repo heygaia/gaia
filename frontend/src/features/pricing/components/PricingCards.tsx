@@ -9,13 +9,9 @@ import { PricingCard } from "./PricingCard";
 
 interface PricingCardsProps {
   durationIsMonth?: boolean;
-  initialPlans?: Plan[];
 }
 
-export function PricingCards({
-  durationIsMonth = false,
-  initialPlans,
-}: PricingCardsProps) {
+export function PricingCards({ durationIsMonth = false }: PricingCardsProps) {
   const { plans, isLoading, error, subscriptionStatus } = usePricing();
 
   if (isLoading) {

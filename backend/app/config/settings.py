@@ -139,6 +139,9 @@ class Settings(BaseSettings):
     DODO_PAYMENTS_API_KEY: str
     DODO_WEBHOOK_PAYMENTS_SECRET: str = ""
 
+    # Analytics Configuration
+    SENTRY_DSN: str = ""
+
     @computed_field  # type: ignore
     @property
     def ENABLE_PROFILING(self) -> bool:

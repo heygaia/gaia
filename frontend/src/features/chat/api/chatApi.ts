@@ -166,6 +166,31 @@ export const chatApi = {
     );
   },
 
+  // Save incomplete conversation when stream is cancelled
+  saveIncompleteConversation: async (
+    inputText: string,
+    conversationId: string | null,
+    incompleteResponse: string,
+    fileData: FileData[] = [],
+    selectedTool: string | null = null,
+    toolCategory: string | null = null,
+  ): Promise<{ success: boolean; conversation_id: string }> => {
+    const fileIds = fileData.map((file) => file.fileId);
+
+    return apiService.post<{ success: boolean; conversation_id: string }>(
+      "/save-incomplete-conversation",
+      {
+        conversation_id: conversationId,
+        message: inputText,
+        fileIds,
+        fileData,
+        selectedTool,
+        toolCategory,
+        incomplete_response: incompleteResponse,
+      },
+    );
+  },
+
   // Fetch chat stream
   fetchChatStream: async (
     inputText: string,
@@ -177,8 +202,9 @@ export const chatApi = {
     fileData: FileData[] = [],
     selectedTool: string | null = null,
     toolCategory: string | null = null,
+    externalController?: AbortController,
   ) => {
-    const controller = new AbortController();
+    const controller = externalController || new AbortController();
 
     // Extract fileIds from fileData for backward compatibility
     const fileIds = fileData.map((file) => file.fileId);
@@ -215,13 +241,11 @@ export const chatApi = {
 
           if (event.data === "[DONE]") {
             onClose();
-            controller.abort();
             return;
           }
         },
         onclose() {
           onClose();
-          controller.abort();
         },
         onerror: onError,
       },
