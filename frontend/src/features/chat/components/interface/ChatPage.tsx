@@ -20,6 +20,7 @@ import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { filterEmptyMessagePairs } from "@/features/chat/utils/messageContentUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
+import NotificationStack from "@/components/shared/NotificationStack";
 
 const ChatPage = React.memo(function MainChat() {
   const router = useRouter();
@@ -207,6 +208,7 @@ const ChatPage = React.memo(function MainChat() {
               <div className="w-full">
                 <Composer {...composerProps} />
               </div>
+              <NotificationStack />
             </div>
           </div>
         )}
