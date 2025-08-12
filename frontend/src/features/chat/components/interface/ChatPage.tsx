@@ -9,6 +9,7 @@ import {
 } from "next/navigation";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import CardStackContainer from "@/components/shared/CardStackContainer";
 import Composer from "@/features/chat/components/composer/Composer";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import ChatRenderer from "@/features/chat/components/interface/ChatRenderer";
@@ -20,7 +21,6 @@ import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { filterEmptyMessagePairs } from "@/features/chat/utils/messageContentUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
-import NotificationStack from "@/components/shared/NotificationStack";
 
 const ChatPage = React.memo(function MainChat() {
   const router = useRouter();
@@ -208,7 +208,7 @@ const ChatPage = React.memo(function MainChat() {
               <div className="w-full">
                 <Composer {...composerProps} />
               </div>
-              <NotificationStack />
+              <CardStackContainer />
             </div>
           </div>
         )}

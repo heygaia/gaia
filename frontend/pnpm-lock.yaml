@@ -473,6 +473,9 @@ importers:
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
+      require-in-the-middle:
+        specifier: ^7.5.2
+        version: 7.5.2
       sharp:
         specifier: ^0.33.5
         version: 0.33.5
@@ -12019,8 +12022,8 @@ snapshots:
 
   '@jridgewell/source-map@0.3.10':
     dependencies:
-      '@jridgewell/gen-mapping': 0.3.8
-      '@jridgewell/trace-mapping': 0.3.25
+      '@jridgewell/gen-mapping': 0.3.12
+      '@jridgewell/trace-mapping': 0.3.29
 
   '@jridgewell/sourcemap-codec@1.5.0': {}
 
@@ -20325,7 +20328,7 @@ snapshots:
 
   terser-webpack-plugin@5.3.14(webpack@5.101.0):
     dependencies:
-      '@jridgewell/trace-mapping': 0.3.25
+      '@jridgewell/trace-mapping': 0.3.29
       jest-worker: 27.5.1
       schema-utils: 4.3.2
       serialize-javascript: 6.0.2
