@@ -8,12 +8,14 @@ interface ScrollToBottomButtonProps {
   containerRef: React.RefObject<HTMLElement | null>;
   onScrollToBottom: () => void;
   threshold?: number;
+  hasMessages?: boolean;
 }
 
 export default function ScrollToBottomButton({
   containerRef,
   onScrollToBottom,
   threshold = 100,
+  hasMessages = false,
 }: ScrollToBottomButtonProps) {
   const [shouldShow, setShouldShow] = useState(false);
 
@@ -39,7 +41,9 @@ export default function ScrollToBottomButton({
 
   return (
     <div
-      className={`absolute bottom-32 z-10 flex w-full items-center justify-center transition-opacity duration-100 ${
+      className={`absolute z-10 flex w-full items-center justify-center transition-opacity duration-100 ${
+        hasMessages ? "bottom-32" : "bottom-6"
+      } ${
         shouldShow
           ? "pointer-events-auto opacity-100"
           : "pointer-events-none opacity-0"

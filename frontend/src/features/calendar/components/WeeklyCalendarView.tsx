@@ -1,8 +1,10 @@
 "use client";
 
-import { ChevronLeft, ChevronRight } from "lucide-react";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 
+import { CalendarGrid } from "@/features/calendar/components/CalendarGrid";
+import { CalendarHeader } from "@/features/calendar/components/CalendarHeader";
+import { DateStrip } from "@/features/calendar/components/DateStrip";
 import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 
@@ -24,7 +26,6 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentWeek, setCurrentWeek] = useState(new Date());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
-  const dateStripRef = useRef<HTMLDivElement>(null);
 
   const {
     events,
@@ -61,7 +62,9 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
   const extendedDates = useMemo(() => {
     const startOfWeek = new Date(currentWeek);
     const day = startOfWeek.getDay();
-    startOfWeek.setDate(startOfWeek.getDate() - day - 14); // Go 2 weeks before Sunday
+    // Adjust to start from Monday (day 1) instead of Sunday (day 0)
+    const daysFromMonday = day === 0 ? 6 : day - 1;
+    startOfWeek.setDate(startOfWeek.getDate() - daysFromMonday - 14); // Go 2 weeks before Monday
 
     return Array.from({ length: 35 }, (_, i) => {
       const date = new Date(startOfWeek);
@@ -110,6 +113,8 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
 
     return colorMap[eventType || "default"] || "#4285f4"; // Default blue
   };
+
+  // Filter events for the selected day only and calculate positions
   const dayEvents = useMemo(() => {
     // Constants for positioning
     const HOUR_HEIGHT = 64; // 64px per hour (h-16 in Tailwind)
@@ -203,6 +208,24 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     return dayEvents;
   }, [selectedDate, events]);
 
+  // Helper function to scroll to the first event of the day
+  const scrollToFirstEvent = (events: EventPosition[]) => {
+    if (scrollContainerRef.current && events.length > 0) {
+      // Find the earliest event
+      const firstEvent = events.reduce((earliest, current) => 
+        current.top < earliest.top ? current : earliest
+      );
+      
+      // Scroll to show the first event with some padding above
+      const scrollPosition = Math.max(0, firstEvent.top - 100); // 100px padding above the event
+      
+      scrollContainerRef.current.scrollTo({
+        top: scrollPosition,
+        behavior: 'smooth'
+      });
+    }
+  };
+
   // Navigation handlers
   const goToPreviousDay = () => {
     const newSelectedDate = new Date(selectedDate);
@@ -230,285 +253,62 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     setSelectedDate(today);
   };
 
-  // Get current month and year for header
-  const monthYear = currentWeek.toLocaleDateString("en-US", {
-    month: "long",
-    year: "numeric",
-  });
-
-  // Scroll to 8AM on mount (show morning schedule)
+  // Auto-scroll to first event when date changes (left/right navigation)
   useEffect(() => {
-    if (scrollContainerRef.current) {
-      // Scroll to 8AM (8 hours after midnight)
-      const scrollToHour = 8;
-      const scrollPosition = scrollToHour * 64; // 64px per hour (h-16)
-      scrollContainerRef.current.scrollTop = scrollPosition;
-    }
-  }, []);
-
-  // Auto-scroll date strip to center the selected date
-  useEffect(() => {
-    if (dateStripRef.current) {
-      const selectedIndex = extendedDates.findIndex(
-        (date) => date.toDateString() === selectedDate.toDateString(),
-      );
-
-      if (selectedIndex !== -1) {
-        const container = dateStripRef.current;
-        const buttons = container.querySelectorAll("button");
-
-        if (buttons[selectedIndex]) {
-          const selectedButton = buttons[selectedIndex];
-          const containerRect = container.getBoundingClientRect();
-          const buttonRect = selectedButton.getBoundingClientRect();
-
-          // Calculate the position to center the button
-          const scrollLeft = container.scrollLeft;
-          const buttonCenter =
-            buttonRect.left -
-            containerRect.left +
-            scrollLeft +
-            buttonRect.width / 2;
-          const containerCenter = containerRect.width / 2;
-          const targetScrollLeft = buttonCenter - containerCenter;
-
-          container.scrollTo({
-            left: Math.max(0, targetScrollLeft),
-            behavior: "smooth",
-          });
-        }
+    if (dayEvents.length > 0) {
+      // Small delay to ensure the view has updated
+      const timeoutId = setTimeout(() => {
+        scrollToFirstEvent(dayEvents);
+      }, 100);
+      
+      return () => clearTimeout(timeoutId);
+    } else {
+      // If no events, scroll to 8AM
+      if (scrollContainerRef.current) {
+        const scrollToHour = 8;
+        const scrollPosition = scrollToHour * 64; // 64px per hour (h-16)
+        scrollContainerRef.current.scrollTo({
+          top: scrollPosition,
+          behavior: 'smooth'
+        });
       }
     }
-  }, [selectedDate, extendedDates]);
+  }, [selectedDate, dayEvents]);
+
+  // Handler for date changes from header
+  const handleDateChange = (date: Date) => {
+    setSelectedDate(date);
+    setCurrentWeek(date);
+  };
 
   return (
     <div className="flex h-full w-full justify-center p-4 pt-0">
       <div className="flex h-full w-full max-w-2xl flex-col">
-        {/* Header Row */}
-        <div className="flex items-center justify-between p-6 py-4">
-          <h1 className="text-2xl font-semibold text-white">Calendar</h1>
-          <div className="text-lg font-medium text-zinc-300">{monthYear}</div>
-          <div className="flex items-center gap-3">
-            <button
-              onClick={goToPreviousDay}
-              className="rounded-lg p-2 transition-colors hover:bg-zinc-800"
-            >
-              <ChevronLeft className="h-5 w-5 text-zinc-400" />
-            </button>
-            <button
-              onClick={goToToday}
-              className="rounded-lg bg-zinc-800 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-zinc-700"
-            >
-              Today
-            </button>
-            <button
-              onClick={goToNextDay}
-              className="rounded-lg p-2 transition-colors hover:bg-zinc-800"
-            >
-              <ChevronRight className="h-5 w-5 text-zinc-400" />
-            </button>
-          </div>
-        </div>
+        <CalendarHeader
+          selectedDate={selectedDate}
+          onDateChange={handleDateChange}
+          onPreviousDay={goToPreviousDay}
+          onNextDay={goToNextDay}
+          onToday={goToToday}
+        />
 
-        {/* Week Strip (Day Selector) */}
-        <div className="border-b border-zinc-800 pb-2">
-          <div
-            ref={dateStripRef}
-            className="flex gap-2 overflow-x-auto px-4"
-            style={{
-              scrollbarWidth: "none",
-              msOverflowStyle: "none",
-            }}
-          >
-            {extendedDates.map((date, index) => {
-              const isSelected =
-                date.toDateString() === selectedDate.toDateString();
-              const isToday = date.toDateString() === new Date().toDateString();
-              const isWeekend = date.getDay() === 0 || date.getDay() === 6; // Sunday or Saturday
-              const isFirstDayOfWeek = date.getDay() === 0; // Sunday
-              const dayLabel = date
-                .toLocaleDateString("en-US", { weekday: "short" })
-                .toUpperCase();
-              const dayNumber = date.getDate();
+        <DateStrip
+          dates={extendedDates}
+          selectedDate={selectedDate}
+          onDateSelect={setSelectedDate}
+        />
 
-              return (
-                <div key={index} className="flex items-center">
-                  {/* Week separator line - show before each Sunday (except the first one) */}
-                  {isFirstDayOfWeek && index > 0 && (
-                    <div className="w-px h-12 bg-zinc-700 mr-2 flex-shrink-0" />
-                  )}
-                  
-                  <button
-                    onClick={() => setSelectedDate(date)}
-                    className={`flex min-w-[60px] flex-col items-center rounded-2xl px-3 py-2 transition-all duration-200 ${
-                      isSelected
-                        ? "bg-primary text-white"
-                        : isToday
-                          ? "bg-zinc-700 text-white"
-                          : isWeekend
-                            ? "bg-zinc-900 text-zinc-500 hover:bg-zinc-800"
-                            : "text-zinc-400 hover:bg-zinc-800"
-                    }`}
-                  >
-                    <div className="mb-1 text-xs font-medium">{dayLabel}</div>
-                    <div
-                      className={`text-lg font-semibold ${
-                        isSelected
-                          ? "text-white"
-                          : isToday
-                            ? "text-white"
-                            : isWeekend
-                              ? "text-zinc-400"
-                              : "text-zinc-300"
-                      }`}
-                    >
-                      {dayNumber}
-                    </div>
-                  </button>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Single Day Calendar Grid */}
-        <div className="flex-1 overflow-y-auto" ref={scrollContainerRef}>
-          <div className="relative flex">
-            {/* Time Labels Column */}
-            <div className="w-20 flex-shrink-0 border-r border-zinc-800">
-              {hours.map((hour) => (
-                <div
-                  key={hour}
-                  className="flex h-16 items-start justify-end pt-2 pr-3"
-                >
-                  <span className="text-xs font-medium text-zinc-500">
-                    {hour === 0
-                      ? "12AM"
-                      : hour === 12
-                        ? "12PM"
-                        : hour > 12
-                          ? `${hour - 12}PM`
-                          : `${hour}AM`}
-                  </span>
-                </div>
-              ))}
-            </div>
-
-            {/* Main Calendar Column */}
-            <div className="relative flex-1">
-              {/* Hour Dividers */}
-              {hours.map((hour) => (
-                <div
-                  key={`divider-${hour}`}
-                  className="h-16 border-t border-zinc-800 first:border-t-0"
-                />
-              ))}
-
-              {/* Events Container */}
-              <div className="absolute inset-0 px-2">
-                {loading.calendars ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-zinc-500">Loading calendars...</div>
-                  </div>
-                ) : error.calendars ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center text-red-500">
-                      <div className="text-lg font-medium">
-                        Error loading calendars
-                      </div>
-                      <div className="mt-1 text-sm">{error.calendars}</div>
-                    </div>
-                  </div>
-                ) : selectedCalendars.length === 0 ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center text-zinc-500">
-                      <div className="text-lg font-medium">
-                        No calendars selected
-                      </div>
-                      <div className="mt-1 text-sm">
-                        Please select a calendar to view events
-                      </div>
-                    </div>
-                  </div>
-                ) : loading.events ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-zinc-500">Loading events...</div>
-                  </div>
-                ) : error.events ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center text-red-500">
-                      <div className="text-lg font-medium">
-                        Error loading events
-                      </div>
-                      <div className="mt-1 text-sm">{error.events}</div>
-                    </div>
-                  </div>
-                ) : dayEvents.length === 0 ? (
-                  <div className="flex h-full items-center justify-center">
-                    <div className="text-center text-zinc-500">
-                      <div className="text-lg font-medium">
-                        No events scheduled
-                      </div>
-                      <div className="mt-1 text-sm">
-                        for{" "}
-                        {selectedDate.toLocaleDateString("en-US", {
-                          weekday: "long",
-                          month: "long",
-                          day: "numeric",
-                        })}
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  dayEvents.map((eventPos, eventIndex) => {
-                    const eventColor = getEventColor(eventPos.event);
-                    return (
-                      <div
-                        key={`event-${eventIndex}`}
-                        className="absolute cursor-pointer rounded-lg border text-white shadow-lg transition-all duration-200 hover:opacity-80"
-                        style={{
-                          top: `${eventPos.top}px`,
-                          height: `${eventPos.height}px`,
-                          left: `${eventPos.left}%`,
-                          width: `${eventPos.width - 1}%`,
-                          backgroundColor: eventColor,
-                          borderColor: eventColor,
-                        }}
-                        onClick={() => onEventClick?.(eventPos.event)}
-                      >
-                        <div className="p-3">
-                          <div className="line-clamp-2 text-sm leading-tight font-medium">
-                            {eventPos.event.summary}
-                          </div>
-                          {eventPos.event.start.dateTime &&
-                            eventPos.event.end.dateTime && (
-                              <div className="mt-1 text-xs text-white/80">
-                                {new Date(
-                                  eventPos.event.start.dateTime,
-                                ).toLocaleTimeString("en-US", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })}{" "}
-                                –{" "}
-                                {new Date(
-                                  eventPos.event.end.dateTime,
-                                ).toLocaleTimeString("en-US", {
-                                  hour: "numeric",
-                                  minute: "2-digit",
-                                  hour12: true,
-                                })}
-                              </div>
-                            )}
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
+        <CalendarGrid
+          ref={scrollContainerRef}
+          hours={hours}
+          dayEvents={dayEvents}
+          loading={loading}
+          error={error}
+          selectedCalendars={selectedCalendars}
+          selectedDate={selectedDate}
+          onEventClick={onEventClick}
+          getEventColor={getEventColor}
+        />
       </div>
     </div>
   );
