@@ -14,6 +14,7 @@ import Composer from "@/features/chat/components/composer/Composer";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import ChatRenderer from "@/features/chat/components/interface/ChatRenderer";
 import ScrollToBottomButton from "@/features/chat/components/interface/ScrollToBottomButton";
+import ScrollForMoreButton from "@/features/chat/components/interface/ScrollForMoreButton";
 import StarterText from "@/features/chat/components/interface/StarterText";
 import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import { useConversation } from "@/features/chat/hooks/useConversation";
@@ -35,8 +36,10 @@ const ChatPage = React.memo(function MainChat() {
 
   const chatRef = useRef<HTMLDivElement>(null);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const cardStackSectionRef = useRef<HTMLDivElement>(null);
+  const dummySectionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
-  // const [isAtBottom, setIsAtBottom] = useState(false);
+  const [showScrollForMore, setShowScrollForMore] = useState(false);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
   const fileUploadRef = useRef<{
     openFileUploadModal: () => void;
@@ -88,6 +91,42 @@ const ChatPage = React.memo(function MainChat() {
     }
   };
 
+  const scrollToCardStack = () => {
+    if (cardStackSectionRef.current) {
+      cardStackSectionRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  };
+
+  const scrollToDummySection = () => {
+    if (dummySectionRef.current) {
+      dummySectionRef.current.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+    }
+  };
+
+  const handleNewChatScroll = (event: React.UIEvent) => {
+    const { scrollTop, clientHeight } = event.target as HTMLElement;
+    const isInFirstSection = scrollTop < clientHeight * 0.8;
+    
+    // For new chat page, always show the button unless user has scrolled to second section
+    setShowScrollForMore(isInFirstSection);
+  };
+
+  const handleScroll = (event: React.UIEvent) => {
+    const { scrollTop, scrollHeight, clientHeight } =
+      event.target as HTMLElement;
+    const isInFirstSection = scrollTop < clientHeight * 0.8; // Show button when near end of first section
+
+    // Show scroll for more button when user is in the first section and has scrolled down
+    // but hasn't reached the second section yet
+    setShowScrollForMore(hasMessages && isInFirstSection && scrollTop > 200);
+  };
+
   // Drag and drop functionality
   const { isDragging, dragHandlers } = useDragAndDrop({
     onDrop: (files: File[]) => {
@@ -115,6 +154,20 @@ const ChatPage = React.memo(function MainChat() {
     if (inputRef?.current) inputRef.current.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convoIdParam]);
+
+  // Show scroll for more button when messages are loaded
+  useEffect(() => {
+    if (hasMessages) {
+      // Delay showing the button to allow for initial scroll
+      const timer = setTimeout(() => {
+        setShowScrollForMore(true);
+      }, 1000);
+      return () => clearTimeout(timer);
+    } else {
+      // For new chat page, always show the scroll button
+      setShowScrollForMore(true);
+    }
+  }, [hasMessages]);
 
   // ! THIS CAUSES AN INFINITE LOOP
   // const fetchConvoMessages = useCallback(async () => {
@@ -164,52 +217,100 @@ const ChatPage = React.memo(function MainChat() {
     <ComposerProvider value={{ appendToInput }}>
       <div className="flex h-full flex-col">
         {hasMessages ? (
-          // Layout with messages: Chat at top, composer at bottom
-          <>
-            <div
-              ref={scrollContainerRef}
-              className={`${dragContainerClass} flex-1 justify-center overflow-y-auto`}
-              {...dragHandlers}
-            >
-              <FileDropModal isDragging={isDragging} />
-              <div
-                ref={chatRef}
-                className="conversation_history w-full max-w-(--breakpoint-lg) p-2 sm:p-4"
-              >
-                <ChatRenderer />
+          // Layout with messages: Chat with scroll snapping sections
+          <div
+            ref={scrollContainerRef}
+            className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
+            onScroll={handleScroll}
+            {...dragHandlers}
+          >
+            <FileDropModal isDragging={isDragging} />
+
+            {/* First section: Chat interface */}
+            <div className="relative flex h-screen min-h-screen snap-start flex-col">
+              <div className="flex-1 overflow-y-auto">
+                <div
+                  ref={chatRef}
+                  className="conversation_history mx-auto w-full max-w-(--breakpoint-lg) p-2 sm:p-4"
+                >
+                  <ChatRenderer />
+                </div>
+              </div>
+              <div className="flex-shrink-0 pb-2">
+                <Composer {...composerProps} />
               </div>
             </div>
+
+            {/* Second section: Card Stack Container */}
+            <div
+              ref={cardStackSectionRef}
+              className="relative flex h-screen min-h-screen snap-start items-center justify-center p-4"
+            >
+              <div className="w-full max-w-(--breakpoint-xl)">
+                <CardStackContainer />
+              </div>
+            </div>
+
+            {/* Scroll buttons */}
             <ScrollToBottomButton
               containerRef={scrollContainerRef}
               onScrollToBottom={scrollToBottom}
               threshold={150}
             />
-            <div className="flex-shrink-0 pb-2">
-              <Composer {...composerProps} />
-            </div>
-          </>
+            <ScrollForMoreButton
+              onClick={scrollToCardStack}
+              visible={showScrollForMore}
+            />
+          </div>
         ) : (
-          // Layout without messages: Centered composer
+          // Layout without messages: Scroll snapping sections for new chat
           <div
-            className={`${dragContainerClass} h-[calc(100%-50px)] items-center justify-center`}
+            ref={scrollContainerRef}
+            className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
+            onScroll={handleNewChatScroll}
             {...dragHandlers}
           >
             <FileDropModal isDragging={isDragging} />
-            <div className="flex w-full max-w-(--breakpoint-xl) flex-col items-center justify-center gap-10 p-4">
-              <div className="flex flex-col items-center gap-2">
-                <Image
-                  alt="GAIA Logo"
-                  src="/branding/logo.webp"
-                  width={110}
-                  height={110}
-                />
-                <StarterText />
+            
+            {/* First section: New chat interface */}
+            <div className="relative flex h-screen min-h-screen snap-start items-center justify-center p-4">
+              <div className="flex w-full max-w-(--breakpoint-xl) flex-col items-center justify-center gap-10">
+                <div className="flex flex-col items-center gap-2">
+                  <Image
+                    alt="GAIA Logo"
+                    src="/branding/logo.webp"
+                    width={110}
+                    height={110}
+                  />
+                  <StarterText />
+                </div>
+                <div className="w-full">
+                  <Composer {...composerProps} />
+                </div>
+                <CardStackContainer />
               </div>
-              <div className="w-full">
-                <Composer {...composerProps} />
-              </div>
-              <CardStackContainer />
             </div>
+
+            {/* Second section: Dummy text section */}
+            <div
+              ref={dummySectionRef}
+              className="relative flex h-screen min-h-screen snap-start items-center justify-center p-4"
+            >
+              <div className="text-center">
+                <h1 className="text-4xl font-bold text-foreground">
+                  DUMMY TEXT
+                </h1>
+                <p className="mt-4 text-lg text-foreground/60">
+                  This is a placeholder section for additional content
+                </p>
+              </div>
+            </div>
+
+            {/* Scroll button for new chat */}
+            <ScrollForMoreButton
+              onClick={scrollToDummySection}
+              visible={showScrollForMore}
+            />
           </div>
         )}
       </div>

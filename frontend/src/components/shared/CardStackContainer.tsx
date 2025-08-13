@@ -2,7 +2,7 @@
 
 import { Bell, Calendar, Mail } from "lucide-react";
 import CardStack from "./CardStack";
-import { Calendar03Icon, Mail01Icon } from "./icons";
+import { Calendar03Icon, Gmail, GoogleCalendarIcon, Mail01Icon } from "./icons";
 
 interface Notification {
   id: string;
@@ -132,7 +132,7 @@ export default function CardStackContainer({
       <CardStack
         title="Unread Emails"
         data={mockEmails}
-        indicator={<Mail01Icon className="h-4 w-4 text-red-500" />}
+        indicator={<Gmail className="h-4 w-4 text-red-500" />}
         renderCard={(email) => (
           <div className="w-full min-w-0 flex-1">
             <div className="mb-1 flex w-full items-center justify-between">
@@ -162,7 +162,7 @@ export default function CardStackContainer({
       <CardStack
         title="Today's Events"
         data={mockCalendarEvents}
-        indicator={<Calendar03Icon className="h-4 w-4 text-red-500" />}
+        indicator={<GoogleCalendarIcon className="h-4 w-4 text-red-500" />}
         renderCard={(event) => (
           <div className="w-full min-w-0 flex-1">
             <div className="mb-1 flex w-full items-center justify-between">
