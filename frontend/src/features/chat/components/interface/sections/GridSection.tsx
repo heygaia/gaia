@@ -1,5 +1,5 @@
 import React from "react";
-import WeeklyCalendarView from "@/features/calendar/components/WeeklyCalendarView";
+import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
 import { useRouter } from "next/navigation";
 
 interface GridSectionProps {
@@ -15,7 +15,7 @@ export const GridSection: React.FC<GridSectionProps> = ({
       ref={dummySectionRef}
       className="relative flex h-fit snap-start items-center justify-center p-4 pt-24"
     >
-      <div className="grid w-full max-w-7xl grid-cols-2 grid-rows-2 gap-4">
+      <div className="grid h-screen w-full max-w-7xl grid-cols-2 grid-rows-4 gap-4">
         {/* Top-left */}
         <div className="flex items-center justify-center rounded-2xl bg-zinc-800 p-6">
           <div className="text-center">
@@ -26,8 +26,8 @@ export const GridSection: React.FC<GridSectionProps> = ({
           </div>
         </div>
         {/* Top-right */}
-        <div className="row-span-2 flex max-h-[70vh] items-center justify-center rounded-3xl bg-[#141414] p-6">
-          <WeeklyCalendarView
+        <div className="row-span-2 flex max-h-[70vh] items-center justify-center rounded-3xl">
+          <UpcomingEventsView
             onEventClick={(event) => {
               router.push("/calendar");
             }}

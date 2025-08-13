@@ -7,6 +7,7 @@ import { CalendarHeader } from "@/features/calendar/components/CalendarHeader";
 import { DateStrip } from "@/features/calendar/components/DateStrip";
 import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
+import { getEventColor } from "@/features/calendar/utils/eventColors";
 
 interface EventPosition {
   event: GoogleCalendarEvent;
@@ -73,45 +74,9 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     });
   }, [currentWeek]);
 
-  // Helper function to get event color
-  const getEventColor = (event: GoogleCalendarEvent) => {
-    // Find the calendar this event belongs to
-    const calendar = calendars.find(
-      (cal) =>
-        // Events don't always have organizer.email matching calendar id,
-        // so we'll use a fallback color scheme
-        event.organizer?.email === cal.id || event.creator?.email === cal.id,
-    );
-
-    // Use calendar's background color if available, otherwise use default colors based on event type
-    const eventColor =
-      calendar?.backgroundColor || getDefaultEventColor(event.eventType);
-
-    return eventColor;
-  };
-
-  // Default color scheme for events when no specific color is available
-  const getDefaultEventColor = (eventType?: string) => {
-    const colorMap: { [key: string]: string } = {
-      birthday: "#f72585", // Pink
-      outOfOffice: "#ff6d00", // Orange
-      reminder: "#ffd60a", // Yellow
-      appointment: "#003566", // Dark blue
-      meeting: "#0077b6", // Blue
-      task: "#00b4d8", // Light blue
-      holiday: "#f72585", // Pink
-      work: "#023e8a", // Navy
-      travel: "#0077b6", // Blue
-      sports: "#90e0ef", // Light cyan
-      concert: "#7209b7", // Purple
-      party: "#f72585", // Pink
-      health: "#e63946", // Red
-      study: "#f77f00", // Orange
-      wedding: "#f72585", // Pink
-      default: "#4285f4", // Google blue
-    };
-
-    return colorMap[eventType || "default"] || "#4285f4"; // Default blue
+  // Wrapper function to maintain compatibility with CalendarGrid
+  const getEventColorForGrid = (event: GoogleCalendarEvent) => {
+    return getEventColor(event, calendars);
   };
 
   // Filter events for the selected day only and calculate positions
@@ -212,16 +177,16 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
   const scrollToFirstEvent = (events: EventPosition[]) => {
     if (scrollContainerRef.current && events.length > 0) {
       // Find the earliest event
-      const firstEvent = events.reduce((earliest, current) => 
-        current.top < earliest.top ? current : earliest
+      const firstEvent = events.reduce((earliest, current) =>
+        current.top < earliest.top ? current : earliest,
       );
-      
+
       // Scroll to show the first event with some padding above
       const scrollPosition = Math.max(0, firstEvent.top - 100); // 100px padding above the event
-      
+
       scrollContainerRef.current.scrollTo({
         top: scrollPosition,
-        behavior: 'smooth'
+        behavior: "smooth",
       });
     }
   };
@@ -260,7 +225,7 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
       const timeoutId = setTimeout(() => {
         scrollToFirstEvent(dayEvents);
       }, 100);
-      
+
       return () => clearTimeout(timeoutId);
     } else {
       // If no events, scroll to 8AM
@@ -269,7 +234,7 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
         const scrollPosition = scrollToHour * 64; // 64px per hour (h-16)
         scrollContainerRef.current.scrollTo({
           top: scrollPosition,
-          behavior: 'smooth'
+          behavior: "smooth",
         });
       }
     }
@@ -307,7 +272,7 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
           selectedCalendars={selectedCalendars}
           selectedDate={selectedDate}
           onEventClick={onEventClick}
-          getEventColor={getEventColor}
+          getEventColor={getEventColorForGrid}
         />
       </div>
     </div>
