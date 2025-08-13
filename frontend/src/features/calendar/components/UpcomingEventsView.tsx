@@ -2,7 +2,7 @@
 
 import React, { useEffect, useMemo } from "react";
 
-import { Calendar03Icon } from "@/components";
+import { GoogleCalendarIcon } from "@/components";
 import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
 import { getEventColor } from "@/features/calendar/utils/eventColors";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
@@ -156,7 +156,7 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
       {/* Sticky Header */}
       <div className="px-4 py-3">
         <div className="flex items-center gap-2">
-          <Calendar03Icon className="h-6 w-6 text-zinc-500" />
+          <GoogleCalendarIcon className="h-6 w-6 text-zinc-500" />
           <h3 className="font-medium text-white">Upcoming events</h3>
         </div>
       </div>
