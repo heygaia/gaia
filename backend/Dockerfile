@@ -49,10 +49,8 @@
     uv pip install --system --no-cache-dir -r heavy-deps.txt && \
     rm -rf /root/.cache/pip
 
-  # Setup Playwright and NLTK
-  RUN python -m playwright install --with-deps chromium
-  RUN python -m nltk.downloader punkt stopwords punkt_tab && \
-    rm -rf /root/.cache/nltk
+  # Setup Playwright
+  RUN python -m playwright install chromium
 
   # ---- Default Dependencies Stage: Install default application dependencies ----
   FROM heavy-dependencies AS default-dependencies
@@ -82,8 +80,7 @@
 
   # Setup non-root user and permissions
   RUN adduser --disabled-password --gecos '' appuser \
-    && mkdir -p /home/appuser/.cache/huggingface /home/appuser/nltk_data  \
-    && cp -R /root/nltk_data/* /home/appuser/nltk_data/ \
+    && mkdir -p /home/appuser/.cache \
     && chown -R appuser:appuser /home/appuser \
     && cp -R /root/.cache/ms-playwright /home/appuser/.cache/ \
     && chown -R appuser:appuser /home/appuser/.cache/ms-playwright \

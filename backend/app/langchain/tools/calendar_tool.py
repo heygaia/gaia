@@ -1,5 +1,5 @@
 import json
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import httpx
 from app.config.loggers import chat_logger as logger
@@ -17,7 +17,11 @@ from app.langchain.templates.calendar_template import (
     CALENDAR_LIST_TEMPLATE,
     CALENDAR_PROMPT_TEMPLATE,
 )
-from app.models.calendar_models import EventCreateRequest, EventLookupRequest
+from app.models.calendar_models import (
+    CalendarEventToolRequest,
+    CalendarEventUpdateToolRequest,
+    EventLookupRequest,
+)
 from app.services.calendar_service import (
     find_event_for_action,
     get_calendar_events,
@@ -34,20 +38,12 @@ from langgraph.config import get_stream_writer
 @with_doc(CALENDAR_EVENT)
 @require_integration("calendar")
 async def create_calendar_event(
-    event_data: Union[
-        List[EventCreateRequest],
-        EventCreateRequest,
-    ],
+    events_data: List[CalendarEventToolRequest],
     config: RunnableConfig,
 ) -> str:
     try:
-        # Normalize input to always work with a list of EventCreateRequest objects
-        event_list: List[EventCreateRequest] = (
-            event_data if isinstance(event_data, list) else [event_data]
-        )
-
         # Validate non-empty
-        if not event_list:
+        if not events_data:
             logger.error("Empty event list provided")
             return json.dumps(
                 {
@@ -57,50 +53,47 @@ async def create_calendar_event(
                 }
             )
 
+        # Get user time from config for timezone processing
+        configurable = config.get("configurable", {})
+        user_time_str: str = configurable.get("user_time", "")
+        if not user_time_str:
+            logger.error("User time is required for calendar event processing")
+            return json.dumps(
+                {
+                    "error": "User time is required to process calendar events",
+                    "calendar_options": [],
+                    "prompt": str(CALENDAR_PROMPT_TEMPLATE.invoke({})),
+                }
+            )
+
         calendar_options = []
         validation_errors = []
 
-        logger.info(f"Processing {len(event_list)} calendar events")
+        logger.info(f"Processing {len(events_data)} calendar events")
 
         # Process each event with validation
-        for event in event_list:
+        for event in events_data:
             try:
-                # Validate event fields based on whether it's an all-day event
-                if event.is_all_day:
-                    # For all-day events, start and end are optional
-                    # They'll be handled in the service with defaults if missing
-                    pass
-                else:
-                    # For time-specific events, both start and end are required
-                    if not event.start or not event.end:
-                        raise ValueError(
-                            "Start and end times are required for time-specific events"
-                        )
+                # Process the event times with timezone handling to convert to service format
+                processed_event = event.process_times(user_time_str)
 
-                # Add the validated event as a proper dict with all required fields
+                # Add the validated and processed event as a proper dict with all required fields
                 event_dict = {
-                    "summary": event.summary,
-                    "description": event.description or "",
-                    "is_all_day": event.is_all_day,
-                    "timezone": event.timezone or "UTC",
+                    "summary": processed_event.summary,
+                    "description": processed_event.description or "",
+                    "is_all_day": processed_event.is_all_day,
+                    "start": processed_event.start,
+                    "end": processed_event.end,
                 }
 
                 # Add optional fields only if they exist
-                if event.start:
-                    event_dict["start"] = event.start
-                if event.end:
-                    event_dict["end"] = event.end
-                if event.calendar_id:
-                    event_dict["calendar_id"] = event.calendar_id
-                if event.calendar_name:
-                    event_dict["calendar_name"] = event.calendar_name
-                if event.calendar_color:
-                    event_dict["calendar_color"] = event.calendar_color
-                if event.recurrence:
-                    event_dict["recurrence"] = event.recurrence.model_dump()
+                if processed_event.calendar_id:
+                    event_dict["calendar_id"] = processed_event.calendar_id
+                if processed_event.recurrence:
+                    event_dict["recurrence"] = processed_event.recurrence.model_dump()
 
                 calendar_options.append(event_dict)
-                logger.info(f"Added calendar event: {event.summary}")
+                logger.info(f"Added calendar event: {processed_event.summary}")
 
             except Exception as e:
                 error_msg = f"Error processing calendar event: {e}"
@@ -119,7 +112,7 @@ async def create_calendar_event(
                 }
             )
 
-        configurable = config.get("configurable", {})
+        # Validate configurable section exists
         if not configurable:
             logger.error("Missing 'configurable' section in config")
             return json.dumps(
@@ -273,7 +266,7 @@ async def fetch_calendar_events(
         events = events_data.get("events", [])
         logger.info(f"Fetched {len(events)} events")
 
-        # Build array of {summary, start_time, calendar_name} for all events
+        # Build array of {summary, start_time} for all events
         calendar_fetch_data = []
         for event in events:
             start_time = ""
@@ -288,7 +281,6 @@ async def fetch_calendar_events(
                 {
                     "summary": event.get("summary", "No Title"),
                     "start_time": start_time,
-                    "calendar_name": event.get("calendarTitle", ""),
                 }
             )
 
@@ -354,7 +346,7 @@ async def search_calendar_events(
             f"Found {len(search_results.get('matching_events', []))} matching events for query: {query}"
         )
 
-        # Build array of {summary, start_time, calendar_name} for search results
+        # Build array of {summary, start_time} for search results
         calendar_search_data = []
         for event in search_results.get("matching_events", []):
             start_time = ""
@@ -369,7 +361,6 @@ async def search_calendar_events(
                 {
                     "summary": event.get("summary", "No Title"),
                     "start_time": start_time,
-                    "calendar_name": event.get("calendarTitle", ""),
                 }
             )
 
@@ -517,7 +508,7 @@ async def edit_calendar_event(
     start: Optional[str] = None,
     end: Optional[str] = None,
     is_all_day: Optional[bool] = None,
-    timezone: Optional[str] = None,
+    timezone_offset: Optional[str] = None,
     recurrence: Optional[dict] = None,
     location: Optional[str] = None,
     attendees: Optional[list] = None,
@@ -532,14 +523,55 @@ async def edit_calendar_event(
 
         access_token = config.get("configurable", {}).get("access_token")
         user_id = config.get("configurable", {}).get("user_id")
+        user_time_str = config.get("configurable", {}).get("user_time", "")
 
-        # Ensure access_token and user_id are available
+        # Ensure access_token, user_id and user_time are available
         if not user_id:
             logger.error("Missing user_id in config")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
         if not access_token:
             logger.error("Missing access token in config")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
+        if not user_time_str:
+            logger.error("Missing user_time in config")
+            return "User time is required for calendar event processing."
+
+        # Process timezone for start/end times if provided
+        processed_start = start
+        processed_end = end
+
+        if start is not None or end is not None:
+            try:
+                # Convert recurrence dict to RecurrenceData if provided
+                recurrence_data = None
+                if recurrence is not None:
+                    from app.models.calendar_models import RecurrenceData
+
+                    recurrence_data = (
+                        RecurrenceData(**recurrence)
+                        if isinstance(recurrence, dict)
+                        else recurrence
+                    )
+
+                tool_request = CalendarEventUpdateToolRequest(
+                    event_lookup=event_lookup_data,
+                    user_time=user_time_str,
+                    start=start,
+                    end=end,
+                    timezone_offset=timezone_offset,
+                    summary=summary,
+                    description=description,
+                    is_all_day=is_all_day,
+                    recurrence=recurrence_data,
+                )
+
+                update_request = tool_request.to_update_request()
+                processed_start = update_request.start
+                processed_end = update_request.end
+
+            except Exception as e:
+                logger.error(f"Error processing timezone for calendar update: {e}")
+                return f"Error processing timezone: {e}"
 
         writer = get_stream_writer()
         # Use service method to find the event for action (edit)
@@ -573,13 +605,11 @@ async def edit_calendar_event(
         if description is not None:
             edit_option["description"] = description
         if start is not None:
-            edit_option["start"] = start
+            edit_option["start"] = processed_start
         if end is not None:
-            edit_option["end"] = end
+            edit_option["end"] = processed_end
         if is_all_day is not None:
             edit_option["is_all_day"] = is_all_day
-        if timezone is not None:
-            edit_option["timezone"] = timezone
         if recurrence is not None:
             # Pass recurrence data as is - it will be validated and converted by the service layer
             edit_option["recurrence"] = recurrence

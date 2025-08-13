@@ -11,6 +11,7 @@ from app.langchain.tools import (
     memory_tools,
     reminder_tool,
     search_tool,
+    support_tool,
     todo_tool,
     weather_tool,
     webpage_tool,
@@ -55,6 +56,9 @@ TOOLS_BY_CATEGORY = {
     ],
     "weather": [
         weather_tool.get_weather,
+    ],
+    "support": [
+        *support_tool.tools,
     ],
 }
 

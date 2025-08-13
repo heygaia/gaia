@@ -1,6 +1,5 @@
 // useChatStream.ts
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
-import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
@@ -19,7 +18,6 @@ import { parseStreamData } from "./useStreamDataParser";
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
   const { updateConvoMessages, convoMessages } = useConversation();
-  const router = useRouter();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
 
@@ -97,58 +95,71 @@ export const useChatStream = () => {
     updateConvoMessages(currentConvo);
   };
 
-  const handleStreamEvent = (event: EventSourceMessage) => {
-    if (event.data === "[DONE]") return;
+  /**
+   * Handles the incoming stream event, updating the bot message and loading text.
+   * @param event - The EventSourceMessage received from the stream.
+   * @returns An error message if an error occurs, otherwise undefined.
+   */
+  const handleStreamEvent = (event: EventSourceMessage): void | string => {
+    try {
+      if (event.data === "[DONE]") return;
 
-    const data = JSON.parse(event.data);
-    if (data.error) return toast.error(data.error);
+      const data = JSON.parse(event.data);
+      if (data.error) return data.error;
 
-    if (data.progress) {
-      // Handle both old format (string) and new format (object with tool info)
-      if (typeof data.progress === "string") {
-        setLoadingText(data.progress);
-      } else if (typeof data.progress === "object" && data.progress.message) {
-        // Enhanced progress with tool information
-        setLoadingText(data.progress.message, {
-          toolName: data.progress.tool_name,
-          toolCategory: data.progress.tool_category,
-        });
+      if (data.progress) {
+        // Handle both old format (string) and new format (object with tool info)
+        if (typeof data.progress === "string") {
+          setLoadingText(data.progress);
+        } else if (typeof data.progress === "object" && data.progress.message) {
+          // Enhanced progress with tool information
+          setLoadingText(data.progress.message, {
+            toolName: data.progress.tool_name,
+            toolCategory: data.progress.tool_category,
+          });
+        }
       }
-    }
-    if (data.conversation_id)
-      refs.current.newConversation.id = data.conversation_id;
-    if (data.conversation_description)
-      refs.current.newConversation.description = data.conversation_description;
+      if (data.conversation_id)
+        refs.current.newConversation.id = data.conversation_id;
+      if (data.conversation_description)
+        refs.current.newConversation.description =
+          data.conversation_description;
 
-    if (data.status === "generating_image") {
-      setLoadingText("Generating image...");
+      if (data.status === "generating_image") {
+        setLoadingText("Generating image...");
+        updateBotMessage({
+          image_data: { url: "", prompt: refs.current.userPrompt },
+          response: "",
+        });
+        return;
+      }
+
+      if (data.image_data) {
+        updateBotMessage({
+          image_data: data.image_data,
+          loading: false,
+        });
+        return;
+      }
+
+      // Add to the accumulated response if there's new response content
+      if (data.response) {
+        refs.current.accumulatedResponse += data.response;
+      }
+
+      // Parse only the data that's actually present in this stream chunk
+      const streamUpdates = parseStreamData(data);
+
       updateBotMessage({
-        image_data: { url: "", prompt: refs.current.userPrompt },
-        response: "",
+        ...streamUpdates,
+        response: refs.current.accumulatedResponse,
       });
-      return;
+    } catch (error) {
+      console.error("Error handling stream event:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      return `Error processing stream data: ${errorMessage}`;
     }
-
-    if (data.image_data) {
-      updateBotMessage({
-        image_data: data.image_data,
-        loading: false,
-      });
-      return;
-    }
-
-    // Add to the accumulated response if there's new response content
-    if (data.response) {
-      refs.current.accumulatedResponse += data.response;
-    }
-
-    // Parse only the data that's actually present in this stream chunk
-    const streamUpdates = parseStreamData(data);
-
-    updateBotMessage({
-      ...streamUpdates,
-      response: refs.current.accumulatedResponse,
-    });
   };
 
   const handleStreamClose = async () => {
@@ -188,7 +199,6 @@ export const useChatStream = () => {
   return async (
     inputText: string,
     currentMessages: MessageType[],
-    conversationId: string | null,
     botMessageId: string,
     fileData: FileData[] = [],
     selectedTool: string | null = null,
@@ -234,7 +244,7 @@ export const useChatStream = () => {
     await chatApi.fetchChatStream(
       inputText,
       [...refs.current.convoMessages, ...currentMessages],
-      conversationId,
+      undefined, // conversationId is will be fetched from the URL
       handleStreamEvent,
       handleStreamClose,
       (err) => {

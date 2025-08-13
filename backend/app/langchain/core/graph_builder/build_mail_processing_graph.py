@@ -15,7 +15,7 @@ from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessageChunk
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_huggingface import HuggingFaceEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import get_stream_writer
 from langgraph.constants import END, START
@@ -61,13 +61,15 @@ async def build_mail_processing_graph():
     all_tools = tools + ALWAYS_AVAILABLE_TOOLS
     tool_registry = {tool.name: tool for tool in all_tools}
 
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
+    )
 
     # Create store for tool discovery
     store = InMemoryStore(
         index={
             "embed": embeddings,
-            "dims": 384,
+            "dims": 768,
             "fields": ["description"],
         }
     )

@@ -1,7 +1,6 @@
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional, Union, cast
-from zoneinfo import ZoneInfo
 
 import httpx
 from app.config.loggers import calendar_logger as logger
@@ -13,7 +12,6 @@ from app.models.calendar_models import (
     EventLookupRequest,
     EventUpdateRequest,
 )
-from app.utils.calendar_utils import resolve_timezone
 from fastapi import HTTPException
 
 http_async_client = httpx.AsyncClient()
@@ -456,24 +454,18 @@ async def create_calendar_event(
                     detail="Start and end times are required for time-specific events",
                 )
 
-            canonical_timezone = resolve_timezone(event.timezone or "UTC")
-            user_tz = ZoneInfo(canonical_timezone)
-
-            # Parse the ISO string into a datetime
-            start_dt = datetime.fromisoformat(event.start).replace(tzinfo=user_tz)
-            end_dt = datetime.fromisoformat(event.end).replace(tzinfo=user_tz)
-
+            # The calendar tool has already processed times - use them directly
             event_payload["start"] = {
-                "dateTime": start_dt.isoformat(),
-                "timeZone": canonical_timezone,
+                "dateTime": event.start,
+                "timeZone": "UTC",  # Default timezone since times are already processed
             }
             event_payload["end"] = {
-                "dateTime": end_dt.isoformat(),
-                "timeZone": canonical_timezone,
+                "dateTime": event.end,
+                "timeZone": "UTC",  # Default timezone since times are already processed
             }
         except Exception as e:
             raise HTTPException(
-                status_code=400, detail=f"Invalid timezone or datetime format: {str(e)}"
+                status_code=400, detail=f"Invalid datetime format: {str(e)}"
             )
 
     # Handle recurrence rules if provided
@@ -483,22 +475,18 @@ async def create_calendar_event(
             recurrence_rules = event.recurrence.to_google_calendar_format()
             event_payload["recurrence"] = recurrence_rules
 
-            # For recurring events, Google Calendar requires that a single timezone is specified
-            # If this is a timed event (not all-day), ensure a timezone is set
+            # For recurring events, times are already processed by calendar tool
+            # Just ensure timezone is consistent
             if not event.is_all_day:
-                canonical_timezone = resolve_timezone(event.timezone or "UTC")
-                # Make sure both start and end have the same timezone
-                if "timeZone" in event_payload["start"]:
-                    event_payload["start"]["timeZone"] = canonical_timezone
-                if "timeZone" in event_payload["end"]:
-                    event_payload["end"]["timeZone"] = canonical_timezone
+                if "timeZone" in event_payload.get("start", {}):
+                    event_payload["start"]["timeZone"] = "UTC"
+                if "timeZone" in event_payload.get("end", {}):
+                    event_payload["end"]["timeZone"] = "UTC"
 
         except Exception as e:
             raise HTTPException(
                 status_code=400, detail=f"Invalid recurrence rule format: {str(e)}"
-            )
-
-    # Send request to create the event
+            )  # Send request to create the event
     try:
         async with httpx.AsyncClient() as client:
             response = await client.post(url, headers=headers, json=event_payload)
@@ -947,42 +935,31 @@ async def update_calendar_event(
         else:
             # Handle time-specific event updates
             try:
-                timezone = event.timezone or existing_event.get("start", {}).get(
-                    "timeZone", "UTC"
-                )
-                canonical_timezone = resolve_timezone(timezone)
-                user_tz = ZoneInfo(canonical_timezone)
-
+                # Use processed times directly from calendar tool
                 if event.start is not None:
-                    start_dt = datetime.fromisoformat(event.start).replace(
-                        tzinfo=user_tz
-                    )
+                    start_time = event.start
                 else:
-                    # Parse existing start time
-                    existing_start = existing_event.get("start", {}).get("dateTime", "")
-                    start_dt = datetime.fromisoformat(
-                        existing_start.replace("Z", "+00:00")
-                    )
+                    # Keep existing start time
+                    start_time = existing_event.get("start", {}).get("dateTime", "")
 
                 if event.end is not None:
-                    end_dt = datetime.fromisoformat(event.end).replace(tzinfo=user_tz)
+                    end_time = event.end
                 else:
-                    # Parse existing end time
-                    existing_end = existing_event.get("end", {}).get("dateTime", "")
-                    end_dt = datetime.fromisoformat(existing_end.replace("Z", "+00:00"))
+                    # Keep existing end time
+                    end_time = existing_event.get("end", {}).get("dateTime", "")
 
                 event_payload["start"] = {
-                    "dateTime": start_dt.isoformat(),
-                    "timeZone": canonical_timezone,
+                    "dateTime": start_time,
+                    "timeZone": "UTC",
                 }
                 event_payload["end"] = {
-                    "dateTime": end_dt.isoformat(),
-                    "timeZone": canonical_timezone,
+                    "dateTime": end_time,
+                    "timeZone": "UTC",
                 }
             except Exception as e:
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid timezone or datetime format: {str(e)}",
+                    detail=f"Invalid datetime format: {str(e)}",
                 )
     else:
         # Preserve existing start/end times
