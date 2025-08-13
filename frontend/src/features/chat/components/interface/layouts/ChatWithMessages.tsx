@@ -1,6 +1,6 @@
 import React from "react";
 import Composer from "@/features/chat/components/composer/Composer";
-import { ChatSection, CardStackSection } from "../sections";
+import { ChatSection, GridSection } from "../sections";
 
 interface ChatWithMessagesProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -38,7 +38,7 @@ export const ChatWithMessages: React.FC<ChatWithMessagesProps> = ({
       {...dragHandlers}
     >
       {/* Chat interface - no snap scrolling when there are messages */}
-      <div className="relative flex h-full min-h-screen flex-col">
+      <div className="relative flex h-full flex-col">
         <ChatSection chatRef={chatRef} />
         <div className="flex-shrink-0 pb-2">
           <Composer {...composerProps} />

@@ -127,6 +127,7 @@ const ChatPage = React.memo(function MainChat() {
               containerRef={scrollContainerRef}
               onScrollToBottom={scrollToBottom}
               hasMessages={hasMessages}
+              gridSectionRef={dummySectionRef}
             />
           </>
         )}
