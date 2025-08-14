@@ -32,6 +32,7 @@ export default function CalendarEventSection({
           end: option.end,
           is_all_day: option.is_all_day || false,
           recurrence: option.recurrence,
+          calendar_id: option.calendar_id,
         };
         return timedEvent;
       }
@@ -44,6 +45,7 @@ export default function CalendarEventSection({
           time: option.start,
           is_all_day: option.is_all_day || true, // Default to all-day for single time events
           recurrence: option.recurrence,
+          calendar_id: option.calendar_id,
         };
         return singleTimeEvent;
       }
@@ -55,6 +57,7 @@ export default function CalendarEventSection({
         time: "Time TBD",
         is_all_day: true,
         recurrence: option.recurrence,
+        calendar_id: option.calendar_id,
       };
       return fallbackEvent;
     },

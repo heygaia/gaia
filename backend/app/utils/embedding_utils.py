@@ -1,19 +1,11 @@
-from functools import lru_cache
 from typing import Any, List, Optional, Tuple
 
 from bson import ObjectId
 from langchain_core.documents import Document
-from sentence_transformers import SentenceTransformer
 
 from app.config.loggers import chat_logger as logger
 from app.db.chromadb import ChromaClient
 from app.db.mongodb.collections import files_collection, notes_collection
-
-
-@lru_cache(maxsize=1)
-def get_embedding_model():
-    """Lazy-load the SentenceTransformer model and cache it."""
-    return SentenceTransformer("all-MiniLM-L6-v2")
 
 
 async def search_by_similarity(
@@ -162,8 +154,3 @@ async def search_documents_by_similarity(
         additional_filters=additional_filters,
         fetch_mongo_details=True,
     )
-
-
-def generate_embedding(text):
-    model = get_embedding_model()
-    return model.encode(text).tolist()

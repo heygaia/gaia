@@ -115,6 +115,7 @@ export interface BaseEvent {
   organizer?: {
     email?: string;
   };
+  calendar_id?: string;
   is_all_day?: boolean;
   recurrence?: RecurrenceData;
 }
@@ -160,6 +161,7 @@ export type CalendarOptions = {
   description?: string;
   start?: string;
   end?: string;
+  calendar_id?: string;
   is_all_day?: boolean;
   recurrence?: RecurrenceData;
 };

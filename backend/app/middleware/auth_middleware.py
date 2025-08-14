@@ -14,7 +14,7 @@ from app.utils.auth_utils import authenticate_workos_session
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
-from workos import WorkOSClient
+from workos import AsyncWorkOSClient
 
 
 class WorkOSAuthMiddleware(BaseHTTPMiddleware):
@@ -28,12 +28,12 @@ class WorkOSAuthMiddleware(BaseHTTPMiddleware):
     def __init__(
         self,
         app: ASGIApp,
-        workos_client: Optional[WorkOSClient] = None,
+        workos_client: Optional[AsyncWorkOSClient] = None,
         exclude_paths: Optional[list[str]] = None,
     ):
         super().__init__(app)
         # Initialize WorkOS client or use provided one
-        self.workos = workos_client or WorkOSClient(
+        self.workos = workos_client or AsyncWorkOSClient(
             api_key=settings.WORKOS_API_KEY,
             client_id=settings.WORKOS_CLIENT_ID,
         )

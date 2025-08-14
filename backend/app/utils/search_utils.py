@@ -1,5 +1,5 @@
 import asyncio
-from typing import Dict, Optional, Union, TypedDict
+from typing import Dict, Optional, TypedDict, Union
 
 import httpx
 from bs4 import BeautifulSoup

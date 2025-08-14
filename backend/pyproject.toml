@@ -22,7 +22,6 @@ dependencies = [
   "groq==0.15.0",
   "html2text>=2024.2.26",
   "httpx==0.28.1",
-  "huggingface-hub",
   "langchain-groq>=0.3.2",
   "hyperframe==6.1.0",
   "idna==3.10",
@@ -67,7 +66,6 @@ dependencies = [
   "ipython>=9.1.0",
   "uvicorn>=0.34.1",
   "hf-xet>=1.0.3",
-  "langchain-huggingface>=0.1.2",
   "llama-parse>=0.6.12",
   "llama-cloud-services>=0.6.15",
   "psycopg2-binary>=2.9.10",
@@ -98,6 +96,7 @@ dependencies = [
   "workos>=5.24.0",
   "asyncpg>=0.30.0",
   "authlib>=1.6.1",
+  "langchain-cerebras>=0.5.0",
   "dodopayments>=1.44.0",
   "standardwebhooks>=1.0.0",
   "sentry-sdk[fastapi]>=2.32.0",
@@ -138,11 +137,9 @@ dev = [
 ]
 
 heavy = [
-  "sentence-transformers",
   "langchain",
   "langchain-community",
   "playwright",
-  "nltk",
 ]
 
 [[tool.uv.index]]

@@ -62,7 +62,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
   const [pendingDroppedFiles, setPendingDroppedFiles] = useState<File[]>([]);
   const [isSlashCommandDropdownOpen, setIsSlashCommandDropdownOpen] =
     useState(false);
-  const sendMessage = useSendMessage(convoIdParam ?? null);
+  const sendMessage = useSendMessage();
   const { isLoading, setIsLoading } = useLoading();
   const { integrations, isLoading: integrationsLoading } = useIntegrations();
   const currentMode = useMemo(
