@@ -9,7 +9,7 @@ Note: User authentication via WorkOS is handled separately by the WorkOSAuthMidd
 """
 
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import token_repository_logger as logger
@@ -84,7 +84,7 @@ class TokenRepository:
             return datetime.now() + timedelta(seconds=expires_in)
         except (ValueError, TypeError):
             logger.warning(f"Invalid expires_in: {expires_in}, using default")
-            return datetime.utcnow() + timedelta(seconds=3600)
+            return datetime.now(timezone.utc) + timedelta(seconds=3600)
 
     async def store_token(
         self, user_id: str, provider: str, token_data: Dict[str, Any]
@@ -215,11 +215,6 @@ class TokenRepository:
                     else None,
                     "scope": token_data.get("scope", ""),
                 }
-            )
-
-            # Log token status for debugging
-            logger.debug(
-                f"Token expiry status - is_expired: {oauth_token.is_expired()}, will_renew: {renew_if_expired}"
             )
 
             # Check if token is expired

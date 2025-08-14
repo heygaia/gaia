@@ -15,7 +15,6 @@ export default function Onboarding() {
     messagesEndRef,
     inputRef,
     handleChipSelect,
-    handleCountrySelect,
     handleProfessionSelect,
     handleProfessionInputChange,
     handleInputChange,
@@ -50,7 +49,6 @@ export default function Onboarding() {
             onboardingState={onboardingState}
             onSubmit={handleSubmit}
             onInputChange={handleInputChange}
-            onCountrySelect={handleCountrySelect}
             onProfessionSelect={handleProfessionSelect}
             onProfessionInputChange={handleProfessionInputChange}
             inputRef={inputRef}

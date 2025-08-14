@@ -2,26 +2,25 @@ from functools import lru_cache
 from typing import Dict, Optional
 
 import chromadb
+from app.config.loggers import chroma_logger as logger
+from app.config.settings import settings
 from chromadb.api import AsyncClientAPI, ClientAPI
 from chromadb.config import Settings
 from fastapi import Request
 from langchain_chroma import Chroma
-from langchain_huggingface import HuggingFaceEmbeddings
-
-from app.config.loggers import chroma_logger as logger
-from app.config.settings import settings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 
 
 @lru_cache(maxsize=1)
 def get_langchain_embedding_model():
     """
-    Lazy-load the HuggingFace embedding model and cache it.
+    Lazy-load the Google Gemini embedding model and cache it.
 
     Returns:
-        HuggingFaceEmbeddings: The embedding model
+        GoogleGenerativeAIEmbeddings: The embedding model
     """
-    return HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2",
+    return GoogleGenerativeAIEmbeddings(
+        model="models/gemini-embedding-001",
     )
 
 

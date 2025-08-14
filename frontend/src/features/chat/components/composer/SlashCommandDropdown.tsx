@@ -18,10 +18,9 @@ interface SlashCommandDropdownProps {
   selectedIndex: number;
   onSelect: (tool: SlashCommandMatch) => void;
   onClose: () => void;
-  position: { top: number; left: number; width?: number };
+  position: { top?: number; bottom?: number; left: number; width?: number };
   isVisible: boolean;
   openedViaButton?: boolean;
-  hasMessages: boolean;
 }
 
 const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
@@ -32,7 +31,6 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
   position,
   isVisible,
   openedViaButton = false,
-  hasMessages,
 }) => {
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
@@ -106,11 +104,16 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
             stiffness: 300,
             duration: 0.15,
           }}
-          className="slash-command-dropdown fixed z-[150] overflow-hidden rounded-2xl border-1 border-zinc-700 bg-zinc-900/60 shadow-2xl backdrop-blur-2xl"
+          className="slash-command-dropdown fixed z-[200] overflow-hidden rounded-3xl border-1 border-zinc-700 bg-zinc-900/60 shadow-2xl backdrop-blur-2xl"
           style={{
-            bottom: hasMessages ? "117px" : "345px",
+            ...(position.top !== undefined && { top: 0, height: position.top }),
+            ...(position.bottom !== undefined && {
+              bottom: `calc(100vh - ${position.bottom - 2}px)`,
+              maxHeight: position.bottom,
+            }),
             left: position.left,
             width: position.width,
+            transform: "none",
             boxShadow: "0px -18px 30px 5px rgba(0, 0, 0, 0.5)",
           }}
           onClick={(e) => e.stopPropagation()}

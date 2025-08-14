@@ -33,6 +33,7 @@ async def construct_langchain_messages(
     Returns:
         List of LangChain message objects (SystemMessage + HumanMessage only)
     """
+
     # Format current time for the system prompt
     formatted_time = datetime.now(timezone.utc).strftime("%A, %B %d, %Y, %H:%M:%S UTC")
 
@@ -98,7 +99,7 @@ async def construct_langchain_messages(
             human_message_content += f"\n\n**TOOL SELECTION:** The user has specifically selected the '{tool_display_name}' tool and wants you to execute it to handle their request above. You must use the {selected_tool} tool to process their request. Do not suggest alternatives - the user has already chosen this specific tool for their task."
         else:
             # No user content, just tool selection
-            human_message_content = f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_display_name}' tool and wants you to execute it immediately. Use the {selected_tool} tool now. This is a direct tool execution request with no additional context needed. If you don't have tool context, use retrieve_tools to get tool information. Ignore older tools requests and focus on the current tool selection. You must use the {selected_tool} tool to process their request."
+            human_message_content = f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_display_name}' tool and wants you to execute it immediately. Use the {selected_tool} tool now. This is a direct tool execution request with no additional context needed. If you don't have tool context, use retrieve_tools to get tool information. Ignore older tools requests and focus on the current tool selection. You must use the {selected_tool} tool to process their request. If requested tool is not available then use `retrieve_tools` to get the relevant tool information."
 
     # If no human message then return error
     if not human_message_content:

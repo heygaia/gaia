@@ -165,7 +165,7 @@ export default function ChatsList() {
           className="w-full p-0"
           defaultValue={[
             ...(systemConversations.length > 0 ? ["system-conversations"] : []),
-            ...(starredConversations.length > 0 ? ["starred-chats"] : []),
+            "starred-chats",
             ...(sortedTimeFrames.length > 0
               ? ["today", "previous-7-days", "yesterday"]
               : []),

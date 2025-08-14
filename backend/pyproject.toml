@@ -22,7 +22,6 @@ dependencies = [
   "groq==0.15.0",
   "html2text>=2024.2.26",
   "httpx==0.28.1",
-  "huggingface-hub",
   "langchain-groq>=0.3.2",
   "hyperframe==6.1.0",
   "idna==3.10",
@@ -50,6 +49,7 @@ dependencies = [
   "protobuf==5.29.5",
   "pydantic==2.10.4",
   "pydantic-settings>=2.8.1",
+  "PyJWT>=2.10.0",
   "pymongo==4.9.2",
   "pymupdf>=1.25.5",
   "pypdf2==3.0.1",
@@ -66,7 +66,6 @@ dependencies = [
   "ipython>=9.1.0",
   "uvicorn>=0.34.1",
   "hf-xet>=1.0.3",
-  "langchain-huggingface>=0.1.2",
   "llama-parse>=0.6.12",
   "llama-cloud-services>=0.6.15",
   "psycopg2-binary>=2.9.10",
@@ -86,7 +85,6 @@ dependencies = [
   "markdown2>=2.5.3",
   "pandas>=2.3.0",
   "resend>=2.10.0",
-  "razorpay>=1.4.2",
   "tomli>=2.2.1",
   "cfgv>=3.4.0",
   "pre-commit>=4.2.0",
@@ -138,11 +136,9 @@ dev = [
 ]
 
 heavy = [
-  "sentence-transformers",
   "langchain",
   "langchain-community",
   "playwright",
-  "nltk",
 ]
 
 [[tool.uv.index]]

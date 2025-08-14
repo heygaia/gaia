@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Button, Textarea } from "@heroui/react";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -41,10 +41,10 @@ export default function AddMemoryForm({
     }
   }, [isOpen]);
 
-  const handleContentChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+  const handleContentChange = (value: string) => {
     // Limit input to maximum character count
-    if (e.target.value.length <= MAX_MEMORY_LENGTH) {
-      setContent(e.target.value);
+    if (value.length <= MAX_MEMORY_LENGTH) {
+      setContent(value);
     }
   };
 
@@ -92,9 +92,8 @@ export default function AddMemoryForm({
   if (!isOpen) return null;
 
   return (
-    <div className="relative mb-4 rounded-lg border border-zinc-700 bg-zinc-900 p-4">
+    <div className="relative mb-4 rounded-2xl border border-zinc-700 p-4">
       <div className="mb-2 flex items-center justify-between">
-        <h3 className="text-sm font-medium">Add New Memory</h3>
         <Button
           isIconOnly
           size="sm"
@@ -106,20 +105,30 @@ export default function AddMemoryForm({
         </Button>
       </div>
 
-      <div className="flex flex-col gap-2">
-        <textarea
+      <div className="mt-6 flex flex-col gap-2">
+        <Textarea
           ref={textareaRef}
           placeholder="Enter a memory to store..."
           value={content}
-          onChange={handleContentChange}
+          onValueChange={handleContentChange}
           onKeyDown={handleKeyDown}
-          rows={4}
-          className="w-full resize-none rounded-md bg-zinc-800 p-3 text-sm focus:ring-2 focus:ring-primary focus:outline-none"
+          minRows={4}
+          maxRows={6}
+          label="Add New Memory"
+          description="GAIA will not add the memory if it is unable to extract valuable information from your text. Please add specific and meaningful information about yourself, your preferences, or important details you want GAIA to remember."
+          errorMessage={
+            content.length > MAX_MEMORY_LENGTH
+              ? `Content must be ${MAX_MEMORY_LENGTH} characters or less. Currently ${content.length} characters.`
+              : undefined
+          }
+          isInvalid={content.length > MAX_MEMORY_LENGTH}
+          classNames={{
+            input: "bg-zinc-800 text-sm",
+            inputWrapper: "bg-zinc-800 focus:bg-zinc-700/50",
+            description: "text-zinc-400 text-xs",
+          }}
           autoFocus
         />
-        <div className="text-right text-xs text-gray-400">
-          {content.length}/{MAX_MEMORY_LENGTH} characters
-        </div>
       </div>
 
       <div className="mt-3 flex justify-end gap-2">

@@ -13,7 +13,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from slowapi.middleware import SlowAPIMiddleware
-from workos import WorkOSClient
+from workos import AsyncWorkOSClient
 
 
 async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
@@ -61,7 +61,7 @@ def configure_middleware(app: FastAPI) -> None:
     )
 
     # Add WorkOS authentication middleware
-    workos_client = WorkOSClient(
+    workos_client = AsyncWorkOSClient(
         api_key=settings.WORKOS_API_KEY, client_id=settings.WORKOS_CLIENT_ID
     )
     app.add_middleware(WorkOSAuthMiddleware, workos_client=workos_client)

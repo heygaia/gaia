@@ -17,7 +17,6 @@ export interface OnboardingState {
   currentQuestionIndex: number;
   currentInputs: {
     text: string;
-    selectedCountry: string | null;
     selectedProfession: string | null;
   };
   userResponses: Record<string, string>;

@@ -11,6 +11,7 @@ from app.langchain.tools import (
     memory_tools,
     reminder_tool,
     search_tool,
+    support_tool,
     todo_tool,
     weather_tool,
     webpage_tool,

@@ -23,6 +23,7 @@ import {
   ThreeDotsMenu,
   WhatsappIcon,
 } from "@/components/shared/icons";
+import { getLinkByLabel } from "@/config/appConfig";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
@@ -48,6 +49,9 @@ export default function SettingsMenu() {
   const dispatch = useDispatch();
   const fetchConversations = useFetchConversations();
   const { updateConvoMessages } = useConversation();
+
+  const discordLink = getLinkByLabel("Discord");
+  const whatsappLink = getLinkByLabel("WhatsApp");
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
@@ -141,20 +145,28 @@ export default function SettingsMenu() {
       label: (
         <div className="flex items-center gap-2 text-[#5865F2]">
           <DiscordIcon color="#5865F2" width={18} />
-          Join our Discord
+          {discordLink?.description || "Join our Discord"}
         </div>
       ),
-      action: () => window.open("https://discord.heygaia.io", "_blank"),
+      action: () =>
+        window.open(
+          discordLink?.href || "https://discord.heygaia.io",
+          "_blank",
+        ),
     },
     {
       key: "whatsapp",
       label: (
         <div className="flex items-center gap-2 text-[#25d366]">
           <WhatsappIcon color="#25d366" width={18} />
-          WhatsApp Community
+          {whatsappLink?.description || "WhatsApp Community"}
         </div>
       ),
-      action: () => window.open("https://whatsapp.heygaia.io", "_blank"),
+      action: () =>
+        window.open(
+          whatsappLink?.href || "https://whatsapp.heygaia.io",
+          "_blank",
+        ),
     },
     {
       key: "settings",

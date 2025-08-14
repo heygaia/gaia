@@ -24,6 +24,7 @@ import FollowUpActions from "./FollowUpActions";
 import GoalSection from "./goals/GoalSection";
 import { GoalAction } from "./goals/types";
 import GoogleDocsSection from "./GoogleDocsSection";
+import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
 
 export default function TextBubble({
@@ -35,6 +36,7 @@ export default function TextBubble({
   email_compose_data,
   email_fetch_data,
   email_thread_data,
+  support_ticket_data,
   calendar_fetch_data,
   calendar_list_fetch_data,
   weather_data,
@@ -130,6 +132,10 @@ export default function TextBubble({
 
       {!!email_compose_data && (
         <EmailComposeSection email_compose_data={email_compose_data!} />
+      )}
+
+      {!!support_ticket_data && (
+        <SupportTicketSection support_ticket_data={support_ticket_data!} />
       )}
 
       {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}

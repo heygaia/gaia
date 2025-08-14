@@ -55,10 +55,8 @@ export default function ChatOptionsDropdown({
         starred === undefined ? true : !starred,
       );
       setIsOpen(false);
-
       await fetchConversations();
     } catch (error) {
-
       console.error("Failed to update star", error);
     }
   };
@@ -67,7 +65,7 @@ export default function ChatOptionsDropdown({
     if (!newName) return;
     try {
       await chatApi.renameConversation(chatId, newName);
-      setIsOpen(false);
+      closeModal();
       await fetchConversations(1, 20, false);
     } catch (error) {
       console.error("Failed to update chat name", error);
@@ -78,18 +76,24 @@ export default function ChatOptionsDropdown({
     try {
       router.push("/c");
       await chatApi.deleteConversation(chatId);
-      setIsOpen(false);
-      // Toast is already shown by the API service
+      closeModal();
       await fetchConversations(1, 20, false);
     } catch (error) {
-      // Error toast is already shown by the API service
       console.error("Failed to delete chat", error);
     }
   };
 
   const openModal = (action: "edit" | "delete") => {
     setModalAction(action);
+    if (action === "edit") setNewName(chatName); // Reset to current chat name when opening edit modal
+
     setIsOpen(true);
+  };
+
+  const closeModal = () => {
+    setIsOpen(false);
+    setModalAction(null);
+    setNewName(""); // Clear the input field
   };
 
   return (
@@ -157,7 +161,7 @@ export default function ChatOptionsDropdown({
       <Modal
         className="text-foreground dark"
         isOpen={isOpen}
-        onOpenChange={setIsOpen}
+        onOpenChange={closeModal}
       >
         <ModalContent>
           {modalAction === "edit" ? (
@@ -186,7 +190,7 @@ export default function ChatOptionsDropdown({
                 />
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={() => setIsOpen(false)}>
+                <Button variant="light" onPress={closeModal}>
                   Cancel
                 </Button>
                 <Button color="primary" onPress={handleEdit}>
@@ -203,7 +207,7 @@ export default function ChatOptionsDropdown({
                 <p className="text-danger">This action cannot be undone.</p>
               </ModalBody>
               <ModalFooter>
-                <Button variant="light" onPress={() => setIsOpen(false)}>
+                <Button variant="light" onPress={closeModal}>
                   Cancel
                 </Button>
                 <Button color="danger" variant="flat" onPress={handleDelete}>

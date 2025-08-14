@@ -11,7 +11,7 @@ import httpx
 from langgraph.config import get_stream_writer
 
 from app.config.loggers import auth_logger as logger
-from app.config.oauth_config import get_integration_by_id
+from app.config.oauth_config import get_integration_by_id, get_integration_scopes
 from app.config.token_repository import token_repository
 
 http_async_client = httpx.AsyncClient(timeout=10.0)
@@ -23,17 +23,6 @@ TOOL_INTEGRATION_MAPPING = {
     "google_docs": "google_docs",
     "google_drive": "google_drive",
     # Add more mappings as needed
-}
-
-# Mapping of integration IDs to their required scopes
-INTEGRATION_SCOPE_MAPPING = {
-    "gmail": ["https://www.googleapis.com/auth/gmail.modify"],
-    "google_calendar": [
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/calendar.readonly",
-    ],
-    "google_docs": ["https://www.googleapis.com/auth/documents"],
-    "google_drive": ["https://www.googleapis.com/auth/drive.file"],
 }
 
 
@@ -52,8 +41,8 @@ async def check_user_has_integration(access_token: str, integration_id: str) -> 
         return False
 
     try:
-        # Get required scopes for this integration
-        required_scopes = INTEGRATION_SCOPE_MAPPING.get(integration_id, [])
+        # Get required scopes for this integration from oauth_config
+        required_scopes = get_integration_scopes(integration_id)
         if not required_scopes:
             logger.warning(f"No scopes defined for integration: {integration_id}")
             return False

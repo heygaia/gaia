@@ -13,6 +13,7 @@ async def store_user_message_memory(user_id: str, message: str, conversation_id:
         result = await memory_service.store_memory(
             content=message,
             user_id=user_id,
+            conversation_id=conversation_id,
             metadata={
                 "timestamp": datetime.now(timezone.utc).isoformat(),
                 "conversation_id": conversation_id,

@@ -47,10 +47,14 @@ async def upload_file_service(
     """
     if not file.filename:
         logger.error("Missing filename in file upload")
-        raise HTTPException(status_code=400, detail="Invalid file name. Filename is required.")
+        raise HTTPException(
+            status_code=400, detail="Invalid file name. Filename is required."
+        )
     if not file.content_type:
         logger.error("Missing content_type in file upload")
-        raise HTTPException(status_code=400, detail="Invalid file type. Content type is required.")
+        raise HTTPException(
+            status_code=400, detail="Invalid file type. Content type is required."
+        )
 
     file_id = str(uuid.uuid4())
     public_id = f"file_{file_id}_{file.filename.replace(' ', '_')}"
@@ -61,11 +65,13 @@ async def upload_file_service(
         file_size = len(content)
         if file_size > 10 * 1024 * 1024:
             logger.error("File size exceeds the 10 MB limit")
-            raise HTTPException(status_code=400, detail="File size exceeds the 10 MB limit")
+            raise HTTPException(
+                status_code=400, detail="File size exceeds the 10 MB limit"
+            )
 
         cloudinary_task = asyncio.to_thread(
             cloudinary.uploader.upload,
-            io.BytesIO(content),  
+            io.BytesIO(content),
             resource_type="auto",
             public_id=public_id,
             overwrite=True,
@@ -76,7 +82,7 @@ async def upload_file_service(
             content_type=file.content_type,
             filename=file.filename,
         )
-   
+
         upload_result, summary_result = await asyncio.gather(
             cloudinary_task,
             summary_task,
@@ -85,7 +91,9 @@ async def upload_file_service(
         file_url = upload_result.get("secure_url")
         if not file_url:
             logger.error("Missing secure_url in Cloudinary upload response")
-            raise HTTPException(status_code=500, detail="Invalid response from file upload service")
+            raise HTTPException(
+                status_code=500, detail="Invalid response from file upload service"
+            )
 
         summary, formatted_file_content = _process_file_summary(summary_result)
 
@@ -132,6 +140,7 @@ async def upload_file_service(
     except Exception as e:
         logger.error(f"Failed to upload file: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to upload file: {str(e)}")
+
 
 def _process_file_summary(
     file_summary: str | list[DocumentSummaryModel] | DocumentSummaryModel,

@@ -47,7 +47,7 @@ export default function ChatHeader() {
           />
         )}
       </div>
-      <div className="flex gap-2">
+      <div className="z-[100] flex gap-2">
         <Link href={"/c"}>
           <Button
             aria-label="Create new chat"

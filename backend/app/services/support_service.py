@@ -7,8 +7,6 @@ from typing import Any, Dict, List, Optional
 
 import cloudinary
 import cloudinary.uploader
-from fastapi import HTTPException, UploadFile
-
 from app.config.loggers import app_logger as logger
 from app.db.mongodb.collections import support_collection
 from app.models.support_models import (
@@ -26,6 +24,7 @@ from app.utils.email_utils import (
     send_support_team_notification,
     send_support_to_user_email,
 )
+from fastapi import HTTPException, UploadFile
 
 # Support team emails
 SUPPORT_EMAILS = [

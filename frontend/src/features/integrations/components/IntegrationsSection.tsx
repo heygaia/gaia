@@ -7,6 +7,7 @@ import React from "react";
 
 import { useIntegrations } from "../hooks/useIntegrations";
 import { Integration } from "../types";
+import { SpecialIntegrationCard } from "./SpecialIntegrationCard";
 
 interface IntegrationsSectionProps {
   onClose?: () => void;
@@ -32,7 +33,7 @@ const IntegrationCard: React.FC<{
         <div className="flex-shrink-0">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-zinc-800/50">
             <Image
-              src={integration.icon}
+              src={integration.icons[0]}
               alt={integration.name}
               width={20}
               height={20}
@@ -102,8 +103,16 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
   onClose,
   maxHeight = "24rem",
 }) => {
-  const { integrations, connectIntegration, disconnectIntegration, isLoading } =
-    useIntegrations();
+  const {
+    integrations,
+    connectIntegration,
+    disconnectIntegration,
+    isLoading,
+    getSpecialIntegrations,
+    getRegularIntegrations,
+    isUnifiedIntegrationConnected,
+    getIntegrationStatus,
+  } = useIntegrations();
 
   const handleConnect = async (integrationId: string) => {
     try {
@@ -122,13 +131,20 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
     }
   };
 
-  const connectedIntegrations = integrations.filter(
+  // Get special and regular integrations
+  const specialIntegrations = getSpecialIntegrations();
+  const regularIntegrations = getRegularIntegrations();
+
+  // Separate regular integrations by status
+  const connectedIntegrations = regularIntegrations.filter(
     (i) => i.status === "connected",
   );
-  const availableIntegrations = integrations.filter(
+  const availableIntegrations = regularIntegrations.filter(
     (i) => i.status === "not_connected" && i.loginEndpoint,
   );
-  const comingSoonIntegrations = integrations.filter((i) => !i.loginEndpoint);
+  const comingSoonIntegrations = regularIntegrations.filter(
+    (i) => !i.loginEndpoint,
+  );
 
   if (isLoading) {
     return (
@@ -141,6 +157,42 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
   return (
     <ScrollShadow className="overflow-y-auto" style={{ maxHeight }}>
       <div className="py-2">
+        {/* Special Integrations (like Google Workspace) */}
+        {specialIntegrations.length > 0 && (
+          <div className="mb-4">
+            <div className="mb-2 flex items-center gap-2 px-3">
+              <Plus size={16} className="text-purple-400" />
+              <span className="text-sm font-medium text-purple-400">
+                Quick Connect
+              </span>
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              {specialIntegrations.map((integration) => {
+                const connectedCount =
+                  integration.includedIntegrations?.filter(
+                    (includedId) => getIntegrationStatus(includedId)?.connected,
+                  ).length || 0;
+                const totalCount =
+                  integration.includedIntegrations?.length || 0;
+                const isConnected = isUnifiedIntegrationConnected(
+                  integration.id,
+                );
+
+                return (
+                  <SpecialIntegrationCard
+                    key={integration.id}
+                    integration={integration}
+                    isConnected={isConnected}
+                    connectedCount={connectedCount}
+                    totalCount={totalCount}
+                    onConnect={handleConnect}
+                  />
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Connected Integrations */}
         {connectedIntegrations.length > 0 && (
           <div className="mb-4">
@@ -150,14 +202,16 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
                 Connected
               </span>
             </div>
-            {connectedIntegrations.map((integration) => (
-              <IntegrationCard
-                key={integration.id}
-                integration={integration}
-                onConnect={handleConnect}
-                onDisconnect={handleDisconnect}
-              />
-            ))}
+            <div className="grid grid-cols-2 gap-2">
+              {connectedIntegrations.map((integration) => (
+                <IntegrationCard
+                  key={integration.id}
+                  integration={integration}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                />
+              ))}
+            </div>
           </div>
         )}
 
@@ -170,14 +224,16 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
                 Available
               </span>
             </div>
-            {availableIntegrations.map((integration) => (
-              <IntegrationCard
-                key={integration.id}
-                integration={integration}
-                onConnect={handleConnect}
-                onDisconnect={handleDisconnect}
-              />
-            ))}
+            <div className="grid grid-cols-2 gap-2">
+              {availableIntegrations.map((integration) => (
+                <IntegrationCard
+                  key={integration.id}
+                  integration={integration}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                />
+              ))}
+            </div>
           </div>
         )}
 
@@ -190,14 +246,16 @@ export const IntegrationsSection: React.FC<IntegrationsSectionProps> = ({
                 Coming Soon
               </span>
             </div>
-            {comingSoonIntegrations.map((integration) => (
-              <IntegrationCard
-                key={integration.id}
-                integration={integration}
-                onConnect={handleConnect}
-                onDisconnect={handleDisconnect}
-              />
-            ))}
+            <div className="grid grid-cols-2 gap-2">
+              {comingSoonIntegrations.map((integration) => (
+                <IntegrationCard
+                  key={integration.id}
+                  integration={integration}
+                  onConnect={handleConnect}
+                  onDisconnect={handleDisconnect}
+                />
+              ))}
+            </div>
           </div>
         )}
 

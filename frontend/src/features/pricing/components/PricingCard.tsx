@@ -10,9 +10,7 @@ import { Tick02Icon } from "@/components/shared/icons";
 import { useUser } from "@/features/auth/hooks/useUser";
 
 // Removed currency import - using USD only
-import { useRazorpay } from "../hooks/useRazorpay";
-import { PaymentStatusIndicator } from "./PaymentStatusIndicator";
-import { SubscriptionSuccessModal } from "./SubscriptionSuccessModal";
+import { useDodoPayments } from "../hooks/useDodoPayments";
 
 interface PricingCardProps {
   title: string;
@@ -72,11 +70,10 @@ export function PricingCard({
     : null;
 
   const {
-    createSubscriptionPayment,
-    isLoading,
-    paymentStates,
-    paymentActions,
-  } = useRazorpay();
+    createSubscriptionAndRedirect,
+    isLoading: isCreatingSubscription,
+    error: paymentError,
+  } = useDodoPayments();
   const user = useUser();
   const router = useRouter();
 
@@ -111,10 +108,8 @@ export function PricingCard({
       return;
     }
 
-    await createSubscriptionPayment(planId, {
-      name: user.name,
-      email: user.email,
-    });
+    // Create subscription and redirect to Dodo payment page
+    await createSubscriptionAndRedirect(planId);
   };
 
   return (
@@ -198,10 +193,11 @@ export function PricingCard({
         </div>
 
         <div className="space-y-3">
-          {(paymentStates.isInitiating ||
-            paymentStates.isProcessing ||
-            paymentStates.isVerifying) && (
-            <PaymentStatusIndicator states={paymentStates} />
+          {/* Show payment error if any */}
+          {paymentError && (
+            <div className="rounded-lg border border-red-200 bg-red-50 p-3">
+              <p className="text-sm text-red-600">{paymentError}</p>
+            </div>
           )}
 
           <Button
@@ -211,36 +207,23 @@ export function PricingCard({
             }
             variant={type === "main" ? "solid" : "flat"}
             onPress={handleGetStarted}
-            isLoading={isLoading}
+            isLoading={isCreatingSubscription}
             disabled={
-              isLoading ||
-              paymentStates.isVerifying ||
-              (isCurrentPlan && hasActiveSubscription)
+              isCreatingSubscription || (isCurrentPlan && hasActiveSubscription)
             }
           >
-            {paymentStates.isInitiating
-              ? "Preparing..."
-              : paymentStates.isProcessing
-                ? "Processing..."
-                : paymentStates.isVerifying
-                  ? "Activating..."
-                  : isCurrentPlan && hasActiveSubscription
-                    ? "Active Plan"
-                    : hasActiveSubscription && !isCurrentPlan
-                      ? "Switch Plan"
-                      : price === 0
-                        ? "Get started"
-                        : "Subscribe now"}
+            {isCreatingSubscription
+              ? "Creating subscription..."
+              : isCurrentPlan && hasActiveSubscription
+                ? "Active Plan"
+                : hasActiveSubscription && !isCurrentPlan
+                  ? "Switch Plan"
+                  : price === 0
+                    ? "Get started"
+                    : "Subscribe now"}
           </Button>
         </div>
       </div>
-
-      <SubscriptionSuccessModal
-        isOpen={paymentStates.showSuccessModal}
-        onClose={paymentActions.handleSuccessModalClose}
-        onNavigateToChat={paymentActions.handleSuccessModalNavigate}
-        planName={title}
-      />
     </div>
   );
 }

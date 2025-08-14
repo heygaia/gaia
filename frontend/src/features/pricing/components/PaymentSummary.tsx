@@ -46,7 +46,6 @@ export function PaymentSummary() {
   }
 
   const plan = subscriptionStatus.current_plan;
-  const subscription = subscriptionStatus.subscription;
 
   // Convert to USD and format
   const priceInUSDCents = convertToUSDCents(plan.amount, plan.currency);
@@ -108,16 +107,6 @@ export function PaymentSummary() {
               </div>
             )}
         </div>
-
-        {subscription?.current_end && (
-          <>
-            <Divider />
-            <div className="text-xs text-default-500">
-              Next billing:{" "}
-              {new Date(subscription.current_end).toLocaleDateString()}
-            </div>
-          </>
-        )}
       </CardBody>
     </Card>
   );

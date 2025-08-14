@@ -62,25 +62,21 @@ export default function CalendarEventDialog({
     date?: string;
   }>({});
   const [recurrence, setRecurrence] = useState<string>("none");
-  const [showCustomRecurrence, setShowCustomRecurrence] = useState(false);
-  const [customRecurrence, setCustomRecurrence] = useState({
-    interval: 1,
-    unit: "day",
-  });
 
   // Reset form when dialog closes
   useEffect(() => {
-    if (!open) {
-      setSummary("");
-      setDescription("");
-      setStart("");
-      setEnd("");
-      setIsAllDay(false);
-      setErrors({});
-      setRecurrence("none");
-      setShowCustomRecurrence(false);
-      setCustomRecurrence({ interval: 1, unit: "day" });
+    if (open) {
+      return;
     }
+    setSummary("");
+    setDescription("");
+    setStart("");
+    setEnd("");
+    setIsAllDay(false);
+    setErrors({});
+    setRecurrence("none");
+    // setShowCustomRecurrence(false);
+    // setCustomRecurrence({ interval: 1, unit: "day" });
   }, [open]);
 
   // If in edit mode, populate form with event data
