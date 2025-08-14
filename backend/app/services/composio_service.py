@@ -54,6 +54,9 @@ class ComposioService:
             raise
 
     def get_notion_tools(self, user_id: str):
+        self.composio.tools._get()
+        self.composio.tools.get_raw_composio_tools()
+
         return self.composio.tools.get(user_id=user_id, toolkits=["NOTION"])
 
     def get_google_sheet_tools(self, user_id: str):

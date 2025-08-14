@@ -17,6 +17,7 @@ from app.langchain.tools import (
 )
 from app.services.composio_service import composio_service  
 
+
 # Organize tools by categories for better organisation when fetching tools on client side
 TOOLS_BY_CATEGORY = {
     "mail": [
