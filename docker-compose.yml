@@ -1,76 +1,6 @@
 name: gaia-dev
 
 services:
-  # FastAPI Application
-  gaia-backend:
-    container_name: gaia-backend
-    profiles: ["", "backend-only"]
-    build: ./backend
-    image: gaia
-    working_dir: /app
-    command:
-      [
-        "python",
-        "-m",
-        "uvicorn",
-        "app.main:app",
-        "--host",
-        "0.0.0.0",
-        "--port",
-        "80",
-        "--reload",
-        "--no-access-log",
-      ]
-    environment:
-      DEBUG: 1
-      PYTHONUNBUFFERED: 1
-      FORCE_COLOR: 1
-      WORKER_TYPE: main_app
-    env_file:
-      - ./backend/.env
-    volumes:
-      - ./backend:/app
-    ports:
-      - "8000:80"
-    restart: on-failure
-    tty: true
-    stdin_open: true
-    depends_on:
-      chromadb:
-        condition: service_healthy
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-      mongo:
-        condition: service_healthy
-    networks:
-      - gaia_network
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 5
-
-  frontend:
-    container_name: gaia-frontend
-    profiles: [""]
-    build:
-      context: ./frontend
-    working_dir: /app
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules # Avoid host overwriting container deps
-    restart: on-failure
-    networks:
-      - gaia_network
-    depends_on:
-      - gaia-backend
-    env_file:
-      - ./frontend/.env
-
   # ChromaDB Service
   chromadb:
     image: chromadb/chroma:1.0.0
@@ -105,6 +35,8 @@ services:
       POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: on-failure
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
@@ -120,7 +52,7 @@ services:
     container_name: redis
     profiles: ["", "backend-only"]
     ports:
-      - "6381:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: on-failure
@@ -140,6 +72,8 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: on-failure
+    ports:
+      - "27017:27017"
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
