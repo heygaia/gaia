@@ -17,6 +17,9 @@ import { ReactLenis } from "lenis/react";
 // import Integrations from "@/features/landing/components/sections/IntegrationsSection";
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import LandingLayout from "./(landing)/layout";
+import Personalised from "@/features/landing/components/sections/new/Personalised";
+import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
+import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
 
 // const DeepSearchSection = lazy(
 //   () => import("@/features/landing/components/sections/DeepSearchSection"),
@@ -77,9 +80,10 @@ export default function LandingPage() {
         </div>
           */}
           <div>
-            <Description />
-            {/* <Personalised /> */}
+            {/* <Description /> */}
+            <Personalised />
             <Integrations />
+            <Tired />
             <Proactive />
             <Mail />
             {/* <WorkflowAutomation /> */}
@@ -87,7 +91,8 @@ export default function LandingPage() {
             <Todo />
             <Goals />
             <InternetSection />
-            <AdvancedConversation />
+            <FAQAccordion />
+            {/* <AdvancedConversation /> */}
             {/* TODO: Section for crazy automations, MCP, n8n, and reminders feature */}
 
             {/*
