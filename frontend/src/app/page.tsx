@@ -2,31 +2,24 @@
 
 import { lazy, useEffect } from "react";
 
-import Calendar from "@/features/calendar/components/Calendar";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
 import Integrations from "@/features/landing/components/sections/IntegrationsSection";
 import InternetSection from "@/features/landing/components/sections/InternetSection";
 import AdvancedConversation from "@/features/landing/components/sections/new/AdvancedConversation";
 import Description from "@/features/landing/components/sections/new/Description";
 import Goals from "@/features/landing/components/sections/new/Goals";
-import Mail from "@/features/landing/components/sections/new/Mail";
+import MailCalendarSection from "@/features/landing/components/sections/new/MailCalendarSection";
 import Proactive from "@/features/landing/components/sections/new/Proactive";
 import Todo from "@/features/landing/components/sections/new/Todo";
 import { ReactLenis } from "lenis/react";
 
-// import Integrations from "@/features/landing/components/sections/IntegrationsSection";
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import LandingLayout from "./(landing)/layout";
 import Personalised from "@/features/landing/components/sections/new/Personalised";
 import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
 import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
+import Productivity from "@/features/landing/components/sections/new/Productivity";
 
-// const DeepSearchSection = lazy(
-//   () => import("@/features/landing/components/sections/DeepSearchSection"),
-// );
-// const FeatureGridSection = lazy(
-//   () => import("@/components/landing/sections/FeatureGridSection"),
-// );
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
@@ -37,9 +30,9 @@ const FinalSection = lazy(
 // const InternetSection = lazy(
 //   () => import("@/features/landing/components/sections/InternetSection"),
 // );
-// const MobileSection = lazy(
-//   () => import("@/features/landing/components/sections/MobileSection"),
-// );
+const MobileSection = lazy(
+  () => import("@/features/landing/components/sections/MobileSection"),
+);
 
 export default function LandingPage() {
   useEffect(() => {
@@ -54,8 +47,6 @@ export default function LandingPage() {
     <ReactLenis root>
       <LandingLayout>
         <div className="relative overflow-hidden">
-          {/* <div className="fixed inset-0 top-0 z-[-1] h-screen bg-[#000000] bg-linear-to-b" /> */}
-
           <HeroSection />
           <div className="relative z-10 flex w-screen items-center justify-center p-10">
             <HeroVideoDialog
@@ -66,41 +57,23 @@ export default function LandingPage() {
               thumbnailAlt="Hero Section Video"
             />
           </div>
-          {/*
-
-          <div className="relative z-10 flex h-screen w-screen items-center justify-center p-20">
-          <Image
-            width={1920}
-            height={1080}
-            alt="Hero Image"
-            src={"/landing/hero2.webp"}
-            className="rounded-3xl"
-            />
-          <HeroImage />
-        </div>
-          */}
           <div>
             {/* <Description /> */}
+            <MailCalendarSection />
+            <Productivity />
             <Personalised />
             <Integrations />
             <Tired />
-            <Proactive />
-            <Mail />
             {/* <WorkflowAutomation /> */}
-            <Calendar />
-            <Todo />
-            <Goals />
-            <InternetSection />
-            <FAQAccordion />
+            {/* <Todo /> */}
+            {/* <Goals /> */}
+            {/* <InternetSection /> */}
             {/* <AdvancedConversation /> */}
             {/* TODO: Section for crazy automations, MCP, n8n, and reminders feature */}
 
             {/*
           <Suspense fallback={<SuspenseLoader />}>
             <DeepSearchSection />
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
           </Suspense>
 
           <Suspense fallback={<SuspenseLoader />}>
@@ -113,6 +86,7 @@ export default function LandingPage() {
 
            */}
             {/* <MobileSection /> */}
+            <FAQAccordion />
             <FinalSection />
           </div>
         </div>

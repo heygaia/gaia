@@ -12,8 +12,8 @@ export default function LargeHeader({
   subHeadingText?: string;
 }) {
   return (
-    <div className="flex max-w-(--breakpoint-lg) flex-col items-center text-center">
-      <div className="flex w-full items-center justify-center gap-1">
+    <div className="flex max-w-(--breakpoint-lg) flex-col items-start text-left">
+      <div className="flex w-full items-start justify-start gap-1">
         {chipText && (
           <Chip variant="flat" color="primary">
             {chipText}
@@ -26,13 +26,11 @@ export default function LargeHeader({
           </Chip>
         )}
       </div>
-      <h2 className="relative z-2 mt-4 mb-2 flex items-center justify-center gap-4 text-4xl font-semibold sm:text-5xl">
+      <h2 className="relative z-2 mt-4 mb-2 flex items-start justify-start gap-4 text-4xl font-semibold sm:text-5xl">
         {headingText}
       </h2>
       {!!subHeadingText && (
-        <div
-          className={`max-w-(--breakpoint-md) px-10 text-lg text-foreground-400`}
-        >
+        <div className={`max-w-(--breakpoint-md) text-lg text-foreground-400`}>
           {subHeadingText}
         </div>
       )}

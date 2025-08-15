@@ -263,7 +263,7 @@ const ComposeAnimation = () => (
   <motion.div
     initial={{ opacity: 0, y: 10 }}
     animate={{ opacity: 1, y: 0 }}
-    transition={{ duration: 0.4, ease: "easeOut" }}
+    transition={{ duration: 0.3, ease: "easeOut" }}
   >
     <EmailComposeSection email_compose_data={composeData} />
   </motion.div>
@@ -275,7 +275,7 @@ const FetchAnimation = () => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    const expandTimer = setTimeout(() => setIsExpanded(true), 200);
+    const expandTimer = setTimeout(() => setIsExpanded(true), 100);
 
     let emailTimers: NodeJS.Timeout[] = [];
     if (isExpanded) {
@@ -294,7 +294,7 @@ const FetchAnimation = () => {
             }, 50);
             return newEmails;
           });
-        }, index * 150),
+        }, index * 100),
       );
     }
     return () => {
@@ -311,7 +311,7 @@ const FetchAnimation = () => {
           opacity: 1,
           height: isExpanded ? "350px" : "60px",
         }}
-        transition={{ duration: 0.5, ease: "easeInOut" }}
+        transition={{ duration: 0.3, ease: "easeInOut" }}
         className="overflow-hidden"
       >
         <div ref={scrollContainerRef} className="h-full overflow-y-auto">
@@ -326,7 +326,7 @@ const ViewAnimation = () => {
   const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
-    const summaryTimer = setTimeout(() => setShowSummary(true), 1000);
+    const summaryTimer = setTimeout(() => setShowSummary(true), 600);
 
     return () => {
       clearTimeout(summaryTimer);
@@ -338,7 +338,7 @@ const ViewAnimation = () => {
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.4, ease: "easeOut" }}
+        transition={{ duration: 0.3, ease: "easeOut" }}
       >
         <EmailThreadCard emailThreadData={threadData} />
       </motion.div>
@@ -348,7 +348,7 @@ const ViewAnimation = () => {
           <motion.div
             initial={{ opacity: 0, y: 15 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.4, ease: "easeOut" }}
+            transition={{ duration: 0.3, ease: "easeOut" }}
           >
             {summaryComponent}
           </motion.div>

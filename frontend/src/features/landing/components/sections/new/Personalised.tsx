@@ -1,5 +1,3 @@
-import LargeHeader from "../../shared/LargeHeader";
-
 function BentoItem() {
   return (
     <>

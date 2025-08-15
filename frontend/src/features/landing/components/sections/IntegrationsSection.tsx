@@ -7,12 +7,12 @@ const LargeHeader = ({
   headingText,
   subHeadingText,
 }: {
-  chipText: string;
+  chipText?: string;
   headingText: string;
   subHeadingText: string;
 }) => (
   <div className="mb-16 text-center">
-    <SectionChip text={chipText} />
+    {chipText && <SectionChip text={chipText} />}
 
     <h2 className="mb-6 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-medium text-transparent md:text-5xl lg:text-6xl">
       {headingText}
@@ -55,7 +55,7 @@ const IntegrationCard = ({
   return (
     <div
       ref={cardRef}
-      className={`group relative flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] shadow-lg backdrop-blur-sm transition-all duration-500 ease-out hover:border-[#01BBFF]/20 hover:shadow-xl hover:shadow-[#01BBFF]/5 ${isLarge ? "w-28" : "w-24"} ${isBlurred ? "scale-90 opacity-40" : "scale-100 opacity-100"} ${isVisible ? "translate-y-0" : "translate-y-4"} ${className} `}
+      className={`group relative flex aspect-square items-center justify-center rounded-3xl border border-white/10 bg-zinc-900 shadow-lg backdrop-blur-sm transition-all duration-500 ease-out hover:border-[#01BBFF]/20 hover:shadow-xl hover:shadow-[#01BBFF]/5 ${isLarge ? "w-28" : "w-24"} ${isBlurred ? "scale-90 opacity-40" : "scale-100 opacity-100"} ${isVisible ? "translate-y-0" : "translate-y-4"} ${className} `}
     >
       {image ? (
         <img
@@ -182,7 +182,6 @@ export default function IntegrationsSection() {
     <section ref={sectionRef} className="relative min-h-screen overflow-hidden">
       <div className="relative z-10 container mx-auto max-w-7xl px-4 py-20">
         <LargeHeader
-          chipText="Coming Soon"
           headingText="All Your Tools, One Assistant"
           subHeadingText="GAIA plugs into your digital world — so it can actually do things, not just talk."
         />
@@ -192,7 +191,7 @@ export default function IntegrationsSection() {
           {integrations.map((row, rowIndex) => (
             <div
               key={rowIndex}
-              className="flex items-center justify-center gap-4"
+              className="flex items-center justify-center gap-3"
             >
               {row.map((integration, cardIndex) => (
                 <IntegrationCard
