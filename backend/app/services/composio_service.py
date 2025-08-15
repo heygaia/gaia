@@ -27,17 +27,20 @@ SOCIAL_CONFIGS = {
 }
 
 
-@before_execute(toolkits=["NOTION"])
+@before_execute(
+    tools=[
+        "NOTION_CREATE_NOTION_PAGE",
+        "NOTION_SEARCH_NOTION_PAGE",
+        "NOTION_CREATE_DATABASE",
+    ]
+)
 def before_execute_notion(
     tool,
     toolkit,
     params: ToolExecuteParams,
 ):
-    """
-    Before execute hook for Notion toolkit.
-    """
-    logger.info(f"Executing Notion tool with params: {params}")
-    logger.info(f"Tool toolkit: {toolkit}")
+    print(f"Executing Notion tool with params: {params}")
+    print(f"Tool toolkit: {toolkit}")
     return tool
 
 
@@ -72,7 +75,9 @@ class ComposioService:
     def get_notion_tools(self, user_id: str):
         # self.composio.tools._get()
         # self.composio.tools.get_raw_composio_tools()
-        return self.composio.tools.get(user_id=user_id, toolkits=["NOTION"])
+        return self.composio.tools.get(
+            user_id=user_id, toolkits=["NOTION"], modifiers=[before_execute_notion]
+        )
 
     def get_google_sheet_tools(self, user_id: str):
         return self.composio.tools.get(user_id=user_id, toolkits=["GOOGLESHEETS"])
