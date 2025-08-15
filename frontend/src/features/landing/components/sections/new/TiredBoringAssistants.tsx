@@ -1,13 +1,15 @@
 import Image from "next/image";
 import GetStartedButton from "../../shared/GetStartedButton";
+import LargeHeader from "../../shared/LargeHeader";
 
 export default function Tired() {
   return (
-    <div className="relative flex flex-col items-center justify-center gap-2 p-10">
-      <div className="text-5xl font-semibold">Tired of Boring Assistants?</div>
-      <div className="text-2xl font-light text-foreground-500">
-        Meet one that actually works.
-      </div>
+    <div className="relative flex h-screen flex-col items-center justify-center gap-2 p-10">
+      <LargeHeader
+        headingText="Tired of Boring Assistants?"
+        subHeadingText="Meet one that actually works."
+        centered
+      />
 
       <div className="flex gap-14 pt-10">
         <Image
@@ -49,7 +51,7 @@ export default function Tired() {
         className="my-14 rounded-3xl bg-gradient-to-b from-zinc-800 to-zinc-950 p-4 shadow-[0px_0px_100px_40px_rgba(0,_187,_255,_0.2)] outline-1 outline-zinc-800"
       />
 
-      <div className="absolute bottom-4 flex w-full max-w-lg items-center">
+      <div className="absolute bottom-32 flex w-full max-w-lg items-center">
         <div className="absolute bottom-16 left-0 -rotate-12 rounded-xl bg-zinc-800/50 px-3 py-2 text-sm text-zinc-500">
           Personalised
         </div>

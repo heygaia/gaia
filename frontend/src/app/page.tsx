@@ -3,23 +3,14 @@
 import { lazy, useEffect } from "react";
 
 import HeroSection from "@/features/landing/components/hero/HeroSection";
-import Integrations from "@/features/landing/components/sections/IntegrationsSection";
-import InternetSection from "@/features/landing/components/sections/InternetSection";
-import AdvancedConversation from "@/features/landing/components/sections/new/AdvancedConversation";
-import Description from "@/features/landing/components/sections/new/Description";
-import Goals from "@/features/landing/components/sections/new/Goals";
-import MailCalendarSection from "@/features/landing/components/sections/new/MailCalendarSection";
-import Proactive from "@/features/landing/components/sections/new/Proactive";
-import Todo from "@/features/landing/components/sections/new/Todo";
 import { ReactLenis } from "lenis/react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
-import LandingLayout from "./(landing)/layout";
 import Personalised from "@/features/landing/components/sections/new/Personalised";
 import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
-import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
-import Productivity from "@/features/landing/components/sections/new/Productivity";
 import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
+import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
+import LandingLayout from "./(landing)/layout";
 
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
@@ -60,12 +51,10 @@ export default function LandingPage() {
           </div>
           <div>
             {/* <Description /> */}
-            <MailCalendarSection />
-            <Productivity />
             <ToolsShowcaseSection />
-            <Personalised />
-            <Integrations />
             <Tired />
+            {/* <MailCalendarSection /> */}
+            <Personalised />
             {/* <WorkflowAutomation /> */}
             {/* <Todo /> */}
             {/* <Goals /> */}

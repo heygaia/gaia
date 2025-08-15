@@ -512,3 +512,11 @@ code {
 .bobbing {
   animation: rotateBounce 2s ease-in-out infinite;
 }
+
+.shadow1 {
+  box-shadow: -30px 30px 50px 10px rgba(255, 255, 255, 0.3);
+}
+
+.shadow2 {
+  box-shadow: 30px -30px 50px 10px rgba(255, 255, 255, 0.3);
+}

@@ -1,7 +1,7 @@
 import { Button } from "@heroui/button";
 import { Textarea } from "@heroui/input";
 import { Kbd } from "@heroui/react";
-import { ChevronRight } from "lucide-react";
+import { ArrowUp, ChevronRight } from "lucide-react";
 import Image from "next/image";
 import React, { useState, useRef } from "react";
 
@@ -241,9 +241,9 @@ const DummyComposer: React.FC = () => {
               type="submit"
               onClick={handleSend}
               disabled={!message.trim()}
-              className="h-9 w-9 rounded-full bg-primary p-0 hover:bg-primary/90 disabled:opacity-50"
+              className="h-9 w-9 rounded-full bg-primary p-0 text-xl hover:bg-primary/90 disabled:opacity-50"
             >
-              <Send className="h-4 w-4" />
+              <ArrowUp width={40} height={40} className="min-h-5 min-w-5" />
             </ShadcnButton>
           </div>
         </div>
