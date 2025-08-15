@@ -1,7 +1,8 @@
+import { CalendarDemo } from "@/features/calendar/components/Calendar";
 import { Tab, Tabs } from "@heroui/react";
 import { useState } from "react";
 import LargeHeader from "../../shared/LargeHeader";
-import CalendarContent from "./CalendarContent";
+import GoalsStepsContent from "./GoalsStepsContent";
 import MailAnimationWrapper from "./MailAnimationWrapper";
 import TodosBentoContent from "./TodosBentoContent";
 
@@ -33,12 +34,12 @@ export default function Productivity() {
             </Tab>
             <Tab key="calendar" title="Calendar">
               <div className="flex items-center justify-center rounded-3xl bg-zinc-900 p-4">
-                calendar
+                <CalendarDemo />
               </div>
             </Tab>
             <Tab key="goals" title="Goals">
               <div className="flex items-center justify-center rounded-3xl bg-zinc-900 p-4">
-                "goals"
+                <GoalsStepsContent />
               </div>
             </Tab>
             <Tab key="todos" title="Todos">

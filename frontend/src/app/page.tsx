@@ -13,7 +13,6 @@ import WorkflowAutomation from "@/features/landing/components/sections/new/Workf
 import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
 import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
 import LandingLayout from "./(landing)/layout";
-
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
