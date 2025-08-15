@@ -1,4 +1,4 @@
-import React, { useEffect, useRef,useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 import SectionChip from "../shared/SectionChip";
 
@@ -12,7 +12,6 @@ const LargeHeader = ({
   subHeadingText: string;
 }) => (
   <div className="mb-16 text-center">
-
     <SectionChip text={chipText} />
 
     <h2 className="mb-6 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-medium text-transparent md:text-5xl lg:text-6xl">
@@ -180,14 +179,7 @@ export default function IntegrationsSection() {
   }, []);
 
   return (
-    <section
-      ref={sectionRef}
-      className="relative min-h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top_left,_#0f0f0f,_#09090b)] bg-cover bg-fixed bg-no-repeat"
-    >
-      {/* Background effects */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(1,187,255,0.03),transparent_50%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
-
+    <section ref={sectionRef} className="relative min-h-screen overflow-hidden">
       <div className="relative z-10 container mx-auto max-w-7xl px-4 py-20">
         <LargeHeader
           chipText="Coming Soon"

@@ -15,7 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import NextImage from "next/image";
-import React, { useEffect, useRef,useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 const FeatureCard: React.FC<{
   children: React.ReactNode;
   className?: string;
@@ -659,16 +659,13 @@ export default function AdvancedConversation() {
   const [hoveredCard, setHoveredCard] = useState<number | null>(null);
 
   return (
-    <div className="relative min-h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top_left,_rgba(15,15,15,0.9),_rgba(9,9,11,1)),linear-gradient(to_bottom,_#0c0c0c,_#0a0a0a)] bg-cover bg-fixed bg-no-repeat">
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(1,187,255,0.05),transparent_50%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
-
+    <div className="relative min-h-screen overflow-hidden">
       <div className="relative z-10 container mx-auto max-w-7xl py-16">
         <div className="mb-16 text-center">
           <div className="relative mb-6">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-transparent leading-tight relative z-10">
-                Smarter Conversations
-              </h1>
+            <h1 className="relative z-10 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-bold text-transparent md:text-5xl lg:text-6xl">
+              Smarter Conversations
+            </h1>
           </div>
 
           <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-400 md:text-2xl">

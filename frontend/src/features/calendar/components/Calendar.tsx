@@ -679,9 +679,7 @@ const CalendarDemo: React.FC = () => {
 
 export default function Calendar() {
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden bg-[#09090b] bg-cover bg-fixed bg-no-repeat">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_#0f0f0f,_#09090b)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
+    <div className="relative min-h-screen w-full overflow-x-hidden">
       <div className="relative z-10 container mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center gap-12 px-4 py-12 sm:py-16 md:gap-16 md:py-24">
         <LargeHeader
           headingText="Intelligent Calendar Management"

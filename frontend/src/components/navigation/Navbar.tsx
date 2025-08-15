@@ -14,15 +14,18 @@ import { appConfig } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 import useMediaQuery from "@/hooks/ui/useMediaQuery";
 
-import { BubbleConversationChatIcon } from "../shared";
+import { useGitHubStars } from "@/hooks";
+import { StarFilledIcon } from "@radix-ui/react-icons";
+import { BubbleConversationChatIcon, Github } from "../shared";
 import { NavbarMenu } from "./NavbarMenu";
-import { RainbowGithubButton } from "./RainbowGithubButton";
 
 export default function Navbar() {
   const pathname = usePathname();
   const isMobileScreen = useMediaQuery("(max-width: 990px)");
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const { data: repoData, isLoading: isLoadingStars } =
+    useGitHubStars("heygaia/gaia");
 
   const user = useUser();
 
@@ -149,7 +152,19 @@ export default function Navbar() {
             <div className="hidden" />
           ) : (
             <div className="hidden items-center gap-3 sm:flex">
-              <RainbowGithubButton />
+              <Button className="h-9 max-h-9 min-h-9 rounded-xl bg-zinc-900 px-4! text-sm font-medium text-black transition-all! hover:bg-zinc-800">
+                <div className="animate-rainbow flex items-center text-white">
+                  <Github width={18} />
+                  <span className="ml-1">GitHub</span>
+                  <div className="ml-2 flex items-center gap-1 text-sm">
+                    <StarFilledIcon className="h-4 w-4 text-[#6A7486] transition-colors group-hover:text-yellow-300" />
+                    <span className="font-display inline-block font-medium tracking-wider tabular-nums">
+                      {isLoadingStars ? "..." : repoData?.stargazers_count || 0}
+                    </span>
+                  </div>
+                </div>
+              </Button>
+
               <LinkButton
                 size="sm"
                 className="h-9 max-h-9 min-h-9 rounded-xl bg-primary px-4! text-sm font-medium text-black transition-all! hover:scale-105 hover:bg-primary!"
