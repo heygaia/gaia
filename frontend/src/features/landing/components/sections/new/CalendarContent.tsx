@@ -97,13 +97,13 @@ export default function CalendarContent() {
   ];
 
   return (
-    <div className="px-5">
+    <div className="flex h-full flex-col items-center justify-center px-5">
       <Tabs
         selectedKey={selectedTab}
         onSelectionChange={(key) => setSelectedTab(key as string)}
-        className="mb-4"
-        fullWidth
-        radius="full"
+        className="mb-8 flex-shrink-0"
+        color="primary"
+        variant="light"
       >
         <Tab
           key="chat"
@@ -133,45 +133,47 @@ export default function CalendarContent() {
         />
       </Tabs>
 
-      <ScrollShadow>
-        <div className="z-1 w-full overflow-hidden rounded-3xl bg-linear-to-bl">
-          {selectedTab === "chat" ? (
-            <CalendarMessages
-              events={events}
-              addedEvents={addedEvents}
-              setAddedEvents={setAddedEvents}
-            />
-          ) : (
-            <div className="space-y-4 p-4">
-              {defaultEvents.map((event, index) => (
-                <CalendarCard
-                  key={`default-${index}`}
-                  event={event}
-                  onClick={() => {}}
-                  calendars={dummyCalendars}
-                />
-              ))}
+      <div className="min-h-0 flex-1">
+        <ScrollShadow className="h-full">
+          <div className="z-1 w-full overflow-hidden rounded-3xl bg-linear-to-bl">
+            {selectedTab === "chat" ? (
+              <CalendarMessages
+                events={events}
+                addedEvents={addedEvents}
+                setAddedEvents={setAddedEvents}
+              />
+            ) : (
+              <div className="w-full min-w-full space-y-4 p-4">
+                {defaultEvents.map((event, index) => (
+                  <CalendarCard
+                    key={`default-${index}`}
+                    event={event}
+                    onClick={() => {}}
+                    calendars={dummyCalendars}
+                  />
+                ))}
 
-              {addedEvents.map((eventIndex) => (
-                <CalendarCard
-                  key={`added-${eventIndex}`}
-                  event={events[eventIndex]}
-                  onClick={() => {}}
-                  calendars={dummyCalendars}
-                />
-              ))}
+                {addedEvents.map((eventIndex) => (
+                  <CalendarCard
+                    key={`added-${eventIndex}`}
+                    event={events[eventIndex]}
+                    onClick={() => {}}
+                    calendars={dummyCalendars}
+                  />
+                ))}
 
-              {addedEvents.length === 0 && defaultEvents.length === 0 && (
-                <div className="flex h-40 flex-col items-center justify-center text-center text-gray-500">
-                  <Calendar01Icon className="mb-4 h-12 w-12 opacity-50" />
-                  <p className="text-lg font-medium">No events scheduled</p>
-                  <p className="mt-2">Add events using the chat interface</p>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </ScrollShadow>
+                {addedEvents.length === 0 && defaultEvents.length === 0 && (
+                  <div className="flex h-40 flex-col items-center justify-center text-center text-gray-500">
+                    <Calendar01Icon className="mb-4 h-12 w-12 opacity-50" />
+                    <p className="text-lg font-medium">No events scheduled</p>
+                    <p className="mt-2">Add events using the chat interface</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        </ScrollShadow>
+      </div>
     </div>
   );
 }

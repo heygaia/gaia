@@ -19,6 +19,7 @@ import Personalised from "@/features/landing/components/sections/new/Personalise
 import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
 import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
 import Productivity from "@/features/landing/components/sections/new/Productivity";
+import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
 
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
@@ -61,6 +62,7 @@ export default function LandingPage() {
             {/* <Description /> */}
             <MailCalendarSection />
             <Productivity />
+            <ToolsShowcaseSection />
             <Personalised />
             <Integrations />
             <Tired />

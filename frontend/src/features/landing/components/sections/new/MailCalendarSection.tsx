@@ -6,16 +6,16 @@ import MailAnimationWrapper from "./MailAnimationWrapper";
 export default function MailCalendarSection() {
   return (
     <SectionLayout>
-      <div className="h-screen w-full max-w-7xl overflow-hidden">
-        <div className="grid grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
+      <div className="h-screen w-full max-w-7xl">
+        <div className="grid h-full grid-cols-1 gap-8 lg:grid-cols-2 lg:gap-12">
           <div className="flex flex-col">
             <LargeHeader
               chipText="Mail"
               headingText="Inbox on Autopilot"
               subHeadingText="Compose, view, and manage your emails with simple commands. GAIA streamlines your entire workflow."
             />
-            <div className="relative mt-8">
-              <div className="relative overflow-hidden rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] p-4 shadow-2xl backdrop-blur-lg md:p-8">
+            <div className="relative mt-8 min-h-0 flex-1">
+              <div className="rounded-3xl bg-zinc-900 p-4">
                 <MailAnimationWrapper />
               </div>
             </div>
@@ -27,8 +27,8 @@ export default function MailCalendarSection() {
               headingText="Calendar, Reimagined."
               subHeadingText="Schedule, update, and manage your calendar just by texting GAIA. Never open your calendar app again."
             />
-            <div className="relative mt-8">
-              <div className="rounded-3xl bg-zinc-900 p-4">
+            <div className="relative mt-8 min-h-0 flex-1">
+              <div className="h-full rounded-3xl bg-zinc-900 p-4">
                 <CalendarContent />
               </div>
             </div>

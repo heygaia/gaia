@@ -18,6 +18,7 @@ import { useGitHubStars } from "@/hooks";
 import { StarFilledIcon } from "@radix-ui/react-icons";
 import { BubbleConversationChatIcon, Github } from "../shared";
 import { NavbarMenu } from "./NavbarMenu";
+import { RaisedButton } from "../ui/shadcn/raised-button";
 
 export default function Navbar() {
   const pathname = usePathname();
@@ -165,7 +166,16 @@ export default function Navbar() {
                 </div>
               </Button>
 
-              <LinkButton
+              <Link href={user.email ? "/c" : "/signup"}>
+                <RaisedButton
+                  size={"sm"}
+                  className="rounded-xl text-black!"
+                  color="#00bbff"
+                >
+                  {user.email ? "Open Chat" : "Get Started"}
+                </RaisedButton>
+              </Link>
+              {/* <LinkButton
                 size="sm"
                 className="h-9 max-h-9 min-h-9 rounded-xl bg-primary px-4! text-sm font-medium text-black transition-all! hover:scale-105 hover:bg-primary!"
                 as={Link}
@@ -179,7 +189,7 @@ export default function Navbar() {
                   />
                 )}
                 {user.email ? "Chat" : "Get Started"}
-              </LinkButton>
+              </LinkButton> */}
             </div>
           )}
         </div>

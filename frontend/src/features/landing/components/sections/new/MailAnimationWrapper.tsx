@@ -48,7 +48,7 @@ const AnimatedChat = ({ step }: { step: (typeof animationSteps)[0] }) => {
             }}
             className="flex w-full items-start justify-end"
           >
-            <div className="max-w-md rounded-2xl rounded-tr-md border border-white/10 bg-gradient-to-br from-slate-700/90 to-slate-800/90 px-5 py-3 text-sm break-words whitespace-pre-wrap text-white shadow-lg shadow-black/20 backdrop-blur-sm">
+            <div className="max-w-md rounded-3xl rounded-br-none border border-[#00bbff]/20 bg-[#00bbff] px-4 py-3 text-base break-words whitespace-pre-wrap text-black">
               {step.prompt}
             </div>
           </motion.div>
@@ -97,18 +97,14 @@ export default function MailAnimationWrapper() {
         {animationSteps.map((step, index) => (
           <Chip
             key={step.name}
-            variant="flat"
             color={activeStep === index ? "primary" : "default"}
-            className={`cursor-pointer transition-all duration-300 ${
-              activeStep === index
-                ? "border-[#01BBFF]/30 bg-[#01BBFF]/20 text-white"
-                : "bg-white/5 text-gray-400 hover:bg-white/10 hover:text-white"
-            }`}
+            radius="sm"
+            size="lg"
+            className={"flex cursor-pointer gap-1 pl-3"}
             onClick={() => setActiveStep(index)}
             startContent={React.cloneElement(step.icon, {
-              className: `h-4 w-4 transition-colors duration-300 ${
-                activeStep === index ? "text-[#01BBFF]" : "text-gray-400"
-              }`,
+              color: undefined,
+              className: `h-4 w-4`,
             })}
           >
             {step.name}
@@ -117,7 +113,7 @@ export default function MailAnimationWrapper() {
       </div>
 
       {/* Main Animation Area */}
-      <div className="relative flex min-h-[650px] items-start rounded-2xl border border-white/10 p-6">
+      <div className="relative flex min-h-[650px] items-start p-6">
         <div className="relative z-10 w-full">
           {/* Using key={activeStep} on AnimatedChat ensures it re-mounts and runs its
               internal animation sequence from the beginning every time the step changes. */}

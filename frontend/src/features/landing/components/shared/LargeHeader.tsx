@@ -26,7 +26,7 @@ export default function LargeHeader({
           </Chip>
         )}
       </div>
-      <h2 className="relative z-2 mt-4 mb-2 flex items-start justify-start gap-4 text-4xl font-semibold sm:text-5xl">
+      <h2 className="relative z-2 mt-4 mb-3 flex items-start justify-start gap-4 text-4xl font-semibold sm:text-5xl">
         {headingText}
       </h2>
       {!!subHeadingText && (
