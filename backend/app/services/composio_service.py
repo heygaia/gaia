@@ -1,29 +1,14 @@
-import logging
-
+from app.config.loggers import app_logger as logger
 from app.config.settings import settings
+from app.services.langchain_composio_service import LangchainProvider
 from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
-from composio_langchain import LangchainProvider
-
-logger = logging.getLogger(__name__)
 
 SOCIAL_CONFIGS = {
-    "notion": {
-        "auth_config_id": "ac_9Yho1TxOcxHh",
-        "toolkit": "NOTION"
-    },
-    "twitter": {
-        "auth_config_id": "ac_o66V1UO0-GI2",
-        "toolkit": "TWITTER"
-    },
-    "google_sheets": {
-        "auth_config_id": "ac_r5-Q6qJ4U8Qk",
-        "toolkit": "GOOGLE_SHEETS"
-    },
-    "linkedin": {
-        "auth_config_id": "ac_X0iHigf4UZ2c",
-        "toolkit": "LINKEDIN"
-    }
+    "notion": {"auth_config_id": "ac_9Yho1TxOcxHh", "toolkit": "NOTION"},
+    "twitter": {"auth_config_id": "ac_o66V1UO0-GI2", "toolkit": "TWITTER"},
+    "google_sheets": {"auth_config_id": "ac_r5-Q6qJ4U8Qk", "toolkit": "GOOGLE_SHEETS"},
+    "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
 }
 
 
@@ -39,14 +24,35 @@ def before_execute_notion(
     toolkit,
     params: ToolExecuteParams,
 ):
-    print(f"Executing Notion tool with params: {params}")
-    print(f"Tool toolkit: {toolkit}")
-    return tool
+    arguments = params.get("arguments", {})
+
+    if not arguments:
+        return params
+
+    config = arguments.pop("__runnable_config__", None)
+
+    if config is None:
+        return params
+
+    metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
+
+    if not metadata:
+        return params
+
+    user_id = metadata.get("user_id")
+
+    if user_id is None:
+        return params
+
+    params["user_id"] = user_id
+    return params
 
 
 class ComposioService:
     def __init__(self):
-        self.composio = Composio(provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY)
+        self.composio = Composio(
+            provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY
+        )
 
     def connect_account(self, provider: str, user_id: str):
         """
@@ -59,24 +65,23 @@ class ComposioService:
 
         try:
             connection_request = self.composio.connected_accounts.initiate(
-                user_id=user_id,
-                auth_config_id=config["auth_config_id"]
+                user_id=user_id, auth_config_id=config["auth_config_id"]
             )
 
             return {
                 "status": "pending",
                 "redirect_url": connection_request.redirect_url,
-                "connection_id": connection_request.id
+                "connection_id": connection_request.id,
             }
         except Exception as e:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
     def get_notion_tools(self, user_id: str):
-        # self.composio.tools._get()
-        # self.composio.tools.get_raw_composio_tools()
         return self.composio.tools.get(
-            user_id=user_id, toolkits=["NOTION"], modifiers=[before_execute_notion]
+            user_id=user_id,
+            toolkits=["NOTION"],
+            modifiers=[before_execute_notion],
         )
 
     def get_google_sheet_tools(self, user_id: str):

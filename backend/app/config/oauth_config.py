@@ -38,6 +38,7 @@ Integration types:
 """
 
 from typing import Dict, List, Optional
+
 from pydantic import BaseModel
 
 
@@ -226,26 +227,40 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
     #     scopes=[],
     #     available=False,
     # ),
-    # OAuthIntegration(
-    #     id="notion",
-    #     name="Notion",
-    #     description="Manage pages, databases, and workspace content with AI",
-    #     icon="https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
-    #     category="productivity",
-    #     provider="notion",
-    #     scopes=[],
-    #     available=True,
-    # ),
-    # OAuthIntegration(
-    #     id="twitter",
-    #     name="Twitter",
-    #     description="Post tweets, read timelines, and manage your account with AI-powered tools",
-    #     icon="https://upload.wikimedia.org/wikipedia/commons/b/b7/X_logo.jpg",
-    #     category="social",
-    #     provider="twitter",
-    #     scopes=[],
-    #     available=True,
-    # ),
+    OAuthIntegration(
+        id="notion",
+        name="Notion",
+        description="Manage pages, databases, and workspace content with AI",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+        ],
+        category="productivity",
+        provider="notion",
+        scopes=[],
+        available=True,
+    ),
+    OAuthIntegration(
+        id="twitter",
+        name="Twitter",
+        description="Post tweets, read timelines, and manage your account with AI-powered tools",
+        icons=["https://upload.wikimedia.org/wikipedia/commons/b/b7/X_logo.jpg"],
+        category="social",
+        provider="twitter",
+        scopes=[],
+        available=True,
+    ),
+    OAuthIntegration(
+        id="google_sheets",
+        name="Google Sheets",
+        description="Create, read, and update Google Sheets with AI-powered tools for automation and data management",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/3/3f/Google_Sheets_logo.svg"
+        ],
+        category="productivity",
+        provider="google",
+        scopes=[],
+        available=True,
+    ),
     # OAuthIntegration(
     #     id="linkedin",
     #     name="LinkedIn",

@@ -23,6 +23,7 @@ from app.models.user_models import (
     OnboardingResponse,
     UserUpdateResponse,
 )
+from app.services.composio_service import composio_service
 from app.services.oauth_service import store_user_info
 from app.services.onboarding_service import (
     complete_onboarding,
@@ -32,7 +33,6 @@ from app.services.onboarding_service import (
 from app.services.user_service import update_user_profile
 from app.utils.oauth_utils import fetch_user_info_from_google, get_tokens_from_code
 from app.utils.watch_mail import watch_mail
-from app.services.composio_service import composio_service
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -216,6 +216,13 @@ async def login_integration(
         )
     if integration.provider == "twitter":
         return RedirectResponse(url=composio_service.connect_account("twitter", user["user_id"])["redirect_url"])
+
+    if integration.provider == "google_sheet":
+        return RedirectResponse(
+            url=composio_service.connect_account("google_sheet", user["user_id"])[
+                "redirect_url"
+            ]
+        )
 
     if integration.provider == "linkedin":
         return RedirectResponse(url=composio_service.connect_account("linkedin", user["user_id"])["redirect_url"])
