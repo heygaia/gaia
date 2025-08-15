@@ -1,8 +1,9 @@
-from composio import Composio, schema_modifier
-from app.config.settings import settings
-from composio_langchain import LangchainProvider
-from composio.types import Tool
 import logging
+
+from app.config.settings import settings
+from composio import Composio, before_execute
+from composio.types import ToolExecuteParams
+from composio_langchain import LangchainProvider
 
 logger = logging.getLogger(__name__)
 
@@ -26,20 +27,18 @@ SOCIAL_CONFIGS = {
 }
 
 
-@schema_modifier(toolkits=["NOTION"])
-def inject_user_id(tool, toolkit, schema: Tool):
+@before_execute(toolkits=["NOTION"])
+def before_execute_notion(
+    tool,
+    toolkit,
+    params: ToolExecuteParams,
+):
     """
-    Dynamically inject user_id from RunnableConfig into Composio tools at runtime.
+    Before execute hook for Notion toolkit.
     """
-    # runnable_config = context.get("config")  
-    
-    # if runnable_config:
-    #     metadata = runnable_config.get("metadata", {})
-    #     user_id = metadata.get("user_id")
-        # if user_id:
-    # schema["args"]["user_id"] = 
-    schema.description += f"if user_id is not provided use this 688bc1c38769a8edbc71954a"
-    return schema
+    logger.info(f"Executing Notion tool with params: {params}")
+    logger.info(f"Tool toolkit: {toolkit}")
+    return tool
 
 
 class ComposioService:
@@ -73,7 +72,7 @@ class ComposioService:
     def get_notion_tools(self, user_id: str):
         # self.composio.tools._get()
         # self.composio.tools.get_raw_composio_tools()
-        return self.composio.tools.get(user_id=user_id, toolkits=["NOTION"],modifiers=[inject_user_id])
+        return self.composio.tools.get(user_id=user_id, toolkits=["NOTION"])
 
     def get_google_sheet_tools(self, user_id: str):
         return self.composio.tools.get(user_id=user_id, toolkits=["GOOGLESHEETS"])

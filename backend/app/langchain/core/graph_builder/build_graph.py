@@ -70,7 +70,7 @@ async def build_graph(
 ):
     """Construct and compile the state graph."""
 
-    tool_registry, store = await get_tool_store()
+    tool_registry, store = await get_tools_store()
 
     # Create agent with custom tool retrieval logic
     builder = create_agent(
