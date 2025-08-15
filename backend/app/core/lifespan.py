@@ -23,8 +23,8 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting up the API...")
 
-        await init_chroma(app)
-        init_cloudinary()
+        # await init_chroma(app)
+        # init_cloudinary()
 
         try:
             await init_postgresql_db()
@@ -33,14 +33,14 @@ async def lifespan(app: FastAPI):
             raise RuntimeError("PostgreSQL initialization failed") from e
 
         # Create all database indexes
-        try:
-            from app.db.mongodb.mongodb import init_mongodb
+        # try:
+        #     from app.db.mongodb.mongodb import init_mongodb
 
-            mongo_client = init_mongodb()
+        #     mongo_client = init_mongodb()
 
-            await mongo_client._initialize_indexes()
-        except Exception as e:
-            logger.error(f"Failed to create database indexes: {e}")
+        #     await mongo_client._initialize_indexes()
+        # except Exception as e:
+        #     logger.error(f"Failed to create database indexes: {e}")
 
         # Initialize reminder scheduler and scan for pending reminders
         try:

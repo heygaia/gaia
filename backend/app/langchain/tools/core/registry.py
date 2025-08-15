@@ -63,7 +63,7 @@ TOOLS_BY_CATEGORY = {
         *composio_service.get_notion_tools(user_id="688bc1c38769a8edbc71954a")
     ],
      "google_sheet": [
-        *composio_service.get_google_sheet_tools(user_id="688bc1c38769a8edbc71954a")
+        *composio_service.get_google_sheet_tools(user_id="")
     ],
      "twitter": [
         *composio_service.get_x_tools(user_id="688bc1c38769a8edbc71954a")
