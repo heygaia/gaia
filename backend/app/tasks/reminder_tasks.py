@@ -7,8 +7,6 @@ from datetime import datetime, timezone
 from typing import List, Union
 from uuid import uuid4
 
-from langchain_core.messages import AIMessage, HumanMessage
-
 from app.config.loggers import general_logger as logger
 from app.langchain.core.agent import call_reminder_agent
 from app.models.chat_models import (
@@ -28,9 +26,10 @@ from app.services.conversation_service import (
     update_messages,
 )
 from app.services.notification_service import notification_service
-from app.services.reminder_service import update_reminder
+from app.services.reminder_service import reminder_scheduler
 from app.utils.notification.sources import AIProactiveNotificationSource
 from app.utils.oauth_utils import get_tokens_by_user_id
+from langchain_core.messages import AIMessage, HumanMessage
 
 
 async def _get_conversation_history(
@@ -88,7 +87,7 @@ async def _create_conversation_for_reminder(
     )
 
     # Update the reminder with the new conversation_id
-    await update_reminder(
+    await reminder_scheduler.update_reminder(
         reminder_id=reminder.id,
         update_data={"conversation_id": conversation["conversation_id"]},
         user_id=reminder.user_id,

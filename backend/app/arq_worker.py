@@ -11,7 +11,8 @@ from arq.connections import RedisSettings
 from app.config.loggers import arq_worker_logger as logger
 from app.config.settings import settings
 from app.langchain.llm.client import init_llm
-from app.services.reminder_service import process_reminder_task
+from app.services.reminder_service import reminder_scheduler
+
 # from app.tasks.subscription_cleanup import (
 #     cleanup_abandoned_subscriptions,
 #     reconcile_subscription_payments,
@@ -98,7 +99,7 @@ async def process_reminder(ctx: dict, reminder_id: str) -> str:
 
     try:
         # Process the reminder
-        await process_reminder_task(reminder_id)
+        await reminder_scheduler.process_task_execution(reminder_id)
 
         result = f"Successfully processed reminder {reminder_id}"
         logger.info(result)
