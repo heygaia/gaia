@@ -91,7 +91,7 @@ export default function MailAnimationWrapper() {
   }, []);
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="mx-auto w-full max-w-3xl">
       {/* Navigation Pills */}
       <div className="mb-8 flex justify-center space-x-2">
         {animationSteps.map((step, index) => (
@@ -113,7 +113,7 @@ export default function MailAnimationWrapper() {
       </div>
 
       {/* Main Animation Area */}
-      <div className="relative flex min-h-[650px] items-start p-6">
+      <div className="relative flex min-h-[50vh] items-start p-6">
         <div className="relative z-10 w-full">
           {/* Using key={activeStep} on AnimatedChat ensures it re-mounts and runs its
               internal animation sequence from the beginning every time the step changes. */}

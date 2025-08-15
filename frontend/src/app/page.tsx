@@ -7,23 +7,15 @@ import { ReactLenis } from "lenis/react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import Personalised from "@/features/landing/components/sections/new/Personalised";
+import Productivity from "@/features/landing/components/sections/new/Productivity";
 import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
+import WorkflowAutomation from "@/features/landing/components/sections/new/WorkflowAutomation";
 import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
 import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
 import LandingLayout from "./(landing)/layout";
 
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
-);
-
-// const Goals = lazy(
-//   () => import("@/features/landing/components/sections/new/Goals"),
-// );
-// const InternetSection = lazy(
-//   () => import("@/features/landing/components/sections/InternetSection"),
-// );
-const MobileSection = lazy(
-  () => import("@/features/landing/components/sections/MobileSection"),
 );
 
 export default function LandingPage() {
@@ -52,31 +44,10 @@ export default function LandingPage() {
           <div>
             {/* <Description /> */}
             <ToolsShowcaseSection />
+            <Productivity />
             <Tired />
-            {/* <MailCalendarSection /> */}
             <Personalised />
-            {/* <WorkflowAutomation /> */}
-            {/* <Todo /> */}
-            {/* <Goals /> */}
-            {/* <InternetSection /> */}
-            {/* <AdvancedConversation /> */}
-            {/* TODO: Section for crazy automations, MCP, n8n, and reminders feature */}
-
-            {/*
-          <Suspense fallback={<SuspenseLoader />}>
-            <DeepSearchSection />
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
-            <MailSection />
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
-            <FeatureGridSection />
-          </Suspense>
-
-           */}
-            {/* <MobileSection /> */}
+            <WorkflowAutomation />
             <FAQAccordion />
             <FinalSection />
           </div>

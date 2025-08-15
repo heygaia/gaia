@@ -29,7 +29,7 @@ const FloatingIcon = ({
 
 const ToolsShowcaseSection: React.FC = () => {
   return (
-    <SectionLayout className="relative">
+    <SectionLayout className="relative my-20">
       {/* Radial Gradient Background */}
       <div
         className="absolute inset-0 z-[-1] w-full"
