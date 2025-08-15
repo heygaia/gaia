@@ -1,5 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
-from typing import List, Optional
+from functools import lru_cache
+from typing import Optional
 
 from app.config.settings import settings
 from app.langchain.core.nodes.follow_up_actions_node import follow_up_actions_node
@@ -23,20 +25,15 @@ from langgraph_bigtool import create_agent
 llm = init_llm()
 
 
-@asynccontextmanager
-async def build_graph(
-    chat_llm: Optional[LanguageModelLike] = None,
-    exclude_tools: List[str] = [],
-    in_memory_checkpointer: bool = False,
-):
-    """Construct and compile the state graph."""
+@lru_cache(maxsize=1)
+async def get_tools_store() -> tuple[dict, InMemoryStore]:
+    """Initialize and return the tool registry and store.
+
+    Returns:
+        tuple: A tuple containing the tool registry and the store.
+    """
     # Register both regular and always available tools
     all_tools = tools + ALWAYS_AVAILABLE_TOOLS
-
-    # Filter out any tools that should be excluded
-    if exclude_tools:
-        all_tools = [tool for tool in all_tools if tool.name not in exclude_tools]
-
     tool_registry = {tool.name: tool for tool in all_tools}
 
     embeddings = GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
@@ -50,15 +47,30 @@ async def build_graph(
         }
     )
 
-    # Store all tools for vector search (both regular and always available)
-    for tool in all_tools:
-        store.put(
-            ("tools",),
-            tool.name,
-            {
-                "description": f"{tool.name}: {tool.description}",
-            },
-        )
+    # Store all tools for vector search using asyncio batch
+    await asyncio.gather(
+        *[
+            store.aput(
+                ("tools",),
+                tool.name,
+                {
+                    "description": f"{tool.name}: {tool.description}",
+                },
+            )
+            for tool in all_tools
+        ]
+    )
+    return tool_registry, store
+
+
+@asynccontextmanager
+async def build_graph(
+    chat_llm: Optional[LanguageModelLike] = None,
+    in_memory_checkpointer: bool = False,
+):
+    """Construct and compile the state graph."""
+
+    tool_registry, store = await get_tool_store()
 
     # Create agent with custom tool retrieval logic
     builder = create_agent(

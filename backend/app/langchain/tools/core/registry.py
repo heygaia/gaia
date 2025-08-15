@@ -16,8 +16,7 @@ from app.langchain.tools import (
     weather_tool,
     webpage_tool,
 )
-from app.services.composio_service import composio_service  
-
+from app.services.composio_service import composio_service
 
 # Organize tools by categories for better organisation when fetching tools on client side
 TOOLS_BY_CATEGORY = {
@@ -45,6 +44,9 @@ TOOLS_BY_CATEGORY = {
         search_tool.web_search_tool,
         search_tool.deep_research_tool,
         webpage_tool.fetch_webpages,
+    ],
+    "support": [
+        support_tool.create_support_ticket,
     ],
     "memory": [
         *memory_tools.tools,

@@ -12,6 +12,7 @@ from app.config.loggers import arq_worker_logger as logger
 from app.config.settings import settings
 from app.langchain.llm.client import init_llm
 from app.services.reminder_service import process_reminder_task
+
 # from app.tasks.subscription_cleanup import (
 #     cleanup_abandoned_subscriptions,
 #     reconcile_subscription_payments,
@@ -21,11 +22,6 @@ from app.services.reminder_service import process_reminder_task
 async def startup(ctx: dict):
     from app.langchain.core.graph_builder.build_graph import build_graph
     from app.langchain.core.graph_manager import GraphManager
-    from app.langchain.tools.reminder_tool import (
-        create_reminder_tool,
-        delete_reminder_tool,
-        update_reminder_tool,
-    )
 
     """ARQ worker startup function."""
     logger.info("ARQ worker starting up...")
@@ -40,11 +36,6 @@ async def startup(ctx: dict):
     # Register and Build the processing graph
     async with build_graph(
         chat_llm=llm,  # type: ignore[call-arg]
-        exclude_tools=[
-            create_reminder_tool.name,
-            update_reminder_tool.name,
-            delete_reminder_tool.name,
-        ],
         in_memory_checkpointer=True,
     ) as built_graph:
         GraphManager.set_graph(built_graph, graph_name="reminder_processing")

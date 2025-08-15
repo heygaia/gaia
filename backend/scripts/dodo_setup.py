@@ -35,10 +35,9 @@ import argparse
 import asyncio
 from datetime import datetime, timezone
 
-from motor.motor_asyncio import AsyncIOMotorClient
-
 from app.config.settings import settings
 from app.models.payment_models import PlanDB
+from motor.motor_asyncio import AsyncIOMotorClient
 
 
 async def cleanup_old_indexes(collection):
