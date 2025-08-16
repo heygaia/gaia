@@ -6,6 +6,7 @@ import { useEffect, useState } from "react";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { todoApi } from "@/features/todo/api/todoApi";
+import { workflowApi } from "@/features/workflows/api/workflowApi";
 import {
   Workflow as WorkflowType,
   WorkflowStatus,
@@ -91,23 +92,23 @@ export default function WorkflowSection({
 
     setIsRunning(true);
     try {
-      // Navigate to new chat
-      router.push("/c");
+      // First, create a proper workflow from the todo workflow data
+      const workflowResponse = await workflowApi.createWorkflowFromTodo(
+        todoId,
+        todoTitle,
+        _todoDescription,
+      );
 
-      // Create workflow execution message
-      const workflowMessage = `I want to execute a workflow for my todo: "${todoTitle}".
+      // Then execute the workflow using the modern execution API
+      const executionResponse = await workflowApi.executeWorkflow(
+        workflowResponse.workflow.id,
+        { context: { source: "todo", todo_id: todoId } },
+      );
 
-Here's the workflow plan:
-${workflow.steps
-  .map(
-    (step, index) =>
-      `${index + 1}. ${step.title} (${formatToolName(step.tool_name)}): ${step.description}`,
-  )
-  .join("\n")}
+      console.log("Workflow execution started:", executionResponse);
 
-Please execute these steps in order and use the appropriate tools for each step.`;
-
-      await sendMessage(workflowMessage);
+      // Optionally, you could poll for status updates here
+      // or redirect to a workflow status page
     } catch (error) {
       console.error("Failed to run workflow:", error);
     } finally {

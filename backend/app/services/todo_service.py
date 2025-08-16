@@ -180,11 +180,29 @@ class TodoService:
     async def _generate_workflow_for_todo(
         todo_title: str, todo_description: str | None = None
     ) -> Dict[str, Any]:
-        """Generate a workflow plan for a TODO item using structured LLM output."""
+        """Generate a workflow plan for a TODO item using modern structured LLM output."""
         try:
-            from app.langchain.tools.workflow_tool import generate_workflow_for_todo
+            # Use the modern workflow generation from WorkflowService
+            from app.services.workflow_service import WorkflowService
 
-            return await generate_workflow_for_todo(todo_title, todo_description or "")
+            steps_data = await WorkflowService._generate_steps_with_llm(
+                description=todo_description or "No description provided",
+                title=todo_title,
+            )
+
+            if steps_data:
+                return {
+                    "success": True,
+                    "workflow": {
+                        "title": todo_title,
+                        "description": todo_description or "",
+                        "steps": steps_data,
+                        "created_at": datetime.now(timezone.utc).isoformat(),
+                    },
+                }
+            else:
+                return {"success": False, "error": "Failed to generate workflow steps"}
+
         except Exception as e:
             todos_logger.error(f"Error generating workflow for TODO: {str(e)}")
             return {"success": False, "error": str(e)}

@@ -240,3 +240,53 @@ async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to deactivate workflow",
         )
+
+
+@router.post("/workflows/from-todo", response_model=WorkflowResponse)
+@tiered_rate_limit("workflow_operations")
+async def create_workflow_from_todo(
+    request: dict,  # {todo_id: str, todo_title: str, todo_description?: str}
+    user: dict = Depends(get_current_user),
+):
+    """Create a workflow from a todo item."""
+    try:
+        todo_id = request.get("todo_id")
+        todo_title = request.get("todo_title")
+        todo_description = request.get("todo_description", "")
+
+        if not todo_id or not todo_title:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="todo_id and todo_title are required",
+            )
+
+        # Create workflow using modern workflow system
+        from app.models.workflow_models import (
+            CreateWorkflowRequest,
+            TriggerConfig,
+            TriggerType,
+        )
+
+        workflow_request = CreateWorkflowRequest(
+            title=f"Todo: {todo_title}",
+            description=todo_description or f"Workflow for todo: {todo_title}",
+            trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+            generate_immediately=True,  # Generate steps immediately for todos
+        )
+
+        workflow = await WorkflowService.create_workflow(
+            workflow_request, user["user_id"]
+        )
+
+        return WorkflowResponse(
+            workflow=workflow, message="Workflow created from todo successfully"
+        )
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating workflow from todo: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create workflow from todo",
+        )

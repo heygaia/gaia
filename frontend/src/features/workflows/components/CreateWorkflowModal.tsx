@@ -4,18 +4,22 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
 import { Modal, ModalBody, ModalContent, ModalFooter } from "@heroui/modal";
+import { Select, SelectItem } from "@heroui/select";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
 import { AlertCircle, CheckCircle, Info } from "lucide-react";
+import Image from "next/image";
 import React, { useEffect, useState } from "react";
 
+import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 
 interface WorkflowFormData {
   title: string;
   description: string;
-  activeTab: "manual" | "schedule" | "email" | "calendar";
+  activeTab: "manual" | "schedule" | "trigger";
+  selectedTrigger: string;
   trigger_config: {
     type: "manual" | "schedule" | "email" | "calendar" | "webhook";
     enabled: boolean;
@@ -58,9 +62,10 @@ export default function CreateWorkflowModal({
   const [formData, setFormData] = useState<WorkflowFormData>({
     title: "",
     description: "",
-    activeTab: "manual",
+    activeTab: "schedule",
+    selectedTrigger: "",
     trigger_config: {
-      type: "manual",
+      type: "schedule",
       enabled: true,
     },
   });
@@ -75,9 +80,10 @@ export default function CreateWorkflowModal({
     setFormData({
       title: "",
       description: "",
-      activeTab: "manual",
+      activeTab: "schedule",
+      selectedTrigger: "",
       trigger_config: {
-        type: "manual",
+        type: "schedule",
         enabled: true,
       },
     });
@@ -88,7 +94,7 @@ export default function CreateWorkflowModal({
   };
 
   const handleCreate = async () => {
-    if (!formData.title.trim()) return;
+    if (!formData.title.trim() || !formData.description.trim()) return;
 
     setCreationPhase("creating");
 
@@ -96,7 +102,11 @@ export default function CreateWorkflowModal({
     const createRequest = {
       title: formData.title,
       description: formData.description,
-      trigger_config: formData.trigger_config,
+      trigger_config: {
+        ...formData.trigger_config,
+        // Include selected trigger for future implementation
+        selected_trigger: formData.selectedTrigger,
+      },
       generate_immediately: true,
     };
 
@@ -142,7 +152,79 @@ export default function CreateWorkflowModal({
     }
   }, [isOpen]);
 
-  const renderTriggerTab = () => (
+  const renderTriggerTab = () => {
+    const selectedTriggerOption = triggerOptions.find(
+      (t) => t.id === formData.selectedTrigger,
+    );
+
+    return (
+      <div className="w-full">
+        <div className="w-full">
+          <Select
+            aria-label="Choose a custom trigger for your workflow"
+            placeholder="Choose a trigger for your workflow"
+            fullWidth
+            className="w-screen max-w-xl"
+            selectedKeys={
+              formData.selectedTrigger ? [formData.selectedTrigger] : []
+            }
+            onSelectionChange={(keys) => {
+              const selectedTrigger = Array.from(keys)[0] as string;
+              updateFormData({
+                selectedTrigger,
+                trigger_config: {
+                  ...formData.trigger_config,
+                  type:
+                    selectedTrigger === "gmail"
+                      ? "email"
+                      : selectedTrigger === "calendar"
+                        ? "calendar"
+                        : "webhook",
+                },
+              });
+            }}
+            startContent={
+              selectedTriggerOption && (
+                <Image
+                  src={selectedTriggerOption.icon}
+                  alt={selectedTriggerOption.name}
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
+              )
+            }
+          >
+            {triggerOptions.map((trigger) => (
+              <SelectItem
+                key={trigger.id}
+                startContent={
+                  <Image
+                    src={trigger.icon}
+                    alt={trigger.name}
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
+                }
+                description={trigger.description}
+              >
+                {trigger.name}
+              </SelectItem>
+            ))}
+          </Select>
+        </div>
+
+        {selectedTriggerOption && (
+          <p className="mt-2 px-1 text-xs text-foreground-400">
+            {selectedTriggerOption.description}
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderManualTab = () => (
     <div className="w-full">
       <p className="text-sm text-foreground-500">
         This workflow will be triggered manually when you run it.
@@ -250,7 +332,7 @@ export default function CreateWorkflowModal({
         onOpenChange(open);
       }}
       size="3xl"
-      className="min-h-fit"
+      className="min-h-[50vh]"
       scrollBehavior="inside"
       backdrop="blur"
     >
@@ -265,7 +347,7 @@ export default function CreateWorkflowModal({
                   value={formData.title}
                   variant="underlined"
                   classNames={{
-                    input: "font-semibold! text-4xl",
+                    input: "font-medium! text-4xl",
                     inputWrapper: "px-0",
                   }}
                   onChange={(e) => updateFormData({ title: e.target.value })}
@@ -273,23 +355,23 @@ export default function CreateWorkflowModal({
                 />
 
                 <Textarea
-                  placeholder="Describe what this workflow does"
+                  placeholder="Describe what this workflow should do when triggered"
                   value={formData.description}
                   onChange={(e) =>
                     updateFormData({ description: e.target.value })
                   }
-                  maxRows={3}
-                  minRows={3}
+                  minRows={4}
                   variant="underlined"
                   className="text-sm"
+                  isRequired
                 />
               </div>
 
               <div className="space-y-3">
                 {/* Trigger/Schedule Tabs. rounded-2xl bg-zinc-800/50 p-1 pb-0 */}
 
-                <div className="flex items-center gap-3">
-                  <div className="flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-foreground-500">
+                <div className="flex items-start gap-3">
+                  <div className="mt-2.5 flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-foreground-500">
                     <span>When to Run</span>
                     <Tooltip
                       content={
@@ -307,6 +389,10 @@ export default function CreateWorkflowModal({
                               • <span className="font-medium">Schedule:</span>{" "}
                               Run at specific times or intervals
                             </li>
+                            <li>
+                              • <span className="font-medium">Trigger:</span>{" "}
+                              Run when external events occur (coming soon)
+                            </li>
                           </ul>
                         </div>
                       }
@@ -316,7 +402,7 @@ export default function CreateWorkflowModal({
                       <Info className="h-3.5 w-3.5 cursor-help text-foreground-400 hover:text-foreground-600" />
                     </Tooltip>
                   </div>
-                  <div>
+                  <div className="w-full">
                     <Tabs
                       color="primary"
                       classNames={{
@@ -325,24 +411,27 @@ export default function CreateWorkflowModal({
                         tabWrapper: "w-full",
                         panel: "min-w-full",
                       }}
+                      className="w-full"
                       selectedKey={formData.activeTab}
-                      placement="start"
                       onSelectionChange={(key) => {
-                        const tabKey = key as "manual" | "schedule";
+                        const tabKey = key as "manual" | "schedule" | "trigger";
                         updateFormData({
                           activeTab: tabKey,
                           trigger_config: {
                             ...formData.trigger_config,
-                            type: tabKey,
+                            type: tabKey === "trigger" ? "email" : tabKey,
                           },
                         });
                       }}
                     >
-                      <Tab key="manual" title="Manual">
-                        {renderTriggerTab()}
-                      </Tab>
                       <Tab key="schedule" title="Schedule">
                         {renderScheduleTab()}
+                      </Tab>
+                      <Tab key="trigger" title="Trigger">
+                        {renderTriggerTab()}
+                      </Tab>
+                      <Tab key="manual" title="Manual">
+                        {renderManualTab()}
                       </Tab>
                     </Tabs>
                   </div>
@@ -365,7 +454,8 @@ export default function CreateWorkflowModal({
                 onPress={handleCreate}
                 isLoading={isCreating}
                 isDisabled={
-                  !formData.title ||
+                  !formData.title.trim() ||
+                  !formData.description.trim() ||
                   (formData.activeTab === "schedule" &&
                     !formData.trigger_config.cron_expression)
                 }

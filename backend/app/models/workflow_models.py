@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class WorkflowStatus(str, Enum):
@@ -105,9 +105,9 @@ class Workflow(BaseModel):
         default_factory=lambda: f"wf_{uuid.uuid4().hex[:12]}",
         description="Unique identifier",
     )
-    title: str = Field(description="Title of the workflow")
+    title: str = Field(min_length=1, description="Title of the workflow")
     description: str = Field(
-        description="Description of what this workflow aims to accomplish"
+        min_length=1, description="Description of what this workflow aims to accomplish"
     )
     steps: List[WorkflowStep] = Field(
         description="List of workflow steps to execute", min_length=1, max_length=10
@@ -149,14 +149,21 @@ class Workflow(BaseModel):
 class CreateWorkflowRequest(BaseModel):
     """Request model for creating a new workflow."""
 
-    title: str = Field(description="Title of the workflow")
+    title: str = Field(min_length=1, description="Title of the workflow")
     description: str = Field(
-        description="Description of what the workflow should accomplish"
+        min_length=1, description="Description of what the workflow should accomplish"
     )
     trigger_config: TriggerConfig = Field(description="Trigger configuration")
     generate_immediately: bool = Field(
         default=False, description="Generate steps immediately vs background"
     )
+
+    @field_validator("title", "description")
+    @classmethod
+    def validate_non_empty_strings(cls, v):
+        if not v or not v.strip():
+            raise ValueError("Field cannot be empty or contain only whitespace")
+        return v.strip()
 
 
 class UpdateWorkflowRequest(BaseModel):
