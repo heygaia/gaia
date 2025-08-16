@@ -1,13 +1,19 @@
 import React from "react";
+
 import Composer from "@/features/chat/components/composer/Composer";
-import { ChatSection, GridSection } from "../sections";
+
+import { ChatSection } from "../sections";
 
 interface ChatWithMessagesProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   chatRef: React.RefObject<HTMLDivElement | null>;
-  cardStackSectionRef: React.RefObject<HTMLDivElement | null>;
   handleScroll: (event: React.UIEvent) => void;
-  dragHandlers: any;
+  dragHandlers: {
+    onDragEnter: (e: React.DragEvent<HTMLElement>) => void;
+    onDragOver: (e: React.DragEvent<HTMLElement>) => void;
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
+    onDrop: (e: React.DragEvent<HTMLElement>) => void;
+  };
   composerProps: {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     scrollToBottom: () => void;
@@ -25,7 +31,6 @@ interface ChatWithMessagesProps {
 export const ChatWithMessages: React.FC<ChatWithMessagesProps> = ({
   scrollContainerRef,
   chatRef,
-  cardStackSectionRef,
   handleScroll,
   dragHandlers,
   composerProps,

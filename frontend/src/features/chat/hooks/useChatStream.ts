@@ -14,13 +14,14 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
+import { useRouter } from "next/navigation";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
   const { updateConvoMessages, convoMessages } = useConversation();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
-
+  const router = useRouter();
   // Unified ref storage
   const refs = useRef({
     convoMessages,

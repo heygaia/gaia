@@ -1,26 +1,40 @@
 "use client";
 
-import { useState } from "react";
 import { Chip } from "@heroui/chip";
+import { useState } from "react";
+
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import dataJson from "@/features/use-cases/constants/data.json";
+
+interface UseCase {
+  title: string;
+  description: string;
+  action_type: "prompt" | "workflow";
+  integrations: string[];
+  categories?: string[];
+  published_id?: string;
+}
+
+interface UseCaseData {
+  templates: UseCase[];
+}
 
 export default function UseCasesPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
 
-  const data = dataJson as unknown as { templates: any[] };
+  const data = dataJson as unknown as UseCaseData;
 
   const allCategories = [
     "all",
     ...Array.from(
-      new Set(data.templates.flatMap((item: any) => item.categories || [])),
+      new Set(data.templates.flatMap((item: UseCase) => item.categories || [])),
     ),
   ];
 
   const filteredUseCases =
     selectedCategory === "all"
       ? data.templates
-      : data.templates.filter((useCase: any) =>
+      : data.templates.filter((useCase: UseCase) =>
           useCase.categories?.includes(selectedCategory),
         );
 
@@ -51,7 +65,7 @@ export default function UseCasesPage() {
         </div>
 
         <div className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {filteredUseCases.map((useCase: any, index: number) => (
+          {filteredUseCases.map((useCase: UseCase, index: number) => (
             <UseCaseCard
               key={useCase.published_id || index}
               title={useCase.title || ""}

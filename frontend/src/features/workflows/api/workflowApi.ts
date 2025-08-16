@@ -1,0 +1,227 @@
+/**
+ * Workflow API service for unified workflow management.
+ * Provides functions to interact with the workflow backend API.
+ */
+
+import { apiService } from "@/lib/api";
+
+export interface WorkflowStep {
+  id: string;
+  title: string;
+  tool_name: string;
+  tool_category: string;
+  description: string;
+  tool_inputs: Record<string, unknown>;
+  order: number;
+  status?: string;
+  executed_at?: string;
+  result?: Record<string, unknown>;
+}
+
+export interface TriggerConfig {
+  type: "manual" | "schedule" | "email" | "calendar" | "webhook";
+  cron_expression?: string;
+  timezone?: string;
+  next_run?: string;
+  email_patterns?: string[];
+  email_labels?: string[];
+  calendar_patterns?: string[];
+  webhook_url?: string;
+  webhook_secret?: string;
+  enabled: boolean;
+}
+
+export interface ExecutionConfig {
+  method: "chat" | "background" | "hybrid";
+  timeout_seconds: number;
+  max_retries: number;
+  retry_delay_seconds: number;
+  notify_on_completion: boolean;
+  notify_on_failure: boolean;
+}
+
+export interface WorkflowMetadata {
+  created_from: "chat" | "modal" | "todo" | "template" | "api";
+  template_id?: string;
+  related_todo_id?: string;
+  related_conversation_id?: string;
+  tags: string[];
+  category?: string;
+  total_executions: number;
+  successful_executions: number;
+  last_execution_at?: string;
+  average_execution_time?: number;
+}
+
+export interface Workflow {
+  id: string;
+  title: string;
+  description: string;
+  steps: WorkflowStep[];
+  trigger_config: TriggerConfig;
+  execution_config: ExecutionConfig;
+  metadata: WorkflowMetadata;
+  status: string;
+  user_id: string;
+  created_at: string;
+  updated_at: string;
+  last_executed_at?: string;
+  current_step_index: number;
+  execution_logs: string[];
+  error_message?: string;
+}
+
+export interface CreateWorkflowRequest {
+  title: string;
+  description: string;
+  trigger_config: TriggerConfig;
+  execution_config?: ExecutionConfig;
+  metadata?: Partial<WorkflowMetadata>;
+  generate_immediately?: boolean;
+}
+
+export interface WorkflowExecutionRequest {
+  execution_method?: "chat" | "background" | "hybrid";
+  context?: Record<string, unknown>;
+}
+
+export interface WorkflowStatusResponse {
+  workflow_id: string;
+  status: string;
+  current_step_index: number;
+  total_steps: number;
+  progress_percentage: number;
+  last_updated: string;
+  error_message?: string;
+  logs: string[];
+}
+
+export const workflowApi = {
+  // Create a new workflow
+  createWorkflow: async (
+    request: CreateWorkflowRequest,
+  ): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
+      "/workflows",
+      request,
+      {
+        successMessage: "Workflow created successfully",
+        errorMessage: "Failed to create workflow",
+      },
+    );
+  },
+
+  // List workflows with filtering
+  listWorkflows: async (params?: {
+    status?: string;
+    source?: string;
+    limit?: number;
+    skip?: number;
+  }): Promise<{
+    workflows: Workflow[];
+    total_count: number;
+    page: number;
+    page_size: number;
+  }> => {
+    const searchParams = new URLSearchParams();
+    if (params?.status) searchParams.append("status", params.status);
+    if (params?.source) searchParams.append("source", params.source);
+    if (params?.limit) searchParams.append("limit", params.limit.toString());
+    if (params?.skip) searchParams.append("skip", params.skip.toString());
+
+    const queryString = searchParams.toString();
+    const url = queryString ? `/workflows?${queryString}` : "/workflows";
+
+    return apiService.get<{
+      workflows: Workflow[];
+      total_count: number;
+      page: number;
+      page_size: number;
+    }>(url);
+  },
+
+  // Get a specific workflow
+  getWorkflow: async (
+    workflowId: string,
+  ): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.get<{ workflow: Workflow; message: string }>(
+      `/workflows/${workflowId}`,
+    );
+  },
+
+  // Update a workflow
+  updateWorkflow: async (
+    workflowId: string,
+    updates: Partial<CreateWorkflowRequest>,
+  ): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.put<{ workflow: Workflow; message: string }>(
+      `/workflows/${workflowId}`,
+      updates,
+      {
+        successMessage: "Workflow updated successfully",
+        errorMessage: "Failed to update workflow",
+      },
+    );
+  },
+
+  // Delete a workflow
+  deleteWorkflow: async (workflowId: string): Promise<{ message: string }> => {
+    return apiService.delete<{ message: string }>(`/workflows/${workflowId}`, {
+      successMessage: "Workflow deleted successfully",
+      errorMessage: "Failed to delete workflow",
+    });
+  },
+
+  // Execute a workflow
+  executeWorkflow: async (
+    workflowId: string,
+    request?: WorkflowExecutionRequest,
+  ): Promise<{
+    execution_id: string;
+    status: string;
+    message: string;
+    estimated_completion_time?: string;
+  }> => {
+    return apiService.post<{
+      execution_id: string;
+      status: string;
+      message: string;
+      estimated_completion_time?: string;
+    }>(`/workflows/${workflowId}/execute`, request || {}, {
+      successMessage: "Workflow execution started",
+      errorMessage: "Failed to execute workflow",
+    });
+  },
+
+  // Get workflow status
+  getWorkflowStatus: async (
+    workflowId: string,
+  ): Promise<WorkflowStatusResponse> => {
+    return apiService.get<WorkflowStatusResponse>(
+      `/workflows/${workflowId}/status`,
+      {
+        silent: true, // Don't show success/error toasts for polling
+      },
+    );
+  },
+
+  // Create workflow from todo (migration helper)
+  createWorkflowFromTodo: async (
+    todoId: string,
+    todoTitle: string,
+    todoDescription?: string,
+  ): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
+      "/workflows/from-todo",
+      {
+        todo_id: todoId,
+        todo_title: todoTitle,
+        todo_description: todoDescription,
+      },
+      {
+        successMessage: "Workflow created from todo successfully",
+        errorMessage: "Failed to create workflow from todo",
+      },
+    );
+  },
+};

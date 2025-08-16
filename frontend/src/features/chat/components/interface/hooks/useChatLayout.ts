@@ -1,11 +1,13 @@
-import { useMemo, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useMemo, useRef, useState } from "react";
+
+import { Conversation } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { filterEmptyMessagePairs } from "@/features/chat/utils/messageContentUtils";
 
 interface UseChatLayoutReturn {
-  conversation: any;
+  conversation: Conversation | undefined;
   hasMessages: boolean;
   chatRef: React.RefObject<HTMLDivElement | null>;
   cardStackSectionRef: React.RefObject<HTMLDivElement | null>;
@@ -18,7 +20,7 @@ interface UseChatLayoutReturn {
     handleDroppedFiles: (files: File[]) => void;
   } | null>;
   appendToInputRef: React.RefObject<((text: string) => void) | null>;
-  router: any;
+  router: ReturnType<typeof useRouter>;
   convoIdParam: string;
 }
 

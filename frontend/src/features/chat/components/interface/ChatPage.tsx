@@ -1,11 +1,6 @@
 "use client";
 
-import {
-  useParams,
-  usePathname,
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
@@ -14,7 +9,7 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
 
-import { useScrollBehavior, useChatLayout } from "./hooks";
+import { useChatLayout, useScrollBehavior } from "./hooks";
 import { ChatWithMessages, NewChatLayout } from "./layouts";
 import { ScrollButtons } from "./scroll";
 
@@ -103,7 +98,6 @@ const ChatPage = React.memo(function MainChat() {
             <ChatWithMessages
               scrollContainerRef={scrollContainerRef}
               chatRef={chatRef}
-              cardStackSectionRef={cardStackSectionRef}
               handleScroll={handleScroll}
               dragHandlers={dragHandlers}
               composerProps={composerProps}

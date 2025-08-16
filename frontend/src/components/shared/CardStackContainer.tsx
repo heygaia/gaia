@@ -1,8 +1,7 @@
 "use client";
 
-import { Bell, Calendar, Mail } from "lucide-react";
 import CardStack from "./CardStack";
-import { Calendar03Icon, Gmail, GoogleCalendarIcon, Mail01Icon } from "./icons";
+import { Gmail, GoogleCalendarIcon } from "./icons";
 
 interface Notification {
   id: string;

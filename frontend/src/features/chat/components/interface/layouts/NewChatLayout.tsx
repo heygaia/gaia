@@ -1,11 +1,17 @@
 import React from "react";
-import { NewChatSection, GridSection } from "../sections";
+
+import { GridSection, NewChatSection } from "../sections";
 
 interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
   handleNewChatScroll: (event: React.UIEvent) => void;
-  dragHandlers: any;
+  dragHandlers: {
+    onDragEnter: (e: React.DragEvent<HTMLElement>) => void;
+    onDragOver: (e: React.DragEvent<HTMLElement>) => void;
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
+    onDrop: (e: React.DragEvent<HTMLElement>) => void;
+  };
   composerProps: {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     scrollToBottom: () => void;

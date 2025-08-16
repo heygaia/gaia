@@ -15,6 +15,7 @@ from app.langchain.tools import (
     todo_tool,
     weather_tool,
     webpage_tool,
+    workflow_tool,
 )
 
 # Organize tools by categories for better organisation when fetching tools on client side
@@ -25,6 +26,7 @@ TOOLS_BY_CATEGORY = {
     "productivity": [
         *todo_tool.tools,
         *reminder_tool.tools,
+        *workflow_tool.tools,
     ],
     "calendar": [
         *calendar_tool.tools,
