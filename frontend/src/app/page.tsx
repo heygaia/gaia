@@ -13,6 +13,7 @@ import WorkflowAutomation from "@/features/landing/components/sections/new/Workf
 import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
 import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
 import LandingLayout from "./(landing)/layout";
+import OpenSource from "@/features/landing/components/sections/new/OpenSource";
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
@@ -31,12 +32,13 @@ export default function LandingPage() {
       <LandingLayout>
         <div className="relative overflow-hidden">
           <HeroSection />
-          <div className="relative z-10 flex w-screen items-center justify-center p-10">
+          <div className="relative z-10 flex w-screen items-center justify-center px-20">
             <HeroVideoDialog
-              className="block"
+              className="block rounded-3xl!"
               animationStyle="from-center"
               videoSrc="https://www.youtube.com/embed/K-ZbxMHxReM?si=U9Caazt9Ondagnr8"
-              thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
+              // thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
+              thumbnailSrc="/landing/hero.webp"
               thumbnailAlt="Hero Section Video"
             />
           </div>
@@ -46,7 +48,8 @@ export default function LandingPage() {
             <Productivity />
             <Tired />
             <Personalised />
-            <WorkflowAutomation />
+            {/* <WorkflowAutomation /> */}
+            <OpenSource />
             <FAQAccordion />
             <FinalSection />
           </div>
