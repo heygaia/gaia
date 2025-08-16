@@ -23,10 +23,10 @@ const ChatPage = React.memo(function MainChat() {
 
   // Use our custom hooks
   const {
-    conversation,
+    conversation: _conversation,
     hasMessages,
     chatRef,
-    cardStackSectionRef,
+    cardStackSectionRef: _cardStackSectionRef,
     dummySectionRef,
     inputRef,
     droppedFiles,

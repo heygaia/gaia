@@ -1,5 +1,6 @@
 // useChatStream.ts
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
+import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
@@ -14,7 +15,6 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
-import { useRouter } from "next/navigation";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();

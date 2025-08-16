@@ -3,9 +3,9 @@
 import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
 import { PlusIcon, RefreshCw } from "lucide-react";
-import { useCallback, useEffect,useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-import { useWorkflowPolling,useWorkflows } from "../hooks";
+import { useWorkflowPolling, useWorkflows } from "../hooks";
 import CreateWorkflowModal from "./CreateWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
@@ -16,14 +16,10 @@ export default function WorkflowPage() {
     null,
   );
 
-  const { workflows, isLoading, error, refetch, addWorkflow, updateWorkflow } =
+  const { workflows, isLoading, error, refetch, updateWorkflow } =
     useWorkflows();
 
-  const {
-    workflow: pollingWorkflow,
-    isPolling,
-    startPolling,
-  } = useWorkflowPolling();
+  const { workflow: pollingWorkflow, startPolling } = useWorkflowPolling();
 
   // Handle workflow creation completion
   const handleWorkflowCreated = useCallback(

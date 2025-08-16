@@ -3,12 +3,11 @@
 import { Button } from "@heroui/button";
 import { motion } from "framer-motion";
 import { ArrowUpRight } from "lucide-react";
-import { ReactNode, useState, useRef, useEffect } from "react";
+import { ReactNode, useEffect, useRef, useState } from "react";
 
 interface CardStackProps<T> {
   title?: string;
   data: T[];
-  collapsedContent?: ReactNode;
   indicator?: ReactNode;
   renderCard: (item: T) => ReactNode;
   viewAllHref?: string;
@@ -22,7 +21,6 @@ const defaultCollapsedMessage = (count: number) =>
 export default function CardStack<T extends { id: string }>({
   title = "Items",
   data,
-  collapsedContent,
   indicator = <div className="min-h-2 min-w-2 rounded-full bg-red-500" />,
   renderCard,
   viewAllHref,

@@ -1,7 +1,8 @@
+import { useRouter } from "next/navigation";
 import React from "react";
+
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
-import { useRouter } from "next/navigation";
 
 interface GridSectionProps {
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
@@ -23,7 +24,7 @@ export const GridSection: React.FC<GridSectionProps> = ({
         {/* Top-right */}
         <div className="row-span-2 flex items-center justify-center rounded-3xl">
           <UpcomingEventsView
-            onEventClick={(event) => {
+            onEventClick={(_event) => {
               router.push("/calendar");
             }}
           />

@@ -2,7 +2,7 @@ import { Chip } from "@heroui/chip";
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
-import { Tab,Tabs } from "@heroui/tabs";
+import { Tab, Tabs } from "@heroui/tabs";
 import { Clock, Zap } from "lucide-react";
 import { useState } from "react";
 
@@ -18,10 +18,7 @@ interface ScheduleBuilderProps {
   onChange: (cronExpression: string) => void;
 }
 
-export const ScheduleBuilder = ({
-  value = "",
-  onChange,
-}: ScheduleBuilderProps) => {
+export const ScheduleBuilder = ({ onChange }: ScheduleBuilderProps) => {
   const [activeTab, setActiveTab] = useState<"presets" | "custom">("presets");
   const [selectedPreset, setSelectedPreset] = useState<string>("");
   const [customSchedule, setCustomSchedule] = useState<CronSchedule>({
@@ -49,10 +46,6 @@ export const ScheduleBuilder = ({
   const handleCustomCronChange = (cron: string) => {
     setCustomCron(cron);
     onChange(cron);
-  };
-
-  const formatTime = (hour: number, minute: number) => {
-    return `${hour.toString().padStart(2, "0")}:${minute.toString().padStart(2, "0")}`;
   };
 
   const renderPresets = () => (

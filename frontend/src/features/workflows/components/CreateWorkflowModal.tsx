@@ -48,7 +48,6 @@ export default function CreateWorkflowModal({
 
   const {
     workflow: pollingWorkflow,
-    isPolling,
     startPolling,
     stopPolling,
   } = useWorkflowPolling();

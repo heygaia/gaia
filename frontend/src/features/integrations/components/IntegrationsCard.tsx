@@ -85,7 +85,7 @@ export const IntegrationsCard: React.FC<IntegrationsCardProps> = ({
   onClose,
 }) => {
   const {
-    integrations,
+    integrations: _integrations,
     connectIntegration,
     refreshStatus,
     getSpecialIntegrations,

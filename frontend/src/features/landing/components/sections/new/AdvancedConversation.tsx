@@ -15,7 +15,7 @@ import {
   Upload,
 } from "lucide-react";
 import NextImage from "next/image";
-import React, { useEffect, useRef,useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 const FeatureCard: React.FC<{
   children: React.ReactNode;
   className?: string;
@@ -184,15 +184,6 @@ const ImageGenerationAnimation: React.FC<AnimationProps> = ({ isHovered }) => {
   const [dots, setDots] = useState(0);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
-
-  const scaleValue = usePhysicsAnimation(
-    0.8,
-    step === 2 ? 1 : 0.95,
-    isHovered,
-    180,
-    20,
-    1,
-  );
 
   useEffect(() => {
     if (!isHovered) {
@@ -666,9 +657,9 @@ export default function AdvancedConversation() {
       <div className="relative z-10 container mx-auto max-w-7xl py-16">
         <div className="mb-16 text-center">
           <div className="relative mb-6">
-            <h1 className="text-4xl md:text-5xl lg:text-6xl font-bold bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-transparent leading-tight relative z-10">
-                Smarter Conversations
-              </h1>
+            <h1 className="relative z-10 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-bold text-transparent md:text-5xl lg:text-6xl">
+              Smarter Conversations
+            </h1>
           </div>
 
           <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-400 md:text-2xl">

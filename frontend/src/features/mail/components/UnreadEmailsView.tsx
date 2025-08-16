@@ -1,9 +1,9 @@
-import React from "react";
 import { Spinner } from "@heroui/react";
+import React from "react";
 
 import { Gmail } from "@/components";
-import { useUnreadEmails } from "@/features/mail/hooks/useUnreadEmails";
 import EmailListCard from "@/features/mail/components/EmailListCard";
+import { useUnreadEmails } from "@/features/mail/hooks/useUnreadEmails";
 import { EmailFetchData } from "@/types/features/mailTypes";
 
 const UnreadEmailsView: React.FC = () => {

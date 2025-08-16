@@ -1,4 +1,4 @@
-import { useCallback,useRef } from "react";
+import { useCallback, useRef } from "react";
 
 interface UseScrollBehaviorReturn {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -24,12 +24,12 @@ export const useScrollBehavior = (
     }
   }, [messageId]);
 
-  const handleNewChatScroll = useCallback((event: React.UIEvent) => {
+  const handleNewChatScroll = useCallback((_event: React.UIEvent) => {
     // Simple scroll handler for new chat - no special logic needed
   }, []);
 
   const handleScroll = useCallback(
-    (event: React.UIEvent) => {
+    (_event: React.UIEvent) => {
       // Simple scroll handler for chat messages - no special logic needed
     },
     [hasMessages],

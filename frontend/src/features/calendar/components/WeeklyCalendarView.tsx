@@ -6,8 +6,8 @@ import { CalendarGrid } from "@/features/calendar/components/CalendarGrid";
 import { CalendarHeader } from "@/features/calendar/components/CalendarHeader";
 import { DateStrip } from "@/features/calendar/components/DateStrip";
 import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
-import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 import { getEventColor } from "@/features/calendar/utils/eventColors";
+import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 
 interface EventPosition {
   event: GoogleCalendarEvent;
@@ -37,7 +37,6 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     isInitialized,
     loadCalendars,
     loadEvents,
-    clearEvents,
   } = useSharedCalendar();
 
   // Initialize calendars on mount

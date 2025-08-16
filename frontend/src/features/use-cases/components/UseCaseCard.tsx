@@ -1,9 +1,10 @@
 "use client";
 
-import { ToolsIcon } from "@/components";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { Button } from "@heroui/button";
 import { ArrowUpRight, Play, Plus } from "lucide-react";
+
+import { ToolsIcon } from "@/components";
+import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 
 // Map integration names to the categories used in getToolCategoryIcon
 const integrationToCategory: Record<string, string> = {

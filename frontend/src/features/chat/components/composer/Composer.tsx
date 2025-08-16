@@ -1,6 +1,5 @@
 import { ChevronRight } from "lucide-react";
 import Image from "next/image";
-import { useParams } from "next/navigation";
 import React, {
   useEffect,
   useImperativeHandle,
@@ -45,7 +44,6 @@ const Composer: React.FC<MainSearchbarProps> = ({
   onDroppedFilesProcessed,
   hasMessages,
 }) => {
-  const { id: convoIdParam } = useParams<{ id: string }>();
   const [currentHeight, setCurrentHeight] = useState<number>(24);
   const composerInputRef = useRef<ComposerInputRef>(null);
   const [searchbarText, setSearchbarText] = useState<string>("");
