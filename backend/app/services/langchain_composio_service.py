@@ -49,12 +49,11 @@ class LangchainProvider(
             schema_params=schema_params
         )
 
-        # Add RunnableConfig param with a collision-safe name
         parameters.append(
             Parameter(
                 "__runnable_config__",
                 kind=Parameter.KEYWORD_ONLY,
-                default=None,
+                default={},
                 annotation=RunnableConfig,
             )
         )

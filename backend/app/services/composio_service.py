@@ -11,43 +11,6 @@ SOCIAL_CONFIGS = {
     "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
 }
 
-
-@before_execute(
-    tools=[
-        "NOTION_CREATE_NOTION_PAGE",
-        "NOTION_SEARCH_NOTION_PAGE",
-        "NOTION_CREATE_DATABASE",
-    ]
-)
-def before_execute_notion(
-    tool,
-    toolkit,
-    params: ToolExecuteParams,
-):
-    arguments = params.get("arguments", {})
-
-    if not arguments:
-        return params
-
-    config = arguments.pop("__runnable_config__", None)
-
-    if config is None:
-        return params
-
-    metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
-
-    if not metadata:
-        return params
-
-    user_id = metadata.get("user_id")
-
-    if user_id is None:
-        return params
-
-    params["user_id"] = user_id
-    return params
-
-
 class ComposioService:
     def __init__(self):
         self.composio = Composio(
@@ -77,21 +40,36 @@ class ComposioService:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
-    def get_notion_tools(self, user_id: str):
-        return self.composio.tools.get(
-            user_id=user_id,
-            toolkits=["NOTION"],
-            modifiers=[before_execute_notion],
+    def get_tools(self, tool_kit: str):
+        tools = self.composio.tools.get(
+            user_id="",
+            toolkits=[tool_kit],
         )
+        tools_name = [tool.name for tool in tools]
+        @before_execute(tools=tools_name)
+        def before_execute_tools(
+            _,
+            __,
+            params: ToolExecuteParams,
+        ):
+            arguments = params.get("arguments", {})
+            if not arguments:
+                return params
+            config = arguments.pop("__runnable_config__", None)
+            if config is None:
+                return params
+            metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
+            if not metadata:
+                return params
+            user_id = metadata.get("user_id")
+            if user_id is None:
+                return params
+            params["user_id"] = user_id
+            return params
 
-    def get_google_sheet_tools(self, user_id: str):
-        return self.composio.tools.get(user_id=user_id, toolkits=["GOOGLESHEETS"])
-
-    def get_x_tools(self, user_id: str):
-        return self.composio.tools.get(user_id=user_id, toolkits=["TWITTER"])
-
-    def get_linkedin_tools(self, user_id: str):
-        return self.composio.tools.get(user_id=user_id, toolkits=["LINKEDIN"])
-
-
+        return self.composio.tools.get(
+            user_id="",
+            toolkits=[tool_kit],
+            modifiers=[before_execute_tools],
+        )
 composio_service = ComposioService()

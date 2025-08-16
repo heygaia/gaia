@@ -61,9 +61,10 @@ TOOLS_BY_CATEGORY = {
     "weather": [
         weather_tool.get_weather,
     ],
-    "notion": [*composio_service.get_notion_tools(user_id="")],
-    "google_sheet": [*composio_service.get_google_sheet_tools(user_id="")],
-    "twitter": [*composio_service.get_x_tools(user_id="")],
+    "notion": [*composio_service.get_tools(tool_kit="NOTION")],
+    "google_sheet": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
+    "twitter": [*composio_service.get_tools(tool_kit="TWITTER")],
+    "twitter": [*composio_service.get_tools(tool_kit="LINKEDIN")],
 }
 
 # Map categories to their required integrations
