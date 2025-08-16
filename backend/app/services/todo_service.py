@@ -324,7 +324,7 @@ class TodoService:
                 "updated_at": datetime.now(timezone.utc),
                 "completed": False,
                 "subtasks": [],
-                "workflow_status": WorkflowStatus.GENERATING,  # Start generating immediately
+                "workflow_status": WorkflowStatus.PENDING,  # Start generating immediately
             }
         )
 

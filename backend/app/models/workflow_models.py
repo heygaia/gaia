@@ -14,10 +14,7 @@ class WorkflowStatus(str, Enum):
     """Status of workflow processing and execution."""
 
     DRAFT = "draft"
-    GENERATING = "generating"
-    READY = "ready"
-    ACTIVE = "active"
-    INACTIVE = "inactive"
+    PENDING = "pending"
     RUNNING = "running"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -46,7 +43,7 @@ class WorkflowStep(BaseModel):
         default_factory=dict, description="Expected inputs for the tool"
     )
     order: int = Field(description="Order of execution (0-based)")
-    status: WorkflowStatus = Field(default=WorkflowStatus.READY)
+    status: WorkflowStatus = Field(default=WorkflowStatus.PENDING)
     executed_at: Optional[datetime] = Field(default=None)
     result: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -110,7 +107,7 @@ class Workflow(BaseModel):
         min_length=1, description="Description of what this workflow aims to accomplish"
     )
     steps: List[WorkflowStep] = Field(
-        description="List of workflow steps to execute", min_length=1, max_length=10
+        description="List of workflow steps to execute", max_length=10
     )
 
     # Configuration

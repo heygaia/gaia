@@ -1,6 +1,6 @@
-import { useCallback,useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Workflow,workflowApi } from "../api/workflowApi";
+import { Workflow, workflowApi } from "../api/workflowApi";
 
 interface UseWorkflowPollingReturn {
   workflow: Workflow | null;
@@ -28,10 +28,9 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
     return 10000; // After that: poll every 10s
   };
 
-  const shouldStopPolling = (status: string): boolean => {
-    return ["ready", "failed", "active"].includes(status.toLowerCase());
+  const isTerminalStatus = (status: string): boolean => {
+    return ["pending", "failed", "completed"].includes(status.toLowerCase());
   };
-
   const pollWorkflowStatus = useCallback(async (workflowId: string) => {
     try {
       const response = await workflowApi.getWorkflow(workflowId);
@@ -41,7 +40,7 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
       setError(null);
 
       // Stop polling if workflow is in final state
-      if (shouldStopPolling(updatedWorkflow.status)) {
+      if (isTerminalStatus(updatedWorkflow.status)) {
         setIsPolling(false);
         if (intervalRef.current) {
           clearInterval(intervalRef.current);

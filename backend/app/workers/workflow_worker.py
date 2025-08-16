@@ -243,7 +243,7 @@ async def check_scheduled_workflows(ctx: dict) -> str:
         # Find workflows that are scheduled and enabled
         cursor = workflows_collection.find(
             {
-                "status": WorkflowStatus.ACTIVE,
+                "status": WorkflowStatus.PENDING,
                 "trigger_config.type": "schedule",
                 "trigger_config.enabled": True,
                 "trigger_config.next_run": {"$lte": datetime.now(timezone.utc)},

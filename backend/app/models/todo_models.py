@@ -14,6 +14,7 @@ class Priority(str, Enum):
 
 class WorkflowStatus(str, Enum):
     NOT_STARTED = "not_started"
+    PENDING = "pending"
     GENERATING = "generating"
     COMPLETED = "completed"
     FAILED = "failed"

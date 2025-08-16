@@ -132,8 +132,8 @@ export default function CreateWorkflowModal({
   useEffect(() => {
     if (pollingWorkflow && creationPhase === "generating") {
       if (
-        pollingWorkflow.status === "ready" ||
-        pollingWorkflow.status === "active"
+        pollingWorkflow.status === "pending" ||
+        pollingWorkflow.status === "completed"
       ) {
         setCreationPhase("success");
         setTimeout(() => {

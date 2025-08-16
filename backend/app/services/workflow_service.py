@@ -35,8 +35,7 @@ class WorkflowValidator:
     def can_execute(status: WorkflowStatus) -> bool:
         """Check if workflow can be executed based on status."""
         return status in [
-            WorkflowStatus.READY,
-            WorkflowStatus.ACTIVE,
+            WorkflowStatus.PENDING,
             WorkflowStatus.COMPLETED,
         ]
 
@@ -301,7 +300,7 @@ class WorkflowService:
             return await WorkflowService.update_workflow(
                 workflow_id,
                 UpdateWorkflowRequest(
-                    trigger_config=trigger_config, status=WorkflowStatus.ACTIVE
+                    trigger_config=trigger_config, status=WorkflowStatus.PENDING
                 ),
                 user_id,
             )
@@ -325,7 +324,7 @@ class WorkflowService:
             return await WorkflowService.update_workflow(
                 workflow_id,
                 UpdateWorkflowRequest(
-                    trigger_config=trigger_config, status=WorkflowStatus.INACTIVE
+                    trigger_config=trigger_config, status=WorkflowStatus.DRAFT
                 ),
                 user_id,
             )
@@ -342,7 +341,7 @@ class WorkflowService:
                 {"_id": workflow_id, "user_id": user_id},
                 {
                     "$set": {
-                        "status": WorkflowStatus.GENERATING,
+                        "status": WorkflowStatus.RUNNING,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
@@ -363,7 +362,7 @@ class WorkflowService:
                     {
                         "$set": {
                             "steps": steps_data,
-                            "status": WorkflowStatus.READY,
+                            "status": WorkflowStatus.PENDING,
                             "updated_at": datetime.now(timezone.utc),
                         }
                     },
@@ -471,7 +470,7 @@ Available Tools: {tools}
             for i, step in enumerate(result.steps, 1):
                 step_dict = step.model_dump()
                 step_dict["id"] = f"step_{i}"  # Ensure consistent ID format
-                step_dict["status"] = "pending"  # Add initial status
+                step_dict["status"] = WorkflowStatus.PENDING  # Add initial status
                 step_dict["order"] = i - 1  # Add order field (0-based)
                 steps_data.append(step_dict)
 
