@@ -49,4 +49,3 @@ twitter_agent_tool = StructuredTool.from_function(
 )
 
 tools = [twitter_agent_tool]
-

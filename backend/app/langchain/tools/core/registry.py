@@ -73,7 +73,7 @@ CATEGORY_INTEGRATION_REQUIREMENTS = {
     "mail": "gmail",
     "calendar": "google_calendar",
     "google_docs": "google_docs",
-} 
+}
 
 # Define tools that should always be accessible to the agent directly
 ALWAYS_AVAILABLE_TOOLS = [
