@@ -64,7 +64,7 @@ TOOLS_BY_CATEGORY = {
     "notion": [*composio_service.get_tools(tool_kit="NOTION")],
     "google_sheet": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
     "twitter": [*composio_service.get_tools(tool_kit="TWITTER")],
-    "twitter": [*composio_service.get_tools(tool_kit="LINKEDIN")],
+    "linkedin": [*composio_service.get_tools(tool_kit="LINKEDIN")],
 }
 
 # Map categories to their required integrations
