@@ -23,7 +23,7 @@ from app.models.user_models import (
     OnboardingResponse,
     UserUpdateResponse,
 )
-from app.services.composio_service import composio_service
+from app.services.composio_service import SOCIAL_CONFIGS, composio_service
 from app.services.oauth_service import store_user_info
 from app.services.onboarding_service import (
     complete_onboarding,
@@ -199,11 +199,7 @@ async def login_integration(
     integration_id: str, user: dict = Depends(get_current_user)
 ):
     """Dynamic OAuth login for any configured integration."""
-    # Get the integration configuration
     integration = get_integration_by_id(integration_id)
-
-    if integration.provider == "notion":
-        return RedirectResponse(url=composio_service.connect_account("notion", user["user_id"])["redirect_url"])
 
     if not integration:
         raise HTTPException(
@@ -214,18 +210,26 @@ async def login_integration(
         raise HTTPException(
             status_code=400, detail=f"Integration {integration_id} is not available yet"
         )
-    if integration.provider == "twitter":
-        return RedirectResponse(url=composio_service.connect_account("twitter", user["user_id"])["redirect_url"])
 
-    if integration.provider == "google_sheet":
+    # Streamlined composio integration handling
+    composio_providers = set([k for k in SOCIAL_CONFIGS.keys()])
+    if integration.provider in composio_providers:
+        # Map provider name to SOCIAL_CONFIGS key if needed
+        provider_key = integration.provider
+        # Some keys may differ (e.g., google_sheet vs google_sheets)
+        if provider_key not in SOCIAL_CONFIGS:
+            # Try plural form
+            provider_key = provider_key + "s"
+        if provider_key not in SOCIAL_CONFIGS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Composio provider '{integration.provider}' not supported",
+            )
         return RedirectResponse(
-            url=composio_service.connect_account("google_sheet", user["user_id"])[
+            url=composio_service.connect_account(provider_key, user["user_id"])[
                 "redirect_url"
             ]
         )
-
-    if integration.provider == "linkedin":
-        return RedirectResponse(url=composio_service.connect_account("linkedin", user["user_id"])["redirect_url"])
 
     # Handle different OAuth providers
     if integration.provider == "google":
@@ -264,12 +268,11 @@ async def login_integration(
         auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
         return RedirectResponse(url=auth_url)
 
-    # Add other providers here (GitHub, Notion, etc.)
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"OAuth provider {integration.provider} not implemented",
-        )
+    # Add other providers here (GitHub, etc.)
+    raise HTTPException(
+        status_code=400,
+        detail=f"OAuth provider {integration.provider} not implemented",
+    )
 
 
 @router.get("/google/callback", response_class=RedirectResponse)

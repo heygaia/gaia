@@ -11,6 +11,37 @@ SOCIAL_CONFIGS = {
     "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
 }
 
+def extract_user_id_from_params(
+    tool: str,
+    toolkit: str,
+    params: ToolExecuteParams,
+) -> ToolExecuteParams:
+    """
+    Extract user_id from RunnableConfig metadata and add it to tool execution params.
+
+    This function is used as a before_execute modifier for Composio tools to ensure
+    user context is properly passed through during tool execution.
+    """
+    arguments = params.get("arguments", {})
+    if not arguments:
+        return params
+
+    config = arguments.pop("__runnable_config__", None)
+    if config is None:
+        return params
+
+    metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
+    if not metadata:
+        return params
+
+    user_id = metadata.get("user_id")
+    if user_id is None:
+        return params
+
+    params["user_id"] = user_id
+    return params
+
+
 class ComposioService:
     def __init__(self):
         self.composio = Composio(
@@ -46,30 +77,15 @@ class ComposioService:
             toolkits=[tool_kit],
         )
         tools_name = [tool.name for tool in tools]
-        @before_execute(tools=tools_name)
-        def before_execute_tools(
-            _,
-            __,
-            params: ToolExecuteParams,
-        ):
-            arguments = params.get("arguments", {})
-            if not arguments:
-                return params
-            config = arguments.pop("__runnable_config__", None)
-            if config is None:
-                return params
-            metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
-            if not metadata:
-                return params
-            user_id = metadata.get("user_id")
-            if user_id is None:
-                return params
-            params["user_id"] = user_id
-            return params
+
+        # Applying the before_execute decorator dynamically
+        user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
 
         return self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[before_execute_tools],
+            modifiers=[user_id_modifier],
         )
+
+
 composio_service = ComposioService()
