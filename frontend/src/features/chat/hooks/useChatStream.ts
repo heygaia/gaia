@@ -14,14 +14,13 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
-import { useRouter } from "next/router";
+import { redirect } from "next/navigation";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
   const { updateConvoMessages, convoMessages } = useConversation();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
-  const router = useRouter();
 
   // Unified ref storage
   const refs = useRef({
@@ -57,7 +56,7 @@ export const useChatStream = () => {
 
       // Handle navigation for incomplete conversations
       if (response.conversation_id && !refs.current.newConversation.id) {
-        router.push(`/c/${response.conversation_id}`);
+        redirect(`/c/${response.conversation_id}`);
         fetchConversations();
       }
     } catch (saveError) {
