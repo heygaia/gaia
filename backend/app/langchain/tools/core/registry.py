@@ -14,6 +14,7 @@ from app.langchain.tools import (
     support_tool,
     todo_tool,
     weather_tool,
+    twitter_agent,
     webpage_tool,
 )
 from app.services.composio_service import composio_service
@@ -63,7 +64,7 @@ TOOLS_BY_CATEGORY = {
     ],
     "notion": [*composio_service.get_tools(tool_kit="NOTION")],
     "google_sheet": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
-    "twitter": [*composio_service.get_tools(tool_kit="TWITTER")],
+    "twitter": [*twitter_agent.tools],
     "linkedin": [*composio_service.get_tools(tool_kit="LINKEDIN")],
 }
 
