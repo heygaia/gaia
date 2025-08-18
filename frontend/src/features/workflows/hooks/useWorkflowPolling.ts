@@ -29,7 +29,9 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
   };
 
   const isTerminalStatus = (status: string): boolean => {
-    return ["pending", "failed", "completed"].includes(status.toLowerCase());
+    // For polling during creation, we want to continue until workflow has steps and is PENDING
+    // For other cases, FAILED is terminal, but PENDING and COMPLETED depend on context
+    return ["failed"].includes(status.toLowerCase());
   };
   const pollWorkflowStatus = useCallback(async (workflowId: string) => {
     try {
@@ -39,8 +41,9 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
       setWorkflow(updatedWorkflow);
       setError(null);
 
-      // Stop polling if workflow is in final state
-      if (isTerminalStatus(updatedWorkflow.status)) {
+      // Only stop polling on FAILED status
+      // Let the parent component decide when to stop for success cases
+      if (updatedWorkflow.status === "failed") {
         setIsPolling(false);
         if (intervalRef.current) {
           clearInterval(intervalRef.current);

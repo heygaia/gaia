@@ -23,7 +23,6 @@ from app.models.todo_models import (
     SubtaskCreateRequest,
     SubtaskUpdateRequest,
     SubTask,
-    WorkflowStatus,
 )
 from app.services.todo_service import TodoService, ProjectService
 
@@ -268,19 +267,15 @@ async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)
     try:
         todo = await TodoService.get_todo(todo_id, user["user_id"])
 
-        # Set status to generating first
-        await TodoService.update_workflow_status(
-            todo_id, user["user_id"], WorkflowStatus.GENERATING
-        )
-
+        # Generate workflow for todo
         workflow_result = await TodoService._generate_workflow_for_todo(
             todo.title, todo.description or ""
         )
 
         if not workflow_result.get("success"):
-            # Mark as failed
-            await TodoService.update_workflow_status(
-                todo_id, user["user_id"], WorkflowStatus.FAILED
+            # Mark workflow as deactivated on failure
+            await TodoService.update_workflow_activation(
+                todo_id, user["user_id"], False
             )
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -299,7 +294,7 @@ async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)
             completed=None,
             subtasks=None,
             workflow=workflow_result["workflow"],
-            workflow_status=WorkflowStatus.COMPLETED,
+            workflow_activated=True,  # Mark as activated when workflow is successfully generated
         )
         updated_todo = await TodoService.update_todo(
             todo_id, update_request, user["user_id"]
@@ -330,17 +325,13 @@ async def get_workflow_status(todo_id: str, user: dict = Depends(get_current_use
         # Check if workflow exists
         has_workflow = hasattr(todo, "workflow") and todo.workflow is not None
 
-        # Get workflow status - if not present, assume not started for old todos
-        workflow_status = getattr(todo, "workflow_status", WorkflowStatus.NOT_STARTED)
-
-        # Determine if currently generating (status is generating and no workflow yet)
-        is_generating = workflow_status == WorkflowStatus.GENERATING
+        # Get workflow activation status - if not present, assume not activated for old todos
+        workflow_activated = getattr(todo, "workflow_activated", False)
 
         return {
             "todo_id": todo_id,
             "has_workflow": has_workflow,
-            "is_generating": is_generating,
-            "workflow_status": workflow_status,
+            "workflow_activated": workflow_activated,
             "workflow": todo.workflow if has_workflow else None,
         }
     except ValueError as e:
@@ -434,7 +425,7 @@ async def bulk_complete_todos(
             completed=True,
             subtasks=None,
             workflow=None,
-            workflow_status=None,
+            workflow_activated=None,
         ),
     )
     try:
@@ -563,7 +554,7 @@ async def create_subtask(
                 completed=None,
                 subtasks=updated_subtasks,
                 workflow=None,
-                workflow_status=None,
+                workflow_activated=None,
             ),
             user["user_id"],
         )
@@ -622,7 +613,7 @@ async def update_subtask(
                 completed=None,
                 subtasks=updated_subtasks,
                 workflow=None,
-                workflow_status=None,
+                workflow_activated=None,
             ),
             user["user_id"],
         )
@@ -667,7 +658,7 @@ async def delete_subtask(
                 completed=None,
                 subtasks=updated_subtasks,
                 workflow=None,
-                workflow_status=None,
+                workflow_activated=None,
             ),
             user["user_id"],
         )
@@ -721,7 +712,7 @@ async def toggle_subtask_completion(
                 completed=None,
                 subtasks=updated_subtasks,
                 workflow=None,
-                workflow_status=None,
+                workflow_activated=None,
             ),
             user["user_id"],
         )

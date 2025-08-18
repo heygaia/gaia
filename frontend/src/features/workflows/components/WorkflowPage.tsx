@@ -6,13 +6,24 @@ import { PlusIcon, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { useWorkflowPolling, useWorkflows } from "../hooks";
+import { Workflow } from "../api/workflowApi";
 import CreateWorkflowModal from "./CreateWorkflowModal";
+import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
 
 export default function WorkflowPage() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
+  const {
+    isOpen: isEditOpen,
+    onOpen: onEditOpen,
+    onOpenChange: onEditOpenChange,
+  } = useDisclosure();
+
   const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
+    null,
+  );
+  const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(
     null,
   );
 
@@ -43,9 +54,21 @@ export default function WorkflowPage() {
     handlePollingUpdate();
   }, [handlePollingUpdate]);
 
+  const handleWorkflowDeleted = useCallback(
+    (workflowId: string) => {
+      // TODO: Call delete API
+      console.log("Workflow deleted:", workflowId);
+      refetch(); // Refresh the list
+    },
+    [refetch],
+  );
+
   const handleWorkflowClick = (workflowId: string) => {
-    // TODO: Navigate to workflow detail page
-    console.log("Navigate to workflow:", workflowId);
+    const workflow = workflows.find((w) => w.id === workflowId);
+    if (workflow) {
+      setSelectedWorkflow(workflow);
+      onEditOpen();
+    }
   };
 
   const renderWorkflowsGrid = () => {
@@ -92,7 +115,7 @@ export default function WorkflowPage() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {workflows.map((workflow) => (
           <WorkflowCard
             key={workflow.id}
@@ -105,8 +128,8 @@ export default function WorkflowPage() {
   };
 
   return (
-    <div className="overflow-y-auto p-8 px-10">
-      <div className="flex min-h-[50vh] flex-col gap-7">
+    <div className="overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
+      <div className="flex min-h-[50vh] flex-col gap-6 md:gap-7">
         <div>
           <div className="flex w-full items-center justify-between">
             <div>
@@ -160,6 +183,16 @@ export default function WorkflowPage() {
         isOpen={isOpen}
         onOpenChange={onOpenChange}
         onWorkflowCreated={handleWorkflowCreated}
+        onWorkflowListRefresh={refetch}
+      />
+
+      <EditWorkflowModal
+        isOpen={isEditOpen}
+        onOpenChange={onEditOpenChange}
+        onWorkflowUpdated={() => refetch()}
+        onWorkflowDeleted={handleWorkflowDeleted}
+        onWorkflowListRefresh={refetch}
+        workflow={selectedWorkflow}
       />
     </div>
   );

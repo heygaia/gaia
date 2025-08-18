@@ -9,7 +9,6 @@ from bson import ObjectId
 
 from app.config.loggers import worker_logger as logger
 from app.db.mongodb.collections import todos_collection
-from app.models.todo_models import WorkflowStatus
 from app.services.todo_service import TodoService
 
 
@@ -44,7 +43,7 @@ async def process_workflow_generation(task_data: Dict[str, Any]) -> None:
             # Update the todo with the generated workflow
             update_data = {
                 "workflow": workflow_result["workflow"],
-                "workflow_status": WorkflowStatus.COMPLETED,
+                "workflow_activated": True,
                 "updated_at": datetime.now(timezone.utc),
             }
 
@@ -71,7 +70,7 @@ async def process_workflow_generation(task_data: Dict[str, Any]) -> None:
         else:
             # Mark workflow generation as failed
             failed_update_data = {
-                "workflow_status": WorkflowStatus.FAILED,
+                "workflow_activated": False,
                 "updated_at": datetime.now(timezone.utc),
             }
 
@@ -91,7 +90,7 @@ async def process_workflow_generation(task_data: Dict[str, Any]) -> None:
             user_id = task_data.get("user_id")
             if todo_id and user_id:
                 failed_update_data = {
-                    "workflow_status": WorkflowStatus.FAILED,
+                    "workflow_activated": False,
                     "updated_at": datetime.now(timezone.utc),
                 }
 

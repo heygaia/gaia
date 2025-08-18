@@ -31,7 +31,7 @@ async def process_workflow(
     try:
         # Import here to avoid circular imports
         from app.services.workflow_service import WorkflowService
-        from app.models.workflow_models import UpdateWorkflowRequest, WorkflowStatus
+        from app.models.workflow_models import UpdateWorkflowRequest
         from app.langchain.core.graph_manager import GraphManager
 
         # Get the workflow
@@ -42,10 +42,10 @@ async def process_workflow(
         if not workflow.steps:
             raise ValueError(f"Workflow {workflow_id} has no steps to execute")
 
-        # Update workflow status to running
+        # Update workflow updated timestamp
         await WorkflowService.update_workflow(
             workflow_id,
-            UpdateWorkflowRequest(status=WorkflowStatus.RUNNING),
+            UpdateWorkflowRequest(),
             user_id,
         )
 
@@ -64,8 +64,7 @@ async def process_workflow(
                     f"Executing step {step_index + 1}/{len(workflow.steps)}: {step.title}"
                 )
 
-                # Update current step status
-                step.status = WorkflowStatus.RUNNING
+                # Update step execution timestamp
                 step.executed_at = datetime.now(timezone.utc)
 
                 # Update workflow with current step progress
@@ -99,7 +98,6 @@ async def process_workflow(
                 step_result = {
                     "step_id": step.id,
                     "tool_name": step.tool_name,
-                    "status": "completed",
                     "result": result.get("messages", [])[-1].get("content", "")
                     if result.get("messages")
                     else "",
@@ -107,7 +105,6 @@ async def process_workflow(
                 }
 
                 # Update step with results
-                step.status = WorkflowStatus.COMPLETED
                 step.result = step_result
                 execution_results.append(step_result)
 
@@ -123,15 +120,13 @@ async def process_workflow(
                     f"Failed to execute step {step_index + 1}: {str(step_error)}"
                 )
 
-                # Mark step as failed
-                step.status = WorkflowStatus.FAILED
+                # Mark step as failed - just record the error in result
                 step.result = {"error": str(step_error)}
 
                 # Update workflow with failed step
                 await WorkflowService.update_workflow(
                     workflow_id,
                     UpdateWorkflowRequest(
-                        status=WorkflowStatus.FAILED,
                         steps=workflow.steps,
                     ),
                     user_id,
@@ -147,7 +142,6 @@ async def process_workflow(
         await WorkflowService.update_workflow(
             workflow_id,
             UpdateWorkflowRequest(
-                status=WorkflowStatus.COMPLETED,
                 steps=workflow.steps,
             ),
             user_id,
@@ -169,7 +163,7 @@ async def process_workflow(
         # Mark workflow as failed
         try:
             from app.services.workflow_service import WorkflowService
-            from app.models.workflow_models import UpdateWorkflowRequest, WorkflowStatus
+            from app.models.workflow_models import UpdateWorkflowRequest
 
             workflow = await WorkflowService.get_workflow(workflow_id, user_id)
             if workflow:
@@ -177,9 +171,7 @@ async def process_workflow(
 
             await WorkflowService.update_workflow(
                 workflow_id,
-                UpdateWorkflowRequest(
-                    status=WorkflowStatus.FAILED,
-                ),
+                UpdateWorkflowRequest(),
                 user_id,
             )
         except Exception as update_e:
@@ -235,7 +227,6 @@ async def check_scheduled_workflows(ctx: dict) -> str:
 
     try:
         from app.db.mongodb.collections import workflows_collection
-        from app.models.workflow_models import WorkflowStatus
         from arq import create_pool
         from arq.connections import RedisSettings
         from app.config.settings import settings
@@ -243,7 +234,7 @@ async def check_scheduled_workflows(ctx: dict) -> str:
         # Find workflows that are scheduled and enabled
         cursor = workflows_collection.find(
             {
-                "status": WorkflowStatus.PENDING,
+                "activated": True,
                 "trigger_config.type": "schedule",
                 "trigger_config.enabled": True,
                 "trigger_config.next_run": {"$lte": datetime.now(timezone.utc)},
@@ -310,7 +301,8 @@ async def create_workflow_completion_notification(
 """
 
         for i, result in enumerate(execution_results, 1):
-            content += f"\n{i}. **{result['step_id']}** - {result['status'].title()}"
+            status_text = "❌ Failed" if result.get("error") else "✅ Completed"
+            content += f"\n{i}. **{result['step_id']}** - {status_text}"
             if result.get("result"):
                 # Truncate long results
                 result_text = (

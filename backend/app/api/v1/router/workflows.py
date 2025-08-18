@@ -242,6 +242,36 @@ async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current
         )
 
 
+@router.post("/workflows/{workflow_id}/regenerate-steps", response_model=WorkflowResponse)
+@tiered_rate_limit("workflow_operations")
+async def regenerate_workflow_steps(
+    workflow_id: str, user: dict = Depends(get_current_user)
+):
+    """Regenerate steps for an existing workflow."""
+    try:
+        workflow = await WorkflowService.regenerate_workflow_steps(
+            workflow_id, user["user_id"]
+        )
+        if not workflow:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Workflow not found",
+            )
+
+        return WorkflowResponse(
+            workflow=workflow, message="Workflow steps regenerated successfully"
+        )
+
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+    except Exception as e:
+        logger.error(f"Error regenerating workflow steps: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to regenerate workflow steps",
+        )
+
+
 @router.post("/workflows/from-todo", response_model=WorkflowResponse)
 @tiered_rate_limit("workflow_operations")
 async def create_workflow_from_todo(

@@ -35,7 +35,6 @@ from app.models.todo_models import (
     TodoStats,
     UpdateProjectRequest,
     UpdateTodoRequest,
-    WorkflowStatus,
 )
 from app.utils.todo_vector_utils import (
     bulk_index_todos,
@@ -208,16 +207,16 @@ class TodoService:
             return {"success": False, "error": str(e)}
 
     @staticmethod
-    async def update_workflow_status(
-        todo_id: str, user_id: str, status: WorkflowStatus
+    async def update_workflow_activation(
+        todo_id: str, user_id: str, activated: bool
     ) -> None:
-        """Update workflow status for a todo."""
+        """Update workflow activation status for a todo."""
         try:
             await todos_collection.update_one(
                 {"_id": ObjectId(todo_id), "user_id": user_id},
                 {
                     "$set": {
-                        "workflow_status": status,
+                        "workflow_activated": activated,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
@@ -324,7 +323,7 @@ class TodoService:
                 "updated_at": datetime.now(timezone.utc),
                 "completed": False,
                 "subtasks": [],
-                "workflow_status": WorkflowStatus.PENDING,  # Start generating immediately
+                "workflow_activated": True,  # Start activated by default
             }
         )
 

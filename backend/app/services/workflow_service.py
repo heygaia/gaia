@@ -5,7 +5,7 @@ Handles workflow CRUD operations and execution coordination.
 
 import uuid
 from datetime import datetime, timezone
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
 from app.db.mongodb.collections import workflows_collection
@@ -15,7 +15,6 @@ from app.models.workflow_models import (
     Workflow,
     WorkflowExecutionRequest,
     WorkflowExecutionResponse,
-    WorkflowStatus,
     WorkflowStatusResponse,
 )
 
@@ -32,20 +31,15 @@ class WorkflowValidator:
     """Validator class for workflow operations."""
 
     @staticmethod
-    def can_execute(status: WorkflowStatus) -> bool:
-        """Check if workflow can be executed based on status."""
-        return status in [
-            WorkflowStatus.PENDING,
-            WorkflowStatus.COMPLETED,
-        ]
+    def can_execute(workflow: Workflow) -> bool:
+        """Check if workflow can be executed (just check if activated)."""
+        return workflow.activated
 
     @staticmethod
     def validate_execution(workflow: Workflow) -> None:
         """Validate workflow can be executed, raise exception if not."""
-        if not WorkflowValidator.can_execute(workflow.status):
-            raise ValueError(
-                f"Workflow not ready for execution (status: {workflow.status})"
-            )
+        if not WorkflowValidator.can_execute(workflow):
+            raise ValueError("Workflow is deactivated and cannot be executed")
 
 
 class RedisPoolManager:
@@ -70,15 +64,19 @@ async def handle_workflow_error(
     workflow_id: str,
     user_id: str,
     error: Exception,
-    status: WorkflowStatus = WorkflowStatus.FAILED,
+    deactivate: bool = False,
 ) -> None:
     """Centralized error handling for workflow operations."""
     try:
+        update_data: Dict[str, Any] = {"updated_at": datetime.now(timezone.utc)}
+        if deactivate:
+            update_data["activated"] = False
+
         await workflows_collection.find_one_and_update(
             {"_id": workflow_id, "user_id": user_id},
-            {"$set": {"status": status, "updated_at": datetime.now(timezone.utc)}},
+            {"$set": update_data},
         )
-        logger.error(f"Workflow {workflow_id} failed: {error}")
+        logger.error(f"Workflow {workflow_id} error: {error}")
     except Exception as update_error:
         logger.error(
             f"Failed to update workflow {workflow_id} error state: {update_error}"
@@ -98,7 +96,7 @@ class WorkflowService:
                 description=request.description,
                 steps=[],  # Steps will be generated
                 trigger_config=request.trigger_config,
-                status=WorkflowStatus.DRAFT,
+                activated=True,  # Default to activated
                 user_id=user_id,
             )
 
@@ -215,19 +213,18 @@ class WorkflowService:
             # Use validator to check execution readiness
             WorkflowValidator.validate_execution(workflow)
 
-            # Update workflow status using atomic operation
+            # Just update the last execution timestamp
             result = await workflows_collection.find_one_and_update(
                 {"_id": workflow_id, "user_id": user_id},
                 {
                     "$set": {
-                        "status": WorkflowStatus.RUNNING,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
             )
 
             if not result:
-                raise ValueError(f"Failed to update workflow {workflow_id} status")
+                raise ValueError(f"Failed to update workflow {workflow_id}")
 
             # Generate unique execution ID with UUID
             execution_id = f"exec_{workflow_id}_{uuid.uuid4().hex[:8]}"
@@ -241,7 +238,6 @@ class WorkflowService:
 
             return WorkflowExecutionResponse(
                 execution_id=execution_id,
-                status=WorkflowStatus.RUNNING,
                 message="Workflow execution started",
             )
 
@@ -263,16 +259,12 @@ class WorkflowService:
             progress_percentage = 0.0
 
             if total_steps > 0:
-                completed_steps = sum(
-                    1
-                    for step in workflow.steps
-                    if step.status == WorkflowStatus.COMPLETED
-                )
-                progress_percentage = (completed_steps / total_steps) * 100
+                # Since we removed step status, just show progress as 0% unless workflow execution is finished
+                progress_percentage = 0
 
             return WorkflowStatusResponse(
                 workflow_id=workflow_id,
-                status=workflow.status,
+                activated=workflow.activated,
                 current_step_index=workflow.current_step_index,
                 total_steps=total_steps,
                 progress_percentage=progress_percentage,
@@ -299,9 +291,7 @@ class WorkflowService:
 
             return await WorkflowService.update_workflow(
                 workflow_id,
-                UpdateWorkflowRequest(
-                    trigger_config=trigger_config, status=WorkflowStatus.PENDING
-                ),
+                UpdateWorkflowRequest(trigger_config=trigger_config, activated=True),
                 user_id,
             )
 
@@ -323,14 +313,49 @@ class WorkflowService:
 
             return await WorkflowService.update_workflow(
                 workflow_id,
-                UpdateWorkflowRequest(
-                    trigger_config=trigger_config, status=WorkflowStatus.DRAFT
-                ),
+                UpdateWorkflowRequest(trigger_config=trigger_config, activated=False),
                 user_id,
             )
 
         except Exception as e:
             logger.error(f"Error deactivating workflow {workflow_id}: {str(e)}")
+            raise
+
+    @staticmethod
+    async def regenerate_workflow_steps(workflow_id: str, user_id: str) -> Optional[Workflow]:
+        """Regenerate steps for an existing workflow."""
+        try:
+            # Get the existing workflow
+            workflow = await WorkflowService.get_workflow(workflow_id, user_id)
+            if not workflow:
+                return None
+
+            # Generate new steps using the existing title and description
+            steps_data = await WorkflowService._generate_steps_with_llm(
+                workflow.description, workflow.title
+            )
+
+            # Update workflow with new steps
+            result = await workflows_collection.find_one_and_update(
+                {"_id": workflow_id, "user_id": user_id},
+                {
+                    "$set": {
+                        "steps": steps_data,
+                        "updated_at": datetime.now(timezone.utc),
+                    }
+                },
+                return_document=True,
+            )
+
+            if result:
+                logger.info(
+                    f"Regenerated {len(steps_data)} steps for workflow {workflow_id}"
+                )
+                return Workflow(**transform_doc(result))
+            return None
+
+        except Exception as e:
+            logger.error(f"Error regenerating workflow steps {workflow_id}: {str(e)}")
             raise
 
     @staticmethod
@@ -341,7 +366,6 @@ class WorkflowService:
                 {"_id": workflow_id, "user_id": user_id},
                 {
                     "$set": {
-                        "status": WorkflowStatus.RUNNING,
                         "updated_at": datetime.now(timezone.utc),
                     }
                 },
@@ -362,7 +386,6 @@ class WorkflowService:
                     {
                         "$set": {
                             "steps": steps_data,
-                            "status": WorkflowStatus.PENDING,
                             "updated_at": datetime.now(timezone.utc),
                         }
                     },
@@ -470,7 +493,6 @@ Available Tools: {tools}
             for i, step in enumerate(result.steps, 1):
                 step_dict = step.model_dump()
                 step_dict["id"] = f"step_{i}"  # Ensure consistent ID format
-                step_dict["status"] = WorkflowStatus.PENDING  # Add initial status
                 step_dict["order"] = i - 1  # Add order field (0-based)
                 steps_data.append(step_dict)
 

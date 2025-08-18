@@ -10,16 +10,6 @@ from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
-class WorkflowStatus(str, Enum):
-    """Status of workflow processing and execution."""
-
-    DRAFT = "draft"
-    PENDING = "pending"
-    RUNNING = "running"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
 class TriggerType(str, Enum):
     """Type of workflow trigger."""
 
@@ -43,7 +33,6 @@ class WorkflowStep(BaseModel):
         default_factory=dict, description="Expected inputs for the tool"
     )
     order: int = Field(description="Order of execution (0-based)")
-    status: WorkflowStatus = Field(default=WorkflowStatus.PENDING)
     executed_at: Optional[datetime] = Field(default=None)
     result: Optional[Dict[str, Any]] = Field(default=None)
 
@@ -114,7 +103,10 @@ class Workflow(BaseModel):
     trigger_config: TriggerConfig = Field(description="Trigger configuration")
 
     # Status and tracking
-    status: WorkflowStatus = Field(default=WorkflowStatus.DRAFT)
+    activated: bool = Field(
+        default=True,
+        description="Whether the workflow is activated and can be executed",
+    )
     user_id: str = Field(description="ID of the user who owns this workflow")
 
     # Timestamps
@@ -170,7 +162,7 @@ class UpdateWorkflowRequest(BaseModel):
     description: Optional[str] = Field(default=None)
     steps: Optional[List[WorkflowStep]] = Field(default=None)
     trigger_config: Optional[TriggerConfig] = Field(default=None)
-    status: Optional[WorkflowStatus] = Field(default=None)
+    activated: Optional[bool] = Field(default=None)
 
 
 class WorkflowResponse(BaseModel):
@@ -198,7 +190,6 @@ class WorkflowExecutionResponse(BaseModel):
     """Response model for workflow execution."""
 
     execution_id: str = Field(description="Unique ID for this execution")
-    status: WorkflowStatus
     message: str
 
 
@@ -206,7 +197,7 @@ class WorkflowStatusResponse(BaseModel):
     """Response model for workflow status checks."""
 
     workflow_id: str
-    status: WorkflowStatus
+    activated: bool
     current_step_index: int
     total_steps: int
     progress_percentage: float

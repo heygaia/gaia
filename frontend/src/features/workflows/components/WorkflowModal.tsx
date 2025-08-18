@@ -1,0 +1,866 @@
+"use client";
+
+import { Button } from "@heroui/button";
+import { Input } from "@heroui/input";
+import { Textarea } from "@heroui/input";
+import { Modal, ModalBody, ModalContent, ModalFooter } from "@heroui/modal";
+import { Select, SelectItem } from "@heroui/select";
+import { Switch } from "@heroui/switch";
+import { Tab, Tabs } from "@heroui/tabs";
+import { Tooltip } from "@heroui/tooltip";
+import {
+  AlertCircle,
+  CheckCircle,
+  Info,
+  Trash2,
+  RefreshCw,
+  Play,
+} from "lucide-react";
+import Image from "next/image";
+import React, { useEffect, useState } from "react";
+
+import { triggerOptions } from "../data/workflowData";
+import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
+import { Workflow, workflowApi } from "../api/workflowApi";
+import { ScheduleBuilder } from "./ScheduleBuilder";
+import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import WorkflowSteps from "@/features/todo/components/WorkflowSteps";
+
+interface WorkflowFormData {
+  title: string;
+  description: string;
+  activeTab: "manual" | "schedule" | "trigger";
+  selectedTrigger: string;
+  trigger_config: {
+    type: "manual" | "schedule" | "email" | "calendar" | "webhook";
+    enabled: boolean;
+    cron_expression?: string;
+    timezone?: string;
+    email_patterns?: string[];
+    calendar_patterns?: string[];
+  };
+}
+
+interface WorkflowModalProps {
+  isOpen: boolean;
+  onOpenChange: (open: boolean) => void;
+  onWorkflowSaved?: (workflowId: string) => void;
+  onWorkflowDeleted?: (workflowId: string) => void;
+  onWorkflowListRefresh?: () => void;
+  mode: "create" | "edit";
+  existingWorkflow?: Workflow | null;
+}
+
+export default function WorkflowModal({
+  isOpen,
+  onOpenChange,
+  onWorkflowSaved,
+  onWorkflowDeleted,
+  onWorkflowListRefresh,
+  mode,
+  existingWorkflow,
+}: WorkflowModalProps) {
+  const {
+    isCreating,
+    error: creationError,
+    createdWorkflow,
+    createWorkflow,
+    clearError: clearCreationError,
+    reset: resetCreation,
+  } = useWorkflowCreation();
+
+  const {
+    workflow: pollingWorkflow,
+    startPolling,
+    stopPolling,
+  } = useWorkflowPolling();
+
+  const [creationPhase, setCreationPhase] = useState<
+    "form" | "creating" | "generating" | "success" | "error"
+  >("form");
+
+  const [formData, setFormData] = useState<WorkflowFormData>({
+    title: "",
+    description: "",
+    activeTab: "schedule",
+    selectedTrigger: "",
+    trigger_config: {
+      type: "schedule",
+      enabled: true,
+    },
+  });
+
+  // State for workflow activation toggle
+  const [isActivated, setIsActivated] = useState(true);
+  const [isTogglingActivation, setIsTogglingActivation] = useState(false);
+
+  // State for step regeneration
+  const [isRegeneratingSteps, setIsRegeneratingSteps] = useState(false);
+
+  // Initialize form data based on mode
+  useEffect(() => {
+    if (mode === "edit" && existingWorkflow) {
+      setFormData({
+        title: existingWorkflow.title,
+        description: existingWorkflow.description,
+        activeTab:
+          existingWorkflow.trigger_config.type === "email" ||
+          existingWorkflow.trigger_config.type === "calendar" ||
+          existingWorkflow.trigger_config.type === "webhook"
+            ? "trigger"
+            : (existingWorkflow.trigger_config.type as "manual" | "schedule"),
+        selectedTrigger:
+          existingWorkflow.trigger_config.type === "email"
+            ? "gmail"
+            : existingWorkflow.trigger_config.type === "calendar"
+              ? "calendar"
+              : "",
+        trigger_config: existingWorkflow.trigger_config,
+      });
+      // Initialize activation state from existing workflow
+      setIsActivated(existingWorkflow.activated);
+    } else {
+      // Reset to default for create mode
+      setFormData({
+        title: "",
+        description: "",
+        activeTab: "schedule",
+        selectedTrigger: "",
+        trigger_config: {
+          type: "schedule",
+          enabled: true,
+        },
+      });
+      // Reset activation state for create mode
+      setIsActivated(true);
+    }
+  }, [mode, existingWorkflow, isOpen]);
+
+  const updateFormData = (updates: Partial<WorkflowFormData>) => {
+    setFormData((prev) => ({ ...prev, ...updates }));
+  };
+
+  const resetForm = () => {
+    setFormData({
+      title: "",
+      description: "",
+      activeTab: "schedule",
+      selectedTrigger: "",
+      trigger_config: {
+        type: "schedule",
+        enabled: true,
+      },
+    });
+    setCreationPhase("form");
+    resetCreation();
+    stopPolling();
+    clearCreationError();
+  };
+
+  const handleSave = async () => {
+    if (!formData.title.trim() || !formData.description.trim()) return;
+
+    if (mode === "create") {
+      setCreationPhase("creating");
+
+      // Create the request object that matches the backend API
+      const createRequest = {
+        title: formData.title,
+        description: formData.description,
+        trigger_config: {
+          ...formData.trigger_config,
+          // Include selected trigger for future implementation
+          selected_trigger: formData.selectedTrigger,
+        },
+        generate_immediately: true,
+      };
+
+      const success = await createWorkflow(createRequest);
+
+      if (success && createdWorkflow) {
+        setCreationPhase("generating");
+        startPolling(createdWorkflow.id);
+        if (onWorkflowSaved) {
+          onWorkflowSaved(createdWorkflow.id);
+        }
+        // Refresh workflow list after creation
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+      } else {
+        setCreationPhase("error");
+      }
+    } else {
+      // TODO: Implement edit workflow API call
+      // For now, just close the modal
+      handleClose();
+    }
+  };
+
+  const handleClose = () => {
+    resetForm();
+    onOpenChange(false);
+  };
+
+  const handleDelete = async () => {
+    if (mode === "edit" && existingWorkflow) {
+      try {
+        // Call the actual delete API
+        await workflowApi.deleteWorkflow(existingWorkflow.id);
+
+        if (onWorkflowDeleted) {
+          onWorkflowDeleted(existingWorkflow.id);
+        }
+        // Refresh workflow list after deletion
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+        handleClose();
+      } catch (error) {
+        console.error("Failed to delete workflow:", error);
+        // Could add error state here if needed
+      }
+    }
+  };
+
+  // Handle activation toggle
+  const handleActivationToggle = async (newActivated: boolean) => {
+    if (mode !== "edit" || !existingWorkflow) return;
+
+    setIsTogglingActivation(true);
+    try {
+      if (newActivated) {
+        await workflowApi.activateWorkflow(existingWorkflow.id);
+      } else {
+        await workflowApi.deactivateWorkflow(existingWorkflow.id);
+      }
+      setIsActivated(newActivated);
+      // Refresh workflow list after activation/deactivation
+      if (onWorkflowListRefresh) {
+        onWorkflowListRefresh();
+      }
+    } catch (error) {
+      console.error("Failed to toggle workflow activation:", error);
+    } finally {
+      setIsTogglingActivation(false);
+    }
+  };
+
+  // Handle step regeneration
+  const handleRegenerateSteps = async () => {
+    if (mode !== "edit" || !existingWorkflow) return;
+
+    setIsRegeneratingSteps(true);
+    try {
+      // Call the new regenerate steps API
+      const result = await workflowApi.regenerateWorkflowSteps(
+        existingWorkflow.id,
+      );
+
+      // Start polling to see the regenerated workflow
+      startPolling(existingWorkflow.id);
+
+      // Refresh the workflow data in the parent component
+      if (onWorkflowSaved) {
+        onWorkflowSaved(existingWorkflow.id);
+      }
+
+      // Refresh workflow list after regeneration
+      if (onWorkflowListRefresh) {
+        onWorkflowListRefresh();
+      }
+
+      console.log("Steps regenerated successfully:", result.message);
+    } catch (error) {
+      console.error("Failed to regenerate workflow steps:", error);
+    } finally {
+      setIsRegeneratingSteps(false);
+    }
+  };
+
+  // Handle workflow execution
+  const handleRunWorkflow = async () => {
+    if (mode !== "edit" || !existingWorkflow) return;
+
+    try {
+      // Execute the workflow
+      await workflowApi.executeWorkflow(existingWorkflow.id);
+      console.log("Workflow execution started");
+
+      // Refresh workflow list after execution
+      if (onWorkflowListRefresh) {
+        onWorkflowListRefresh();
+      }
+    } catch (error) {
+      console.error("Failed to run workflow:", error);
+    }
+  }; // Handle polling results (only for create mode)
+  useEffect(() => {
+    if (
+      mode === "create" &&
+      pollingWorkflow &&
+      creationPhase === "generating"
+    ) {
+      // Check if workflow has steps and is ready
+      const hasSteps =
+        pollingWorkflow.steps && pollingWorkflow.steps.length > 0;
+
+      if (hasSteps) {
+        setCreationPhase("success");
+        stopPolling(); // Stop polling on success
+        setTimeout(() => {
+          handleClose();
+        }, 2000); // Auto-close after 2 seconds
+      }
+      // Continue polling if no steps yet
+    }
+  }, [pollingWorkflow, creationPhase, stopPolling, mode]);
+
+  // Handle polling results for edit mode regeneration
+  useEffect(() => {
+    if (
+      mode === "edit" &&
+      isRegeneratingSteps &&
+      pollingWorkflow &&
+      pollingWorkflow.steps &&
+      pollingWorkflow.steps.length > 0
+    ) {
+      // Steps have been regenerated successfully
+      setTimeout(() => {
+        setIsRegeneratingSteps(false);
+        stopPolling(); // Stop polling on success
+      }, 2000); // Show success state for 2 seconds before stopping
+    }
+  }, [pollingWorkflow, isRegeneratingSteps, stopPolling, mode]);
+
+  // Clean up when modal closes
+  useEffect(() => {
+    if (!isOpen) {
+      resetForm();
+    }
+  }, [isOpen]);
+
+  const renderTriggerTab = () => {
+    const selectedTriggerOption = triggerOptions.find(
+      (t) => t.id === formData.selectedTrigger,
+    );
+
+    return (
+      <div className="w-full">
+        <div className="w-full">
+          <Select
+            aria-label="Choose a custom trigger for your workflow"
+            placeholder="Choose a trigger for your workflow"
+            fullWidth
+            className="w-screen max-w-xl"
+            selectedKeys={
+              formData.selectedTrigger ? [formData.selectedTrigger] : []
+            }
+            onSelectionChange={(keys) => {
+              const selectedTrigger = Array.from(keys)[0] as string;
+              updateFormData({
+                selectedTrigger,
+                trigger_config: {
+                  ...formData.trigger_config,
+                  type:
+                    selectedTrigger === "gmail"
+                      ? "email"
+                      : selectedTrigger === "calendar"
+                        ? "calendar"
+                        : "webhook",
+                },
+              });
+            }}
+            startContent={
+              selectedTriggerOption && (
+                <Image
+                  src={selectedTriggerOption.icon}
+                  alt={selectedTriggerOption.name}
+                  width={20}
+                  height={20}
+                  className="h-5 w-5 object-contain"
+                />
+              )
+            }
+          >
+            {triggerOptions.map((trigger) => (
+              <SelectItem
+                key={trigger.id}
+                startContent={
+                  <Image
+                    src={trigger.icon}
+                    alt={trigger.name}
+                    width={20}
+                    height={20}
+                    className="h-5 w-5 object-contain"
+                  />
+                }
+                description={trigger.description}
+              >
+                {trigger.name}
+              </SelectItem>
+            ))}
+          </Select>
+        </div>
+
+        {selectedTriggerOption && (
+          <p className="mt-2 px-1 text-xs text-zinc-500">
+            {selectedTriggerOption.description}
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  const renderManualTab = () => (
+    <div className="w-full">
+      <p className="text-sm text-zinc-500">
+        This workflow will be triggered manually when you run it.
+      </p>
+    </div>
+  );
+
+  const renderScheduleTab = () => (
+    <div className="w-full">
+      <ScheduleBuilder
+        value={formData.trigger_config.cron_expression || ""}
+        onChange={(cronExpression) =>
+          updateFormData({
+            trigger_config: {
+              ...formData.trigger_config,
+              cron_expression: cronExpression,
+            },
+          })
+        }
+      />
+    </div>
+  );
+
+  const renderStatusContent = () => {
+    switch (creationPhase) {
+      case "creating":
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4 py-8">
+            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+            <div className="text-center">
+              <h3 className="text-lg font-medium">Creating Workflow</h3>
+              <p className="text-sm text-zinc-400">
+                Setting up your workflow...
+              </p>
+            </div>
+          </div>
+        );
+
+      case "generating":
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4 py-8">
+            <div className="animate-pulse">
+              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+                <div className="h-6 w-6 animate-ping rounded-full bg-primary"></div>
+              </div>
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-medium">Generating Steps</h3>
+              <p className="text-sm text-zinc-400">
+                AI is creating workflow steps for: "{formData.title}"
+              </p>
+              {pollingWorkflow && (
+                <p className="mt-2 text-xs text-zinc-500">
+                  Activated: {pollingWorkflow.activated ? "Yes" : "No"}
+                </p>
+              )}
+            </div>
+          </div>
+        );
+
+      case "success":
+        return (
+          <div className="flex flex-col space-y-6 py-6">
+            <div className="flex flex-col items-center justify-center space-y-4">
+              <CheckCircle className="h-12 w-12 text-success" />
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-success">
+                  Workflow {mode === "create" ? "Created" : "Updated"}!
+                </h3>
+                <p className="text-sm text-zinc-400">
+                  "{formData.title}" is ready to use
+                </p>
+                {pollingWorkflow && (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    {pollingWorkflow?.steps?.length || 0} steps generated
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Generated Steps Preview */}
+            {pollingWorkflow?.steps && pollingWorkflow.steps.length > 0 && (
+              <div className="space-y-3">
+                <h4 className="text-sm font-medium text-zinc-300">
+                  Generated Steps:
+                </h4>
+                <div className="max-h-48 overflow-y-auto">
+                  <WorkflowSteps steps={pollingWorkflow.steps} />
+                </div>
+              </div>
+            )}
+          </div>
+        );
+
+      case "error":
+        return (
+          <div className="flex flex-col items-center justify-center space-y-4 py-8">
+            <AlertCircle className="h-12 w-12 text-danger" />
+            <div className="text-center">
+              <h3 className="text-lg font-medium text-danger">
+                {mode === "create" ? "Creation" : "Update"} Failed
+              </h3>
+              <p className="text-sm text-zinc-400">
+                {creationError ||
+                  `Something went wrong while ${mode === "create" ? "creating" : "updating"} the workflow`}
+              </p>
+            </div>
+          </div>
+        );
+
+      default:
+        return null;
+    }
+  };
+
+  const getModalTitle = () => {
+    if (mode === "edit") return "Edit Workflow";
+    return "Create New Workflow";
+  };
+
+  const getButtonText = () => {
+    if (mode === "edit") return isCreating ? "Saving..." : "Save Changes";
+    return isCreating ? "Creating..." : "Create Workflow";
+  };
+
+  return (
+    <Modal
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        if (!open) resetForm();
+        onOpenChange(open);
+      }}
+      size={mode === "create" ? "4xl" : "5xl"}
+      className={`min-h-[40vh] ${mode !== "create" ? "min-w-[80vw]" : ""}`}
+      scrollBehavior="inside"
+      backdrop="blur"
+    >
+      <ModalContent>
+        <ModalBody className="space-y-6 pt-8">
+          {creationPhase === "form" ? (
+            <div className="flex gap-8">
+              {/* Left side - Form */}
+              <div className="flex-1 space-y-6">
+                {/* Title Section */}
+                <div className="flex items-center gap-3">
+                  <Input
+                    placeholder={
+                      mode === "edit"
+                        ? "Edit workflow name"
+                        : "Enter workflow name"
+                    }
+                    value={formData.title}
+                    variant="underlined"
+                    classNames={{
+                      input: "font-medium! text-4xl",
+                      inputWrapper: "px-0",
+                    }}
+                    onChange={(e) => updateFormData({ title: e.target.value })}
+                    isRequired
+                    className="flex-1"
+                  />
+
+                  {/* Delete button for edit mode - Icon only */}
+                  {mode === "edit" && (
+                    <Tooltip content="Delete workflow" placement="left">
+                      <Button
+                        color="danger"
+                        variant="flat"
+                        size="sm"
+                        isIconOnly
+                        onPress={handleDelete}
+                        className="flex-shrink-0"
+                      >
+                        <Trash2 className="h-4 w-4" />
+                      </Button>
+                    </Tooltip>
+                  )}
+                </div>
+
+                {/* Trigger/Schedule Configuration */}
+                <div className="space-y-3">
+                  <div className="flex items-start gap-3">
+                    <div className="mt-2.5 flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-zinc-400">
+                      <span>When to Run</span>
+                      <Tooltip
+                        content={
+                          <div className="px-1 py-2">
+                            <p className="text-sm font-medium">When to Run</p>
+                            <p className="mt-1 text-xs text-zinc-400">
+                              Choose how your workflow will be activated:
+                            </p>
+                            <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+                              <li>
+                                • <span className="font-medium">Manual:</span>{" "}
+                                Run the workflow manually when you need it
+                              </li>
+                              <li>
+                                • <span className="font-medium">Schedule:</span>{" "}
+                                Run at specific times or intervals
+                              </li>
+                              <li>
+                                • <span className="font-medium">Trigger:</span>{" "}
+                                Run when external events occur (coming soon)
+                              </li>
+                            </ul>
+                          </div>
+                        }
+                        placement="top"
+                        delay={500}
+                      >
+                        <Info className="h-3.5 w-3.5 cursor-help text-zinc-500 hover:text-zinc-300" />
+                      </Tooltip>
+                    </div>
+                    <div className="w-full">
+                      <Tabs
+                        color="primary"
+                        classNames={{
+                          tabList: "flex flex-row",
+                          base: "flex items-start",
+                          tabWrapper: "w-full",
+                          panel: "min-w-full",
+                        }}
+                        className="w-full"
+                        selectedKey={formData.activeTab}
+                        onSelectionChange={(key) => {
+                          const tabKey = key as
+                            | "manual"
+                            | "schedule"
+                            | "trigger";
+                          updateFormData({
+                            activeTab: tabKey,
+                            trigger_config: {
+                              ...formData.trigger_config,
+                              type: tabKey === "trigger" ? "email" : tabKey,
+                            },
+                          });
+                        }}
+                      >
+                        <Tab key="schedule" title="Schedule">
+                          {renderScheduleTab()}
+                        </Tab>
+                        <Tab key="trigger" title="Trigger">
+                          {renderTriggerTab()}
+                        </Tab>
+                        <Tab key="manual" title="Manual">
+                          {renderManualTab()}
+                        </Tab>
+                      </Tabs>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Separator */}
+                <div className="border-t border-zinc-800" />
+
+                {/* Description Section */}
+                <div className="space-y-4">
+                  <Textarea
+                    placeholder={
+                      mode === "edit"
+                        ? "Edit workflow description"
+                        : "Describe what this workflow should do when triggered"
+                    }
+                    value={formData.description}
+                    onChange={(e) =>
+                      updateFormData({ description: e.target.value })
+                    }
+                    minRows={4}
+                    variant="underlined"
+                    className="text-sm"
+                    isRequired
+                  />
+                </div>
+              </div>
+
+              {/* Right side - Workflow Steps */}
+              {mode === "edit" && (
+                <div className="w-96 space-y-4 rounded-2xl bg-zinc-950/50 p-6">
+                  {/* Show regeneration loading state */}
+                  {isRegeneratingSteps &&
+                    (!pollingWorkflow?.steps ||
+                      pollingWorkflow.steps.length === 0) && (
+                      <div className="space-y-4">
+                        <div className="flex flex-col items-center justify-center py-8">
+                          <div className="text-center">
+                            <div className="mb-4">
+                              <RefreshCw className="mx-auto h-12 w-12 animate-spin text-primary" />
+                            </div>
+                            <h3 className="text-lg font-medium">
+                              Regenerating Steps
+                            </h3>
+                            <p className="text-sm text-zinc-400">
+                              AI is creating new workflow steps for: "
+                              {formData.title}"
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Show newly generated steps during regeneration if available */}
+                  {isRegeneratingSteps &&
+                    pollingWorkflow?.steps &&
+                    pollingWorkflow.steps.length > 0 && (
+                      <div className="space-y-4">
+                        <div className="flex flex-col items-center justify-center py-4">
+                          <div className="text-center">
+                            <CheckCircle className="mx-auto h-12 w-12 text-success" />
+                            <h3 className="text-lg font-medium text-success">
+                              Steps Regenerated!
+                            </h3>
+                            <p className="text-sm text-zinc-400">
+                              {pollingWorkflow.steps.length} new steps generated
+                            </p>
+                          </div>
+                        </div>
+                        <div className="space-y-3">
+                          <h4 className="text-sm font-medium text-zinc-300">
+                            Steps to complete this workflow:
+                          </h4>
+                          <WorkflowSteps steps={pollingWorkflow.steps} />
+                        </div>
+                      </div>
+                    )}
+
+                  {/* Show existing workflow steps in edit mode */}
+                  {existingWorkflow &&
+                    existingWorkflow.steps &&
+                    existingWorkflow.steps.length > 0 &&
+                    !isRegeneratingSteps && (
+                      <>
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <h4 className="font-medium text-zinc-200">
+                              Workflow Steps ({existingWorkflow.steps.length})
+                            </h4>
+                            <p className="text-xs text-zinc-500">
+                              Steps to complete this workflow, generated by GAIA
+                            </p>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <Tooltip
+                              content="Regenerate workflow steps"
+                              placement="top"
+                            >
+                              <Button
+                                variant="flat"
+                                size="sm"
+                                color="primary"
+                                isIconOnly
+                                onPress={handleRegenerateSteps}
+                                isLoading={isRegeneratingSteps}
+                                isDisabled={isRegeneratingSteps}
+                              >
+                                <RefreshCw className="h-4 w-4" />
+                              </Button>
+                            </Tooltip>
+                          </div>
+                        </div>
+                        <WorkflowSteps steps={existingWorkflow.steps} />
+                      </>
+                    )}
+                </div>
+              )}
+            </div>
+          ) : (
+            renderStatusContent()
+          )}
+        </ModalBody>
+
+        <ModalFooter>
+          {/* Activation toggle for edit mode - Bottom left */}
+          {mode === "edit" && (
+            <div className="flex items-center gap-3">
+              <Tooltip
+                content={
+                  isActivated
+                    ? "Deactivate this workflow to prevent it from running"
+                    : "Activate this workflow to allow it to run"
+                }
+                placement="top"
+              >
+                <Switch
+                  isSelected={isActivated}
+                  onValueChange={handleActivationToggle}
+                  isDisabled={isTogglingActivation}
+                  color="success"
+                  size="sm"
+                />
+              </Tooltip>
+              <span className="text-sm text-zinc-400">
+                Workflow {isActivated ? "activated" : "deactivated"}
+              </span>
+            </div>
+          )}
+
+          {/* Run Workflow button - Center */}
+          {creationPhase === "form" && mode === "edit" && existingWorkflow && (
+            <div className="flex flex-1 justify-center">
+              <Tooltip content="Manually run workflow" placement="top">
+                <Button
+                  color="success"
+                  variant="flat"
+                  startContent={<Play className="h-4 w-4" />}
+                  onPress={handleRunWorkflow}
+                >
+                  Run Workflow
+                </Button>
+              </Tooltip>
+            </div>
+          )}
+
+          {/* Action buttons - Right side */}
+          {creationPhase === "form" ? (
+            <>
+              <Button variant="flat" onPress={handleClose}>
+                Cancel
+              </Button>
+              <Button
+                color="primary"
+                onPress={handleSave}
+                isLoading={isCreating}
+                isDisabled={
+                  !formData.title.trim() ||
+                  !formData.description.trim() ||
+                  (formData.activeTab === "schedule" &&
+                    !formData.trigger_config.cron_expression)
+                }
+              >
+                {getButtonText()}
+              </Button>
+            </>
+          ) : creationPhase === "error" ? (
+            <>
+              <Button variant="flat" onPress={handleClose}>
+                Cancel
+              </Button>
+              <Button color="primary" onPress={() => setCreationPhase("form")}>
+                Try Again
+              </Button>
+            </>
+          ) : creationPhase === "generating" ? (
+            <Button variant="flat" onPress={handleClose} className="mx-auto">
+              Close
+            </Button>
+          ) : null}
+        </ModalFooter>
+      </ModalContent>
+    </Modal>
+  );
+}

@@ -12,14 +12,6 @@ class Priority(str, Enum):
     NONE = "none"  # no color
 
 
-class WorkflowStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    PENDING = "pending"
-    GENERATING = "generating"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
 class SubTask(BaseModel):
     id: str = Field(default="", description="Unique identifier for the subtask")
     title: str = Field(..., description="Title of the subtask")
@@ -100,8 +92,8 @@ class UpdateTodoRequest(BaseModel):
     workflow: Optional[Dict[str, Any]] = Field(
         None, description="AI-generated workflow plan for this todo"
     )
-    workflow_status: Optional[WorkflowStatus] = Field(
-        WorkflowStatus.NOT_STARTED, description="Status of workflow generation"
+    workflow_activated: Optional[bool] = Field(
+        None, description="Whether the workflow is activated for this todo"
     )
 
 
@@ -128,8 +120,8 @@ class TodoResponse(BaseModel):
     workflow: Optional[Dict[str, Any]] = Field(
         None, description="AI-generated workflow plan for this todo"
     )
-    workflow_status: WorkflowStatus = Field(
-        WorkflowStatus.NOT_STARTED, description="Status of workflow generation"
+    workflow_activated: bool = Field(
+        False, description="Whether the workflow is activated for this todo"
     )
 
 

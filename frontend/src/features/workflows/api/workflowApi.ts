@@ -13,7 +13,6 @@ export interface WorkflowStep {
   description: string;
   tool_inputs: Record<string, unknown>;
   order: number;
-  status?: string;
   executed_at?: string;
   result?: Record<string, unknown>;
 }
@@ -61,7 +60,7 @@ export interface Workflow {
   trigger_config: TriggerConfig;
   execution_config: ExecutionConfig;
   metadata: WorkflowMetadata;
-  status: string;
+  activated: boolean;
   user_id: string;
   created_at: string;
   updated_at: string;
@@ -87,7 +86,7 @@ export interface WorkflowExecutionRequest {
 
 export interface WorkflowStatusResponse {
   workflow_id: string;
-  status: string;
+  activated: boolean;
   current_step_index: number;
   total_steps: number;
   progress_percentage: number;
@@ -113,7 +112,7 @@ export const workflowApi = {
 
   // List workflows with filtering
   listWorkflows: async (params?: {
-    status?: string;
+    activated?: boolean;
     source?: string;
     limit?: number;
     skip?: number;
@@ -124,7 +123,8 @@ export const workflowApi = {
     page_size: number;
   }> => {
     const searchParams = new URLSearchParams();
-    if (params?.status) searchParams.append("status", params.status);
+    if (params?.activated !== undefined)
+      searchParams.append("activated", params.activated.toString());
     if (params?.source) searchParams.append("source", params.source);
     if (params?.limit) searchParams.append("limit", params.limit.toString());
     if (params?.skip) searchParams.append("skip", params.skip.toString());
@@ -172,19 +172,53 @@ export const workflowApi = {
     });
   },
 
+  // Activate a workflow
+  activateWorkflow: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
+      `/workflows/${workflowId}/activate`,
+      {},
+      {
+        successMessage: "Workflow activated successfully",
+        errorMessage: "Failed to activate workflow",
+      },
+    );
+  },
+
+  // Deactivate a workflow
+  deactivateWorkflow: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
+      `/workflows/${workflowId}/deactivate`,
+      {},
+      {
+        successMessage: "Workflow deactivated successfully",
+        errorMessage: "Failed to deactivate workflow",
+      },
+    );
+  },
+
+  // Regenerate workflow steps
+  regenerateWorkflowSteps: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
+      `/workflows/${workflowId}/regenerate-steps`,
+      {},
+      {
+        successMessage: "Workflow steps regenerated successfully",
+        errorMessage: "Failed to regenerate workflow steps",
+      },
+    );
+  },
+
   // Execute a workflow
   executeWorkflow: async (
     workflowId: string,
     request?: WorkflowExecutionRequest,
   ): Promise<{
     execution_id: string;
-    status: string;
     message: string;
     estimated_completion_time?: string;
   }> => {
     return apiService.post<{
       execution_id: string;
-      status: string;
       message: string;
       estimated_completion_time?: string;
     }>(`/workflows/${workflowId}/execute`, request || {}, {
