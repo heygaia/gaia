@@ -213,66 +213,59 @@ async def login_integration(
 
     # Streamlined composio integration handling
     composio_providers = set([k for k in SOCIAL_CONFIGS.keys()])
-    if integration.provider in composio_providers:
-        # Map provider name to SOCIAL_CONFIGS key if needed
-        provider_key = integration.provider
-        # Some keys may differ (e.g., google_sheet vs google_sheets)
-        if provider_key not in SOCIAL_CONFIGS:
-            # Try plural form
-            provider_key = provider_key + "s"
-        if provider_key not in SOCIAL_CONFIGS:
+    if integration.provider not in composio_providers:
+        if not integration.available:
             raise HTTPException(
-                status_code=400,
-                detail=f"Composio provider '{integration.provider}' not supported",
+                status_code=400, detail=f"Composio Integration for {integration_id} is not available yet"
             )
-        return RedirectResponse(
-            url=composio_service.connect_account(provider_key, user["user_id"])[
-                "redirect_url"
-            ]
-        )
+    return RedirectResponse(
+        url=composio_service.connect_account(integration.provider, user["user_id"])[
+            "redirect_url"
+        ]
+    )
 
     # Handle different OAuth providers
-    if integration.provider == "google":
-        # Get base scopes
-        base_scopes = ["openid", "profile", "email"]
+    # if integration.provider == "google":
+    #     # Get base scopes
+    #     base_scopes = ["openid", "profile", "email"]
 
-        # Get new integration scopes
-        new_scopes = get_integration_scopes(integration_id)
+    #     # Get new integration scopes
+    #     new_scopes = get_integration_scopes(integration_id)
 
-        # Get existing scopes from user's current token
-        existing_scopes = []
-        user_id = user.get("user_id")
+    #     # Get existing scopes from user's current token
+    #     existing_scopes = []
+    #     user_id = user.get("user_id")
 
-        if user_id:
-            try:
-                token = await token_repository.get_token(
-                    str(user_id), "google", renew_if_expired=False
-                )
-                existing_scopes = str(token.get("scope", "")).split()
-            except Exception as e:
-                logger.warning(f"Could not get existing scopes: {e}")
+    #     if user_id:
+    #         try:
+    #             token = await token_repository.get_token(
+    #                 str(user_id), "google", renew_if_expired=False
+    #             )
+    #             existing_scopes = str(token.get("scope", "")).split()
+    #         except Exception as e:
+    #             logger.warning(f"Could not get existing scopes: {e}")
 
-        # Combine all scopes (base + existing + new), removing duplicates
-        all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
+    #     # Combine all scopes (base + existing + new), removing duplicates
+    #     all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
 
-        params = {
-            "response_type": "code",
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "redirect_uri": settings.GOOGLE_CALLBACK_URL,
-            "scope": " ".join(all_scopes),
-            "access_type": "offline",
-            "prompt": "consent",  # Only force consent for additional scopes
-            "include_granted_scopes": "true",  # Include previously granted scopes
-            "login_hint": user.get("email"),
-        }
-        auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-        return RedirectResponse(url=auth_url)
+    #     params = {
+    #         "response_type": "code",
+    #         "client_id": settings.GOOGLE_CLIENT_ID,
+    #         "redirect_uri": settings.GOOGLE_CALLBACK_URL,
+    #         "scope": " ".join(all_scopes),
+    #         "access_type": "offline",
+    #         "prompt": "consent",  # Only force consent for additional scopes
+    #         "include_granted_scopes": "true",  # Include previously granted scopes
+    #         "login_hint": user.get("email"),
+    #     }
+    #     auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+    #     return RedirectResponse(url=auth_url)
 
-    # Add other providers here (GitHub, etc.)
-    raise HTTPException(
-        status_code=400,
-        detail=f"OAuth provider {integration.provider} not implemented",
-    )
+    # # Add other providers here (GitHub, etc.)
+    # raise HTTPException(
+    #     status_code=400,
+    #     detail=f"OAuth provider {integration.provider} not implemented",
+    # )
 
 
 @router.get("/google/callback", response_class=RedirectResponse)

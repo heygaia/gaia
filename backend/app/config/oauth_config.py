@@ -180,7 +180,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
         ],
         category="communication",
-        provider="google",
+        provider="gmail",
         scopes=[
             OAuthScope(
                 scope="https://www.googleapis.com/auth/gmail.modify",

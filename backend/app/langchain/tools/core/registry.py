@@ -20,9 +20,9 @@ from app.services.composio_service import composio_service
 
 # Organize tools by categories for better organisation when fetching tools on client side
 TOOLS_BY_CATEGORY = {
-    "mail": [
-        *mail_tool.tools,
-    ],
+    # "mail": [
+    #     *mail_tool.tools,
+    # ],
     "productivity": [
         *todo_tool.tools,
         *reminder_tool.tools,
@@ -65,6 +65,7 @@ TOOLS_BY_CATEGORY = {
     "google_sheet": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
     "twitter": [*composio_service.get_tools(tool_kit="TWITTER")],
     "twitter": [*composio_service.get_tools(tool_kit="LINKEDIN")],
+    "mail": [*composio_service.get_tools(tool_kit="GMAIL")],
 }
 
 # Map categories to their required integrations

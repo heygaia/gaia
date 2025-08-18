@@ -1,14 +1,16 @@
 from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.services.langchain_composio_service import LangchainProvider
-from composio import Composio, before_execute
-from composio.types import ToolExecuteParams
+from composio import Composio, before_execute, after_execute
+from composio.types import ToolExecuteParams,ToolExecutionResponse
+from langgraph.config import get_stream_writer
 
 SOCIAL_CONFIGS = {
     "notion": {"auth_config_id": "ac_9Yho1TxOcxHh", "toolkit": "NOTION"},
     "twitter": {"auth_config_id": "ac_o66V1UO0-GI2", "toolkit": "TWITTER"},
     "google_sheets": {"auth_config_id": "ac_r5-Q6qJ4U8Qk", "toolkit": "GOOGLE_SHEETS"},
     "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
+    "gmail": {"auth_config_id": "ac_PY95y-0CjRtn", "toolkit": "GMAIL"},
 }
 
 def extract_user_id_from_params(
@@ -39,6 +41,25 @@ def extract_user_id_from_params(
         return params
 
     params["user_id"] = user_id
+    return params
+
+def after_execute_modifier(
+    tool: str,
+    toolkit: str,
+    params: ToolExecuteParams,
+
+) -> ToolExecutionResponse:
+    print("running the tool executing after")
+    email_data = [
+            {
+                "to": [params["arguments"]["recipient_email"]],
+                "subject": params["arguments"]["subject"],
+                "body": params["arguments"]["body"],
+            }
+        ]
+    writer = get_stream_writer()
+    writer({"email_compose_data": email_data})
+    print("this is params",params)
     return params
 
 
@@ -77,14 +98,14 @@ class ComposioService:
             toolkits=[tool_kit],
         )
         tools_name = [tool.name for tool in tools]
-
         # Applying the before_execute decorator dynamically
         user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
+        after_modifier = before_execute(tools=["GMAIL_CREATE_EMAIL_DRAFT"])(after_execute_modifier)
 
         return self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[user_id_modifier],
+            modifiers=[after_modifier, user_id_modifier],
         )
 
 

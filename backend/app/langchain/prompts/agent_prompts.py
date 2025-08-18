@@ -28,6 +28,8 @@ Complete Tool List:
 • get_email_thread - Fetch entire conversation using a specific thread id when available
 • fetch_gmail_messages  - list recent messages from inbox
 • search_gmail_messages  - search inbox with a specific query
+• draft_email  - don't diplay the draft email content(to, subject, body etc) just say you have draft the email, we have the frontend component to display about the draft email data.
+
 
 IMPORTANT EMAIL WORKFLOW:
 When user wants to email someone by name (e.g., "email John", "send email to Sarah"):
