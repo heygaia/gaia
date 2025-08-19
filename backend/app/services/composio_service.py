@@ -6,11 +6,11 @@ from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
 
 COMPOSIO_SOCIAL_CONFIGS = {
-    "notion": {"auth_config_id": "ac_9Yho1TxOcxHh", "toolkit": "NOTION"},
-    "twitter": {"auth_config_id": "ac_o66V1UO0-GI2", "toolkit": "TWITTER"},
-    "google_sheets": {"auth_config_id": "ac_r5-Q6qJ4U8Qk", "toolkit": "GOOGLE_SHEETS"},
-    "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
-    "gmail": {"auth_config_id": "ac_PY95y-0CjRtn", "toolkit": "GMAIL"},
+    "notion": {"auth_config_id": "ac_DR3IWp9-Kezl", "toolkit": "NOTION"},
+    "twitter": {"auth_config_id": "ac_vloH3fnhIeUa", "toolkit": "TWITTER"},
+    "google_sheets": {"auth_config_id": "ac_18I3fRfWyXDu", "toolkit": "GOOGLE_SHEETS"},
+    "linkedin": {"auth_config_id": "ac_GMeJBELf3z_m", "toolkit": "LINKEDIN"},
+    "gmail": {"auth_config_id": "ac_Tnn55kCyinEJ", "toolkit": "GMAIL"},
 }
 
 
