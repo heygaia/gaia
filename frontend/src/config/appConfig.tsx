@@ -14,6 +14,7 @@ import {
   MapsIcon,
   TwitterIcon,
   WhatsappIcon,
+  YoutubeIcon,
 } from "@/components/shared/icons";
 
 export interface AppLink {
@@ -152,7 +153,7 @@ export const appConfig = {
       {
         href: "https://youtube.com/@heygaia_io",
         label: "YouTube",
-        icon: <WhatsappIcon width={19} />,
+        icon: <YoutubeIcon width={19} />,
         external: true,
       },
     ] as AppLink[],
