@@ -1,5 +1,30 @@
-import colorName from "color-name";
 // Color utility functions for the RaisedButton component
+
+// Basic CSS color names for server-side parsing
+const CSS_COLOR_NAMES: Record<string, [number, number, number]> = {
+  black: [0, 0, 0],
+  white: [255, 255, 255],
+  red: [255, 0, 0],
+  green: [0, 128, 0],
+  blue: [0, 0, 255],
+  yellow: [255, 255, 0],
+  cyan: [0, 255, 255],
+  magenta: [255, 0, 255],
+  gray: [128, 128, 128],
+  grey: [128, 128, 128],
+  orange: [255, 165, 0],
+  purple: [128, 0, 128],
+  pink: [255, 192, 203],
+  brown: [165, 42, 42],
+  navy: [0, 0, 128],
+  teal: [0, 128, 128],
+  olive: [128, 128, 0],
+  maroon: [128, 0, 0],
+  silver: [192, 192, 192],
+  lime: [0, 255, 0],
+  aqua: [0, 255, 255],
+  fuchsia: [255, 0, 255],
+};
 
 /**
  * Convert hex color to RGB object
@@ -128,9 +153,10 @@ export function parseColor(
         };
       }
     } else {
+      // Server-side: use basic color name mapping
       const colorMap: Record<string, { r: number; g: number; b: number }> = {};
-      for (const [name, rgb] of Object.entries(colorName)) {
-        const [r, g, b] = rgb as [number, number, number]; // Type assertion
+      for (const [name, rgb] of Object.entries(CSS_COLOR_NAMES)) {
+        const [r, g, b] = rgb;
         colorMap[name.toLowerCase()] = { r, g, b };
       }
 

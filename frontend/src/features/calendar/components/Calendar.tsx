@@ -294,7 +294,7 @@ const DayViewCalendar: React.FC<{ addedEvent: Event | null }> = ({
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <img
-              src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+              src="/icons/googlecalendar.png"
               alt="Google Calendar"
               className="h-7 w-7"
             />

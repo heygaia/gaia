@@ -39,7 +39,7 @@ const ToolsShowcaseSection: React.FC = () => {
       />
       <div className="relative h-screen w-full max-w-7xl overflow-hidden">
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+          src="/icons/notion.png"
           alt="Notion"
           size="w-16 h-16"
           className="top-[8%] left-[5%]"
@@ -47,7 +47,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
+          src="/icons/gmail.svg"
           alt="Gmail"
           size="w-14 h-14"
           className="top-[26%] left-[12%]"
@@ -56,7 +56,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Top Right Area */}
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+          src="/icons/googlecalendar.png"
           alt="Google Calendar"
           size="w-15 h-15"
           className="top-[20%] right-[2%]"
@@ -64,7 +64,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg"
+          src="/icons/slack.svg"
           alt="Slack"
           size="w-13 h-13"
           className="top-[7%] right-[13%]"
@@ -73,7 +73,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Mid Level */}
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png"
+          src="/icons/google_docs.png"
           alt="Google Docs"
           size="w-12 h-12"
           className="top-[45%] left-[3%]"
@@ -81,7 +81,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/figma/figma-original.svg"
+          src="/icons/figma.svg"
           alt="Figma"
           size="w-12 h-12"
           className="top-[40%] right-[10%]"
@@ -90,7 +90,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Bottom Corners */}
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Google_Sheets_2020_Logo.svg/640px-Google_Sheets_2020_Logo.svg.png"
+          src="/icons/google_sheets.png"
           alt="Google Sheets"
           size="w-10 h-10"
           className="bottom-[15%] left-[8%] opacity-70"
@@ -98,7 +98,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://cdn.brandfetch.io/idZAyF9rlg/theme/light/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B"
+          src="/icons/github3d.png"
           alt="GitHub"
           size="w-11 h-11"
           className="bottom-[35%] left-[15%] opacity-80"
@@ -106,7 +106,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png"
+          src="/icons/whatsapp.png"
           alt="WhatsApp"
           size="w-10 h-10"
           className="right-[12%] bottom-[12%] opacity-70"
@@ -114,7 +114,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="https://cdn.jsdelivr.net/gh/devicons/devicon/icons/trello/trello-plain.svg"
+          src="/icons/trello.svg"
           alt="Trello"
           size="w-11 h-11"
           className="right-[6%] bottom-[35%] opacity-80"

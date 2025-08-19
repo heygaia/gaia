@@ -1,4 +1,5 @@
 import Image from "next/image";
+
 import GetStartedButton from "../../shared/GetStartedButton";
 import LargeHeader from "../../shared/LargeHeader";
 

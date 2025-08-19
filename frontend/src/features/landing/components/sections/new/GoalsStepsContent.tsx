@@ -1,10 +1,11 @@
 import { motion } from "framer-motion";
 import { useState } from "react";
+
 import {
-  Target02Icon,
-  FlowchartIcon,
   CheckmarkCircle02Icon,
+  FlowchartIcon,
   PlusSignIcon,
+  Target02Icon,
 } from "@/components";
 
 interface StepCardProps {

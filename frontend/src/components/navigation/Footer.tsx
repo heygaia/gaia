@@ -4,6 +4,7 @@ import Image from "next/image";
 import { LinkButton } from "@/components/shared/LinkButton";
 import { appConfig, footerSections } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
+
 import { Separator } from "../ui";
 
 export default function Footer() {

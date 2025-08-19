@@ -1,19 +1,39 @@
 "use client";
 
-import { lazy, useEffect } from "react";
-
-import HeroSection from "@/features/landing/components/hero/HeroSection";
 import { ReactLenis } from "lenis/react";
+import { lazy, Suspense,useEffect } from "react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
-import Personalised from "@/features/landing/components/sections/new/Personalised";
-import Productivity from "@/features/landing/components/sections/new/Productivity";
-import Tired from "@/features/landing/components/sections/new/TiredBoringAssistants";
-import WorkflowAutomation from "@/features/landing/components/sections/new/WorkflowAutomation";
-import ToolsShowcaseSection from "@/features/landing/components/sections/ToolsShowcaseSection";
-import { FAQAccordion } from "@/features/pricing/components/FAQAccordion";
+import SuspenseLoader from "@/components/shared/SuspenseLoader";
+import HeroSection from "@/features/landing/components/hero/HeroSection";
+
 import LandingLayout from "./(landing)/layout";
-import OpenSource from "@/features/landing/components/sections/new/OpenSource";
+
+// Lazy load components
+const Personalised = lazy(
+  () => import("@/features/landing/components/sections/new/Personalised"),
+);
+const Productivity = lazy(
+  () => import("@/features/landing/components/sections/new/Productivity"),
+);
+const Tired = lazy(
+  () =>
+    import("@/features/landing/components/sections/new/TiredBoringAssistants"),
+);
+const WorkflowAutomation = lazy(
+  () => import("@/features/landing/components/sections/new/WorkflowAutomation"),
+);
+const ToolsShowcaseSection = lazy(
+  () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
+);
+const FAQAccordion = lazy(() =>
+  import("@/features/pricing/components/FAQAccordion").then((module) => ({
+    default: module.FAQAccordion,
+  })),
+);
+const OpenSource = lazy(
+  () => import("@/features/landing/components/sections/new/OpenSource"),
+);
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
@@ -43,15 +63,30 @@ export default function LandingPage() {
             />
           </div>
           <div>
-            {/* <Description /> */}
-            <ToolsShowcaseSection />
-            <Productivity />
-            <Tired />
-            <Personalised />
-            {/* <WorkflowAutomation /> */}
-            <OpenSource />
-            <FAQAccordion />
-            <FinalSection />
+            <Suspense fallback={<SuspenseLoader />}>
+              <ToolsShowcaseSection />
+            </Suspense>
+            <Suspense fallback={<SuspenseLoader />}>
+              <Productivity />
+            </Suspense>
+            <Suspense fallback={<SuspenseLoader />}>
+              <Tired />
+            </Suspense>
+            <Suspense fallback={<SuspenseLoader />}>
+              <Personalised />
+            </Suspense>
+            {/* <Suspense fallback={<SuspenseLoader />}>
+              <WorkflowAutomation />
+            </Suspense> */}
+            <Suspense fallback={<SuspenseLoader />}>
+              <OpenSource />
+            </Suspense>
+            <Suspense fallback={<SuspenseLoader />}>
+              <FAQAccordion />
+            </Suspense>
+            <Suspense fallback={<SuspenseLoader />}>
+              <FinalSection />
+            </Suspense>
           </div>
         </div>
 

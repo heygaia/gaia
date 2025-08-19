@@ -1,5 +1,6 @@
-import { RaisedButton } from "@/components/ui/shadcn/raised-button";
 import Link from "next/link";
+
+import { RaisedButton } from "@/components/ui/shadcn/raised-button";
 
 export default function GetStartedButton({
   small_text = false,

@@ -1,20 +1,17 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Chip } from "@heroui/chip";
 import { Input } from "@heroui/input";
+import { Textarea } from "@heroui/input";
 import {
   Modal,
   ModalBody,
   ModalContent,
   ModalFooter,
-  ModalHeader,
-  useDisclosure,
 } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
-import { Textarea } from "@heroui/input";
 import { Calendar, Clock, Info } from "lucide-react";
 import Image from "next/image";
 import React, { useState } from "react";
@@ -26,8 +23,6 @@ import {
   monthOptions,
   scheduleFrequencyOptions,
   triggerOptions,
-  TriggerOption,
-  IntegrationOption,
 } from "../data/workflowData";
 
 interface WorkflowFormData {

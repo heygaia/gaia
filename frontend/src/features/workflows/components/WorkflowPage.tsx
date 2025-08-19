@@ -3,8 +3,9 @@
 import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
 import { PlusIcon } from "lucide-react";
-import WorkflowCard from "./WorkflowCard";
+
 import CreateWorkflowModal from "./CreateWorkflowModal";
+import WorkflowCard from "./WorkflowCard";
 
 export default function WorkflowPage() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();

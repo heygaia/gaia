@@ -2,11 +2,11 @@ import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 import { AnimatePresence, motion } from "framer-motion";
-import { Hash, Search, X, Check } from "lucide-react";
+import { Check,Hash, Search, X } from "lucide-react";
 import React, { useMemo, useState } from "react";
 
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { formatToolName } from "@/features/chat/utils/chatUtils";
+import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 
 // Dummy data based on the provided tools
 const dummyTools = {

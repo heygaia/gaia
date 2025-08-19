@@ -1,6 +1,8 @@
-import { CalendarDemo } from "@/features/calendar/components/Calendar";
 import { Tab, Tabs } from "@heroui/react";
 import { useState } from "react";
+
+import { CalendarDemo } from "@/features/calendar/components/Calendar";
+
 import LargeHeader from "../../shared/LargeHeader";
 import GoalsStepsContent from "./GoalsStepsContent";
 import MailAnimationWrapper from "./MailAnimationWrapper";

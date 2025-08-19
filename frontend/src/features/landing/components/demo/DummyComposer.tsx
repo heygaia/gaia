@@ -1,9 +1,11 @@
 import { Button } from "@heroui/button";
 import { Textarea } from "@heroui/input";
 import { Kbd } from "@heroui/react";
+import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, ChevronRight } from "lucide-react";
+import {WrenchIcon } from "lucide-react";
 import Image from "next/image";
-import React, { useState, useRef } from "react";
+import React, { useRef,useState } from "react";
 
 import { AttachmentIcon, PlusSignIcon } from "@/components/shared/icons";
 import { Button as ShadcnButton } from "@/components/ui/shadcn/button";
@@ -13,8 +15,6 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/shadcn/dropdown-menu";
-import { Check, WrenchIcon, Send } from "lucide-react";
-import { Tooltip } from "@heroui/tooltip";
 
 import DummySlashCommandDropdown from "./DummySlashCommandDropdown";
 
@@ -23,30 +23,22 @@ const dummyIntegrations = [
   {
     id: "gmail",
     name: "Gmail",
-    icons: [
-      "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
-    ],
+    icons: ["/icons/gmail.svg"],
   },
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icons: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
-    ],
+    icons: ["/icons/googlecalendar.png"],
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icons: [
-      "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
-    ],
+    icons: ["/icons/google_docs.png"],
   },
   {
     id: "notion",
     name: "Notion",
-    icons: [
-      "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
-    ],
+    icons: ["/icons/notion.png"],
   },
 ];
 

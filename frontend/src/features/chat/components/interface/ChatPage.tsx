@@ -1,7 +1,6 @@
 "use client";
 
 import {
-  useParams,
   usePathname,
   useRouter,
   useSearchParams,
@@ -14,7 +13,7 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
 
-import { useScrollBehavior, useChatLayout } from "./hooks";
+import { useChatLayout,useScrollBehavior } from "./hooks";
 import { ChatWithMessages, NewChatLayout } from "./layouts";
 import { ScrollButtons } from "./scroll";
 

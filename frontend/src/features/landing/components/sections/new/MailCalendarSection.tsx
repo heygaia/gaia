@@ -1,4 +1,5 @@
 import CalendarContent from "@/features/landing/components/sections/new/CalendarContent";
+
 import LargeHeader from "../../shared/LargeHeader";
 import SectionLayout from "../../shared/SectionLayout";
 import MailAnimationWrapper from "./MailAnimationWrapper";

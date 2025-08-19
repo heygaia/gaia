@@ -1,4 +1,3 @@
-import { Mail as MailIcon } from "lucide-react";
 import React from "react";
 
 import LargeHeader from "../../shared/LargeHeader";

@@ -77,24 +77,20 @@ const integrations = [
   // First row - 4 items
   [
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
+      image: "/icons/google_docs.png",
       alt: "Google Docs",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Google_Sheets_2020_Logo.svg/640px-Google_Sheets_2020_Logo.svg.png",
+      image: "/icons/google_sheets.png",
       alt: "Google Sheets",
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Google_Slides_2020_Logo.svg/640px-Google_Slides_2020_Logo.svg.png",
+      image: "/icons/google_sides.png",
       alt: "Google Slides",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/figma/figma-original.svg",
+      image: "/icons/figma.svg",
       alt: "Figma",
       isBlurred: true,
     },
@@ -102,30 +98,25 @@ const integrations = [
   // Second row - 5 items (Main productivity tools with Notion center)
   [
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/trello/trello-plain.svg",
+      image: "/icons/trello.svg",
       alt: "Trello",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
+      image: "/icons/googlecalendar.png",
       alt: "Google Calendar",
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
+      image: "/icons/notion.png",
       alt: "Notion",
       isLarge: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
+      image: "/icons/gmail.svg",
       alt: "Gmail",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/linkedin/linkedin-original.svg",
+      image: "/icons/linkedin.svg",
       alt: "LinkedIn",
       isBlurred: true,
     },
@@ -133,24 +124,20 @@ const integrations = [
   // Third row - 4 items
   [
     {
-      image:
-        "https://cdn.brandfetch.io/idZAyF9rlg/theme/light/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B",
+      image: "/icons/github3d.png",
       alt: "GitHub",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png?20220228223904",
+      image: "/icons/whatsapp.png",
       alt: "WhatsApp",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
+      image: "/icons/slack.svg",
       alt: "Slack",
     },
     {
-      image:
-        "https://cdn.creazilla.com/icons/3254448/todoist-icon-icon-original.svg",
+      image: "/icons/todoist.svg",
       alt: "Todoist",
       isBlurred: true,
     },

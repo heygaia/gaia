@@ -117,7 +117,7 @@ const GmailView: React.FC<{
           className="flex flex-shrink-0 items-center gap-4"
         >
           <GoogleLogo
-            src="https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
+            src="/icons/gmail.svg"
             alt="Gmail"
             className="h-8 w-8"
           />
@@ -209,7 +209,7 @@ const CalendarView: React.FC<{
     <div className="flex w-full flex-col border-b border-gray-200 bg-white p-4 md:w-64 md:border-r md:border-b-0">
       <div className="mb-6 flex items-center gap-2 p-2">
         <GoogleLogo
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+          src="/icons/googlecalendar.png"
           alt="Google Calendar"
           className="h-8 w-8"
         />
@@ -352,7 +352,7 @@ const SlidesView: React.FC<{
       <div className="border-b border-gray-300 bg-white px-2 py-1 text-sm text-gray-800">
         <div className="flex items-center gap-3">
           <GoogleLogo
-            src="https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Google_Slides_2020_Logo.svg/640px-Google_Slides_2020_Logo.svg.png"
+            src="/icons/google_sides.png"
             alt="Google Slides"
             className="h-8 w-8 flex-shrink-0"
           />

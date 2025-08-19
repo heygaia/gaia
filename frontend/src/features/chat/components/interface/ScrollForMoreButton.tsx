@@ -1,8 +1,9 @@
 "use client";
 
-import { cn } from "@/lib/utils";
 import { Button } from "@heroui/button";
 import { ArrowDown } from "lucide-react";
+
+import { cn } from "@/lib/utils";
 
 interface ScrollForMoreButtonProps {
   onClick: () => void;

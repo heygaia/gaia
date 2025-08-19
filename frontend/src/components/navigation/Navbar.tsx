@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { StarFilledIcon } from "@radix-ui/react-icons";
 import { motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
@@ -12,13 +13,12 @@ import MobileMenu from "@/components/navigation/MobileMenu";
 import { LinkButton } from "@/components/shared/LinkButton";
 import { appConfig } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
+import { useGitHubStars } from "@/hooks";
 import useMediaQuery from "@/hooks/ui/useMediaQuery";
 
-import { useGitHubStars } from "@/hooks";
-import { StarFilledIcon } from "@radix-ui/react-icons";
-import { BubbleConversationChatIcon, Github } from "../shared";
-import { NavbarMenu } from "./NavbarMenu";
+import { Github } from "../shared";
 import { RaisedButton } from "../ui/shadcn/raised-button";
+import { NavbarMenu } from "./NavbarMenu";
 
 export default function Navbar() {
   const pathname = usePathname();

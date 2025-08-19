@@ -1,11 +1,14 @@
 import React from "react";
-import { NewChatSection, GridSection } from "../sections";
+
+import { UseDragAndDropReturn } from "@/hooks/ui/useDragAndDrop";
+
+import { GridSection, NewChatSection } from "../sections";
 
 interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
   handleNewChatScroll: (event: React.UIEvent) => void;
-  dragHandlers: any;
+  dragHandlers: UseDragAndDropReturn["dragHandlers"];
   composerProps: {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     scrollToBottom: () => void;

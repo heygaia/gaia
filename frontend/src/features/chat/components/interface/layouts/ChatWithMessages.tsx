@@ -1,13 +1,16 @@
 import React from "react";
+
 import Composer from "@/features/chat/components/composer/Composer";
-import { ChatSection, GridSection } from "../sections";
+import { UseDragAndDropReturn } from "@/hooks/ui/useDragAndDrop";
+
+import { ChatSection } from "../sections";
 
 interface ChatWithMessagesProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   chatRef: React.RefObject<HTMLDivElement | null>;
   cardStackSectionRef: React.RefObject<HTMLDivElement | null>;
   handleScroll: (event: React.UIEvent) => void;
-  dragHandlers: any;
+  dragHandlers: UseDragAndDropReturn["dragHandlers"];
   composerProps: {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     scrollToBottom: () => void;

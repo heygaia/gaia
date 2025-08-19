@@ -1,7 +1,8 @@
+import { useRouter } from "next/navigation";
 import React from "react";
+
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
-import { useRouter } from "next/navigation";
 
 interface GridSectionProps {
   dummySectionRef: React.RefObject<HTMLDivElement | null>;

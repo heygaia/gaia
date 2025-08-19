@@ -1,10 +1,10 @@
 "use client";
 
-import { CalendarIcon, Gmail } from "@/components";
 import { Chip } from "@heroui/chip";
-import { Switch, Tooltip } from "@heroui/react";
 import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
+
+import { Gmail } from "@/components";
 
 export default function WorkflowCard() {
   return (
@@ -17,9 +17,7 @@ export default function WorkflowCard() {
 
       <div className="flex items-center gap-3">
         <Image
-          src={
-            "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
-          }
+          src="/icons/notion.png"
           alt="Image"
           width={40}
           className="h-[40px] object-contain"
@@ -27,9 +25,7 @@ export default function WorkflowCard() {
         />
 
         <Image
-          src={
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png"
-          }
+          src="/icons/google_docs.png"
           alt="Image"
           width={40}
           className="h-[40px] object-contain"

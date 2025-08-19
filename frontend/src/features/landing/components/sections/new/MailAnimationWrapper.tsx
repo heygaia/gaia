@@ -1,7 +1,7 @@
 // src/features/mail/components/MailAnimationWrapper.tsx
 
-import { AnimatePresence, motion } from "framer-motion";
 import { Chip } from "@heroui/chip";
+import { AnimatePresence, motion } from "framer-motion";
 import React, { useEffect, useState } from "react";
 
 import { animationSteps } from "./mail-animation.data";

@@ -1,4 +1,4 @@
-export { ChatSection } from "./ChatSection";
 export { CardStackSection } from "./CardStackSection";
-export { NewChatSection } from "./NewChatSection";
+export { ChatSection } from "./ChatSection";
 export { GridSection } from "./GridSection";
+export { NewChatSection } from "./NewChatSection";
