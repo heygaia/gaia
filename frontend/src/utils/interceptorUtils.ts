@@ -97,19 +97,19 @@ const handleForbiddenError = (
     detail.type === "integration"
   ) {
     const integrationDetail = detail as { type: string; message?: string };
-    toast.error(
-      `<strong>Calendar integration required</strong><br><span style="font-size:13px;">${integrationDetail.message || 'To use calendar features, please connect your calendar in settings.'}</span>`,
-      {
-        duration: Infinity,
-        classNames: {
-          actionButton: "bg-red-500/30! py-4! px-3!",
-        },
-        action: {
-          label: "Connect",
-          onClick: () => router.push("/settings?section=integrations"),
-        },
-      }
-    );
+    toast.error("Calendar integration required", {
+      description:
+        integrationDetail.message ||
+        "To use calendar features, please connect your calendar in settings.",
+      duration: Infinity,
+      classNames: {
+        actionButton: "bg-red-500/30! py-4! px-3!",
+      },
+      action: {
+        label: "Connect",
+        onClick: () => router.push("/settings?section=integrations"),
+      },
+    });
   } else {
     // Handle generic forbidden errors
     const message =
