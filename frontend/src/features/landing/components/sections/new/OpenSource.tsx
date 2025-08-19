@@ -19,14 +19,14 @@ export default function OpenSource() {
           />
           <div className="flex -space-x-16">
             <Image
-              src={"/icons/docker3d.png"}
+              src={"/icons/docker3d.webp"}
               alt="Docker Logo"
               width={200}
               height={200}
               className="relative z-[1] -rotate-10"
             />
             <Image
-              src={"/icons/github3d.png"}
+              src={"/icons/github3d.webp"}
               alt="Docker Logo"
               width={200}
               className="relative z-[2] rotate-3"

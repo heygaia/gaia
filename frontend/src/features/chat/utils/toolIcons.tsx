@@ -47,7 +47,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="/icons/googlecalendar.png"
+          src="/icons/googlecalendar.webp"
         />
       );
     case "productivity":
@@ -71,7 +71,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="/icons/google_docs.png"
+          src="/icons/google_docs.webp"
         />
       );
     case "development":
@@ -126,7 +126,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="/icons/notion.png"
+          src="/icons/notion.webp"
         />
       );
     case "webpage":

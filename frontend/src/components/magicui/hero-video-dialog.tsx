@@ -91,6 +91,7 @@ export default function HeroVideoDialog({
           alt={thumbnailAlt}
           width={1920}
           height={1080}
+          loading="lazy"
           fetchPriority="high"
           className="w-full rounded-3xl shadow-lg outline-2 outline-zinc-600 transition-all duration-200 ease-out group-hover:brightness-[0.8]"
         />

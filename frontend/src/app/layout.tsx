@@ -93,15 +93,16 @@ export default function RootLayout({
           data-id="212836"
           async
           type="text/javascript"
+          strategy="lazyOnload"
         />
 
         {/* Rybbit Analytics */}
-        <Script
+        {/* <Script
           src="https://analytics.heygaia.io/api/script.js"
           data-site-id="1"
           defer
           data-session-replay="true"
-        />
+        /> */}
 
         {/* Google Analytics */}
         <GoogleAnalytics gaId="G-R6EGV9FG2Q" />

@@ -505,7 +505,7 @@ const WorkflowAutomation: React.FC = () => {
                       <div className="border-b border-white/10 p-4">
                         <div className="flex items-center gap-3">
                           <GoogleLogo
-                            src="/icons/googlecalendar.png"
+                            src="/icons/googlecalendar.webp"
                             alt="Google Calendar"
                             className="h-5 w-5"
                           />

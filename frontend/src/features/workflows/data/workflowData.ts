@@ -28,7 +28,7 @@ export const triggerOptions: TriggerOption[] = [
   {
     id: "calendar",
     name: "Google Calendar",
-    icon: "/icons/googlecalendar.png",
+    icon: "/icons/googlecalendar.webp",
     description: "Trigger when new events are created",
   },
 ];
@@ -37,13 +37,13 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "notion",
     name: "Notion",
-    icon: "/icons/notion.png",
+    icon: "/icons/notion.webp",
     category: "productivity",
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icon: "/icons/google_docs.png",
+    icon: "/icons/google_docs.webp",
     category: "documents",
   },
   {
@@ -61,7 +61,7 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icon: "/icons/googlecalendar.png",
+    icon: "/icons/googlecalendar.webp",
     category: "productivity",
   },
   {

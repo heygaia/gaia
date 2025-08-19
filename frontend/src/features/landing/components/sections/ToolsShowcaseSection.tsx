@@ -39,7 +39,7 @@ const ToolsShowcaseSection: React.FC = () => {
       />
       <div className="relative h-screen w-full max-w-7xl overflow-hidden">
         <FloatingIcon
-          src="/icons/notion.png"
+          src="/icons/notion.webp"
           alt="Notion"
           size="w-16 h-16"
           className="top-[8%] left-[5%]"
@@ -56,7 +56,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Top Right Area */}
         <FloatingIcon
-          src="/icons/googlecalendar.png"
+          src="/icons/googlecalendar.webp"
           alt="Google Calendar"
           size="w-15 h-15"
           className="top-[20%] right-[2%]"
@@ -73,7 +73,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Mid Level */}
         <FloatingIcon
-          src="/icons/google_docs.png"
+          src="/icons/google_docs.webp"
           alt="Google Docs"
           size="w-12 h-12"
           className="top-[45%] left-[3%]"
@@ -90,7 +90,7 @@ const ToolsShowcaseSection: React.FC = () => {
 
         {/* Floating Background Icons - Bottom Corners */}
         <FloatingIcon
-          src="/icons/google_sheets.png"
+          src="/icons/google_sheets.webp"
           alt="Google Sheets"
           size="w-10 h-10"
           className="bottom-[15%] left-[8%] opacity-70"
@@ -98,7 +98,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="/icons/github3d.png"
+          src="/icons/github3d.webp"
           alt="GitHub"
           size="w-11 h-11"
           className="bottom-[35%] left-[15%] opacity-80"
@@ -106,7 +106,7 @@ const ToolsShowcaseSection: React.FC = () => {
         />
 
         <FloatingIcon
-          src="/icons/whatsapp.png"
+          src="/icons/whatsapp.webp"
           alt="WhatsApp"
           size="w-10 h-10"
           className="right-[12%] bottom-[12%] opacity-70"

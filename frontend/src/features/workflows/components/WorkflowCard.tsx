@@ -17,7 +17,7 @@ export default function WorkflowCard() {
 
       <div className="flex items-center gap-3">
         <Image
-          src="/icons/notion.png"
+          src="/icons/notion.webp"
           alt="Image"
           width={40}
           className="h-[40px] object-contain"
@@ -25,7 +25,7 @@ export default function WorkflowCard() {
         />
 
         <Image
-          src="/icons/google_docs.png"
+          src="/icons/google_docs.webp"
           alt="Image"
           width={40}
           className="h-[40px] object-contain"

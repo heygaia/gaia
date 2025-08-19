@@ -3,9 +3,9 @@ import { Textarea } from "@heroui/input";
 import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, ChevronRight } from "lucide-react";
-import {WrenchIcon } from "lucide-react";
+import { WrenchIcon } from "lucide-react";
 import Image from "next/image";
-import React, { useRef,useState } from "react";
+import React, { useRef, useState } from "react";
 
 import { AttachmentIcon, PlusSignIcon } from "@/components/shared/icons";
 import { Button as ShadcnButton } from "@/components/ui/shadcn/button";
@@ -28,17 +28,17 @@ const dummyIntegrations = [
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icons: ["/icons/googlecalendar.png"],
+    icons: ["/icons/googlecalendar.webp"],
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icons: ["/icons/google_docs.png"],
+    icons: ["/icons/google_docs.webp"],
   },
   {
     id: "notion",
     name: "Notion",
-    icons: ["/icons/notion.png"],
+    icons: ["/icons/notion.webp"],
   },
 ];
 

@@ -77,16 +77,16 @@ const integrations = [
   // First row - 4 items
   [
     {
-      image: "/icons/google_docs.png",
+      image: "/icons/google_docs.webp",
       alt: "Google Docs",
       isBlurred: true,
     },
     {
-      image: "/icons/google_sheets.png",
+      image: "/icons/google_sheets.webp",
       alt: "Google Sheets",
     },
     {
-      image: "/icons/google_sides.png",
+      image: "/icons/google_sides.webp",
       alt: "Google Slides",
     },
     {
@@ -103,11 +103,11 @@ const integrations = [
       isBlurred: true,
     },
     {
-      image: "/icons/googlecalendar.png",
+      image: "/icons/googlecalendar.webp",
       alt: "Google Calendar",
     },
     {
-      image: "/icons/notion.png",
+      image: "/icons/notion.webp",
       alt: "Notion",
       isLarge: true,
     },
@@ -124,12 +124,12 @@ const integrations = [
   // Third row - 4 items
   [
     {
-      image: "/icons/github3d.png",
+      image: "/icons/github3d.webp",
       alt: "GitHub",
       isBlurred: true,
     },
     {
-      image: "/icons/whatsapp.png",
+      image: "/icons/whatsapp.webp",
       alt: "WhatsApp",
     },
     {
