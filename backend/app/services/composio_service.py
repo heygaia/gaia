@@ -1,6 +1,7 @@
 from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.services.langchain_composio_service import LangchainProvider
+from app.utils.tool_ui_builders import frontend_stream_modifier
 from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
 
@@ -9,6 +10,7 @@ COMPOSIO_SOCIAL_CONFIGS = {
     "twitter": {"auth_config_id": "ac_o66V1UO0-GI2", "toolkit": "TWITTER"},
     "google_sheets": {"auth_config_id": "ac_r5-Q6qJ4U8Qk", "toolkit": "GOOGLE_SHEETS"},
     "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
+    "gmail": {"auth_config_id": "ac_PY95y-0CjRtn", "toolkit": "GMAIL"},
 }
 
 
@@ -79,14 +81,13 @@ class ComposioService:
         )
 
         tools_name = [tool.name for tool in tools]
-
-        # Applying the before_execute decorator dynamically
         user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
+        after_modifier = before_execute(tools=tools_name)(frontend_stream_modifier)
 
         return self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[user_id_modifier],
+            modifiers=[after_modifier, user_id_modifier],
         )
 
     def check_connection_status(
@@ -137,5 +138,6 @@ class ComposioService:
                 f"Error checking connection status for providers {providers} and user {user_id}: {e}"
             )
             return result
+
 
 composio_service = ComposioService()

@@ -170,4 +170,5 @@ class ToolRegistry:
                 return category
         return None
 
+
 tool_registry = ToolRegistry()
