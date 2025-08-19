@@ -38,10 +38,30 @@ class GraphManager:
                 cls._initialization_events[graph_name] = asyncio.Event()
 
     @classmethod
-    def set_graph(cls, graph_instance: Any, graph_name: str = "default"):
-        """Set a graph instance with the given name."""
-        # Ensure tracking structures exist (synchronous version for backward compatibility)
+    async def set_graph(cls, graph_instance: Any, graph_name: str = "default"):
+        """Set a graph instance with the given name (async version)."""
+        # Ensure tracking structures exist
+        await cls._ensure_graph_tracking(graph_name)
+
+        if graph_name in cls._graphs and cls._graphs[graph_name] is not None:
+            logger.info(f"LANGGRAPH: Graph '{graph_name}' already set, skipping")
+            return
+
+        cls._graphs[graph_name] = graph_instance
+        cls._initialization_events[graph_name].set()
+        logger.info(
+            f"LANGGRAPH: Graph instance '{graph_name}' has been set successfully"
+        )
+
+    @classmethod
+    def set_graph_sync(cls, graph_instance: Any, graph_name: str = "default"):
+        """
+        Synchronous version of set_graph for backward compatibility.
+        Use this only when you're sure the tracking structures already exist.
+        """
         if graph_name not in cls._initialization_locks:
+            # Create basic structures synchronously - this should only be used
+            # when we know we're in a safe context (like app startup)
             cls._initialization_locks[graph_name] = asyncio.Lock()
             cls._initialization_events[graph_name] = asyncio.Event()
 
@@ -82,8 +102,10 @@ class GraphManager:
         return [name for name, graph in cls._graphs.items() if graph is not None]
 
     @classmethod
-    def remove_graph(cls, graph_name: str):
+    async def remove_graph(cls, graph_name: str):
         """Remove a graph instance (useful for cleanup or testing)."""
+        await cls._ensure_graph_tracking(graph_name)
+
         if graph_name in cls._graphs:
             cls._graphs[graph_name] = None
             # Reset the event for potential re-initialization
@@ -94,43 +116,3 @@ class GraphManager:
             logger.warning(
                 f"LANGGRAPH: Attempted to remove non-existent graph '{graph_name}'"
             )
-
-    @classmethod
-    async def wait_for_graph(
-        cls, graph_name: str, timeout: float | None = None
-    ) -> bool:
-        """
-        Wait for a specific graph to be initialized with optional timeout.
-        Returns True if graph is available, False if timeout occurred.
-        """
-        await cls._ensure_graph_tracking(graph_name)
-
-        try:
-            await asyncio.wait_for(
-                cls._initialization_events[graph_name].wait(), timeout=timeout
-            )
-            return True
-        except asyncio.TimeoutError:
-            logger.warning(
-                f"LANGGRAPH: Timeout waiting for graph '{graph_name}' initialization"
-            )
-            return False
-
-    @classmethod
-    def get_graph_sync(cls, graph_name: str = "default") -> Any:
-        """
-        Synchronously get a graph if it's already initialized.
-        Returns None if graph is not yet initialized.
-        """
-        return cls._graphs.get(graph_name)
-
-    # Backward compatibility methods (maintain original API)
-    @classmethod
-    def set_graph_legacy(cls, graph_instance: Any):
-        """Legacy method for backward compatibility."""
-        cls.set_graph(graph_instance, "default")
-
-    @classmethod
-    async def get_graph_legacy(cls) -> Any:
-        """Legacy method for backward compatibility."""
-        return await cls.get_graph("default")

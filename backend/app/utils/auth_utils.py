@@ -47,7 +47,7 @@ async def authenticate_workos_session(
         # Handle authentication result
         if auth_response.authenticated:
             # Authentication successful
-            workos_user = auth_response.user
+            workos_user = auth_response.user  # type: ignore[reportOptionalMemberAccess]
         else:
             # Try to refresh the session
             try:

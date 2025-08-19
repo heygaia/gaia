@@ -4,12 +4,13 @@ from app.services.langchain_composio_service import LangchainProvider
 from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
 
-SOCIAL_CONFIGS = {
+COMPOSIO_SOCIAL_CONFIGS = {
     "notion": {"auth_config_id": "ac_9Yho1TxOcxHh", "toolkit": "NOTION"},
     "twitter": {"auth_config_id": "ac_o66V1UO0-GI2", "toolkit": "TWITTER"},
     "google_sheets": {"auth_config_id": "ac_r5-Q6qJ4U8Qk", "toolkit": "GOOGLE_SHEETS"},
     "linkedin": {"auth_config_id": "ac_X0iHigf4UZ2c", "toolkit": "LINKEDIN"},
 }
+
 
 def extract_user_id_from_params(
     tool: str,
@@ -52,10 +53,10 @@ class ComposioService:
         """
         Initiates connection flow for a given provider and user.
         """
-        if provider not in SOCIAL_CONFIGS:
+        if provider not in COMPOSIO_SOCIAL_CONFIGS:
             raise ValueError(f"Provider '{provider}' not supported")
 
-        config = SOCIAL_CONFIGS[provider]
+        config = COMPOSIO_SOCIAL_CONFIGS[provider]
 
         try:
             connection_request = self.composio.connected_accounts.initiate(
@@ -76,6 +77,7 @@ class ComposioService:
             user_id="",
             toolkits=[tool_kit],
         )
+
         tools_name = [tool.name for tool in tools]
 
         # Applying the before_execute decorator dynamically
@@ -87,5 +89,53 @@ class ComposioService:
             modifiers=[user_id_modifier],
         )
 
+    def check_connection_status(
+        self, providers: list[str], user_id: str
+    ) -> dict[str, bool]:
+        """
+        Check if a user has active connections for given providers.
+        Returns a dictionary mapping provider names to connection status.
+        """
+        result = {}
+        required_auth_config_ids = []
+
+        # Initialize all providers as disconnected
+        for provider in providers:
+            result[provider] = False
+            if provider in COMPOSIO_SOCIAL_CONFIGS:
+                required_auth_config_ids.append(
+                    COMPOSIO_SOCIAL_CONFIGS[provider]["auth_config_id"]
+                )
+
+        try:
+            # Get all connected accounts for the user
+            user_accounts = self.composio.connected_accounts.list(
+                user_ids=[user_id],
+                auth_config_ids=required_auth_config_ids,
+                limit=len(required_auth_config_ids),
+            )
+
+            # Create a mapping of auth_config_ids to check
+            auth_config_provider_map = {}
+            for provider in providers:
+                if provider in COMPOSIO_SOCIAL_CONFIGS:
+                    auth_config_id = COMPOSIO_SOCIAL_CONFIGS[provider]["auth_config_id"]
+                    auth_config_provider_map[auth_config_id] = provider
+
+            # Check each account against our providers
+            for account in user_accounts.items:
+                # Only check active accounts
+                if not account.auth_config.is_disabled:
+                    account_auth_config_id = account.auth_config.id
+
+                    result[auth_config_provider_map[account_auth_config_id]] = True
+
+            return result
+
+        except Exception as e:
+            logger.error(
+                f"Error checking connection status for providers {providers} and user {user_id}: {e}"
+            )
+            return result
 
 composio_service = ComposioService()

@@ -38,7 +38,7 @@ async def startup(ctx: dict):
         chat_llm=llm,  # type: ignore[call-arg]
         in_memory_checkpointer=True,
     ) as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="reminder_processing")
+        await GraphManager.set_graph(built_graph, graph_name="reminder_processing")
 
 
 # async def cleanup_abandoned_subscriptions_task(ctx: dict) -> str:

@@ -14,7 +14,6 @@ from app.docstrings.langchain.tools.follow_up_actions_tool_docs import (
 )
 from app.langchain.llm.client import init_llm
 from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
-from app.langchain.tools.core.registry import tool_names
 from langchain_core.messages import AIMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
@@ -85,13 +84,17 @@ async def follow_up_actions_node(state: Dict[str, Any]):
         # causing our follow-up actions to be mixed with the main agent response output.
         # Solution: run_in_executor() executes the LLM call in an isolated thread where LangGraph
         # cannot detect it, allowing us to control streaming manually with get_stream_writer().
+
+        # Lazy import to avoid circular dependency
+        from app.langchain.tools.core.registry import tool_registry
+
         result = await asyncio.get_event_loop().run_in_executor(
             None,  # Use default thread pool
             lambda: chain.invoke(
                 {  # Synchronous call in isolated thread
                     "conversation_summary": recent_messages,
                     "agent_prompt": AGENT_SYSTEM_PROMPT,
-                    "tool_names": tool_names,
+                    "tool_names": tool_registry.get_tool_names(),
                 }
             ),
         )

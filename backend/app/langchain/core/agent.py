@@ -13,7 +13,7 @@ from app.langchain.prompts.proactive_agent_prompt import (
     PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
 )
 from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
-from app.langchain.tools.core.categories import get_tool_category
+from app.langchain.tools.core.registry import tool_registry
 from app.models.message_models import MessageRequestWithHistory
 from app.models.reminder_models import ReminderProcessingAgentResult
 from app.utils.memory_utils import store_user_message_memory
@@ -113,7 +113,9 @@ async def call_agent(
                             tool_name_raw = tool_call.get("name")
                             if tool_name_raw:
                                 tool_name = tool_name_raw.replace("_", " ").title()
-                                tool_category = get_tool_category(tool_name_raw)
+                                tool_category = tool_registry.get_tool_category(
+                                    tool_name_raw
+                                )
                                 progress_data = {
                                     "progress": {
                                         "message": f"Executing {tool_name}...",
