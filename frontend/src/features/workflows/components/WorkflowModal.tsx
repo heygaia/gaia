@@ -553,138 +553,217 @@ export default function WorkflowModal({
       <ModalContent>
         <ModalBody className="space-y-6 pt-8">
           {creationPhase === "form" ? (
-            <div className="flex gap-8">
-              {/* Left side - Form */}
-              <div className="flex-1 space-y-6">
-                {/* Title Section */}
-                <div className="flex items-center gap-3">
-                  <Input
-                    placeholder={
-                      mode === "edit"
-                        ? "Edit workflow name"
-                        : "Enter workflow name"
-                    }
-                    value={formData.title}
-                    variant="underlined"
-                    classNames={{
-                      input: "font-medium! text-4xl",
-                      inputWrapper: "px-0",
-                    }}
-                    onChange={(e) => updateFormData({ title: e.target.value })}
-                    isRequired
-                    className="flex-1"
-                  />
+            <div className="flex h-full gap-8">
+              {/* Left side - Form with its own footer */}
+              <div className="flex flex-1 flex-col">
+                {/* Form Content */}
+                <div className="flex-1 space-y-6">
+                  {/* Title Section */}
+                  <div className="flex items-center gap-3">
+                    <Input
+                      placeholder={
+                        mode === "edit"
+                          ? "Edit workflow name"
+                          : "Enter workflow name"
+                      }
+                      value={formData.title}
+                      variant="underlined"
+                      classNames={{
+                        input: "font-medium! text-4xl",
+                        inputWrapper: "px-0",
+                      }}
+                      onChange={(e) =>
+                        updateFormData({ title: e.target.value })
+                      }
+                      isRequired
+                      className="flex-1"
+                    />
 
-                  {/* Delete button for edit mode - Icon only */}
-                  {mode === "edit" && (
-                    <Tooltip content="Delete workflow" placement="left">
-                      <Button
-                        color="danger"
-                        variant="flat"
-                        size="sm"
-                        isIconOnly
-                        onPress={handleDelete}
-                        className="flex-shrink-0"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                    </Tooltip>
-                  )}
-                </div>
-
-                {/* Trigger/Schedule Configuration */}
-                <div className="space-y-3">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-2.5 flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-zinc-400">
-                      <span>When to Run</span>
-                      <Tooltip
-                        content={
-                          <div className="px-1 py-2">
-                            <p className="text-sm font-medium">When to Run</p>
-                            <p className="mt-1 text-xs text-zinc-400">
-                              Choose how your workflow will be activated:
-                            </p>
-                            <ul className="mt-2 space-y-1 text-xs text-zinc-400">
-                              <li>
-                                • <span className="font-medium">Manual:</span>{" "}
-                                Run the workflow manually when you need it
-                              </li>
-                              <li>
-                                • <span className="font-medium">Schedule:</span>{" "}
-                                Run at specific times or intervals
-                              </li>
-                              <li>
-                                • <span className="font-medium">Trigger:</span>{" "}
-                                Run when external events occur (coming soon)
-                              </li>
-                            </ul>
-                          </div>
-                        }
-                        placement="top"
-                        delay={500}
-                      >
-                        <Info className="h-3.5 w-3.5 cursor-help text-zinc-500 hover:text-zinc-300" />
+                    {/* Delete button for edit mode - Icon only */}
+                    {mode === "edit" && (
+                      <Tooltip content="Delete workflow" placement="left">
+                        <Button
+                          color="danger"
+                          variant="flat"
+                          size="sm"
+                          isIconOnly
+                          onPress={handleDelete}
+                          className="flex-shrink-0"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
                       </Tooltip>
+                    )}
+                  </div>
+
+                  {/* Trigger/Schedule Configuration */}
+                  <div className="space-y-3">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-2.5 flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-zinc-400">
+                        <span>When to Run</span>
+                        <Tooltip
+                          content={
+                            <div className="px-1 py-2">
+                              <p className="text-sm font-medium">When to Run</p>
+                              <p className="mt-1 text-xs text-zinc-400">
+                                Choose how your workflow will be activated:
+                              </p>
+                              <ul className="mt-2 space-y-1 text-xs text-zinc-400">
+                                <li>
+                                  • <span className="font-medium">Manual:</span>{" "}
+                                  Run the workflow manually when you need it
+                                </li>
+                                <li>
+                                  •{" "}
+                                  <span className="font-medium">Schedule:</span>{" "}
+                                  Run at specific times or intervals
+                                </li>
+                                <li>
+                                  •{" "}
+                                  <span className="font-medium">Trigger:</span>{" "}
+                                  Run when external events occur (coming soon)
+                                </li>
+                              </ul>
+                            </div>
+                          }
+                          placement="top"
+                          delay={500}
+                        >
+                          <Info className="h-3.5 w-3.5 cursor-help text-zinc-500 hover:text-zinc-300" />
+                        </Tooltip>
+                      </div>
+                      <div className="w-full">
+                        <Tabs
+                          color="primary"
+                          classNames={{
+                            tabList: "flex flex-row",
+                            base: "flex items-start",
+                            tabWrapper: "w-full",
+                            panel: "min-w-full",
+                          }}
+                          className="w-full"
+                          selectedKey={formData.activeTab}
+                          onSelectionChange={(key) => {
+                            const tabKey = key as
+                              | "manual"
+                              | "schedule"
+                              | "trigger";
+                            updateFormData({
+                              activeTab: tabKey,
+                              trigger_config: {
+                                ...formData.trigger_config,
+                                type: tabKey === "trigger" ? "email" : tabKey,
+                              },
+                            });
+                          }}
+                        >
+                          <Tab key="schedule" title="Schedule">
+                            {renderScheduleTab()}
+                          </Tab>
+                          <Tab key="trigger" title="Trigger">
+                            {renderTriggerTab()}
+                          </Tab>
+                          <Tab key="manual" title="Manual">
+                            {renderManualTab()}
+                          </Tab>
+                        </Tabs>
+                      </div>
                     </div>
-                    <div className="w-full">
-                      <Tabs
-                        color="primary"
-                        classNames={{
-                          tabList: "flex flex-row",
-                          base: "flex items-start",
-                          tabWrapper: "w-full",
-                          panel: "min-w-full",
-                        }}
-                        className="w-full"
-                        selectedKey={formData.activeTab}
-                        onSelectionChange={(key) => {
-                          const tabKey = key as
-                            | "manual"
-                            | "schedule"
-                            | "trigger";
-                          updateFormData({
-                            activeTab: tabKey,
-                            trigger_config: {
-                              ...formData.trigger_config,
-                              type: tabKey === "trigger" ? "email" : tabKey,
-                            },
-                          });
-                        }}
-                      >
-                        <Tab key="schedule" title="Schedule">
-                          {renderScheduleTab()}
-                        </Tab>
-                        <Tab key="trigger" title="Trigger">
-                          {renderTriggerTab()}
-                        </Tab>
-                        <Tab key="manual" title="Manual">
-                          {renderManualTab()}
-                        </Tab>
-                      </Tabs>
-                    </div>
+                  </div>
+
+                  {/* Separator */}
+                  <div className="border-t border-zinc-800" />
+
+                  {/* Description Section */}
+                  <div className="space-y-4">
+                    <Textarea
+                      placeholder={
+                        mode === "edit"
+                          ? "Edit workflow description"
+                          : "Describe what this workflow should do when triggered"
+                      }
+                      value={formData.description}
+                      onChange={(e) =>
+                        updateFormData({ description: e.target.value })
+                      }
+                      minRows={4}
+                      variant="underlined"
+                      className="text-sm"
+                      isRequired
+                    />
                   </div>
                 </div>
 
-                {/* Separator */}
-                <div className="border-t border-zinc-800" />
+                {/* Form Footer */}
+                <div className="mt-8 border-t border-zinc-800 pt-6 pb-3">
+                  {/* All controls in one row */}
+                  <div className="flex items-center justify-between">
+                    {/* Left side: Switch and Run Workflow */}
+                    <div className="flex items-center gap-4">
+                      {existingWorkflow && (
+                        <Tooltip
+                          content="Manually run workflow"
+                          placement="top"
+                        >
+                          <Button
+                            color="success"
+                            variant="flat"
+                            startContent={<Play className="h-4 w-4" />}
+                            onPress={handleRunWorkflow}
+                          >
+                            Run Workflow
+                          </Button>
+                        </Tooltip>
+                      )}
 
-                {/* Description Section */}
-                <div className="space-y-4">
-                  <Textarea
-                    placeholder={
-                      mode === "edit"
-                        ? "Edit workflow description"
-                        : "Describe what this workflow should do when triggered"
-                    }
-                    value={formData.description}
-                    onChange={(e) =>
-                      updateFormData({ description: e.target.value })
-                    }
-                    minRows={4}
-                    variant="underlined"
-                    className="text-sm"
-                    isRequired
-                  />
+                      {mode === "edit" && (
+                        <>
+                          <div className="flex items-center gap-3">
+                            <Tooltip
+                              content={
+                                isActivated
+                                  ? "Deactivate this workflow to prevent it from running"
+                                  : "Activate this workflow to allow it to run"
+                              }
+                              placement="top"
+                            >
+                              <Switch
+                                isSelected={isActivated}
+                                onValueChange={handleActivationToggle}
+                                isDisabled={isTogglingActivation}
+                                color="success"
+                                size="sm"
+                              />
+                            </Tooltip>
+                            <span className="text-sm text-zinc-400">
+                              Workflow{" "}
+                              {isActivated ? "activated" : "deactivated"}
+                            </span>
+                          </div>
+                        </>
+                      )}
+                    </div>
+
+                    {/* Right side: Cancel and Save */}
+                    <div className="flex items-center gap-3">
+                      <Button variant="flat" onPress={handleClose}>
+                        Cancel
+                      </Button>
+                      <Button
+                        color="primary"
+                        onPress={handleSave}
+                        isLoading={isCreating}
+                        isDisabled={
+                          !formData.title.trim() ||
+                          !formData.description.trim() ||
+                          (formData.activeTab === "schedule" &&
+                            !formData.trigger_config.cron_expression)
+                        }
+                      >
+                        {getButtonText()}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -778,88 +857,95 @@ export default function WorkflowModal({
                 </div>
               )}
             </div>
-          ) : (
-            renderStatusContent()
-          )}
-        </ModalBody>
-
-        <ModalFooter>
-          {/* Activation toggle for edit mode - Bottom left */}
-          {mode === "edit" && (
-            <div className="flex items-center gap-3">
-              <Tooltip
-                content={
-                  isActivated
-                    ? "Deactivate this workflow to prevent it from running"
-                    : "Activate this workflow to allow it to run"
-                }
-                placement="top"
-              >
-                <Switch
-                  isSelected={isActivated}
-                  onValueChange={handleActivationToggle}
-                  isDisabled={isTogglingActivation}
-                  color="success"
-                  size="sm"
-                />
-              </Tooltip>
-              <span className="text-sm text-zinc-400">
-                Workflow {isActivated ? "activated" : "deactivated"}
-              </span>
-            </div>
-          )}
-
-          {/* Run Workflow button - Center */}
-          {creationPhase === "form" && mode === "edit" && existingWorkflow && (
-            <div className="flex flex-1 justify-center">
-              <Tooltip content="Manually run workflow" placement="top">
-                <Button
-                  color="success"
-                  variant="flat"
-                  startContent={<Play className="h-4 w-4" />}
-                  onPress={handleRunWorkflow}
-                >
-                  Run Workflow
-                </Button>
-              </Tooltip>
-            </div>
-          )}
-
-          {/* Action buttons - Right side */}
-          {creationPhase === "form" ? (
-            <>
-              <Button variant="flat" onPress={handleClose}>
-                Cancel
-              </Button>
-              <Button
-                color="primary"
-                onPress={handleSave}
-                isLoading={isCreating}
-                isDisabled={
-                  !formData.title.trim() ||
-                  !formData.description.trim() ||
-                  (formData.activeTab === "schedule" &&
-                    !formData.trigger_config.cron_expression)
-                }
-              >
-                {getButtonText()}
-              </Button>
-            </>
           ) : creationPhase === "error" ? (
-            <>
-              <Button variant="flat" onPress={handleClose}>
-                Cancel
-              </Button>
-              <Button color="primary" onPress={() => setCreationPhase("form")}>
-                Try Again
-              </Button>
-            </>
+            <div className="flex flex-col items-center justify-center space-y-4 py-8">
+              <AlertCircle className="h-12 w-12 text-danger" />
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-danger">
+                  {mode === "create" ? "Creation" : "Update"} Failed
+                </h3>
+                <p className="text-sm text-zinc-400">
+                  {creationError ||
+                    `Something went wrong while ${mode === "create" ? "creating" : "updating"} the workflow`}
+                </p>
+              </div>
+              <div className="flex gap-3">
+                <Button variant="flat" onPress={handleClose}>
+                  Cancel
+                </Button>
+                <Button
+                  color="primary"
+                  onPress={() => setCreationPhase("form")}
+                >
+                  Try Again
+                </Button>
+              </div>
+            </div>
           ) : creationPhase === "generating" ? (
-            <Button variant="flat" onPress={handleClose} className="mx-auto">
-              Close
-            </Button>
+            <div className="flex flex-col items-center justify-center space-y-4 py-8">
+              <div className="animate-pulse">
+                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
+                  <div className="h-6 w-6 animate-ping rounded-full bg-primary"></div>
+                </div>
+              </div>
+              <div className="text-center">
+                <h3 className="text-lg font-medium">Generating Steps</h3>
+                <p className="text-sm text-zinc-400">
+                  AI is creating workflow steps for: "{formData.title}"
+                </p>
+                {pollingWorkflow && (
+                  <p className="mt-2 text-xs text-zinc-500">
+                    Activated: {pollingWorkflow.activated ? "Yes" : "No"}
+                  </p>
+                )}
+              </div>
+              <Button variant="flat" onPress={handleClose}>
+                Close
+              </Button>
+            </div>
+          ) : creationPhase === "creating" ? (
+            <div className="flex flex-col items-center justify-center space-y-4 py-8">
+              <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+              <div className="text-center">
+                <h3 className="text-lg font-medium">Creating Workflow</h3>
+                <p className="text-sm text-zinc-400">
+                  Setting up your workflow...
+                </p>
+              </div>
+            </div>
+          ) : creationPhase === "success" ? (
+            <div className="flex flex-col space-y-6 py-6">
+              <div className="flex flex-col items-center justify-center space-y-4">
+                <CheckCircle className="h-12 w-12 text-success" />
+                <div className="text-center">
+                  <h3 className="text-lg font-medium text-success">
+                    Workflow {mode === "create" ? "Created" : "Updated"}!
+                  </h3>
+                  <p className="text-sm text-zinc-400">
+                    "{formData.title}" is ready to use
+                  </p>
+                  {pollingWorkflow && (
+                    <p className="mt-2 text-xs text-zinc-500">
+                      {pollingWorkflow?.steps?.length || 0} steps generated
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Generated Steps Preview */}
+              {pollingWorkflow?.steps && pollingWorkflow.steps.length > 0 && (
+                <div className="space-y-3">
+                  <h4 className="text-sm font-medium text-zinc-300">
+                    Generated Steps:
+                  </h4>
+                  <div className="max-h-48 overflow-y-auto">
+                    <WorkflowSteps steps={pollingWorkflow.steps} />
+                  </div>
+                </div>
+              )}
+            </div>
           ) : null}
-        </ModalFooter>
+        </ModalBody>
       </ModalContent>
     </Modal>
   );

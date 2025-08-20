@@ -2,7 +2,7 @@ import { Skeleton } from "@/components/ui/shadcn/skeleton";
 
 export const WorkflowCardSkeleton = () => {
   return (
-    <div className="relative flex aspect-square cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-4">
+    <div className="relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6">
       {/* Tool icons skeleton */}
       <div className="flex items-center gap-3">
         <Skeleton className="h-[40px] w-[40px] rounded-lg" />
@@ -69,8 +69,8 @@ export const WorkflowDetailSkeleton = () => {
 
 export const WorkflowListSkeleton = () => {
   return (
-    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
-      {Array.from({ length: 10 }).map((_, i) => (
+    <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+      {Array.from({ length: 4 }).map((_, i) => (
         <WorkflowCardSkeleton key={i} />
       ))}
     </div>

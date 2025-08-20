@@ -49,7 +49,7 @@ const getTriggerLabel = (workflow: Workflow) => {
 };
 
 const getActivationColor = (activated: boolean) => {
-  return activated ? "success" : "default";
+  return activated ? "success" : "danger";
 };
 
 const getActivationLabel = (activated: boolean) => {
@@ -59,7 +59,7 @@ const getActivationLabel = (activated: boolean) => {
 export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
   return (
     <div
-      className="group relative flex aspect-square cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-4 transition duration-300 hover:scale-105 hover:border-zinc-600"
+      className="group relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300 hover:scale-105 hover:border-zinc-600"
       onClick={onClick}
     >
       <ArrowUpRight
@@ -69,44 +69,47 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
       />
 
       {/* Tool icons from workflow steps */}
-      <div className="flex items-center gap-2">
-        {workflow.steps.length > 0 && (
-          <>
-            {[...new Set(workflow.steps.map((step) => step.tool_category))]
-              .slice(0, 3)
-              .map((category, index) => (
-                <div className="flex h-[40px] w-[40px] items-center justify-center rounded-lg">
-                  {getToolCategoryIcon(category, {
-                    size: 20,
-                    width: 20,
-                    height: 20,
-                  })}
+      <div className="flex items-start gap-3">
+        {(() => {
+          const categories = [
+            ...new Set(workflow.steps.map((step) => step.tool_category)),
+          ];
+          const validIcons = categories
+            .slice(0, 3)
+            .map((category, index) => {
+              const IconComponent = getToolCategoryIcon(category, {
+                width: 35,
+                height: 35,
+              });
+              return IconComponent ? (
+                <div
+                  key={category}
+                  className="mb-5 flex items-center justify-center"
+                >
+                  {IconComponent}
                 </div>
-              ))}
+              ) : null;
+            })
+            .filter(Boolean);
 
+          return validIcons.length > 0 ? validIcons : null;
+        })()}
+        {[...new Set(workflow.steps.map((step) => step.tool_category))].length >
+          3 && (
+          <div className="flex h-[40px] w-[40px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
+            +
             {[...new Set(workflow.steps.map((step) => step.tool_category))]
-              .length > 3 && (
-              <div className="flex h-[40px] w-[40px] items-center justify-center rounded-lg bg-zinc-700">
-                <span className="text-xs font-bold">
-                  +
-                  {[
-                    ...new Set(
-                      workflow.steps.map((step) => step.tool_category),
-                    ),
-                  ].length - 3}
-                </span>
-              </div>
-            )}
-          </>
+              .length - 3}
+          </div>
         )}
       </div>
 
-      <h3 className="mt-4 truncate font-medium">{workflow.title}</h3>
-      <div className="line-clamp-2 flex-1 text-sm text-foreground-500">
+      <h3 className="text-xl font-medium">{workflow.title}</h3>
+      <div className="mb-4 line-clamp-3 flex-1 text-sm text-foreground-500">
         {workflow.description}
       </div>
 
-      <div className="flex w-full items-center justify-between">
+      <div className="mt-auto flex w-full items-center justify-between gap-2">
         <Chip
           size="sm"
           startContent={getTriggerIcon(workflow.trigger_config.type)}

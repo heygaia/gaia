@@ -11,6 +11,8 @@ import CreateWorkflowModal from "./CreateWorkflowModal";
 import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
+import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
+import useCasesData from "@/features/use-cases/constants/data.json";
 
 export default function WorkflowPage() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -115,7 +117,7 @@ export default function WorkflowPage() {
     }
 
     return (
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 sm:gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         {workflows.map((workflow) => (
           <WorkflowCard
             key={workflow.id}
@@ -128,8 +130,8 @@ export default function WorkflowPage() {
   };
 
   return (
-    <div className="overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
-      <div className="flex min-h-[50vh] flex-col gap-6 md:gap-7">
+    <div className="space-y-10 overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
+      <div className="flex flex-col gap-6 md:gap-7">
         <div>
           <div className="flex w-full items-center justify-between">
             <div>
@@ -171,12 +173,26 @@ export default function WorkflowPage() {
         {renderWorkflowsGrid()}
       </div>
 
-      <div className="flex min-h-[50vh] flex-col">
-        <h1>Explore</h1>
-        <div className="text-foreground-400">
-          Discover workflow templates and community creations
+      <div className="flex min-h-[50vh] flex-col gap-5">
+        <div>
+          <h1>Explore</h1>
+          <div className="text-foreground-400">
+            Discover workflow templates and community creations
+          </div>
         </div>
-        {/* TODO: Add template gallery */}
+        <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+          {useCasesData.templates.slice(0, 8).map((useCase, index) => (
+            <UseCaseCard
+              key={useCase.published_id || index}
+              title={useCase.title || ""}
+              description={useCase.description || ""}
+              action_type={
+                useCase.action_type === "workflow" ? "workflow" : "prompt"
+              }
+              integrations={useCase.integrations || []}
+            />
+          ))}
+        </div>
       </div>
 
       <CreateWorkflowModal
