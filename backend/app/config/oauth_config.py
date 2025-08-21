@@ -223,7 +223,9 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         id="twitter",
         name="Twitter",
         description="Post tweets, read timelines, and manage your account with AI-powered tools",
-        icons=["https://upload.wikimedia.org/wikipedia/commons/b/b7/X_logo.jpg"],
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/X_logo_2023.svg/600px-X_logo_2023.svg.png?20250120013756"
+        ],
         category="social",
         provider="twitter",
         scopes=[],

@@ -27,6 +27,7 @@ const useFetchUser = () => {
         email: data?.email,
         profilePicture: data?.picture,
         onboarding: data?.onboarding,
+        selected_model: data?.selected_model,
       });
 
       // Check if onboarding is needed and prevent navigation loops

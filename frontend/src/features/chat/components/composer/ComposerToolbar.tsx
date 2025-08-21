@@ -3,6 +3,7 @@ import React from "react";
 import { SearchMode } from "@/types/shared";
 
 import ComposerLeft from "./ComposerLeft";
+import ModelPickerButton from "./ModelPickerButton";
 import SearchbarRightSendBtn from "./ComposerRight";
 
 interface SearchbarToolbarProps {
@@ -37,11 +38,14 @@ const ComposerToolbar: React.FC<SearchbarToolbarProps> = ({
           isSlashCommandDropdownOpen={isSlashCommandDropdownOpen}
         />
       </div>
-      <SearchbarRightSendBtn
-        handleFormSubmit={handleFormSubmit}
-        searchbarText={searchbarText}
-        selectedTool={selectedTool}
-      />
+      <div className="flex items-center gap-2">
+        <ModelPickerButton />
+        <SearchbarRightSendBtn
+          handleFormSubmit={handleFormSubmit}
+          searchbarText={searchbarText}
+          selectedTool={selectedTool}
+        />
+      </div>
     </div>
   );
 };

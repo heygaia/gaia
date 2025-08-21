@@ -1,10 +1,9 @@
 from typing import Any, Dict, Optional, Tuple
 
-from workos import AsyncWorkOSClient
-
 from app.config.loggers import auth_logger
 from app.config.settings import settings
 from app.db.mongodb.collections import users_collection
+from workos import AsyncWorkOSClient
 
 # T is the return type of the wrapped function
 
@@ -104,6 +103,7 @@ async def authenticate_workos_session(
                 "name": user_data.get("name"),  # Use name from our database
                 "picture": user_data.get("picture"),
                 "auth_provider": "workos",
+                "selected_model": user_data.get("selected_model"),
             }
 
             return user_info, new_session

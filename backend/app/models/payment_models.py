@@ -137,7 +137,6 @@ class UserSubscriptionStatus(BaseModel):
     can_upgrade: bool = Field(True, description="Whether user can upgrade")
     can_downgrade: bool = Field(True, description="Whether user can downgrade")
 
-    # Legacy fields for backward compatibility
     has_subscription: Optional[bool] = Field(
         None, description="Legacy field - use is_subscribed"
     )

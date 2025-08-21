@@ -12,6 +12,7 @@ from app.langchain.tools.core.registry import tool_registry
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
 from app.langchain.tools.core.store import get_tools_store
 from app.models.mail_models import EmailProcessingPlan, EmailProcessingReplanResult
+from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessageChunk
 from langchain_core.output_parsers import PydanticOutputParser
@@ -21,7 +22,6 @@ from langgraph.config import get_stream_writer
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
 from langgraph.types import RetryPolicy
-from langgraph_bigtool import create_agent
 from typing_extensions import TypedDict
 
 llm = init_llm()
