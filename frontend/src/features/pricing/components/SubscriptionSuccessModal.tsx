@@ -1,14 +1,9 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import {
-  Modal,
-  ModalContent,
-  ModalFooter,
-  ModalHeader,
-} from "@heroui/modal";
+import { Modal, ModalContent, ModalFooter, ModalHeader } from "@heroui/modal";
 import { ArrowRight, Check } from "lucide-react";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 
 import UseCreateConfetti from "../../../hooks/ui/useCreateConfetti";
 
@@ -17,6 +12,7 @@ interface SubscriptionSuccessModalProps {
   onClose: () => void;
   onNavigateToChat: () => void;
   planName?: string;
+  autoRedirectSeconds?: number;
 }
 
 export function SubscriptionSuccessModal({
@@ -24,13 +20,35 @@ export function SubscriptionSuccessModal({
   onClose,
   onNavigateToChat,
   planName = "Pro",
+  autoRedirectSeconds = 3,
 }: SubscriptionSuccessModalProps) {
+  const [countdown, setCountdown] = useState(autoRedirectSeconds);
+
   // Trigger confetti animation when modal opens
   useEffect(() => {
     if (isOpen) {
       UseCreateConfetti(3000); // 3 seconds of confetti
+      setCountdown(autoRedirectSeconds); // Reset countdown when modal opens
     }
-  }, [isOpen]);
+  }, [isOpen, autoRedirectSeconds]);
+
+  // Auto redirect countdown timer
+  useEffect(() => {
+    if (!isOpen || countdown <= 0) return;
+
+    const timer = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          // Redirect when countdown reaches 0
+          setTimeout(() => onNavigateToChat(), 100);
+          return 0;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+
+    return () => clearInterval(timer);
+  }, [isOpen, countdown, onNavigateToChat]);
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} size="md" backdrop="blur">
@@ -54,7 +72,7 @@ export function SubscriptionSuccessModal({
             onPress={onNavigateToChat}
             endContent={<ArrowRight className="h-4 w-4" />}
           >
-            Let's Chat!
+            {countdown > 0 ? `Let's Chat! (${countdown}s)` : "Let's Chat!"}
           </Button>
           <Button
             variant="light"

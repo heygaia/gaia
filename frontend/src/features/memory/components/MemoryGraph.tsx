@@ -1,6 +1,7 @@
-import { Card, CardBody } from "@heroui/react";
+import { Button, Card, CardBody, Tooltip } from "@heroui/react";
 import * as d3 from "d3";
-import React, { useEffect, useRef, useState } from "react";
+import { FileImage, FileText } from "lucide-react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 
 import { useUser } from "@/features/auth/hooks/useUser";
 import {
@@ -45,6 +46,136 @@ export default function MemoryGraph({
     Array<{ type: string; color: string }>
   >([]);
   const user = useUser();
+
+  const exportAsSVG = useCallback(() => {
+    if (!svgRef.current) return;
+
+    const svgElement = svgRef.current;
+
+    // Clone the SVG to avoid modifying the original
+    const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
+
+    // Get the graph group and its bounding box
+    const graphGroup = clonedSvg.querySelector("g");
+    if (graphGroup) {
+      const bbox = (svgElement.querySelector("g") as SVGGElement).getBBox();
+
+      // Add padding around the graph
+      const padding = 50;
+      const viewBoxWidth = bbox.width + padding * 2;
+      const viewBoxHeight = bbox.height + padding * 2;
+      const viewBoxX = bbox.x - padding;
+      const viewBoxY = bbox.y - padding;
+
+      // Set viewBox to center the graph
+      clonedSvg.setAttribute(
+        "viewBox",
+        `${viewBoxX} ${viewBoxY} ${viewBoxWidth} ${viewBoxHeight}`,
+      );
+      clonedSvg.setAttribute("width", viewBoxWidth.toString());
+      clonedSvg.setAttribute("height", viewBoxHeight.toString());
+
+      // Remove any transform on the graph group to center it properly
+      graphGroup.removeAttribute("transform");
+    }
+
+    const svgData = new XMLSerializer().serializeToString(clonedSvg);
+    const svgBlob = new Blob([svgData], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const svgUrl = URL.createObjectURL(svgBlob);
+    const downloadLink = document.createElement("a");
+
+    downloadLink.href = svgUrl;
+    downloadLink.download = "memory-graph.svg";
+    document.body.appendChild(downloadLink);
+    downloadLink.click();
+    document.body.removeChild(downloadLink);
+    URL.revokeObjectURL(svgUrl);
+  }, []);
+
+  const exportAsPNG = useCallback(() => {
+    if (!svgRef.current) return;
+
+    const svgElement = svgRef.current;
+
+    // Clone the SVG to avoid modifying the original
+    const clonedSvg = svgElement.cloneNode(true) as SVGSVGElement;
+
+    // Get the graph group and its bounding box
+    const graphGroup = clonedSvg.querySelector("g");
+    let bbox = { x: 0, y: 0, width: 800, height: 600 }; // default values
+
+    if (graphGroup) {
+      bbox = (svgElement.querySelector("g") as SVGGElement).getBBox();
+    }
+
+    // Add padding around the graph
+    const padding = 100;
+    const exportWidth = bbox.width + padding * 2;
+    const exportHeight = bbox.height + padding * 2;
+    const viewBoxX = bbox.x - padding;
+    const viewBoxY = bbox.y - padding;
+
+    // Set viewBox to center the graph
+    clonedSvg.setAttribute(
+      "viewBox",
+      `${viewBoxX} ${viewBoxY} ${exportWidth} ${exportHeight}`,
+    );
+    clonedSvg.setAttribute("width", exportWidth.toString());
+    clonedSvg.setAttribute("height", exportHeight.toString());
+
+    // Remove any transform on the graph group
+    if (graphGroup) {
+      graphGroup.removeAttribute("transform");
+    }
+
+    const canvas = document.createElement("canvas");
+    const ctx = canvas.getContext("2d");
+    const img = new Image();
+
+    // High resolution settings - 4x for crisp quality
+    const scale = 4;
+    canvas.width = exportWidth * scale;
+    canvas.height = exportHeight * scale;
+
+    // Scale the context for high DPI
+    ctx?.scale(scale, scale);
+
+    // Set background for better contrast
+    if (ctx) {
+      ctx.fillStyle = "#18181b"; // zinc-900 background
+      ctx.fillRect(0, 0, exportWidth, exportHeight);
+    }
+
+    img.onload = () => {
+      ctx?.drawImage(img, 0, 0, exportWidth, exportHeight);
+
+      canvas.toBlob(
+        (blob) => {
+          if (blob) {
+            const url = URL.createObjectURL(blob);
+            const downloadLink = document.createElement("a");
+            downloadLink.href = url;
+            downloadLink.download = "memory-graph.png";
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            URL.revokeObjectURL(url);
+          }
+        },
+        "image/png",
+        1.0,
+      ); // Maximum quality
+    };
+
+    const svgData = new XMLSerializer().serializeToString(clonedSvg);
+    const svgBlob = new Blob([svgData], {
+      type: "image/svg+xml;charset=utf-8",
+    });
+    const url = URL.createObjectURL(svgBlob);
+    img.src = url;
+  }, []);
 
   useEffect(() => {
     if (!svgRef.current || !containerRef.current) return;
@@ -347,12 +478,38 @@ export default function MemoryGraph({
         </div>
       )}
 
+      {/* Export Controls */}
+      <div className="absolute top-4 left-4 z-50 flex gap-2">
+        <Tooltip content="Export as SVG">
+          <Button
+            size="sm"
+            onPress={exportAsSVG}
+            isIconOnly
+            variant="solid"
+            color="primary"
+          >
+            <FileText size={16} />
+          </Button>
+        </Tooltip>
+        <Tooltip content="Export as PNG">
+          <Button
+            size="sm"
+            onPress={exportAsPNG}
+            isIconOnly
+            variant="solid"
+            color="primary"
+          >
+            <FileImage size={16} />
+          </Button>
+        </Tooltip>
+      </div>
+
       {/* Dynamic Legend */}
       {legendItems.length > 0 && (
         <div className="absolute top-4 right-4 z-10">
           <Card className="border border-zinc-600 bg-zinc-800/90 backdrop-blur-sm">
             <CardBody className="p-3">
-              <div className="space-y-1">
+              <div className="max-h-52 space-y-1 overflow-y-auto">
                 {legendItems.map((item, index) => (
                   <div key={index} className="flex items-center gap-2">
                     <div

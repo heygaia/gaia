@@ -7,6 +7,7 @@ from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
+from app.config.oauth_config import get_integration_scopes
 from app.config.settings import settings
 from app.utils.general_utils import transform_gmail_message
 from fastapi import UploadFile
@@ -58,10 +59,7 @@ def get_gmail_service(
         token_uri=settings.GOOGLE_TOKEN_URL,
         client_id=settings.GOOGLE_CLIENT_ID,
         client_secret=settings.GOOGLE_CLIENT_SECRET,
-        scopes=[
-            "https://www.googleapis.com/auth/gmail.modify",
-            "https://www.googleapis.com/auth/gmail.send",
-        ],
+        scopes=get_integration_scopes("gmail"),
     )
     return build("gmail", "v1", credentials=creds)
 

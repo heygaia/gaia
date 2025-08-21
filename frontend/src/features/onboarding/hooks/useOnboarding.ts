@@ -2,20 +2,20 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { countries, Country } from "@/components/country-selector";
 import { authApi } from "@/features/auth/api/authApi";
+import { useUser } from "@/features/auth/hooks/useUser";
 
 import { FIELD_NAMES, professionOptions, questions } from "../constants";
 import { Message, OnboardingState } from "../types";
 
 export const useOnboarding = () => {
   const router = useRouter();
+  const user = useUser();
   const [onboardingState, setOnboardingState] = useState<OnboardingState>({
     messages: [],
     currentQuestionIndex: 0,
     currentInputs: {
       text: "",
-      selectedCountry: null,
       selectedProfession: null,
     },
     userResponses: {},
@@ -35,13 +35,25 @@ export const useOnboarding = () => {
     scrollToBottom();
   }, [onboardingState.messages]);
 
+  // Auto-focus input when a new question appears
+  useEffect(() => {
+    if (
+      !onboardingState.isProcessing &&
+      !onboardingState.hasAnsweredCurrentQuestion
+    ) {
+      setTimeout(() => {
+        inputRef.current?.focus();
+      }, 500);
+    }
+  }, [
+    onboardingState.currentQuestionIndex,
+    onboardingState.isProcessing,
+    onboardingState.hasAnsweredCurrentQuestion,
+  ]);
+
   const getDisplayText = useCallback(
     (fieldName: string, value: string): string => {
       switch (fieldName) {
-        case FIELD_NAMES.COUNTRY:
-          return (
-            countries.find((c: Country) => c.code === value)?.name || value
-          );
         case FIELD_NAMES.PROFESSION:
           return (
             professionOptions.find((p) => p.value === value)?.label || value
@@ -84,7 +96,6 @@ export const useOnboarding = () => {
 
         newState.currentInputs = {
           text: "",
-          selectedCountry: null,
           selectedProfession: null,
         };
 
@@ -161,18 +172,6 @@ export const useOnboarding = () => {
     ],
   );
 
-  const handleCountrySelect = useCallback(
-    (countryCode: string | null) => {
-      if (onboardingState.isProcessing || !countryCode) return;
-
-      // Ensure country code is uppercase for consistency
-      const normalizedCode = countryCode.toUpperCase();
-      const countryName = getDisplayText("country", normalizedCode);
-      submitResponse(countryName, normalizedCode);
-    },
-    [onboardingState.isProcessing, submitResponse, getDisplayText],
-  );
-
   const handleProfessionSelect = useCallback(
     (professionKey: React.Key | null) => {
       if (
@@ -228,31 +227,15 @@ export const useOnboarding = () => {
       const currentQuestion = questions[onboardingState.currentQuestionIndex];
       const { fieldName } = currentQuestion;
 
-      if (
-        fieldName === FIELD_NAMES.COUNTRY &&
-        onboardingState.currentInputs.selectedCountry
-      ) {
-        handleCountrySelect(onboardingState.currentInputs.selectedCountry);
-      } else if (
-        fieldName !== FIELD_NAMES.COUNTRY &&
-        fieldName !== FIELD_NAMES.PROFESSION
-      ) {
-        if (fieldName === FIELD_NAMES.INSTRUCTIONS) {
-          submitResponse(
-            onboardingState.currentInputs.text.trim() ||
-              "No specific instructions",
-            "",
-          );
-        } else if (onboardingState.currentInputs.text.trim()) {
+      if (fieldName !== FIELD_NAMES.PROFESSION) {
+        if (onboardingState.currentInputs.text.trim()) {
           submitResponse(onboardingState.currentInputs.text.trim());
         }
       }
     },
     [
       onboardingState.currentQuestionIndex,
-      onboardingState.currentInputs.selectedCountry,
       onboardingState.currentInputs.text,
-      handleCountrySelect,
       submitResponse,
     ],
   );
@@ -266,7 +249,7 @@ export const useOnboarding = () => {
       setOnboardingState((prev) => ({ ...prev, isProcessing: true }));
 
       // Validate required fields
-      const requiredFields = ["name", "country", "profession", "responseStyle"];
+      const requiredFields = ["name", "profession"];
       const missingFields = requiredFields.filter(
         (field) => !onboardingState.userResponses[field],
       );
@@ -279,13 +262,9 @@ export const useOnboarding = () => {
       }
 
       // Prepare the onboarding data
-      const instructions = onboardingState.userResponses.instructions?.trim();
       const onboardingData = {
         name: onboardingState.userResponses.name.trim(),
-        country: onboardingState.userResponses.country.toUpperCase(), // Ensure uppercase
         profession: onboardingState.userResponses.profession,
-        response_style: onboardingState.userResponses.responseStyle,
-        instructions: instructions || null,
       };
 
       // Send onboarding data to backend with retry logic
@@ -311,7 +290,6 @@ export const useOnboarding = () => {
       }
 
       if (response?.success) {
-
         // Navigate to the main chat page
         router.push("/c");
       } else {
@@ -349,6 +327,10 @@ export const useOnboarding = () => {
 
   useEffect(() => {
     const firstQuestion = questions[0];
+
+    // Pre-populate the user's name from Gmail if available
+    const userName = user.name || "";
+
     setOnboardingState((prev) => ({
       ...prev,
       messages: [
@@ -358,15 +340,18 @@ export const useOnboarding = () => {
           content: firstQuestion.question,
         },
       ],
+      currentInputs: {
+        ...prev.currentInputs,
+        text: firstQuestion.fieldName === FIELD_NAMES.NAME ? userName : "",
+      },
     }));
-  }, []);
+  }, [user.name]);
 
   return {
     onboardingState,
     messagesEndRef,
     inputRef,
     handleChipSelect,
-    handleCountrySelect,
     handleProfessionSelect,
     handleProfessionInputChange,
     handleInputChange,

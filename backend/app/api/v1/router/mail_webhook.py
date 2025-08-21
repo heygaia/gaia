@@ -1,13 +1,13 @@
 import json
 
-from fastapi import APIRouter, HTTPException, Request
-from fastapi.encoders import jsonable_encoder
-from fastapi.exceptions import RequestValidationError
-from pydantic import ValidationError
-
 from app.config.loggers import mail_webhook_logger as logger
 from app.models.mail_models import EmailWebhookRequest
 from app.services.mail_webhook_service import queue_email_processing
+from app.utils.pubsub_auth import get_verified_pubsub_request
+from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
+from pydantic import ValidationError
 
 router = APIRouter()
 
@@ -16,13 +16,21 @@ router = APIRouter()
     "/mail-webhook/receive",
     summary="Process Email Webhook",
 )
-async def receive_email(request: Request):
+async def receive_email(
+    request: Request,
+    jwt_payload: dict = Depends(
+        get_verified_pubsub_request
+    ),  # Ensure the request is verified
+):
     """
     Process incoming email webhook notifications from Gmail.
     The webhook payload contains information about new emails.
 
     This endpoint receives the webhook, validates the payload,
     and queues a background task for processing.
+
+    The request is authenticated using JWT tokens to ensure it
+    comes from Google Cloud Pub/Sub and not unauthorized entities.
     """
     try:
         # Log raw request body
@@ -43,8 +51,6 @@ async def receive_email(request: Request):
                 status_code=422,
                 detail="Email address and history ID must be provided.",
             )
-
-        logger.info(f"Parsed: email={email_address}, historyId={history_id}")
 
         # Use service to queue email processing
         return await queue_email_processing(email_address, history_id)

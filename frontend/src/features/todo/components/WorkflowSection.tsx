@@ -42,7 +42,7 @@ export default function WorkflowSection({
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
   const router = useRouter();
-  const sendMessage = useSendMessage(null);
+  const sendMessage = useSendMessage();
 
   // Poll for workflow completion when generating
   useEffect(() => {

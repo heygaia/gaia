@@ -3,10 +3,9 @@ from datetime import datetime
 from typing import Any
 
 import redis.asyncio as redis
-from pydantic import BaseModel
-
 from app.config.loggers import redis_logger as logger
 from app.config.settings import settings
+from pydantic import BaseModel
 
 ONE_YEAR_TTL = 31_536_000
 ONE_HOUR_TTL = 3600
@@ -89,6 +88,17 @@ class RedisCache:
             logger.info(f"Cache deleted for key: {key}")
         except Exception as e:
             logger.error(f"Error deleting Redis key {key}: {e}")
+
+    @property
+    def client(self):
+        """
+        Get the Redis client instance.
+        """
+        if not self.redis:
+            self.redis = redis.from_url(self.redis_url, decode_responses=True)
+            logger.info("Re-initialized Redis connection.")
+
+        return self.redis
 
 
 # Initialize the Redis cache

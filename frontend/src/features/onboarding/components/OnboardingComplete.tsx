@@ -20,9 +20,8 @@ export const OnboardingComplete = ({ onLetsGo }: OnboardingCompleteProps) => {
       <Button
         onPress={onLetsGo}
         color="primary"
-        size="lg"
-        radius="full"
-        className="font-medium transition-transform duration-400 hover:scale-125 hover:bg-primary/90"
+        variant="shadow"
+        className="mb-5 font-medium transition-transform! hover:scale-115"
       >
         <span className="flex items-center gap-2">Let's Go!</span>
       </Button>

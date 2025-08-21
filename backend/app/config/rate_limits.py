@@ -20,9 +20,9 @@ Usage:
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from typing import Dict
-from pydantic import BaseModel
 
 from app.models.payment_models import PlanType
+from pydantic import BaseModel
 
 
 class RateLimitPeriod(str, Enum):

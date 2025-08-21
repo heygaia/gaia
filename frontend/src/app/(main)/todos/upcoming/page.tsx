@@ -7,7 +7,6 @@ import { todoApi } from "@/features/todo/api/todoApi";
 import TodoDetailSheet from "@/features/todo/components/TodoDetailSheet";
 import TodoHeader from "@/features/todo/components/TodoHeader";
 import TodoList from "@/features/todo/components/TodoList";
-import { useTodos } from "@/features/todo/hooks/useTodos";
 import { useUrlTodoSelection } from "@/features/todo/hooks/useUrlTodoSelection";
 import { Project, Todo, TodoUpdate } from "@/types/features/todoTypes";
 
@@ -15,7 +14,6 @@ export default function UpcomingTodosPage() {
   const [todos, setTodos] = useState<Todo[]>([]);
   const [loading, setLoading] = useState(true);
   const [projects, setProjects] = useState<Project[]>([]);
-  const { loadCounts } = useTodos();
   const { selectedTodoId, selectTodo, clearSelection } = useUrlTodoSelection();
 
   useEffect(() => {

@@ -3,21 +3,16 @@
 import { Skeleton } from "@heroui/react";
 
 import type { Plan } from "../api/pricingApi";
-import { usePlans, useUserSubscriptionStatus } from "../hooks/usePricing";
+import { usePricing } from "../hooks/usePricing";
 import { convertToUSDCents } from "../utils/currencyConverter";
 import { PricingCard } from "./PricingCard";
 
 interface PricingCardsProps {
   durationIsMonth?: boolean;
-  initialPlans?: Plan[];
 }
 
-export function PricingCards({
-  durationIsMonth = false,
-  initialPlans,
-}: PricingCardsProps) {
-  const { data: plans, isLoading, error } = usePlans(true, initialPlans);
-  const { data: subscriptionStatus } = useUserSubscriptionStatus();
+export function PricingCards({ durationIsMonth = false }: PricingCardsProps) {
+  const { plans, isLoading, error, subscriptionStatus } = usePricing();
 
   if (isLoading) {
     return (
@@ -48,7 +43,7 @@ export function PricingCards({
   }
 
   // Filter plans by duration (always show free plan)
-  const filteredPlans = plans.filter((plan) => {
+  const filteredPlans = plans.filter((plan: Plan) => {
     // Always show free plan regardless of selected duration
     if (plan.amount === 0) {
       return true;
@@ -61,7 +56,7 @@ export function PricingCards({
   });
 
   // Sort plans: Free first, then by amount
-  const sortedPlans = filteredPlans.sort((a, b) => {
+  const sortedPlans = filteredPlans.sort((a: Plan, b: Plan) => {
     if (a.amount === 0) return -1;
     if (b.amount === 0) return 1;
     return a.amount - b.amount;
@@ -69,7 +64,7 @@ export function PricingCards({
 
   return (
     <div className="grid w-screen max-w-(--breakpoint-sm) grid-cols-2 gap-3">
-      {sortedPlans.map((plan) => {
+      {sortedPlans.map((plan: Plan) => {
         const isPro = plan.name.toLowerCase().includes("pro");
         // Convert any currency to USD cents for display
         const priceInUSDCents = convertToUSDCents(plan.amount, plan.currency);
@@ -82,6 +77,7 @@ export function PricingCards({
         }
 
         const isCurrentPlan = subscriptionStatus?.current_plan?.id === plan.id;
+        // Only consider truly active subscriptions (not just created ones)
         const hasActiveSubscription =
           subscriptionStatus?.is_subscribed &&
           subscriptionStatus?.subscription?.status === "active";
@@ -89,7 +85,7 @@ export function PricingCards({
         return (
           <PricingCard
             key={plan.id}
-            planId={plan.id}
+            planId={plan.dodo_product_id} // Use dodo_product_id instead of id
             durationIsMonth={durationIsMonth}
             features={plan.features}
             featurestitle={

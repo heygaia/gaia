@@ -3,3 +3,4 @@ node_modules
 public
 .husky
 ../docs
+pnpm-lock.yaml

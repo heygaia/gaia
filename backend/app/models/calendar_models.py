@@ -1,5 +1,5 @@
 import re
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import List, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator, model_validator
@@ -266,7 +266,9 @@ class EventUpdateRequest(BaseModel):
     start: Optional[str] = Field(None, title="Updated start time in ISO 8601 format")
     end: Optional[str] = Field(None, title="Updated end time in ISO 8601 format")
     is_all_day: Optional[bool] = Field(None, title="Updated all-day status")
-    timezone: Optional[str] = Field(None, title="Updated timezone")
+    timezone_offset: Optional[str] = Field(
+        None, title="Updated timezone offset in (+|-)HH:MM format"
+    )
     original_summary: Optional[str] = Field(
         None, title="Original event summary for confirmation"
     )
@@ -275,45 +277,80 @@ class EventUpdateRequest(BaseModel):
     )
 
 
-class EventCreateRequest(BaseModel):
+class BaseCalendarEvent(BaseModel):
+    """Base model for calendar events with common fields shared across models."""
+
     summary: str = Field(..., title="Event Summary")
     description: str = Field("", title="Event Description")
-    start: Optional[str] = Field(
-        None, title="Start Time in ISO 8601 format or date for all-day events"
-    )
-    end: Optional[str] = Field(
-        None, title="End Time in ISO 8601 format or date for all-day events"
-    )
     is_all_day: bool = Field(False, title="Is All Day Event")
-    timezone: str = Field(
-        "UTC", title="Event Timezone that comes from the client ex- Asia/Calcutta"
-    )
     calendar_id: Optional[str] = Field(None, title="Calendar ID")
-    calendar_name: Optional[str] = None  # Name of the calendar for display purposes
-    calendar_color: Optional[str] = "#00bbff"
     recurrence: Optional[RecurrenceData] = Field(
         None, title="Recurrence rules for creating a recurring event"
     )
 
+    model_config = {"extra": "ignore"}
+
+
+class CalendarEventToolRequest(BaseCalendarEvent):
+    """Model for LLM tool input with time string and duration approach."""
+
+    # Input fields for time specification
+    time_str: Optional[str] = Field(
+        None,
+        title="Time string: either a relative offset like '+02:30' or an ISO 8601 time",
+    )
+    duration_minutes: Optional[int] = Field(
+        30, title="Duration of the event in minutes, defaults to 30 minutes", ge=1
+    )
+    timezone_offset: Optional[str] = Field(
+        None,
+        title="Timezone offset in `(+|-)HH:MM` format. Only provide when user explicitly mentions a timezone.",
+    )
+
+    @field_validator("timezone_offset")
+    @classmethod
+    def validate_timezone_offset(cls, v):
+        """Validate timezone offset format (+|-)HH:MM"""
+        if v is not None:
+            if not re.match(r"^[+-]\d{2}:\d{2}$", v):
+                raise ValueError("Timezone offset must be in (+|-)HH:MM format")
+        return v
+
     @model_validator(mode="after")
-    def validate_event_times(self) -> "EventCreateRequest":
+    def validate_event_times(self) -> "CalendarEventToolRequest":
         """
         Validate event data based on event type after model initialization.
         """
         if not self.is_all_day:
-            # For timed events, both start and end are required
-            if not self.start or not self.end:
-                raise ValueError("Start and end times are required for timed events")
+            # For timed events, time_str is required
+            if not self.time_str:
+                raise ValueError("time_str is required for timed events")
 
-        # For all-day events, start and end are optional (will default to today if not provided)
+            # Validate the format of time_str
+            if self.time_str.startswith("+"):
+                # This is a relative time offset, validate the format
+                if not re.match(r"^\+\d{2}:\d{2}$", self.time_str):
+                    raise ValueError(
+                        "Relative time offset must be in the format '+HH:MM'"
+                    )
+            else:
+                # This is an absolute time, try to parse it
+                try:
+                    # Replace space with T if needed
+                    time_str = (
+                        self.time_str.replace(" ", "T")
+                        if " " in self.time_str
+                        else self.time_str
+                    )
+                    datetime.fromisoformat(time_str)
+                except ValueError:
+                    raise ValueError(
+                        f"Invalid time format: {self.time_str}. Use ISO format (YYYY-MM-DDTHH:MM:SS) for absolute times."
+                    )
 
-        # For recurring events, ensure timezone is specified for non-all-day events
-        if self.recurrence and not self.is_all_day:
-            # Recurring events with time must have a timezone specified
-            if not self.start or not self.end:
-                raise ValueError(
-                    "Recurring events must have start and end times specified"
-                )
+        # For recurring events, ensure time_str is provided for non-all-day events
+        if self.recurrence and not self.is_all_day and not self.time_str:
+            raise ValueError("Recurring events must have time_str specified")
 
         return self
 
@@ -321,16 +358,256 @@ class EventCreateRequest(BaseModel):
     def event_date(self) -> str:
         """
         Returns the date part for all-day events.
-        For all-day events without start time, returns today's date in YYYY-MM-DD format.
+        For all-day events without time_str, returns today's date in YYYY-MM-DD format.
         """
-        if self.is_all_day and not self.start:
-            from datetime import datetime
-
+        if self.is_all_day and not self.time_str:
             return datetime.now().strftime("%Y-%m-%d")
-        elif self.start:
+        elif self.time_str and not self.time_str.startswith("+"):
             # Extract date part from ISO datetime string
-            return self.start.split("T")[0] if "T" in self.start else self.start
-        # Fallback to today's date
-        from datetime import datetime
+            return (
+                self.time_str.split("T")[0] if "T" in self.time_str else self.time_str
+            )
 
         return datetime.now().strftime("%Y-%m-%d")
+
+    def _apply_timezone_offset(self, dt: datetime, offset_str: str) -> datetime:
+        """Apply timezone offset to datetime object."""
+        # Parse offset string (+|-)HH:MM
+        sign = 1 if offset_str.startswith("+") else -1
+        hours, minutes = map(int, offset_str[1:].split(":"))
+        offset_seconds = sign * (hours * 3600 + minutes * 60)
+        tz = timezone(timedelta(seconds=offset_seconds))
+        return dt.replace(tzinfo=tz)
+
+    def process_times(self, user_time: str) -> "EventCreateRequest":
+        """
+        Process time strings and calculate start/end times, converting to EventCreateRequest.
+
+        Args:
+            user_time: Current user time in ISO format for timezone reference
+
+        Returns:
+            EventCreateRequest with processed start/end times
+        """
+        # Extract user's timezone from user_time
+        user_datetime = datetime.fromisoformat(user_time)
+        user_timezone = user_datetime.tzinfo if user_datetime.tzinfo else timezone.utc
+
+        # Skip processing for all-day events
+        if self.is_all_day:
+            # For all-day events, use the date without time component
+            event_date = self.event_date
+
+            # Return a new EventCreateRequest with start/end set to event_date
+            return EventCreateRequest(
+                summary=self.summary,
+                description=self.description,
+                is_all_day=True,
+                start=event_date,
+                end=event_date,
+                calendar_id=self.calendar_id,
+                recurrence=self.recurrence,
+            )
+
+        # Check if time_str is provided
+        if not self.time_str:
+            raise ValueError("time_str is required for timed events")
+
+        # Process time based on format
+        try:
+            if self.time_str.startswith("+"):
+                # Relative time offset (e.g., "+02:30")
+                offset_hours, offset_minutes = map(int, self.time_str[1:].split(":"))
+                offset_seconds = offset_hours * 3600 + offset_minutes * 60
+
+                # Calculate the future time (from user's current time)
+                start_time = user_datetime + timedelta(seconds=offset_seconds)
+
+                # Calculate end time based on duration
+                end_time = start_time + timedelta(minutes=self.duration_minutes or 30)
+
+                # Return new EventCreateRequest with calculated times
+                return EventCreateRequest(
+                    summary=self.summary,
+                    description=self.description,
+                    is_all_day=False,
+                    start=start_time.isoformat(),
+                    end=end_time.isoformat(),
+                    calendar_id=self.calendar_id,
+                    recurrence=self.recurrence,
+                )
+
+            else:
+                # Absolute time (ISO format)
+                time_str = (
+                    self.time_str.replace(" ", "T")
+                    if " " in self.time_str
+                    else self.time_str
+                )
+                dt = datetime.fromisoformat(time_str)
+
+                # Apply timezone if specified
+                if self.timezone_offset:
+                    # User explicitly provided timezone
+                    start_time = self._apply_timezone_offset(dt, self.timezone_offset)
+                else:
+                    # Use user's timezone
+                    start_time = dt.replace(tzinfo=user_timezone)
+
+                # Calculate end time based on duration
+                end_time = start_time + timedelta(minutes=self.duration_minutes or 30)
+
+                # Return new EventCreateRequest with calculated times
+                return EventCreateRequest(
+                    summary=self.summary,
+                    description=self.description,
+                    is_all_day=False,
+                    start=start_time.isoformat(),
+                    end=end_time.isoformat(),
+                    calendar_id=self.calendar_id,
+                    recurrence=self.recurrence,
+                )
+
+        except ValueError as e:
+            raise ValueError(f"Invalid time format: {self.time_str}. Error: {e}")
+
+
+class EventCreateRequest(BaseCalendarEvent):
+    """Model for calendar event creation for service layer."""
+
+    # Direct time fields for service operations
+    start: str = Field(..., title="Start time in ISO format or date for all-day events")
+    end: str = Field(..., title="End time in ISO format or date for all-day events")
+
+    # Validate that start and end times are in ISO format or date format
+    @field_validator("start", "end")
+    @classmethod
+    def validate_time_format(cls, v, info):
+        field_name = info.field_name
+
+        try:
+            # Try to parse as ISO datetime
+            datetime.fromisoformat(v)
+        except ValueError:
+            # If not ISO datetime, check if it's a valid date (YYYY-MM-DD)
+            try:
+                datetime.strptime(v, "%Y-%m-%d")
+            except ValueError:
+                raise ValueError(
+                    f"{field_name} must be in ISO format (YYYY-MM-DDTHH:MM:SS) or date format (YYYY-MM-DD)"
+                )
+
+        return v
+
+    @model_validator(mode="after")
+    def validate_times(self) -> "EventCreateRequest":
+        """Validate that start time is before end time for timed events."""
+        if not self.is_all_day:
+            try:
+                start_time = datetime.fromisoformat(self.start)
+                end_time = datetime.fromisoformat(self.end)
+
+                if start_time >= end_time:
+                    raise ValueError("Start time must be before end time")
+            except ValueError as e:
+                if "fromisoformat" not in str(e):
+                    raise e
+                # This means the format validation failed, which is handled by the field validator
+                pass
+
+        return self
+
+
+class CalendarEventUpdateToolRequest(BaseModel):
+    """Request model for calendar event updates with timezone handling."""
+
+    event_lookup: EventLookupRequest = Field(
+        ..., description="Event lookup information"
+    )
+    user_time: str = Field(..., description="User's current time for timezone handling")
+
+    # Update fields
+    summary: Optional[str] = Field(None, description="Updated event summary")
+    description: Optional[str] = Field(None, description="Updated event description")
+    start: Optional[str] = Field(None, description="Updated start time")
+    end: Optional[str] = Field(None, description="Updated end time")
+    is_all_day: Optional[bool] = Field(None, description="Updated all-day status")
+    timezone_offset: Optional[str] = Field(
+        None, description="Timezone offset in (+|-)HH:MM format"
+    )
+    recurrence: Optional[RecurrenceData] = Field(
+        None, description="Updated recurrence pattern"
+    )
+
+    @field_validator("timezone_offset")
+    @classmethod
+    def validate_timezone_offset(cls, v):
+        """Validate timezone offset format (+|-)HH:MM"""
+        if v is not None:
+            if not re.match(r"^[+-]\d{2}:\d{2}$", v):
+                raise ValueError("Timezone offset must be in (+|-)HH:MM format")
+        return v
+
+    def _apply_timezone_offset(self, dt: datetime, offset_str: str) -> datetime:
+        """Apply timezone offset to datetime object."""
+        # Parse offset string (+|-)HH:MM
+        sign = 1 if offset_str.startswith("+") else -1
+        hours, minutes = map(int, offset_str[1:].split(":"))
+        offset_seconds = sign * (hours * 3600 + minutes * 60)
+        tz = timezone(timedelta(seconds=offset_seconds))
+        return dt.replace(tzinfo=tz)
+
+    def to_update_request(self) -> EventUpdateRequest:
+        """Convert to EventUpdateRequest with processed times."""
+        # Extract user's timezone from user_time
+        user_datetime = datetime.fromisoformat(self.user_time)
+        user_timezone = user_datetime.tzinfo if user_datetime.tzinfo else timezone.utc
+
+        # Process start time if provided
+        processed_start = None
+        if self.start is not None:
+            try:
+                dt = datetime.fromisoformat(self.start.replace(" ", "T"))
+
+                if self.timezone_offset:
+                    processed_start_dt = self._apply_timezone_offset(
+                        dt, self.timezone_offset
+                    )
+                else:
+                    processed_start_dt = dt.replace(tzinfo=user_timezone)
+
+                processed_start = processed_start_dt.isoformat()
+
+            except ValueError as e:
+                raise ValueError(f"Invalid start time format: {self.start}. Error: {e}")
+
+        # Process end time if provided
+        processed_end = None
+        if self.end is not None:
+            try:
+                dt = datetime.fromisoformat(self.end.replace(" ", "T"))
+
+                if self.timezone_offset:
+                    processed_end_dt = self._apply_timezone_offset(
+                        dt, self.timezone_offset
+                    )
+                else:
+                    processed_end_dt = dt.replace(tzinfo=user_timezone)
+
+                processed_end = processed_end_dt.isoformat()
+
+            except ValueError as e:
+                raise ValueError(f"Invalid end time format: {self.end}. Error: {e}")
+
+        return EventUpdateRequest(
+            event_id=self.event_lookup.event_id or "",
+            calendar_id=self.event_lookup.calendar_id or "primary",
+            summary=self.summary,
+            description=self.description,
+            start=processed_start,
+            end=processed_end,
+            is_all_day=self.is_all_day,
+            timezone_offset=None,  # Processed times no longer need timezone_offset
+            original_summary=None,
+            recurrence=self.recurrence,
+        )

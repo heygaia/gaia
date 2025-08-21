@@ -1,0 +1,14 @@
+{
+  "packages": {
+    "backend": {
+      "path": "backend",
+      "release-type": "python",
+      "version-file": "backend/pyproject.toml"
+    },
+    "frontend": {
+      "path": "frontend",
+      "release-type": "node",
+      "version-file": "frontend/package.json"
+    }
+  }
+}

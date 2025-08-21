@@ -22,7 +22,7 @@ from pydantic import BaseModel
 
 from app.db.redis import redis_cache
 from app.models.payment_models import PlanType
-from app.services.payments.subscriptions import get_user_subscription_status
+from app.services.payment_service import payment_service
 from app.config.rate_limits import (
     RateLimitPeriod,
     get_limits_for_plan,
@@ -278,7 +278,7 @@ def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
                 raise HTTPException(status_code=401, detail="User ID not found")
 
             # Get user subscription
-            subscription = await get_user_subscription_status(user_id)
+            subscription = await payment_service.get_user_subscription_status(user_id)
             user_plan = subscription.plan_type or PlanType.FREE
 
             # Check rate limits before executing function

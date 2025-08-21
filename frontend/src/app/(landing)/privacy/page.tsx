@@ -119,7 +119,15 @@ const PrivacyPolicy = () => {
             <li>
               <strong>Authentication Services:</strong> If you use third-party
               authentication services (e.g., Google, GitHub), we may receive
-              basic profile information;
+              basic profile information such as your name, email address, and
+              profile picture;
+            </li>
+            <li>
+              <strong>Google User Data:</strong> When you connect Google
+              services, we may access and collect data from your Google account
+              including but not limited to email, calendar events, contacts, and
+              documents as authorized by you through Google's OAuth consent
+              process;
             </li>
             <li>
               <strong>Analytics Providers:</strong> Information from third-party
@@ -153,6 +161,12 @@ const PrivacyPolicy = () => {
             <li>
               Processing and responding to your requests and interactions with
               the AI assistant;
+            </li>
+            <li>
+              <strong>Google User Data Processing:</strong> Using Google user
+              data solely to provide and improve our AI assistant functionality,
+              including processing emails, calendar events, and documents to
+              provide relevant assistance and responses;
             </li>
             <li>
               Personalizing your experience and delivering relevant content and
@@ -226,8 +240,10 @@ const PrivacyPolicy = () => {
         <div className="mb-4">
           <p className="mb-2">
             We do not sell, rent, or lease your personal information to third
-            parties. However, we may share your information in the following
-            limited circumstances:
+            parties.{" "}
+            <strong>We do not sell Google user data to third parties.</strong>{" "}
+            However, we may share your information in the following limited
+            circumstances:
           </p>
 
           <h3 className="mt-4 mb-2 text-lg font-semibold">
@@ -244,6 +260,13 @@ const PrivacyPolicy = () => {
             <li>Analytics and monitoring services;</li>
             <li>Security and fraud prevention services.</li>
           </ul>
+          <p className="mb-2">
+            <strong>Google User Data:</strong> We only share Google user data
+            with service providers who are necessary for providing our AI
+            assistant functionality and who have agreed to appropriate data
+            protection measures. We do not transfer Google user data to third
+            parties for advertising or other unrelated purposes.
+          </p>
 
           <h3 className="mt-4 mb-2 text-lg font-semibold">
             3.2 Legal Requirements
@@ -345,6 +368,12 @@ const PrivacyPolicy = () => {
               Incident response procedures to address potential security
               breaches.
             </li>
+            <li>
+              <strong>Google User Data Protection:</strong> Enhanced security
+              measures for Google user data including restricted access on a
+              need-to-know basis, secure API connections, and compliance with
+              Google's security requirements.
+            </li>
           </ul>
           <p className="mb-4">
             However, no method of transmission over the internet or electronic
@@ -434,11 +463,21 @@ const PrivacyPolicy = () => {
               Support communications: Retained for up to 3 years for quality
               assurance and legal compliance.
             </li>
+            <li>
+              <strong>Google User Data:</strong> Retained only as long as
+              necessary to provide our services or as required by law. You can
+              request deletion of your Google user data at any time through your
+              account settings or by contacting us directly.
+            </li>
           </ul>
           <p className="mb-4">
             We may retain certain information for longer periods when required
             by law or for legitimate business purposes such as fraud prevention
-            and security.
+            and security.{" "}
+            <strong>
+              Google user data is deleted when no longer necessary for providing
+              our AI assistant services.
+            </strong>
           </p>
         </div>
 

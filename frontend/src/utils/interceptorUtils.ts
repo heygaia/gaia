@@ -14,6 +14,9 @@ interface ErrorHandlerDependencies {
   router: AppRouterInstance;
 }
 
+// Track active integration toasts to prevent duplicates
+const activeIntegrationToasts = new Set<string>();
+
 // Constants
 const LANDING_ROUTES = [
   "/",
@@ -97,17 +100,32 @@ const handleForbiddenError = (
     detail.type === "integration"
   ) {
     const integrationDetail = detail as { type: string; message?: string };
-    toast.error("Calendar integration required", {
-      description:
-        integrationDetail.message ||
-        "To use calendar features, please connect your calendar in settings.",
+    const toastKey = `integration-${integrationDetail.type || "default"}`;
+
+    // Check if toast for this integration is already active
+    if (activeIntegrationToasts.has(toastKey)) {
+      return;
+    }
+
+    // Add to active toasts set
+    activeIntegrationToasts.add(toastKey);
+
+    toast.error(integrationDetail.message || "Integration required.", {
       duration: Infinity,
       classNames: {
         actionButton: "bg-red-500/30! py-4! px-3!",
       },
       action: {
         label: "Connect",
-        onClick: () => router.push("/settings?section=integrations"),
+        onClick: () => {
+          // Clear from active toasts when action is clicked
+          activeIntegrationToasts.delete(toastKey);
+          router.push("/settings?section=integrations");
+        },
+      },
+      onDismiss: () => {
+        // Clear from active toasts when dismissed
+        activeIntegrationToasts.delete(toastKey);
       },
     });
   } else {

@@ -1,13 +1,12 @@
 from enum import Enum
 from typing import List, Optional
 
-from pydantic import BaseModel, Field
-
 from app.models.calendar_models import EventCreateRequest
 from app.models.mail_models import EmailComposeRequest
 from app.models.message_models import FileData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
+from pydantic import BaseModel, Field
 
 
 class ImageData(BaseModel):
@@ -67,6 +66,28 @@ class IntegrationConnectionData(BaseModel):
     settings_url: Optional[str] = None
 
 
+class SupportTicketData(BaseModel):
+    """Data structure for support ticket creation."""
+
+    type: str = Field(
+        ..., description="Type of support request: 'support' or 'feature'"
+    )
+    title: str = Field(
+        ...,
+        min_length=1,
+        max_length=200,
+        description="Brief title of the issue or request",
+    )
+    description: str = Field(
+        ...,
+        min_length=10,
+        max_length=5000,
+        description="Detailed description of the issue or request",
+    )
+    user_name: Optional[str] = Field(None, description="Name of the user")
+    user_email: Optional[str] = Field(None, description="Email of the user")
+
+
 class MessageModel(BaseModel):
     type: str
     response: str
@@ -89,6 +110,7 @@ class MessageModel(BaseModel):
     email_compose_data: Optional[List[EmailComposeRequest]] = None
     email_fetch_data: Optional[List[EmailFetchData]] = None
     email_thread_data: Optional[EmailThreadData] = None
+    support_ticket_data: Optional[List[SupportTicketData]] = None
     calendar_fetch_data: Optional[List[CalendarFetchData]] = None
     calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
     memory_data: Optional[dict] = None

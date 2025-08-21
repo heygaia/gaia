@@ -16,12 +16,12 @@ import {
   SheetTrigger,
 } from "@/components/ui/shadcn/sheet";
 import {
-  authNavLinks,
-  companyNavLinks,
-  connectNavLinks,
-  mainNavLinks,
-  productNavLinks,
-  resourcesNavLinks,
+  auth,
+  company,
+  connect,
+  main,
+  product,
+  resources,
 } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 
@@ -45,7 +45,7 @@ export default function MobileMenu() {
           </SheetTitle>
           <SheetDescription className="flex flex-col gap-3 pt-12">
             {/* Main navigation links */}
-            {mainNavLinks.map((link) => (
+            {main.map((link) => (
               <Button
                 key={link.href}
                 className="flex w-full justify-between"
@@ -69,7 +69,7 @@ export default function MobileMenu() {
               <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                 Product
               </p>
-              {productNavLinks.map((link) => {
+              {product.map((link) => {
                 const isCommented = link.commented;
                 return (
                   <Button
@@ -99,7 +99,7 @@ export default function MobileMenu() {
               <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                 Resources
               </p>
-              {resourcesNavLinks.map((link) => {
+              {resources.map((link) => {
                 const isCommented = link.commented;
                 return (
                   <Button
@@ -129,7 +129,7 @@ export default function MobileMenu() {
               <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                 Company
               </p>
-              {companyNavLinks.map((link) => (
+              {company.map((link) => (
                 <Button
                   key={link.href}
                   className="flex w-full justify-between"
@@ -155,7 +155,7 @@ export default function MobileMenu() {
               <p className="mb-2 text-xs font-semibold tracking-wide text-zinc-400 uppercase">
                 Connect
               </p>
-              {connectNavLinks.map((link) => (
+              {connect.map((link) => (
                 <Button
                   key={link.href}
                   className="flex w-full justify-between"
@@ -175,7 +175,7 @@ export default function MobileMenu() {
             {/* Authentication related links */}
             {isAuthenticated ? (
               // Show auth links that require login
-              authNavLinks
+              auth
                 .filter((link) => link.requiresAuth)
                 .map((link) => (
                   <Button
@@ -196,7 +196,7 @@ export default function MobileMenu() {
             ) : (
               // Show auth links for guests only
               <>
-                {authNavLinks
+                {auth
                   .filter((link) => link.guestOnly)
                   .map((link) => (
                     <Button

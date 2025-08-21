@@ -7,8 +7,6 @@ from app.db.postgresql import close_postgresql_db, init_postgresql_db
 from app.db.rabbitmq import publisher
 from app.langchain.core.graph_builder.build_graph import build_graph
 from app.langchain.core.graph_manager import GraphManager
-from app.utils.nltk_utils import download_nltk_resources
-from app.utils.text_utils import get_zero_shot_classifier
 from app.utils.websocket_consumer import (
     start_websocket_consumer,
     stop_websocket_consumer,
@@ -24,9 +22,8 @@ async def lifespan(app: FastAPI):
     """
     try:
         logger.info("Starting up the API...")
+
         await init_chroma(app)
-        download_nltk_resources()
-        get_zero_shot_classifier()
         init_cloudinary()
 
         try:
