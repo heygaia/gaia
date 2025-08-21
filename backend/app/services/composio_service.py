@@ -4,6 +4,7 @@ from app.services.langchain_composio_service import LangchainProvider
 from app.utils.tool_ui_builders import frontend_stream_modifier
 from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
+from typing import Optional
 
 COMPOSIO_SOCIAL_CONFIGS = {
     "notion": {"auth_config_id": "ac_DR3IWp9-Kezl", "toolkit": "NOTION"},
@@ -74,13 +75,13 @@ class ComposioService:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
-    def get_tools(self, tool_kit: str):
+    def get_tools(self, tool_kit: str, exclude_tools:Optional[list[str]]=None):
         tools = self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
         )
-
-        tools_name = [tool.name for tool in tools]
+        exclude_tools = exclude_tools or []
+        tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
         user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
         after_modifier = before_execute(tools=tools_name)(frontend_stream_modifier)
 

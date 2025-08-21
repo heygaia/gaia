@@ -61,9 +61,7 @@ class ToolRegistry:
 
         # All tools organized by category
         self._tools_by_category = {
-            "mail": [
-                *mail_tool.tools,
-            ],
+          
             "productivity": [
                 *todo_tool.tools,
                 *reminder_tool.tools,
@@ -106,6 +104,7 @@ class ToolRegistry:
             "twitter": composio_service.get_tools(tool_kit="TWITTER"),
             "notion": composio_service.get_tools(tool_kit="NOTION"),
             "linkedin": composio_service.get_tools(tool_kit="LINKEDIN"),
+            "mail": composio_service.get_tools(tool_kit="GMAIL", exclude_tools=["GMAIL_SEND_EMAIL"]),
             "google_sheets": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
         }
 
