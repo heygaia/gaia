@@ -33,7 +33,7 @@ export const useToolsWithIntegrations = (): UseToolsWithIntegrationsReturn => {
   } = useQuery({
     queryKey: ["tools"],
     queryFn: fetchAvailableTools,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 60 * 60 * 1000, // Cache for 1 hour
   });
 
   // Combine tools with integration status
