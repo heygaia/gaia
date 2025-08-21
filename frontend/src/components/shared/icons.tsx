@@ -2545,19 +2545,6 @@ export const MoneyBag02Icon: React.FC<IconProps> = (props) => (
   </svg>
 );
 
-export const YoutubeIcon: React.FC<IconProps> = (props) => (
-  <svg
-    viewBox="0 0 24 24"
-    fill="currentColor"
-    xmlns="http://www.w3.org/2000/svg"
-    width={24}
-    height={24}
-    {...props}
-  >
-    <path d="M23.498 6.186a2.994 2.994 0 0 0-2.108-2.116C19.37 3.5 12 3.5 12 3.5s-7.37 0-9.39.57A2.994 2.994 0 0 0 .502 6.186C0 8.21 0 12 0 12s0 3.79.502 5.814a2.994 2.994 0 0 0 2.108 2.116C4.63 20.5 12 20.5 12 20.5s7.37 0 9.39-.57a2.994 2.994 0 0 0 2.108-2.116C24 15.79 24 12 24 12s0-3.79-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z" />
-  </svg>
-);
-
 export const HelpCircleIcon: React.FC<IconProps> = (props) => (
   <svg
     color={"#000000"}
