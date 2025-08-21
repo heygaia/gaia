@@ -4,7 +4,7 @@ from typing import Optional
 from app.langchain.core.graph_builder.checkpointer_manager import (
     checkpointer_manager,
 )
-from app.langchain.core.nodes.follow_up_actions_node import follow_up_actions_node
+from app.langchain.core.nodes import delete_system_messages, follow_up_actions_node
 from app.langchain.llm.client import init_llm
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
 from app.langchain.tools.core.store import get_tools_store
@@ -36,8 +36,10 @@ async def build_graph(
 
     # Injector nodes add tool calls to the state messages
     builder.add_node("follow_up_actions", follow_up_actions_node)  # type: ignore[call-arg]
+    builder.add_node("delete_system_messages", delete_system_messages)  # type: ignore[call-arg]
     builder.add_edge("agent", "follow_up_actions")
     builder.add_edge("follow_up_actions", END)
+    builder.add_edge("agent", "delete_system_messages")
 
     if in_memory_checkpointer:
         # Use in-memory checkpointer for testing or simple use cases
