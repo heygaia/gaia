@@ -16,7 +16,7 @@ from app.config.rate_limits import (
     get_reset_time,
     RateLimitPeriod,
 )
-from app.services.payments.subscriptions import get_user_subscription_status
+from app.services.payment_service import payment_service
 from app.models.payment_models import PlanType
 from app.decorators.rate_limiting import tiered_limiter
 
@@ -33,7 +33,7 @@ async def get_usage_summary(user: dict = Depends(get_current_user)) -> Dict[str,
         raise HTTPException(status_code=400, detail="User ID not found")
 
     # Get user subscription
-    subscription = await get_user_subscription_status(user_id)
+    subscription = await payment_service.get_user_subscription_status(user_id)
     user_plan = subscription.plan_type or PlanType.FREE
 
     # Get real-time usage data directly from Redis

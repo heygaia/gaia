@@ -1,13 +1,36 @@
 """Docstrings for calendar-related tools."""
 
 CALENDAR_EVENT = """
-Create structured calendar events from LLM-generated data.
+CALENDAR — CREATE: This tool is used to create calendar events.
 
 This tool processes event details and returns a structured JSON response. The frontend will use this response to render event options that the user must manually confirm.
+
+TIMEZONE HANDLING:
+• SIMPLIFIED APPROACH: Use only two fields for handling time
+  - `time_str`: For relative times, use offset format like "+02:30" (2 hours and 30 minutes from now)
+  - `time_str`: For absolute times, use ISO format like "2025-08-08T16:30:00"
+  - `duration_minutes`: Specify event duration in minutes (defaults to 30 if not provided)
+
+• **MANDATORY TIMEZONE RULE**:
+  - If the user explicitly mentions a timezone (e.g., "EST", "PST", "IST", "GMT+5:30"), you MUST always include the corresponding `timezone_offset` in the output.
+  - This is **not optional** — never omit `timezone_offset` if a timezone is stated.
+  - If no timezone is mentioned, do not provide `timezone_offset`.
+
+EXAMPLES (Current time: 2025-08-08T14:30:00Z):
+• User: "Create event in 2 hours" → time_str: "+02:00", duration_minutes: 30
+• User: "Schedule meeting at 4:30 PM today for 1 hour" → time_str: "2025-08-08T16:30:00", duration_minutes: 60
+• User: "Book appointment tomorrow at 9 AM EST for 45 minutes" → time_str: "2025-08-09T09:00:00", timezone_offset: "-05:00", duration_minutes: 45
+• User: "Create event for classes tomorrow at 10 AM PST for 1 hour" → time_str: "2025-08-09T10:00:00", timezone_offset: "-08:00", duration_minutes: 60
+
+The backend will handle all timezone calculations automatically. Your only responsibility is to include `timezone_offset` whenever the user states a timezone.
 
 Important:
 - This tool does NOT directly create calendar events.
 - The user must review and confirm the events before they are added to their calendar.
+- For relative times (like "in 2 hours"), provide time_str as an offset string (e.g., "+02:00")
+- For absolute times (like "at 3 PM"), provide time_str in ISO format (e.g., "2025-08-08T16:30:00")
+- Specify duration_minutes for how long the event should last (defaults to 30 minutes if not specified)
+- Only provide timezone_offset when a specific timezone is explicitly mentioned.
 
 ---
 
@@ -17,25 +40,30 @@ Use this tool when the user wants to:
 - Schedule a single or recurring event
 - Set up meetings, calls, appointments, or reminders
 - Define repeating events like "every Monday", "1st of every month", or "every January and June"
+- Create multiple events at once (use array input)
 
-You may return:
-- A single event object
-- An array of event objects
+This tool handles both single events and multiple events in one call:
+- Single event: Pass one EventCreateRequest object
+- Multiple events: Pass an array of EventCreateRequest objects
+
+IMPORTANT: When creating multiple events, always use a single tool call with an array.
+Never make separate tool calls for each event in the same message.
 
 ---
 
-EVENT FORMAT: `EventCreateRequest`
+EVENT FORMAT: `CalendarEventToolRequest`
 
 Each event must include the following fields:
 
 - `summary` (str): Required. Title or name of the event.
 - `description` (str): Optional. Extra information about the event.
 - `is_all_day` (bool): Required. Set to `true` if the event is an all-day event.
-- `start` (str): Required if `is_all_day` is `false`. Must follow ISO 8601 format: `YYYY-MM-DDTHH:MM:SS±HH:MM`.
-- `end` (str): Required if `is_all_day` is `false`. Same format as `start`.
+- `time_str` (str): Required if `is_all_day` is `false`. Either:
+  - Relative time offset in format "+HH:MM" (e.g., "+02:30" for 2 hours and 30 minutes from now)
+  - Absolute time in ISO 8601 format: `YYYY-MM-DDTHH:MM:SS`.
+- `duration_minutes` (int): Optional. Duration of the event in minutes. Defaults to 30 if not specified.
+- `timezone_offset` (str): Optional. Only provide when user explicitly mentions a timezone (e.g., "-05:00" for EST).
 - `calendar_id` (str): Optional. ID of the calendar to add the event to.
-- `calendar_name` (str): Optional. Display name of the calendar.
-- `calendar_color` (str): Optional. Hex color for visual distinction (e.g., `#00bbff`).
 - `recurrence` (RecurrenceData): Optional. Used for recurring events.
 
 ---
@@ -113,12 +141,12 @@ EXAMPLES:
 User says: *“Set up a team sync every Monday at 10 AM for the next 4 weeks.”*
 
 ```json
-{
+[{
   "summary": "Team Sync",
   "description": "Weekly standup with dev team",
   "is_all_day": false,
-  "start": "2025-08-04T10:00:00+05:30",
-  "end": "2025-08-04T10:30:00+05:30",
+  "time_str": "2025-08-04T10:00:00",
+  "duration_minutes": 30,
   "recurrence": {
     "rrule": {
       "frequency": "WEEKLY",
@@ -127,20 +155,21 @@ User says: *“Set up a team sync every Monday at 10 AM for the next 4 weeks.”
       "by_day": ["MO"]
     }
   }
-}
+}]
 ````
 
 2. **Monthly event with skipped and added dates:**
 
-User says: *“Can you please create recurring calendar event for everyday at 10PM about standup meeting on every Mon, Tue, Friday in Aug, Sep, Oct, excluding 8 Aug”*
+User says: *“Can you please create recurring calendar event for everyday at 10PM PST about standup meeting on every Mon, Tue, Friday in Aug, Sep, Oct, excluding 8 Aug”*
 
 ```json
-{
+[{
   "summary": "Standup Meeting",
   "description": "Recurring team standup",
   "is_all_day": false,
-  "start": "2025-08-04T22:00:00+05:30",
-  "end": "2025-08-04T22:30:00+05:30",
+  "time_str": "2025-08-04T22:00:00",
+  "duration_minutes": 30,
+  "timezone_offset": "-08:00",
   "recurrence": {
     "rrule": {
       "frequency": "WEEKLY",
@@ -150,13 +179,26 @@ User says: *“Can you please create recurring calendar event for everyday at 10
       "exclude_dates": ["2025-08-08"]
     }
   }
-}
+}]
 ```
 
 ---
 
+CRITICAL USAGE RULE:
+
+This tool takes an ARRAY input and is designed to handle multiple events in a single call.
+NEVER call this tool multiple times in the same message, even if creating multiple events.
+
+✓ CORRECT: Pass all events in one array: [event1, event2, event3]
+✗ INCORRECT: Call the tool separately for each event (causes system issues)
+
+Always batch multiple event creations into a single tool call using the array parameter.
+This prevents conflicts and ensures proper event processing.
+
+---
+
 Args:
-    event_data: Single EventCreateRequest object or array of EventCreateRequest objects
+    events_data: array of CalendarEventToolRequest objects
 
 Returns:
     str: Confirmation message or JSON string containing formatted calendar event options for user confirmation.
@@ -164,7 +206,7 @@ Returns:
 
 
 FETCH_CALENDAR_LIST = """
-Retrieves the user's available calendars using their access token.
+CALENDAR — LIST: This tool is used to fetch the user's calendar list.
 
 This tool securely accesses the user's access token from the config metadata
 and calls the calendar service to fetch all available calendars.
@@ -185,7 +227,7 @@ Returns:
 """
 
 FETCH_CALENDAR_EVENTS = """
-Fetch calendar events from the user's selected calendars.
+CALENDAR — FETCH EVENTS: This tool is used to fetch calendar events.
 
 This tool retrieves events from the user's calendar based on optional filters like time range
 and specific calendar selection. It uses the user's access token to securely fetch events.
@@ -220,7 +262,7 @@ Returns:
 """
 
 SEARCH_CALENDAR_EVENTS = """
-Search for specific calendar events based on a text query.
+CALENDAR — SEARCH EVENTS: This tool is used to search calendar events.
 
 This tool searches through the user's calendar events to find matches based on event titles,
 descriptions, or calendar names. It performs case-insensitive text matching.
@@ -245,7 +287,7 @@ Returns:
 """
 
 VIEW_CALENDAR_EVENT = """
-Retrieve detailed information about a specific calendar event.
+CALENDAR — VIEW EVENT: This tool is used to view a calendar event by ID.
 
 This tool fetches complete details for a single calendar event using its event ID and calendar ID.
 It provides comprehensive information about the event including all metadata.
@@ -283,7 +325,7 @@ Returns:
 """
 
 DELETE_CALENDAR_EVENT = """
-Delete a calendar event using either search or known identifiers — never assume anything.
+CALENDAR — DELETE: This tool is used to delete or cancel calendar events (confirmation required).
 
 Purpose:
 Use this tool **only when the user wants to cancel or delete an existing calendar event**.
@@ -318,7 +360,7 @@ Returns:
 """
 
 EDIT_CALENDAR_EVENT = """
-Edit a calendar event using either search or known identifiers — never assume anything.
+CALENDAR — EDIT: This tool is used to modify or update existing calendar events.
 
 Purpose:
 Use this tool **only when the user wants to update, change, or modify details of an existing calendar event**.
@@ -336,6 +378,18 @@ This tool edits calendar events using two mutually exclusive methods:
 
 Do not assume or guess `event_id` or `calendar_id`. Use only if previously retrieved. Otherwise, use a `query`.
 
+TIMEZONE HANDLING FOR UPDATES:
+• RELATIVE TIME (e.g., "move it 2 hours later", "shift by 30 minutes"): For any time described relative to the event's current time, you MUST calculate the new time and ALWAYS set `timezone_offset` to `"+00:00"`. This is a strict requirement. Do not use any other offset.
+• ABSOLUTE TIME (e.g., "change to 4:30 PM", "move to tomorrow at 9 AM") → Provide the new time as-is, timezone_offset will be processed internally based on user's timezone
+• EXPLICIT TIMEZONE: Use timezone_offset parameter if user explicitly mentions a timezone (e.g., "change to 3 PM EST", "move to 9 AM +05:30")
+
+EXAMPLES FOR TIME UPDATES:
+• User: "Move my meeting 2 hours later" → Calculate new time: original_start + 2 hours → start: "calculated_time", timezone_offset: "+00:00"
+• User: "Change meeting to 4:30 PM today" → start: "2025-08-08T16:30:00" (timezone_offset: null - processed internally)
+• User: "Reschedule to tomorrow at 9 AM PST" → start: "2025-08-09T09:00:00", timezone_offset: "-08:00"
+
+The calendar tool will process all updated times internally and send final calculated times to the frontend.
+
 Important:
 This tool does not immediately apply updates. It sends the updated event to the frontend for user confirmation. Changes are finalized only after user approval.
 
@@ -350,10 +404,10 @@ Arguments:
         - OR `query` (from user's event description)
     summary (str, optional): New event title
     description (str, optional): New event description
-    start (str, optional): New start time (ISO 8601)
-    end (str, optional): New end time (ISO 8601)
+    start (str, optional): New start time (ISO 8601 format: YYYY-MM-DDTHH:MM:SS)
+    end (str, optional): New end time (ISO 8601 format: YYYY-MM-DDTHH:MM:SS)
     is_all_day (bool, optional): Whether it's an all-day event
-    timezone (str, optional): Timezone for the updated event
+    timezone_offset (str, optional): Timezone offset in (+|-)HH:MM format. Only use if user explicitly mentions a timezone
     recurrence (RecurrenceData, optional): New recurrence pattern
 
 Returns:

@@ -55,19 +55,21 @@ export const authApi = {
 
   // Logout user
   logout: async (): Promise<void> => {
-    return apiService.post("/oauth/logout", undefined, {
+    const response = await apiService.post<{ logout_url: string }>("/oauth/logout", {}, {
       successMessage: "Logged out successfully",
       errorMessage: "Failed to logout",
     });
+    
+    // Redirect to the logout URL returned by the backend
+    if (response.logout_url) {
+      window.location.href = response.logout_url;
+    }
   },
 
   // Complete onboarding
   completeOnboarding: async (onboardingData: {
     name: string;
-    country: string;
     profession: string;
-    response_style: string;
-    instructions?: string | null;
   }): Promise<{ success: boolean; message: string; user?: UserInfo }> => {
     return apiService.post("/oauth/onboarding", onboardingData, {
       successMessage: "Welcome! Your preferences have been saved.",

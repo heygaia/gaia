@@ -117,19 +117,36 @@ To test push subscriptions locally:
 
 ## 4. Configuration in Gaia
 
-Gaia uses [Infisical](https://infisical.io/) to manage secret environment variables. You only need to set the following secret:
+Gaia uses [Infisical](https://infisical.io/) to manage secret environment variables. You need to set the following secrets:
 
 - `GCP_TOPIC_NAME`: The full Pub/Sub topic resource name, e.g., `projects/your-gcp-project-id/topics/gmail-notifications`
+- `GCP_SUBSCRIPTION_NAME`: The Pub/Sub subscription name, e.g., `gmail-notifications-sub`
+- `ENABLE_PUBSUB_JWT_VERIFICATION`: Boolean flag to enable/disable JWT authentication for Pub/Sub webhooks (default: `true`)
 
 All other application settings, such as OAuth credentials and webhook URLs, are managed securely in Infisical and do not require manual `.env` configuration.
+
+### Authentication Security
+
+Gaia now implements JWT token verification for Pub/Sub push subscriptions to ensure that webhook requests come from Google Cloud and not unauthorized entities. This follows Google's recommended security practices:
+
+- **JWT Verification**: Each push request must include a valid JWT token in the Authorization header
+- **Signature Validation**: Tokens are verified using Google's public keys
+- **Claims Validation**: Audience, issuer, and expiration claims are validated
+- **Configurable**: Can be disabled in development environments by setting `ENABLE_PUBSUB_JWT_VERIFICATION=false`
+
+To enable JWT authentication for your Pub/Sub subscription:
+1. In GCP Console → Pub/Sub → Subscriptions → select your subscription
+2. Edit subscription settings and enable "Authentication" with proper service account
+3. Ensure your subscription is configured to send JWT tokens
 
 ---
 
 ## 5. Code References
 
 - **watch_mail.py**: Calls `service.users().watch(userId="me", body=...)`
-- **router/mail.py**: Defines `/api/v1/notifications/gmail` endpoint to parse Pub/Sub push messages
-- **tasks/mail_tasks.py**: Enqueues jobs to RabbitMQ for further processing
+- **router/mail_webhook.py**: Defines `/api/v1/mail-webhook/receive` endpoint to parse Pub/Sub push messages with JWT authentication
+- **utils/pubsub_auth.py**: Implements JWT token verification for Pub/Sub push subscriptions
+- **services/mail_webhook_service.py**: Enqueues jobs to RabbitMQ for further processing
 - **worker.py**: Consumes RabbitMQ tasks and fetches email data from Gmail
 
 ---
@@ -137,10 +154,13 @@ All other application settings, such as OAuth credentials and webhook URLs, are 
 ## 6. Best Practices and Troubleshooting
 
 - **Message Retry**: Use idempotent processing; Pub/Sub may redeliver on failure.
-- **Authentication**: Validate Pub/Sub push messages using tokens or JWT if configured.
+- **Authentication**: JWT token validation is now implemented by default to verify Pub/Sub push messages come from Google Cloud.
+- **Security**: Never disable JWT verification in production environments unless absolutely necessary.
+- **Development**: For local development, you may need to disable JWT verification temporarily with `ENABLE_PUBSUB_JWT_VERIFICATION=false`.
 - **Scaling**: Adjust `max_concurrent` for `renew_gmail_watch_subscriptions` based on resource limits.
 - **Monitoring**: Use Stackdriver (Cloud Monitoring) for Pub/Sub metrics and logs.
 - **Error Handling**: Log and surface errors in `renew_gmail_watch_for_user` and webhook failures.
+- **Token Issues**: If JWT verification fails, check subscription configuration and ensure tokens are being sent.
 
 ## 7. Additional Resources
 

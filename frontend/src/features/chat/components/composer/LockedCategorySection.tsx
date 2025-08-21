@@ -65,9 +65,9 @@ export const LockedCategorySection: React.FC<LockedCategorySectionProps> = ({
             color="primary"
             variant="flat"
             startContent={
-              integration.icon && (
+              integration.icons?.[0] && (
                 <Image
-                  src={integration.icon}
+                  src={integration.icons[0]}
                   alt={integration.name}
                   width={16}
                   height={16}

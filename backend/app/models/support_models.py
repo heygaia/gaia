@@ -1,10 +1,10 @@
 """Support request models for the GAIA API."""
 
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field, EmailStr
+from pydantic import BaseModel, EmailStr, Field
 
 
 class SupportRequestType(str, Enum):
@@ -40,7 +40,8 @@ class SupportAttachment(BaseModel):
     content_type: str = Field(..., description="MIME type of the file")
     file_url: Optional[str] = Field(None, description="URL to access the file")
     uploaded_at: datetime = Field(
-        default_factory=datetime.utcnow, description="Upload timestamp"
+        default_factory=lambda: datetime.now(timezone.utc),
+        description="Upload timestamp",
     )
 
 

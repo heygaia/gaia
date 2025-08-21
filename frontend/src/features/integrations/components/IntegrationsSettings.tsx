@@ -71,7 +71,7 @@ const IntegrationSettingsCard: React.FC<{
           {/* Icon */}
           <div className="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl bg-zinc-700">
             <Image
-              src={integration.icon}
+              src={integration.icons[0]}
               alt={integration.name}
               width={32}
               height={32}

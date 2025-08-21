@@ -5,11 +5,12 @@ This module provides FastAPI dependencies for validating Google OAuth scopes
 before allowing access to protected endpoints that require specific integrations.
 """
 
-from typing import Dict, List, Literal, Union
+from typing import List, Literal, Union
 
 import httpx
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.loggers import auth_logger as logger
+from app.config.oauth_config import get_integration_scopes, get_short_name_mapping
 from app.config.token_repository import token_repository
 from fastapi import Depends, HTTPException, status
 
@@ -40,10 +41,13 @@ def require_google_scope(scope: Union[str, List[str]]):
             )
 
         try:
-            token = await token_repository.get_token(
-                user_id, "google", renew_if_expired=True
-            )
-            authorized_scopes = str(token.get("scope", "")).split()
+            try:
+                token = await token_repository.get_token(
+                    user_id, "google", renew_if_expired=True
+                )
+                authorized_scopes = str(token.get("scope", "")).split()
+            except HTTPException:
+                authorized_scopes = []
 
             # Handle both single scope and list of scopes
             required_scopes = [scope] if isinstance(scope, str) else scope
@@ -76,18 +80,6 @@ def require_google_scope(scope: Union[str, List[str]]):
     return wrapper
 
 
-# Mapping of integration names to their required OAuth scope URLs
-GOOGLE_SCOPE_URLS: Dict[str, Union[str, List[str]]] = {
-    "gmail": "https://www.googleapis.com/auth/gmail.modify",
-    "calendar": [
-        "https://www.googleapis.com/auth/calendar.events",
-        "https://www.googleapis.com/auth/calendar.readonly",
-    ],
-    "drive": "https://www.googleapis.com/auth/drive.file",
-    "docs": "https://www.googleapis.com/auth/documents",
-}
-
-
 def require_google_integration(
     integration: Literal["gmail", "calendar", "drive", "docs"],
 ):
@@ -101,13 +93,13 @@ def require_google_integration(
         def get_events(user = Depends(require_google_integration("calendar"))):
             # user has Calendar scope with both read and write permissions
 
-        # For Calendar readonly endpoints
-        @app.get("/calendar/events/readonly")
-        def get_events_readonly(user = Depends(require_google_integration("calendar_readonly"))):
-            # user has Calendar readonly scope
+        # For Gmail endpoints
+        @app.get("/gmail/messages")
+        def get_messages(user = Depends(require_google_integration("gmail"))):
+            # user has Gmail scope with required permissions
 
     Args:
-        integration: The Google integration name
+        integration: The Google integration short name
 
     Returns:
         The corresponding scope dependency function
@@ -115,10 +107,18 @@ def require_google_integration(
     Raises:
         ValueError: If unknown integration name is provided
     """
-    if integration not in GOOGLE_SCOPE_URLS:
+    # Get the short name mapping from oauth_config (single source of truth)
+    short_name_mapping = get_short_name_mapping()
+
+    if integration not in short_name_mapping:
         raise ValueError(
-            f"Unknown integration: {integration}. Available: {list(GOOGLE_SCOPE_URLS.keys())}"
+            f"Unknown integration: {integration}. Available: {list(short_name_mapping.keys())}"
         )
 
-    scope_urls = GOOGLE_SCOPE_URLS[integration]
+    integration_id = short_name_mapping[integration]
+    scope_urls = get_integration_scopes(integration_id)
+
+    if not scope_urls:
+        raise ValueError(f"No scopes found for integration: {integration_id}")
+
     return require_google_scope(scope_urls)

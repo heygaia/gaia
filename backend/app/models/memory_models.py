@@ -47,7 +47,9 @@ class MemoryEntry(BaseModel):
         default=None, description="Unique identifier for the memory"
     )
     content: str = Field(description="The memory content")
-    user_id: str = Field(description="User ID associated with this memory")
+    user_id: Optional[str] = Field(
+        default="", description="User ID associated with this memory"
+    )
     metadata: Dict[str, Any] = Field(
         default_factory=dict, description="Additional metadata"
     )
@@ -63,12 +65,15 @@ class MemoryEntry(BaseModel):
     expiration_date: Optional[datetime] = Field(
         default=None, description="When this memory expires"
     )
-    internal_metadata: Optional[Dict[str, Any]] = Field(
-        default=None, description="Internal metadata not exposed to users"
+    # Mem0 API specific fields
+    immutable: Optional[bool] = Field(
+        default=False, description="Whether this memory is immutable"
     )
-    deleted_at: Optional[datetime] = Field(
-        default=None, description="When this memory was deleted"
+    organization: Optional[str] = Field(
+        default=None, description="Organization associated with this memory"
     )
+    owner: Optional[str] = Field(default=None, description="Owner of this memory")
+    # Search-specific fields
     relevance_score: Optional[float] = Field(
         default=None, description="Relevance score from search"
     )

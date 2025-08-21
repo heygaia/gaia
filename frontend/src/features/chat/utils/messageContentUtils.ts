@@ -3,6 +3,7 @@ import {
   BASE_MESSAGE_KEYS,
   BASE_MESSAGE_SCHEMA,
   BaseMessageData,
+  TOOLS_MESSAGE_KEYS,
 } from "@/types/features/baseMessageRegistry";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { ConversationMessage, MessageType } from "@/types/features/convoTypes";
@@ -34,8 +35,8 @@ export const isBotMessageEmpty = (props: ChatBubbleBotProps): boolean => {
 
   if (loading) return false;
 
-  // Only check keys that are in BASE_MESSAGE_KEYS
-  const hasAnyContent = BASE_MESSAGE_KEYS.some((key) => !!props[key]);
+  // Only check keys that are in TOOLS_MESSAGE_KEYS
+  const hasAnyContent = TOOLS_MESSAGE_KEYS.some((key) => !!props[key]);
 
   return !(
     hasAnyContent ||

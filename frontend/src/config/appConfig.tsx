@@ -14,6 +14,7 @@ import {
   MapsIcon,
   TwitterIcon,
   WhatsappIcon,
+  YoutubeIcon,
 } from "@/components/shared/icons";
 
 export interface AppLink {
@@ -24,6 +25,7 @@ export interface AppLink {
   requiresAuth?: boolean;
   guestOnly?: boolean;
   commented?: boolean;
+  description?: string;
 }
 
 export interface LinkSection {
@@ -39,7 +41,7 @@ export const appConfig = {
     domain: "heygaia.io",
   },
 
-  // All links organized by category
+  // Core link definitions - single source of truth
   links: {
     // Primary navigation links (used in navbar)
     main: [
@@ -47,33 +49,26 @@ export const appConfig = {
         href: "/",
         label: "Home",
         icon: <Home01Icon width={19} color={undefined} />,
+        description: "Return to the home page",
       },
     ] as AppLink[],
 
     // Navigation menu sections
     product: [
-      // {
-      //   href: "/features",
-      //   label: "Features",
-      //   icon: <BookOpen02Icon width={19} color={undefined} />,
-      // },
       {
         href: "https://gaia.featurebase.app/roadmap",
         label: "Roadmap",
         icon: <MapsIcon width={19} color={undefined} />,
         external: true,
+        description: "See what's coming next",
       },
       {
         href: "https://status.heygaia.io",
         label: "Status",
         icon: <GlobalIcon width={19} color={undefined} />,
         external: true,
+        description: "Check the status of GAIA",
       },
-      //   {
-      //     href: "/use-cases",
-      //     label: "Use Cases",
-      //     icon: <BookOpen02Icon width={19} color={undefined} />,
-      //   },
     ] as AppLink[],
 
     resources: [
@@ -81,23 +76,27 @@ export const appConfig = {
         href: "/blog",
         label: "Blog",
         icon: <BookOpen02Icon width={19} color={undefined} />,
+        description: "Read the latest updates and insights",
       },
       {
         href: "https://docs.heygaia.io",
         label: "Docs",
         icon: <BookOpen02Icon width={19} color={undefined} />,
         external: true,
+        description: "Comprehensive documentation and guides",
       },
       {
         href: "/pricing",
         label: "Pricing",
         icon: <CreditCardPosIcon width={19} color={undefined} />,
+        description: "Choose the perfect plan for your needs",
       },
       {
         href: "https://gaia.featurebase.app",
         label: "Feature Request",
         icon: <Idea01Icon width={19} color={undefined} />,
         external: true,
+        description: "Request new features and vote on ideas",
       },
     ] as AppLink[],
 
@@ -106,21 +105,25 @@ export const appConfig = {
         href: "/about",
         label: "About",
         icon: <GlobalIcon width={19} color={undefined} />,
+        description: "Learn about our mission",
       },
       {
         href: "/contact",
         label: "Contact",
         icon: <CustomerService01Icon width={19} color={undefined} />,
+        description: "Get in touch with our team",
       },
       {
         href: "/terms",
         label: "Terms",
         icon: <BookOpen02Icon width={19} color={undefined} />,
+        description: "Terms of service and usage",
       },
       {
         href: "/privacy",
         label: "Privacy",
         icon: <BookOpen02Icon width={19} color={undefined} />,
+        description: "Our privacy policy",
       },
     ] as AppLink[],
 
@@ -130,212 +133,102 @@ export const appConfig = {
         label: "Discord",
         icon: <DiscordIcon width={19} />,
         external: true,
+        description: "Join the Community Discord",
       },
       {
         href: "https://x.com/_heygaia",
         label: "Twitter (X)",
         icon: <TwitterIcon width={19} />,
         external: true,
+        description: "Follow us for updates",
       },
       {
         href: "https://github.com/heygaia",
         label: "GitHub",
         icon: <Github width={19} height={19} />,
         external: true,
+        description: "Check out our open source projects",
       },
       {
         href: "https://whatsapp.heygaia.io",
         label: "WhatsApp",
         icon: <WhatsappIcon width={19} />,
         external: true,
+        description: "Join our WhatsApp Community",
       },
       {
         href: "https://youtube.com/@heygaia_io",
         label: "YouTube",
-        icon: <WhatsappIcon width={19} />,
+        icon: <YoutubeIcon width={19} />,
         external: true,
+        description: "Subscribe to our YouTube Channel",
+      },
+      {
+        href: "https://www.linkedin.com/company/heygaia",
+        label: "LinkedIn",
+        icon: <LinkedinIcon width={19} />,
+        external: true,
+        description: "Follow our LinkedIn Company Page",
       },
     ] as AppLink[],
 
     // Authentication related links
     auth: [
       {
-        href: "/c",
-        label: "Chat",
-        icon: <BubbleConversationChatIcon width={17} color={undefined} />,
-        requiresAuth: true,
+        href: "/login",
+        label: "Login",
+        guestOnly: true,
       },
       {
         href: "/signup",
         label: "Get Started",
         guestOnly: true,
       },
-    ] as AppLink[],
-
-    // Explore links
-    explore: [
       {
-        label: "About",
-        href: "/about",
-        icon: <GlobalIcon width={19} />,
+        href: "/c",
+        label: "Chat",
+        icon: <BubbleConversationChatIcon width={17} color={undefined} />,
+        requiresAuth: true,
       },
-      {
-        label: "Blog",
-        href: "/blog",
-        icon: <BookOpen02Icon width={19} />,
-      },
-      {
-        label: "Status",
-        href: "https://status.heygaia.io",
-        external: true,
-        icon: <BookOpen02Icon width={19} />,
-      },
-    ] as AppLink[],
-
-    // Social/Connect links
-    social: [
-      {
-        label: "Contact Us",
-        href: "/contact",
-        icon: <CustomerService01Icon width={19} />,
-      },
-      {
-        label: "X (Twitter)",
-        href: "https://x.com/_heygaia",
-        external: true,
-        icon: <TwitterIcon width={19} />,
-      },
-      {
-        label: "WhatsApp",
-        href: "https://whatsapp.heygaia.io",
-        external: true,
-        icon: <WhatsappIcon width={19} />,
-      },
-      {
-        label: "GitHub",
-        href: "https://github.com/heygaia",
-        external: true,
-        icon: <Github width={19} />,
-      },
-      {
-        label: "LinkedIn",
-        href: "https://www.linkedin.com/company/heygaia",
-        external: true,
-        icon: <LinkedinIcon width={19} />,
-      },
-    ] as AppLink[],
-
-    // Legal links
-    legal: [
-      { label: "Terms", href: "/terms" },
-      { label: "Privacy", href: "/privacy" },
     ] as AppLink[],
   },
 
-  // Footer sections (organized for footer display)
-  footerSections: [
-    {
-      title: "Get Started",
-      links: [
-        // Get auth links that are guest-only or require auth
-        { label: "Login", href: "/login", guestOnly: true },
-        { label: "Signup", href: "/signup", guestOnly: true },
-        { label: "New Chat", href: "/c", requiresAuth: true },
-      ],
-    },
-    {
-      title: "Explore",
-      links: [
-        // Combine explore links with main navigation links that fit here
-        { label: "About", href: "/about", icon: <GlobalIcon width={19} /> },
-        { label: "Blog", href: "/blog", icon: <BookOpen02Icon width={19} /> },
-        {
-          label: "Feature Request",
-          href: "https://gaia.featurebase.app",
-          external: true,
-          icon: <Idea01Icon width={19} />,
-        },
-        {
-          label: "Roadmap",
-          href: "https://gaia.featurebase.app/roadmap",
-          external: true,
-          icon: <MapsIcon width={19} />,
-        },
-        {
-          label: "Pricing",
-          href: "/pricing",
-          icon: <CreditCardPosIcon width={19} />,
-        },
-        {
-          label: "Status",
-          href: "https://status.heygaia.io",
-          external: true,
-          icon: <BookOpen02Icon width={19} />,
-        },
-      ],
-    },
-    {
-      title: "Connect",
-      links: [
-        // Use social links + Discord from main nav
-        {
-          label: "Contact Us",
-          href: "/contact",
-          icon: <CustomerService01Icon width={19} />,
-        },
-        {
-          label: "X (Twitter)",
-          href: "https://x.com/_heygaia",
-          external: true,
-          icon: <TwitterIcon width={19} />,
-        },
-        {
-          label: "Discord",
-          href: "https://discord.heygaia.io",
-          external: true,
-          icon: <DiscordIcon width={19} />,
-        },
-        {
-          label: "WhatsApp",
-          href: "https://whatsapp.heygaia.io",
-          external: true,
-          icon: <WhatsappIcon width={19} />,
-        },
-        {
-          label: "GitHub",
-          href: "https://github.com/heygaia",
-          external: true,
-          icon: <Github width={19} />,
-        },
-        {
-          label: "LinkedIn",
-          href: "https://www.linkedin.com/company/heygaia",
-          external: true,
-          icon: <LinkedinIcon width={19} />,
-        },
-      ],
-    },
-    {
-      title: "Legal",
-      links: [
-        { label: "Terms", href: "/terms" },
-        { label: "Privacy", href: "/privacy" },
-      ],
-    },
-  ] as LinkSection[],
+  // Footer mapping - references existing link categories
+  footerMapping: {
+    "Get Started": ["auth"],
+    Explore: ["resources", "product"],
+    Company: ["company"],
+    Connect: ["connect"],
+  } as Record<string, string[]>,
 };
 
-// Export legacy aliases for easier migration
-export const siteConfig = {
-  name: appConfig.site.name,
-  copyright: appConfig.site.copyright,
-  domain: appConfig.site.domain,
-  pageSections: appConfig.footerSections,
+// Utility functions for footer generation
+const getFooterSections = (): LinkSection[] => {
+  return Object.entries(appConfig.footerMapping).map(([title, categories]) => ({
+    title,
+    links: categories.flatMap(
+      (category) =>
+        appConfig.links[category as keyof typeof appConfig.links] || [],
+    ),
+  }));
 };
 
-export const mainNavLinks = appConfig.links.main;
-export const authNavLinks = appConfig.links.auth;
-export const productNavLinks = appConfig.links.product;
-export const resourcesNavLinks = appConfig.links.resources;
-export const companyNavLinks = appConfig.links.company;
-export const connectNavLinks = appConfig.links.connect;
+// Streamlined exports
+export const footerSections = getFooterSections();
+
+// Direct access to link categories for navigation
+export const { main, product, resources, company, connect, auth } =
+  appConfig.links;
+
+// Utility function to get description for a link by label
+export const getLinkDescription = (label: string): string => {
+  const allLinks = Object.values(appConfig.links).flat();
+  const link = allLinks.find((link) => link.label === label);
+  return link?.description || "";
+};
+
+// Utility function to get a link by label from all categories
+export const getLinkByLabel = (label: string): AppLink | undefined => {
+  const allLinks = Object.values(appConfig.links).flat();
+  return allLinks.find((link) => link.label === label);
+};

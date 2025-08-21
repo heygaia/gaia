@@ -8,6 +8,7 @@ import { chatApi } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import { streamController } from "@/features/chat/utils/streamController";
 import { MessageType } from "@/types/features/convoTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
@@ -16,11 +17,11 @@ import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
 
 export const useChatStream = () => {
-  const { setIsLoading } = useLoading();
+  const { setIsLoading, setAbortController } = useLoading();
   const { updateConvoMessages, convoMessages } = useConversation();
-  const router = useRouter();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
+  const router = useRouter();
 
   // Unified ref storage
   const refs = useRef({
@@ -38,6 +39,31 @@ export const useChatStream = () => {
   useEffect(() => {
     refs.current.convoMessages = convoMessages;
   }, [convoMessages]);
+
+  const saveIncompleteConversation = async () => {
+    if (!refs.current.botMessage || !refs.current.accumulatedResponse) {
+      return;
+    }
+
+    try {
+      const response = await chatApi.saveIncompleteConversation(
+        refs.current.userPrompt,
+        refs.current.newConversation.id || null,
+        refs.current.accumulatedResponse,
+        refs.current.botMessage.fileData || [],
+        refs.current.botMessage.selectedTool || null,
+        refs.current.botMessage.toolCategory || null,
+      );
+
+      // Handle navigation for incomplete conversations
+      if (response.conversation_id && !refs.current.newConversation.id) {
+        router.push(`/c/${response.conversation_id}`);
+        fetchConversations();
+      }
+    } catch (saveError) {
+      console.error("Failed to save incomplete conversation:", saveError);
+    }
+  };
 
   const updateBotMessage = (overrides: Partial<MessageType>) => {
     const baseMessage: MessageType = {
@@ -71,58 +97,71 @@ export const useChatStream = () => {
     updateConvoMessages(currentConvo);
   };
 
-  const handleStreamEvent = (event: EventSourceMessage) => {
-    if (event.data === "[DONE]") return;
+  /**
+   * Handles the incoming stream event, updating the bot message and loading text.
+   * @param event - The EventSourceMessage received from the stream.
+   * @returns An error message if an error occurs, otherwise undefined.
+   */
+  const handleStreamEvent = (event: EventSourceMessage): void | string => {
+    try {
+      if (event.data === "[DONE]") return;
 
-    const data = JSON.parse(event.data);
-    if (data.error) return toast.error(data.error);
+      const data = JSON.parse(event.data);
+      if (data.error) return data.error;
 
-    if (data.progress) {
-      // Handle both old format (string) and new format (object with tool info)
-      if (typeof data.progress === "string") {
-        setLoadingText(data.progress);
-      } else if (typeof data.progress === "object" && data.progress.message) {
-        // Enhanced progress with tool information
-        setLoadingText(data.progress.message, {
-          toolName: data.progress.tool_name,
-          toolCategory: data.progress.tool_category,
-        });
+      if (data.progress) {
+        // Handle both old format (string) and new format (object with tool info)
+        if (typeof data.progress === "string") {
+          setLoadingText(data.progress);
+        } else if (typeof data.progress === "object" && data.progress.message) {
+          // Enhanced progress with tool information
+          setLoadingText(data.progress.message, {
+            toolName: data.progress.tool_name,
+            toolCategory: data.progress.tool_category,
+          });
+        }
       }
-    }
-    if (data.conversation_id)
-      refs.current.newConversation.id = data.conversation_id;
-    if (data.conversation_description)
-      refs.current.newConversation.description = data.conversation_description;
+      if (data.conversation_id)
+        refs.current.newConversation.id = data.conversation_id;
+      if (data.conversation_description)
+        refs.current.newConversation.description =
+          data.conversation_description;
 
-    if (data.status === "generating_image") {
-      setLoadingText("Generating image...");
+      if (data.status === "generating_image") {
+        setLoadingText("Generating image...");
+        updateBotMessage({
+          image_data: { url: "", prompt: refs.current.userPrompt },
+          response: "",
+        });
+        return;
+      }
+
+      if (data.image_data) {
+        updateBotMessage({
+          image_data: data.image_data,
+          loading: false,
+        });
+        return;
+      }
+
+      // Add to the accumulated response if there's new response content
+      if (data.response) {
+        refs.current.accumulatedResponse += data.response;
+      }
+
+      // Parse only the data that's actually present in this stream chunk
+      const streamUpdates = parseStreamData(data);
+
       updateBotMessage({
-        image_data: { url: "", prompt: refs.current.userPrompt },
-        response: "",
+        ...streamUpdates,
+        response: refs.current.accumulatedResponse,
       });
-      return;
+    } catch (error) {
+      console.error("Error handling stream event:", error);
+      const errorMessage =
+        error instanceof Error ? error.message : "Unknown error";
+      return `Error processing stream data: ${errorMessage}`;
     }
-
-    if (data.image_data) {
-      updateBotMessage({
-        image_data: data.image_data,
-        loading: false,
-      });
-      return;
-    }
-
-    // Add to the accumulated response if there's new response content
-    if (data.response) {
-      refs.current.accumulatedResponse += data.response;
-    }
-
-    // Parse only the data that's actually present in this stream chunk
-    const streamUpdates = parseStreamData(data);
-
-    updateBotMessage({
-      ...streamUpdates,
-      response: refs.current.accumulatedResponse,
-    });
   };
 
   const handleStreamClose = async () => {
@@ -139,15 +178,20 @@ export const useChatStream = () => {
 
     setIsLoading(false);
     resetLoadingText();
+    streamController.clear();
 
+    // Only navigate for successful completions (manual aborts are handled in the save callback)
     if (refs.current.newConversation.id) {
-      // && !refs.current.convoMessages[0]?.conversation_id
-      router.push(`/c/${refs.current.newConversation.id}`);
+      // If a new conversation was created, update the URL and fetch conversations
+      // Using replaceState to avoid reloading the page that would happen with pushState
+      // Reloading results in fetching conversations again hence the flickering
+      window.history.replaceState(
+        {},
+        "",
+        `/c/${refs.current.newConversation.id}`,
+      );
       fetchConversations();
     }
-
-    // Clear the saved input text since the message was sent successfully
-    localStorage.removeItem("gaia-searchbar-text");
 
     refs.current.botMessage = null;
     refs.current.currentStreamingMessages = []; // Reset streaming messages
@@ -157,7 +201,6 @@ export const useChatStream = () => {
   return async (
     inputText: string,
     currentMessages: MessageType[],
-    conversationId: string | null,
     botMessageId: string,
     fileData: FileData[] = [],
     selectedTool: string | null = null,
@@ -182,24 +225,48 @@ export const useChatStream = () => {
       fileData,
     };
 
+    // Create abort controller for this stream
+    const controller = new AbortController();
+    setAbortController(controller);
+
+    // Register the save callback for when user clicks stop
+    streamController.setSaveCallback(() => {
+      // Update the UI immediately when stop is clicked
+      if (refs.current.botMessage) {
+        updateBotMessage({
+          response: refs.current.accumulatedResponse,
+          loading: false,
+        });
+      }
+
+      // Save the incomplete conversation
+      saveIncompleteConversation();
+    });
+
     await chatApi.fetchChatStream(
       inputText,
       [...refs.current.convoMessages, ...currentMessages],
-      conversationId,
+      undefined, // conversationId is will be fetched from the URL
       handleStreamEvent,
       handleStreamClose,
       (err) => {
         setIsLoading(false);
         resetLoadingText();
-        toast.error("Error in chat stream.");
-        console.error("Stream error:", err);
+        streamController.clear();
 
-        // Save the user's input text for restoration on error
-        localStorage.setItem("gaia-searchbar-text", inputText);
+        // Handle non-abort errors
+        if (err.name !== "AbortError") {
+          toast.error(`Error while streaming: ${err}`);
+          console.error("Stream error:", err);
+          // Save the user's input text for restoration on error
+          localStorage.setItem("gaia-searchbar-text", inputText);
+        }
+        // Abort errors are now handled in handleStreamClose
       },
       fileData,
       selectedTool,
       toolCategory,
+      controller,
     );
   };
 };

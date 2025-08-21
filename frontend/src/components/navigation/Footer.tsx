@@ -2,7 +2,7 @@ import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
 
 import { LinkButton } from "@/components/shared/LinkButton";
-import { appConfig } from "@/config/appConfig";
+import { appConfig, footerSections } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 
 export default function Footer() {
@@ -28,7 +28,7 @@ export default function Footer() {
             </div>
           </div>
 
-          {appConfig.footerSections.map((section) => (
+          {footerSections.map((section) => (
             <div
               key={section.title}
               className="flex h-full w-fit flex-col text-foreground-500"

@@ -39,20 +39,12 @@ async def complete_onboarding(
         # Convert string ID to ObjectId
         user_object_id = ObjectId(user_id)
 
-        # Prepare onboarding preferences
-        custom_instructions = (
-            onboarding_data.instructions.strip()
-            if onboarding_data.instructions
-            else None
-        )
-        if custom_instructions == "":
-            custom_instructions = None
-
+        # Prepare onboarding preferences with default values for settings page
         preferences = OnboardingPreferences(
-            country=onboarding_data.country,
+            country=None,  # Will be set later from timezone detection or settings
             profession=onboarding_data.profession,
-            response_style=onboarding_data.response_style,
-            custom_instructions=custom_instructions,
+            response_style="casual",  # Default response style
+            custom_instructions=None,
         )
 
         # Prepare onboarding data
@@ -178,7 +170,10 @@ async def update_onboarding_preferences(
         user_object_id = ObjectId(user_id)
 
         # Sanitize and prepare preferences
-        sanitized_preferences = preferences.model_dump(exclude_none=True)
+        # First, validate using the Pydantic model which will handle empty string normalization
+        validated_preferences = OnboardingPreferences(**preferences.model_dump())
+        sanitized_preferences = validated_preferences.model_dump(exclude_none=True)
+
         if "custom_instructions" in sanitized_preferences:
             # Basic sanitization - remove potentially harmful content
             sanitized_preferences["custom_instructions"] = sanitized_preferences[

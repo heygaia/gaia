@@ -16,7 +16,7 @@ from app.middleware.tiered_rate_limiter import (
     tiered_limiter,
     RateLimitExceededException,
 )
-from app.services.payments.subscriptions import get_user_subscription_status
+from app.services.payment_service import payment_service
 from app.models.payment_models import PlanType
 from app.config.loggers import app_logger
 from app.db.redis import redis_cache
@@ -205,7 +205,7 @@ def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
                 raise HTTPException(status_code=401, detail="User ID not found")
 
             # Get user subscription
-            subscription = await get_user_subscription_status(user_id)
+            subscription = await payment_service.get_user_subscription_status(user_id)
             user_plan = subscription.plan_type or PlanType.FREE
 
             # Check rate limits before executing function
@@ -292,7 +292,7 @@ async def _get_cached_subscription(user_id: str):
         app_logger.debug(f"Cache lookup failed for user {user_id}: {str(e)}")
 
     # Fetch and cache
-    subscription = await get_user_subscription_status(user_id)
+    subscription = await payment_service.get_user_subscription_status(user_id)
 
     # Cache for 5 minutes
     try:

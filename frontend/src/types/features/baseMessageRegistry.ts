@@ -14,6 +14,7 @@ import {
 import { IntegrationConnectionData } from "./integrationTypes";
 import { EmailComposeData, EmailFetchData, EmailThreadData } from "./mailTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
+import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";
 import {
   CodeData,
@@ -24,6 +25,34 @@ import {
   MemoryData,
 } from "./toolDataTypes";
 import { WeatherData } from "./weatherTypes";
+
+export const TOOLS_MESSAGE_SCHEMA = {
+  calendar_options: undefined as CalendarOptions[] | null | undefined,
+  calendar_delete_options: undefined as
+    | CalendarDeleteOptions[]
+    | null
+    | undefined,
+  calendar_edit_options: undefined as CalendarEditOptions[] | null | undefined,
+  email_compose_data: undefined as EmailComposeData[] | null | undefined,
+  email_fetch_data: undefined as EmailFetchData[] | null | undefined,
+  email_thread_data: undefined as EmailThreadData | null | undefined,
+  support_ticket_data: undefined as SupportTicketData[] | null | undefined,
+  weather_data: undefined as WeatherData | null | undefined,
+  search_results: undefined as SearchResults | null | undefined,
+  deep_research_results: undefined as DeepResearchResults | null | undefined,
+  image_data: undefined as ImageData | null | undefined,
+  todo_data: undefined as TodoToolData | null | undefined,
+  document_data: undefined as DocumentData | null | undefined,
+  code_data: undefined as CodeData | null | undefined,
+  memory_data: undefined as MemoryData | null | undefined,
+  goal_data: undefined as GoalDataMessageType | null | undefined,
+  google_docs_data: undefined as GoogleDocsData | null | undefined,
+  calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
+  calendar_list_fetch_data: undefined as
+    | CalendarListFetchData[]
+    | null
+    | undefined,
+};
 
 // BASE_MESSAGE_SCHEMA defines all the fields for message data.
 // Each value is set as `undefined as type` (or similar) to:
@@ -38,36 +67,13 @@ export const BASE_MESSAGE_SCHEMA = {
   fileData: undefined as FileData[] | undefined,
   selectedTool: undefined as string | null | undefined,
   toolCategory: undefined as string | null | undefined,
-  calendar_options: undefined as CalendarOptions[] | null | undefined,
-  calendar_delete_options: undefined as
-    | CalendarDeleteOptions[]
-    | null
-    | undefined,
-  calendar_edit_options: undefined as CalendarEditOptions[] | null | undefined,
-  email_compose_data: undefined as EmailComposeData[] | null | undefined,
-  email_fetch_data: undefined as EmailFetchData[] | null | undefined,
-  email_thread_data: undefined as EmailThreadData | null | undefined,
-  weather_data: undefined as WeatherData | null | undefined,
-  search_results: undefined as SearchResults | null | undefined,
-  deep_research_results: undefined as DeepResearchResults | null | undefined,
-  image_data: undefined as ImageData | null | undefined,
-  todo_data: undefined as TodoToolData | null | undefined,
-  document_data: undefined as DocumentData | null | undefined,
-  code_data: undefined as CodeData | null | undefined,
-  memory_data: undefined as MemoryData | null | undefined,
-  goal_data: undefined as GoalDataMessageType | null | undefined,
-  google_docs_data: undefined as GoogleDocsData | null | undefined,
   isConvoSystemGenerated: undefined as boolean | undefined,
-  calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
-  calendar_list_fetch_data: undefined as
-    | CalendarListFetchData[]
-    | null
-    | undefined,
   follow_up_actions: undefined as string[] | undefined,
   integration_connection_required: undefined as
     | IntegrationConnectionData
     | null
     | undefined,
+  ...TOOLS_MESSAGE_SCHEMA,
 };
 
 export type BaseMessageData = typeof BASE_MESSAGE_SCHEMA;
@@ -75,3 +81,10 @@ export type BaseMessageKey = keyof typeof BASE_MESSAGE_SCHEMA;
 export const BASE_MESSAGE_KEYS = Object.keys(
   BASE_MESSAGE_SCHEMA,
 ) as BaseMessageKey[];
+
+export type ToolsMessageData = typeof TOOLS_MESSAGE_SCHEMA;
+export type ToolsMessageKey = keyof typeof TOOLS_MESSAGE_SCHEMA;
+export const TOOLS_MESSAGE_KEYS = Object.keys(
+  TOOLS_MESSAGE_SCHEMA,
+) as ToolsMessageKey[];
+

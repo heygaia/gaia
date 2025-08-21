@@ -3,4 +3,3 @@
  */
 
 export * from "./api/index";
-export * from "./apiService";

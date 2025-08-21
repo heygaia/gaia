@@ -87,7 +87,21 @@ export default function PreferencesSettings({
         setIsUpdating(true);
         setHasUnsavedChanges(false);
 
-        const response = await authApi.updatePreferences(updatedPreferences);
+        // Filter out empty strings and only send valid values
+        const sanitizedPreferences = Object.entries(updatedPreferences).reduce(
+          (acc, [key, value]) => {
+            // Only include non-empty values, convert empty strings to undefined
+            if (value !== "" && value !== null && value !== undefined)
+              acc[key] = value;
+            else if (value === null) acc[key] = null;
+            // Explicitly include null values (for custom_instructions)
+
+            return acc;
+          },
+          {} as Record<string, string | null>,
+        );
+
+        const response = await authApi.updatePreferences(sanitizedPreferences);
 
         if (response.success) {
           toast.success("Preferences saved");
@@ -143,6 +157,11 @@ export default function PreferencesSettings({
       const updatedPreferences = { ...preferences, country: normalizedCode };
       setPreferences(updatedPreferences);
       debouncedUpdate(updatedPreferences);
+    } else {
+      // Handle case when country is deselected
+      const updatedPreferences = { ...preferences, country: "" };
+      setPreferences(updatedPreferences);
+      debouncedUpdate(updatedPreferences);
     }
   };
 
@@ -150,6 +169,11 @@ export default function PreferencesSettings({
     if (keys !== "all" && keys.size > 0) {
       const profession = Array.from(keys)[0] as string;
       const updatedPreferences = { ...preferences, profession };
+      setPreferences(updatedPreferences);
+      debouncedUpdate(updatedPreferences);
+    } else {
+      // Handle case when profession is deselected
+      const updatedPreferences = { ...preferences, profession: "" };
       setPreferences(updatedPreferences);
       debouncedUpdate(updatedPreferences);
     }
@@ -162,6 +186,11 @@ export default function PreferencesSettings({
         ...preferences,
         response_style: responseStyle === "other" ? "custom" : responseStyle,
       };
+      setPreferences(updatedPreferences);
+      debouncedUpdate(updatedPreferences);
+    } else {
+      // Handle case when response style is deselected
+      const updatedPreferences = { ...preferences, response_style: "" };
       setPreferences(updatedPreferences);
       debouncedUpdate(updatedPreferences);
     }

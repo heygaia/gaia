@@ -2,8 +2,8 @@ import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Kbd } from "@heroui/react";
+import { useEffect } from "react";
 
-import { CountrySelector } from "@/components/country-selector";
 import { SentIcon } from "@/components/shared/icons";
 import { cn } from "@/lib/utils";
 
@@ -14,7 +14,6 @@ interface OnboardingInputProps {
   onboardingState: OnboardingState;
   onSubmit: (e: React.FormEvent) => void;
   onInputChange: (value: string) => void;
-  onCountrySelect: (countryCode: string | null) => void;
   onProfessionSelect: (professionKey: React.Key | null) => void;
   onProfessionInputChange: (value: string) => void;
   inputRef: React.RefObject<HTMLInputElement | null>;
@@ -24,7 +23,6 @@ export const OnboardingInput = ({
   onboardingState,
   onSubmit,
   onInputChange,
-  onCountrySelect,
   onProfessionSelect,
   onProfessionInputChange,
   inputRef,
@@ -34,21 +32,39 @@ export const OnboardingInput = ({
       ? questions[onboardingState.currentQuestionIndex]
       : null;
 
+  // Focus the appropriate input when question changes
+  useEffect(() => {
+    if (
+      !onboardingState.isProcessing &&
+      !onboardingState.hasAnsweredCurrentQuestion
+    ) {
+      setTimeout(() => {
+        if (currentQuestion?.fieldName === FIELD_NAMES.PROFESSION) {
+          // Focus the autocomplete input
+          const autocompleteInput = document.querySelector(
+            '[data-slot="input"]',
+          ) as HTMLInputElement;
+          if (autocompleteInput) {
+            autocompleteInput.focus();
+          }
+        } else {
+          // Focus regular input
+          inputRef.current?.focus();
+        }
+      }, 500);
+    }
+  }, [
+    onboardingState.currentQuestionIndex,
+    onboardingState.isProcessing,
+    onboardingState.hasAnsweredCurrentQuestion,
+    currentQuestion?.fieldName,
+    inputRef,
+  ]);
+
   if (!currentQuestion) return null;
 
   const renderInput = () => {
     switch (currentQuestion.fieldName) {
-      case FIELD_NAMES.COUNTRY:
-        return (
-          <CountrySelector
-            key={`country-${onboardingState.currentQuestionIndex}`}
-            selectedKey={onboardingState.currentInputs.selectedCountry}
-            onSelectionChange={onCountrySelect}
-            placeholder="Search for your country..."
-            label=""
-          />
-        );
-
       case FIELD_NAMES.PROFESSION:
         return (
           <Autocomplete
@@ -98,10 +114,8 @@ export const OnboardingInput = ({
                 isIconOnly
                 type="submit"
                 disabled={
-                  currentQuestion.fieldName === FIELD_NAMES.INSTRUCTIONS
-                    ? onboardingState.isProcessing
-                    : !onboardingState.currentInputs.text.trim() ||
-                      onboardingState.isProcessing
+                  !onboardingState.currentInputs.text.trim() ||
+                  onboardingState.isProcessing
                 }
                 color="primary"
                 radius="full"

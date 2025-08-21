@@ -137,7 +137,10 @@ async def call_agent(
 
     except Exception as e:
         logger.error(f"Error when calling agent: {e}")
-        yield "data: {'error': 'Error when calling agent:  {e}'}\n\n"
+        error_dict = {
+            "error": f"Error when calling agent: {e}",
+        }
+        yield f"data: {json.dumps(error_dict)}\n\n"
         yield "data: [DONE]\n\n"
 
 
