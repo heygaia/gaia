@@ -3,12 +3,15 @@ import { apiService } from "@/lib/api";
 export interface ModelInfo {
   model_id: string;
   name: string;
-  provider: string;
+  model_provider?: string; // New field for model provider
+  inference_provider?: string; // New field for inference provider
   description?: string;
+  logo_url?: string;
   max_tokens: number;
   supports_streaming: boolean;
   supports_function_calling: boolean;
   available_in_plans: string[];
+  lowest_tier: string;
   is_default: boolean;
 }
 
@@ -48,10 +51,3 @@ export const selectModel = async (
   );
 };
 
-export const fetchModelDetails = async (
-  modelId: string,
-): Promise<ModelInfo> => {
-  return apiService.get<ModelInfo>(`/chat-models/${modelId}`, {
-    errorMessage: "Failed to fetch model details",
-  });
-};

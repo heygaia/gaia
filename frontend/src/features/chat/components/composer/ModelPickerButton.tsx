@@ -1,4 +1,10 @@
-import { Select, SelectItem, SharedSelection } from "@heroui/react";
+import {
+  Select,
+  SelectItem,
+  SharedSelection,
+  Avatar,
+  Chip,
+} from "@heroui/react";
 import { Cpu } from "lucide-react";
 import React from "react";
 
@@ -27,6 +33,24 @@ const ModelPickerButton: React.FC = () => {
     }
   };
 
+  const getTierDisplayName = (tier: string) => {
+    return tier.charAt(0).toUpperCase() + tier.slice(1);
+  };
+
+  const getTierColor = (tier: string) => {
+    switch (tier.toLowerCase()) {
+      case "pro":
+        return "text-amber-400";
+      default:
+        return "text-zinc-400";
+    }
+  };
+
+  // Don't render the button if models are still loading or not available
+  if (isLoading || !models || models.length === 0) {
+    return null;
+  }
+
   return (
     <Select
       placeholder="Model"
@@ -34,7 +58,6 @@ const ModelPickerButton: React.FC = () => {
         currentModel?.model_id ? new Set([currentModel.model_id]) : new Set()
       }
       onSelectionChange={handleSelectionChange}
-      isLoading={isLoading}
       isDisabled={selectModelMutation.isPending}
       size="sm"
       radius="sm"
@@ -47,7 +70,20 @@ const ModelPickerButton: React.FC = () => {
         value: "text-zinc-300 text-xs font-medium",
         selectorIcon: "text-zinc-400 w-3 h-3",
       }}
-      startContent={<Cpu className="h-3 w-3 shrink-0 text-zinc-400" />}
+      startContent={
+        currentModel?.logo_url ? (
+          <Avatar
+            src={currentModel.logo_url}
+            alt={currentModel.name}
+            className="h-3 w-3 shrink-0"
+            classNames={{
+              img: `object-contain ${currentModel.name.toLowerCase().includes("gpt") ? "invert" : ""}`,
+            }}
+          />
+        ) : (
+          <Cpu className="h-3 w-3 shrink-0 text-zinc-400" />
+        )
+      }
       renderValue={(items) => {
         if (!items.length) return "Model";
         const item = items[0];
@@ -66,24 +102,47 @@ const ModelPickerButton: React.FC = () => {
               title: "text-zinc-200",
               description: "text-zinc-400 mt-1",
             }}
+            startContent={
+              model.logo_url ? (
+                <Avatar
+                  src={model.logo_url}
+                  alt={model.name}
+                  className="h-4 w-4 shrink-0"
+                  classNames={{
+                    img: `object-contain ${model.name.toLowerCase().includes("gpt") ? "invert" : ""}`,
+                  }}
+                />
+              ) : (
+                <Cpu className="h-4 w-4 shrink-0 text-zinc-400" />
+              )
+            }
             description={
-              (model.supports_streaming || model.is_default) && (
-                <div className="flex items-center gap-2 text-xs">
-                  {model.supports_streaming && (
-                    <span className="text-zinc-500">Streaming</span>
-                  )}
-                  {model.is_default && (
-                    <span className="text-yellow-400">Default</span>
+              <div className="flex items-center justify-between text-xs">
+                <div className="flex items-center gap-2">
+                  {model.lowest_tier.toLowerCase() !== "free" && (
+                    <span className={getTierColor(model.lowest_tier)}>
+                      {getTierDisplayName(model.lowest_tier)}+ Plan
+                    </span>
                   )}
                 </div>
-              )
+              </div>
             }
           >
             <div className="flex items-center justify-between gap-2">
               <span>{model.name}</span>
               <span className="text-xs text-zinc-500 capitalize">
-                {model.provider}
+                {model.model_provider}
               </span>
+              {model.is_default && (
+                <Chip
+                  size="sm"
+                  color="warning"
+                  variant="flat"
+                  className="text-xs"
+                >
+                  Default
+                </Chip>
+              )}
             </div>
           </SelectItem>
         )) || []}

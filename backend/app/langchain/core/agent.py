@@ -88,7 +88,7 @@ async def call_agent(
                 "model_name": (
                     user_model_config.provider_model_name if user_model_config else None
                 ),
-                "provider": user_model_config.provider.value
+                "provider": user_model_config.inference_provider.value
                 if user_model_config
                 else None,
             },

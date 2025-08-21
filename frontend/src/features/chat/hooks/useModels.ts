@@ -3,14 +3,13 @@ import { toast } from "sonner";
 
 import { fetchAvailableModels, selectModel, ModelInfo } from "../api/modelsApi";
 import { useUser } from "@/features/auth/hooks/useUser";
-import { setUser } from "@/redux/slices/userSlice";
 
 export const useModels = () => {
   return useQuery({
     queryKey: ["models"],
     queryFn: fetchAvailableModels,
-    staleTime: 5 * 60 * 1000, // 5 minutes
-    gcTime: 10 * 60 * 1000, // 10 minutes
+    staleTime: 60 * 60 * 1000, // 1 hour - models change infrequently
+    gcTime: 60 * 60 * 1000, // 1 hour - keep in memory longer
     refetchOnWindowFocus: false,
     refetchOnMount: false,
   });

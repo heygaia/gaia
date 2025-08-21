@@ -34,14 +34,17 @@ async def get_available_models(user_plan: Optional[str] = None) -> List[ModelRes
             model_response = ModelResponse(
                 model_id=model_doc["model_id"],
                 name=model_doc["name"],
-                provider=model_doc["provider"],
+                model_provider=model_doc.get("model_provider"),
+                inference_provider=model_doc.get("inference_provider"),
                 description=model_doc.get("description"),
+                logo_url=model_doc.get("logo_url"),
                 max_tokens=model_doc["max_tokens"],
                 supports_streaming=model_doc.get("supports_streaming", True),
                 supports_function_calling=model_doc.get(
                     "supports_function_calling", True
                 ),
                 available_in_plans=model_doc["available_in_plans"],
+                lowest_tier=model_doc["lowest_tier"],
                 is_default=model_doc.get("is_default", False),
             )
             models.append(model_response)
@@ -128,12 +131,15 @@ async def update_user_selected_model(
         return ModelResponse(
             model_id=model.model_id,
             name=model.name,
-            provider=model.provider,
+            model_provider=model.model_provider,
+            inference_provider=model.inference_provider,
             description=model.description,
+            logo_url=model.logo_url,
             max_tokens=model.max_tokens,
             supports_streaming=model.supports_streaming,
             supports_function_calling=model.supports_function_calling,
             available_in_plans=model.available_in_plans,
+            lowest_tier=model.lowest_tier,
             is_default=model.is_default,
         )
 

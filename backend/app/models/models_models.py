@@ -27,11 +27,17 @@ class ModelConfig(BaseModel):
 
     model_id: str = Field(..., description="Unique identifier for the model")
     name: str = Field(..., description="Display name of the model")
-    provider: ModelProvider = Field(..., description="Model provider")
+    model_provider: ModelProvider = Field(description="Model provider (new field)")
+    inference_provider: ModelProvider = Field(
+        description="Inference provider (new field)"
+    )
     provider_model_name: str = Field(
         ..., description="Model name as used by the provider"
     )
     description: Optional[str] = Field(None, description="Model description")
+    logo_url: Optional[str] = Field(
+        None, description="URL to the model's logo (not provider logo)"
+    )
     max_tokens: int = Field(..., description="Maximum token limit")
     supports_streaming: bool = Field(
         default=True, description="Whether model supports streaming"
@@ -41,6 +47,9 @@ class ModelConfig(BaseModel):
     )
     available_in_plans: List[PlanType] = Field(
         ..., description="Plans where this model is available"
+    )
+    lowest_tier: PlanType = Field(
+        ..., description="Lowest pricing tier where this model is available"
     )
     is_active: bool = Field(
         default=True, description="Whether model is currently active"
@@ -63,8 +72,16 @@ class ModelResponse(BaseModel):
 
     model_id: str = Field(..., description="Unique identifier for the model")
     name: str = Field(..., description="Display name of the model")
-    provider: ModelProvider = Field(..., description="Model provider")
+    model_provider: Optional[ModelProvider] = Field(
+        None, description="Model provider (new field)"
+    )
+    inference_provider: Optional[ModelProvider] = Field(
+        None, description="Inference provider (new field)"
+    )
     description: Optional[str] = Field(None, description="Model description")
+    logo_url: Optional[str] = Field(
+        None, description="URL to the model's logo (not provider logo)"
+    )
     max_tokens: int = Field(..., description="Maximum token limit")
     supports_streaming: bool = Field(
         ..., description="Whether model supports streaming"
@@ -74,6 +91,9 @@ class ModelResponse(BaseModel):
     )
     available_in_plans: List[PlanType] = Field(
         ..., description="Plans where this model is available"
+    )
+    lowest_tier: PlanType = Field(
+        ..., description="Lowest pricing tier where this model is available"
     )
     is_default: bool = Field(..., description="Whether this is a default model")
 
@@ -98,10 +118,19 @@ class ModelCreateRequest(BaseModel):
     model_id: str = Field(..., description="Unique identifier for the model")
     name: str = Field(..., description="Display name of the model")
     provider: ModelProvider = Field(..., description="Model provider")
+    model_provider: Optional[ModelProvider] = Field(
+        None, description="Model provider (new field)"
+    )
+    inference_provider: Optional[ModelProvider] = Field(
+        None, description="Inference provider (new field)"
+    )
     provider_model_name: str = Field(
         ..., description="Model name as used by the provider"
     )
     description: Optional[str] = Field(None, description="Model description")
+    logo_url: Optional[str] = Field(
+        None, description="URL to the model's logo (not provider logo)"
+    )
     max_tokens: int = Field(..., description="Maximum token limit")
     supports_streaming: bool = Field(
         default=True, description="Whether model supports streaming"
@@ -111,6 +140,9 @@ class ModelCreateRequest(BaseModel):
     )
     available_in_plans: List[PlanType] = Field(
         ..., description="Plans where this model is available"
+    )
+    lowest_tier: PlanType = Field(
+        ..., description="Lowest pricing tier where this model is available"
     )
     is_active: bool = Field(
         default=True, description="Whether model is currently active"
@@ -131,6 +163,9 @@ class ModelUpdateRequest(BaseModel):
 
     name: Optional[str] = Field(None, description="Display name of the model")
     description: Optional[str] = Field(None, description="Model description")
+    logo_url: Optional[str] = Field(
+        None, description="URL to the model's logo (not provider logo)"
+    )
     max_tokens: Optional[int] = Field(None, description="Maximum token limit")
     supports_streaming: Optional[bool] = Field(
         None, description="Whether model supports streaming"
@@ -140,6 +175,9 @@ class ModelUpdateRequest(BaseModel):
     )
     available_in_plans: Optional[List[PlanType]] = Field(
         None, description="Plans where this model is available"
+    )
+    lowest_tier: Optional[PlanType] = Field(
+        None, description="Lowest pricing tier where this model is available"
     )
     is_active: Optional[bool] = Field(
         None, description="Whether model is currently active"
