@@ -85,12 +85,19 @@ async def call_agent(
                 "user_id": user_id,
                 "email": user.get("email"),
                 "user_time": user_time.isoformat(),
-                "model_name": (
-                    user_model_config.provider_model_name if user_model_config else None
-                ),
-                "provider": user_model_config.inference_provider.value
-                if user_model_config
-                else None,
+                "model_configurations": {
+                    "model_name": (
+                        user_model_config.provider_model_name
+                        if user_model_config
+                        else None
+                    ),
+                    "provider": user_model_config.inference_provider.value
+                    if user_model_config
+                    else None,
+                    "max_tokens": (
+                        user_model_config.max_tokens if user_model_config else None
+                    ),
+                },
             },
             "recursion_limit": 25,
             "metadata": {"user_id": user_id},

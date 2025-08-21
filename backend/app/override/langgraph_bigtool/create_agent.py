@@ -53,6 +53,7 @@ def create_agent(
     retrieve_tools_function: Callable | None = None,
     retrieve_tools_coroutine: Callable | None = None,
     context_schema=None,
+    trim_messages_node: Callable | None = None,
 ) -> StateGraph:
     """Create an agent with a registry of tools.
 
@@ -90,8 +91,15 @@ def create_agent(
     # strict typing requirements. The functionality is preserved from the original library.
 
     def call_model(state: State, config: RunnableConfig, *, store: BaseStore) -> State:
-        model_name = config.get("configurable").get("model_name", "gpt-4o-mini")
-        provider = config.get("configurable").get("provider", None)
+        if trim_messages_node:
+            messages = trim_messages_node(state, config, store)
+            state["messages"] = messages
+
+        model_configurations = config.get("configurable", {}).get(
+            "model_configurations", {}
+        )
+        model_name = model_configurations.get("model_name", "gpt-4o-mini")
+        provider = model_configurations.get("provider", None)
         _llm = llm.with_config(
             configurable={"model_name": model_name, "provider": provider}
         )
@@ -103,8 +111,15 @@ def create_agent(
     async def acall_model(
         state: State, config: RunnableConfig, *, store: BaseStore
     ) -> State:
-        model_name = config.get("configurable").get("model_name", "gpt-4o-mini")
-        provider = config.get("configurable").get("provider", None)
+        if trim_messages_node:
+            messages = trim_messages_node(state, config, store)
+            state["messages"] = messages
+
+        model_configurations = config.get("configurable", {}).get(
+            "model_configurations", {}
+        )
+        model_name = model_configurations.get("model_name", "gpt-4o-mini")
+        provider = model_configurations.get("provider", None)
         selected_tools = [tool_registry[id] for id in state["selected_tool_ids"]]
         _llm = llm.with_config(
             configurable={"model_name": model_name, "provider": provider}

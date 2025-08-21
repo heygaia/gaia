@@ -57,7 +57,7 @@ async def seed_models():
             "provider_model_name": "gpt-4o",
             "description": "OpenAI's most capable model, great for complex reasoning tasks",
             "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/ChatGPT-Logo.svg",
-            "max_tokens": 128000,
+            "max_tokens": 48_000,
             "supports_streaming": True,
             "supports_function_calling": True,
             "available_in_plans": [
@@ -79,7 +79,7 @@ async def seed_models():
             "provider_model_name": "gpt-4o-mini",
             "description": "OpenAI's efficient model, fast and cost-effective for most tasks",
             "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/ChatGPT-Logo.svg",
-            "max_tokens": 128000,
+            "max_tokens": 120_000,
             "supports_streaming": True,
             "supports_function_calling": True,
             "available_in_plans": [
@@ -149,7 +149,7 @@ async def seed_models():
             "provider_model_name": "gpt-oss-120b",
             "description": "Cerebras' open-source model, high performance with fast inference",
             "logo_url": "https://upload.wikimedia.org/wikipedia/commons/e/ef/ChatGPT-Logo.svg",
-            "max_tokens": 8192,
+            "max_tokens": 120_000,
             "supports_streaming": True,
             "supports_function_calling": True,
             "available_in_plans": [
