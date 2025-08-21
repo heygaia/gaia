@@ -63,7 +63,8 @@ class ComposioService:
 
         try:
             connection_request = self.composio.connected_accounts.initiate(
-                user_id=user_id, auth_config_id=config["auth_config_id"]
+                user_id=user_id, auth_config_id=config["auth_config_id"],
+                callback_url=["localhost:3000/c" if settings.ENV=="development" else "https://heygaia.io/c"]
             )
 
             return {
