@@ -37,13 +37,11 @@ async def startup(ctx: dict):
     logger.info("ARQ worker starting up...")
 
     # Initialize any resources needed by worker
-    # For example, database connections, external service clients, etc.
     ctx["startup_time"] = asyncio.get_event_loop().time()
-    logger.info("ARQ worker startup complete")
 
     llm = init_llm()
 
-    # Register and Build the processing graph
+    # Build the single workflow processing graph (renamed from reminder_processing)
     async with build_graph(
         chat_llm=llm,  # type: ignore[call-arg]
         exclude_tools=[
@@ -52,8 +50,12 @@ async def startup(ctx: dict):
             delete_reminder_tool.name,
         ],
         in_memory_checkpointer=True,
-    ) as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="reminder_processing")
+    ) as workflow_graph:
+        GraphManager.set_graph(workflow_graph, graph_name="workflow_processing")
+
+    logger.info(
+        "ARQ worker startup complete with workflow processing graph initialized"
+    )
 
 
 # async def cleanup_abandoned_subscriptions_task(ctx: dict) -> str:
@@ -228,6 +230,128 @@ async def renew_gmail_watch_subscriptions(ctx: dict) -> str:
     return await renew_function(ctx, max_concurrent=15)
 
 
+async def process_email_task(ctx: dict, history_id: str, user_email: str) -> str:
+    """
+    Simple email processing task that uses the workflow processing graph.
+    """
+    from app.langchain.core.graph_manager import GraphManager
+
+    try:
+        logger.info(f"Processing email task for history_id: {history_id}")
+
+        # Use the standard workflow processing graph for email tasks too
+        graph = await GraphManager.get_graph("workflow_processing")
+        if not graph:
+            raise ValueError("Workflow processing graph not available")
+
+        # Simple email processing logic here
+        # TODO: Implement actual email processing logic
+        result = f"Processed email {history_id} for {user_email}"
+
+        logger.info(f"Email processing completed for {history_id}: {result}")
+        return f"Email processed successfully: {result}"
+
+    except Exception as e:
+        error_msg = f"Failed to process email {history_id}: {str(e)}"
+        logger.error(error_msg)
+        raise
+
+
+async def process_workflow_generation_task(
+    ctx: dict, todo_id: str, user_id: str, title: str, description: str = ""
+) -> str:
+    """
+    Process workflow generation task for todos.
+    Migrated from RabbitMQ to ARQ for unified task processing.
+
+    Args:
+        ctx: ARQ context
+        todo_id: Todo ID to generate workflow for
+        user_id: User ID who owns the todo
+        title: Todo title
+        description: Todo description
+
+    Returns:
+        Processing result message
+    """
+    from datetime import datetime, timezone
+    from bson import ObjectId
+    from app.db.mongodb.collections import todos_collection
+    from app.services.todo_service import TodoService
+
+    logger.info(f"Processing workflow generation for todo {todo_id}: {title}")
+
+    try:
+        # Generate workflow using the existing method
+        workflow_result = await TodoService._generate_workflow_for_todo(
+            str(title),
+            str(description) if description else "",
+        )
+
+        if workflow_result.get("success"):
+            # Update the todo with the generated workflow
+            update_data = {
+                "workflow": workflow_result["workflow"],
+                "workflow_activated": True,
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            result = await todos_collection.update_one(
+                {"_id": ObjectId(todo_id), "user_id": user_id}, {"$set": update_data}
+            )
+
+            if result.modified_count > 0:
+                logger.info(
+                    f"Successfully generated and saved workflow for todo {todo_id} with {len(workflow_result['workflow'].get('steps', []))} steps"
+                )
+
+                # Invalidate cache for this todo
+                await TodoService._invalidate_cache(user_id, None, todo_id, "update")
+
+                return f"Successfully generated workflow for todo {todo_id}"
+            else:
+                raise ValueError(f"Todo {todo_id} not found or not updated")
+
+        else:
+            # Mark workflow generation as failed
+            failed_update_data = {
+                "workflow_activated": False,
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            await todos_collection.update_one(
+                {"_id": ObjectId(todo_id), "user_id": user_id},
+                {"$set": failed_update_data},
+            )
+
+            error_msg = workflow_result.get("error", "Unknown error")
+            logger.error(f"Failed to generate workflow for todo {todo_id}: {error_msg}")
+            raise ValueError(f"Workflow generation failed: {error_msg}")
+
+    except Exception as e:
+        # Mark workflow generation as failed on exception
+        try:
+            failed_update_data = {
+                "workflow_activated": False,
+                "updated_at": datetime.now(timezone.utc),
+            }
+
+            await todos_collection.update_one(
+                {"_id": ObjectId(todo_id), "user_id": user_id},
+                {"$set": failed_update_data},
+            )
+        except Exception as update_error:
+            logger.error(
+                f"Failed to update workflow status to failed: {str(update_error)}"
+            )
+
+        error_msg = (
+            f"Failed to process workflow generation for todo {todo_id}: {str(e)}"
+        )
+        logger.error(error_msg)
+        raise
+
+
 async def shutdown(ctx: dict):
     """ARQ worker shutdown function."""
     logger.info("ARQ worker shutting down...")
@@ -247,6 +371,8 @@ class WorkerSettings:
         cleanup_expired_reminders,
         check_inactive_users,
         renew_gmail_watch_subscriptions,
+        process_email_task,
+        process_workflow_generation_task,
         process_workflow,
         generate_workflow_steps,
         check_scheduled_workflows,

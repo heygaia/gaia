@@ -10,6 +10,126 @@ from typing import Optional
 from app.config.loggers import arq_worker_logger as logger
 
 
+async def _update_workflow_step_field(
+    workflow_id: str, user_id: str, step_index: int, field_name: str, field_value
+) -> bool:
+    """
+    Update a specific field of a workflow step using MongoDB field-specific operations.
+    This avoids updating the entire workflow document.
+
+    Args:
+        workflow_id: ID of the workflow
+        user_id: ID of the user who owns the workflow
+        step_index: Index of the step to update (0-based)
+        field_name: Name of the field to update (e.g., 'executed_at', 'result')
+        field_value: New value for the field
+
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    try:
+        from app.db.mongodb.collections import workflows_collection
+        from datetime import datetime, timezone
+
+        # Use MongoDB positional operator to update specific array element
+        update_data = {
+            f"steps.{step_index}.{field_name}": field_value,
+            "updated_at": datetime.now(timezone.utc),
+        }
+
+        result = await workflows_collection.update_one(
+            {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
+        )
+
+        return result.modified_count > 0
+
+    except Exception as e:
+        logger.error(f"Failed to update workflow step field {field_name}: {str(e)}")
+        return False
+
+
+async def _update_workflow_execution_metrics(
+    workflow_id: str,
+    user_id: str,
+    total_executions: int,
+    successful_executions: Optional[int] = None,
+) -> bool:
+    """
+    Update workflow execution metrics efficiently using MongoDB increment operations.
+
+    Args:
+        workflow_id: ID of the workflow
+        user_id: ID of the user who owns the workflow
+        total_executions: Total number of executions to increment
+        successful_executions: Successful executions to increment (optional)
+
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    try:
+        from app.db.mongodb.collections import workflows_collection
+        from datetime import datetime, timezone
+
+        # Use MongoDB increment operations for atomic updates
+        update_operations = {
+            "$inc": {"total_executions": total_executions},
+            "$set": {
+                "last_executed_at": datetime.now(timezone.utc),
+                "updated_at": datetime.now(timezone.utc),
+            },
+        }
+
+        if successful_executions is not None:
+            update_operations["$inc"]["successful_executions"] = successful_executions
+
+        result = await workflows_collection.update_one(
+            {"_id": workflow_id, "user_id": user_id}, update_operations
+        )
+
+        return result.modified_count > 0
+
+    except Exception as e:
+        logger.error(f"Failed to update workflow execution metrics: {str(e)}")
+        return False
+
+
+async def _batch_update_workflow_steps(
+    workflow_id: str, user_id: str, step_updates: dict
+) -> bool:
+    """
+    Batch update multiple workflow step fields in a single MongoDB operation.
+
+    Args:
+        workflow_id: ID of the workflow
+        user_id: ID of the user who owns the workflow
+        step_updates: Dictionary mapping step indices to field updates
+                     e.g., {0: {'executed_at': datetime, 'result': {...}}}
+
+    Returns:
+        bool: True if update was successful, False otherwise
+    """
+    try:
+        from app.db.mongodb.collections import workflows_collection
+        from datetime import datetime, timezone
+
+        # Build update document for multiple step fields
+        update_data = {"updated_at": datetime.now(timezone.utc)}
+
+        for step_index, fields in step_updates.items():
+            for field_name, field_value in fields.items():
+                update_data[f"steps.{step_index}.{field_name}"] = field_value
+
+        result = await workflows_collection.update_one(
+            {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
+        )
+
+        return result.modified_count > 0
+
+    except Exception as e:
+        logger.error(f"Failed to batch update workflow steps: {str(e)}")
+        return False
+
+
 async def process_workflow(
     ctx: dict, workflow_id: str, user_id: str, context: Optional[dict] = None
 ) -> str:
@@ -49,10 +169,10 @@ async def process_workflow(
             user_id,
         )
 
-        # Get the processing graph
-        graph = await GraphManager.get_graph("reminder_processing")
+        # Get the workflow processing graph
+        graph = await GraphManager.get_graph("workflow_processing")
         if not graph:
-            raise ValueError("Processing graph not available")
+            raise ValueError("Workflow processing graph not available")
 
         # Execute workflow steps sequentially
         execution_results = []
@@ -64,14 +184,10 @@ async def process_workflow(
                     f"Executing step {step_index + 1}/{len(workflow.steps)}: {step.title}"
                 )
 
-                # Update step execution timestamp
+                # Update step execution timestamp using optimized field update
                 step.executed_at = datetime.now(timezone.utc)
-
-                # Update workflow with current step progress
-                await WorkflowService.update_workflow(
-                    workflow_id,
-                    UpdateWorkflowRequest(steps=workflow.steps),
-                    user_id,
+                await _update_workflow_step_field(
+                    workflow_id, user_id, step_index, "executed_at", step.executed_at
                 )
 
                 # Execute the tool directly via graph
@@ -104,8 +220,11 @@ async def process_workflow(
                     "executed_at": step.executed_at.isoformat(),
                 }
 
-                # Update step with results
+                # Update step with results using optimized field update
                 step.result = step_result
+                await _update_workflow_step_field(
+                    workflow_id, user_id, step_index, "result", step_result
+                )
                 execution_results.append(step_result)
 
                 # Add to accumulated context for next steps
@@ -120,31 +239,17 @@ async def process_workflow(
                     f"Failed to execute step {step_index + 1}: {str(step_error)}"
                 )
 
-                # Mark step as failed - just record the error in result
+                # Mark step as failed using optimized field update
                 step.result = {"error": str(step_error)}
-
-                # Update workflow with failed step
-                await WorkflowService.update_workflow(
-                    workflow_id,
-                    UpdateWorkflowRequest(
-                        steps=workflow.steps,
-                    ),
-                    user_id,
+                await _update_workflow_step_field(
+                    workflow_id, user_id, step_index, "result", step.result
                 )
 
                 raise step_error
 
-        # All steps completed successfully
-        workflow.total_executions += 1
-        workflow.successful_executions += 1
-        workflow.last_executed_at = datetime.now(timezone.utc)
-
-        await WorkflowService.update_workflow(
-            workflow_id,
-            UpdateWorkflowRequest(
-                steps=workflow.steps,
-            ),
-            user_id,
+        # All steps completed successfully - update execution metrics efficiently
+        await _update_workflow_execution_metrics(
+            workflow_id, user_id, total_executions=1, successful_executions=1
         )
 
         # Create result summary and notification
@@ -160,19 +265,10 @@ async def process_workflow(
         error_msg = f"Failed to process workflow {workflow_id}: {str(e)}"
         logger.error(error_msg)
 
-        # Mark workflow as failed
+        # Mark workflow as failed using optimized execution metrics update
         try:
-            from app.services.workflow_service import WorkflowService
-            from app.models.workflow_models import UpdateWorkflowRequest
-
-            workflow = await WorkflowService.get_workflow(workflow_id, user_id)
-            if workflow:
-                workflow.total_executions += 1
-
-            await WorkflowService.update_workflow(
-                workflow_id,
-                UpdateWorkflowRequest(),
-                user_id,
+            await _update_workflow_execution_metrics(
+                workflow_id, user_id, total_executions=1, successful_executions=0
             )
         except Exception as update_e:
             logger.error(

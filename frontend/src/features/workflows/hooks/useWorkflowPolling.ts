@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useState } from "react";
 
 import { Workflow, workflowApi } from "../api/workflowApi";
+import { usePolling } from "@/hooks/usePolling";
 
 interface UseWorkflowPollingReturn {
   workflow: Workflow | null;
@@ -12,132 +13,66 @@ interface UseWorkflowPollingReturn {
 }
 
 export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
-  const [workflow, setWorkflow] = useState<Workflow | null>(null);
-  const [isPolling, setIsPolling] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [currentWorkflowId, setCurrentWorkflowId] = useState<string | null>(
+    null,
+  );
 
-  const intervalRef = useRef<NodeJS.Timeout | null>(null);
-  const workflowIdRef = useRef<string | null>(null);
-  const pollCountRef = useRef(0);
-
-  const getPollingInterval = (pollCount: number): number => {
-    // Start with 1 second, then gradually increase
-    if (pollCount < 10) return 1000; // First 10 seconds: poll every 1s
-    if (pollCount < 30) return 2000; // Next 40 seconds: poll every 2s
-    if (pollCount < 60) return 5000; // Next 2.5 minutes: poll every 5s
-    return 10000; // After that: poll every 10s
-  };
-
-  const isTerminalStatus = (status: string): boolean => {
-    // For polling during creation, we want to continue until workflow has steps and is PENDING
-    // For other cases, FAILED is terminal, but PENDING and COMPLETED depend on context
-    return ["failed"].includes(status.toLowerCase());
-  };
-  const pollWorkflowStatus = useCallback(async (workflowId: string) => {
-    try {
-      const response = await workflowApi.getWorkflow(workflowId);
-      const updatedWorkflow = response.workflow;
-
-      setWorkflow(updatedWorkflow);
-      setError(null);
-
-      // Only stop polling on FAILED status
-      // Let the parent component decide when to stop for success cases
-      if (updatedWorkflow.status === "failed") {
-        setIsPolling(false);
-        if (intervalRef.current) {
-          clearInterval(intervalRef.current);
-          intervalRef.current = null;
-        }
-        return;
+  const {
+    data: workflow,
+    isPolling,
+    error,
+    startPolling: startGenericPolling,
+    stopPolling,
+    clearError,
+  } = usePolling<Workflow>(
+    async () => {
+      if (!currentWorkflowId) {
+        throw new Error("No workflow ID set for polling");
       }
-
-      // Continue polling with adjusted interval
-      pollCountRef.current++;
-      const newInterval = getPollingInterval(pollCountRef.current);
-
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-
-      intervalRef.current = setTimeout(() => {
-        pollWorkflowStatus(workflowId);
-      }, newInterval);
-    } catch (err) {
-      const errorMessage =
-        err instanceof Error ? err.message : "Failed to fetch workflow status";
-      setError(errorMessage);
-
-      // Continue polling even on error, but with longer interval
-      pollCountRef.current++;
-      const newInterval = Math.min(
-        getPollingInterval(pollCountRef.current) * 2,
-        30000,
-      ); // Max 30s
-
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-
-      intervalRef.current = setTimeout(() => {
-        pollWorkflowStatus(workflowId);
-      }, newInterval);
-    }
-  }, []);
+      const response = await workflowApi.getWorkflow(currentWorkflowId);
+      return response.workflow;
+    },
+    {
+      initialInterval: 1000, // Start with 1 second
+      maxInterval: 10000, // Max 10 seconds
+      maxAttempts: 120, // Up to 2 minutes of attempts
+      maxDuration: 300000, // 5 minutes total
+      enableBackoff: true,
+      backoffMultiplier: 1.2,
+      shouldStop: (workflow: Workflow) => {
+        // Stop when workflow has steps and no error
+        return workflow?.steps?.length > 0 && !workflow?.error_message;
+      },
+      isError: (workflow: Workflow) => !!workflow?.error_message,
+      retryOnError: true,
+      errorRetryMultiplier: 1.5,
+    },
+  );
 
   const startPolling = useCallback(
     (workflowId: string) => {
-      if (workflowIdRef.current === workflowId && isPolling) {
-        return; // Already polling this workflow
+      if (!workflowId) {
+        console.error("Cannot start polling: No workflow ID provided");
+        return;
       }
 
-      // Stop any existing polling
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-        intervalRef.current = null;
-      }
-
-      workflowIdRef.current = workflowId;
-      pollCountRef.current = 0;
-      setIsPolling(true);
-      setError(null);
-
-      // Start polling immediately
-      pollWorkflowStatus(workflowId);
+      setCurrentWorkflowId(workflowId);
+      startGenericPolling();
     },
-    [pollWorkflowStatus, isPolling],
+    [startGenericPolling],
   );
 
-  const stopPolling = useCallback(() => {
-    setIsPolling(false);
-    workflowIdRef.current = null;
-    pollCountRef.current = 0;
-
-    if (intervalRef.current) {
-      clearInterval(intervalRef.current);
-      intervalRef.current = null;
-    }
-  }, []);
-
-  const clearError = useCallback(() => {
-    setError(null);
-  }, []);
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) {
-        clearInterval(intervalRef.current);
-      }
-    };
-  }, []);
+  const stopPollingWrapper = useCallback(() => {
+    setCurrentWorkflowId(null);
+    stopPolling();
+  }, [stopPolling]);
 
   return {
     workflow,
     isPolling,
     error,
     startPolling,
-    stopPolling,
+    stopPolling: stopPollingWrapper,
     clearError,
   };
 };

@@ -218,7 +218,6 @@ export default function WorkflowModal({
         handleClose();
       } catch (error) {
         console.error("Failed to delete workflow:", error);
-        // Could add error state here if needed
       }
     }
   };
@@ -294,7 +293,9 @@ export default function WorkflowModal({
     } catch (error) {
       console.error("Failed to run workflow:", error);
     }
-  }; // Handle polling results (only for create mode)
+  };
+
+  // Handle polling results (only for create mode)
   useEffect(() => {
     if (
       mode === "create" &&
@@ -312,7 +313,15 @@ export default function WorkflowModal({
           handleClose();
         }, 2000); // Auto-close after 2 seconds
       }
-      // Continue polling if no steps yet
+
+      // Check for error state
+      if (pollingWorkflow.error_message) {
+        setCreationPhase("error");
+        stopPolling();
+        setTimeout(() => {
+          handleClose(); // Auto-close even on error
+        }, 3000); // Give a bit more time to read error
+      }
     }
   }, [pollingWorkflow, creationPhase, stopPolling, mode]);
 

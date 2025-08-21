@@ -10,6 +10,7 @@ import { Workflow } from "../api/workflowApi";
 import CreateWorkflowModal from "./CreateWorkflowModal";
 import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
+import { WorkflowErrorBoundary } from "./WorkflowErrorBoundary";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import useCasesData from "@/features/use-cases/constants/data.json";
@@ -130,86 +131,88 @@ export default function WorkflowPage() {
   };
 
   return (
-    <div className="space-y-10 overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
-      <div className="flex flex-col gap-6 md:gap-7">
-        <div>
-          <div className="flex w-full items-center justify-between">
-            <div>
-              <h1>Your Workflows</h1>
-              <div className="text-foreground-400">
-                Automate your tasks with AI-powered workflows
+    <WorkflowErrorBoundary>
+      <div className="space-y-10 overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
+        <div className="flex flex-col gap-6 md:gap-7">
+          <div>
+            <div className="flex w-full items-center justify-between">
+              <div>
+                <h1>Your Workflows</h1>
+                <div className="text-foreground-400">
+                  Automate your tasks with AI-powered workflows
+                  {workflows.length > 0 && (
+                    <span className="ml-2">
+                      ({workflows.length} workflow
+                      {workflows.length !== 1 ? "s" : ""})
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
                 {workflows.length > 0 && (
-                  <span className="ml-2">
-                    ({workflows.length} workflow
-                    {workflows.length !== 1 ? "s" : ""})
-                  </span>
+                  <Button
+                    variant="flat"
+                    size="sm"
+                    isIconOnly
+                    onPress={refetch}
+                    isLoading={isLoading}
+                  >
+                    <RefreshCw className="h-4 w-4" />
+                  </Button>
                 )}
+                <Button
+                  color="primary"
+                  size="sm"
+                  startContent={<PlusIcon width={16} height={16} />}
+                  onPress={onOpen}
+                >
+                  Create
+                </Button>
               </div>
             </div>
-            <div className="flex items-center gap-2">
-              {workflows.length > 0 && (
-                <Button
-                  variant="flat"
-                  size="sm"
-                  isIconOnly
-                  onPress={refetch}
-                  isLoading={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              )}
-              <Button
-                color="primary"
-                size="sm"
-                startContent={<PlusIcon width={16} height={16} />}
-                onPress={onOpen}
-              >
-                Create
-              </Button>
+          </div>
+
+          {renderWorkflowsGrid()}
+        </div>
+
+        <div className="flex min-h-[50vh] flex-col gap-5">
+          <div>
+            <h1>Explore</h1>
+            <div className="text-foreground-400">
+              Discover workflow templates and community creations
             </div>
           </div>
-        </div>
-
-        {renderWorkflowsGrid()}
-      </div>
-
-      <div className="flex min-h-[50vh] flex-col gap-5">
-        <div>
-          <h1>Explore</h1>
-          <div className="text-foreground-400">
-            Discover workflow templates and community creations
+          <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+            {useCasesData.templates.slice(0, 8).map((useCase, index) => (
+              <UseCaseCard
+                key={useCase.published_id || index}
+                title={useCase.title || ""}
+                description={useCase.description || ""}
+                action_type={
+                  useCase.action_type === "workflow" ? "workflow" : "prompt"
+                }
+                integrations={useCase.integrations || []}
+              />
+            ))}
           </div>
         </div>
-        <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {useCasesData.templates.slice(0, 8).map((useCase, index) => (
-            <UseCaseCard
-              key={useCase.published_id || index}
-              title={useCase.title || ""}
-              description={useCase.description || ""}
-              action_type={
-                useCase.action_type === "workflow" ? "workflow" : "prompt"
-              }
-              integrations={useCase.integrations || []}
-            />
-          ))}
-        </div>
+
+        <CreateWorkflowModal
+          isOpen={isOpen}
+          onOpenChange={onOpenChange}
+          onWorkflowCreated={handleWorkflowCreated}
+          onWorkflowListRefresh={refetch}
+        />
+
+        <EditWorkflowModal
+          isOpen={isEditOpen}
+          onOpenChange={onEditOpenChange}
+          onWorkflowUpdated={() => refetch()}
+          onWorkflowDeleted={handleWorkflowDeleted}
+          onWorkflowListRefresh={refetch}
+          workflow={selectedWorkflow}
+        />
       </div>
-
-      <CreateWorkflowModal
-        isOpen={isOpen}
-        onOpenChange={onOpenChange}
-        onWorkflowCreated={handleWorkflowCreated}
-        onWorkflowListRefresh={refetch}
-      />
-
-      <EditWorkflowModal
-        isOpen={isEditOpen}
-        onOpenChange={onEditOpenChange}
-        onWorkflowUpdated={() => refetch()}
-        onWorkflowDeleted={handleWorkflowDeleted}
-        onWorkflowListRefresh={refetch}
-        workflow={selectedWorkflow}
-      />
-    </div>
+    </WorkflowErrorBoundary>
   );
 }

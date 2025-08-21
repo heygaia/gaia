@@ -45,7 +45,6 @@ async def create_workflow(
 
 
 @router.get("/workflows", response_model=WorkflowListResponse)
-@tiered_rate_limit("workflow_operations")
 async def list_workflows(user: dict = Depends(get_current_user)):
     """List all workflows for the current user."""
     try:
@@ -61,7 +60,6 @@ async def list_workflows(user: dict = Depends(get_current_user)):
 
 
 @router.get("/workflows/{workflow_id}", response_model=WorkflowResponse)
-@tiered_rate_limit("workflow_operations")
 async def get_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
     """Get a specific workflow by ID."""
     try:
@@ -87,7 +85,6 @@ async def get_workflow(workflow_id: str, user: dict = Depends(get_current_user))
 
 
 @router.put("/workflows/{workflow_id}", response_model=WorkflowResponse)
-@tiered_rate_limit("workflow_operations")
 async def update_workflow(
     workflow_id: str,
     request: UpdateWorkflowRequest,
@@ -119,7 +116,6 @@ async def update_workflow(
 
 
 @router.delete("/workflows/{workflow_id}")
-@tiered_rate_limit("workflow_operations")
 async def delete_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
     """Delete a workflow."""
     try:
@@ -169,7 +165,6 @@ async def execute_workflow(
 
 
 @router.get("/workflows/{workflow_id}/status", response_model=WorkflowStatusResponse)
-@tiered_rate_limit("workflow_operations")
 async def get_workflow_status(workflow_id: str, user: dict = Depends(get_current_user)):
     """Get the current status of a workflow (for polling)."""
     try:
@@ -189,7 +184,6 @@ async def get_workflow_status(workflow_id: str, user: dict = Depends(get_current
 
 
 @router.post("/workflows/{workflow_id}/activate", response_model=WorkflowResponse)
-@tiered_rate_limit("workflow_operations")
 async def activate_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
     """Activate a workflow (enable its trigger)."""
     try:
@@ -215,7 +209,6 @@ async def activate_workflow(workflow_id: str, user: dict = Depends(get_current_u
 
 
 @router.post("/workflows/{workflow_id}/deactivate", response_model=WorkflowResponse)
-@tiered_rate_limit("workflow_operations")
 async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
     """Deactivate a workflow (disable its trigger)."""
     try:
@@ -242,7 +235,9 @@ async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current
         )
 
 
-@router.post("/workflows/{workflow_id}/regenerate-steps", response_model=WorkflowResponse)
+@router.post(
+    "/workflows/{workflow_id}/regenerate-steps", response_model=WorkflowResponse
+)
 @tiered_rate_limit("workflow_operations")
 async def regenerate_workflow_steps(
     workflow_id: str, user: dict = Depends(get_current_user)

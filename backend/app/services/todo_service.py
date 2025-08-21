@@ -1,12 +1,10 @@
 import math
 import uuid
-import json
 from datetime import datetime, timezone
 from typing import Dict, Any, List, Optional
 
 from bson import ObjectId
 from pymongo import ReturnDocument
-from app.db.rabbitmq import publisher
 from app.config.loggers import todos_logger
 from app.db.mongodb.collections import projects_collection, todos_collection
 from app.db.redis import (
@@ -330,22 +328,35 @@ class TodoService:
         result = await todos_collection.insert_one(todo_dict)
         created_todo = await todos_collection.find_one({"_id": result.inserted_id})
 
-        # Publish workflow generation task to background queue
-
+        # Queue workflow generation task using ARQ
         try:
-            await publisher.connect()
-            workflow_task_data = {
-                "todo_id": str(result.inserted_id),
-                "user_id": user_id,
-                "title": todo.title,
-                "description": todo.description,
-            }
-            await publisher.publish(
-                "workflow-generation", json.dumps(workflow_task_data).encode()
+            from arq import create_pool
+            from arq.connections import RedisSettings
+            from app.config.settings import settings
+
+            # Create ARQ connection pool
+            redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
+            pool = await create_pool(redis_settings)
+
+            # Enqueue the workflow generation task
+            job = await pool.enqueue_job(
+                "process_workflow_generation_task",
+                str(result.inserted_id),
+                user_id,
+                todo.title,
+                todo.description or "",
             )
-            todos_logger.info(
-                f"Queued workflow generation for todo '{todo.title}' (ID: {result.inserted_id})"
-            )
+
+            await pool.close()
+
+            if job:
+                todos_logger.info(
+                    f"Queued workflow generation for todo '{todo.title}' (ID: {result.inserted_id}) with job ID: {job.job_id}"
+                )
+            else:
+                todos_logger.warning(
+                    f"Failed to queue workflow generation for todo '{todo.title}'"
+                )
         except Exception as e:
             todos_logger.warning(
                 f"Failed to queue workflow generation for todo '{todo.title}': {str(e)}"
