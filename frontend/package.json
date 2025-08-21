@@ -1,7 +1,13 @@
 {
-  "name": "gaia-nextjs",
+  "name": "gaia",
+  "description": "Frontend of GAIA - The personal AI assistant",
   "version": "0.1.0",
   "private": true,
+  "homepage": "https://github.com/heygaia/gaia",
+   "bugs": {
+    "url": "https://github.com/heygaia/gaia/issues",
+    "email": "support@heygaia.io"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
