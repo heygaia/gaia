@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1-beta](https://github.com/heygaia/gaia/compare/v0.2.0-beta...v0.2.1-beta) (2025-08-21)
+
+
+### Documentation
+
+* Added Code of Conduct and appropriately replaced main with master in docs ([c297fcd](https://github.com/heygaia/gaia/commit/c297fcd9bcd55d1deedf564b9736b32b4993fcf9))
+
 ## [0.2.0-beta](https://github.com/heygaia/gaia/compare/v0.1.0-beta...v0.2.0-beta) (2025-08-21)
 
 
