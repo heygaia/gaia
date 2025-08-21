@@ -15,7 +15,6 @@ from app.services.reminder_service import reminder_scheduler
 from app.workers.workflow_worker import (
     process_workflow,
     generate_workflow_steps,
-    check_scheduled_workflows,
 )
 
 # from app.tasks.subscription_cleanup import (
@@ -375,7 +374,6 @@ class WorkerSettings:
         process_workflow_generation_task,
         process_workflow,
         generate_workflow_steps,
-        check_scheduled_workflows,
         # cleanup_abandoned_subscriptions_task,
         # reconcile_subscription_payments_task,
     ]
@@ -397,11 +395,6 @@ class WorkerSettings:
             hour=2,  # At 2 AM (different from other jobs to spread load)
             minute=0,  # At the start of the hour
             second=0,  # At the start of the minute
-        ),
-        cron(
-            check_scheduled_workflows,
-            minute={0, 15, 30, 45},  # Every 15 minutes
-            second=0,
         ),
         # cron(
         #     cleanup_abandoned_subscriptions_task,

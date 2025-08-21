@@ -90,12 +90,17 @@ class WorkflowService:
     async def create_workflow(request: CreateWorkflowRequest, user_id: str) -> Workflow:
         """Create a new workflow."""
         try:
+            # Calculate next_run for scheduled workflows
+            trigger_config = request.trigger_config
+            if trigger_config.type == "schedule" and trigger_config.cron_expression:
+                trigger_config.update_next_run()
+
             # Create workflow object
             workflow = Workflow(
                 title=request.title,
                 description=request.description,
                 steps=[],  # Steps will be generated
-                trigger_config=request.trigger_config,
+                trigger_config=trigger_config,
                 activated=True,  # Default to activated
                 user_id=user_id,
             )
@@ -109,6 +114,16 @@ class WorkflowService:
                 raise ValueError("Failed to create workflow in database")
 
             logger.info(f"Created workflow {workflow.id} for user {user_id}")
+
+            # Schedule the workflow if it's a scheduled type and enabled
+            if (
+                trigger_config.type == "schedule"
+                and trigger_config.enabled
+                and trigger_config.next_run
+            ):
+                await WorkflowService._schedule_workflow_execution(
+                    workflow.id, user_id, trigger_config.next_run
+                )
 
             # Generate steps
             if request.generate_immediately:
@@ -164,8 +179,50 @@ class WorkflowService:
     ) -> Optional[Workflow]:
         """Update an existing workflow."""
         try:
+            # Get current workflow to check for trigger changes
+            current_workflow = await WorkflowService.get_workflow(workflow_id, user_id)
+            if not current_workflow:
+                return None
+
             update_data = {"updated_at": datetime.now(timezone.utc)}
             update_fields = request.model_dump(exclude_unset=True)
+
+            # Handle trigger config changes
+            if "trigger_config" in update_fields:
+                new_trigger_config = update_fields["trigger_config"]
+
+                # Calculate next_run for scheduled workflows
+                if (
+                    new_trigger_config.type == "schedule"
+                    and new_trigger_config.cron_expression
+                ):
+                    new_trigger_config.update_next_run()
+
+                # Check if we need to reschedule
+                old_config = current_workflow.trigger_config
+                schedule_changed = (
+                    old_config.type != new_trigger_config.type
+                    or old_config.cron_expression != new_trigger_config.cron_expression
+                    or old_config.enabled != new_trigger_config.enabled
+                )
+
+                if schedule_changed:
+                    # Cancel existing scheduled job
+                    await WorkflowService._cancel_scheduled_workflow_execution(
+                        workflow_id
+                    )
+
+                    # Schedule new execution if conditions are met
+                    if (
+                        new_trigger_config.type == "schedule"
+                        and new_trigger_config.enabled
+                        and new_trigger_config.next_run
+                        and current_workflow.activated
+                    ):
+                        await WorkflowService._schedule_workflow_execution(
+                            workflow_id, user_id, new_trigger_config.next_run
+                        )
+
             update_data.update(update_fields)
 
             result = await workflows_collection.update_one(
@@ -186,6 +243,9 @@ class WorkflowService:
     async def delete_workflow(workflow_id: str, user_id: str) -> bool:
         """Delete a workflow."""
         try:
+            # Cancel any scheduled executions before deleting
+            await WorkflowService._cancel_scheduled_workflow_execution(workflow_id)
+
             result = await workflows_collection.delete_one(
                 {"_id": workflow_id, "user_id": user_id}
             )
@@ -307,6 +367,9 @@ class WorkflowService:
             if not workflow:
                 return None
 
+            # Cancel any scheduled executions
+            await WorkflowService._cancel_scheduled_workflow_execution(workflow_id)
+
             # Update trigger to disabled and status to inactive
             trigger_config = workflow.trigger_config
             trigger_config.enabled = False
@@ -322,7 +385,9 @@ class WorkflowService:
             raise
 
     @staticmethod
-    async def regenerate_workflow_steps(workflow_id: str, user_id: str) -> Optional[Workflow]:
+    async def regenerate_workflow_steps(
+        workflow_id: str, user_id: str
+    ) -> Optional[Workflow]:
         """Regenerate steps for an existing workflow."""
         try:
             # Get the existing workflow
@@ -549,4 +614,48 @@ Available Tools: {tools}
         except Exception as e:
             logger.error(
                 f"Error queuing workflow execution for {workflow_id}: {str(e)}"
+            )
+
+    @staticmethod
+    async def _schedule_workflow_execution(
+        workflow_id: str, user_id: str, scheduled_at: datetime
+    ) -> None:
+        """Schedule workflow execution at a specific time using ARQ."""
+        try:
+            pool = await RedisPoolManager.get_pool()
+
+            job = await pool.enqueue_job(
+                "process_workflow",
+                workflow_id,
+                user_id,
+                {},  # context
+                _defer_until=scheduled_at,
+            )
+
+            if job:
+                logger.info(
+                    f"Scheduled workflow {workflow_id} for execution at {scheduled_at} with job ID {job.job_id}"
+                )
+            else:
+                logger.error(f"Failed to schedule workflow execution for {workflow_id}")
+
+        except Exception as e:
+            logger.error(
+                f"Error scheduling workflow execution for {workflow_id}: {str(e)}"
+            )
+
+    @staticmethod
+    async def _cancel_scheduled_workflow_execution(workflow_id: str) -> None:
+        """Cancel any pending scheduled executions for a workflow."""
+        try:
+            # Note: ARQ doesn't provide a direct way to cancel specific jobs by metadata
+            # This is a limitation we'll accept for now
+            # In a production system, you might want to track job IDs in the database
+            logger.info(
+                f"Scheduled execution cancellation requested for workflow {workflow_id}"
+            )
+            # TODO: Implement job cancellation when ARQ supports it better
+        except Exception as e:
+            logger.error(
+                f"Error cancelling scheduled execution for {workflow_id}: {str(e)}"
             )

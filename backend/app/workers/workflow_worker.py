@@ -252,6 +252,34 @@ async def process_workflow(
             workflow_id, user_id, total_executions=1, successful_executions=1
         )
 
+        # Schedule next execution for scheduled workflows
+        if (
+            workflow.trigger_config.type == "schedule"
+            and workflow.trigger_config.enabled
+            and workflow.trigger_config.cron_expression
+            and workflow.activated
+        ):
+            # Calculate next run time
+            next_run = workflow.trigger_config.calculate_next_run()
+            if next_run:
+                # Update the next_run field in database
+                from app.db.mongodb.collections import workflows_collection
+
+                await workflows_collection.update_one(
+                    {"_id": workflow_id, "user_id": user_id},
+                    {"$set": {"trigger_config.next_run": next_run}},
+                )
+
+                # Schedule the next execution
+                from app.services.workflow_service import WorkflowService
+
+                await WorkflowService._schedule_workflow_execution(
+                    workflow_id, user_id, next_run
+                )
+                logger.info(
+                    f"Scheduled next execution of workflow {workflow_id} for {next_run}"
+                )
+
         # Create result summary and notification
         await create_workflow_completion_notification(
             workflow, execution_results, user_id
@@ -305,70 +333,6 @@ async def generate_workflow_steps(ctx: dict, workflow_id: str, user_id: str) -> 
 
     except Exception as e:
         error_msg = f"Failed to generate workflow steps {workflow_id}: {str(e)}"
-        logger.error(error_msg)
-        raise
-
-
-async def check_scheduled_workflows(ctx: dict) -> str:
-    """
-    Check for scheduled workflows that need to be executed.
-
-    Args:
-        ctx: ARQ context
-
-    Returns:
-        Processing result message
-    """
-    logger.info("Checking for scheduled workflows")
-
-    try:
-        from app.db.mongodb.collections import workflows_collection
-        from arq import create_pool
-        from arq.connections import RedisSettings
-        from app.config.settings import settings
-
-        # Find workflows that are scheduled and enabled
-        cursor = workflows_collection.find(
-            {
-                "activated": True,
-                "trigger_config.type": "schedule",
-                "trigger_config.enabled": True,
-                "trigger_config.next_run": {"$lte": datetime.now(timezone.utc)},
-            }
-        )
-
-        executed_count = 0
-        redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-        pool = await create_pool(redis_settings)
-
-        try:
-            async for workflow_doc in cursor:
-                try:
-                    # Queue workflow execution with empty context
-                    job = await pool.enqueue_job(
-                        "process_workflow",
-                        workflow_doc["_id"],
-                        workflow_doc["user_id"],
-                        {},  # Add context parameter
-                    )
-
-                    if job:
-                        executed_count += 1
-                        logger.info(f"Queued scheduled workflow {workflow_doc['_id']}")
-
-                except Exception as e:
-                    logger.error(
-                        f"Failed to queue scheduled workflow {workflow_doc['_id']}: {str(e)}"
-                    )
-        finally:
-            await pool.close()
-
-        result = f"Checked scheduled workflows, queued {executed_count} for execution"
-        logger.info(result)
-        return result
-
-    except Exception as e:
-        error_msg = f"Failed to check scheduled workflows: {str(e)}"
         logger.error(error_msg)
         raise
 

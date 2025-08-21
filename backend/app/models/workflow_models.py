@@ -83,6 +83,37 @@ class TriggerConfig(BaseModel):
         default=None, description="Calendar event patterns"
     )
 
+    def calculate_next_run(
+        self, base_time: Optional[datetime] = None
+    ) -> Optional[datetime]:
+        """Calculate the next run time based on cron expression."""
+        if self.type != TriggerType.SCHEDULE or not self.cron_expression:
+            return None
+
+        from app.utils.cron_utils import get_next_run_time
+
+        try:
+            return get_next_run_time(self.cron_expression, base_time)
+        except Exception:
+            return None
+
+    def update_next_run(self, base_time: Optional[datetime] = None) -> bool:
+        """Update the next_run field and return True if changed."""
+        old_next_run = self.next_run
+        self.next_run = self.calculate_next_run(base_time)
+        return old_next_run != self.next_run
+
+    @field_validator("cron_expression")
+    @classmethod
+    def validate_cron_expression(cls, v):
+        """Validate cron expression if provided."""
+        if v is not None:
+            from app.utils.cron_utils import validate_cron_expression
+
+            if not validate_cron_expression(v):
+                raise ValueError(f"Invalid cron expression: {v}")
+        return v
+
 
 class Workflow(BaseModel):
     """Main workflow model."""
