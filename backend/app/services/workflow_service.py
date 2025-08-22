@@ -7,8 +7,13 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
+
 from app.config.loggers import general_logger as logger
 from app.db.mongodb.collections import workflows_collection
+from app.langchain.llm.client import init_llm
+from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
 from app.models.workflow_models import (
     CreateWorkflowRequest,
     UpdateWorkflowRequest,
@@ -476,12 +481,6 @@ class WorkflowService:
     async def _generate_steps_with_llm(description: str, title: str) -> list:
         """Generate workflow steps using LLM with structured output."""
         try:
-            from pydantic import BaseModel, Field
-            from langchain_core.output_parsers import PydanticOutputParser
-            from langchain_core.prompts import PromptTemplate
-            from app.langchain.llm.client import init_llm
-            from app.langchain.tools.core.registry import tool_names
-
             # Define the structured output schema
             class WorkflowStep(BaseModel):
                 id: str = Field(
@@ -511,80 +510,44 @@ class WorkflowService:
             # Create the parser
             parser = PydanticOutputParser(pydantic_object=WorkflowPlan)
 
-            # Create prompt template
-            prompt = PromptTemplate(
-                template="""Create a practical workflow plan for this goal using ONLY the available tools listed below.
-
-TITLE: {title}
-DESCRIPTION: {description}
-
-CRITICAL REQUIREMENTS:
-1. Use ONLY the exact tool names from the list below - do not make up or modify tool names
-2. Choose tools that are logically appropriate for the goal
-3. Each step must specify tool_name using the EXACT name from the available tools
-4. Consider the tool category when selecting appropriate tools
-5. Create 4-7 actionable steps that logically break down this goal into executable tasks
-6. Use practical and helpful tools that accomplish the goal, avoid unnecessary tools
-
-FORBIDDEN STEP TYPES (DO NOT CREATE):
-- Do NOT create steps for "generating summaries," "analyzing data," or "processing information" - these are internal AI operations, not actionable tools
-- Do NOT create steps for "thinking," "planning," "deciding," or "reviewing" - focus only on concrete actions using available tools
-- Do NOT create steps that involve only text processing, data analysis, or content generation without a specific tool
-- Do NOT create generic steps like "gather requirements," "evaluate options," or "make recommendations"
-- If content analysis is needed, use existing tools like web_search_tool to gather information or generate_document to create output
-
-FOCUS ON ACTIONABLE TOOLS:
-- Every step must perform a concrete action (send email, create calendar event, search web, save file, etc.)
-- Every step must use an available tool that interfaces with an external system or service
-- Think "What external action needs to happen?" not "What thinking needs to occur?"
-- Steps should produce tangible outputs or perform specific operations
-
-JSON OUTPUT REQUIREMENTS:
-- NEVER include comments (//) in the JSON output
-- Use only valid JSON syntax with no explanatory comments
-- Tool inputs should contain realistic example values, not placeholders
-- All string values must be properly quoted
-- No trailing commas or syntax errors
-
-BAD WORKFLOW EXAMPLES (DO NOT CREATE):
-❌ "Analyze project requirements" → No corresponding tool
-❌ "Generate summary of findings" → Pure text processing, use generate_document instead
-❌ "Review and prioritize tasks" → Internal thinking process, use list_todos instead
-❌ "Create analysis report" → Vague, use generate_document with specific content
-❌ "Evaluate meeting feedback" → No tool available, use search_gmail_messages to find feedback
-
-GOOD WORKFLOW EXAMPLES:
-✅ "Plan vacation to Europe" → 1) web_search_tool (research destinations), 2) get_weather (check climate), 3) create_calendar_event (schedule trip dates)
-✅ "Organize project emails" → 1) search_gmail_messages (find project emails), 2) create_gmail_label (create organization), 3) apply_labels_to_emails (organize them)
-✅ "Prepare for client meeting" → 1) search_gmail_messages (find relevant emails), 2) web_search_tool (research client), 3) create_calendar_event (block preparation time)
-✅ "Submit quarterly report" → 1) query_file (review previous reports), 2) generate_document (create new report), 3) create_reminder (set deadline reminder)
-✅ "Research market trends" → 1) web_search_tool (find current trends), 2) deep_research_tool (detailed analysis), 3) generate_document (compile findings)
-
-Available Tools: {tools}
-
-{format_instructions}""",
-                input_variables=["description", "title", "tools"],
-                partial_variables={
-                    "format_instructions": parser.get_format_instructions()
-                },
+            # Also include always available tools
+            # Import here to avoid circular dependency at module level
+            from app.langchain.tools.core.categories import get_tool_category
+            from app.langchain.tools.core.registry import (
+                ALWAYS_AVAILABLE_TOOLS,
+                TOOLS_BY_CATEGORY,
             )
+
+            # Create structured tool information with categories
+            tools_with_categories = []
+            for category, category_tools in TOOLS_BY_CATEGORY.items():
+                for tool in category_tools:
+                    if hasattr(tool, "name"):
+                        tools_with_categories.append(
+                            f"{tool.name} (category: {category})"
+                        )
+
+            for tool in ALWAYS_AVAILABLE_TOOLS:
+                if hasattr(tool, "name"):
+                    category = get_tool_category(tool.name)
+                    tools_with_categories.append(f"{tool.name} (category: {category})")
 
             # Initialize LLM
             llm = init_llm(streaming=False)
 
-            # Create chain
-            chain = prompt | llm | parser
+            # Create chain using the template
+            chain = WORKFLOW_GENERATION_TEMPLATE | llm | parser
 
             # Generate workflow plan
             result = await chain.ainvoke(
                 {
                     "description": description,
                     "title": title,
-                    "tools": ", ".join(tool_names),
+                    "tools": "\n".join(tools_with_categories),
+                    "categories": ", ".join(TOOLS_BY_CATEGORY.keys()),
+                    "format_instructions": parser.get_format_instructions(),
                 }
-            )
-
-            # Convert to list of dictionaries for storage
+            )  # Convert to list of dictionaries for storage
             steps_data = []
             for i, step in enumerate(result.steps, 1):
                 step_dict = step.model_dump()
