@@ -153,7 +153,20 @@ class WorkflowService:
             if not workflow_doc:
                 return None
 
-            return Workflow(**transform_doc(workflow_doc))
+            # Transform the document and ensure proper typing
+            transformed_doc = transform_doc(workflow_doc)
+
+            # Ensure trigger_config is properly typed as TriggerConfig
+            if "trigger_config" in transformed_doc and isinstance(
+                transformed_doc["trigger_config"], dict
+            ):
+                from app.models.workflow_models import TriggerConfig
+
+                transformed_doc["trigger_config"] = TriggerConfig(
+                    **transformed_doc["trigger_config"]
+                )
+
+            return Workflow(**transformed_doc)
 
         except Exception as e:
             logger.error(f"Error getting workflow {workflow_id}: {str(e)}")
@@ -169,7 +182,20 @@ class WorkflowService:
             workflows = []
 
             async for doc in cursor:
-                workflows.append(Workflow(**transform_doc(doc)))
+                # Transform the document and ensure proper typing
+                transformed_doc = transform_doc(doc)
+
+                # Ensure trigger_config is properly typed as TriggerConfig
+                if "trigger_config" in transformed_doc and isinstance(
+                    transformed_doc["trigger_config"], dict
+                ):
+                    from app.models.workflow_models import TriggerConfig
+
+                    transformed_doc["trigger_config"] = TriggerConfig(
+                        **transformed_doc["trigger_config"]
+                    )
+
+                workflows.append(Workflow(**transformed_doc))
 
             logger.debug(f"Retrieved {len(workflows)} workflows for user {user_id}")
             return workflows
@@ -195,6 +221,12 @@ class WorkflowService:
             # Handle trigger config changes
             if "trigger_config" in update_fields:
                 new_trigger_config = update_fields["trigger_config"]
+
+                # Ensure trigger_config is a TriggerConfig object, not a dict
+                if isinstance(new_trigger_config, dict):
+                    from app.models.workflow_models import TriggerConfig
+
+                    new_trigger_config = TriggerConfig(**new_trigger_config)
 
                 # Calculate next_run for scheduled workflows
                 if (
@@ -227,6 +259,9 @@ class WorkflowService:
                         await WorkflowService._schedule_workflow_execution(
                             workflow_id, user_id, new_trigger_config.next_run
                         )
+
+                # Convert TriggerConfig back to dict for MongoDB storage
+                update_fields["trigger_config"] = new_trigger_config.model_dump()
 
             update_data.update(update_fields)
 
@@ -424,7 +459,20 @@ class WorkflowService:
                 logger.info(
                     f"Regenerated {len(steps_data)} steps for workflow {workflow_id}"
                 )
-                return Workflow(**transform_doc(result))
+                # Transform the document and ensure proper typing
+                transformed_doc = transform_doc(result)
+
+                # Ensure trigger_config is properly typed as TriggerConfig
+                if "trigger_config" in transformed_doc and isinstance(
+                    transformed_doc["trigger_config"], dict
+                ):
+                    from app.models.workflow_models import TriggerConfig
+
+                    transformed_doc["trigger_config"] = TriggerConfig(
+                        **transformed_doc["trigger_config"]
+                    )
+
+                return Workflow(**transformed_doc)
             return None
 
         except Exception as e:

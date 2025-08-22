@@ -78,6 +78,7 @@ export default function WorkflowModal({
 
   const {
     workflow: pollingWorkflow,
+    isPolling,
     startPolling,
     stopPolling,
   } = useWorkflowPolling();
@@ -398,21 +399,49 @@ export default function WorkflowModal({
       if (hasSteps) {
         setCreationPhase("success");
         stopPolling(); // Stop polling on success
+
+        // Refresh workflow list when steps are generated successfully
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+
         setTimeout(() => {
           handleClose();
         }, 2000); // Auto-close after 2 seconds
+        return;
       }
 
-      // Check for error state
-      if (pollingWorkflow.error_message) {
-        setCreationPhase("error");
-        stopPolling();
-        setTimeout(() => {
-          handleClose(); // Auto-close even on error
-        }, 3000); // Give a bit more time to read error
-      }
+      // For error handling, we'll rely on polling timeout rather than immediate error_message
+      // This prevents showing error for temporary generation issues
+      // The polling hook will stop after maxDuration (5 minutes) or maxAttempts (120)
     }
   }, [pollingWorkflow, creationPhase, stopPolling, mode]);
+
+  // Handle polling timeout/completion for error states
+  useEffect(() => {
+    if (mode === "create" && !isPolling && creationPhase === "generating") {
+      // Polling stopped but we're still in generating phase
+      // Check if we have steps or if it's an error case
+      if (pollingWorkflow?.steps && pollingWorkflow.steps.length > 0) {
+        setCreationPhase("success");
+
+        // Refresh workflow list when steps are generated successfully
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+
+        setTimeout(() => {
+          handleClose();
+        }, 2000);
+      } else {
+        // No steps after polling completed - this is an error
+        setCreationPhase("error");
+        setTimeout(() => {
+          handleClose();
+        }, 3000);
+      }
+    }
+  }, [isPolling, creationPhase, pollingWorkflow, mode]);
 
   // Handle polling results for edit mode regeneration
   useEffect(() => {
@@ -921,7 +950,8 @@ export default function WorkflowModal({
                               Steps Regenerated!
                             </h3>
                             <p className="text-sm text-zinc-400">
-                              {pollingWorkflow.steps.length} new steps generated
+                              {pollingWorkflow.steps?.length || 0} new steps
+                              generated
                             </p>
                           </div>
                         </div>

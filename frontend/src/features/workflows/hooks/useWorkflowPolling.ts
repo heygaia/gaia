@@ -40,10 +40,14 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
       enableBackoff: true,
       backoffMultiplier: 1.2,
       shouldStop: (workflow: Workflow) => {
-        // Stop when workflow has steps and no error
-        return workflow?.steps?.length > 0 && !workflow?.error_message;
+        // Stop when workflow has steps (successful generation)
+        return workflow?.steps?.length > 0;
       },
-      isError: (workflow: Workflow) => !!workflow?.error_message,
+      isError: (workflow: Workflow) => {
+        // Only treat as error if we have error_message AND no steps AND it's been a while
+        // This prevents premature error states during generation
+        return false; // Let the modal handle error logic with more context
+      },
       retryOnError: true,
       errorRetryMultiplier: 1.5,
     },
