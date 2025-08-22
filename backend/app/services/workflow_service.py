@@ -526,6 +526,19 @@ CRITICAL REQUIREMENTS:
 5. Create 4-7 actionable steps that logically break down this goal into executable tasks
 6. Use practical and helpful tools that accomplish the goal, avoid unnecessary tools
 
+FORBIDDEN STEP TYPES (DO NOT CREATE):
+- Do NOT create steps for "generating summaries," "analyzing data," or "processing information" - these are internal AI operations, not actionable tools
+- Do NOT create steps for "thinking," "planning," "deciding," or "reviewing" - focus only on concrete actions using available tools
+- Do NOT create steps that involve only text processing, data analysis, or content generation without a specific tool
+- Do NOT create generic steps like "gather requirements," "evaluate options," or "make recommendations"
+- If content analysis is needed, use existing tools like web_search_tool to gather information or generate_document to create output
+
+FOCUS ON ACTIONABLE TOOLS:
+- Every step must perform a concrete action (send email, create calendar event, search web, save file, etc.)
+- Every step must use an available tool that interfaces with an external system or service
+- Think "What external action needs to happen?" not "What thinking needs to occur?"
+- Steps should produce tangible outputs or perform specific operations
+
 JSON OUTPUT REQUIREMENTS:
 - NEVER include comments (//) in the JSON output
 - Use only valid JSON syntax with no explanatory comments
@@ -533,11 +546,19 @@ JSON OUTPUT REQUIREMENTS:
 - All string values must be properly quoted
 - No trailing commas or syntax errors
 
+BAD WORKFLOW EXAMPLES (DO NOT CREATE):
+❌ "Analyze project requirements" → No corresponding tool
+❌ "Generate summary of findings" → Pure text processing, use generate_document instead
+❌ "Review and prioritize tasks" → Internal thinking process, use list_todos instead
+❌ "Create analysis report" → Vague, use generate_document with specific content
+❌ "Evaluate meeting feedback" → No tool available, use search_gmail_messages to find feedback
+
 GOOD WORKFLOW EXAMPLES:
-- "Plan vacation to Europe" → 1) web_search_tool (research destinations), 2) get_weather (check climate), 3) create_calendar_event (schedule trip dates)
-- "Organize project emails" → 1) search_gmail_messages (find project emails), 2) create_gmail_label (create organization), 3) apply_labels_to_emails (organize them)
-- "Prepare for client meeting" → 1) search_gmail_messages (find relevant emails), 2) web_search_tool (research client), 3) create_calendar_event (block preparation time)
-- "Submit quarterly report" → 1) query_file (review previous reports), 2) generate_document (create new report), 3) create_reminder (set deadline reminder)
+✅ "Plan vacation to Europe" → 1) web_search_tool (research destinations), 2) get_weather (check climate), 3) create_calendar_event (schedule trip dates)
+✅ "Organize project emails" → 1) search_gmail_messages (find project emails), 2) create_gmail_label (create organization), 3) apply_labels_to_emails (organize them)
+✅ "Prepare for client meeting" → 1) search_gmail_messages (find relevant emails), 2) web_search_tool (research client), 3) create_calendar_event (block preparation time)
+✅ "Submit quarterly report" → 1) query_file (review previous reports), 2) generate_document (create new report), 3) create_reminder (set deadline reminder)
+✅ "Research market trends" → 1) web_search_tool (find current trends), 2) deep_research_tool (detailed analysis), 3) generate_document (compile findings)
 
 Available Tools: {tools}
 
