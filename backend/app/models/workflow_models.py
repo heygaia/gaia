@@ -235,3 +235,16 @@ class WorkflowStatusResponse(BaseModel):
     last_updated: datetime
     error_message: Optional[str] = Field(default=None)
     logs: List[str] = Field(default_factory=list)
+
+
+class RegenerateStepsRequest(BaseModel):
+    """Request model for regenerating workflow steps."""
+
+    reason: Optional[str] = Field(
+        default=None,
+        description="Optional reason for regeneration (e.g., 'make more efficient', 'use different tools')",
+    )
+    force_different_tools: bool = Field(
+        default=True,
+        description="Whether to explicitly avoid using the same tools as previous steps",
+    )

@@ -173,7 +173,9 @@ export const workflowApi = {
   },
 
   // Activate a workflow
-  activateWorkflow: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+  activateWorkflow: async (
+    workflowId: string,
+  ): Promise<{ workflow: Workflow; message: string }> => {
     return apiService.post<{ workflow: Workflow; message: string }>(
       `/workflows/${workflowId}/activate`,
       {},
@@ -185,7 +187,9 @@ export const workflowApi = {
   },
 
   // Deactivate a workflow
-  deactivateWorkflow: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+  deactivateWorkflow: async (
+    workflowId: string,
+  ): Promise<{ workflow: Workflow; message: string }> => {
     return apiService.post<{ workflow: Workflow; message: string }>(
       `/workflows/${workflowId}/deactivate`,
       {},
@@ -197,10 +201,19 @@ export const workflowApi = {
   },
 
   // Regenerate workflow steps
-  regenerateWorkflowSteps: async (workflowId: string): Promise<{ workflow: Workflow; message: string }> => {
+  regenerateWorkflowSteps: async (
+    workflowId: string,
+    options?: {
+      reason?: string;
+      force_different_tools?: boolean;
+    },
+  ): Promise<{ workflow: Workflow; message: string }> => {
     return apiService.post<{ workflow: Workflow; message: string }>(
       `/workflows/${workflowId}/regenerate-steps`,
-      {},
+      {
+        reason: options?.reason,
+        force_different_tools: options?.force_different_tools ?? true,
+      },
       {
         successMessage: "Workflow steps regenerated successfully",
         errorMessage: "Failed to regenerate workflow steps",

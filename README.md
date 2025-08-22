@@ -66,6 +66,16 @@ See the full license terms at [LICENSE.md](LICENSE.md).
 
 Feel free to contact the team at contact@heygaia.io or aryan@heygaia.io for any questions
 
+## Star History
+
+<a href="https://www.star-history.com/#heygaia/gaia&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date" />
+ </picture>
+</a>
+
 ---
 
 <div align="center">

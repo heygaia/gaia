@@ -10,6 +10,7 @@ from app.decorators import tiered_rate_limit
 from app.config.loggers import general_logger as logger
 from app.models.workflow_models import (
     CreateWorkflowRequest,
+    RegenerateStepsRequest,
     UpdateWorkflowRequest,
     WorkflowExecutionRequest,
     WorkflowExecutionResponse,
@@ -240,12 +241,17 @@ async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current
 )
 @tiered_rate_limit("workflow_operations")
 async def regenerate_workflow_steps(
-    workflow_id: str, user: dict = Depends(get_current_user)
+    workflow_id: str,
+    request: RegenerateStepsRequest = RegenerateStepsRequest(),
+    user: dict = Depends(get_current_user),
 ):
-    """Regenerate steps for an existing workflow."""
+    """Regenerate steps for an existing workflow with optional parameters."""
     try:
         workflow = await WorkflowService.regenerate_workflow_steps(
-            workflow_id, user["user_id"]
+            workflow_id,
+            user["user_id"],
+            regeneration_reason=request.reason,
+            force_different_tools=request.force_different_tools,
         )
         if not workflow:
             raise HTTPException(
