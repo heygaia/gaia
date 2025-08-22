@@ -1,9 +1,14 @@
 [project]
 name = "gaia"
-version = "0.1.0"
+version = "0.2.0-beta"
 description = "Backend of GAIA - The personal AI assistant"
-readme = "README.md"
+readme = "../README.md"
 requires-python = ">=3.11"
+authors = [
+    {name = "Aryan Randeriya", email = "aryan@heygaia.io"},
+    {name = "Dhruv Maradiya", email = "dhruv@heygaia.io"}
+]
+
 dependencies = [
   "langgraph-checkpoint-postgres>=2.0.21",
   "pyppeteer>=0.0.25",
@@ -151,3 +156,9 @@ explicit = true
 torch = [
   { index = "pytorch-cpu" },
 ]
+
+[project.urls]
+Homepage = "https://heygaia.io"
+Documentation = "https://docs.heygaia.io"
+Repository = "https://github.com/heygaia/gaia"
+Issues = "https://github.com/heygaia/gaia/issues"

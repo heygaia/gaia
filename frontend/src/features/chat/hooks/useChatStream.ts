@@ -22,6 +22,7 @@ export const useChatStream = () => {
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
   const router = useRouter();
+
   // Unified ref storage
   const refs = useRef({
     convoMessages,

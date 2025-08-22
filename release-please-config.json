@@ -1,0 +1,18 @@
+{
+  "packages": {
+    "backend": {
+      "path": "backend",
+      "release-type": "python",
+      "version-file": "pyproject.toml",
+      "changelog-path": "CHANGELOG.md",
+      "skip-empty-release": true
+    },
+    "frontend": {
+      "path": "frontend",
+      "release-type": "node",
+      "version-file": "package.json",
+      "changelog-path": "CHANGELOG.md",
+      "skip-empty-release": true
+    }
+  }
+}
