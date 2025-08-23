@@ -15,7 +15,6 @@ import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
 import {
   AlertCircle,
-  CheckCircle,
   ChevronDown,
   Info,
   Play,
@@ -35,6 +34,8 @@ import { ScheduleBuilder } from "./ScheduleBuilder";
 import { Spinner } from "@heroui/spinner";
 import WorkflowSteps from "@/features/todo/components/WorkflowSteps";
 import { toast } from "sonner";
+import CustomSpinner from "@/components/ui/shadcn/spinner";
+import { CheckmarkCircle02Icon } from "@/components/shared/icons";
 
 interface WorkflowFormData {
   title: string;
@@ -114,6 +115,11 @@ export default function WorkflowModal({
   const [regenerationError, setRegenerationError] = useState<string | null>(
     null,
   );
+
+  // State for countdown close timer
+  const [countdown, setCountdown] = useState<number>(0);
+  const [countdownInterval, setCountdownInterval] =
+    useState<NodeJS.Timeout | null>(null);
 
   // Regeneration reason options (only for existing workflows)
   const regenerationReasons = [
@@ -250,13 +256,42 @@ export default function WorkflowModal({
         setCreationPhase("error");
       }
     } else {
-      // TODO: Implement edit workflow API call
-      // For now, just close the modal
-      handleClose();
+      // Edit mode - update the existing workflow
+      if (!existingWorkflow) return;
+
+      try {
+        const updateRequest = {
+          title: formData.title,
+          description: formData.description,
+          trigger_config: {
+            ...formData.trigger_config,
+            selected_trigger: formData.selectedTrigger,
+          },
+        };
+
+        await workflowApi.updateWorkflow(existingWorkflow.id, updateRequest);
+
+        if (onWorkflowSaved) {
+          onWorkflowSaved(existingWorkflow.id);
+        }
+        // Refresh workflow list after update
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+        handleClose();
+      } catch (error) {
+        console.error("Failed to update workflow:", error);
+      }
     }
   };
 
   const handleClose = () => {
+    // Clear countdown interval if active
+    if (countdownInterval) {
+      clearInterval(countdownInterval);
+      setCountdownInterval(null);
+    }
+    setCountdown(0);
     resetForm();
     onOpenChange(false);
   };
@@ -399,9 +434,20 @@ export default function WorkflowModal({
           onWorkflowListRefresh();
         }
 
-        setTimeout(() => {
-          handleClose();
-        }, 2000); // Auto-close after 2 seconds
+        // Start countdown
+        setCountdown(5); // 5 seconds countdown
+        const interval = setInterval(() => {
+          setCountdown((prev) => {
+            if (prev <= 1) {
+              clearInterval(interval);
+              handleClose();
+              return 0;
+            }
+            return prev - 1;
+          });
+        }, 1000);
+        setCountdownInterval(interval);
+
         return;
       }
 
@@ -491,9 +537,15 @@ export default function WorkflowModal({
   // Clean up when modal closes
   useEffect(() => {
     if (!isOpen) {
+      // Clear countdown interval if active
+      if (countdownInterval) {
+        clearInterval(countdownInterval);
+        setCountdownInterval(null);
+      }
+      setCountdown(0);
       resetForm();
     }
-  }, [isOpen]);
+  }, [isOpen, countdownInterval]);
 
   const renderTriggerTab = () => {
     const selectedTriggerOption = triggerOptions.find(
@@ -603,19 +655,18 @@ export default function WorkflowModal({
         if (!open) resetForm();
         onOpenChange(open);
       }}
-      size={mode === "create" ? "4xl" : "5xl"}
-      className={`min-h-[40vh] ${mode !== "create" ? "min-w-[80vw]" : ""}`}
-      scrollBehavior="inside"
+      size={mode === "create" ? "3xl" : "4xl"}
+      className={`max-h-[70vh] ${mode !== "create" ? "min-w-[80vw]" : ""}`}
       backdrop="blur"
     >
       <ModalContent>
-        <ModalBody className="space-y-6 pt-8">
+        <ModalBody className="max-h-full space-y-6 overflow-hidden pt-8">
           {creationPhase === "form" ? (
-            <div className="flex h-full gap-8">
+            <div className="flex h-full min-h-0 gap-8">
               {/* Left side - Form with its own footer */}
-              <div className="flex flex-1 flex-col">
+              <div className="flex min-h-0 flex-1 flex-col">
                 {/* Form Content */}
-                <div className="flex-1 space-y-6">
+                <div className="min-h-0 flex-1 space-y-6 overflow-y-auto">
                   {/* Title Section */}
                   <div className="flex items-center gap-3">
                     <Input
@@ -827,7 +878,7 @@ export default function WorkflowModal({
 
               {/* Right side - Workflow Steps */}
               {mode === "edit" && (
-                <div className="w-96 space-y-4 rounded-2xl bg-zinc-950/50 p-6">
+                <div className="flex min-h-0 w-96 flex-col space-y-4 rounded-2xl bg-zinc-950/50 p-6">
                   {/* Show regeneration error state */}
                   {regenerationError && (
                     <div className="space-y-4">
@@ -924,13 +975,15 @@ export default function WorkflowModal({
                               </Dropdown>
                             </div>
                           </div>
-                          <WorkflowSteps
-                            steps={
-                              pollingWorkflow?.steps ||
-                              existingWorkflow.steps ||
-                              []
-                            }
-                          />
+                          <div className="min-h-0 flex-1 overflow-y-auto">
+                            <WorkflowSteps
+                              steps={
+                                pollingWorkflow?.steps ||
+                                existingWorkflow.steps ||
+                                []
+                              }
+                            />
+                          </div>
                         </>
                       ) : (
                         // Show empty state with generate button (when no steps in either source)
@@ -1000,11 +1053,7 @@ export default function WorkflowModal({
             </div>
           ) : creationPhase === "generating" ? (
             <div className="flex flex-col items-center justify-center space-y-4 py-8">
-              <div className="animate-pulse">
-                <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                  <div className="h-6 w-6 animate-ping rounded-full bg-primary"></div>
-                </div>
-              </div>
+              <CustomSpinner variant="logo" />
               <div className="text-center">
                 <h3 className="text-lg font-medium">Generating Steps</h3>
                 <p className="text-sm text-zinc-400">
@@ -1022,7 +1071,7 @@ export default function WorkflowModal({
             </div>
           ) : creationPhase === "creating" ? (
             <div className="flex flex-col items-center justify-center space-y-4 py-8">
-              <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
+              <CustomSpinner variant="simple" />
               <div className="text-center">
                 <h3 className="text-lg font-medium">Creating Workflow</h3>
                 <p className="text-sm text-zinc-400">
@@ -1033,7 +1082,7 @@ export default function WorkflowModal({
           ) : creationPhase === "success" ? (
             <div className="flex flex-col space-y-6 py-6">
               <div className="flex flex-col items-center justify-center space-y-4">
-                <CheckCircle className="h-12 w-12 text-success" />
+                <CheckmarkCircle02Icon className="h-16 w-16 text-success" />
                 <div className="text-center">
                   <h3 className="text-lg font-medium text-success">
                     Workflow {mode === "create" ? "Created" : "Updated"}!
@@ -1047,6 +1096,15 @@ export default function WorkflowModal({
                     </p>
                   )}
                 </div>
+                {/* Countdown close button */}
+                <Button
+                  color="primary"
+                  variant="flat"
+                  onPress={handleClose}
+                  className="mt-4"
+                >
+                  Close {countdown > 0 && `(${countdown}s)`}
+                </Button>
               </div>
 
               {/* Generated Steps Preview */}

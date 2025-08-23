@@ -29,7 +29,9 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
       if (!currentWorkflowId) {
         throw new Error("No workflow ID set for polling");
       }
-      const response = await workflowApi.getWorkflow(currentWorkflowId);
+      const response = await workflowApi.getWorkflow(currentWorkflowId, {
+        silent: true,
+      });
       return response.workflow;
     },
     {

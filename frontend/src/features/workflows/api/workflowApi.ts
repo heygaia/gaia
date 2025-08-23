@@ -143,9 +143,13 @@ export const workflowApi = {
   // Get a specific workflow
   getWorkflow: async (
     workflowId: string,
+    options?: { silent?: boolean },
   ): Promise<{ workflow: Workflow; message: string }> => {
     return apiService.get<{ workflow: Workflow; message: string }>(
       `/workflows/${workflowId}`,
+      {
+        silent: options?.silent,
+      },
     );
   },
 
