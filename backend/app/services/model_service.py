@@ -3,11 +3,18 @@ from typing import List, Optional
 
 from app.config.loggers import app_logger as logger
 from app.db.mongodb.collections import ai_models_collection, users_collection
+from app.decorators.caching import Cacheable, CacheInvalidator
 from app.models.models_models import ModelConfig, ModelResponse, PlanType
 from bson import ObjectId
 from fastapi import HTTPException
 
 
+@Cacheable(
+    key_pattern="chat_models:available_models:{user_plan}",
+    ttl=3600,  # Cache for 1 hour
+    serializer=lambda models: [model.model_dump() for model in models],
+    deserializer=lambda data: [ModelResponse(**item) for item in data] if data else [],
+)
 async def get_available_models(user_plan: Optional[str] = None) -> List[ModelResponse]:
     """
     Get all available models for a user based on their plan.
@@ -58,7 +65,12 @@ async def get_available_models(user_plan: Optional[str] = None) -> List[ModelRes
         logger.error(f"Error fetching available models: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch models")
 
-
+@Cacheable(
+    key_pattern="chat_models:model_by_id:{model_id}",
+    ttl=3600,  # Cache for 1 hour
+    deserializer=lambda data: ModelConfig(**data) if data else None,
+    serializer=lambda model: model.model_dump() if model else None,
+)
 async def get_model_by_id(model_id: str) -> Optional[ModelConfig]:
     """
     Get a specific model by its ID.
@@ -83,7 +95,7 @@ async def get_model_by_id(model_id: str) -> Optional[ModelConfig]:
         logger.error(f"Error fetching model {model_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch model")
 
-
+@CacheInvalidator(key_patterns=["chat_models:selected_model:{user_id}"])
 async def update_user_selected_model(
     user_id: str, model_id: str, user_plan: str
 ) -> ModelResponse:
@@ -152,7 +164,12 @@ async def update_user_selected_model(
         logger.error(f"Error updating user model selection: {e}")
         raise HTTPException(status_code=500, detail="Failed to update model selection")
 
-
+@Cacheable(
+    key_pattern="chat_models:selected_model:{user_id}",
+    ttl=3600,  # Cache for 1 hour
+    deserializer=lambda data: ModelConfig(**data) if data else None,
+    serializer=lambda model: model.model_dump() if model else None,
+)
 async def get_user_selected_model(user_id: str) -> Optional[ModelConfig]:
     """
     Get user's currently selected model.
@@ -174,14 +191,18 @@ async def get_user_selected_model(user_id: str) -> Optional[ModelConfig]:
             return await get_default_model()
 
         return await get_model_by_id(selected_model_id)
-
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"Error fetching user selected model: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user model")
 
-
+@Cacheable(
+    key_pattern="chat_models:default_model",
+    ttl=3600,  # Cache for 1 hour
+    deserializer=lambda data: ModelConfig(**data) if data else None,
+    serializer=lambda model: model.model_dump() if model else None,
+)
 async def get_default_model() -> Optional[ModelConfig]:
     """
     Get the default model.
@@ -209,114 +230,3 @@ async def get_default_model() -> Optional[ModelConfig]:
         return None
 
 
-async def create_model(model_data: ModelConfig) -> ModelConfig:
-    """
-    Create a new AI model (admin only).
-
-    Args:
-        model_data: Model configuration data
-
-    Returns:
-        Created model
-    """
-    try:
-        # Check if model with same ID already exists
-        existing = await ai_models_collection.find_one(
-            {"model_id": model_data.model_id}
-        )
-        if existing:
-            raise HTTPException(
-                status_code=409, detail="Model with this ID already exists"
-            )
-
-        # If this is set as default, unset other defaults
-        if model_data.is_default:
-            await ai_models_collection.update_many(
-                {"is_default": True}, {"$set": {"is_default": False}}
-            )
-
-        # Insert new model
-        model_dict = model_data.model_dump()
-        await ai_models_collection.insert_one(model_dict)
-
-        return model_data
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error creating model: {e}")
-        raise HTTPException(status_code=500, detail="Failed to create model")
-
-
-async def update_model(model_id: str, update_data: dict) -> ModelConfig:
-    """
-    Update an existing AI model (admin only).
-
-    Args:
-        model_id: Model ID to update
-        update_data: Update data
-
-    Returns:
-        Updated model
-    """
-    try:
-        # Check if model exists
-        existing = await ai_models_collection.find_one({"model_id": model_id})
-        if not existing:
-            raise HTTPException(status_code=404, detail="Model not found")
-
-        # If setting as default, unset other defaults
-        if update_data.get("is_default"):
-            await ai_models_collection.update_many(
-                {"model_id": {"$ne": model_id}, "is_default": True},
-                {"$set": {"is_default": False}},
-            )
-
-        # Update model
-        update_data["updated_at"] = datetime.now(timezone.utc)
-        await ai_models_collection.update_one(
-            {"model_id": model_id}, {"$set": update_data}
-        )
-
-        # Return updated model
-        updated_model = await get_model_by_id(model_id)
-        if not updated_model:
-            raise HTTPException(status_code=500, detail="Failed to fetch updated model")
-
-        return updated_model
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error updating model: {e}")
-        raise HTTPException(status_code=500, detail="Failed to update model")
-
-
-async def delete_model(model_id: str) -> bool:
-    """
-    Delete an AI model (admin only).
-
-    Args:
-        model_id: Model ID to delete
-
-    Returns:
-        True if deleted successfully
-    """
-    try:
-        result = await ai_models_collection.delete_one({"model_id": model_id})
-
-        if result.deleted_count == 0:
-            raise HTTPException(status_code=404, detail="Model not found")
-
-        # Clear this model from any users who had it selected
-        await users_collection.update_many(
-            {"selected_model": model_id}, {"$unset": {"selected_model": ""}}
-        )
-
-        return True
-
-    except HTTPException:
-        raise
-    except Exception as e:
-        logger.error(f"Error deleting model: {e}")
-        raise HTTPException(status_code=500, detail="Failed to delete model")
