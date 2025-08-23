@@ -9,6 +9,7 @@ export interface OnboardingData {
     profession?: string;
     response_style?: string;
     custom_instructions?: string;
+    timezone?: string;
   };
 }
 

@@ -45,6 +45,7 @@ async def complete_onboarding(
             profession=onboarding_data.profession,
             response_style="casual",  # Default response style
             custom_instructions=None,
+            timezone=onboarding_data.timezone,  # Use timezone from frontend
         )
 
         # Prepare onboarding data

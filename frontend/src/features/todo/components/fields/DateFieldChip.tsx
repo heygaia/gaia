@@ -10,13 +10,21 @@ interface DateFieldChipProps {
   value?: string; // ISO date string
   onChange: (date?: string, timezone?: string) => void;
   className?: string;
+  timezone?: string; // User's preferred timezone
 }
 
 export default function DateFieldChip({
   value,
   onChange,
   className,
+  timezone,
 }: DateFieldChipProps) {
+  // Use user's preferred timezone or fallback to browser timezone
+  // Handle empty string as "auto-detect"
+  const userTimezone =
+    timezone && timezone.trim() !== ""
+      ? timezone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const formatDisplayDate = (dateString: string) => {
     const date = new Date(dateString);
 
@@ -33,10 +41,7 @@ export default function DateFieldChip({
     const inputValue = e.target.value;
     if (inputValue) {
       const date = new Date(inputValue);
-      onChange(
-        date.toISOString(),
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      );
+      onChange(date.toISOString(), userTimezone);
     } else {
       onChange(undefined, undefined);
     }
@@ -45,10 +50,7 @@ export default function DateFieldChip({
   const handleQuickDate = (days: number) => {
     const date = new Date();
     date.setDate(date.getDate() + days);
-    onChange(
-      date.toISOString(),
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    );
+    onChange(date.toISOString(), userTimezone);
   };
 
   return (

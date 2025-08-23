@@ -19,6 +19,11 @@ import { SettingsOption } from "@/components/shared/SettingsOption";
 import { StatusIndicator } from "@/components/shared/StatusIndicator";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUser } from "@/features/auth/hooks/useUser";
+import {
+  formatTimezoneDisplay,
+  getCurrentBrowserTimezone,
+  getTimezoneList,
+} from "@/utils/timezoneUtils";
 
 import { ModalAction } from "./SettingsMenu";
 
@@ -57,13 +62,49 @@ export default function PreferencesSettings({
   const user = useUser();
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [currentTimezoneInfo, setCurrentTimezoneInfo] = useState(() => {
+    const browserTz = getCurrentBrowserTimezone();
+    return {
+      timezone: browserTz.label,
+      currentTime: browserTz.currentTime,
+      offset: browserTz.offset,
+    };
+  });
+
+  // Get timezone options with enhanced display
+  const timezoneOptions = [
+    {
+      value: "",
+      label: `Auto-detect (${currentTimezoneInfo.timezone} ${currentTimezoneInfo.offset})`,
+    },
+    ...getTimezoneList().map((tz) => ({
+      value: tz.value,
+      label: tz.formattedLabel,
+    })),
+  ];
+
   const [preferences, setPreferences] = useState({
     country: user.onboarding?.preferences?.country || "",
     profession: user.onboarding?.preferences?.profession || "",
     response_style: user.onboarding?.preferences?.response_style || "",
     custom_instructions:
       user.onboarding?.preferences?.custom_instructions || null,
+    timezone: user.onboarding?.preferences?.timezone || "",
   });
+
+  // Update current timezone info every minute
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const browserTz = getCurrentBrowserTimezone();
+      setCurrentTimezoneInfo({
+        timezone: browserTz.label,
+        currentTime: browserTz.currentTime,
+        offset: browserTz.offset,
+      });
+    }, 60000); // Update every minute
+
+    return () => clearInterval(interval);
+  }, []);
 
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedPreferences = useRef(preferences);
@@ -76,6 +117,7 @@ export default function PreferencesSettings({
       response_style: user.onboarding?.preferences?.response_style || "",
       custom_instructions:
         user.onboarding?.preferences?.custom_instructions || null,
+      timezone: user.onboarding?.preferences?.timezone || "",
     };
     setPreferences(newPreferences);
     lastSavedPreferences.current = newPreferences;
@@ -217,6 +259,17 @@ export default function PreferencesSettings({
     debouncedUpdate(updatedPreferences);
   };
 
+  const handleTimezoneChange = (keys: SharedSelection) => {
+    const selectedKeys = Array.from(keys);
+    const timezoneValue = selectedKeys[0] as string;
+    const updatedPreferences = {
+      ...preferences,
+      timezone: timezoneValue || "",
+    };
+    setPreferences(updatedPreferences);
+    debouncedUpdate(updatedPreferences);
+  };
+
   return (
     <div className="w-full space-y-6">
       <SettingsCard
@@ -267,6 +320,47 @@ export default function PreferencesSettings({
                 </SelectItem>
               ))}
             </Select>
+          </LabeledField>
+
+          <LabeledField label="Timezone">
+            <div className="space-y-2">
+              {/* Current timezone info */}
+              <div className="rounded-md bg-zinc-900/50 p-2 text-xs text-zinc-400">
+                <div className="flex items-center justify-between">
+                  <span>Current:</span>
+                  <span className="font-mono text-zinc-300">
+                    {preferences.timezone && preferences.timezone.trim() !== ""
+                      ? formatTimezoneDisplay(preferences.timezone)
+                      : `${currentTimezoneInfo.timezone} ${currentTimezoneInfo.offset}`}
+                  </span>
+                </div>
+                <div className="mt-1 text-right text-zinc-500">
+                  {currentTimezoneInfo.currentTime}
+                </div>
+              </div>
+
+              <Select
+                placeholder="Select your timezone"
+                selectedKeys={
+                  preferences.timezone
+                    ? new Set([preferences.timezone])
+                    : new Set([""])
+                }
+                onSelectionChange={handleTimezoneChange}
+                isDisabled={isUpdating}
+                classNames={{
+                  trigger:
+                    "bg-zinc-800/50 hover:bg-zinc-700/50 cursor-pointer min-h-[36px]",
+                  popoverContent: "bg-zinc-800 z-50",
+                  listbox: "bg-zinc-800",
+                  value: "text-white text-sm",
+                }}
+              >
+                {timezoneOptions.map((timezone) => (
+                  <SelectItem key={timezone.value}>{timezone.label}</SelectItem>
+                ))}
+              </Select>
+            </div>
           </LabeledField>
         </div>
       </SettingsCard>

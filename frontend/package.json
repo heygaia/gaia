@@ -152,6 +152,7 @@
     "lucide-react": "^0.483.0",
     "marked": "^15.0.11",
     "mermaid": "^11.6.0",
+    "moment-timezone": "^0.6.0",
     "motion": "^12.9.2",
     "next": "15.3.3",
     "next-themes": "^0.4.6",
@@ -195,6 +196,7 @@
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
     "@types/dagre": "^0.7.52",
+    "@types/moment-timezone": "^0.5.30",
     "@types/node": "22.15.21",
     "@types/react": "^19.1.2",
     "@types/react-dom": "^19.1.3",

@@ -12,13 +12,13 @@ import {
 import { Plus } from "lucide-react";
 import { useEffect, useMemo } from "react";
 
+import { useUser } from "@/features/auth/hooks/useUser";
 import { useTodoData } from "@/features/todo/hooks/useTodoData";
 import { useModalForm } from "@/hooks/ui/useModalForm";
 import { Priority, Todo, TodoCreate } from "@/types/features/todoTypes";
 
 import SubtaskManager from "./shared/SubtaskManager";
 import TodoFieldsRow from "./shared/TodoFieldsRow";
-import TestModal from "./TestModal";
 
 interface TodoModalProps {
   onSuccess?: () => void;
@@ -60,8 +60,12 @@ export default function TodoModal({
   buttonText = "Add Task",
   buttonClassName = "w-full justify-start text-sm text-primary",
 }: TodoModalProps) {
+  const user = useUser();
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const { projects, createTodo, updateTodo } = useTodoData({ autoLoad: false });
+
+  // Get user's preferred timezone or fallback to browser timezone
+  const userTimezone = user?.onboarding?.preferences?.timezone;
 
   const initialData = useMemo(() => {
     if (mode === "edit" && todo) {
@@ -236,6 +240,7 @@ export default function TodoModal({
                   }
                   onDateChange={handleDateChange}
                   onLabelsChange={(labels) => updateField("labels", labels)}
+                  userTimezone={userTimezone}
                 />
 
                 {/* Subtasks Manager */}
