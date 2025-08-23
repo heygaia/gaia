@@ -32,7 +32,7 @@ import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 import { Spinner } from "@heroui/spinner";
-import WorkflowSteps from "@/features/todo/components/WorkflowSteps";
+import WorkflowSteps from "./shared/WorkflowSteps";
 import { toast } from "sonner";
 import CustomSpinner from "@/components/ui/shadcn/spinner";
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";

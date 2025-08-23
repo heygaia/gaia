@@ -12,10 +12,12 @@ import {
   WorkflowStatus,
 } from "@/types/features/todoTypes";
 
-import WorkflowEmptyState from "./WorkflowEmptyState";
-import WorkflowHeader from "./WorkflowHeader";
-import WorkflowLoadingState from "./WorkflowLoadingState";
-import WorkflowSteps from "./WorkflowSteps";
+import {
+  WorkflowEmptyState,
+  WorkflowHeader,
+  WorkflowLoadingState,
+  WorkflowSteps,
+} from "@/features/workflows/components";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;
@@ -42,8 +44,6 @@ export default function WorkflowSection({
   const [localIsGenerating, setLocalIsGenerating] = useState(
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
-  const router = useRouter();
-  const sendMessage = useSendMessage();
 
   // Poll for workflow completion when generating
   useEffect(() => {
