@@ -1,19 +1,20 @@
 import {
+  Avatar,
+  Chip,
   Select,
   SelectItem,
   SharedSelection,
-  Avatar,
-  Chip,
 } from "@heroui/react";
 import { Cpu } from "lucide-react";
 import React from "react";
 
+import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
+
 import {
+  useCurrentUserModel,
   useModels,
   useSelectModel,
-  useCurrentUserModel,
 } from "../../hooks/useModels";
-import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 
 const ModelPickerButton: React.FC = () => {
   const { data: models, isLoading } = useModels();
