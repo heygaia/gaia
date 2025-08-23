@@ -90,9 +90,11 @@ export const integrationsApi = {
       );
     }
 
+    const frontendPath = window.location.pathname + window.location.search;
+
     // Use the backend API base URL for proper OAuth flow
     const backendUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
-    const fullUrl = `${backendUrl}${integration.loginEndpoint}`;
+    const fullUrl = `${backendUrl}${integration.loginEndpoint}?redirect_path=${encodeURIComponent(frontendPath)}`;
 
     // Navigate to OAuth endpoint
     window.location.href = fullUrl;

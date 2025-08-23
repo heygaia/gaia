@@ -37,53 +37,15 @@ Integration types:
 - Coming soon: Placeholder with available=False (github, figma)
 """
 
+from functools import cache
 from typing import Dict, List, Optional
 
-from pydantic import BaseModel
-
-
-class OAuthScope(BaseModel):
-    """OAuth scope configuration."""
-
-    scope: str
-    description: str
-
-
-class OAuthIntegration(BaseModel):
-    """OAuth integration configuration."""
-
-    id: str
-    name: str
-    description: str
-    icons: List[str]  # List of icon URLs for different contexts/sizes
-    category: str
-    provider: str  # 'google', 'github', 'figma', 'notion', etc.
-    scopes: List[OAuthScope]
-    available: bool = True
-    oauth_endpoints: Optional[Dict[str, str]] = None
-    # Display and organization properties
-    is_special: bool = False  # For unified integrations like Google Workspace
-    display_priority: int = 0  # Higher priority shows first
-    included_integrations: List[str] = []  # Child integrations for unified ones
-    # Short name for slash command dropdowns and quick access
-    short_name: Optional[str] = None  # e.g., "gmail", "calendar", "drive", "docs"
-
-
-class IntegrationConfigResponse(BaseModel):
-    """Response model for integration configuration."""
-
-    id: str
-    name: str
-    description: str
-    icons: List[str]
-    category: str
-    provider: str
-    available: bool
-    loginEndpoint: Optional[str]
-    isSpecial: bool
-    displayPriority: int
-    includedIntegrations: List[str]
-
+from app.models.oauth_models import (
+    ComposioConfig,
+    OAuthIntegration,
+    OAuthScope,
+    TriggerConfig,
+)
 
 # Define all integrations dynamically
 OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
@@ -132,6 +94,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "google_docs",
             "google_drive",
         ],
+        managed_by="self",
     ),
     # Individual Google integrations
     OAuthIntegration(
@@ -154,6 +117,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="calendar",
+        managed_by="self",
     ),
     OAuthIntegration(
         id="google_docs",
@@ -171,6 +135,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="docs",
+        managed_by="self",
     ),
     OAuthIntegration(
         id="gmail",
@@ -185,9 +150,21 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             OAuthScope(
                 scope="https://www.googleapis.com/auth/gmail.modify",
                 description="Read, compose, and send emails",
-            ),
+            )
         ],
         short_name="gmail",
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_Tnn55kCyinEJ", toolkit="GMAIL"
+        ),
+        associated_triggers=[
+            TriggerConfig(
+                slug="GMAIL_NEW_GMAIL_MESSAGE",
+                name="New Gmail Message",
+                description="Triggered when a new Gmail message arrives",
+                config={"labelIds": "INBOX", "user_id": "me", "interval": 1},
+            )
+        ],
     ),
     OAuthIntegration(
         id="google_drive",
@@ -205,6 +182,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="drive",
+        managed_by="self",
     ),
     # Composio integrations
     OAuthIntegration(
@@ -218,6 +196,10 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="notion",
         scopes=[],
         available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_DR3IWp9-Kezl", toolkit="NOTION"
+        ),
     ),
     OAuthIntegration(
         id="twitter",
@@ -230,6 +212,10 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="twitter",
         scopes=[],
         available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_vloH3fnhIeUa", toolkit="TWITTER"
+        ),
     ),
     OAuthIntegration(
         id="google_sheets",
@@ -239,9 +225,13 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "https://upload.wikimedia.org/wikipedia/commons/a/ae/Google_Sheets_2020_Logo.svg"
         ],
         category="productivity",
-        provider="google",
+        provider="google_sheets",
         scopes=[],
         available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_18I3fRfWyXDu", toolkit="GOOGLE_SHEETS"
+        ),
     ),
     OAuthIntegration(
         id="linkedin",
@@ -254,15 +244,19 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="linkedin",
         scopes=[],
         available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_GMeJBELf3z_m", toolkit="LINKEDIN"
+        ),
     ),
 ]
 
-
+@cache
 def get_integration_by_id(integration_id: str) -> Optional[OAuthIntegration]:
     """Get an integration by its ID."""
     return next((i for i in OAUTH_INTEGRATIONS if i.id == integration_id), None)
 
-
+@cache
 def get_integration_scopes(integration_id: str) -> List[str]:
     """Get the OAuth scopes for a specific integration."""
     integration = get_integration_by_id(integration_id)
@@ -270,7 +264,30 @@ def get_integration_scopes(integration_id: str) -> List[str]:
         return []
     return [scope.scope for scope in integration.scopes]
 
-
+@cache
 def get_short_name_mapping() -> Dict[str, str]:
     """Get mapping of short names to integration IDs for convenience functions."""
     return {i.short_name: i.id for i in OAUTH_INTEGRATIONS if i.short_name}
+
+
+@cache
+def get_composio_social_configs() -> Dict[str, ComposioConfig]:
+    """Generate COMPOSIO_SOCIAL_CONFIGS dynamically from integrations managed by Composio."""
+    configs = {}
+    for integration in OAUTH_INTEGRATIONS:
+        if integration.managed_by == "composio" and integration.composio_config:
+            configs[integration.provider] = integration.composio_config
+    return configs
+
+
+@cache
+def get_integration_by_config(auth_config_id: str) -> Optional[OAuthIntegration]:
+    """Get an integration by its Composio auth config ID."""
+    return next(
+        (
+            i
+            for i in OAUTH_INTEGRATIONS
+            if i.composio_config and i.composio_config.auth_config_id == auth_config_id
+        ),
+        None,
+    )

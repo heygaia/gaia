@@ -15,7 +15,6 @@ from app.api.v1.router import (
     goals,
     image,
     mail,
-    mail_webhook,
     memory,
     models,
     notes,
@@ -30,6 +29,7 @@ from app.api.v1.router import (
     tools,
     usage,
     waitlist,
+    webhook,
     websocket,
 )
 from fastapi import APIRouter
@@ -54,7 +54,7 @@ router.include_router(team.router, tags=["Team"])
 router.include_router(file.router, tags=["File"])
 router.include_router(notification.router, tags=["Notification"])
 router.include_router(websocket.router, tags=["WebSocket"])
-router.include_router(mail_webhook.router, tags=["Mail Webhook"])
+router.include_router(webhook.router, tags=["Mail Webhook"])
 router.include_router(todos.router, tags=["Todos"])
 router.include_router(reminders.router, tags=["Reminders"])
 router.include_router(support.router, tags=["Support"])

@@ -1,18 +1,18 @@
+import asyncio
+from typing import Optional
+
 from app.config.loggers import app_logger as logger
+from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
+from app.models.oauth_models import TriggerConfig
 from app.services.langchain_composio_service import LangchainProvider
+from app.utils.query_utils import add_query_param
 from app.utils.tool_ui_builders import frontend_stream_modifier
 from composio import Composio, before_execute
 from composio.types import ToolExecuteParams
-from typing import Optional
 
-COMPOSIO_SOCIAL_CONFIGS = {
-    "notion": {"auth_config_id": "ac_DR3IWp9-Kezl", "toolkit": "NOTION"},
-    "twitter": {"auth_config_id": "ac_vloH3fnhIeUa", "toolkit": "TWITTER"},
-    "google_sheets": {"auth_config_id": "ac_18I3fRfWyXDu", "toolkit": "GOOGLE_SHEETS"},
-    "linkedin": {"auth_config_id": "ac_GMeJBELf3z_m", "toolkit": "LINKEDIN"},
-    "gmail": {"auth_config_id": "ac_Tnn55kCyinEJ", "toolkit": "GMAIL"},
-}
+# Generate COMPOSIO_SOCIAL_CONFIGS dynamically from oauth_config
+COMPOSIO_SOCIAL_CONFIGS = get_composio_social_configs()
 
 
 def extract_user_id_from_params(
@@ -52,7 +52,9 @@ class ComposioService:
             provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY
         )
 
-    def connect_account(self, provider: str, user_id: str):
+    def connect_account(
+        self, provider: str, user_id: str, frontend_redirect_path: Optional[str] = None
+    ) -> dict:
         """
         Initiates connection flow for a given provider and user.
         """
@@ -62,9 +64,20 @@ class ComposioService:
         config = COMPOSIO_SOCIAL_CONFIGS[provider]
 
         try:
+            callback_url = (
+                add_query_param(
+                    settings.COMPOSIO_REDIRECT_URI,
+                    "frontend_redirect_path",
+                    frontend_redirect_path,
+                )
+                if frontend_redirect_path
+                else settings.COMPOSIO_REDIRECT_URI
+            )
+
             connection_request = self.composio.connected_accounts.initiate(
-                user_id=user_id, auth_config_id=config["auth_config_id"],
-                callback_url=["localhost:3000/c" if settings.ENV=="development" else "https://heygaia.io/c"]
+                user_id=user_id,
+                auth_config_id=config.auth_config_id,
+                callback_url=callback_url,
             )
 
             return {
@@ -107,7 +120,7 @@ class ComposioService:
             result[provider] = False
             if provider in COMPOSIO_SOCIAL_CONFIGS:
                 required_auth_config_ids.append(
-                    COMPOSIO_SOCIAL_CONFIGS[provider]["auth_config_id"]
+                    COMPOSIO_SOCIAL_CONFIGS[provider].auth_config_id
                 )
 
         try:
@@ -122,13 +135,13 @@ class ComposioService:
             auth_config_provider_map = {}
             for provider in providers:
                 if provider in COMPOSIO_SOCIAL_CONFIGS:
-                    auth_config_id = COMPOSIO_SOCIAL_CONFIGS[provider]["auth_config_id"]
+                    auth_config_id = COMPOSIO_SOCIAL_CONFIGS[provider].auth_config_id
                     auth_config_provider_map[auth_config_id] = provider
 
             # Check each account against our providers
             for account in user_accounts.items:
                 # Only check active accounts
-                if not account.auth_config.is_disabled:
+                if not account.auth_config.is_disabled and account.status == "ACTIVE":
                     account_auth_config_id = account.auth_config.id
 
                     result[auth_config_provider_map[account_auth_config_id]] = True
@@ -140,6 +153,48 @@ class ComposioService:
                 f"Error checking connection status for providers {providers} and user {user_id}: {e}"
             )
             return result
+
+    def get_connected_account_by_id(self, connected_account_id: str):
+        """
+        Retrieve a connected account by its ID.
+        """
+        try:
+            connected_account = self.composio.connected_accounts.get(
+                nanoid=connected_account_id,
+            )
+
+            return connected_account
+        except Exception as e:
+            logger.error(
+                f"Error retrieving connected account {connected_account_id}: {e}"
+            )
+            return None
+
+    async def handle_subscribe_trigger(
+        self, user_id: str, triggers: list[TriggerConfig]
+    ):
+        """
+        Handle the subscription trigger for a specific provider.
+        """
+        print(f"Subscribing triggers for user {user_id}: {triggers}")
+        try:
+            # Create tasks for each trigger to run them concurrently
+            tasks = [
+                asyncio.get_event_loop().run_in_executor(
+                    None,
+                    lambda t=trigger: self.composio.triggers.create(
+                        user_id=user_id,
+                        slug=t.slug,
+                        trigger_config=t.config,
+                    ),
+                )
+                for trigger in triggers
+            ]
+
+            # Execute all trigger creation tasks concurrently
+            return await asyncio.gather(*tasks)
+        except Exception as e:
+            logger.error(f"Error handling subscribe trigger for {user_id}: {e}")
 
 
 composio_service = ComposioService()

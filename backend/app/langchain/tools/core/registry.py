@@ -9,7 +9,6 @@ from app.langchain.tools import (
     goal_tool,
     google_docs_tool,
     image_tool,
-    mail_tool,
     memory_tools,
     reminder_tool,
     search_tool,

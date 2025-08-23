@@ -164,8 +164,6 @@ async def call_mail_processing_agent(
     email_content: str,
     user_id: str,
     email_metadata: dict | None = None,
-    access_token: str | None = None,
-    refresh_token: str | None = None,
 ):
     """
     Process incoming email with AI agent to take appropriate actions.
@@ -238,8 +236,6 @@ async def call_mail_processing_agent(
                 "configurable": {
                     "thread_id": processing_id,
                     "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
                     "initiator": "backend",  # This will be used to identify either to send notification or stream to the user
                 },
                 "recursion_limit": 25,  # Increased limit for complex email processing

@@ -108,6 +108,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_SECRET: str
     COMPOSIO_KEY: str
 
+    # Webhook Secrets
+    COMPOSIO_WEBHOOK_SECRET: str
+
     # Blog Management
     BLOG_BEARER_TOKEN: str  # Bearer token for blog management operations
 
@@ -163,6 +166,12 @@ class Settings(BaseSettings):
     def WORKOS_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/workos/callback"
+
+    @computed_field  # type: ignore
+    @property
+    def COMPOSIO_REDIRECT_URI(self) -> str:
+        """Composio OAuth callback URL."""
+        return f"{self.HOST}/api/v1/oauth/composio/callback"
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

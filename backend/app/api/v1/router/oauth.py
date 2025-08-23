@@ -1,6 +1,7 @@
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
+from urllib.parse import urlencode
 
 import httpx
 from app.api.v1.dependencies.oauth_dependencies import (
@@ -10,12 +11,13 @@ from app.api.v1.dependencies.oauth_dependencies import (
 from app.config.loggers import auth_logger as logger
 from app.config.oauth_config import (
     OAUTH_INTEGRATIONS,
-    IntegrationConfigResponse,
+    get_integration_by_config,
     get_integration_by_id,
     get_integration_scopes,
 )
 from app.config.settings import settings
 from app.config.token_repository import token_repository
+from app.models.oauth_models import IntegrationConfigResponse
 from app.models.user_models import (
     OnboardingPreferences,
     OnboardingRequest,
@@ -83,34 +85,6 @@ def _build_integrations_config():
     return {"integrations": integration_configs}
 
 
-def clear_integrations_cache():
-    """
-    Clear the integrations configuration cache.
-    Call this function when the integration configuration changes.
-    """
-    _build_integrations_config.cache_clear()
-
-
-# @router.get("/login/google")
-# async def login_google():
-#     """Basic Google OAuth for signup - only requests essential scopes."""
-#     scopes = [
-#         "openid",
-#         "profile",
-#         "email",
-#     ]
-#     params = {
-#         "response_type": "code",
-#         "client_id": settings.GOOGLE_CLIENT_ID,
-#         "redirect_uri": settings.GOOGLE_CALLBACK_URL,
-#         "scope": " ".join(scopes),
-#         "access_type": "offline",
-#         "prompt": "select_account",  # Only force account selection for initial login
-#     }
-#     auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-#     return RedirectResponse(url=auth_url)
-
-
 @router.get("/login/workos")
 async def login_workos():
     """
@@ -135,10 +109,8 @@ async def workos_callback(
     """
     Handle the WorkOS SSO callback.
 
-    Args:
-        background_tasks: FastAPI background tasks
+    Args:config_id
         code: Authorization code from WorkOS
-        error: Error message (if any)access_token
 
     Returns:
         RedirectResponse to the frontend with auth tokens
@@ -195,7 +167,9 @@ async def workos_callback(
 
 @router.get("/login/integration/{integration_id}")
 async def login_integration(
-    integration_id: str, user: dict = Depends(get_current_user)
+    integration_id: str,
+    redirect_path: str,
+    user: dict = Depends(get_current_user),
 ):
     """Dynamic OAuth login for any configured integration."""
     integration = get_integration_by_id(integration_id)
@@ -213,65 +187,143 @@ async def login_integration(
     # Streamlined composio integration handling
     composio_providers = set([k for k in COMPOSIO_SOCIAL_CONFIGS.keys()])
     if integration.provider in composio_providers:
-        # Map provider name to SOCIAL_CONFIGS key if needed
         provider_key = integration.provider
-        # Some keys may differ (e.g., google_sheet vs google_sheets)
-        if provider_key not in COMPOSIO_SOCIAL_CONFIGS:
-            # Try plural form
-            provider_key = provider_key + "s"
-        if provider_key not in COMPOSIO_SOCIAL_CONFIGS:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Composio Integration for {integration_id} is not available yet",
-            )
+        url = composio_service.connect_account(
+            provider_key, user["user_id"], frontend_redirect_path=redirect_path
+        )["redirect_url"]
+        return RedirectResponse(url=url)
+    elif integration.provider == "google":
+        # Get base scopes
+        base_scopes = ["openid", "profile", "email"]
+
+        # Get new integration scopes
+        new_scopes = get_integration_scopes(integration_id)
+
+        # Get existing scopes from user's current token
+        existing_scopes = []
+        user_id = user.get("user_id")
+
+        if user_id:
+            try:
+                token = await token_repository.get_token(
+                    str(user_id), "google", renew_if_expired=False
+                )
+                existing_scopes = str(token.get("scope", "")).split()
+            except Exception as e:
+                logger.warning(f"Could not get existing scopes: {e}")
+
+        # Combine all scopes (base + existing + new), removing duplicates
+        all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
+
+        params = {
+            "response_type": "code",
+            "client_id": settings.GOOGLE_CLIENT_ID,
+            "redirect_uri": settings.GOOGLE_CALLBACK_URL,
+            "scope": " ".join(all_scopes),
+            "access_type": "offline",
+            "prompt": "consent",  # Only force consent for additional scopes
+            "include_granted_scopes": "true",  # Include previously granted scopes
+            "login_hint": user.get("email"),
+        }
+        auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+        return RedirectResponse(url=auth_url)
+
+    raise HTTPException(
+        status_code=400,
+        detail=f"OAuth provider {integration.provider} not implemented",
+    )
+
+
+@router.get("/composio/callback", response_class=RedirectResponse)
+async def composio_callback(
+    status: str,
+    connectedAccountId: str,
+    frontend_redirect_path: str,
+    background_tasks: BackgroundTasks,
+):
+    """
+    Handle Composio OAuth callback after successful/failed connection.
+
+    Args:
+        status: Connection status from Composio ('success' or 'failed')
+        connectedAccountId: Unique identifier for the connected account
+        frontend_redirect_path: Path to redirect user after processing
+        background_tasks: FastAPI background tasks for async operations
+
+    Returns:
+        RedirectResponse: Redirects user to frontend with appropriate status
+    """
+    # Handle failed connection early
+    if status != "success":
+        logger.error(
+            f"Composio connection failed: status={status}, accountId={connectedAccountId}"
+        )
         return RedirectResponse(
-            url=composio_service.connect_account(provider_key, user["user_id"])[
-                "redirect_url"
-            ],
+            url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
         )
 
-    # Handle different OAuth providers
-    # if integration.provider == "google":
-    #     # Get base scopes
-    #     base_scopes = ["openid", "profile", "email"]
+    try:
+        # Retrieve connected account details
+        connected_account = composio_service.get_connected_account_by_id(
+            connectedAccountId
+        )
 
-    #     # Get new integration scopes
-    #     new_scopes = get_integration_scopes(integration_id)
+        if not connected_account:
+            logger.error(f"Connected account not found: {connectedAccountId}")
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
+            )
 
-    #     # Get existing scopes from user's current token
-    #     existing_scopes = []
-    #     user_id = user.get("user_id")
+        # Extract essential information
+        config_id = connected_account.auth_config.id
+        user_id = connected_account.user_id  # type: ignore
 
-    #     if user_id:
-    #         try:
-    #             token = await token_repository.get_token(
-    #                 str(user_id), "google", renew_if_expired=False
-    #             )
-    #             existing_scopes = str(token.get("scope", "")).split()
-    #         except Exception as e:
-    #             logger.warning(f"Could not get existing scopes: {e}")
+        if not user_id:
+            logger.error(f"User ID missing for account: {connectedAccountId}")
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
+            )
 
-    #     # Combine all scopes (base + existing + new), removing duplicates
-    #     all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
+        # Find integration configuration by auth config ID
+        integration_config = get_integration_by_config(config_id)
+        if not integration_config:
+            logger.error(
+                f"Integration config not found for auth_config_id: {config_id}"
+            )
+            return RedirectResponse(
+                url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
+            )
 
-    #     params = {
-    #         "response_type": "code",
-    #         "client_id": settings.GOOGLE_CLIENT_ID,
-    #         "redirect_uri": settings.GOOGLE_CALLBACK_URL,
-    #         "scope": " ".join(all_scopes),
-    #         "access_type": "offline",
-    #         "prompt": "consent",  # Only force consent for additional scopes
-    #         "include_granted_scopes": "true",  # Include previously granted scopes
-    #         "login_hint": user.get("email"),
-    #     }
-    #     auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-    #     return RedirectResponse(url=auth_url)
+        print("Integration Config:", integration_config.associated_triggers)
 
-    # # Add other providers here (GitHub, etc.)
-    # raise HTTPException(
-    #     status_code=400,
-    #     detail=f"OAuth provider {integration.provider} not implemented",
-    # )
+        # Setup triggers if available
+        if integration_config.associated_triggers:
+            logger.info(
+                f"Setting up {len(integration_config.associated_triggers)} triggers "
+                f"for user {user_id} and integration {integration_config.id}"
+            )
+            background_tasks.add_task(
+                composio_service.handle_subscribe_trigger,
+                user_id=user_id,
+                triggers=integration_config.associated_triggers,
+            )
+
+        # Successful connection - redirect to frontend
+        logger.info(
+            f"Composio connection successful: user={user_id}, "
+            f"integration={integration_config.id}, account={connectedAccountId}"
+        )
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/{frontend_redirect_path}")
+
+    except Exception as e:
+        logger.error(
+            f"Unexpected error in Composio callback: {str(e)}, "
+            f"accountId={connectedAccountId}",
+            exc_info=True,
+        )
+        return RedirectResponse(
+            url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
+        )
 
 
 @router.get("/google/callback", response_class=RedirectResponse)
@@ -412,19 +464,11 @@ async def get_integrations_status(
             logger.warning(f"Error retrieving token from repository: {e}")
             # Continue with empty scopes
 
-        # Prepare Composio providers for batch check
-        composio_providers = {
-            i.provider
-            for i in OAUTH_INTEGRATIONS
-            if i.provider in COMPOSIO_SOCIAL_CONFIGS
-        }
-
         # Batch check Composio providers
         composio_status = {}
-        if composio_providers:
-            composio_status = composio_service.check_connection_status(
-                list(composio_providers), str(user_id)
-            )
+        composio_status = composio_service.check_connection_status(
+            list(COMPOSIO_SOCIAL_CONFIGS.keys()), str(user_id)
+        )
 
         # Build integration statuses
         integration_statuses = []
