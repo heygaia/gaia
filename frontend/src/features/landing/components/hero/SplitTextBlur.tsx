@@ -47,17 +47,17 @@ const SplitTextBlur = ({
   };
 
   const wordVariants = {
-    hidden: { 
-      opacity: 0, 
+    hidden: {
+      opacity: 0,
       filter: "blur(10px)",
       y: yOffset,
     },
-    visible: { 
-      opacity: 1, 
+    visible: {
+      opacity: 1,
       filter: "blur(0px)",
       y: 0,
       transition: {
-        type: "spring",
+        type: "spring" as const,
         stiffness: springConfig.stiffness,
         damping: springConfig.damping,
         mass: springConfig.mass,
@@ -78,7 +78,7 @@ const SplitTextBlur = ({
         <motion.span
           key={index}
           variants={wordVariants}
-          style={{ 
+          style={{
             willChange: "transform, opacity, filter",
             display: "inline-block",
             marginRight: index < words.length - 1 ? "0.25em" : "0",
@@ -96,7 +96,7 @@ const HeroText = () => {
   return (
     <SplitTextBlur
       text="Meet the AI assistant that actually works"
-      className="max-w-(--breakpoint-md) py-3 text-center text-[5.13rem] font-medium font-inter text-white sm:text-7xl"
+      className="max-w-(--breakpoint-md) py-3 text-center font-inter text-[5.13rem] font-medium text-white sm:text-7xl"
       delay={1}
       staggerDelay={0.1}
       springConfig={{
@@ -109,4 +109,4 @@ const HeroText = () => {
   );
 };
 
-export { HeroText,SplitTextBlur };
+export { HeroText, SplitTextBlur };
