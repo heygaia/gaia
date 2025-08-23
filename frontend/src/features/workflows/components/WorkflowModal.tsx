@@ -655,6 +655,7 @@ export default function WorkflowModal({
         if (!open) resetForm();
         onOpenChange(open);
       }}
+      hideCloseButton
       size={mode === "create" ? "3xl" : "4xl"}
       className={`max-h-[70vh] ${mode !== "create" ? "min-w-[80vw]" : ""}`}
       backdrop="blur"
@@ -663,13 +664,11 @@ export default function WorkflowModal({
         <ModalBody className="max-h-full space-y-6 overflow-hidden pt-8">
           {creationPhase === "form" ? (
             <div className="flex h-full min-h-0 gap-8">
-              {/* Left side - Form with its own footer */}
               <div className="flex min-h-0 flex-1 flex-col">
-                {/* Form Content */}
                 <div className="min-h-0 flex-1 space-y-6 overflow-y-auto">
-                  {/* Title Section */}
                   <div className="flex items-center gap-3">
                     <Input
+                      autoFocus
                       placeholder={
                         mode === "edit"
                           ? "Edit workflow name"
