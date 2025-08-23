@@ -3,8 +3,8 @@ import React from "react";
 import { SearchMode } from "@/types/shared";
 
 import ComposerLeft from "./ComposerLeft";
-import ModelPickerButton from "./ModelPickerButton";
 import SearchbarRightSendBtn from "./ComposerRight";
+import ModelPickerButton from "./ModelPickerButton";
 
 interface SearchbarToolbarProps {
   selectedMode: Set<SearchMode>;

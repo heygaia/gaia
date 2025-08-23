@@ -1,7 +1,13 @@
 {
-  "name": "gaia-nextjs",
-  "version": "0.1.0",
+  "name": "gaia",
+  "description": "Frontend of GAIA - The personal AI assistant",
+  "version": "0.2.0-beta",
   "private": true,
+  "homepage": "https://github.com/heygaia/gaia",
+  "bugs": {
+    "url": "https://github.com/heygaia/gaia/issues",
+    "email": "support@heygaia.io"
+  },
   "type": "module",
   "scripts": {
     "dev": "next dev --turbopack",
@@ -140,6 +146,7 @@
     "html-react-parser": "^5.2.6",
     "html-to-text": "^9.0.5",
     "idb-keyval": "^6.2.2",
+    "import-in-the-middle": "^1.14.2",
     "input-otp": "^1.4.2",
     "lenis": "^1.3.4",
     "lucide-react": "^0.483.0",
@@ -173,6 +180,7 @@
     "redux": "^5.0.1",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
+    "require-in-the-middle": "^7.5.2",
     "sharp": "^0.33.5",
     "sonner": "^2.0.3",
     "source-map-js": "^1.2.1",

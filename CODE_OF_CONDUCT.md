@@ -1,32 +1,58 @@
-# GAIA Code of Conduct
+# Contributor Covenant Code of Conduct
 
-Like the technical community as a whole, the GAIA team and community is made up of a mixture of professionals and volunteers from all over the world, working on every aspect of the mission - including mentorship, teaching, and connecting people.
+## Our Commitment
 
-Diversity is one of our huge strengths, but it can also lead to communication issues and unhappiness. To that end, we have a few ground rules that we ask people to adhere to. This code applies equally to founders, mentors and those seeking help and guidance.
+We are committed to making participation in our community a welcoming, respectful, and productive experience for everyone.
 
-This isn’t an exhaustive list of things that you can’t do. Rather, take it in the spirit in which it’s intended - a guide to make it easier to enrich all of us and the technical communities in which we participate.
+## Standards
 
-This code of conduct applies to all spaces managed by the GAIA project or heygaia. This includes IRC, the mailing lists, the issue tracker, DSF events, and any other forums created by the project team which the community uses for communication. In addition, violations of this code outside these spaces may affect a person's ability to participate within them.
+Positive examples of behavior include:
 
-If you believe someone is violating the code of conduct, we ask that you report it by emailing [hi@heygaia.io](mailto:hi@heygaia.io).
+- Showing respect and kindness to others  
+- Being open to different perspectives and experiences  
+- Offering and accepting constructive feedback  
+- Taking responsibility for mistakes and working to correct them  
 
-- **Be friendly and patient.**
-- **Be welcoming.** We strive to be a community that welcomes and supports people of all backgrounds and identities. This includes, but is not limited to members of any race, ethnicity, culture, national origin, colour, immigration status, social and economic class, educational level, sex, sexual orientation, gender identity and expression, age, size, family status, political belief, religion, and mental and physical ability.
-- **Be considerate.** Your work will be used by other people, and you in turn will depend on the work of others. Any decision you take will affect users and colleagues, and you should take those consequences into account when making decisions. Remember that we're a world-wide community, so you might not be communicating in someone else's primary language.
-- **Be respectful.** Not all of us will agree all the time, but disagreement is no excuse for poor behavior and poor manners. We might all experience some frustration now and then, but we cannot allow that frustration to turn into a personal attack. It’s important to remember that a community where people feel uncomfortable or threatened is not a productive one. Members of the GAIA community should be respectful when dealing with other members as well as with people outside the GAIA community.
-- **Be careful in the words that you choose.** We are a community of professionals, and we conduct ourselves professionally. Be kind to others. Do not insult or put down other participants. Harassment and other exclusionary behavior aren't acceptable. This includes, but is not limited to: 
- - Violent threats or language directed against another person.
- - Discriminatory jokes and language.
- - Posting sexually explicit or violent material.
- - Posting (or threatening to post) other people's personally identifying information ("doxing").
- - Personal insults, especially those using racist or sexist terms.
- - Unwelcome sexual attention.
- - Advocating for, or encouraging, any of the above behavior.
- - Repeated harassment of others. In general, if someone asks you to stop, then stop.
-- **When we disagree, try to understand why.** Disagreements, both social and technical, happen all the time and GAIA is no exception. It is important that we resolve disagreements and differing views constructively. Remember that we’re different. The strength of GAIA comes from its varied community, people from a wide range of backgrounds. Different people have different perspectives on issues. Being unable to understand why someone holds a viewpoint doesn’t mean that they’re wrong. Don’t forget that it is human to err and blaming each other doesn’t get us anywhere. Instead, focus on helping to resolve issues and learning from mistakes.
+Unacceptable behavior includes:
 
-Original text courtesy of the [Speak Up! project](http://web.archive.org/web/20141109123859/http://speakup.io/coc.html).
+- Harassment or discrimination of any kind  
+- Offensive, derogatory, or inappropriate comments  
+- Personal attacks or trolling  
+- Sharing private information without consent  
+- Any unprofessional or disruptive conduct  
 
-## Questions?
+## Responsibilities
 
-If you have questions, please see . If that doesn't answer your questions, feel free to [contact us](mailto:hi@heygaia.io).
+Community leaders will:
+
+- Enforce this Code of Conduct consistently and fairly  
+- Take appropriate action for violations, which may include warnings, temporary bans, or permanent bans  
+- Provide clear reasons for moderation decisions when possible  
+
+## Scope
+
+This Code of Conduct applies across all community spaces and when an individual is representing the community in public settings.
+
+## Enforcement
+
+If you experience or witness unacceptable behavior, please report it to the community leaders at **your-email@example.com**. Reports will be handled respectfully, promptly, and with confidentiality.
+
+## Enforcement Guidelines
+
+Community leaders will use the following guidelines when determining consequences for violations:
+
+1. **Warning**  
+   - *Behavior*: Minor or first-time violation.  
+   - *Action*: Private warning with explanation. A public apology may be requested.  
+
+2. **Temporary Ban**  
+   - *Behavior*: More serious or repeated violations.  
+   - *Action*: Temporary restriction from community participation.  
+
+3. **Permanent Ban**  
+   - *Behavior*: Severe or ongoing violations.  
+   - *Action*: Permanent removal from the community.  
+
+## Attribution
+
+This Code of Conduct is adapted from the [Contributor Covenant, version 2.0](https://www.contributor-covenant.org/version/2/0/code_of_conduct.html), with modifications for clarity and brevity.

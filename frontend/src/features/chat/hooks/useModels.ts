@@ -1,8 +1,9 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
-import { fetchAvailableModels, selectModel, ModelInfo } from "../api/modelsApi";
 import { useUser } from "@/features/auth/hooks/useUser";
+
+import { fetchAvailableModels, ModelInfo,selectModel } from "../api/modelsApi";
 
 export const useModels = () => {
   return useQuery({
