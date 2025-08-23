@@ -8,21 +8,20 @@ from app.langchain.templates.mail_templates import (
     EMAIL_PROCESSING_PLAN_TEMPLATE,
     EMAIL_PROCESSING_REPLAN_TEMPLATE,
 )
-from app.langchain.tools.core.registry import ALWAYS_AVAILABLE_TOOLS, tools
-from app.langchain.tools.core.retrieval import retrieve_tools
+from app.langchain.tools.core.registry import tool_registry
+from app.langchain.tools.core.retrieval import get_retrieve_tools_function
+from app.langchain.tools.core.store import get_tools_store
 from app.models.mail_models import EmailProcessingPlan, EmailProcessingReplanResult
+from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.exceptions import OutputParserException
 from langchain_core.messages import AIMessageChunk
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import ChatPromptTemplate
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.config import get_stream_writer
 from langgraph.constants import END, START
 from langgraph.graph import StateGraph
-from langgraph.store.memory import InMemoryStore
 from langgraph.types import RetryPolicy
-from langgraph_bigtool import create_agent
 from typing_extensions import TypedDict
 
 llm = init_llm()
@@ -57,38 +56,13 @@ async def build_mail_processing_graph():
     - Step-by-step execution with tool usage
     - Ability to revise the plan based on intermediate results
     """
-    # Register both regular and always available tools
-    all_tools = tools + ALWAYS_AVAILABLE_TOOLS
-    tool_registry = {tool.name: tool for tool in all_tools}
-
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/gemini-embedding-001",
-    )
-
-    # Create store for tool discovery
-    store = InMemoryStore(
-        index={
-            "embed": embeddings,
-            "dims": 768,
-            "fields": ["description"],
-        }
-    )
-
-    # Store all tools for vector search
-    for tool in all_tools:
-        store.put(
-            ("tools",),
-            tool.name,
-            {
-                "description": f"{tool.name}: {tool.description}",
-            },
-        )
+    store = get_tools_store()
 
     # Create agent for tool execution
     agent_executor = create_agent(
         llm=llm,
-        tool_registry=tool_registry,
-        retrieve_tools_function=retrieve_tools,
+        tool_registry=tool_registry.get_tool_registry(),
+        retrieve_tools_function=get_retrieve_tools_function(),
     )
 
     # Planning prompt - use template from mail_templates

@@ -38,6 +38,7 @@ Integration types:
 """
 
 from typing import Dict, List, Optional
+
 from pydantic import BaseModel
 
 
@@ -179,7 +180,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
         ],
         category="communication",
-        provider="google",
+        provider="gmail",
         scopes=[
             OAuthScope(
                 scope="https://www.googleapis.com/auth/gmail.modify",
@@ -205,55 +206,55 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         ],
         short_name="drive",
     ),
-    # Coming soon integrations
-    # OAuthIntegration(
-    #     id="github",
-    #     name="GitHub",
-    #     description="Manage repositories, issues, and pull requests",
-    #     icons=[
-    #         "https://cdn.brandfetch.io/idZAyF9rlg/theme/light/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B"
-    #     ],
-    #     category="development",
-    #     provider="github",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="figma",
-    #     name="Figma",
-    #     description="Create and collaborate on design projects",
-    #     icons=[
-    #         "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/figma/figma-original.svg"
-    #     ],
-    #     category="creative",
-    #     provider="figma",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="notion",
-    #     name="Notion",
-    #     description="Manage pages, databases, and workspace content with AI",
-    #     icons=[
-    #         "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
-    #     ],
-    #     category="productivity",
-    #     provider="notion",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="whatsapp",
-    #     name="WhatsApp",
-    #     description="Send and receive messages",
-    #     icons=[
-    #         "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png?20220228223904"
-    #     ],
-    #     category="communication",
-    #     provider="facebook",
-    #     scopes=[],
-    #     available=False,
-    # ),
+    # Composio integrations
+    OAuthIntegration(
+        id="notion",
+        name="Notion",
+        description="Manage pages, databases, and workspace content with AI",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+        ],
+        category="productivity",
+        provider="notion",
+        scopes=[],
+        available=True,
+    ),
+    OAuthIntegration(
+        id="twitter",
+        name="Twitter",
+        description="Post tweets, read timelines, and manage your account with AI-powered tools",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/X_logo_2023.svg/600px-X_logo_2023.svg.png?20250120013756"
+        ],
+        category="social",
+        provider="twitter",
+        scopes=[],
+        available=True,
+    ),
+    OAuthIntegration(
+        id="google_sheets",
+        name="Google Sheets",
+        description="Create, read, and update Google Sheets with AI-powered tools for automation and data management",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/a/ae/Google_Sheets_2020_Logo.svg"
+        ],
+        category="productivity",
+        provider="google",
+        scopes=[],
+        available=True,
+    ),
+    OAuthIntegration(
+        id="linkedin",
+        name="LinkedIn",
+        description="Share posts, engage with your network, and manage your professional presence using AI-powered tools",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+        ],
+        category="social",
+        provider="linkedin",
+        scopes=[],
+        available=True,
+    ),
 ]
 
 
@@ -262,58 +263,12 @@ def get_integration_by_id(integration_id: str) -> Optional[OAuthIntegration]:
     return next((i for i in OAUTH_INTEGRATIONS if i.id == integration_id), None)
 
 
-def get_integrations_by_provider(provider: str) -> List[OAuthIntegration]:
-    """Get all integrations for a specific provider."""
-    return [i for i in OAUTH_INTEGRATIONS if i.provider == provider]
-
-
-def get_available_integrations() -> List[OAuthIntegration]:
-    """Get all available integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if i.available]
-
-
 def get_integration_scopes(integration_id: str) -> List[str]:
     """Get the OAuth scopes for a specific integration."""
     integration = get_integration_by_id(integration_id)
     if not integration:
         return []
     return [scope.scope for scope in integration.scopes]
-
-
-def get_unified_integrations() -> List[OAuthIntegration]:
-    """Get all unified/special integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if i.is_special]
-
-
-def get_individual_integrations() -> List[OAuthIntegration]:
-    """Get all individual (non-unified) integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if not i.is_special]
-
-
-def get_integrations_sorted_by_priority() -> List[OAuthIntegration]:
-    """Get all integrations sorted by display priority (highest first)."""
-    return sorted(OAUTH_INTEGRATIONS, key=lambda x: x.display_priority, reverse=True)
-
-
-def is_integration_included_in_unified(integration_id: str, unified_id: str) -> bool:
-    """Check if an integration is included in a unified integration."""
-    unified = get_integration_by_id(unified_id)
-    if not unified or not unified.is_special:
-        return False
-    return integration_id in unified.included_integrations
-
-
-def get_included_integration_ids(unified_id: str) -> List[str]:
-    """Get all integration IDs included in a unified integration."""
-    unified = get_integration_by_id(unified_id)
-    if not unified or not unified.is_special:
-        return []
-    return unified.included_integrations
-
-
-def get_integration_by_short_name(short_name: str) -> Optional[OAuthIntegration]:
-    """Get an integration by its short name (used in slash commands)."""
-    return next((i for i in OAUTH_INTEGRATIONS if i.short_name == short_name), None)
 
 
 def get_short_name_mapping() -> Dict[str, str]:

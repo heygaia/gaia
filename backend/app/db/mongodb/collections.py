@@ -31,3 +31,6 @@ plans_collection = mongodb_instance.get_collection("subscription_plans")
 
 # Usage
 usage_snapshots_collection = mongodb_instance.get_collection("usage_snapshots")
+
+# AI Models
+ai_models_collection = mongodb_instance.get_collection("ai_models")

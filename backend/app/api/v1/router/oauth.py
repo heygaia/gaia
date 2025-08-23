@@ -1,7 +1,6 @@
 from datetime import datetime
 from functools import lru_cache
 from typing import Optional
-from urllib.parse import urlencode
 
 import httpx
 from app.api.v1.dependencies.oauth_dependencies import (
@@ -23,6 +22,7 @@ from app.models.user_models import (
     OnboardingResponse,
     UserUpdateResponse,
 )
+from app.services.composio_service import COMPOSIO_SOCIAL_CONFIGS, composio_service
 from app.services.oauth_service import store_user_info
 from app.services.onboarding_service import (
     complete_onboarding,
@@ -198,8 +198,8 @@ async def login_integration(
     integration_id: str, user: dict = Depends(get_current_user)
 ):
     """Dynamic OAuth login for any configured integration."""
-    # Get the integration configuration
     integration = get_integration_by_id(integration_id)
+
     if not integration:
         raise HTTPException(
             status_code=404, detail=f"Integration {integration_id} not found"
@@ -210,49 +210,68 @@ async def login_integration(
             status_code=400, detail=f"Integration {integration_id} is not available yet"
         )
 
-    # Handle different OAuth providers
-    if integration.provider == "google":
-        # Get base scopes
-        base_scopes = ["openid", "profile", "email"]
-
-        # Get new integration scopes
-        new_scopes = get_integration_scopes(integration_id)
-
-        # Get existing scopes from user's current token
-        existing_scopes = []
-        user_id = user.get("user_id")
-
-        if user_id:
-            try:
-                token = await token_repository.get_token(
-                    str(user_id), "google", renew_if_expired=False
-                )
-                existing_scopes = str(token.get("scope", "")).split()
-            except Exception as e:
-                logger.warning(f"Could not get existing scopes: {e}")
-
-        # Combine all scopes (base + existing + new), removing duplicates
-        all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
-
-        params = {
-            "response_type": "code",
-            "client_id": settings.GOOGLE_CLIENT_ID,
-            "redirect_uri": settings.GOOGLE_CALLBACK_URL,
-            "scope": " ".join(all_scopes),
-            "access_type": "offline",
-            "prompt": "consent",  # Only force consent for additional scopes
-            "include_granted_scopes": "true",  # Include previously granted scopes
-            "login_hint": user.get("email"),
-        }
-        auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
-        return RedirectResponse(url=auth_url)
-
-    # Add other providers here (GitHub, Notion, etc.)
-    else:
-        raise HTTPException(
-            status_code=400,
-            detail=f"OAuth provider {integration.provider} not implemented",
+    # Streamlined composio integration handling
+    composio_providers = set([k for k in COMPOSIO_SOCIAL_CONFIGS.keys()])
+    if integration.provider in composio_providers:
+        # Map provider name to SOCIAL_CONFIGS key if needed
+        provider_key = integration.provider
+        # Some keys may differ (e.g., google_sheet vs google_sheets)
+        if provider_key not in COMPOSIO_SOCIAL_CONFIGS:
+            # Try plural form
+            provider_key = provider_key + "s"
+        if provider_key not in COMPOSIO_SOCIAL_CONFIGS:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Composio Integration for {integration_id} is not available yet",
+            )
+        return RedirectResponse(
+            url=composio_service.connect_account(provider_key, user["user_id"])[
+                "redirect_url"
+            ],
         )
+
+    # Handle different OAuth providers
+    # if integration.provider == "google":
+    #     # Get base scopes
+    #     base_scopes = ["openid", "profile", "email"]
+
+    #     # Get new integration scopes
+    #     new_scopes = get_integration_scopes(integration_id)
+
+    #     # Get existing scopes from user's current token
+    #     existing_scopes = []
+    #     user_id = user.get("user_id")
+
+    #     if user_id:
+    #         try:
+    #             token = await token_repository.get_token(
+    #                 str(user_id), "google", renew_if_expired=False
+    #             )
+    #             existing_scopes = str(token.get("scope", "")).split()
+    #         except Exception as e:
+    #             logger.warning(f"Could not get existing scopes: {e}")
+
+    #     # Combine all scopes (base + existing + new), removing duplicates
+    #     all_scopes = list(set(base_scopes + existing_scopes + new_scopes))
+
+    #     params = {
+    #         "response_type": "code",
+    #         "client_id": settings.GOOGLE_CLIENT_ID,
+    #         "redirect_uri": settings.GOOGLE_CALLBACK_URL,
+    #         "scope": " ".join(all_scopes),
+    #         "access_type": "offline",
+    #         "prompt": "consent",  # Only force consent for additional scopes
+    #         "include_granted_scopes": "true",  # Include previously granted scopes
+    #         "login_hint": user.get("email"),
+    #     }
+    #     auth_url = f"https://accounts.google.com/o/oauth2/auth?{urlencode(params)}"
+    #     return RedirectResponse(url=auth_url)
+
+    # # Add other providers here (GitHub, etc.)
+    # raise HTTPException(
+    #     status_code=400,
+    #     detail=f"OAuth provider {integration.provider} not implemented",
+    # )
 
 
 @router.get("/google/callback", response_class=RedirectResponse)
@@ -379,7 +398,7 @@ async def get_integrations_status(
         authorized_scopes = []
         user_id = user.get("user_id")
 
-        # Get token from repository
+        # Get token from repository for Google integrations
         try:
             if not user_id:
                 logger.warning("User ID not found in user object")
@@ -389,43 +408,38 @@ async def get_integrations_status(
                 str(user_id), "google", renew_if_expired=True
             )
             authorized_scopes = str(token.get("scope", "")).split()
-
         except Exception as e:
             logger.warning(f"Error retrieving token from repository: {e}")
             # Continue with empty scopes
 
-        # Dynamically check each integration's status
+        # Prepare Composio providers for batch check
+        composio_providers = {
+            i.provider
+            for i in OAUTH_INTEGRATIONS
+            if i.provider in COMPOSIO_SOCIAL_CONFIGS
+        }
+
+        # Batch check Composio providers
+        composio_status = {}
+        if composio_providers:
+            composio_status = composio_service.check_connection_status(
+                list(composio_providers), str(user_id)
+            )
+
+        # Build integration statuses
         integration_statuses = []
         for integration in OAUTH_INTEGRATIONS:
-            is_connected = False
-
-            # Check connection based on provider
-            if integration.provider == "google" and authorized_scopes:
-                # Check if all required scopes are present
+            if integration.provider in composio_status:
+                # Use Composio status
+                is_connected = composio_status[integration.provider]
+            elif integration.provider == "google" and authorized_scopes:
+                # Check Google OAuth scopes
                 required_scopes = get_integration_scopes(integration.id)
                 is_connected = all(
                     scope in authorized_scopes for scope in required_scopes
                 )
-
-                # Special handling for unified integrations
-                if integration.is_special and integration.included_integrations:
-                    # For unified integrations, check if ALL included integrations are connected
-                    included_connected = []
-                    for included_id in integration.included_integrations:
-                        included_integration = get_integration_by_id(included_id)
-                        if included_integration:
-                            included_scopes = get_integration_scopes(included_id)
-                            included_is_connected = all(
-                                scope in authorized_scopes for scope in included_scopes
-                            )
-                            included_connected.append(included_is_connected)
-
-                    # Unified integration is connected only if ALL included ones are connected
-                    is_connected = (
-                        all(included_connected) if included_connected else False
-                    )
-
-            # Add other provider checks here (GitHub, Notion, etc.)
+            else:
+                is_connected = False
 
             integration_statuses.append(
                 {"integrationId": integration.id, "connected": is_connected}

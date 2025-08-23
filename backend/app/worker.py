@@ -111,7 +111,7 @@ async def start_worker():
 
     # Build the processing graph
     async with build_mail_processing_graph() as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="mail_processing")
+        await GraphManager.set_graph(built_graph, graph_name="mail_processing")
 
     logger.info("Worker started on queues: email-events, workflow-generation")
 

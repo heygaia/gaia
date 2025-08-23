@@ -1,4 +1,3 @@
-// useChatStream.ts
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef } from "react";
@@ -15,6 +14,7 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
+import { redirect } from "next/navigation";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
@@ -57,8 +57,7 @@ export const useChatStream = () => {
 
       // Handle navigation for incomplete conversations
       if (response.conversation_id && !refs.current.newConversation.id) {
-        router.push(`/c/${response.conversation_id}`);
-        fetchConversations();
+        redirect(`/c/${response.conversation_id}`);
       }
     } catch (saveError) {
       console.error("Failed to save incomplete conversation:", saveError);
