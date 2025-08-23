@@ -1,6 +1,6 @@
 """Workflow generation service for LLM-based step creation."""
 
-from typing import Any, Dict, List
+from typing import List
 
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
@@ -8,19 +8,7 @@ from pydantic import BaseModel, Field
 from app.config.loggers import general_logger as logger
 from app.langchain.llm.client import init_llm
 from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
-
-
-class WorkflowStep(BaseModel):
-    """Schema for workflow step generation."""
-
-    id: str = Field(description="Unique identifier for the step")
-    title: str = Field(description="Brief title for the step")
-    description: str = Field(description="Detailed description of what this step does")
-    tool_name: str = Field(description="Name of the tool to use for this step")
-    order: int = Field(description="Order of execution (0-indexed)")
-    parameters: Dict[str, Any] = Field(
-        default={}, description="Parameters for the tool"
-    )
+from app.models.workflow_models import WorkflowStep
 
 
 class WorkflowPlan(BaseModel):
