@@ -215,7 +215,6 @@ export const workflowApi = {
         force_different_tools: options?.force_different_tools ?? true,
       },
       {
-        successMessage: "Workflow steps regenerated successfully",
         errorMessage: "Failed to regenerate workflow steps",
       },
     );

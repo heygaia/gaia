@@ -6,7 +6,7 @@
 
 [![GAIA](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/heygaia/gaia/refs/heads/feat/workflows-insane/frontend/public/badge.json)](https://heygaia.io)
 
-[![Documentation](https://img.shields.io/badge/Documentation-00bbff?style=flat&logo=gitbook&logoColor=white)](https://docs.heygaia.io) [![Latest Release](https://img.shields.io/github/v/release/heygaia/gaia?color=00bbff)](https://github.com/heygaia/gaia/releases)
+[![Documentation](https://img.shields.io/badge/Documentation-00bbff?style=flat&logo=gitbook&logoColor=white)](https://docs.heygaia.io) [![Latest Release](https://img.shields.io/github/v/release/heygaia/gaia?color=00bbff)](https://github.com/heygaia/gaia/releases)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/heygaia/gaia)
 
 [![stars](https://img.shields.io/github/stars/heygaia/gaia)](https://github.com/heygaia/gaia/stargazers) [![stars](https://img.shields.io/github/forks/heygaia/gaia)](https://github.com/heygaia/gaia/forks)
 

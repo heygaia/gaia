@@ -18,7 +18,7 @@ from app.models.workflow_models import (
     WorkflowResponse,
     WorkflowStatusResponse,
 )
-from app.services.workflow_service import WorkflowService
+from app.services.workflow import WorkflowService
 
 router = APIRouter()
 
@@ -260,7 +260,7 @@ async def regenerate_workflow_steps(
             )
 
         return WorkflowResponse(
-            workflow=workflow, message="Workflow steps regenerated successfully"
+            workflow=workflow, message="Workflow regeneration started"
         )
 
     except ValueError as e:

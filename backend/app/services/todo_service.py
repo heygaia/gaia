@@ -180,9 +180,11 @@ class TodoService:
         """Generate a workflow plan for a TODO item using modern structured LLM output."""
         try:
             # Use the modern workflow generation from WorkflowService
-            from app.services.workflow_service import WorkflowService
+            from app.services.workflow.generation_service import (
+                WorkflowGenerationService,
+            )
 
-            steps_data = await WorkflowService._generate_steps_with_llm(
+            steps_data = await WorkflowGenerationService.generate_steps_with_llm(
                 description=todo_description or "No description provided",
                 title=todo_title,
             )

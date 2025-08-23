@@ -1,17 +1,19 @@
 import { Button } from "@heroui/button";
 import { Tooltip } from "@heroui/react";
-import { Play, RotateCcw } from "lucide-react";
+import { Play, RotateCcw, Sparkles } from "lucide-react";
 
 import { WorkflowSquare03Icon } from "@/components";
 
 interface WorkflowHeaderProps {
   isRunning: boolean;
+  isRegenerating?: boolean;
   onGenerateWorkflow?: () => void;
   onRunWorkflow: () => void;
 }
 
 export default function WorkflowHeader({
   isRunning,
+  isRegenerating = false,
   onGenerateWorkflow,
   onRunWorkflow,
 }: WorkflowHeaderProps) {
@@ -20,16 +22,28 @@ export default function WorkflowHeader({
       <div className="flex items-center gap-2">
         <WorkflowSquare03Icon className="h-5 w-5 text-zinc-400" />
         <h3 className="text-base font-medium text-zinc-100">Workflow</h3>
+        {isRegenerating && (
+          <div className="flex items-center gap-1 text-xs text-blue-400">
+            <Sparkles className="h-3 w-3 animate-pulse" />
+            <span>Regenerating...</span>
+          </div>
+        )}
       </div>
       <div className="flex items-center gap-2">
-        <Tooltip content="Regnerate Workflow" color="foreground">
+        <Tooltip content="Regenerate Workflow" color="foreground">
           <Button
             color="default"
             variant="flat"
             size="sm"
             onPress={onGenerateWorkflow}
-            startContent={<RotateCcw className="h-4 w-4" />}
+            startContent={
+              <RotateCcw
+                className={`h-4 w-4 ${isRegenerating ? "animate-spin" : ""}`}
+              />
+            }
             isIconOnly
+            isDisabled={isRegenerating}
+            isLoading={isRegenerating}
           />
         </Tooltip>
 
@@ -41,6 +55,7 @@ export default function WorkflowHeader({
           onPress={onRunWorkflow}
           startContent={!isRunning ? <Play className="h-4 w-4" /> : undefined}
           className="bg-green-500/20 text-green-400 hover:bg-green-500/30"
+          isDisabled={isRegenerating}
         >
           {isRunning ? "Running..." : "Run Workflow"}
         </Button>

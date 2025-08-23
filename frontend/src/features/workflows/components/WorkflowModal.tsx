@@ -25,13 +25,16 @@ import {
 import Image from "next/image";
 import { useEffect, useState } from "react";
 
-import WorkflowSteps from "@/features/todo/components/WorkflowSteps";
+import WorkflowRegenerationLoader from "./WorkflowRegenerationLoader";
+import WorkflowRegenerationSuccess from "./WorkflowRegenerationSuccess";
 import { Chip } from "@heroui/chip";
 import { Workflow, workflowApi } from "../api/workflowApi";
 import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 import { Spinner } from "@heroui/spinner";
+import WorkflowSteps from "@/features/todo/components/WorkflowSteps";
+import { toast } from "sonner";
 
 interface WorkflowFormData {
   title: string;
@@ -183,6 +186,7 @@ export default function WorkflowModal({
         trigger_config: {
           type: "schedule",
           enabled: true,
+          cron_expression: "0 9 * * *", // Default: daily at 9 AM
         },
       });
       // Reset activation state for create mode
@@ -203,6 +207,7 @@ export default function WorkflowModal({
       trigger_config: {
         type: "schedule",
         enabled: true,
+        cron_expression: "0 9 * * *", // Default: daily at 9 AM
       },
     });
     setCreationPhase("form");
@@ -229,13 +234,13 @@ export default function WorkflowModal({
         generate_immediately: true,
       };
 
-      const success = await createWorkflow(createRequest);
+      const result = await createWorkflow(createRequest);
 
-      if (success && createdWorkflow) {
+      if (result.success && result.workflow) {
         setCreationPhase("generating");
-        startPolling(createdWorkflow.id);
+        startPolling(result.workflow.id);
         if (onWorkflowSaved) {
-          onWorkflowSaved(createdWorkflow.id);
+          onWorkflowSaved(result.workflow.id);
         }
         // Refresh workflow list after creation
         if (onWorkflowListRefresh) {
@@ -309,12 +314,13 @@ export default function WorkflowModal({
     setIsRegeneratingSteps(true);
     setCurrentRegenerationReason(reason);
     setRegenerationError(null); // Clear any previous errors
+
     try {
       // Call the enhanced regenerate steps API with selected reason
       const result = await workflowApi.regenerateWorkflowSteps(
         existingWorkflow.id,
         {
-          reason: reason,
+          reason,
           force_different_tools: forceDifferentTools,
         },
       );
@@ -323,40 +329,28 @@ export default function WorkflowModal({
       startPolling(existingWorkflow.id);
 
       // Refresh the workflow data in the parent component
-      if (onWorkflowSaved) {
-        onWorkflowSaved(existingWorkflow.id);
-      }
+      if (onWorkflowSaved) onWorkflowSaved(existingWorkflow.id);
 
       // Refresh workflow list after regeneration
-      if (onWorkflowListRefresh) {
-        onWorkflowListRefresh();
-      }
+      if (onWorkflowListRefresh) onWorkflowListRefresh();
 
-      console.log("Steps regenerated successfully:", result.message);
+      console.log("Steps regeneration started:", result.message);
     } catch (error) {
-      console.error("Failed to regenerate workflow steps:", error);
+      console.error("Failed to start workflow regeneration:", error);
 
       // Extract error message for user display
-      let errorMessage = "Failed to regenerate workflow steps";
-      if (error instanceof Error) {
-        errorMessage = error.message;
-      } else if (typeof error === "string") {
-        errorMessage = error;
-      } else if (error && typeof error === "object" && "message" in error) {
-        errorMessage = (error as any).message;
-      }
+      const errorMessage =
+        error instanceof Error
+          ? error.message
+          : typeof error === "string"
+            ? error
+            : "Failed to start workflow regeneration";
 
       setRegenerationError(errorMessage);
-
-      // Clear timeout on error
-      if (regenerationTimeoutId) {
-        clearTimeout(regenerationTimeoutId);
-        setRegenerationTimeoutId(null);
-      }
-    } finally {
       setIsRegeneratingSteps(false);
       setCurrentRegenerationReason("");
     }
+    // Note: Don't set isRegeneratingSteps to false here - let polling handle it
   };
 
   // Handle regeneration with specific reason
@@ -443,40 +437,56 @@ export default function WorkflowModal({
     }
   }, [isPolling, creationPhase, pollingWorkflow, mode]);
 
-  // Handle polling results for edit mode regeneration
+  // Handle regeneration completion for edit mode
   useEffect(() => {
     if (mode === "edit" && isRegeneratingSteps && pollingWorkflow) {
-      // Check if regeneration completed (either with steps or without)
-      const hasSteps =
+      // Check if we have new steps (indicating regeneration completed successfully)
+      const hasNewSteps =
         pollingWorkflow.steps && pollingWorkflow.steps.length > 0;
-      const hasError = pollingWorkflow.error_message;
 
-      // If we have steps or an error, the regeneration is complete
-      if (hasSteps || hasError) {
-        // Clear the timeout since regeneration completed successfully
-        if (regenerationTimeoutId) {
-          clearTimeout(regenerationTimeoutId);
-          setRegenerationTimeoutId(null);
-        }
+      if (hasNewSteps) {
+        // Show success toast
+        toast.success("Workflow steps regenerated successfully!", {
+          description: `${pollingWorkflow.steps?.length || 0} new steps created`,
+          duration: 3000,
+        });
 
-        setTimeout(
-          () => {
-            setIsRegeneratingSteps(false);
-            setCurrentRegenerationReason("");
-            stopPolling(); // Stop polling on completion
-          },
-          hasSteps ? 2000 : 1000,
-        ); // Show success state longer, error state shorter
+        // Regeneration completed - just stop the loading state
+        setIsRegeneratingSteps(false);
+        setCurrentRegenerationReason("");
+        setRegenerationError(null);
+        stopPolling();
       }
-      // Note: If no steps and no error, continue polling (regeneration might still be in progress)
     }
-  }, [
-    pollingWorkflow,
-    isRegeneratingSteps,
-    stopPolling,
-    mode,
-    regenerationTimeoutId,
-  ]);
+  }, [pollingWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
+
+  // Timeout mechanism for regeneration
+  useEffect(() => {
+    let timeoutId: NodeJS.Timeout;
+
+    if (isRegeneratingSteps) {
+      // Set a 60-second timeout for regeneration
+      timeoutId = setTimeout(() => {
+        setRegenerationError(
+          "Regeneration is taking longer than expected. Please try again.",
+        );
+        setIsRegeneratingSteps(false);
+        setCurrentRegenerationReason("");
+        stopPolling();
+
+        toast.error("Regeneration timeout", {
+          description: "The regeneration is taking too long. Please try again.",
+          duration: 5000,
+        });
+      }, 60000); // 60 seconds timeout
+    }
+
+    return () => {
+      if (timeoutId) {
+        clearTimeout(timeoutId);
+      }
+    };
+  }, [isRegeneratingSteps, stopPolling]);
 
   // Clean up when modal closes
   useEffect(() => {
@@ -580,103 +590,6 @@ export default function WorkflowModal({
       />
     </div>
   );
-
-  const renderStatusContent = () => {
-    switch (creationPhase) {
-      case "creating":
-        return (
-          <div className="flex flex-col items-center justify-center space-y-4 py-8">
-            <div className="h-8 w-8 animate-spin rounded-full border-b-2 border-primary"></div>
-            <div className="text-center">
-              <h3 className="text-lg font-medium">Creating Workflow</h3>
-              <p className="text-sm text-zinc-400">
-                Setting up your workflow...
-              </p>
-            </div>
-          </div>
-        );
-
-      case "generating":
-        return (
-          <div className="flex flex-col items-center justify-center space-y-4 py-8">
-            <div className="animate-pulse">
-              <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/20">
-                <div className="h-6 w-6 animate-ping rounded-full bg-primary"></div>
-              </div>
-            </div>
-            <div className="text-center">
-              <h3 className="text-lg font-medium">Generating Steps</h3>
-              <p className="text-sm text-zinc-400">
-                AI is creating workflow steps for: "{formData.title}"
-              </p>
-              {pollingWorkflow && (
-                <p className="mt-2 text-xs text-zinc-500">
-                  Activated: {pollingWorkflow.activated ? "Yes" : "No"}
-                </p>
-              )}
-            </div>
-          </div>
-        );
-
-      case "success":
-        return (
-          <div className="flex flex-col space-y-6 py-6">
-            <div className="flex flex-col items-center justify-center space-y-4">
-              <CheckCircle className="h-12 w-12 text-success" />
-              <div className="text-center">
-                <h3 className="text-lg font-medium text-success">
-                  Workflow {mode === "create" ? "Created" : "Updated"}!
-                </h3>
-                <p className="text-sm text-zinc-400">
-                  "{formData.title}" is ready to use
-                </p>
-                {pollingWorkflow && (
-                  <p className="mt-2 text-xs text-zinc-500">
-                    {pollingWorkflow?.steps?.length || 0} steps generated
-                  </p>
-                )}
-              </div>
-            </div>
-
-            {/* Generated Steps Preview */}
-            {pollingWorkflow?.steps && pollingWorkflow.steps.length > 0 && (
-              <div className="space-y-3">
-                <h4 className="text-sm font-medium text-zinc-300">
-                  Generated Steps:
-                </h4>
-                <div className="max-h-48 overflow-y-auto">
-                  <WorkflowSteps steps={pollingWorkflow.steps} />
-                </div>
-              </div>
-            )}
-          </div>
-        );
-
-      case "error":
-        return (
-          <div className="flex flex-col items-center justify-center space-y-4 py-8">
-            <AlertCircle className="h-12 w-12 text-danger" />
-            <div className="text-center">
-              <h3 className="text-lg font-medium text-danger">
-                {mode === "create" ? "Creation" : "Update"} Failed
-              </h3>
-              <p className="text-sm text-zinc-400">
-                {creationError ||
-                  `Something went wrong while ${mode === "create" ? "creating" : "updating"} the workflow`}
-              </p>
-            </div>
-          </div>
-        );
-
-      default:
-        return null;
-    }
-  };
-
-  const getModalTitle = () => {
-    if (mode === "edit") return "Edit Workflow";
-    return "Create New Workflow";
-  };
 
   const getButtonText = () => {
     if (mode === "edit") return isCreating ? "Saving..." : "Save Changes";
@@ -915,57 +828,8 @@ export default function WorkflowModal({
               {/* Right side - Workflow Steps */}
               {mode === "edit" && (
                 <div className="w-96 space-y-4 rounded-2xl bg-zinc-950/50 p-6">
-                  {/* Show regeneration loading state */}
-                  {isRegeneratingSteps &&
-                    (!pollingWorkflow?.steps ||
-                      pollingWorkflow.steps.length === 0) && (
-                      <div className="space-y-4">
-                        <div className="flex flex-col items-center justify-center py-8">
-                          <div className="text-center">
-                            <div className="mb-4">
-                              <Spinner />
-                            </div>
-                            <h3 className="text-lg font-medium">
-                              Regenerating Steps
-                            </h3>
-                            <p className="text-sm text-zinc-400">
-                              {currentRegenerationReason
-                                ? `${currentRegenerationReason} for: "${formData.title}"`
-                                : `AI is creating new workflow steps for: "${formData.title}"`}
-                            </p>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-
-                  {/* Show newly generated steps during regeneration if available */}
-                  {isRegeneratingSteps &&
-                    pollingWorkflow?.steps &&
-                    pollingWorkflow.steps.length > 0 && (
-                      <div className="space-y-4">
-                        <div className="flex flex-col items-center justify-center py-4">
-                          <div className="text-center">
-                            <CheckCircle className="mx-auto h-12 w-12 text-success" />
-                            <h3 className="text-lg font-medium text-success">
-                              Steps Regenerated!
-                            </h3>
-                            <p className="text-sm text-zinc-400">
-                              {pollingWorkflow.steps?.length || 0} new steps
-                              generated
-                            </p>
-                          </div>
-                        </div>
-                        <div className="space-y-3">
-                          <h4 className="text-sm font-medium text-zinc-300">
-                            Steps to complete this workflow:
-                          </h4>
-                          <WorkflowSteps steps={pollingWorkflow.steps} />
-                        </div>
-                      </div>
-                    )}
-
                   {/* Show regeneration error state */}
-                  {regenerationError && !isRegeneratingSteps && (
+                  {regenerationError && (
                     <div className="space-y-4">
                       <div className="flex flex-col items-center justify-center py-8">
                         <div className="text-center">
@@ -981,7 +845,9 @@ export default function WorkflowModal({
                           <Button
                             variant="flat"
                             size="sm"
-                            onPress={() => setRegenerationError(null)}
+                            onPress={() => {
+                              setRegenerationError(null);
+                            }}
                           >
                             Try Again
                           </Button>
@@ -990,10 +856,10 @@ export default function WorkflowModal({
                     </div>
                   )}
 
-                  {/* Show existing workflow steps in edit mode OR empty state with generate button */}
-                  {existingWorkflow && !isRegeneratingSteps && (
+                  {/* Show workflow steps - either existing or newly generated */}
+                  {existingWorkflow && !regenerationError && (
                     <>
-                      {/* Show steps if they exist (either from existingWorkflow or pollingWorkflow) */}
+                      {/* Show steps if they exist */}
                       {(existingWorkflow.steps &&
                         existingWorkflow.steps.length > 0) ||
                       (pollingWorkflow?.steps &&
@@ -1032,7 +898,9 @@ export default function WorkflowModal({
                                       <RefreshCw className="h-4 w-4" />
                                     }
                                   >
-                                    Regenerate
+                                    {isRegeneratingSteps
+                                      ? "Regenerating..."
+                                      : "Regenerate"}
                                   </Button>
                                 </DropdownTrigger>
                                 <DropdownMenu

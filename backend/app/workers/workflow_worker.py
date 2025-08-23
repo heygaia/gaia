@@ -150,7 +150,7 @@ async def process_workflow(
 
     try:
         # Import here to avoid circular imports
-        from app.services.workflow_service import WorkflowService
+        from app.services.workflow import WorkflowService
         from app.models.workflow_models import UpdateWorkflowRequest
         from app.langchain.core.graph_manager import GraphManager
 
@@ -271,9 +271,11 @@ async def process_workflow(
                 )
 
                 # Schedule the next execution
-                from app.services.workflow_service import WorkflowService
+                from app.services.workflow.scheduler_service import (
+                    WorkflowSchedulerService,
+                )
 
-                await WorkflowService._schedule_workflow_execution(
+                await WorkflowSchedulerService.schedule_workflow_execution(
                     workflow_id, user_id, next_run
                 )
                 logger.info(
@@ -306,6 +308,52 @@ async def process_workflow(
         raise
 
 
+async def regenerate_workflow_steps(
+    ctx: dict,
+    workflow_id: str,
+    user_id: str,
+    regeneration_reason: str,
+    force_different_tools: bool = True,
+) -> str:
+    """
+    Regenerate workflow steps for an existing workflow.
+
+    Args:
+        ctx: ARQ context
+        workflow_id: ID of the workflow to regenerate steps for
+        user_id: ID of the user who owns the workflow
+        regeneration_reason: Reason for regeneration
+        force_different_tools: Whether to force different tools
+
+    Returns:
+        Processing result message
+    """
+    logger.info(
+        f"Regenerating workflow steps: {workflow_id} for user {user_id}, reason: {regeneration_reason}"
+    )
+
+    try:
+        # Import here to avoid circular imports
+        from app.services.workflow import WorkflowService
+
+        # Regenerate steps using the service method (without background queue)
+        await WorkflowService.regenerate_workflow_steps(
+            workflow_id,
+            user_id,
+            regeneration_reason,
+            force_different_tools,
+        )
+
+        result = f"Successfully regenerated steps for workflow {workflow_id}"
+        logger.info(result)
+        return result
+
+    except Exception as e:
+        error_msg = f"Failed to regenerate workflow steps {workflow_id}: {str(e)}"
+        logger.error(error_msg)
+        raise
+
+
 async def generate_workflow_steps(ctx: dict, workflow_id: str, user_id: str) -> str:
     """
     Generate workflow steps for a workflow.
@@ -322,7 +370,7 @@ async def generate_workflow_steps(ctx: dict, workflow_id: str, user_id: str) -> 
 
     try:
         # Import here to avoid circular imports
-        from app.services.workflow_service import WorkflowService
+        from app.services.workflow import WorkflowService
 
         # Generate steps using the service method
         await WorkflowService._generate_workflow_steps(workflow_id, user_id)

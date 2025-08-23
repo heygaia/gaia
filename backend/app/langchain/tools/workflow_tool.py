@@ -17,7 +17,7 @@ from app.models.workflow_models import (
     TriggerConfig,
     TriggerType,
 )
-from app.services.workflow_service import WorkflowService
+from app.services.workflow import WorkflowService
 
 
 # Helper functions
@@ -162,7 +162,6 @@ async def execute_workflow_tool(
         data = {
             "workflow_id": workflow_id,
             "execution_id": result.execution_id,
-            "status": result.status,
             "message": result.message,
         }
 

@@ -13,7 +13,7 @@ export const useWorkflowCreation = (): UseWorkflowCreationReturn => {
 
   const createWorkflow = async (
     request: CreateWorkflowRequest,
-  ): Promise<boolean> => {
+  ): Promise<{ success: boolean; workflow?: Workflow }> => {
     try {
       setIsCreating(true);
       setError(null);
@@ -21,12 +21,12 @@ export const useWorkflowCreation = (): UseWorkflowCreationReturn => {
       const response = await workflowApi.createWorkflow(request);
 
       setCreatedWorkflow(response.workflow);
-      return true;
+      return { success: true, workflow: response.workflow };
     } catch (err) {
       const errorMessage =
         err instanceof Error ? err.message : "Failed to create workflow";
       setError(errorMessage);
-      return false;
+      return { success: false };
     } finally {
       setIsCreating(false);
     }
@@ -54,7 +54,9 @@ interface UseWorkflowCreationReturn {
   isCreating: boolean;
   error: string | null;
   createdWorkflow: Workflow | null;
-  createWorkflow: (request: CreateWorkflowRequest) => Promise<boolean>;
+  createWorkflow: (
+    request: CreateWorkflowRequest,
+  ) => Promise<{ success: boolean; workflow?: Workflow }>;
   clearError: () => void;
   reset: () => void;
 }
