@@ -1,10 +1,8 @@
 import math
 import uuid
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, List, Optional
 
-from bson import ObjectId
-from pymongo import ReturnDocument
 from app.config.loggers import todos_logger
 from app.db.mongodb.collections import projects_collection, todos_collection
 from app.db.redis import (
@@ -34,6 +32,12 @@ from app.models.todo_models import (
     UpdateProjectRequest,
     UpdateTodoRequest,
 )
+from app.models.workflow_models import (
+    CreateWorkflowRequest,
+    TriggerConfig,
+    TriggerType,
+)
+from app.services.workflow.service import WorkflowService
 from app.utils.todo_vector_utils import (
     bulk_index_todos,
     delete_todo_embedding,
@@ -46,6 +50,8 @@ from app.utils.todo_vector_utils import (
 from app.utils.todo_vector_utils import (
     semantic_search_todos as vector_search,
 )
+from bson import ObjectId
+from pymongo import ReturnDocument
 
 # Special constants
 INBOX_PROJECT_ID = "inbox"
@@ -174,59 +180,6 @@ class TodoService:
         return query
 
     @staticmethod
-    async def _generate_workflow_for_todo(
-        todo_title: str, todo_description: str | None = None
-    ) -> Dict[str, Any]:
-        """Generate a workflow plan for a TODO item using modern structured LLM output."""
-        try:
-            # Use the modern workflow generation from WorkflowService
-            from app.services.workflow.generation_service import (
-                WorkflowGenerationService,
-            )
-
-            steps_data = await WorkflowGenerationService.generate_steps_with_llm(
-                description=todo_description or "No description provided",
-                title=todo_title,
-            )
-
-            if steps_data:
-                return {
-                    "success": True,
-                    "workflow": {
-                        "title": todo_title,
-                        "description": todo_description or "",
-                        "steps": steps_data,
-                        "created_at": datetime.now(timezone.utc).isoformat(),
-                    },
-                }
-            else:
-                return {"success": False, "error": "Failed to generate workflow steps"}
-
-        except Exception as e:
-            todos_logger.error(f"Error generating workflow for TODO: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    @staticmethod
-    async def update_workflow_activation(
-        todo_id: str, user_id: str, activated: bool
-    ) -> None:
-        """Update workflow activation status for a todo."""
-        try:
-            await todos_collection.update_one(
-                {"_id": ObjectId(todo_id), "user_id": user_id},
-                {
-                    "$set": {
-                        "workflow_activated": activated,
-                        "updated_at": datetime.now(timezone.utc),
-                    }
-                },
-            )
-            # Invalidate cache
-            await TodoService._invalidate_cache(user_id, None, todo_id, "update")
-        except Exception as e:
-            todos_logger.error(f"Failed to update workflow status: {e}")
-
-    @staticmethod
     async def _calculate_stats(user_id: str) -> TodoStats:
         """Calculate todo statistics for a user."""
         cache_key = f"stats:{user_id}"
@@ -330,38 +283,29 @@ class TodoService:
         result = await todos_collection.insert_one(todo_dict)
         created_todo = await todos_collection.find_one({"_id": result.inserted_id})
 
-        # Queue workflow generation task using ARQ
+        # Create standalone workflow instead of queuing embedded workflow generation
         try:
-            from arq import create_pool
-            from arq.connections import RedisSettings
-            from app.config.settings import settings
-
-            # Create ARQ connection pool
-            redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-            pool = await create_pool(redis_settings)
-
-            # Enqueue the workflow generation task
-            job = await pool.enqueue_job(
-                "process_workflow_generation_task",
-                str(result.inserted_id),
-                user_id,
-                todo.title,
-                todo.description or "",
+            # Create workflow using standalone workflow system
+            workflow_request = CreateWorkflowRequest(
+                title=f"Todo: {todo.title}",
+                description=todo.description or f"Workflow for todo: {todo.title}",
+                trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+                generate_immediately=False,  # Generate in background
             )
 
-            await pool.close()
+            workflow = await WorkflowService.create_workflow(workflow_request, user_id)
 
-            if job:
-                todos_logger.info(
-                    f"Queued workflow generation for todo '{todo.title}' (ID: {result.inserted_id}) with job ID: {job.job_id}"
-                )
-            else:
-                todos_logger.warning(
-                    f"Failed to queue workflow generation for todo '{todo.title}'"
-                )
+            # Update the todo with the workflow_id
+            await todos_collection.update_one(
+                {"_id": result.inserted_id}, {"$set": {"workflow_id": workflow.id}}
+            )
+
+            todos_logger.info(
+                f"Created standalone workflow {workflow.id} for todo '{todo.title}' (ID: {result.inserted_id})"
+            )
         except Exception as e:
             todos_logger.warning(
-                f"Failed to queue workflow generation for todo '{todo.title}': {str(e)}"
+                f"Failed to create workflow for todo '{todo.title}': {str(e)}"
             )
 
         # Index for search

@@ -4,7 +4,7 @@ import { Button, Drawer, DrawerContent, DrawerBody } from "@heroui/react";
 import { Input, Textarea } from "@heroui/input";
 import { formatDistanceToNow } from "date-fns";
 import { Check, Trash2 } from "lucide-react";
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { toast } from "sonner";
 
 import { useUser } from "@/features/auth/hooks/useUser";
@@ -43,8 +43,17 @@ export default function TodoDetailSheet({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
+  const [workflowRefreshTrigger, setWorkflowRefreshTrigger] = useState(0);
+  const [newGeneratedWorkflow, setNewGeneratedWorkflow] = useState<
+    Workflow | undefined
+  >();
 
   const userTimezone = user?.onboarding?.preferences?.timezone;
+
+  // Reset generated workflow when todo changes
+  useEffect(() => {
+    setNewGeneratedWorkflow(undefined);
+  }, [todo?.id]);
 
   const handleToggleComplete = () => {
     if (!todo) return;
@@ -94,9 +103,14 @@ export default function TodoDetailSheet({
     if (!todo) return;
     setIsGeneratingWorkflow(true);
     try {
-      const updatedTodo = await todoApi.generateWorkflow(todo.id);
-      if (updatedTodo.workflow) {
-        onUpdate(todo.id, updatedTodo);
+      const result = await todoApi.generateWorkflow(todo.id);
+      if (result.workflow) {
+        // Update the todo with the workflow_id for immediate UI consistency
+        onUpdate(todo.id, { workflow_id: result.workflow.id });
+
+        // Pass the workflow directly for instant display
+        setNewGeneratedWorkflow(result.workflow);
+
         toast.success("Workflow generated successfully!");
       }
     } catch (error) {
@@ -109,8 +123,10 @@ export default function TodoDetailSheet({
 
   const handleWorkflowGenerated = (workflow: Workflow) => {
     if (!todo) return;
-    onUpdate(todo.id, { workflow });
-    toast.success("Workflow generated successfully!");
+    // Clear the newGeneratedWorkflow after it's been processed
+    setNewGeneratedWorkflow(undefined);
+    // Workflow is now stored separately, just show success
+    toast.success("Workflow updated successfully!");
   };
 
   return (
@@ -288,14 +304,14 @@ export default function TodoDetailSheet({
                   {/* Workflow Section */}
                   <div className="px-6 py-4 pt-6">
                     <WorkflowSection
-                      workflow={todo.workflow}
                       isGenerating={isGeneratingWorkflow}
-                      workflowStatus={todo.workflow_status}
                       todoId={todo.id}
                       todoTitle={todo.title}
                       todoDescription={todo.description}
                       onGenerateWorkflow={handleGenerateWorkflow}
                       onWorkflowGenerated={handleWorkflowGenerated}
+                      refreshTrigger={workflowRefreshTrigger}
+                      newWorkflow={newGeneratedWorkflow}
                     />
                   </div>
                 </div>

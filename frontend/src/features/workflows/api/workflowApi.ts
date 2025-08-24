@@ -5,7 +5,7 @@
 
 import { apiService } from "@/lib/api";
 
-export interface WorkflowStep {
+export interface WorkflowStepType {
   id: string;
   title: string;
   tool_name: string;
@@ -56,7 +56,7 @@ export interface Workflow {
   id: string;
   title: string;
   description: string;
-  steps: WorkflowStep[];
+  steps: WorkflowStepType[];
   trigger_config: TriggerConfig;
   execution_config: ExecutionConfig;
   metadata: WorkflowMetadata;

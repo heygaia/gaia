@@ -73,6 +73,11 @@ class WorkflowService:
             # Generate steps
             if request.generate_immediately:
                 await WorkflowService._generate_workflow_steps(workflow.id, user_id)
+                # Fetch the updated workflow with generated steps
+                updated_workflow = await WorkflowService.get_workflow(
+                    workflow.id, user_id
+                )
+                return updated_workflow or workflow
             else:
                 await WorkflowQueueService.queue_workflow_generation(
                     workflow.id, user_id

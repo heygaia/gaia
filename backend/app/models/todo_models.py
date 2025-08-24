@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -42,6 +42,9 @@ class TodoModel(BaseModel):
     completed: bool = Field(default=False, description="Whether the todo is completed")
     subtasks: List[SubTask] = Field(
         default_factory=list, max_length=50, description="List of subtasks"
+    )
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -89,11 +92,8 @@ class UpdateTodoRequest(BaseModel):
     subtasks: Optional[List[SubTask]] = Field(
         None, max_length=50, description="List of subtasks"
     )
-    workflow: Optional[Dict[str, Any]] = Field(
-        None, description="AI-generated workflow plan for this todo"
-    )
-    workflow_activated: Optional[bool] = Field(
-        None, description="Whether the workflow is activated for this todo"
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
     )
 
 
@@ -115,14 +115,11 @@ class TodoResponse(BaseModel):
     subtasks: List[SubTask] = Field(
         default_factory=list, description="List of subtasks"
     )
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    workflow: Optional[Dict[str, Any]] = Field(
-        None, description="AI-generated workflow plan for this todo"
-    )
-    workflow_activated: bool = Field(
-        False, description="Whether the workflow is activated for this todo"
-    )
 
 
 class ProjectModel(BaseModel):
