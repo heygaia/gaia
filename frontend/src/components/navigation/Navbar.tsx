@@ -153,7 +153,7 @@ export default function Navbar() {
             <div className="hidden" />
           ) : (
             <div className="hidden items-center gap-3 sm:flex">
-              <Button className="h-9 max-h-9 min-h-9 rounded-xl bg-zinc-900 px-4! text-sm font-medium text-black transition-all! hover:bg-zinc-800">
+              {/* <Button className="h-9 max-h-9 min-h-9 rounded-xl bg-zinc-900 px-4! text-sm font-medium text-black transition-all! hover:bg-zinc-800">
                 <div className="animate-rainbow flex items-center text-white">
                   <Github width={18} />
                   <span className="ml-1">GitHub</span>
@@ -164,8 +164,27 @@ export default function Navbar() {
                     </span>
                   </div>
                 </div>
-              </Button>
-
+              </Button> */}
+              <a
+                target="_blank"
+                href="https://github.com/heygaia/gaia"
+                className="group flex h-fit"
+              >
+                <RaisedButton
+                  size={"sm"}
+                  className="rounded-xl text-white"
+                  color="#171717"
+                >
+                  <Github width={18} />
+                  <span className="ml-1">GitHub</span>
+                  <div className="ml-2 flex items-center gap-1 text-sm">
+                    <StarFilledIcon className="h-4 w-4 text-[#6A7486] transition-colors group-hover:text-yellow-300" />
+                    <span className="font-display inline-block font-medium tracking-wider tabular-nums">
+                      {isLoadingStars ? "..." : repoData?.stargazers_count || 0}
+                    </span>
+                  </div>
+                </RaisedButton>
+              </a>
               <Link href={user.email ? "/c" : "/signup"}>
                 <RaisedButton
                   size={"sm"}

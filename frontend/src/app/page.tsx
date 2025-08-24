@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactLenis } from "lenis/react";
-import { lazy, Suspense,useEffect } from "react";
+import { lazy, Suspense, useEffect } from "react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
@@ -37,6 +37,10 @@ const OpenSource = lazy(
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
+const ChaoticWorkspaceSection = lazy(
+  () =>
+    import("@/features/landing/components/sections/ChaoticWorkspaceSection"),
+);
 
 export default function LandingPage() {
   useEffect(() => {
@@ -63,6 +67,9 @@ export default function LandingPage() {
             />
           </div>
           <div>
+            <Suspense fallback={<SuspenseLoader />}>
+              <ChaoticWorkspaceSection />
+            </Suspense>
             <Suspense fallback={<SuspenseLoader />}>
               <ToolsShowcaseSection />
             </Suspense>

@@ -1,11 +1,15 @@
 import Link from "next/link";
 
 import ShinyText from "@/components/ui/shadcn/shimmering-chip";
+import { useLatestRelease } from "@/hooks/useLatestRelease";
 import { MotionContainer } from "@/layouts/MotionContainer";
 
 import GetStartedButton from "../shared/GetStartedButton";
 import { SplitTextBlur } from "./SplitTextBlur";
 export default function HeroSection() {
+  const { data: release, isLoading: isReleaseLoading } =
+    useLatestRelease("heygaia/gaia");
+
   return (
     <div className="mt-28 w-screen flex-col gap-8 py-16 sm:pb-10">
       <div className="particles absolute top-0 z-1 h-screen w-full overflow-hidden bg-[#01bbff1a] bg-[radial-gradient(circle_at_center,_#01bbff40_0%,_#01bbff26_40%,_#01bbff0d_75%,_transparent_100%)]">
@@ -15,9 +19,9 @@ export default function HeroSection() {
       <MotionContainer className="relative z-2 flex h-full flex-col items-center justify-start gap-4">
         <Link href="/blog/public-beta">
           <ShinyText
-            text="Currently in Public Beta"
+            text={`Public Beta ${isReleaseLoading ? "" : release?.name.replace("-beta", "")}`}
             speed={10}
-            className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-2 px-4 text-sm font-light outline-1 outline-zinc-700 transition-colors hover:bg-zinc-800"
+            className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-2 px-4 text-sm font-light outline-1 outline-zinc-800 transition-colors hover:bg-zinc-800"
           />
         </Link>
 

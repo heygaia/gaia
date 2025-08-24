@@ -81,7 +81,7 @@ const RaisedButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const computedClassName = cn(
       buttonVariants({ variant, size, className }),
       color &&
-        "hover:bg-[color:var(--hover-bg)] before:border-[color:var(--border)] before:from-[color:var(--gradient)]",
+        "hover:bg-[color:var(--hover-bg)] before:border-[color:var(--border)] before:from-[color:var(--gradient)] hover:opacity-80",
     );
 
     return (
