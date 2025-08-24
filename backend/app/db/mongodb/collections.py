@@ -22,6 +22,7 @@ notifications_collection = mongodb_instance.get_collection("notifications")
 todos_collection = mongodb_instance.get_collection("todos")
 projects_collection = mongodb_instance.get_collection("projects")
 reminders_collection = mongodb_instance.get_collection("reminders")
+workflows_collection = mongodb_instance.get_collection("workflows")
 support_collection = mongodb_instance.get_collection("support_requests")
 
 # Payment-related collections

@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { CircleArrowUp } from "lucide-react";
+import { CircleArrowUp, ZapIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -72,10 +72,16 @@ export default function SidebarTopButtons() {
       label: "Pins",
     },
     {
+      route: "/workflows",
+      icon: <ZapIcon />,
+      label: "Workflows",
+    },
+    {
       route: "/c",
       icon: <MessageMultiple02Icon />,
       label: "Chats",
     },
+
     // {
     //   route: "/browser",
     //   icon: <AiBrowserIcon height={23} width={23} />,

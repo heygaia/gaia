@@ -11,6 +11,7 @@ import {
   User,
   Zap,
 } from "lucide-react";
+import Image from "next/image";
 import React, { useEffect, useReducer, useRef } from "react";
 import { useInView } from "react-intersection-observer";
 
@@ -299,10 +300,12 @@ const DayViewCalendar: React.FC<{ addedEvent: Event | null }> = ({
       <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <img
+            <Image
               src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
               alt="Google Calendar"
               className="h-7 w-7"
+              width={28}
+              height={28}
             />
             <h2 className="text-lg font-medium text-gray-800">
               {new Date().toLocaleDateString("en-US", {

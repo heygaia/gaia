@@ -48,6 +48,9 @@ class OnboardingPreferences(BaseModel):
     custom_instructions: Optional[str] = Field(
         None, max_length=500, description="Custom instructions for the AI assistant"
     )
+    timezone: Optional[str] = Field(
+        None, description="User's preferred timezone (e.g., 'America/New_York', 'UTC')"
+    )
 
     @field_validator("country")
     @classmethod
@@ -100,6 +103,31 @@ class OnboardingPreferences(BaseModel):
         # Return None for empty strings to normalize the data
         return None if v == "" else v
 
+    @field_validator("timezone")
+    @classmethod
+    def validate_timezone(cls, v):
+        if v is not None and v != "":
+            v = v.strip()
+            # Basic validation for timezone format
+            # Accept common timezone formats like 'America/New_York', 'UTC', 'Asia/Kolkata'
+            if not v:
+                raise ValueError("Timezone cannot be empty")
+            # Allow standard timezone identifiers (IANA timezone database)
+            import pytz
+
+            try:
+                pytz.timezone(v)
+                return v
+            except pytz.UnknownTimeZoneError:
+                # Allow UTC as fallback
+                if v.upper() == "UTC":
+                    return "UTC"
+                raise ValueError(
+                    f"Invalid timezone: {v}. Use standard timezone identifiers like 'America/New_York', 'UTC', 'Asia/Kolkata'"
+                )
+        # Return None for empty strings to normalize the data
+        return None if v == "" else v
+
 
 class OnboardingData(BaseModel):
     completed: bool = Field(
@@ -119,6 +147,9 @@ class OnboardingRequest(BaseModel):
     )
     profession: str = Field(
         ..., min_length=1, max_length=50, description="User's profession"
+    )
+    timezone: Optional[str] = Field(
+        None, description="User's detected timezone (e.g., 'America/New_York', 'UTC')"
     )
 
     @field_validator("name")

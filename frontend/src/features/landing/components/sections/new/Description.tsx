@@ -88,8 +88,6 @@ export default function Description() {
     textRefs.current.forEach((textRef, index) => {
       if (!textRef) return;
 
-      const isLastParagraph = index === paragraphs.length - 1;
-
       const tl = gsap.timeline({
         scrollTrigger: {
           trigger: sectionRef.current,
@@ -103,10 +101,10 @@ export default function Description() {
                 if (i === index) {
                   gsap.set(ref, { visibility: "visible" });
                 } else {
-                  gsap.set(ref, { 
+                  gsap.set(ref, {
                     visibility: "hidden",
                     opacity: 0,
-                    filter: "blur(20px)"
+                    filter: "blur(20px)",
                   });
                 }
               }
@@ -281,11 +279,11 @@ export default function Description() {
             {text}
           </div>
         ))}
-        
+
         <div
           ref={buttonRef}
           className="pointer-events-auto fixed left-1/2 z-20 -translate-x-1/2 transform"
-          style={{ 
+          style={{
             top: "calc(50% + 3rem)",
           }}
         >

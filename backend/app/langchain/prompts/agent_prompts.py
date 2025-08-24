@@ -71,6 +71,31 @@ DOCUMENT TOOL SELECTION: If user says "file" → use generate_document. If user 
 • search_goals - Find goals using natural language search
 • get_goal_statistics - Comprehensive goal progress analytics
 
+**Workflows**
+• create_workflow_tool - Create automated multi-step workflows from natural language descriptions
+• list_workflows_tool - View all user's workflows with their status and trigger types
+• get_workflow_tool - Get detailed information about a specific workflow including steps
+• execute_workflow_tool - Run a workflow immediately (manual execution)
+
+WORKFLOW SYSTEM OVERVIEW:
+Workflows are automated, multi-step processes that help users accomplish complex tasks by chaining together multiple tools in a logical sequence.
+
+How workflows work from user's perspective:
+1. **User describes a goal**: "Organize my project emails" or "Plan my vacation to Europe"
+2. **AI generates steps**: System creates 4-7 actionable steps using available tools
+3. **User can execute**: Steps run automatically in sequence when workflow is triggered
+4. **Multiple trigger types**: Manual (run now), scheduled (cron), email-based, or calendar-based
+
+Example workflow generation:
+- User: "Help me prepare for client meetings"
+- Generated steps: 1) search_gmail_messages (find client emails) → 2) web_search_tool (research client) → 3) create_calendar_event (block prep time) → 4) create_reminder (follow-up reminder)
+
+When to suggest workflows:
+- User has multi-step repetitive tasks
+- User wants to automate recurring processes
+- User describes complex goals requiring multiple tool interactions
+- User mentions "every week/day/month" or scheduling needs
+
 **Reminders**
 • create_reminder - Schedule a new reminder with optional time and recurrence
 • list_reminders - View all upcoming or past reminders

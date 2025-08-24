@@ -1,20 +1,20 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
-import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { todoApi } from "@/features/todo/api/todoApi";
+import { workflowApi } from "@/features/workflows/api/workflowApi";
 import {
-  Workflow as WorkflowType,
   WorkflowStatus,
+  Workflow as WorkflowType,
 } from "@/types/features/todoTypes";
 
-import WorkflowEmptyState from "./WorkflowEmptyState";
-import WorkflowHeader from "./WorkflowHeader";
-import WorkflowLoadingState from "./WorkflowLoadingState";
-import WorkflowSteps from "./WorkflowSteps";
+import {
+  WorkflowEmptyState,
+  WorkflowHeader,
+  WorkflowLoadingState,
+  WorkflowSteps,
+} from "@/features/workflows/components";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;
@@ -25,24 +25,62 @@ interface WorkflowSectionProps {
   todoDescription?: string;
   onGenerateWorkflow?: () => void;
   onWorkflowGenerated?: (workflow: WorkflowType) => void;
+  refreshTrigger?: number; // Add refresh trigger prop
+  newWorkflow?: WorkflowType; // Direct workflow update prop
 }
 
 export default function WorkflowSection({
-  workflow,
+  workflow: initialWorkflow,
   isGenerating = false,
-  workflowStatus = WorkflowStatus.NOT_STARTED,
+  workflowStatus: initialWorkflowStatus = WorkflowStatus.NOT_STARTED,
   todoId,
   todoTitle,
   todoDescription: _todoDescription,
   onGenerateWorkflow,
   onWorkflowGenerated,
+  refreshTrigger,
+  newWorkflow,
 }: WorkflowSectionProps) {
+  const [workflow, setWorkflow] = useState<WorkflowType | undefined>(
+    initialWorkflow,
+  );
+  const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>(
+    initialWorkflowStatus,
+  );
   const [isRunning, setIsRunning] = useState(false);
   const [localIsGenerating, setLocalIsGenerating] = useState(
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
-  const router = useRouter();
-  const sendMessage = useSendMessage();
+
+  // Fetch workflow on component mount and when refresh is triggered
+  useEffect(() => {
+    const fetchWorkflow = async () => {
+      try {
+        const status = await todoApi.getWorkflowStatus(todoId);
+        if (status.has_workflow && status.workflow) {
+          setWorkflow(status.workflow);
+          setWorkflowStatus(status.workflow_status);
+        } else {
+          setWorkflow(undefined);
+          setWorkflowStatus(WorkflowStatus.NOT_STARTED);
+        }
+      } catch (error) {
+        console.error("Failed to fetch workflow:", error);
+      }
+    };
+
+    fetchWorkflow();
+  }, [todoId, refreshTrigger]); // Add refreshTrigger to dependencies
+
+  // Handle direct workflow updates (for instant updates after generation)
+  useEffect(() => {
+    if (newWorkflow) {
+      setWorkflow(newWorkflow);
+      setWorkflowStatus(WorkflowStatus.COMPLETED);
+      setLocalIsGenerating(false); // Ensure we stop generating state
+      onWorkflowGenerated?.(newWorkflow);
+    }
+  }, [newWorkflow, onWorkflowGenerated]);
 
   // Poll for workflow completion when generating
   useEffect(() => {
@@ -54,10 +92,13 @@ export default function WorkflowSection({
 
         if (status.has_workflow && status.workflow) {
           setLocalIsGenerating(false);
+          setWorkflow(status.workflow);
+          setWorkflowStatus(status.workflow_status);
           onWorkflowGenerated?.(status.workflow);
           clearInterval(pollInterval);
         } else if (status.workflow_status === WorkflowStatus.FAILED) {
           setLocalIsGenerating(false);
+          setWorkflowStatus(WorkflowStatus.FAILED);
           clearInterval(pollInterval);
           console.error("Workflow generation failed");
         }
@@ -91,23 +132,15 @@ export default function WorkflowSection({
 
     setIsRunning(true);
     try {
-      // Navigate to new chat
-      router.push("/c");
+      // Execute the existing workflow directly
+      const executionResponse = await workflowApi.executeWorkflow(workflow.id, {
+        context: { source: "todo", todo_id: todoId },
+      });
 
-      // Create workflow execution message
-      const workflowMessage = `I want to execute a workflow for my todo: "${todoTitle}".
+      console.log("Workflow execution started:", executionResponse);
 
-Here's the workflow plan:
-${workflow.steps
-  .map(
-    (step, index) =>
-      `${index + 1}. ${step.title} (${formatToolName(step.tool_name)}): ${step.description}`,
-  )
-  .join("\n")}
-
-Please execute these steps in order and use the appropriate tools for each step.`;
-
-      await sendMessage(workflowMessage);
+      // Optionally, you could poll for status updates here
+      // or redirect to a workflow status page
     } catch (error) {
       console.error("Failed to run workflow:", error);
     } finally {
@@ -130,7 +163,7 @@ Please execute these steps in order and use the appropriate tools for each step.
         onGenerateWorkflow={onGenerateWorkflow}
         onRunWorkflow={handleRunWorkflow}
       />
-      <WorkflowSteps steps={workflow.steps} />
+      <WorkflowSteps key={workflow.id} steps={workflow.steps} />
     </div>
   );
 }

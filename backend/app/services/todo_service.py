@@ -1,12 +1,8 @@
 import math
 import uuid
-import json
 from datetime import datetime, timezone
-from typing import Dict, Any, List, Optional
+from typing import Any, List, Optional
 
-from bson import ObjectId
-from pymongo import ReturnDocument
-from app.db.rabbitmq import publisher
 from app.config.loggers import todos_logger
 from app.db.mongodb.collections import projects_collection, todos_collection
 from app.db.redis import (
@@ -35,8 +31,13 @@ from app.models.todo_models import (
     TodoStats,
     UpdateProjectRequest,
     UpdateTodoRequest,
-    WorkflowStatus,
 )
+from app.models.workflow_models import (
+    CreateWorkflowRequest,
+    TriggerConfig,
+    TriggerType,
+)
+from app.services.workflow.service import WorkflowService
 from app.utils.todo_vector_utils import (
     bulk_index_todos,
     delete_todo_embedding,
@@ -49,6 +50,8 @@ from app.utils.todo_vector_utils import (
 from app.utils.todo_vector_utils import (
     semantic_search_todos as vector_search,
 )
+from bson import ObjectId
+from pymongo import ReturnDocument
 
 # Special constants
 INBOX_PROJECT_ID = "inbox"
@@ -177,39 +180,6 @@ class TodoService:
         return query
 
     @staticmethod
-    async def _generate_workflow_for_todo(
-        todo_title: str, todo_description: str | None = None
-    ) -> Dict[str, Any]:
-        """Generate a workflow plan for a TODO item using structured LLM output."""
-        try:
-            from app.langchain.tools.workflow_tool import generate_workflow_for_todo
-
-            return await generate_workflow_for_todo(todo_title, todo_description or "")
-        except Exception as e:
-            todos_logger.error(f"Error generating workflow for TODO: {str(e)}")
-            return {"success": False, "error": str(e)}
-
-    @staticmethod
-    async def update_workflow_status(
-        todo_id: str, user_id: str, status: WorkflowStatus
-    ) -> None:
-        """Update workflow status for a todo."""
-        try:
-            await todos_collection.update_one(
-                {"_id": ObjectId(todo_id), "user_id": user_id},
-                {
-                    "$set": {
-                        "workflow_status": status,
-                        "updated_at": datetime.now(timezone.utc),
-                    }
-                },
-            )
-            # Invalidate cache
-            await TodoService._invalidate_cache(user_id, None, todo_id, "update")
-        except Exception as e:
-            todos_logger.error(f"Failed to update workflow status: {e}")
-
-    @staticmethod
     async def _calculate_stats(user_id: str) -> TodoStats:
         """Calculate todo statistics for a user."""
         cache_key = f"stats:{user_id}"
@@ -306,32 +276,36 @@ class TodoService:
                 "updated_at": datetime.now(timezone.utc),
                 "completed": False,
                 "subtasks": [],
-                "workflow_status": WorkflowStatus.GENERATING,  # Start generating immediately
+                "workflow_activated": True,  # Start activated by default
             }
         )
 
         result = await todos_collection.insert_one(todo_dict)
         created_todo = await todos_collection.find_one({"_id": result.inserted_id})
 
-        # Publish workflow generation task to background queue
-
+        # Create standalone workflow instead of queuing embedded workflow generation
         try:
-            await publisher.connect()
-            workflow_task_data = {
-                "todo_id": str(result.inserted_id),
-                "user_id": user_id,
-                "title": todo.title,
-                "description": todo.description,
-            }
-            await publisher.publish(
-                "workflow-generation", json.dumps(workflow_task_data).encode()
+            # Create workflow using standalone workflow system
+            workflow_request = CreateWorkflowRequest(
+                title=f"Todo: {todo.title}",
+                description=todo.description or f"Workflow for todo: {todo.title}",
+                trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+                generate_immediately=False,  # Generate in background
             )
+
+            workflow = await WorkflowService.create_workflow(workflow_request, user_id)
+
+            # Update the todo with the workflow_id
+            await todos_collection.update_one(
+                {"_id": result.inserted_id}, {"$set": {"workflow_id": workflow.id}}
+            )
+
             todos_logger.info(
-                f"Queued workflow generation for todo '{todo.title}' (ID: {result.inserted_id})"
+                f"Created standalone workflow {workflow.id} for todo '{todo.title}' (ID: {result.inserted_id})"
             )
         except Exception as e:
             todos_logger.warning(
-                f"Failed to queue workflow generation for todo '{todo.title}': {str(e)}"
+                f"Failed to create workflow for todo '{todo.title}': {str(e)}"
             )
 
         # Index for search

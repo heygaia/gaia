@@ -153,6 +153,29 @@ export default function ChatsList() {
     (conversation) => conversation.starred,
   );
 
+  // Calculate which accordions should be open by default - show ALL expanded
+  const getDefaultAccordionValues = () => {
+    const defaultValues: string[] = [];
+
+    // Add system conversations if they exist
+    if (systemConversations.length > 0) {
+      defaultValues.push("system-conversations");
+    }
+
+    // Add starred chats if they exist
+    if (starredConversations.length > 0) {
+      defaultValues.push("starred-chats");
+    }
+
+    // Add ALL time frame sections - show everything expanded by default
+    const timeFrameValues = sortedTimeFrames.map(([timeFrame]) =>
+      timeFrame.toLowerCase().replace(/\s+/g, "-"),
+    );
+    defaultValues.push(...timeFrameValues);
+
+    return defaultValues;
+  };
+
   return (
     <>
       {loading ? (
@@ -163,13 +186,7 @@ export default function ChatsList() {
         <Accordion
           type="multiple"
           className="w-full p-0"
-          defaultValue={[
-            ...(systemConversations.length > 0 ? ["system-conversations"] : []),
-            "starred-chats",
-            ...(sortedTimeFrames.length > 0
-              ? ["today", "previous-7-days", "yesterday"]
-              : []),
-          ]}
+          defaultValue={getDefaultAccordionValues()}
         >
           {/* System-generated conversations */}
           {systemConversations.length > 0 && (
