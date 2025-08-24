@@ -243,6 +243,37 @@ async def send_welcome_email(user_email: str, user_name: Optional[str] = None) -
         raise
 
 
+async def add_contact_to_resend(
+    user_email: str, user_name: Optional[str] = None
+) -> None:
+    """Add new user contact to Resend audience."""
+    try:
+        # Split name into first and last name
+        first_name = ""
+        last_name = ""
+
+        if user_name:
+            name_parts = user_name.strip().split()
+            first_name = name_parts[0] if name_parts else ""
+            last_name = " ".join(name_parts[1:]) if len(name_parts) > 1 else ""
+
+        params: resend.Contacts.CreateParams = {
+            "email": user_email,
+            "first_name": first_name,
+            "last_name": last_name,
+            "unsubscribed": False,
+            "audience_id": settings.RESEND_AUDIENCE_ID,
+        }
+
+        resend.Contacts.create(params)
+        logger.info(f"Contact added to Resend audience: {user_email}")
+    except Exception as e:
+        logger.error(
+            f"Failed to add contact to Resend audience for {user_email}: {str(e)}"
+        )
+        # Don't raise exception - user creation should still succeed even if contact addition fails
+
+
 def generate_welcome_email_html(user_name: Optional[str] = None) -> str | None:
     """Generate HTML email content for welcome email using Jinja2 template."""
     try:

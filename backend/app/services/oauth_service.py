@@ -3,7 +3,7 @@ from typing import Optional
 
 from app.config.loggers import app_logger as logger
 from app.db.mongodb.collections import users_collection
-from app.utils.email_utils import send_welcome_email
+from app.utils.email_utils import send_welcome_email, add_contact_to_resend
 from fastapi import HTTPException
 
 
@@ -64,6 +64,16 @@ async def store_user_info(name: str, email: str, picture_url: Optional[str]):
             logger.info(f"Welcome email sent to new user: {email}")
         except Exception as e:
             logger.error(f"Failed to send welcome email to {email}: {str(e)}")
+            # Don't raise exception - user creation should still succeed
+
+        # Add contact to Resend audience
+        try:
+            await add_contact_to_resend(email, name)
+            logger.info(f"Contact added to Resend audience for new user: {email}")
+        except Exception as e:
+            logger.error(
+                f"Failed to add contact to Resend audience for {email}: {str(e)}"
+            )
             # Don't raise exception - user creation should still succeed
 
         return result.inserted_id
