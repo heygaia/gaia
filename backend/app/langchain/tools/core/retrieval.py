@@ -1,29 +1,52 @@
 from typing import Annotated
 
-from app.langchain.tools.core.registry import ALWAYS_AVAILABLE_TOOLS
 from langgraph.prebuilt import InjectedStore
 from langgraph.store.base import BaseStore
 
 
-def retrieve_tools(
-    query: str,
-    store: Annotated[BaseStore, InjectedStore],
-    exclude_tools: list[str] = [],
-) -> list[str]:
-    """Retrieve a tool to use, given a search query."""
-    # Search for matching tools based on query
-    results = store.search(("tools",), query=query, limit=5)
-    tool_ids = [
-        result.key for result in results
-    ]  # Filter out any tools that should be excluded
-    filtered_always_available_tools = [
-        tool for tool in ALWAYS_AVAILABLE_TOOLS if tool.name not in exclude_tools
-    ]
+def get_retrieve_tools_function(
+    tool_space: str = "general",
+    include_core_tools: bool = True,
+):
+    """
+    Get a function to retrieve tools based on a search query.
 
-    # Always available tools are essential core tools that should be accessible regardless of semantic search results. These tools provide fundamental capabilities like web search, memory management, and basic functionality that the agent may need even if they don't match the current query semantically.
-    always_available_tool_ids = [tool.name for tool in filtered_always_available_tools]
+    Args:
+        tool_space: Namespace prefix for the tools.
+        exclude_tools: List of tool names to exclude from results.
+        include_core_tools: Whether to include core tools in the results.
 
-    # Combine both sets of tools (semantic search + always available)
-    combined_tools = tool_ids + always_available_tool_ids
+    Returns:
+        A function that retrieves tools based on the provided parameters.
+    """
 
-    return combined_tools
+    def retrieve_tools(
+        query: str,
+        store: Annotated[BaseStore, InjectedStore],
+        exclude_tools: list[str] = [],
+    ) -> list[str]:
+        """Retrieve a tool to use, given a search query."""
+
+        # Lazy import to avoid circular dependency
+        from app.langchain.tools.core.registry import tool_registry
+
+        # Search for matching tools based on query
+        results = store.search((tool_space,), query=query, limit=5)
+        tool_ids = [result.key for result in results]
+
+        if include_core_tools:
+            # Filter core tools based on exclusions
+            filtered_core_tools = [
+                tool
+                for tool in tool_registry.get_core_tools()
+                if tool.name not in exclude_tools
+            ]
+
+            # Core tools are essential tools that should be accessible regardless of semantic search results
+            core_tool_ids = [tool.name for tool in filtered_core_tools]
+
+            tool_ids.extend(core_tool_ids)
+
+        return tool_ids
+
+    return retrieve_tools

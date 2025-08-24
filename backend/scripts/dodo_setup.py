@@ -33,12 +33,18 @@ Example:
 
 import argparse
 import asyncio
+import sys
 from datetime import datetime, timezone
+from pathlib import Path
 
-from motor.motor_asyncio import AsyncIOMotorClient
+# Add the backend directory to Python path so we can import from app
+backend_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(backend_dir))
 
-from app.config.settings import settings
-from app.models.payment_models import PlanDB
+
+from app.config.settings import settings  # noqa: E402
+from app.models.payment_models import PlanDB  # noqa: E402
+from motor.motor_asyncio import AsyncIOMotorClient  # noqa: E402
 
 
 async def cleanup_old_indexes(collection):

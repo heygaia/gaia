@@ -37,52 +37,15 @@ Integration types:
 - Coming soon: Placeholder with available=False (github, figma)
 """
 
+from functools import cache
 from typing import Dict, List, Optional
-from pydantic import BaseModel
 
-
-class OAuthScope(BaseModel):
-    """OAuth scope configuration."""
-
-    scope: str
-    description: str
-
-
-class OAuthIntegration(BaseModel):
-    """OAuth integration configuration."""
-
-    id: str
-    name: str
-    description: str
-    icons: List[str]  # List of icon URLs for different contexts/sizes
-    category: str
-    provider: str  # 'google', 'github', 'figma', 'notion', etc.
-    scopes: List[OAuthScope]
-    available: bool = True
-    oauth_endpoints: Optional[Dict[str, str]] = None
-    # Display and organization properties
-    is_special: bool = False  # For unified integrations like Google Workspace
-    display_priority: int = 0  # Higher priority shows first
-    included_integrations: List[str] = []  # Child integrations for unified ones
-    # Short name for slash command dropdowns and quick access
-    short_name: Optional[str] = None  # e.g., "gmail", "calendar", "drive", "docs"
-
-
-class IntegrationConfigResponse(BaseModel):
-    """Response model for integration configuration."""
-
-    id: str
-    name: str
-    description: str
-    icons: List[str]
-    category: str
-    provider: str
-    available: bool
-    loginEndpoint: Optional[str]
-    isSpecial: bool
-    displayPriority: int
-    includedIntegrations: List[str]
-
+from app.models.oauth_models import (
+    ComposioConfig,
+    OAuthIntegration,
+    OAuthScope,
+    TriggerConfig,
+)
 
 # Define all integrations dynamically
 OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
@@ -131,6 +94,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "google_docs",
             "google_drive",
         ],
+        managed_by="self",
     ),
     # Individual Google integrations
     OAuthIntegration(
@@ -153,6 +117,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="calendar",
+        managed_by="self",
     ),
     OAuthIntegration(
         id="google_docs",
@@ -170,6 +135,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="docs",
+        managed_by="self",
     ),
     OAuthIntegration(
         id="gmail",
@@ -179,14 +145,26 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
         ],
         category="communication",
-        provider="google",
+        provider="gmail",
         scopes=[
             OAuthScope(
                 scope="https://www.googleapis.com/auth/gmail.modify",
                 description="Read, compose, and send emails",
-            ),
+            )
         ],
         short_name="gmail",
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_Tnn55kCyinEJ", toolkit="GMAIL"
+        ),
+        associated_triggers=[
+            TriggerConfig(
+                slug="GMAIL_NEW_GMAIL_MESSAGE",
+                name="New Gmail Message",
+                description="Triggered when a new Gmail message arrives",
+                config={"labelIds": "INBOX", "user_id": "me", "interval": 1},
+            )
+        ],
     ),
     OAuthIntegration(
         id="google_drive",
@@ -204,74 +182,81 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
             ),
         ],
         short_name="drive",
+        managed_by="self",
     ),
-    # Coming soon integrations
-    # OAuthIntegration(
-    #     id="github",
-    #     name="GitHub",
-    #     description="Manage repositories, issues, and pull requests",
-    #     icons=[
-    #         "https://cdn.brandfetch.io/idZAyF9rlg/theme/light/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B"
-    #     ],
-    #     category="development",
-    #     provider="github",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="figma",
-    #     name="Figma",
-    #     description="Create and collaborate on design projects",
-    #     icons=[
-    #         "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/figma/figma-original.svg"
-    #     ],
-    #     category="creative",
-    #     provider="figma",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="notion",
-    #     name="Notion",
-    #     description="Manage pages, databases, and workspace content with AI",
-    #     icons=[
-    #         "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
-    #     ],
-    #     category="productivity",
-    #     provider="notion",
-    #     scopes=[],
-    #     available=False,
-    # ),
-    # OAuthIntegration(
-    #     id="whatsapp",
-    #     name="WhatsApp",
-    #     description="Send and receive messages",
-    #     icons=[
-    #         "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png?20220228223904"
-    #     ],
-    #     category="communication",
-    #     provider="facebook",
-    #     scopes=[],
-    #     available=False,
-    # ),
+    # Composio integrations
+    OAuthIntegration(
+        id="notion",
+        name="Notion",
+        description="Manage pages, databases, and workspace content with AI",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+        ],
+        category="productivity",
+        provider="notion",
+        scopes=[],
+        available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_DR3IWp9-Kezl", toolkit="NOTION"
+        ),
+    ),
+    OAuthIntegration(
+        id="twitter",
+        name="Twitter",
+        description="Post tweets, read timelines, and manage your account with AI-powered tools",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/X_logo_2023.svg/600px-X_logo_2023.svg.png?20250120013756"
+        ],
+        category="social",
+        provider="twitter",
+        scopes=[],
+        available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_vloH3fnhIeUa", toolkit="TWITTER"
+        ),
+    ),
+    OAuthIntegration(
+        id="google_sheets",
+        name="Google Sheets",
+        description="Create, read, and update Google Sheets with AI-powered tools for automation and data management",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/a/ae/Google_Sheets_2020_Logo.svg"
+        ],
+        category="productivity",
+        provider="google_sheets",
+        scopes=[],
+        available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_18I3fRfWyXDu", toolkit="GOOGLE_SHEETS"
+        ),
+    ),
+    OAuthIntegration(
+        id="linkedin",
+        name="LinkedIn",
+        description="Share posts, engage with your network, and manage your professional presence using AI-powered tools",
+        icons=[
+            "https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+        ],
+        category="social",
+        provider="linkedin",
+        scopes=[],
+        available=True,
+        managed_by="composio",
+        composio_config=ComposioConfig(
+            auth_config_id="ac_GMeJBELf3z_m", toolkit="LINKEDIN"
+        ),
+    ),
 ]
 
-
+@cache
 def get_integration_by_id(integration_id: str) -> Optional[OAuthIntegration]:
     """Get an integration by its ID."""
     return next((i for i in OAUTH_INTEGRATIONS if i.id == integration_id), None)
 
-
-def get_integrations_by_provider(provider: str) -> List[OAuthIntegration]:
-    """Get all integrations for a specific provider."""
-    return [i for i in OAUTH_INTEGRATIONS if i.provider == provider]
-
-
-def get_available_integrations() -> List[OAuthIntegration]:
-    """Get all available integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if i.available]
-
-
+@cache
 def get_integration_scopes(integration_id: str) -> List[str]:
     """Get the OAuth scopes for a specific integration."""
     integration = get_integration_by_id(integration_id)
@@ -279,43 +264,30 @@ def get_integration_scopes(integration_id: str) -> List[str]:
         return []
     return [scope.scope for scope in integration.scopes]
 
-
-def get_unified_integrations() -> List[OAuthIntegration]:
-    """Get all unified/special integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if i.is_special]
-
-
-def get_individual_integrations() -> List[OAuthIntegration]:
-    """Get all individual (non-unified) integrations."""
-    return [i for i in OAUTH_INTEGRATIONS if not i.is_special]
-
-
-def get_integrations_sorted_by_priority() -> List[OAuthIntegration]:
-    """Get all integrations sorted by display priority (highest first)."""
-    return sorted(OAUTH_INTEGRATIONS, key=lambda x: x.display_priority, reverse=True)
-
-
-def is_integration_included_in_unified(integration_id: str, unified_id: str) -> bool:
-    """Check if an integration is included in a unified integration."""
-    unified = get_integration_by_id(unified_id)
-    if not unified or not unified.is_special:
-        return False
-    return integration_id in unified.included_integrations
-
-
-def get_included_integration_ids(unified_id: str) -> List[str]:
-    """Get all integration IDs included in a unified integration."""
-    unified = get_integration_by_id(unified_id)
-    if not unified or not unified.is_special:
-        return []
-    return unified.included_integrations
-
-
-def get_integration_by_short_name(short_name: str) -> Optional[OAuthIntegration]:
-    """Get an integration by its short name (used in slash commands)."""
-    return next((i for i in OAUTH_INTEGRATIONS if i.short_name == short_name), None)
-
-
+@cache
 def get_short_name_mapping() -> Dict[str, str]:
     """Get mapping of short names to integration IDs for convenience functions."""
     return {i.short_name: i.id for i in OAUTH_INTEGRATIONS if i.short_name}
+
+
+@cache
+def get_composio_social_configs() -> Dict[str, ComposioConfig]:
+    """Generate COMPOSIO_SOCIAL_CONFIGS dynamically from integrations managed by Composio."""
+    configs = {}
+    for integration in OAUTH_INTEGRATIONS:
+        if integration.managed_by == "composio" and integration.composio_config:
+            configs[integration.provider] = integration.composio_config
+    return configs
+
+
+@cache
+def get_integration_by_config(auth_config_id: str) -> Optional[OAuthIntegration]:
+    """Get an integration by its Composio auth config ID."""
+    return next(
+        (
+            i
+            for i in OAUTH_INTEGRATIONS
+            if i.composio_config and i.composio_config.auth_config_id == auth_config_id
+        ),
+        None,
+    )

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
-import { fetchAvailableTools, ToolInfo } from "@/features/chat/api/toolsApi";
+import { ToolInfo } from "@/features/chat/api/toolsApi";
 
 import { EnhancedToolInfo } from "../types/enhancedTools";
 import { useToolsWithIntegrations } from "./useToolsWithIntegrations";
@@ -30,29 +30,19 @@ export interface UseSlashCommandsReturn {
 }
 
 export const useSlashCommands = (): UseSlashCommandsReturn => {
-  const [tools, setTools] = useState<ToolInfo[]>([]);
-  const [isLoadingTools, setIsLoadingTools] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Get enhanced tools with integration status - this uses cached data
+  const {
+    tools: enhancedTools,
+    isLoading: isLoadingTools,
+    error,
+  } = useToolsWithIntegrations();
 
-  // Get enhanced tools with integration status
-  const { tools: enhancedTools } = useToolsWithIntegrations();
-
-  useEffect(() => {
-    const loadTools = async () => {
-      try {
-        setIsLoadingTools(true);
-        setError(null);
-        const toolsData = await fetchAvailableTools();
-        setTools(toolsData.tools);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load tools");
-      } finally {
-        setIsLoadingTools(false);
-      }
-    };
-
-    loadTools();
-  }, []);
+  // Convert enhanced tools back to base tools for compatibility
+  const tools: ToolInfo[] = enhancedTools.map((enhancedTool) => ({
+    name: enhancedTool.name,
+    category: enhancedTool.category,
+    required_integration: enhancedTool.integration?.requiredIntegration,
+  }));
 
   const getSlashCommandSuggestions = useCallback(
     (query: string): SlashCommandMatch[] => {
@@ -223,7 +213,7 @@ export const useSlashCommands = (): UseSlashCommandsReturn => {
   return {
     tools,
     isLoadingTools,
-    error,
+    error: error?.message || null,
     detectSlashCommand,
     getSlashCommandSuggestions,
     getAllTools,

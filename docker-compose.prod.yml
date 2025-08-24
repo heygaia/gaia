@@ -120,7 +120,7 @@ services:
   # Scheduler Worker
   worker:
     container_name: worker
-    image: gaia
+    image: ghcr.io/heygaia/gaia:latest
     profiles: ["", "backend-only"]
     working_dir: /app
     env_file:
@@ -140,7 +140,7 @@ services:
   # Arq Worker
   arq_worker:
     container_name: arq_worker
-    image: gaia
+    image: ghcr.io/heygaia/gaia:latest
     profiles: ["", "backend-only"]
     working_dir: /app
     env_file:

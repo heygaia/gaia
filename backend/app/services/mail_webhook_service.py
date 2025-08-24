@@ -4,29 +4,29 @@ from app.config.loggers import mail_webhook_logger as logger
 from app.db.rabbitmq import publisher
 
 
-async def queue_email_processing(email_address: str, history_id: int) -> dict:
+async def queue_composio_email_processing(user_id: str, email_data: dict) -> dict:
     """
-    Queue an email for background processing.
+    Queue a Composio email for background processing.
 
     Args:
-        email_address (str): The email address associated with the webhook
-        history_id (int): The history ID from the webhook
+        user_id (str): The user ID from the webhook
+        email_data (dict): The email data from Composio webhook
 
     Returns:
         dict: Response message indicating success
     """
     logger.info(
-        f"Queueing email processing: email={email_address}, historyId={history_id}"
+        f"Queueing Composio email processing: user_id={user_id}, message_id={email_data.get('message_id', 'unknown')}"
     )
 
     await publisher.publish(
-        queue_name="email-events",
+        queue_name="composio-email-events",
         body=json.dumps(
             {
-                "email_address": email_address,
-                "history_id": history_id,
+                "user_id": user_id,
+                "email_data": email_data,
             }
         ).encode("utf-8"),
     )
 
-    return {"message": "Email processing started successfully."}
+    return {"message": "Composio email processing started successfully."}

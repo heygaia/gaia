@@ -5,10 +5,6 @@ Clean, simple, and maintainable.
 
 from typing import Any, Dict, List
 
-from bson import ObjectId
-from dodopayments import DodoPayments
-from fastapi import HTTPException
-
 from app.config.settings import settings
 from app.db.mongodb.collections import (
     plans_collection,
@@ -24,6 +20,9 @@ from app.models.payment_models import (
     UserSubscriptionStatus,
 )
 from app.utils.email_utils import send_pro_subscription_email
+from bson import ObjectId
+from dodopayments import DodoPayments
+from fastapi import HTTPException
 
 
 class DodoPaymentService:
@@ -115,7 +114,6 @@ class DodoPaymentService:
                 customer={
                     "email": user.get("email"),
                     "name": user.get("first_name") or user.get("name", "User"),
-                    "create_new_customer": True,
                 },
                 product_id=product_id,
                 quantity=quantity,

@@ -6,9 +6,6 @@ Handles webhook events and updates database state accordingly.
 from datetime import datetime, timezone
 from typing import Any, Dict
 
-from bson import ObjectId
-from standardwebhooks.webhooks import Webhook
-
 from app.config.loggers import general_logger as logger
 from app.config.settings import settings
 from app.db.mongodb.collections import (
@@ -17,10 +14,12 @@ from app.db.mongodb.collections import (
 )
 from app.models.webhook_models import (
     DodoWebhookEvent,
-    WebhookEventType,
-    WebhookProcessingResult,
+    DodoWebhookEventType,
+    DodoWebhookProcessingResult,
 )
 from app.utils.email_utils import send_pro_subscription_email
+from bson import ObjectId
+from standardwebhooks.webhooks import Webhook
 
 
 class PaymentWebhookService:
@@ -40,17 +39,17 @@ class PaymentWebhookService:
             self.webhook_verifier = None
 
         self.handlers = {
-            WebhookEventType.PAYMENT_SUCCEEDED: self._handle_payment_succeeded,
-            WebhookEventType.PAYMENT_FAILED: self._handle_payment_failed,
-            WebhookEventType.PAYMENT_PROCESSING: self._handle_payment_processing,
-            WebhookEventType.PAYMENT_CANCELLED: self._handle_payment_cancelled,
-            WebhookEventType.SUBSCRIPTION_ACTIVE: self._handle_subscription_active,
-            WebhookEventType.SUBSCRIPTION_RENEWED: self._handle_subscription_renewed,
-            WebhookEventType.SUBSCRIPTION_CANCELLED: self._handle_subscription_cancelled,
-            WebhookEventType.SUBSCRIPTION_EXPIRED: self._handle_subscription_expired,
-            WebhookEventType.SUBSCRIPTION_FAILED: self._handle_subscription_failed,
-            WebhookEventType.SUBSCRIPTION_ON_HOLD: self._handle_subscription_on_hold,
-            WebhookEventType.SUBSCRIPTION_PLAN_CHANGED: self._handle_subscription_plan_changed,
+            DodoWebhookEventType.PAYMENT_SUCCEEDED: self._handle_payment_succeeded,
+            DodoWebhookEventType.PAYMENT_FAILED: self._handle_payment_failed,
+            DodoWebhookEventType.PAYMENT_PROCESSING: self._handle_payment_processing,
+            DodoWebhookEventType.PAYMENT_CANCELLED: self._handle_payment_cancelled,
+            DodoWebhookEventType.SUBSCRIPTION_ACTIVE: self._handle_subscription_active,
+            DodoWebhookEventType.SUBSCRIPTION_RENEWED: self._handle_subscription_renewed,
+            DodoWebhookEventType.SUBSCRIPTION_CANCELLED: self._handle_subscription_cancelled,
+            DodoWebhookEventType.SUBSCRIPTION_EXPIRED: self._handle_subscription_expired,
+            DodoWebhookEventType.SUBSCRIPTION_FAILED: self._handle_subscription_failed,
+            DodoWebhookEventType.SUBSCRIPTION_ON_HOLD: self._handle_subscription_on_hold,
+            DodoWebhookEventType.SUBSCRIPTION_PLAN_CHANGED: self._handle_subscription_plan_changed,
         }
 
     def verify_webhook_signature(self, payload: str, headers: Dict[str, str]) -> bool:
@@ -99,14 +98,14 @@ class PaymentWebhookService:
 
     async def process_webhook(
         self, webhook_data: Dict[str, Any]
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Process Dodo payment webhook."""
         try:
             event = DodoWebhookEvent(**webhook_data)
 
             handler = self.handlers.get(event.type)
             if not handler:
-                return WebhookProcessingResult(
+                return DodoWebhookProcessingResult(
                     event_type=event.type.value,
                     status="ignored",
                     message=f"No handler for {event.type}",
@@ -118,7 +117,7 @@ class PaymentWebhookService:
 
         except Exception as e:
             logger.error(f"Webhook processing failed: {e}")
-            return WebhookProcessingResult(
+            return DodoWebhookProcessingResult(
                 event_type=webhook_data.get("type", "unknown"),
                 status="failed",
                 message=f"Processing error: {str(e)}",
@@ -127,7 +126,7 @@ class PaymentWebhookService:
     # Payment event handlers
     async def _handle_payment_succeeded(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle successful payment - just log, subscription activation handles the rest."""
         payment_data = event.get_payment_data()
         if not payment_data:
@@ -135,7 +134,7 @@ class PaymentWebhookService:
 
         logger.info(f"Payment succeeded: {payment_data.payment_id}")
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Payment success logged",
@@ -145,7 +144,7 @@ class PaymentWebhookService:
 
     async def _handle_payment_failed(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle failed payment."""
         payment_data = event.get_payment_data()
         if not payment_data:
@@ -153,7 +152,7 @@ class PaymentWebhookService:
 
         logger.warning(f"Payment failed: {payment_data.payment_id}")
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Payment failure logged",
@@ -163,13 +162,13 @@ class PaymentWebhookService:
 
     async def _handle_payment_processing(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle payment processing status."""
         payment_data = event.get_payment_data()
         if not payment_data:
             raise ValueError("Invalid payment data")
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Payment processing noted",
@@ -179,13 +178,13 @@ class PaymentWebhookService:
 
     async def _handle_payment_cancelled(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle cancelled payment."""
         payment_data = event.get_payment_data()
         if not payment_data:
             raise ValueError("Invalid payment data")
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Payment cancellation noted",
@@ -196,7 +195,7 @@ class PaymentWebhookService:
     # Subscription event handlers
     async def _handle_subscription_active(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription activation - CREATE subscription record here."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -209,7 +208,7 @@ class PaymentWebhookService:
 
         if existing:
             logger.info(f"Subscription already exists: {sub_data.subscription_id}")
-            return WebhookProcessingResult(
+            return DodoWebhookProcessingResult(
                 event_type=event.type.value,
                 status="processed",
                 message="Subscription already active",
@@ -224,7 +223,7 @@ class PaymentWebhookService:
                 logger.error(
                     f"User not found for subscription: {sub_data.subscription_id}"
                 )
-                return WebhookProcessingResult(
+                return DodoWebhookProcessingResult(
                     event_type=event.type.value,
                     status="failed",
                     message="User not found",
@@ -260,7 +259,7 @@ class PaymentWebhookService:
         await self._send_welcome_email(user_id)
 
         logger.info(f"Subscription activated: {sub_data.subscription_id}")
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription activated",
@@ -269,7 +268,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_renewed(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription renewal."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -293,7 +292,7 @@ class PaymentWebhookService:
                 f"Subscription not found for renewal: {sub_data.subscription_id}"
             )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription renewed",
@@ -302,7 +301,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_cancelled(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription cancellation."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -321,7 +320,7 @@ class PaymentWebhookService:
             {"$set": update_data},
         )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription cancelled",
@@ -330,7 +329,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_expired(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription expiration."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -346,7 +345,7 @@ class PaymentWebhookService:
             },
         )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription expired",
@@ -355,7 +354,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_failed(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription failure."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -371,7 +370,7 @@ class PaymentWebhookService:
             },
         )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription failed",
@@ -380,7 +379,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_on_hold(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription on hold."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -396,7 +395,7 @@ class PaymentWebhookService:
             },
         )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription on hold",
@@ -405,7 +404,7 @@ class PaymentWebhookService:
 
     async def _handle_subscription_plan_changed(
         self, event: DodoWebhookEvent
-    ) -> WebhookProcessingResult:
+    ) -> DodoWebhookProcessingResult:
         """Handle subscription plan change."""
         sub_data = event.get_subscription_data()
         if not sub_data:
@@ -423,7 +422,7 @@ class PaymentWebhookService:
             },
         )
 
-        return WebhookProcessingResult(
+        return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
             message="Subscription plan changed",

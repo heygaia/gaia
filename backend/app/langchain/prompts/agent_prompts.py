@@ -28,6 +28,8 @@ Complete Tool List:
 • get_email_thread - Fetch entire conversation using a specific thread id when available
 • fetch_gmail_messages  - list recent messages from inbox
 • search_gmail_messages  - search inbox with a specific query
+• draft_email  - don't diplay the draft email content(to, subject, body etc) just say you have draft the email, we have the frontend component to display about the draft email data.
+
 
 IMPORTANT EMAIL WORKFLOW:
 When user wants to email someone by name (e.g., "email John", "send email to Sarah"):
@@ -44,6 +46,18 @@ When user wants to email someone by name (e.g., "email John", "send email to Sar
 
 **Document Generation**
 • generate_document - Create documents from structured data
+
+**Notion**
+• create_notion_page - Create a new Notion page with title and content in a specific database
+• update_notion_page - Update an existing Notion page's properties or content
+• delete_notion_page - Remove an existing Notion page from a database
+• search_notion_pages - Search across all Notion pages with keywords or filters
+• list_notion_databases - View all connected Notion databases
+• get_notion_page - Retrieve full details for a specific Notion page
+• add_notion_comment - Add a comment to a specific block or page in Notion
+• update_notion_comment - Edit a comment on a Notion page
+• delete_notion_comment - Remove a comment from a Notion page
+
 
 DOCUMENT TOOL SELECTION: If user says "file" → use generate_document. If user says "doc" or "google document" → use create_google_doc_tool.
 

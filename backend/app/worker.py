@@ -16,7 +16,7 @@ llm_limiter = AsyncLimiter(10, 1)  # 10 tasks per second
 stop_event = asyncio.Event()
 
 
-async def on_email_message(message: AbstractIncomingMessage):
+async def on_composio_email_message(message: AbstractIncomingMessage):
     import app.worker_node.process_email as process_emails
 
     async with message.process():
@@ -25,30 +25,35 @@ async def on_email_message(message: AbstractIncomingMessage):
             try:
                 # Parse message data
                 data = json.loads(message.body.decode())
-                history_id = data.get("history_id")
-                email_address = data.get("email_address")
+                user_id = data.get("user_id")
+                email_data = data.get("email_data")
 
-                # Create processing session
-                session = create_session(history_id, email_address)
+                # Create processing session for Composio email
+                message_id = email_data.get("message_id", "unknown")
+                session = create_session(message_id, user_id)
 
                 session.log_milestone(
-                    "Message received",
+                    "Composio email message received",
                     {
                         "queue_message_id": getattr(message, "message_id", "unknown"),
                         "routing_key": getattr(message, "routing_key", "unknown"),
+                        "user_id": user_id,
+                        "email_message_id": message_id,
                     },
                 )
 
-                # Process emails with session
-                result = await process_emails.process_emails(
-                    history_id=history_id, email=email_address, session=session
+                # Process Composio email with session
+                result = await process_emails.process_composio_email(
+                    user_id=user_id, email_data=email_data, session=session
                 )
 
                 session.log_session_summary(result)
-                logger.info(f"Session {session.session_id} completed successfully")
+                logger.info(
+                    f"Composio session {session.session_id} completed successfully"
+                )
 
             except json.JSONDecodeError as e:
-                error_msg = f"Failed to decode message JSON: {e}"
+                error_msg = f"Failed to decode Composio message JSON: {e}"
                 if session:
                     session.log_error("JSON_DECODE_ERROR", error_msg)
                     session.log_session_summary(
@@ -57,7 +62,7 @@ async def on_email_message(message: AbstractIncomingMessage):
                 logger.error(error_msg)
 
             except Exception as e:
-                error_msg = f"Failed to process message: {e}"
+                error_msg = f"Failed to process Composio message: {e}"
                 if session:
                     session.log_error("PROCESSING_ERROR", error_msg)
                     session.log_session_summary(
@@ -101,9 +106,9 @@ async def start_worker():
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=10)
 
-    # Set up email processing queue
-    email_queue = await channel.declare_queue("email-events", durable=True)
-    await email_queue.consume(on_email_message)
+    # Set up Composio email processing queue
+    composio_email_queue = await channel.declare_queue("composio-email-events", durable=True)
+    await composio_email_queue.consume(on_composio_email_message)
 
     # Set up workflow generation queue
     workflow_queue = await channel.declare_queue("workflow-generation", durable=True)
@@ -111,9 +116,9 @@ async def start_worker():
 
     # Build the processing graph
     async with build_mail_processing_graph() as built_graph:
-        GraphManager.set_graph(built_graph, graph_name="mail_processing")
+        await GraphManager.set_graph(built_graph, graph_name="mail_processing")
 
-    logger.info("Worker started on queues: email-events, workflow-generation")
+    logger.info("Worker started on queues: composio-email-events, workflow-generation")
 
     # Handle shutdown signals
     loop = asyncio.get_running_loop()

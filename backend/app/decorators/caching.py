@@ -10,7 +10,7 @@ import inspect
 from typing import Any, Awaitable, Callable, Dict, Generic, List, Optional, TypeVar
 
 from app.config.loggers import redis_logger as logger
-from app.db.redis import get_cache, set_cache, delete_cache, ONE_YEAR_TTL
+from app.db.redis import ONE_YEAR_TTL, delete_cache, get_cache, set_cache
 
 T = TypeVar("T")
 
@@ -89,7 +89,7 @@ class Cacheable(Generic[T]):
             # Check if the value is already cached
             cached_value = await get_cache(cache_key)
             if cached_value is not None:
-                logger.info(f"Cache hit for key: {cache_key}")
+                logger.debug(f"Cache hit for key: {cache_key}")
                 if self.deserializer:
                     cached_value = self.deserializer(cached_value)
                 return cached_value
@@ -101,8 +101,8 @@ class Cacheable(Generic[T]):
             if self.serializer:
                 serialized_result = self.serializer(result)
 
-            logger.info(f"Cache miss for key: {cache_key}")
-            logger.info(f"Setting cache for key: {cache_key}")
+            logger.debug(f"Cache miss for key: {cache_key}")
+            logger.debug(f"Setting cache for key: {cache_key}")
 
             # Let set_cache handle Pydantic serialization
             await set_cache(key=cache_key, value=serialized_result, ttl=self.ttl)
@@ -177,7 +177,7 @@ class CacheInvalidator:
                     for pattern in self.key_patterns
                 ]
 
-            logger.info(f"Cache invalidation for keys: {cache_keys}")
+            logger.debug(f"Cache invalidation for keys: {cache_keys}")
 
             # Invalidate the cache
             await asyncio.gather(*[delete_cache(key) for key in cache_keys])

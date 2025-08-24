@@ -1,24 +1,8 @@
 import re
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any, Dict, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
-
-
-class CurrentUserModel(BaseModel):
-    model_config = ConfigDict(arbitrary_types_allowed=True)
-
-    user_id: str = Field(..., description="Unique identifier for the user")
-    name: str = Field(..., description="Name of the user")
-    email: str = Field(..., description="Email address of the user")
-    cached_at: datetime = Field(
-        default_factory=lambda: datetime.now(timezone.utc),
-        description="Timestamp when the user data was cached",
-    )
-    picture: Optional[str] = Field(
-        default=None, description="URL of the user's profile picture"
-    )
-    is_active: bool = Field(default=True, description="Indicates if the user is active")
+from pydantic import BaseModel, Field, field_validator
 
 
 class UserUpdateRequest(BaseModel):
@@ -33,6 +17,9 @@ class UserUpdateResponse(BaseModel):
         None, description="URL of the user's profile picture"
     )
     updated_at: Optional[datetime] = Field(None, description="Last update timestamp")
+    selected_model: Optional[str] = Field(
+        None, description="ID of the user's selected AI model"
+    )
 
 
 class OnboardingPreferences(BaseModel):

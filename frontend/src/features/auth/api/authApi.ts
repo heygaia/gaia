@@ -14,6 +14,7 @@ export interface UserInfo {
       custom_instructions?: string;
     };
   };
+  selected_model?: string;
 }
 
 export interface GoogleLoginResponse {

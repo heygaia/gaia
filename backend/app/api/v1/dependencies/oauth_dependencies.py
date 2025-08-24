@@ -24,7 +24,6 @@ async def get_current_user(request: Request):
         raise HTTPException(
             status_code=401, detail="Unauthorized: Authentication required"
         )
-
     if not request.state.user:
         logger.error("User marked as authenticated but no user data found")
         raise HTTPException(status_code=401, detail="Unauthorized: User data missing")
