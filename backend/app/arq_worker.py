@@ -13,11 +13,6 @@ from app.config.settings import settings
 from app.langchain.llm.client import init_llm
 from app.services.reminder_service import process_reminder_task
 
-# from app.tasks.subscription_cleanup import (
-#     cleanup_abandoned_subscriptions,
-#     reconcile_subscription_payments,
-# )
-
 
 async def startup(ctx: dict):
     from app.langchain.core.graph_builder.build_graph import build_graph
@@ -39,39 +34,6 @@ async def startup(ctx: dict):
         in_memory_checkpointer=True,
     ) as built_graph:
         await GraphManager.set_graph(built_graph, graph_name="reminder_processing")
-
-
-# async def cleanup_abandoned_subscriptions_task(ctx: dict) -> str:
-#     """ARQ task wrapper for cleaning up abandoned subscriptions."""
-#     try:
-#         result = await cleanup_abandoned_subscriptions()
-#         message = f"Subscription cleanup completed. Status: {result['status']}, Cleaned: {result.get('cleaned_up_count', 0)}"
-#         logger.info(message)
-#         return message
-#     except Exception as e:
-#         error_msg = f"Failed to cleanup abandoned subscriptions: {str(e)}"
-#         logger.error(error_msg)
-#         raise
-
-
-# async def reconcile_subscription_payments_task(ctx: dict) -> str:
-#     """ARQ task wrapper for reconciling subscription payments."""
-#     try:
-#         result = await reconcile_subscription_payments()
-#         message = f"Payment reconciliation completed. Status: {result['status']}, Reconciled: {result.get('reconciled_count', 0)}, Deactivated: {result.get('deactivated_count', 0)}"
-#         logger.info(message)
-#         return message
-#     except Exception as e:
-#         error_msg = f"Failed to reconcile subscription payments: {str(e)}"
-#         logger.error(error_msg)
-#         raise
-#     """ARQ worker shutdown function."""
-#     logger.info("ARQ worker shutting down...")
-
-#     # Clean up any resources
-#     startup_time = ctx.get("startup_time", 0)
-#     runtime = asyncio.get_event_loop().time() - startup_time
-#     logger.info(f"ARQ worker ran for {runtime:.2f} seconds")
 
 
 async def process_reminder(ctx: dict, reminder_id: str) -> str:
