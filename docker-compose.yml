@@ -1,6 +1,57 @@
 name: gaia-dev
 
 services:
+  # FastAPI Application
+  gaia-backend:
+    container_name: gaia-backend
+    profiles: ["", "backend-only"]
+    build: ./backend
+    image: gaia
+    working_dir: /app
+    command:
+      [
+        "python",
+        "-m",
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "80",
+        "--reload",
+        "--no-access-log",
+      ]
+    environment:
+      DEBUG: 1
+      PYTHONUNBUFFERED: 1
+      FORCE_COLOR: 1
+      WORKER_TYPE: main_app
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend:/app
+    ports:
+      - "8000:80"
+    restart: on-failure
+    tty: true
+    stdin_open: true
+    depends_on:
+      chromadb:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      mongo:
+        condition: service_healthy
+    networks:
+      - gaia_network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:80/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
   # ChromaDB Service
   chromadb:
     image: chromadb/chroma:1.0.0
