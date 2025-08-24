@@ -1,26 +1,33 @@
 from app.config.loggers import mail_webhook_logger as logger
-from app.config.settings import settings
 from app.models.webhook_models import ComposioWebhookEvent
 from app.services.mail_webhook_service import queue_composio_email_processing
+from app.utils.webhook_utils import verify_composio_webhook_signature
 from fastapi import APIRouter, HTTPException, Request
-from standardwebhooks.webhooks import Webhook
 
 router = APIRouter()
-wh = Webhook(settings.COMPOSIO_WEBHOOK_SECRET)
-
 
 @router.post(
     "/webhook/composio",
 )
-async def webhook_composio(request: Request):
-    webhook_payload = await request.json()
-    webhook_headers = request.headers
-    wh.verify(webhook_payload, webhook_headers)  # pyright: ignore[reportArgumentType]
+async def webhook_composio(
+    request: Request,
+):
+    await verify_composio_webhook_signature(request)
+    body = await request.json()
+    data = body.get("data")
 
-    payload = await request.json()
+    event_data = ComposioWebhookEvent(
+        connection_id=data.get("connection_id"),
+        connection_nano_id=data.get("connection_nano_id"),
+        trigger_nano_id=data.get("trigger_nano_id"),
+        trigger_id=data.get("trigger_id"),
+        user_id=data.get("user_id"),
+        data=data,
+        timestamp=body.get("timestamp"),
+        type=body.get("type"),
+    )
 
-    event_data = ComposioWebhookEvent(**payload)
-
+    # Process specific webhook types
     if event_data.type == "GMAIL_NEW_GMAIL_MESSAGE":
         # Extract user_id from the webhook event
         user_id = event_data.user_id
@@ -35,4 +42,5 @@ async def webhook_composio(request: Request):
         # Queue email processing with Composio data
         return await queue_composio_email_processing(user_id, event_data.data)
 
+    # Log unhandled webhook types for monitoring
     return {"status": "success", "message": "Webhook received"}
