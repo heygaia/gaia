@@ -62,6 +62,7 @@ async def call_agent(
                 query=request.message,
                 user_name=user.get("name"),
                 selected_tool=request.selectedTool,
+                selected_workflow=request.selectedWorkflow,
             ),
             GraphManager.get_graph(),
         )
@@ -76,6 +77,7 @@ async def call_agent(
             "mem0_user_id": user_id,
             "conversation_id": conversation_id,
             "selected_tool": request.selectedTool,
+            "selected_workflow": request.selectedWorkflow,
         }
 
         # Begin streaming the AI output

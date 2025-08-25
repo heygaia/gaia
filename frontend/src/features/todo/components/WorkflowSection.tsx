@@ -8,6 +8,7 @@ import {
   WorkflowStatus,
   Workflow as WorkflowType,
 } from "@/types/features/todoTypes";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 
 import {
   WorkflowEmptyState,
@@ -51,6 +52,8 @@ export default function WorkflowSection({
   const [localIsGenerating, setLocalIsGenerating] = useState(
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
+
+  const { selectWorkflow } = useWorkflowSelection();
 
   // Fetch workflow on component mount and when refresh is triggered
   useEffect(() => {
@@ -130,21 +133,29 @@ export default function WorkflowSection({
   const handleRunWorkflow = async () => {
     if (!workflow) return;
 
-    setIsRunning(true);
     try {
-      // Execute the existing workflow directly
-      const executionResponse = await workflowApi.executeWorkflow(workflow.id, {
-        context: { source: "todo", todo_id: todoId },
-      });
+      // Convert the todo workflow to the expected format
+      const workflowData = {
+        id: workflow.id,
+        title: workflow.title,
+        description: workflow.description,
+        steps: workflow.steps.map((step) => ({
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          tool_name: step.tool_name,
+          tool_category: step.tool_category,
+        })),
+      };
 
-      console.log("Workflow execution started:", executionResponse);
+      // Use selectWorkflow to store in localStorage and navigate to chat with auto-send
+      selectWorkflow(workflowData, { autoSend: true });
 
-      // Optionally, you could poll for status updates here
-      // or redirect to a workflow status page
+      console.log(
+        "Workflow selected for manual execution in chat with auto-send",
+      );
     } catch (error) {
-      console.error("Failed to run workflow:", error);
-    } finally {
-      setIsRunning(false);
+      console.error("Failed to select workflow for execution:", error);
     }
   };
 

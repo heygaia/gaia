@@ -36,6 +36,7 @@ import WorkflowSteps from "./shared/WorkflowSteps";
 import { toast } from "sonner";
 import CustomSpinner from "@/components/ui/shadcn/spinner";
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 
 interface WorkflowFormData {
   title: string;
@@ -86,6 +87,8 @@ export default function WorkflowModal({
     startPolling,
     stopPolling,
   } = useWorkflowPolling();
+
+  const { selectWorkflow } = useWorkflowSelection();
 
   const [creationPhase, setCreationPhase] = useState<
     "form" | "creating" | "generating" | "success" | "error"
@@ -401,16 +404,17 @@ export default function WorkflowModal({
     if (mode !== "edit" || !existingWorkflow) return;
 
     try {
-      // Execute the workflow
-      await workflowApi.executeWorkflow(existingWorkflow.id);
-      console.log("Workflow execution started");
+      // Use selectWorkflow to store in localStorage and navigate to chat with auto-send
+      selectWorkflow(existingWorkflow, { autoSend: true });
 
-      // Refresh workflow list after execution
-      if (onWorkflowListRefresh) {
-        onWorkflowListRefresh();
-      }
+      // Close the modal after navigation starts
+      onOpenChange(false);
+
+      console.log(
+        "Workflow selected for manual execution in chat with auto-send",
+      );
     } catch (error) {
-      console.error("Failed to run workflow:", error);
+      console.error("Failed to select workflow for execution:", error);
     }
   };
 

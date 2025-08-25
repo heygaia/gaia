@@ -77,3 +77,28 @@ Available Tools:
 {tools}
 
 {format_instructions}"""
+
+WORKFLOW_EXECUTION_PROMPT = """You are executing a workflow manually for the user. The user has selected a specific workflow to run in this chat session.
+
+**Workflow Details:**
+Title: {workflow_title}
+Description: {workflow_description}
+
+**Steps to Execute:**
+{workflow_steps}
+
+**Your Task:**
+Execute these steps one by one, using the appropriate tools for each step. As you complete each step, provide clear updates on your progress. Use the tools available to you to accomplish each step's objectives.
+
+**Execution Guidelines:**
+1. Process steps in the exact order shown
+2. Use the specified tool for each step (tool_name: {tool_names})
+3. Provide real-time feedback as you complete each step
+4. If a step fails, explain what happened and attempt to continue with remaining steps
+5. Show the results of each step before moving to the next
+6. Adapt tool inputs based on user's specific context and previous step results
+
+**User's Request:**
+{user_message}
+
+Begin executing the workflow steps now, starting with step 1."""
