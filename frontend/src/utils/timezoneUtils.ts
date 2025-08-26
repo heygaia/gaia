@@ -13,6 +13,34 @@ export interface TimezoneInfo {
 }
 
 /**
+ * Normalize timezone to current IANA identifier using moment-timezone
+ */
+export const normalizeTimezone = (timezone: string): string => {
+  if (!timezone) return "UTC";
+
+  // Handle common legacy timezone manually since moment might not recognize them
+  const legacyMap: Record<string, string> = {
+    "Asia/Calcutta": "Asia/Kolkata",
+  };
+
+  if (legacyMap[timezone]) {
+    return legacyMap[timezone];
+  }
+
+  try {
+    // Check if timezone is valid first
+    const momentTz = moment.tz(timezone);
+    if (momentTz.isValid()) {
+      return timezone; // If valid, return as-is (moment-timezone handles canonical names)
+    }
+    return timezone;
+  } catch (error) {
+    console.warn(`Failed to normalize timezone ${timezone}:`, error);
+    return timezone;
+  }
+};
+
+/**
  * Get timezone information including UTC offset and abbreviation using moment
  */
 export const getTimezoneInfo = (timezone: string): TimezoneInfo => {
@@ -50,49 +78,11 @@ export const getTimezoneInfo = (timezone: string): TimezoneInfo => {
  * Get human-readable timezone display name
  */
 const getTimezoneDisplayName = (timezone: string): string => {
-  // Common timezone name mappings for better UX
-  const cityMap: Record<string, string> = {
-    UTC: "UTC",
-    "America/New_York": "New York",
-    "America/Chicago": "Chicago",
-    "America/Denver": "Denver",
-    "America/Los_Angeles": "Los Angeles",
-    "America/Toronto": "Toronto",
-    "America/Sao_Paulo": "São Paulo",
-    "America/Mexico_City": "Mexico City",
-    "Europe/London": "London",
-    "Europe/Paris": "Paris",
-    "Europe/Berlin": "Berlin",
-    "Europe/Rome": "Rome",
-    "Europe/Madrid": "Madrid",
-    "Europe/Amsterdam": "Amsterdam",
-    "Europe/Zurich": "Zurich",
-    "Europe/Stockholm": "Stockholm",
-    "Europe/Moscow": "Moscow",
-    "Asia/Tokyo": "Tokyo",
-    "Asia/Shanghai": "Shanghai",
-    "Asia/Hong_Kong": "Hong Kong",
-    "Asia/Singapore": "Singapore",
-    "Asia/Kolkata": "Mumbai",
-    "Asia/Calcutta": "Kolkata", // Handle both variants
-    "Asia/Dubai": "Dubai",
-    "Asia/Seoul": "Seoul",
-    "Asia/Bangkok": "Bangkok",
-    "Australia/Sydney": "Sydney",
-    "Australia/Melbourne": "Melbourne",
-    "Pacific/Auckland": "Auckland",
-  };
-
-  if (cityMap[timezone]) {
-    return cityMap[timezone];
-  }
-
-  // Fallback: extract city name from timezone string
+  // Just extract the city name from the timezone identifier
   const parts = timezone.split("/");
   if (parts.length >= 2) {
     return parts[parts.length - 1].replace(/_/g, " ");
   }
-
   return timezone;
 };
 
@@ -100,8 +90,10 @@ const getTimezoneDisplayName = (timezone: string): string => {
  * Get current browser timezone info
  */
 export const getCurrentBrowserTimezone = (): TimezoneInfo => {
-  const timezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  return getTimezoneInfo(timezone);
+  const browserTimezone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  // Normalize the browser-detected timezone using moment-timezone
+  const normalizedTimezone = normalizeTimezone(browserTimezone);
+  return getTimezoneInfo(normalizedTimezone);
 };
 
 /**

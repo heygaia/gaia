@@ -1,7 +1,6 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import List
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.core.graph_manager import GraphManager
@@ -9,22 +8,14 @@ from app.langchain.core.messages import construct_langchain_messages
 from app.langchain.prompts.proactive_agent_prompt import (
     PROACTIVE_MAIL_AGENT_MESSAGE_PROMPT,
     PROACTIVE_MAIL_AGENT_SYSTEM_PROMPT,
-    PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT,
-    PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
 )
 from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
 from app.langchain.tools.core.categories import get_tool_category
 from app.models.message_models import MessageRequestWithHistory
-from app.models.reminder_models import ReminderProcessingAgentResult
 from app.utils.memory_utils import store_user_message_memory
 from langchain_core.messages import (
-    AIMessage,
     AIMessageChunk,
-    AnyMessage,
-    HumanMessage,
-    SystemMessage,
 )
-from langchain_core.output_parsers import PydanticOutputParser
 from langsmith import traceable
 
 
@@ -285,122 +276,3 @@ async def call_mail_processing_agent(
     except Exception as e:
         logger.error(f"Error in email processing for user {user_id}: {str(e)}")
         raise e
-
-
-@traceable
-async def call_reminder_agent(
-    instruction: str,
-    user_id: str,
-    reminder_id: str,
-    access_token: str | None = None,
-    refresh_token: str | None = None,
-    old_messages: List[AnyMessage] = [],
-) -> ReminderProcessingAgentResult:
-    """
-    Process reminder instruction with AI agent to process a reminder.
-
-    Args:
-        instruction: The reminder instruction to process
-        user_id: User ID for context
-        access_token: User's access token for API calls
-        refresh_token: User's refresh token
-
-    Returns:
-        None: This function is designed to run as a background task
-    """
-    logger.info(f"Starting reminder processing for user {user_id}")
-
-    messages = [
-        SystemMessage(
-            content=PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
-        ),
-        *old_messages,
-        HumanMessage(
-            content=PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT.format(
-                reminder_request=instruction,
-                format_instructions=reminder_agent_result_parser.get_format_instructions(),
-            )
-        ),
-    ]
-
-    logger.info(f"Processing reminder for user {user_id}")
-
-    initial_state = {
-        "messages": messages,
-        "current_datetime": datetime.now(timezone.utc).isoformat(),
-        "mem0_user_id": user_id,
-    }
-
-    try:
-        # Get the reminder processing graph
-        graph = await GraphManager.get_graph("reminder_processing")
-
-        if not graph:
-            logger.error(f"No graph found for reminder processing for user {user_id}")
-            raise ValueError(f"Graph not found for reminder processing: {user_id}")
-
-        logger.info(
-            f"Graph for reminder processing retrieved successfully for user {user_id}"
-        )
-
-        # Just invoke the graph directly - no streaming needed
-        result = await graph.ainvoke(
-            initial_state,
-            config={
-                "configurable": {
-                    "thread_id": f"reminder_{reminder_id}",
-                    "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                    "reminder_id": reminder_id,
-                    "initiator": "backend",
-                },
-                "recursion_limit": 20,  # Increased limit for complex reminder processing
-                "metadata": {
-                    "user_id": user_id,
-                    "processing_type": "reminder",
-                },
-            },
-        )
-
-        if not result:
-            logger.warning(
-                f"No result returned from reminder processing for user {user_id}"
-            )
-            raise ValueError(
-                f"No result returned from reminder processing for user {user_id}"
-            )
-
-        # Extract the AI response from the messages
-        ai_response = None
-        if "messages" in result:
-            last_message = result["messages"][-1]
-            if isinstance(last_message, AIMessage):
-                ai_response = last_message.content
-
-        if not ai_response:
-            logger.error(f"No AI response found in result for user {user_id}")
-            raise ValueError(f"No AI response found in result for user {user_id}")
-
-        logger.info(f"AI response content: {ai_response}")
-
-        # Parse the AI response using the parser
-        try:
-            parsed_result = reminder_agent_result_parser.parse(ai_response)  # type: ignore
-            logger.info(f"Successfully parsed reminder result: {parsed_result}")
-
-            return parsed_result
-        except Exception as parse_error:
-            logger.error(f"Failed to parse AI response with parser: {parse_error}")
-            raise ValueError(
-                f"Failed to parse AI response for reminder {reminder_id} for user {user_id}: {parse_error}"
-            )
-    except Exception as e:
-        logger.error(f"Error in reminder processing for user {user_id}: {str(e)}")
-        # Handle the error as needed, e.g., log it, notify the user, etc.
-        raise e
-
-
-reminder_agent_result_parser = PydanticOutputParser(
-    pydantic_object=ReminderProcessingAgentResult
-)

@@ -25,7 +25,7 @@ export interface GenerateImageResponse {
 
 export enum SystemPurpose {
   EMAIL_PROCESSING = "email_processing",
-  REMINDER_PROCESSING = "reminder_processing",
+  WORKFLOW_EXECUTION = "workflow_execution",
   OTHER = "other", // Add more purposes as needed
 }
 

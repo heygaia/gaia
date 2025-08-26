@@ -40,7 +40,9 @@ async def startup(ctx: dict):
 
     llm = init_llm()
 
-    # Build the single workflow processing graph (renamed from reminder_processing)
+    # Build the workflow processing graph excluding reminder tools
+    # Reminder tools are excluded since AI agent reminders were removed
+    # STATIC reminders still work via direct reminder service
     async with build_graph(
         chat_llm=llm,  # type: ignore[call-arg]
         exclude_tools=[
@@ -172,14 +174,17 @@ async def check_inactive_users(ctx: dict) -> str:
         now = datetime.now(timezone.utc)
         seven_days_ago = now - timedelta(days=7)
 
+        # Convert to naive datetime for comparison with potentially naive database values
+        seven_days_ago_naive = seven_days_ago.replace(tzinfo=None)
+
         # Find users inactive for 7+ days who haven't gotten email recently
         inactive_users = await users_collection.find(
             {
-                "last_active_at": {"$lt": seven_days_ago},
+                "last_active_at": {"$lt": seven_days_ago_naive},
                 "is_active": {"$ne": False},
                 "$or": [
                     {"last_inactive_email_sent": {"$exists": False}},
-                    {"last_inactive_email_sent": {"$lt": seven_days_ago}},
+                    {"last_inactive_email_sent": {"$lt": seven_days_ago_naive}},
                 ],
             }
         ).to_list(length=None)
@@ -277,21 +282,30 @@ async def process_workflow_generation_task(
     from bson import ObjectId
     from app.db.mongodb.collections import todos_collection
     from app.services.todo_service import TodoService
+    from app.models.workflow_models import (
+        CreateWorkflowRequest,
+        TriggerConfig,
+        TriggerType,
+    )
+    from app.services.workflow.service import WorkflowService
 
     logger.info(f"Processing workflow generation for todo {todo_id}: {title}")
 
     try:
-        # Generate workflow using the existing method
-        workflow_result = await TodoService._generate_workflow_for_todo(
-            str(title),
-            str(description) if description else "",
+        # Create standalone workflow using the new workflow system
+        workflow_request = CreateWorkflowRequest(
+            title=f"Todo: {title}",
+            description=description or f"Workflow for todo: {title}",
+            trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+            generate_immediately=True,  # Generate steps immediately
         )
 
-        if workflow_result.get("success"):
-            # Update the todo with the generated workflow
+        workflow = await WorkflowService.create_workflow(workflow_request, user_id)
+
+        if workflow and workflow.id:
+            # Update the todo with the workflow_id for linking
             update_data = {
-                "workflow": workflow_result["workflow"],
-                "workflow_activated": True,
+                "workflow_id": workflow.id,
                 "updated_at": datetime.now(timezone.utc),
             }
 
@@ -301,49 +315,25 @@ async def process_workflow_generation_task(
 
             if result.modified_count > 0:
                 logger.info(
-                    f"Successfully generated and saved workflow for todo {todo_id} with {len(workflow_result['workflow'].get('steps', []))} steps"
+                    f"Successfully generated and linked standalone workflow {workflow.id} for todo {todo_id} with {len(workflow.steps)} steps"
                 )
 
                 # Invalidate cache for this todo
                 await TodoService._invalidate_cache(user_id, None, todo_id, "update")
 
-                return f"Successfully generated workflow for todo {todo_id}"
+                return f"Successfully generated standalone workflow {workflow.id} for todo {todo_id}"
             else:
                 raise ValueError(f"Todo {todo_id} not found or not updated")
 
         else:
             # Mark workflow generation as failed
-            failed_update_data = {
-                "workflow_activated": False,
-                "updated_at": datetime.now(timezone.utc),
-            }
-
-            await todos_collection.update_one(
-                {"_id": ObjectId(todo_id), "user_id": user_id},
-                {"$set": failed_update_data},
+            logger.error(
+                f"Failed to generate workflow for todo {todo_id}: No workflow created"
             )
-
-            error_msg = workflow_result.get("error", "Unknown error")
-            logger.error(f"Failed to generate workflow for todo {todo_id}: {error_msg}")
-            raise ValueError(f"Workflow generation failed: {error_msg}")
+            raise ValueError("Workflow generation failed: No workflow created")
 
     except Exception as e:
-        # Mark workflow generation as failed on exception
-        try:
-            failed_update_data = {
-                "workflow_activated": False,
-                "updated_at": datetime.now(timezone.utc),
-            }
-
-            await todos_collection.update_one(
-                {"_id": ObjectId(todo_id), "user_id": user_id},
-                {"$set": failed_update_data},
-            )
-        except Exception as update_error:
-            logger.error(
-                f"Failed to update workflow status to failed: {str(update_error)}"
-            )
-
+        # Log the error but don't try to update legacy workflow fields
         error_msg = (
             f"Failed to process workflow generation for todo {todo_id}: {str(e)}"
         )

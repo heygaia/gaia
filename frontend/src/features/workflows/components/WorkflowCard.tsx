@@ -4,7 +4,7 @@ import { Chip } from "@heroui/chip";
 import { Tooltip } from "@heroui/tooltip";
 import { ArrowUpRight, Clock, Mail, MousePointer } from "lucide-react";
 
-import { CalendarIcon } from "@/components";
+import { CalendarIcon, CursorMagicSelection03Icon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 
 import { Workflow } from "../api/workflowApi";
@@ -25,7 +25,7 @@ const getTriggerIcon = (triggerType: string) => {
     case "calendar":
       return <CalendarIcon width={15} />;
     default:
-      return <MousePointer width={15} />;
+      return <CursorMagicSelection03Icon width={15} />;
   }
 };
 
@@ -46,6 +46,32 @@ const getTriggerLabel = (workflow: Workflow) => {
     default:
       return "manual trigger";
   }
+};
+
+const getNextRunDisplay = (workflow: Workflow) => {
+  const { trigger_config } = workflow;
+
+  if (trigger_config.type === "schedule" && trigger_config.next_run) {
+    const nextRun = new Date(trigger_config.next_run);
+    const now = new Date();
+
+    // Check if next run is in the future
+    if (nextRun > now) {
+      const diffMs = nextRun.getTime() - now.getTime();
+      const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+      const diffDays = Math.floor(diffHours / 24);
+
+      if (diffDays > 0) {
+        return `Next run in ${diffDays}d`;
+      } else if (diffHours > 0) {
+        return `Next run in ${diffHours}h`;
+      } else {
+        return "Running soon";
+      }
+    }
+  }
+
+  return null;
 };
 
 const getActivationColor = (activated: boolean) => {
@@ -109,14 +135,32 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
         {workflow.description}
       </div>
 
-      <div className="mt-auto flex w-full items-center justify-between gap-2">
-        <Chip
-          size="sm"
-          startContent={getTriggerIcon(workflow.trigger_config.type)}
-          className="flex gap-1 px-2!"
-        >
-          {getTriggerLabel(workflow)}
-        </Chip>
+      <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-2">
+        <div className="flex flex-wrap items-center gap-2">
+          <Chip
+            size="sm"
+            startContent={getTriggerIcon(workflow.trigger_config.type)}
+            className="flex gap-1 px-2!"
+          >
+            {getTriggerLabel(workflow)
+              .split(" ")
+              .map(
+                (word) =>
+                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+              )
+              .join(" ")}
+          </Chip>
+
+          {getNextRunDisplay(workflow) && (
+            <Chip
+              size="sm"
+              variant="flat"
+              className="text-xs text-foreground-500"
+            >
+              {getNextRunDisplay(workflow)}
+            </Chip>
+          )}
+        </div>
 
         <Chip
           color={getActivationColor(workflow.activated)}

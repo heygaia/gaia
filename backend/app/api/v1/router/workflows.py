@@ -5,7 +5,10 @@ Provides CRUD operations, execution, and status endpoints.
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.api.v1.dependencies.oauth_dependencies import (
+    get_current_user,
+    get_user_timezone_from_preferences,
+)
 from app.decorators import tiered_rate_limit
 from app.config.loggers import general_logger as logger
 from app.models.workflow_models import (
@@ -26,11 +29,16 @@ router = APIRouter()
 @router.post("/workflows", response_model=WorkflowResponse)
 @tiered_rate_limit("workflow_operations")
 async def create_workflow(
-    request: CreateWorkflowRequest, user: dict = Depends(get_current_user)
+    request: CreateWorkflowRequest,
+    user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
 ):
-    """Create a new workflow."""
+    """Create a new workflow with automatic timezone detection."""
     try:
-        workflow = await WorkflowService.create_workflow(request, user["user_id"])
+        # Pass user timezone to the service for automatic population
+        workflow = await WorkflowService.create_workflow(
+            request, user["user_id"], user_timezone=user_timezone
+        )
         return WorkflowResponse(
             workflow=workflow, message="Workflow created successfully"
         )
@@ -85,16 +93,17 @@ async def get_workflow(workflow_id: str, user: dict = Depends(get_current_user))
         )
 
 
-@router.put("/workflows/{workflow_id}", response_model=WorkflowResponse)
+@router.put("/workflows/{workflow_id}")
 async def update_workflow(
     workflow_id: str,
     request: UpdateWorkflowRequest,
     user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
 ):
-    """Update an existing workflow."""
+    """Update an existing workflow with automatic timezone detection."""
     try:
         workflow = await WorkflowService.update_workflow(
-            workflow_id, request, user["user_id"]
+            workflow_id, request, user["user_id"], user_timezone=user_timezone
         )
         if not workflow:
             raise HTTPException(
@@ -185,10 +194,16 @@ async def get_workflow_status(workflow_id: str, user: dict = Depends(get_current
 
 
 @router.post("/workflows/{workflow_id}/activate", response_model=WorkflowResponse)
-async def activate_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
+async def activate_workflow(
+    workflow_id: str,
+    user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
+):
     """Activate a workflow (enable its trigger)."""
     try:
-        workflow = await WorkflowService.activate_workflow(workflow_id, user["user_id"])
+        workflow = await WorkflowService.activate_workflow(
+            workflow_id, user["user_id"], user_timezone=user_timezone
+        )
         if not workflow:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -210,11 +225,15 @@ async def activate_workflow(workflow_id: str, user: dict = Depends(get_current_u
 
 
 @router.post("/workflows/{workflow_id}/deactivate", response_model=WorkflowResponse)
-async def deactivate_workflow(workflow_id: str, user: dict = Depends(get_current_user)):
+async def deactivate_workflow(
+    workflow_id: str,
+    user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
+):
     """Deactivate a workflow (disable its trigger)."""
     try:
         workflow = await WorkflowService.deactivate_workflow(
-            workflow_id, user["user_id"]
+            workflow_id, user["user_id"], user_timezone=user_timezone
         )
         if not workflow:
             raise HTTPException(
@@ -278,8 +297,9 @@ async def regenerate_workflow_steps(
 async def create_workflow_from_todo(
     request: dict,  # {todo_id: str, todo_title: str, todo_description?: str}
     user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
 ):
-    """Create a workflow from a todo item."""
+    """Create a workflow from a todo item with automatic timezone detection."""
     try:
         todo_id = request.get("todo_id")
         todo_title = request.get("todo_title")
@@ -306,7 +326,7 @@ async def create_workflow_from_todo(
         )
 
         workflow = await WorkflowService.create_workflow(
-            workflow_request, user["user_id"]
+            workflow_request, user["user_id"], user_timezone=user_timezone
         )
 
         return WorkflowResponse(

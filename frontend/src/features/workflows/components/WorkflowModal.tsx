@@ -75,20 +75,35 @@ export default function WorkflowModal({
   const {
     isCreating,
     error: creationError,
-    createdWorkflow,
     createWorkflow,
     clearError: clearCreationError,
     reset: resetCreation,
   } = useWorkflowCreation();
 
-  const {
-    workflow: pollingWorkflow,
-    isPolling,
-    startPolling,
-    stopPolling,
-  } = useWorkflowPolling();
+  const { isPolling, startPolling, stopPolling } = useWorkflowPolling();
 
   const { selectWorkflow } = useWorkflowSelection();
+
+  // Single source of truth for workflow data
+  const [currentWorkflow, setCurrentWorkflow] = useState<Workflow | null>(null);
+
+  // Manage the single workflow state from all sources
+  useEffect(() => {
+    if (existingWorkflow) {
+      setCurrentWorkflow(existingWorkflow);
+    } else {
+      setCurrentWorkflow(null);
+    }
+  }, [existingWorkflow]);
+
+  // Update currentWorkflow from polling results (for regeneration)
+  const { workflow: pollingWorkflow } = useWorkflowPolling();
+  useEffect(() => {
+    if (pollingWorkflow && currentWorkflow?.id === pollingWorkflow.id) {
+      // Only update if it's the same workflow being polled
+      setCurrentWorkflow(pollingWorkflow);
+    }
+  }, [pollingWorkflow, currentWorkflow?.id]);
 
   const [creationPhase, setCreationPhase] = useState<
     "form" | "creating" | "generating" | "success" | "error"
@@ -163,28 +178,28 @@ export default function WorkflowModal({
     handleRegenerateSteps("Generate workflow steps", false); // Don't force different tools for initial generation
   };
 
-  // Initialize form data based on mode
+  // Initialize form data based on mode and currentWorkflow
   useEffect(() => {
-    if (mode === "edit" && existingWorkflow) {
+    if (mode === "edit" && currentWorkflow) {
       setFormData({
-        title: existingWorkflow.title,
-        description: existingWorkflow.description,
+        title: currentWorkflow.title,
+        description: currentWorkflow.description,
         activeTab:
-          existingWorkflow.trigger_config.type === "email" ||
-          existingWorkflow.trigger_config.type === "calendar" ||
-          existingWorkflow.trigger_config.type === "webhook"
+          currentWorkflow.trigger_config.type === "email" ||
+          currentWorkflow.trigger_config.type === "calendar" ||
+          currentWorkflow.trigger_config.type === "webhook"
             ? "trigger"
-            : (existingWorkflow.trigger_config.type as "manual" | "schedule"),
+            : (currentWorkflow.trigger_config.type as "manual" | "schedule"),
         selectedTrigger:
-          existingWorkflow.trigger_config.type === "email"
+          currentWorkflow.trigger_config.type === "email"
             ? "gmail"
-            : existingWorkflow.trigger_config.type === "calendar"
+            : currentWorkflow.trigger_config.type === "calendar"
               ? "calendar"
               : "",
-        trigger_config: existingWorkflow.trigger_config,
+        trigger_config: currentWorkflow.trigger_config,
       });
-      // Initialize activation state from existing workflow
-      setIsActivated(existingWorkflow.activated);
+      // Initialize activation state from current workflow
+      setIsActivated(currentWorkflow.activated);
     } else {
       // Reset to default for create mode
       setFormData({
@@ -201,7 +216,7 @@ export default function WorkflowModal({
       // Reset activation state for create mode
       setIsActivated(true);
     }
-  }, [mode, existingWorkflow, isOpen]);
+  }, [mode, currentWorkflow, isOpen]);
 
   const updateFormData = (updates: Partial<WorkflowFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
@@ -246,6 +261,8 @@ export default function WorkflowModal({
       const result = await createWorkflow(createRequest);
 
       if (result.success && result.workflow) {
+        // Update currentWorkflow with the newly created workflow
+        setCurrentWorkflow(result.workflow);
         setCreationPhase("generating");
         startPolling(result.workflow.id);
         if (onWorkflowSaved) {
@@ -260,7 +277,7 @@ export default function WorkflowModal({
       }
     } else {
       // Edit mode - update the existing workflow
-      if (!existingWorkflow) return;
+      if (!currentWorkflow) return;
 
       try {
         const updateRequest = {
@@ -272,10 +289,21 @@ export default function WorkflowModal({
           },
         };
 
-        await workflowApi.updateWorkflow(existingWorkflow.id, updateRequest);
+        const updatedWorkflow = await workflowApi.updateWorkflow(
+          currentWorkflow.id,
+          updateRequest,
+        );
+
+        // Update currentWorkflow with the updated data
+        if (updatedWorkflow) {
+          setCurrentWorkflow({
+            ...currentWorkflow,
+            ...updateRequest,
+          });
+        }
 
         if (onWorkflowSaved) {
-          onWorkflowSaved(existingWorkflow.id);
+          onWorkflowSaved(currentWorkflow.id);
         }
         // Refresh workflow list after update
         if (onWorkflowListRefresh) {
@@ -321,16 +349,23 @@ export default function WorkflowModal({
 
   // Handle activation toggle
   const handleActivationToggle = async (newActivated: boolean) => {
-    if (mode !== "edit" || !existingWorkflow) return;
+    if (mode !== "edit" || !currentWorkflow) return;
 
     setIsTogglingActivation(true);
     try {
       if (newActivated) {
-        await workflowApi.activateWorkflow(existingWorkflow.id);
+        await workflowApi.activateWorkflow(currentWorkflow.id);
       } else {
-        await workflowApi.deactivateWorkflow(existingWorkflow.id);
+        await workflowApi.deactivateWorkflow(currentWorkflow.id);
       }
+
+      // Update currentWorkflow activation state
+      setCurrentWorkflow({
+        ...currentWorkflow,
+        activated: newActivated,
+      });
       setIsActivated(newActivated);
+
       // Refresh workflow list after activation/deactivation
       if (onWorkflowListRefresh) {
         onWorkflowListRefresh();
@@ -347,7 +382,7 @@ export default function WorkflowModal({
     reason: string = "Generate alternative workflow approach",
     forceDifferentTools: boolean = true,
   ) => {
-    if (mode !== "edit" || !existingWorkflow) return;
+    if (mode !== "edit" || !currentWorkflow) return;
 
     setIsRegeneratingSteps(true);
     setCurrentRegenerationReason(reason);
@@ -356,7 +391,7 @@ export default function WorkflowModal({
     try {
       // Call the enhanced regenerate steps API with selected reason
       const result = await workflowApi.regenerateWorkflowSteps(
-        existingWorkflow.id,
+        currentWorkflow.id,
         {
           reason,
           force_different_tools: forceDifferentTools,
@@ -364,10 +399,10 @@ export default function WorkflowModal({
       );
 
       // Start polling to see the regenerated workflow
-      startPolling(existingWorkflow.id);
+      startPolling(currentWorkflow.id);
 
       // Refresh the workflow data in the parent component
-      if (onWorkflowSaved) onWorkflowSaved(existingWorkflow.id);
+      if (onWorkflowSaved) onWorkflowSaved(currentWorkflow.id);
 
       // Refresh workflow list after regeneration
       if (onWorkflowListRefresh) onWorkflowListRefresh();
@@ -422,12 +457,12 @@ export default function WorkflowModal({
   useEffect(() => {
     if (
       mode === "create" &&
-      pollingWorkflow &&
+      currentWorkflow &&
       creationPhase === "generating"
     ) {
       // Check if workflow has steps and is ready
       const hasSteps =
-        pollingWorkflow.steps && pollingWorkflow.steps.length > 0;
+        currentWorkflow.steps && currentWorkflow.steps.length > 0;
 
       if (hasSteps) {
         setCreationPhase("success");
@@ -459,14 +494,14 @@ export default function WorkflowModal({
       // This prevents showing error for temporary generation issues
       // The polling hook will stop after maxDuration (5 minutes) or maxAttempts (120)
     }
-  }, [pollingWorkflow, creationPhase, stopPolling, mode]);
+  }, [currentWorkflow, creationPhase, stopPolling, mode]);
 
   // Handle polling timeout/completion for error states
   useEffect(() => {
     if (mode === "create" && !isPolling && creationPhase === "generating") {
       // Polling stopped but we're still in generating phase
       // Check if we have steps or if it's an error case
-      if (pollingWorkflow?.steps && pollingWorkflow.steps.length > 0) {
+      if (currentWorkflow?.steps && currentWorkflow.steps.length > 0) {
         setCreationPhase("success");
 
         // Refresh workflow list when steps are generated successfully
@@ -485,19 +520,19 @@ export default function WorkflowModal({
         }, 3000);
       }
     }
-  }, [isPolling, creationPhase, pollingWorkflow, mode]);
+  }, [isPolling, creationPhase, currentWorkflow, mode]);
 
   // Handle regeneration completion for edit mode
   useEffect(() => {
-    if (mode === "edit" && isRegeneratingSteps && pollingWorkflow) {
+    if (mode === "edit" && isRegeneratingSteps && currentWorkflow) {
       // Check if we have new steps (indicating regeneration completed successfully)
       const hasNewSteps =
-        pollingWorkflow.steps && pollingWorkflow.steps.length > 0;
+        currentWorkflow.steps && currentWorkflow.steps.length > 0;
 
       if (hasNewSteps) {
         // Show success toast
         toast.success("Workflow steps regenerated successfully!", {
-          description: `${pollingWorkflow.steps?.length || 0} new steps created`,
+          description: `${currentWorkflow.steps?.length || 0} new steps created`,
           duration: 3000,
         });
 
@@ -508,7 +543,7 @@ export default function WorkflowModal({
         stopPolling();
       }
     }
-  }, [pollingWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
+  }, [currentWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
 
   // Timeout mechanism for regeneration
   useEffect(() => {
@@ -547,7 +582,7 @@ export default function WorkflowModal({
         setCountdownInterval(null);
       }
       setCountdown(0);
-      resetForm();
+      // Don't call resetForm here - it's already called in onOpenChange
     }
   }, [isOpen, countdownInterval]);
 
@@ -654,6 +689,7 @@ export default function WorkflowModal({
 
   return (
     <Modal
+      key={currentWorkflow?.id || "new-workflow"}
       isOpen={isOpen}
       onOpenChange={(open) => {
         if (!open) resetForm();
@@ -914,10 +950,8 @@ export default function WorkflowModal({
                   {existingWorkflow && !regenerationError && (
                     <>
                       {/* Show steps if they exist */}
-                      {(existingWorkflow.steps &&
-                        existingWorkflow.steps.length > 0) ||
-                      (pollingWorkflow?.steps &&
-                        pollingWorkflow.steps.length > 0) ? (
+                      {currentWorkflow?.steps &&
+                      currentWorkflow.steps.length > 0 ? (
                         <>
                           <div className="flex items-center justify-between">
                             <div className="flex items-center gap-2">
@@ -929,9 +963,7 @@ export default function WorkflowModal({
                                 color="primary"
                                 className="text-sm font-medium"
                               >
-                                {pollingWorkflow?.steps?.length ||
-                                  existingWorkflow.steps?.length ||
-                                  0}
+                                {currentWorkflow.steps.length}
                               </Chip>
                             </div>
                             <div className="flex items-center gap-2">
@@ -980,11 +1012,7 @@ export default function WorkflowModal({
                           </div>
                           <div className="min-h-0 flex-1 overflow-y-auto">
                             <WorkflowSteps
-                              steps={
-                                pollingWorkflow?.steps ||
-                                existingWorkflow.steps ||
-                                []
-                              }
+                              steps={currentWorkflow.steps || []}
                             />
                           </div>
                         </>
@@ -1062,9 +1090,9 @@ export default function WorkflowModal({
                 <p className="text-sm text-zinc-400">
                   AI is creating workflow steps for: "{formData.title}"
                 </p>
-                {pollingWorkflow && (
+                {currentWorkflow && (
                   <p className="mt-2 text-xs text-zinc-500">
-                    Activated: {pollingWorkflow.activated ? "Yes" : "No"}
+                    Activated: {currentWorkflow.activated ? "Yes" : "No"}
                   </p>
                 )}
               </div>
@@ -1093,9 +1121,9 @@ export default function WorkflowModal({
                   <p className="text-sm text-zinc-400">
                     "{formData.title}" is ready to use
                   </p>
-                  {pollingWorkflow && (
+                  {currentWorkflow && (
                     <p className="mt-2 text-xs text-zinc-500">
-                      {pollingWorkflow?.steps?.length || 0} steps generated
+                      {currentWorkflow?.steps?.length || 0} steps generated
                     </p>
                   )}
                 </div>
@@ -1111,13 +1139,13 @@ export default function WorkflowModal({
               </div>
 
               {/* Generated Steps Preview */}
-              {pollingWorkflow?.steps && pollingWorkflow.steps.length > 0 && (
+              {currentWorkflow?.steps && currentWorkflow.steps.length > 0 && (
                 <div className="space-y-3">
                   <h4 className="text-sm font-medium text-zinc-300">
                     Generated Steps:
                   </h4>
                   <div className="max-h-48 overflow-y-auto">
-                    <WorkflowSteps steps={pollingWorkflow.steps} />
+                    <WorkflowSteps steps={currentWorkflow.steps} />
                   </div>
                 </div>
               )}

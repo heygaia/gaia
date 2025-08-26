@@ -9,7 +9,6 @@ export interface OnboardingData {
     profession?: string;
     response_style?: string;
     custom_instructions?: string;
-    timezone?: string;
   };
 }
 
@@ -17,6 +16,7 @@ export interface UserState {
   profilePicture: string;
   name: string;
   email: string;
+  timezone?: string; // User's timezone (e.g., 'Asia/Kolkata', 'America/New_York')
   onboarding?: OnboardingData;
 }
 
@@ -24,6 +24,7 @@ const initialState: UserState = {
   profilePicture: "",
   name: "",
   email: "",
+  timezone: undefined,
   onboarding: undefined,
 };
 
@@ -36,6 +37,7 @@ const userSlice = createSlice({
       state.profilePicture = action.payload.profilePicture;
       state.name = action.payload.name;
       state.email = action.payload.email;
+      state.timezone = action.payload.timezone;
       state.onboarding = action.payload.onboarding;
     },
     // Updates user information partially (preserves existing onboarding state)
@@ -49,6 +51,9 @@ const userSlice = createSlice({
       if (action.payload.email !== undefined) {
         state.email = action.payload.email;
       }
+      if (action.payload.timezone !== undefined) {
+        state.timezone = action.payload.timezone;
+      }
       if (action.payload.onboarding !== undefined) {
         state.onboarding = action.payload.onboarding;
       }
@@ -58,6 +63,7 @@ const userSlice = createSlice({
       state.profilePicture = "";
       state.name = "";
       state.email = "";
+      state.timezone = undefined;
       state.onboarding = undefined;
     },
   },

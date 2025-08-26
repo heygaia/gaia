@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
+from app.config.loggers import general_logger as logger
+from app.models.scheduler_models import BaseScheduledTask
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -84,23 +86,76 @@ class TriggerConfig(BaseModel):
     )
 
     def calculate_next_run(
-        self, base_time: Optional[datetime] = None
+        self, base_time: Optional[datetime] = None, user_timezone: Optional[str] = None
     ) -> Optional[datetime]:
-        """Calculate the next run time based on cron expression."""
+        """
+        Calculate the next run time based on cron expression with timezone awareness.
+
+        Args:
+            base_time: Base time for calculation (defaults to current UTC)
+            user_timezone: User's timezone for cron calculation (defaults to trigger config timezone)
+
+        Returns:
+            Next run time in UTC
+        """
         if self.type != TriggerType.SCHEDULE or not self.cron_expression:
             return None
 
         from app.utils.cron_utils import get_next_run_time
+        from datetime import timezone as dt_timezone
+        import pytz
 
         try:
-            return get_next_run_time(self.cron_expression, base_time)
-        except Exception:
+            # Use user_timezone parameter, fallback to trigger config timezone, then UTC
+            tz_name = user_timezone or self.timezone or "UTC"
+
+            # Convert timezone name to timezone object
+            if tz_name == "UTC":
+                tz = dt_timezone.utc
+            else:
+                tz = pytz.timezone(tz_name)
+
+            # If base_time is provided, convert it to the user's timezone for cron calculation
+            if base_time:
+                if base_time.tzinfo is None:
+                    base_time = base_time.replace(tzinfo=dt_timezone.utc)
+                # Convert to user timezone for cron calculation
+                if tz_name != "UTC":
+                    base_time = base_time.astimezone(tz)
+            else:
+                # Current time in user's timezone
+                if tz_name == "UTC":
+                    base_time = datetime.now(dt_timezone.utc)
+                else:
+                    base_time = datetime.now(tz)
+
+            # Calculate next run time using timezone-aware base_time
+            next_run = get_next_run_time(self.cron_expression, base_time, tz_name)
+
+            # Ensure result is in UTC for storage
+            if next_run.tzinfo != dt_timezone.utc:
+                next_run = next_run.astimezone(dt_timezone.utc)
+
+            return next_run
+        except Exception as e:
+            logger.error(f"Error calculating next run time: {e}")
             return None
 
-    def update_next_run(self, base_time: Optional[datetime] = None) -> bool:
-        """Update the next_run field and return True if changed."""
+    def update_next_run(
+        self, base_time: Optional[datetime] = None, user_timezone: Optional[str] = None
+    ) -> bool:
+        """
+        Update the next_run field with timezone awareness and return True if changed.
+
+        Args:
+            base_time: Base time for calculation
+            user_timezone: User's timezone for cron calculation
+
+        Returns:
+            True if next_run was updated
+        """
         old_next_run = self.next_run
-        self.next_run = self.calculate_next_run(base_time)
+        self.next_run = self.calculate_next_run(base_time, user_timezone)
         return old_next_run != self.next_run
 
     @field_validator("cron_expression")
@@ -115,13 +170,17 @@ class TriggerConfig(BaseModel):
         return v
 
 
-class Workflow(BaseModel):
-    """Main workflow model."""
+class Workflow(BaseScheduledTask):
+    """Main workflow model extending BaseScheduledTask for scheduling capabilities."""
 
-    id: str = Field(
+    # Override ID generation for workflows - always generate ID
+    id: Optional[str] = Field(
         default_factory=lambda: f"wf_{uuid.uuid4().hex[:12]}",
         description="Unique identifier",
     )
+
+    user_id: str = Field(..., description="User ID who owns this workflow")
+
     title: str = Field(min_length=1, description="Title of the workflow")
     description: str = Field(
         min_length=1, description="Description of what this workflow aims to accomplish"
@@ -133,16 +192,11 @@ class Workflow(BaseModel):
     # Configuration
     trigger_config: TriggerConfig = Field(description="Trigger configuration")
 
-    # Status and tracking
+    # Workflow-specific fields
     activated: bool = Field(
         default=True,
         description="Whether the workflow is activated and can be executed",
     )
-    user_id: str = Field(description="ID of the user who owns this workflow")
-
-    # Timestamps
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     last_executed_at: Optional[datetime] = Field(default=None)
 
     # Execution tracking
@@ -161,6 +215,49 @@ class Workflow(BaseModel):
     successful_executions: int = Field(
         default=0, description="Number of successful executions"
     )
+
+    def __init__(self, **data):
+        """Initialize workflow with mapping from trigger_config to BaseScheduledTask fields."""
+        # Ensure user_id is provided (it's required by BaseScheduledTask)
+        if "user_id" not in data:
+            raise ValueError("user_id is required for workflow creation")
+
+        # Map trigger_config fields to BaseScheduledTask fields if not provided
+        if "trigger_config" in data:
+            trigger_config = data["trigger_config"]
+
+            # Handle both dict and TriggerConfig object
+            if isinstance(trigger_config, dict):
+                # Map scheduled_at from trigger_config.next_run if not provided
+                if "scheduled_at" not in data and trigger_config.get("next_run"):
+                    data["scheduled_at"] = trigger_config["next_run"]
+
+                # Map repeat from trigger_config.cron_expression if not provided
+                if "repeat" not in data and trigger_config.get("cron_expression"):
+                    data["repeat"] = trigger_config["cron_expression"]
+            else:
+                # TriggerConfig is already a Pydantic model
+                # Map scheduled_at from trigger_config.next_run if not provided
+                if (
+                    "scheduled_at" not in data
+                    and hasattr(trigger_config, "next_run")
+                    and trigger_config.next_run
+                ):
+                    data["scheduled_at"] = trigger_config.next_run
+
+                # Map repeat from trigger_config.cron_expression if not provided
+                if (
+                    "repeat" not in data
+                    and hasattr(trigger_config, "cron_expression")
+                    and trigger_config.cron_expression
+                ):
+                    data["repeat"] = trigger_config.cron_expression
+
+        # Set default scheduled_at if still not provided
+        if "scheduled_at" not in data:
+            data["scheduled_at"] = datetime.now(timezone.utc)
+
+        super().__init__(**data)
 
 
 # Request/Response models for API

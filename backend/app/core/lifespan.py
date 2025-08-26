@@ -54,6 +54,20 @@ async def lifespan(app: FastAPI):
         except Exception as e:
             logger.error(f"Failed to initialize reminder scheduler: {e}")
 
+        # Initialize workflow scheduler and scan for pending workflows
+        try:
+            from app.services.workflow.scheduler_service import (
+                workflow_scheduler_service,
+            )
+
+            await workflow_scheduler_service.initialize()
+            await workflow_scheduler_service.scheduler.scan_and_schedule_pending_tasks()
+            logger.info(
+                "Workflow scheduler initialized and pending workflows scheduled"
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize workflow scheduler: {e}")
+
         try:
             await publisher.connect()
         except Exception as e:
@@ -89,6 +103,17 @@ async def lifespan(app: FastAPI):
             logger.info("Reminder scheduler closed")
         except Exception as e:
             logger.error(f"Error closing reminder scheduler: {e}")
+
+        # Close workflow scheduler
+        try:
+            from app.services.workflow.scheduler_service import (
+                workflow_scheduler_service,
+            )
+
+            await workflow_scheduler_service.close()
+            logger.info("Workflow scheduler closed")
+        except Exception as e:
+            logger.error(f"Error closing workflow scheduler: {e}")
 
         # Stop WebSocket consumer if running in main app
         try:

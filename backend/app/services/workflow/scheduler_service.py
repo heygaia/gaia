@@ -1,109 +1,176 @@
-"""Workflow scheduling service for time-based execution."""
+"""
+Workflow scheduling service - thin wrapper around WorkflowScheduler.
 
-from datetime import datetime, timezone
+This maintains the existing API while leveraging the robust BaseSchedulerService
+foundation for enhanced scheduling capabilities.
+"""
+
+from datetime import datetime
+from typing import Optional
 
 from app.config.loggers import general_logger as logger
-from app.db.mongodb.collections import workflows_collection
-from app.utils.redis_utils import RedisPoolManager
+from app.models.scheduler_models import ScheduleConfig, ScheduledTaskStatus
+from app.services.workflow.scheduler import WorkflowScheduler
 
 
 class WorkflowSchedulerService:
-    """Service for scheduling workflow executions."""
+    """
+    Service for scheduling workflow executions.
 
-    @staticmethod
+    Now powered by BaseSchedulerService with support for:
+    - Recurring workflows with cron expressions
+    - Occurrence counting and limits
+    - Stop dates and advanced scheduling
+    - Robust error handling and status management
+    """
+
+    def __init__(self):
+        """Initialize with WorkflowScheduler instance."""
+        self.scheduler = WorkflowScheduler()
+
+    async def initialize(self):
+        """Initialize the underlying scheduler."""
+        await self.scheduler.initialize()
+
+    async def close(self):
+        """Close the underlying scheduler."""
+        await self.scheduler.close()
+
     async def schedule_workflow_execution(
-        workflow_id: str, user_id: str, scheduled_at: datetime
-    ) -> None:
-        """Schedule workflow execution at a specific time using ARQ."""
-        try:
-            pool = await RedisPoolManager.get_pool()
+        self,
+        workflow_id: str,
+        user_id: str,
+        scheduled_at: datetime,
+        repeat: Optional[str] = None,
+        max_occurrences: Optional[int] = None,
+        stop_after: Optional[datetime] = None,
+    ) -> bool:
+        """
+        Schedule workflow execution using BaseSchedulerService.
 
-            job = await pool.enqueue_job(
-                "process_workflow",
-                workflow_id,
-                user_id,
-                {},  # context
-                _defer_until=scheduled_at,
+        Args:
+            workflow_id: Workflow ID to schedule
+            user_id: User ID (for validation)
+            scheduled_at: When to execute
+            repeat: Cron expression for recurring workflows
+            max_occurrences: Limit number of executions
+            stop_after: Stop executing after this date
+
+        Returns:
+            True if scheduled successfully
+        """
+        try:
+            # Create schedule configuration
+            schedule_config = ScheduleConfig(
+                scheduled_at=scheduled_at,
+                repeat=repeat,
+                max_occurrences=max_occurrences,
+                stop_after=stop_after,
+                base_time=scheduled_at,  # Use scheduled_at as base for timezone calculations
             )
 
-            if job:
-                # Store job ID in workflow document for cancellation
-                await workflows_collection.update_one(
-                    {"_id": workflow_id, "user_id": user_id},
-                    {
-                        "$set": {
-                            "scheduled_job_id": job.job_id,
-                            "scheduled_at": scheduled_at,
-                            "updated_at": datetime.now(timezone.utc),
-                        }
-                    },
-                )
+            # Use the robust BaseSchedulerService scheduling
+            success = await self.scheduler.schedule_task(workflow_id, schedule_config)
+
+            if success:
                 logger.info(
-                    f"Scheduled workflow {workflow_id} for execution at {scheduled_at} with job ID {job.job_id}"
+                    f"Scheduled workflow {workflow_id} for execution at {scheduled_at}"
+                    + (f" with repeat '{repeat}'" if repeat else "")
                 )
             else:
-                logger.error(f"Failed to schedule workflow execution for {workflow_id}")
+                logger.error(f"Failed to schedule workflow {workflow_id}")
+
+            return success
 
         except Exception as e:
-            logger.error(
-                f"Error scheduling workflow execution for {workflow_id}: {str(e)}"
-            )
+            logger.error(f"Error scheduling workflow {workflow_id}: {str(e)}")
+            return False
 
-    @staticmethod
-    async def cancel_scheduled_workflow_execution(workflow_id: str) -> None:
-        """Cancel any pending scheduled executions for a workflow."""
+    async def cancel_scheduled_workflow_execution(self, workflow_id: str) -> bool:
+        """
+        Cancel scheduled workflow execution.
+
+        Args:
+            workflow_id: Workflow ID to cancel
+
+        Returns:
+            True if cancelled successfully
+        """
         try:
-            # Get the workflow to retrieve the scheduled job ID
-            workflow_doc = await workflows_collection.find_one(
-                {"_id": workflow_id}, {"scheduled_job_id": 1, "scheduled_at": 1}
+            # Update workflow status to cancelled using the robust scheduler
+            success = await self.scheduler.update_task_status(
+                workflow_id, ScheduledTaskStatus.CANCELLED
             )
 
-            if not workflow_doc:
-                logger.warning(f"Workflow {workflow_id} not found for cancellation")
-                return
-
-            scheduled_job_id = workflow_doc.get("scheduled_job_id")
-
-            if scheduled_job_id:
-                try:
-                    pool = await RedisPoolManager.get_pool()
-
-                    # Get job info and try to cancel it
-                    # ARQ uses Redis keys for job storage, we can try to delete the job
-                    job_key = f"arq:job:{scheduled_job_id}"
-                    redis_client = pool  # ARQ pool is a Redis connection
-
-                    # Delete the job from Redis if it exists
-                    deleted = await redis_client.delete(job_key)
-
-                    if deleted:
-                        logger.info(
-                            f"Successfully cancelled job {scheduled_job_id} for workflow {workflow_id}"
-                        )
-                    else:
-                        logger.info(
-                            f"Job {scheduled_job_id} for workflow {workflow_id} may have already started or completed"
-                        )
-
-                except Exception as abort_error:
-                    logger.warning(
-                        f"Could not cancel job {scheduled_job_id}: {abort_error}"
-                    )
-                    # Continue to clear the job ID even if cancellation failed
-
-                # Clear the job ID from the workflow document regardless of abort success
-                await workflows_collection.update_one(
-                    {"_id": workflow_id},
-                    {
-                        "$unset": {"scheduled_job_id": "", "scheduled_at": ""},
-                        "$set": {"updated_at": datetime.now(timezone.utc)},
-                    },
-                )
-                logger.info(f"Cleared scheduled job data for workflow {workflow_id}")
+            if success:
+                logger.info(f"Cancelled scheduled execution for workflow {workflow_id}")
             else:
-                logger.info(f"No scheduled job found for workflow {workflow_id}")
+                logger.warning(
+                    f"Could not cancel workflow {workflow_id} - may not exist or already executed"
+                )
+
+            return success
 
         except Exception as e:
-            logger.error(
-                f"Error cancelling scheduled execution for {workflow_id}: {str(e)}"
+            logger.error(f"Error cancelling workflow {workflow_id}: {str(e)}")
+            return False
+
+    async def reschedule_workflow(
+        self, workflow_id: str, new_scheduled_at: datetime, repeat: Optional[str] = None
+    ) -> bool:
+        """
+        Reschedule an existing workflow.
+
+        Args:
+            workflow_id: Workflow ID to reschedule
+            new_scheduled_at: New execution time
+            repeat: New cron expression (optional)
+
+        Returns:
+            True if rescheduled successfully
+        """
+        try:
+            # Update the workflow's scheduling fields
+            update_data = {
+                "scheduled_at": new_scheduled_at,
+                "status": ScheduledTaskStatus.SCHEDULED.value,
+            }
+
+            if repeat is not None:
+                update_data["repeat"] = repeat
+
+            success = await self.scheduler.update_task_status(
+                workflow_id, ScheduledTaskStatus.SCHEDULED, update_data
             )
+
+            if success:
+                logger.info(
+                    f"Rescheduled workflow {workflow_id} for {new_scheduled_at}"
+                )
+
+            return success
+
+        except Exception as e:
+            logger.error(f"Error rescheduling workflow {workflow_id}: {str(e)}")
+            return False
+
+    async def get_workflow_status(self, workflow_id: str) -> Optional[str]:
+        """
+        Get the current status of a workflow.
+
+        Args:
+            workflow_id: Workflow ID
+
+        Returns:
+            Status string or None if not found
+        """
+        try:
+            workflow = await self.scheduler.get_task(workflow_id)
+            return workflow.status.value if workflow else None
+        except Exception as e:
+            logger.error(f"Error getting workflow status for {workflow_id}: {str(e)}")
+            return None
+
+
+# Global instance for backward compatibility
+workflow_scheduler_service = WorkflowSchedulerService()

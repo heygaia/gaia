@@ -41,9 +41,7 @@ class WorkflowQueueService:
         try:
             pool = await RedisPoolManager.get_pool()
 
-            job = await pool.enqueue_job(
-                "process_workflow", workflow_id, user_id, context or {}
-            )
+            job = await pool.enqueue_job("process_workflow", workflow_id, context or {})
 
             if job:
                 logger.info(

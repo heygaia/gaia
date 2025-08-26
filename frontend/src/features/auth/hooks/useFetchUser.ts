@@ -26,6 +26,7 @@ const useFetchUser = () => {
         name: data?.name,
         email: data?.email,
         profilePicture: data?.picture,
+        timezone: data?.timezone,
         onboarding: data?.onboarding,
       });
 

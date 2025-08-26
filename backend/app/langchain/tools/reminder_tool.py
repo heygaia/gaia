@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Optional, Union
+from typing import Annotated, Any, Optional
 
 from app.config.loggers import reminders_logger as logger
 from app.decorators import with_doc, with_rate_limiting
@@ -16,7 +16,6 @@ from app.docstrings.langchain.tools.reminder_tool_docs import (
 )
 from app.models.reminder_models import (
     AgentType,
-    AIAgentReminderPayload,
     CreateReminderToolRequest,
     ReminderStatus,
     StaticReminderPayload,
@@ -42,11 +41,11 @@ def _apply_timezone_offset(dt: datetime, offset_str: str) -> datetime:
 async def create_reminder_tool(
     config: RunnableConfig,
     payload: Annotated[
-        Union[AIAgentReminderPayload, StaticReminderPayload],
-        "Additional data for the reminder task",
+        StaticReminderPayload,
+        "Static reminder data with title and body",
     ],
     agent: Annotated[
-        AgentType, "The agent type creating the reminder"
+        AgentType, "The agent type creating the reminder (static only)"
     ] = AgentType.STATIC,
     repeat: Annotated[Optional[str], "Cron expression for recurring reminders"] = None,
     scheduled_at: Annotated[

@@ -13,7 +13,9 @@ class ScheduledTaskStatus(str, Enum):
     """Base status enum for scheduled tasks."""
 
     SCHEDULED = "scheduled"
+    EXECUTING = "executing"
     COMPLETED = "completed"
+    FAILED = "failed"
     CANCELLED = "cancelled"
     PAUSED = "paused"
 

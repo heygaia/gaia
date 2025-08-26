@@ -48,7 +48,7 @@ export default function TodoDetailSheet({
     Workflow | undefined
   >();
 
-  const userTimezone = user?.onboarding?.preferences?.timezone;
+  const userTimezone = user?.timezone;
 
   // Reset generated workflow when todo changes
   useEffect(() => {

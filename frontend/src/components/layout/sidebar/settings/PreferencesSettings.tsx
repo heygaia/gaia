@@ -1,6 +1,12 @@
 "use client";
 
-import { Select, SelectItem, SharedSelection, Textarea } from "@heroui/react";
+import {
+  Select,
+  SelectItem,
+  SharedSelection,
+  Textarea,
+  Button,
+} from "@heroui/react";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -18,11 +24,13 @@ import { SettingsCardSimple } from "@/components/shared/SettingsCardSimple";
 import { SettingsOption } from "@/components/shared/SettingsOption";
 import { StatusIndicator } from "@/components/shared/StatusIndicator";
 import { authApi } from "@/features/auth/api/authApi";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 import {
   formatTimezoneDisplay,
   getCurrentBrowserTimezone,
   getTimezoneList,
+  getTimezoneInfo,
+  normalizeTimezone,
 } from "@/utils/timezoneUtils";
 
 import { ModalAction } from "./SettingsMenu";
@@ -60,6 +68,7 @@ export default function PreferencesSettings({
   setModalAction: React.Dispatch<React.SetStateAction<ModalAction | null>>;
 }) {
   const user = useUser();
+  const { updateUser } = useUserActions();
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [currentTimezoneInfo, setCurrentTimezoneInfo] = useState(() => {
@@ -72,16 +81,10 @@ export default function PreferencesSettings({
   });
 
   // Get timezone options with enhanced display
-  const timezoneOptions = [
-    {
-      value: "",
-      label: `Auto-detect (${currentTimezoneInfo.timezone} ${currentTimezoneInfo.offset})`,
-    },
-    ...getTimezoneList().map((tz) => ({
-      value: tz.value,
-      label: tz.formattedLabel,
-    })),
-  ];
+  const timezoneOptions = getTimezoneList().map((tz) => ({
+    value: tz.value,
+    label: tz.formattedLabel,
+  }));
 
   const [preferences, setPreferences] = useState({
     country: user.onboarding?.preferences?.country || "",
@@ -89,22 +92,8 @@ export default function PreferencesSettings({
     response_style: user.onboarding?.preferences?.response_style || "",
     custom_instructions:
       user.onboarding?.preferences?.custom_instructions || null,
-    timezone: user.onboarding?.preferences?.timezone || "",
+    timezone: normalizeTimezone(user.timezone || "UTC"),
   });
-
-  // Update current timezone info every minute
-  useEffect(() => {
-    const interval = setInterval(() => {
-      const browserTz = getCurrentBrowserTimezone();
-      setCurrentTimezoneInfo({
-        timezone: browserTz.label,
-        currentTime: browserTz.currentTime,
-        offset: browserTz.offset,
-      });
-    }, 60000); // Update every minute
-
-    return () => clearInterval(interval);
-  }, []);
 
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedPreferences = useRef(preferences);
@@ -117,11 +106,11 @@ export default function PreferencesSettings({
       response_style: user.onboarding?.preferences?.response_style || "",
       custom_instructions:
         user.onboarding?.preferences?.custom_instructions || null,
-      timezone: user.onboarding?.preferences?.timezone || "",
+      timezone: normalizeTimezone(user.timezone || "") || "UTC", // Normalize legacy timezone names
     };
     setPreferences(newPreferences);
     lastSavedPreferences.current = newPreferences;
-  }, [user.onboarding?.preferences]);
+  }, [user.onboarding?.preferences, user.timezone]);
 
   const updatePreferences = useCallback(
     async (updatedPreferences: typeof preferences) => {
@@ -129,8 +118,13 @@ export default function PreferencesSettings({
         setIsUpdating(true);
         setHasUnsavedChanges(false);
 
-        // Filter out empty strings and only send valid values
-        const sanitizedPreferences = Object.entries(updatedPreferences).reduce(
+        // Extract timezone for separate handling
+        const { timezone, ...preferencesWithoutTimezone } = updatedPreferences;
+
+        // Filter out empty strings and only send valid values for non-timezone preferences
+        const sanitizedPreferences = Object.entries(
+          preferencesWithoutTimezone,
+        ).reduce(
           (acc, [key, value]) => {
             // Only include non-empty values, convert empty strings to undefined
             if (value !== "" && value !== null && value !== undefined)
@@ -143,9 +137,16 @@ export default function PreferencesSettings({
           {} as Record<string, string | null>,
         );
 
-        const response = await authApi.updatePreferences(sanitizedPreferences);
+        // Update preferences (without timezone)
+        const response =
+          await authApi.updateOnboardingPreferences(sanitizedPreferences);
 
         if (response.success) {
+          // If timezone changed, update it separately
+          if (timezone !== lastSavedPreferences.current.timezone) {
+            await updateTimezone(timezone);
+          }
+
           toast.success("Preferences saved");
           lastSavedPreferences.current = updatedPreferences;
         } else {
@@ -164,7 +165,24 @@ export default function PreferencesSettings({
         setIsUpdating(false);
       }
     },
-    [],
+    [updateUser],
+  );
+
+  // Separate function to update timezone
+  const updateTimezone = useCallback(
+    async (timezone: string) => {
+      try {
+        const response = await authApi.updateUserTimezone(timezone || "");
+        if (response.success) {
+          // Update user state with new timezone
+          updateUser({ timezone: timezone || undefined });
+        }
+      } catch (error) {
+        console.error("Error updating timezone:", error);
+        throw error;
+      }
+    },
+    [updateUser],
   );
 
   // Debounced update function
@@ -264,10 +282,21 @@ export default function PreferencesSettings({
     const timezoneValue = selectedKeys[0] as string;
     const updatedPreferences = {
       ...preferences,
-      timezone: timezoneValue || "",
+      timezone: timezoneValue || "UTC", // Default to UTC if empty
     };
     setPreferences(updatedPreferences);
     debouncedUpdate(updatedPreferences);
+  };
+
+  const handleAutoDetectTimezone = () => {
+    const browserTimezone = getCurrentBrowserTimezone();
+    const updatedPreferences = {
+      ...preferences,
+      timezone: browserTimezone.value,
+    };
+    setPreferences(updatedPreferences);
+    debouncedUpdate(updatedPreferences);
+    toast.success(`Timezone set to ${browserTimezone.label}`);
   };
 
   return (
@@ -323,28 +352,13 @@ export default function PreferencesSettings({
           </LabeledField>
 
           <LabeledField label="Timezone">
-            <div className="space-y-2">
-              {/* Current timezone info */}
-              <div className="rounded-md bg-zinc-900/50 p-2 text-xs text-zinc-400">
-                <div className="flex items-center justify-between">
-                  <span>Current:</span>
-                  <span className="font-mono text-zinc-300">
-                    {preferences.timezone && preferences.timezone.trim() !== ""
-                      ? formatTimezoneDisplay(preferences.timezone)
-                      : `${currentTimezoneInfo.timezone} ${currentTimezoneInfo.offset}`}
-                  </span>
-                </div>
-                <div className="mt-1 text-right text-zinc-500">
-                  {currentTimezoneInfo.currentTime}
-                </div>
-              </div>
-
+            <div className="space-y-3">
               <Select
                 placeholder="Select your timezone"
                 selectedKeys={
                   preferences.timezone
                     ? new Set([preferences.timezone])
-                    : new Set([""])
+                    : new Set(["UTC"])
                 }
                 onSelectionChange={handleTimezoneChange}
                 isDisabled={isUpdating}
@@ -360,6 +374,28 @@ export default function PreferencesSettings({
                   <SelectItem key={timezone.value}>{timezone.label}</SelectItem>
                 ))}
               </Select>
+
+              {/* Auto-detect button and current timezone display in the same row */}
+              <div className="flex items-center justify-between gap-3">
+                <Button
+                  size="sm"
+                  variant="flat"
+                  onPress={handleAutoDetectTimezone}
+                  isDisabled={isUpdating}
+                  className="border-zinc-700 bg-zinc-800/50 text-zinc-300 hover:bg-zinc-700/50"
+                >
+                  Auto Detect
+                </Button>
+
+                <div className="flex items-center gap-2 text-xs text-zinc-400">
+                  <span className="font-mono text-zinc-300">
+                    {formatTimezoneDisplay(getCurrentBrowserTimezone().value)}
+                  </span>
+                  <span className="text-zinc-500">
+                    {getCurrentBrowserTimezone().currentTime}
+                  </span>
+                </div>
+              </div>
             </div>
           </LabeledField>
         </div>

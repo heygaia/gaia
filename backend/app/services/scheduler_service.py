@@ -129,6 +129,13 @@ class BaseSchedulerService(ABC):
         logger.info(f"Processing task {task_id}")
 
         try:
+            # Mark task as executing
+            await self.update_task_status(
+                task_id,
+                ScheduledTaskStatus.EXECUTING,
+                {"updated_at": datetime.now(timezone.utc)},
+            )
+
             # Execute the task
             execution_result = await self.execute_task(task)
 
@@ -153,7 +160,7 @@ class BaseSchedulerService(ABC):
             logger.error(f"Failed to process task {task_id}: {str(e)}")
             await self.update_task_status(
                 task_id,
-                ScheduledTaskStatus.CANCELLED,
+                ScheduledTaskStatus.FAILED,
                 {"updated_at": datetime.now(timezone.utc)},
             )
             return TaskExecutionResult(
@@ -217,8 +224,16 @@ class BaseSchedulerService(ABC):
             logger.error("Task ID is None, cannot handle recurring task")
             return
 
-        # Calculate next run time
-        next_run = get_next_run_time(task.repeat, task.scheduled_at)
+        # Calculate next run time with user timezone context
+        user_timezone = None
+
+        # For workflows, extract timezone from trigger_config
+        trigger_config = getattr(task, "trigger_config", None)
+        if trigger_config and hasattr(trigger_config, "timezone"):
+            user_timezone = trigger_config.timezone
+            logger.debug(f"Using workflow timezone: {user_timezone}")
+
+        next_run = get_next_run_time(task.repeat, task.scheduled_at, user_timezone)
 
         # Check if we should continue scheduling
         should_continue = True

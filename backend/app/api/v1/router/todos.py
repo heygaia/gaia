@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import List, Optional
 
-from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.api.v1.dependencies.oauth_dependencies import (
+    get_current_user,
+    get_user_timezone_from_preferences,
+)
 from app.db.mongodb.collections import projects_collection, todos_collection
 from app.decorators import tiered_rate_limit
 from app.models.todo_models import (
@@ -267,8 +270,12 @@ async def delete_todo(todo_id: str, user: dict = Depends(get_current_user)):
 # Workflow Generation Endpoint
 @router.post("/todos/{todo_id}/workflow")
 @tiered_rate_limit("todo_operations")
-async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)):
-    """Generate a standalone workflow for a specific todo."""
+async def generate_workflow(
+    todo_id: str,
+    user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
+):
+    """Generate a standalone workflow for a specific todo with automatic timezone detection."""
     try:
         todo = await TodoService.get_todo(todo_id, user["user_id"])
 
@@ -292,7 +299,7 @@ async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)
         )
 
         workflow = await WorkflowService.create_workflow(
-            workflow_request, user["user_id"]
+            workflow_request, user["user_id"], user_timezone=user_timezone
         )
 
         # Update the todo with the workflow_id

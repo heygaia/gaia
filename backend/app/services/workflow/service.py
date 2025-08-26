@@ -1,6 +1,6 @@
 """
 Clean workflow service for GAIA workflow system.
-Handles workflow CRUD operations and execution coordination.
+Handles CRUD operations and execution coordination.
 """
 
 import uuid
@@ -19,7 +19,7 @@ from app.models.workflow_models import (
 )
 from .generation_service import WorkflowGenerationService
 from .queue_service import WorkflowQueueService
-from .scheduler_service import WorkflowSchedulerService
+from .scheduler_service import workflow_scheduler_service
 from app.utils.workflow_utils import (
     ensure_trigger_config_object,
     handle_workflow_error,
@@ -32,13 +32,26 @@ class WorkflowService:
     """Service class for workflow operations."""
 
     @staticmethod
-    async def create_workflow(request: CreateWorkflowRequest, user_id: str) -> Workflow:
-        """Create a new workflow."""
+    async def create_workflow(
+        request: CreateWorkflowRequest,
+        user_id: str,
+        user_timezone: Optional[str] = None,
+    ) -> Workflow:
+        """Create a new workflow with automatic timezone population."""
         try:
-            # Calculate next_run for scheduled workflows
+            # Use provided timezone (from dependency) - should already be resolved by dependency
+            timezone_to_use = user_timezone or "UTC"
+
+            logger.info(f"Creating workflow with timezone: {timezone_to_use}")
+
+            # Calculate next_run for scheduled workflows with timezone awareness
             trigger_config = request.trigger_config
-            if trigger_config.type == "schedule" and trigger_config.cron_expression:
-                trigger_config.update_next_run()
+
+            # Automatically populate timezone field
+            if trigger_config.type == "schedule":
+                trigger_config.timezone = timezone_to_use
+                if trigger_config.cron_expression:
+                    trigger_config.update_next_run(user_timezone=timezone_to_use)
 
             # Create workflow object
             workflow = Workflow(
@@ -60,14 +73,20 @@ class WorkflowService:
 
             logger.info(f"Created workflow {workflow.id} for user {user_id}")
 
+            if not workflow.id:
+                raise ValueError("Workflow ID is required")
+
             # Schedule the workflow if it's a scheduled type and enabled
             if (
                 trigger_config.type == "schedule"
                 and trigger_config.enabled
                 and trigger_config.next_run
             ):
-                await WorkflowSchedulerService.schedule_workflow_execution(
-                    workflow.id, user_id, trigger_config.next_run
+                await workflow_scheduler_service.schedule_workflow_execution(
+                    workflow.id,
+                    user_id,
+                    trigger_config.next_run,
+                    repeat=trigger_config.cron_expression,  # Enable recurring if cron exists
                 )
 
             # Generate steps
@@ -139,9 +158,12 @@ class WorkflowService:
 
     @staticmethod
     async def update_workflow(
-        workflow_id: str, request: UpdateWorkflowRequest, user_id: str
+        workflow_id: str,
+        request: UpdateWorkflowRequest,
+        user_id: str,
+        user_timezone: Optional[str] = None,
     ) -> Optional[Workflow]:
-        """Update an existing workflow."""
+        """Update an existing workflow with timezone awareness."""
         try:
             # Get current workflow to check for trigger changes
             current_workflow = await WorkflowService.get_workflow(workflow_id, user_id)
@@ -157,12 +179,23 @@ class WorkflowService:
                     update_fields["trigger_config"]
                 )
 
-                # Calculate next_run for scheduled workflows
+                # Use provided timezone or fallback to UTC
+                timezone_to_use = user_timezone or "UTC"
+
+                logger.info(
+                    f"Updating workflow {workflow_id} with timezone: {timezone_to_use}"
+                )
+
+                # Automatically populate timezone field if it's a scheduled workflow
+                if new_trigger_config.type == "schedule":
+                    new_trigger_config.timezone = timezone_to_use
+
+                # Calculate next_run for scheduled workflows with timezone awareness
                 if (
                     new_trigger_config.type == "schedule"
                     and new_trigger_config.cron_expression
                 ):
-                    new_trigger_config.update_next_run()
+                    new_trigger_config.update_next_run(user_timezone=timezone_to_use)
 
                 # Check if we need to reschedule
                 old_config = current_workflow.trigger_config
@@ -174,8 +207,10 @@ class WorkflowService:
 
                 if schedule_changed:
                     # Cancel existing scheduled job
-                    await WorkflowSchedulerService.cancel_scheduled_workflow_execution(
-                        workflow_id
+                    await (
+                        workflow_scheduler_service.cancel_scheduled_workflow_execution(
+                            workflow_id
+                        )
                     )
 
                     # Schedule new execution if conditions are met
@@ -185,7 +220,7 @@ class WorkflowService:
                         and new_trigger_config.next_run
                         and current_workflow.activated
                     ):
-                        await WorkflowSchedulerService.schedule_workflow_execution(
+                        await workflow_scheduler_service.schedule_workflow_execution(
                             workflow_id, user_id, new_trigger_config.next_run
                         )
 
@@ -213,7 +248,7 @@ class WorkflowService:
         """Delete a workflow."""
         try:
             # Cancel any scheduled executions before deleting
-            await WorkflowSchedulerService.cancel_scheduled_workflow_execution(
+            await workflow_scheduler_service.cancel_scheduled_workflow_execution(
                 workflow_id
             )
 
@@ -304,7 +339,9 @@ class WorkflowService:
             raise
 
     @staticmethod
-    async def activate_workflow(workflow_id: str, user_id: str) -> Optional[Workflow]:
+    async def activate_workflow(
+        workflow_id: str, user_id: str, user_timezone: Optional[str] = None
+    ) -> Optional[Workflow]:
         """Activate a workflow (enable its trigger)."""
         try:
             workflow = await WorkflowService.get_workflow(workflow_id, user_id)
@@ -319,6 +356,7 @@ class WorkflowService:
                 workflow_id,
                 UpdateWorkflowRequest(trigger_config=trigger_config, activated=True),
                 user_id,
+                user_timezone=user_timezone,
             )
 
         except Exception as e:
@@ -326,7 +364,9 @@ class WorkflowService:
             raise
 
     @staticmethod
-    async def deactivate_workflow(workflow_id: str, user_id: str) -> Optional[Workflow]:
+    async def deactivate_workflow(
+        workflow_id: str, user_id: str, user_timezone: Optional[str] = None
+    ) -> Optional[Workflow]:
         """Deactivate a workflow (disable its trigger)."""
         try:
             workflow = await WorkflowService.get_workflow(workflow_id, user_id)
@@ -334,7 +374,7 @@ class WorkflowService:
                 return None
 
             # Cancel any scheduled executions
-            await WorkflowSchedulerService.cancel_scheduled_workflow_execution(
+            await workflow_scheduler_service.cancel_scheduled_workflow_execution(
                 workflow_id
             )
 
@@ -346,6 +386,7 @@ class WorkflowService:
                 workflow_id,
                 UpdateWorkflowRequest(trigger_config=trigger_config, activated=False),
                 user_id,
+                user_timezone=user_timezone,
             )
 
         except Exception as e:
