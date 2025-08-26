@@ -129,13 +129,12 @@ async def _batch_update_workflow_steps(
         return False
 
 
-async def process_workflow(
+async def execute_workflow_by_id(
     ctx: dict, workflow_id: str, context: Optional[dict] = None
 ) -> str:
     """
-    Process a workflow execution task using BaseSchedulerService.
-    This leverages the robust scheduling infrastructure for recurring workflows,
-    occurrence counting, and status management.
+    ARQ-compatible workflow execution function.
+    Fetches workflow by ID and executes it using execute_workflow_as_chat.
 
     Args:
         ctx: ARQ context
@@ -148,53 +147,35 @@ async def process_workflow(
     logger.info(f"Processing workflow execution: {workflow_id}")
 
     try:
-        # Use the robust WorkflowScheduler for execution and lifecycle management
+        # Get workflow from database
         from app.services.workflow.scheduler import WorkflowScheduler
 
         scheduler = WorkflowScheduler()
         await scheduler.initialize()
 
         try:
-            # This handles the complete execution lifecycle:
-            # 1. Gets and validates the workflow
-            # 2. Executes the workflow steps
-            # 3. Handles recurring logic automatically
-            # 4. Updates occurrence count and status
-            # 5. Schedules next execution if recurring
-            result = await scheduler.process_task_execution(workflow_id)
+            workflow = await scheduler.get_task(workflow_id)
+            if not workflow:
+                return f"Workflow {workflow_id} not found"
 
-            if result.success:
-                logger.info(
-                    f"Workflow {workflow_id} executed successfully: {result.message}"
-                )
-                return f"Workflow executed successfully: {result.message}"
-            else:
-                logger.error(
-                    f"Workflow {workflow_id} execution failed: {result.message}"
-                )
-                return f"Workflow execution failed: {result.message}"
+            # Execute the workflow and get messages
+            execution_messages = await execute_workflow_as_chat(
+                workflow, workflow.user_id, context or {}
+            )
+
+            # Store messages and send notification
+            await create_workflow_completion_notification(
+                workflow, execution_messages, workflow.user_id
+            )
+
+            return f"Workflow {workflow_id} executed successfully with {len(execution_messages)} messages"
 
         finally:
             await scheduler.close()
 
     except Exception as e:
-        error_msg = f"Error processing workflow {workflow_id}: {str(e)}"
+        error_msg = f"Error executing workflow {workflow_id}: {str(e)}"
         logger.error(error_msg)
-
-        # Update workflow status to failed
-        try:
-            from app.services.workflow.scheduler import WorkflowScheduler
-            from app.models.scheduler_models import ScheduledTaskStatus
-
-            scheduler = WorkflowScheduler()
-            await scheduler.initialize()
-            await scheduler.update_task_status(
-                workflow_id, ScheduledTaskStatus.CANCELLED, {"error_message": str(e)}
-            )
-            await scheduler.close()
-        except Exception as status_error:
-            logger.error(f"Failed to update workflow status: {status_error}")
-
         return error_msg
 
 

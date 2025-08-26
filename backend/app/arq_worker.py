@@ -13,7 +13,7 @@ from app.config.settings import settings
 from app.langchain.llm.client import init_llm
 from app.services.reminder_service import reminder_scheduler
 from app.workers.workflow_worker import (
-    process_workflow,
+    execute_workflow_by_id,
     generate_workflow_steps,
 )
 
@@ -362,7 +362,7 @@ class WorkerSettings:
         renew_gmail_watch_subscriptions,
         process_email_task,
         process_workflow_generation_task,
-        process_workflow,
+        execute_workflow_by_id,
         generate_workflow_steps,
         # cleanup_abandoned_subscriptions_task,
         # reconcile_subscription_payments_task,

@@ -35,7 +35,7 @@ class WorkflowScheduler(BaseSchedulerService):
 
     def get_job_name(self) -> str:
         """Get the ARQ job name for workflow processing."""
-        return "process_workflow"
+        return "execute_workflow_by_id"
 
     async def get_task(
         self, task_id: str, user_id: Optional[str] = None
@@ -91,7 +91,7 @@ class WorkflowScheduler(BaseSchedulerService):
                 raise ValueError("Task must be a Workflow instance")
 
             # Import here to avoid circular imports
-            from app.workers.workflow_worker import process_workflow
+            from app.workers.workflow_worker import execute_workflow_as_chat
 
             logger.info(f"Executing workflow {workflow.id}")
 
@@ -99,13 +99,12 @@ class WorkflowScheduler(BaseSchedulerService):
             if not workflow.id:
                 raise ValueError("Workflow ID is required for execution")
 
-            # Execute the workflow using the existing worker function
-            # ARQ context is empty since we're calling directly
-            result = await process_workflow({}, workflow.id, {})
+            # Execute the workflow using the chat execution function directly
+            await execute_workflow_as_chat(workflow, workflow.user_id, {})
 
             return TaskExecutionResult(
                 success=True,
-                message=f"Workflow {workflow.id} executed successfully: {result}",
+                message="Workflow executed via scheduler",
             )
         except Exception as e:
             logger.error(f"Error executing workflow {task.id}: {e}")
