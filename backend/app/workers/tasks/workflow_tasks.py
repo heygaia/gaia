@@ -7,126 +7,85 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from app.config.loggers import arq_worker_logger as logger
+from bson import ObjectId
 
 
-async def _update_workflow_step_field(
-    workflow_id: str, user_id: str, step_index: int, field_name: str, field_value
-) -> bool:
+async def process_workflow_generation_task(
+    ctx: dict, todo_id: str, user_id: str, title: str, description: str = ""
+) -> str:
     """
-    Update a specific field of a workflow step using MongoDB field-specific operations.
-    This avoids updating the entire workflow document.
+    Process workflow generation task for todos.
+    Migrated from RabbitMQ to ARQ for unified task processing.
 
     Args:
-        workflow_id: ID of the workflow
-        user_id: ID of the user who owns the workflow
-        step_index: Index of the step to update (0-based)
-        field_name: Name of the field to update (e.g., 'executed_at', 'result')
-        field_value: New value for the field
+        ctx: ARQ context
+        todo_id: Todo ID to generate workflow for
+        user_id: User ID who owns the todo
+        title: Todo title
+        description: Todo description
 
     Returns:
-        bool: True if update was successful, False otherwise
+        Processing result message
     """
+    from app.db.mongodb.collections import todos_collection
+    from app.models.workflow_models import (
+        CreateWorkflowRequest,
+        TriggerConfig,
+        TriggerType,
+    )
+    from app.services.todo_service import TodoService
+    from app.services.workflow.service import WorkflowService
+
+    logger.info(f"Processing workflow generation for todo {todo_id}: {title}")
+
     try:
-        from app.db.mongodb.collections import workflows_collection
-        from datetime import datetime, timezone
-
-        # Use MongoDB positional operator to update specific array element
-        update_data = {
-            f"steps.{step_index}.{field_name}": field_value,
-            "updated_at": datetime.now(timezone.utc),
-        }
-
-        result = await workflows_collection.update_one(
-            {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
+        # Create standalone workflow using the new workflow system
+        workflow_request = CreateWorkflowRequest(
+            title=f"Todo: {title}",
+            description=description or f"Workflow for todo: {title}",
+            trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+            generate_immediately=True,  # Generate steps immediately
         )
 
-        return result.modified_count > 0
+        workflow = await WorkflowService.create_workflow(workflow_request, user_id)
 
-    except Exception as e:
-        logger.error(f"Failed to update workflow step field {field_name}: {str(e)}")
-        return False
-
-
-async def _update_workflow_execution_metrics(
-    workflow_id: str,
-    user_id: str,
-    total_executions: int,
-    successful_executions: Optional[int] = None,
-) -> bool:
-    """
-    Update workflow execution metrics efficiently using MongoDB increment operations.
-
-    Args:
-        workflow_id: ID of the workflow
-        user_id: ID of the user who owns the workflow
-        total_executions: Total number of executions to increment
-        successful_executions: Successful executions to increment (optional)
-
-    Returns:
-        bool: True if update was successful, False otherwise
-    """
-    try:
-        from app.db.mongodb.collections import workflows_collection
-        from datetime import datetime, timezone
-
-        # Use MongoDB increment operations for atomic updates
-        update_operations = {
-            "$inc": {"total_executions": total_executions},
-            "$set": {
-                "last_executed_at": datetime.now(timezone.utc),
+        if workflow and workflow.id:
+            # Update the todo with the workflow_id for linking
+            update_data = {
+                "workflow_id": workflow.id,
                 "updated_at": datetime.now(timezone.utc),
-            },
-        }
+            }
 
-        if successful_executions is not None:
-            update_operations["$inc"]["successful_executions"] = successful_executions
+            result = await todos_collection.update_one(
+                {"_id": ObjectId(todo_id), "user_id": user_id}, {"$set": update_data}
+            )
 
-        result = await workflows_collection.update_one(
-            {"_id": workflow_id, "user_id": user_id}, update_operations
-        )
+            if result.modified_count > 0:
+                logger.info(
+                    f"Successfully generated and linked standalone workflow {workflow.id} for todo {todo_id} with {len(workflow.steps)} steps"
+                )
 
-        return result.modified_count > 0
+                # Invalidate cache for this todo
+                await TodoService._invalidate_cache(user_id, None, todo_id, "update")
 
-    except Exception as e:
-        logger.error(f"Failed to update workflow execution metrics: {str(e)}")
-        return False
+                return f"Successfully generated standalone workflow {workflow.id} for todo {todo_id}"
+            else:
+                raise ValueError(f"Todo {todo_id} not found or not updated")
 
-
-async def _batch_update_workflow_steps(
-    workflow_id: str, user_id: str, step_updates: dict
-) -> bool:
-    """
-    Batch update multiple workflow step fields in a single MongoDB operation.
-
-    Args:
-        workflow_id: ID of the workflow
-        user_id: ID of the user who owns the workflow
-        step_updates: Dictionary mapping step indices to field updates
-                     e.g., {0: {'executed_at': datetime, 'result': {...}}}
-
-    Returns:
-        bool: True if update was successful, False otherwise
-    """
-    try:
-        from app.db.mongodb.collections import workflows_collection
-        from datetime import datetime, timezone
-
-        # Build update document for multiple step fields
-        update_data = {"updated_at": datetime.now(timezone.utc)}
-
-        for step_index, fields in step_updates.items():
-            for field_name, field_value in fields.items():
-                update_data[f"steps.{step_index}.{field_name}"] = field_value
-
-        result = await workflows_collection.update_one(
-            {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
-        )
-
-        return result.modified_count > 0
+        else:
+            # Mark workflow generation as failed
+            logger.error(
+                f"Failed to generate workflow for todo {todo_id}: No workflow created"
+            )
+            raise ValueError("Workflow generation failed: No workflow created")
 
     except Exception as e:
-        logger.error(f"Failed to batch update workflow steps: {str(e)}")
-        return False
+        # Log the error but don't try to update legacy workflow fields
+        error_msg = (
+            f"Failed to process workflow generation for todo {todo_id}: {str(e)}"
+        )
+        logger.error(error_msg)
+        raise
 
 
 async def execute_workflow_by_id(
@@ -193,8 +152,8 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
         List of MessageModel objects from the execution
     """
     from uuid import uuid4
+
     from app.models.chat_models import MessageModel
-    from app.langchain.core.graph_manager import GraphManager
     from app.services.workflow_conversation_service import (
         get_or_create_workflow_conversation,
     )
@@ -211,65 +170,73 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
             workflow_title=workflow.title,
         )
 
-        # Get the workflow processing graph (same as normal chat)
-        graph = await GraphManager.get_graph("workflow_processing")
-        if not graph:
-            raise ValueError("Workflow processing graph not available")
+        # Convert workflow to SelectedWorkflowData format for proper handling
+        from app.models.message_models import (
+            SelectedWorkflowData,
+            MessageRequestWithHistory,
+        )
+        from app.langchain.core.agent import call_agent_silent
 
-        # Format workflow steps into a natural language prompt
-        workflow_prompt = format_workflow_steps_as_prompt(workflow)
+        # Convert workflow steps to the format expected by SelectedWorkflowData
+        workflow_steps = []
+        for step in workflow.steps:
+            workflow_steps.append(
+                {
+                    "id": step.id,
+                    "title": step.title,
+                    "description": step.description,
+                    "tool_name": step.tool_name,
+                    "tool_category": step.tool_category,
+                }
+            )
 
-        # Create user message for workflow trigger
-        user_message = MessageModel(
-            type="user",
-            response=f"🚀 **Scheduled Execution**: {workflow.title}\n\n{workflow_prompt}",
-            date=datetime.now(timezone.utc).isoformat(),
-            message_id=str(uuid4()),
+        selected_workflow_data = SelectedWorkflowData(
+            id=workflow.id,
+            title=workflow.title,
+            description=workflow.description,
+            steps=workflow_steps,
         )
 
-        # Execute via the normal chat graph (same as user chat)
-        graph_config = {
-            "configurable": {
-                "user_id": user_id,
-                "conversation_id": conversation["conversation_id"],
-                "thread_id": f"workflow_{workflow.id}_{int(datetime.now(timezone.utc).timestamp())}",
-            }
-        }
+        # Create a simple MessageRequestWithHistory for workflow execution
+        request = MessageRequestWithHistory(
+            message=f"Execute workflow: {workflow.title}",
+            messages=[],
+            fileIds=[],
+            fileData=[],
+            selectedTool=None,
+            selectedWorkflow=selected_workflow_data,
+        )
 
-        # Execute the workflow prompt through the graph
-        initial_state = {
-            "messages": [{"role": "user", "content": user_message.response}],
-            "current_datetime": datetime.now(timezone.utc).isoformat(),
-            "mem0_user_id": user_id,
-            "conversation_id": conversation["conversation_id"],
-        }
+        # Execute using the same logic as normal chat
+        complete_message, tool_data = await call_agent_silent(
+            request=request,
+            conversation_id=conversation["conversation_id"],
+            user={"user_id": user_id},
+            user_time=datetime.now(timezone.utc),
+        )
 
-        # Invoke the graph (non-streaming for background execution)
-        result = await graph.ainvoke(initial_state, config=graph_config)
+        # Create execution messages with proper tool data
+        execution_messages = []
 
-        # Extract all messages from the result
-        execution_messages = [user_message]
+        # Create a simple user message showing workflow execution (like frontend)
+        user_message = MessageModel(
+            type="user",
+            response="",
+            date=datetime.now(timezone.utc).isoformat(),
+            message_id=str(uuid4()),
+            selectedWorkflow=selected_workflow_data,
+        )
+        execution_messages.append(user_message)
 
-        # Convert LangChain messages to MessageModel objects
-        for msg in result.get("messages", []):
-            if hasattr(msg, "type") and msg.type == "ai":
-                # This is the bot response with tool calls
-                bot_message = MessageModel(
-                    type="bot",
-                    response=getattr(msg, "content", ""),
-                    date=datetime.now(timezone.utc).isoformat(),
-                    message_id=str(uuid4()),
-                )
-                execution_messages.append(bot_message)
-            elif hasattr(msg, "type") and msg.type == "tool":
-                # This is a tool call result - include it as well
-                tool_message = MessageModel(
-                    type="bot",
-                    response=f"**Tool Used**: {getattr(msg, 'name', 'Unknown Tool')}\n**Result**: {getattr(msg, 'content', '')}",
-                    date=datetime.now(timezone.utc).isoformat(),
-                    message_id=str(uuid4()),
-                )
-                execution_messages.append(tool_message)
+        # Create the bot message with complete response and tool data
+        bot_message = MessageModel(
+            type="bot",
+            response=complete_message,
+            date=datetime.now(timezone.utc).isoformat(),
+            message_id=str(uuid4()),
+            **tool_data,  # Include all captured tool data
+        )
+        execution_messages.append(bot_message)
 
         logger.info(
             f"Workflow {workflow.id} executed successfully with {len(execution_messages)} messages"
@@ -392,21 +359,21 @@ async def create_workflow_completion_notification(
     """Create or update workflow conversation with execution results and send notification."""
     try:
         # Import here to avoid circular imports
-        from app.services.workflow_conversation_service import (
-            get_or_create_workflow_conversation,
-            add_workflow_execution_messages,
+        from app.models.notification.notification_models import (
+            ActionConfig,
+            ActionStyle,
+            ActionType,
+            ChannelConfig,
+            NotificationAction,
+            NotificationContent,
+            NotificationRequest,
+            NotificationSourceEnum,
+            RedirectConfig,
         )
         from app.services.notification_service import notification_service
-        from app.models.notification.notification_models import (
-            NotificationRequest,
-            NotificationContent,
-            ChannelConfig,
-            NotificationSourceEnum,
-            NotificationAction,
-            ActionType,
-            ActionStyle,
-            ActionConfig,
-            RedirectConfig,
+        from app.services.workflow_conversation_service import (
+            add_workflow_execution_messages,
+            get_or_create_workflow_conversation,
         )
 
         # Get or create the workflow's persistent conversation
@@ -429,7 +396,7 @@ async def create_workflow_completion_notification(
             user_id=user_id,
             source=NotificationSourceEnum.BACKGROUND_JOB,
             content=NotificationContent(
-                title=f"⚡ Workflow Completed: {workflow.title}",
+                title=f"Workflow Completed: {workflow.title}",
                 body=f"Your workflow '{workflow.title}' has completed successfully.",
                 actions=[
                     NotificationAction(

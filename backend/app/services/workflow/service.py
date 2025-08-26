@@ -206,22 +206,23 @@ class WorkflowService:
                 )
 
                 if schedule_changed:
-                    # Cancel existing scheduled job
-                    await (
-                        workflow_scheduler_service.cancel_scheduled_workflow_execution(
-                            workflow_id
-                        )
-                    )
-
-                    # Schedule new execution if conditions are met
+                    # Use reschedule logic instead of cancel + schedule for efficiency
                     if (
                         new_trigger_config.type == "schedule"
                         and new_trigger_config.enabled
                         and new_trigger_config.next_run
                         and current_workflow.activated
                     ):
-                        await workflow_scheduler_service.schedule_workflow_execution(
-                            workflow_id, user_id, new_trigger_config.next_run
+                        # Reschedule to new time with new cron expression
+                        await workflow_scheduler_service.reschedule_workflow(
+                            workflow_id,
+                            new_trigger_config.next_run,
+                            repeat=new_trigger_config.cron_expression,
+                        )
+                    else:
+                        # Cancel if workflow is being disabled or conditions not met
+                        await workflow_scheduler_service.cancel_scheduled_workflow_execution(
+                            workflow_id
                         )
 
                 # Convert TriggerConfig back to dict for MongoDB storage

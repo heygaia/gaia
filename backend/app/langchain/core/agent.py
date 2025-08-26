@@ -138,6 +138,113 @@ async def call_agent(
 
 
 @traceable
+async def call_agent_silent(
+    request: MessageRequestWithHistory,
+    conversation_id,
+    user,
+    user_time: datetime,
+    access_token=None,
+    refresh_token=None,
+) -> tuple[str, dict]:
+    """
+    Execute agent in silent mode for background processing.
+    Returns (complete_message, tool_data) without streaming.
+
+    This reuses the same graph execution logic as call_agent() but captures
+    tool data without yielding stream chunks.
+    """
+    from app.services.chat_service import extract_tool_data
+
+    user_id = user.get("user_id")
+    messages = request.messages
+    complete_message = ""
+    tool_data = {}
+
+    async def store_memory():
+        """Store memory in background."""
+        try:
+            if user_id and request.message:
+                await store_user_message_memory(
+                    user_id, request.message, conversation_id
+                )
+        except Exception as e:
+            logger.error(f"Error in background memory storage: {e}")
+
+    try:
+        # Setup operations that can run in parallel
+        history = await construct_langchain_messages(
+            messages=messages,
+            files_data=request.fileData,
+            currently_uploaded_file_ids=request.fileIds,
+            user_id=user_id,
+            query=request.message,
+            user_name=user.get("name"),
+            selected_tool=request.selectedTool,
+            selected_workflow=request.selectedWorkflow,
+        )
+
+        # Use the default graph (same as normal chat)
+        graph = await GraphManager.get_graph()
+
+        # Start memory storage in background
+        asyncio.create_task(store_memory())
+
+        initial_state = {
+            "query": request.message,
+            "messages": history,
+            "current_datetime": datetime.now(timezone.utc).isoformat(),
+            "mem0_user_id": user_id,
+            "conversation_id": conversation_id,
+            "selected_tool": request.selectedTool,
+            "selected_workflow": request.selectedWorkflow,
+        }
+
+        # Execute graph and capture tool data silently
+        async for event in graph.astream(
+            initial_state,
+            stream_mode=["messages", "custom"],
+            config={
+                "configurable": {
+                    "thread_id": conversation_id,
+                    "user_id": user_id,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "email": user.get("email"),
+                    "user_time": user_time.isoformat(),
+                },
+                "recursion_limit": 25,
+                "metadata": {"user_id": user_id},
+            },
+        ):
+            stream_mode, payload = event
+
+            if stream_mode == "messages":
+                chunk, metadata = payload
+                if chunk is None:
+                    continue
+
+                if isinstance(chunk, AIMessageChunk):
+                    content = str(chunk.content)
+                    if content:
+                        complete_message += content
+
+            elif stream_mode == "custom":
+                # Extract tool data from custom stream events
+                try:
+                    new_data = extract_tool_data(json.dumps(payload))
+                    if new_data:
+                        tool_data.update(new_data)
+                except Exception as e:
+                    logger.error(f"Error extracting tool data in silent mode: {e}")
+
+        return complete_message, tool_data
+
+    except Exception as e:
+        logger.error(f"Error in call_agent_silent: {e}")
+        return f"❌ Error executing workflow: {str(e)}", {}
+
+
+@traceable
 async def call_mail_processing_agent(
     email_content: str,
     user_id: str,

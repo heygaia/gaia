@@ -46,11 +46,9 @@ async def get_or_create_workflow_conversation(
         )
         return existing_conversation
 
-    # Create new workflow conversation
-    description = f"⚡ Workflow: {workflow_title}"
     conversation = await create_system_conversation(
         user_id=user_id,
-        description=description,
+        description=workflow_title,
         system_purpose=SystemPurpose.WORKFLOW_EXECUTION,
     )
 

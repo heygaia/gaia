@@ -91,7 +91,7 @@ class WorkflowScheduler(BaseSchedulerService):
                 raise ValueError("Task must be a Workflow instance")
 
             # Import here to avoid circular imports
-            from app.workers.workflow_worker import execute_workflow_as_chat
+            from app.workers.tasks import execute_workflow_as_chat
 
             logger.info(f"Executing workflow {workflow.id}")
 

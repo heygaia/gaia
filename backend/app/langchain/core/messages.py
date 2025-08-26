@@ -123,13 +123,14 @@ async def construct_langchain_messages(
             workflow_description=selected_workflow.description,
             workflow_steps=workflow_steps_text,
             tool_names=tool_names_text,
-            user_message=human_message_content or "Execute this workflow",
+            user_message=human_message_content
+            or f"Execute workflow: {selected_workflow.title}",
         )
 
         # Replace the human message with the workflow execution prompt
         human_message_content = workflow_execution_message
 
-    # If no human message then return error
+    # If no human message then return error (but workflow execution should always have content now)
     if not human_message_content:
         raise ValueError("No human message or selected tool")
 
