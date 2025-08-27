@@ -97,19 +97,26 @@ class WorkflowSchedulerService:
             True if cancelled successfully
         """
         try:
-            # Update workflow status to cancelled using the robust scheduler
-            success = await self.scheduler.update_task_status(
+            # Update workflow status to cancelled in database
+            db_success = await self.scheduler.update_task_status(
                 workflow_id, ScheduledTaskStatus.CANCELLED
             )
 
-            if success:
+            # Cancel ARQ job
+            arq_success = await self.scheduler.cancel_task(workflow_id, "")
+
+            if db_success and arq_success:
                 logger.info(f"Cancelled scheduled execution for workflow {workflow_id}")
+            elif db_success:
+                logger.warning(
+                    f"Cancelled workflow {workflow_id} in DB but ARQ cancellation failed"
+                )
             else:
                 logger.warning(
                     f"Could not cancel workflow {workflow_id} - may not exist or already executed"
                 )
 
-            return success
+            return db_success
 
         except Exception as e:
             logger.error(f"Error cancelling workflow {workflow_id}: {str(e)}")
@@ -130,7 +137,7 @@ class WorkflowSchedulerService:
             True if rescheduled successfully
         """
         try:
-            # Update the workflow's scheduling fields
+            # Update the workflow's scheduling fields in database
             update_data = {
                 "scheduled_at": new_scheduled_at,
                 "status": ScheduledTaskStatus.SCHEDULED.value,
@@ -139,16 +146,30 @@ class WorkflowSchedulerService:
             if repeat is not None:
                 update_data["repeat"] = repeat
 
-            success = await self.scheduler.update_task_status(
+            # Update database status
+            db_success = await self.scheduler.update_task_status(
                 workflow_id, ScheduledTaskStatus.SCHEDULED, update_data
             )
 
-            if success:
+            if not db_success:
+                logger.error(f"Failed to update workflow {workflow_id} in database")
+                return False
+
+            # Actually reschedule in ARQ queue
+            arq_success = await self.scheduler.reschedule_task(
+                workflow_id, new_scheduled_at
+            )
+
+            if arq_success:
                 logger.info(
                     f"Rescheduled workflow {workflow_id} for {new_scheduled_at}"
                 )
+            else:
+                logger.error(
+                    f"Failed to reschedule workflow {workflow_id} in ARQ queue"
+                )
 
-            return success
+            return arq_success
 
         except Exception as e:
             logger.error(f"Error rescheduling workflow {workflow_id}: {str(e)}")

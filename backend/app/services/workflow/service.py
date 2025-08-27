@@ -253,6 +253,16 @@ class WorkflowService:
                 workflow_id
             )
 
+            # Additional cleanup
+            try:
+                await workflow_scheduler_service.scheduler.cancel_task(
+                    workflow_id, user_id
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Additional cleanup failed for workflow {workflow_id}: {e}"
+                )
+
             result = await workflows_collection.delete_one(
                 {"_id": workflow_id, "user_id": user_id}
             )
@@ -350,15 +360,41 @@ class WorkflowService:
                 return None
 
             # Update trigger to enabled and status to active
-            trigger_config = workflow.trigger_config
-            trigger_config.enabled = True
+            update_data = {
+                "activated": True,
+                "trigger_config.enabled": True,
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-            return await WorkflowService.update_workflow(
-                workflow_id,
-                UpdateWorkflowRequest(trigger_config=trigger_config, activated=True),
-                user_id,
-                user_timezone=user_timezone,
+            result = await workflows_collection.update_one(
+                {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
             )
+
+            if result.matched_count == 0:
+                return None
+
+            # Get updated workflow
+            updated_workflow = await WorkflowService.get_workflow(workflow_id, user_id)
+            if not updated_workflow:
+                return None
+
+            # Schedule if workflow is scheduled type
+            if (
+                updated_workflow.trigger_config.type == "schedule"
+                and updated_workflow.trigger_config.enabled
+                and updated_workflow.trigger_config.next_run
+            ):
+                await workflow_scheduler_service.schedule_workflow_execution(
+                    workflow_id,
+                    user_id,
+                    updated_workflow.trigger_config.next_run,
+                    repeat=updated_workflow.trigger_config.cron_expression,
+                    max_occurrences=getattr(updated_workflow, "max_occurrences", None),
+                    stop_after=getattr(updated_workflow, "stop_after", None),
+                )
+
+            logger.info(f"Activated workflow {workflow_id} for user {user_id}")
+            return updated_workflow
 
         except Exception as e:
             logger.error(f"Error activating workflow {workflow_id}: {str(e)}")
@@ -380,15 +416,21 @@ class WorkflowService:
             )
 
             # Update trigger to disabled and status to inactive
-            trigger_config = workflow.trigger_config
-            trigger_config.enabled = False
+            update_data = {
+                "activated": False,
+                "trigger_config.enabled": False,
+                "updated_at": datetime.now(timezone.utc),
+            }
 
-            return await WorkflowService.update_workflow(
-                workflow_id,
-                UpdateWorkflowRequest(trigger_config=trigger_config, activated=False),
-                user_id,
-                user_timezone=user_timezone,
+            result = await workflows_collection.update_one(
+                {"_id": workflow_id, "user_id": user_id}, {"$set": update_data}
             )
+
+            if result.matched_count == 0:
+                return None
+
+            logger.info(f"Deactivated workflow {workflow_id} for user {user_id}")
+            return await WorkflowService.get_workflow(workflow_id, user_id)
 
         except Exception as e:
             logger.error(f"Error deactivating workflow {workflow_id}: {str(e)}")

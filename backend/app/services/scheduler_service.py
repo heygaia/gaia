@@ -171,6 +171,10 @@ class BaseSchedulerService(ABC):
         """
         Cancel a scheduled task.
 
+        Note: ARQ doesn't support direct job cancellation, so this marks the task
+        as cancelled in the database. The task execution will check this status
+        and skip execution if cancelled.
+
         Args:
             task_id: Task ID to cancel
             user_id: User ID for authorization
