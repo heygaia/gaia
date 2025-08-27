@@ -4,10 +4,61 @@ Contains all workflow-related background tasks and execution logic.
 """
 
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 from app.config.loggers import arq_worker_logger as logger
 from bson import ObjectId
+
+
+async def get_user_authentication_tokens(
+    user_id: str,
+) -> Tuple[Optional[str], Optional[str]]:
+    """
+    Retrieve user authentication tokens for workflow execution.
+
+    This wrapper function handles token retrieval and refresh for background workflow execution,
+    following the same pattern as chat streams to ensure consistent authentication.
+
+    Args:
+        user_id: The user ID to get tokens for
+
+    Returns:
+        Tuple of (access_token, refresh_token) or (None, None) if not available
+    """
+    try:
+        from app.config.token_repository import token_repository
+
+        token = await token_repository.get_token(
+            str(user_id), "google", renew_if_expired=True
+        )
+        if token:
+            access_token = (
+                str(token.get("access_token", ""))
+                if token.get("access_token")
+                else None
+            )
+            refresh_token = (
+                str(token.get("refresh_token", ""))
+                if token.get("refresh_token")
+                else None
+            )
+            if access_token and refresh_token:
+                logger.info(
+                    f"Successfully retrieved authentication tokens for user {user_id}"
+                )
+                return access_token, refresh_token
+            else:
+                logger.warning(
+                    f"Tokens found but empty for user {user_id} - access_token: {bool(access_token)}, refresh_token: {bool(refresh_token)}"
+                )
+                return None, None
+        else:
+            logger.warning(f"No authentication tokens found for user {user_id}")
+            return None, None
+
+    except Exception as e:
+        logger.error(f"Error retrieving authentication tokens for user {user_id}: {e}")
+        return None, None
 
 
 async def process_workflow_generation_task(
@@ -163,6 +214,37 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
             f"Executing workflow {workflow.id} as chat session for user {user_id}"
         )
 
+        # Get user tokens for authentication (same as chat stream)
+        access_token, refresh_token = await get_user_authentication_tokens(user_id)
+
+        if not access_token:
+            logger.error(
+                f"No access token available for user {user_id} - workflow tools requiring authentication will fail"
+            )
+        else:
+            logger.info(
+                f"Access token available for user {user_id} - tools can authenticate"
+            )
+
+        # Get user information for tools that may need it (e.g., email tools)
+        user_obj: dict = {"user_id": user_id}
+        try:
+            from app.services.user_service import get_user_by_id
+
+            user_data = await get_user_by_id(user_id)
+            if user_data:
+                if user_data.get("email"):
+                    user_obj["email"] = str(user_data.get("email"))
+                if user_data.get("name"):
+                    user_obj["name"] = str(user_data.get("name"))
+                user_obj["user_id"] = user_id
+                logger.info(
+                    f"Enhanced user object for workflow execution: email={bool(user_obj.get('email'))}, name={bool(user_obj.get('name'))}"
+                )
+        except Exception as e:
+            logger.warning(f"Could not get user data for {user_id}: {e}")
+            # Continue with minimal user object
+
         # Get or create the workflow conversation for thread context
         conversation = await get_or_create_workflow_conversation(
             workflow_id=workflow.id,
@@ -211,8 +293,10 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
         complete_message, tool_data = await call_agent_silent(
             request=request,
             conversation_id=conversation["conversation_id"],
-            user={"user_id": user_id},
+            user=user_obj,
             user_time=datetime.now(timezone.utc),
+            access_token=access_token,
+            refresh_token=refresh_token,
         )
 
         # Create execution messages with proper tool data
