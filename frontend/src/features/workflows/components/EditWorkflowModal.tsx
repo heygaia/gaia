@@ -1,7 +1,7 @@
 import React from "react";
 
-import WorkflowModal from "./WorkflowModal";
 import { Workflow } from "../api/workflowApi";
+import WorkflowModal from "./WorkflowModal";
 
 interface EditWorkflowModalProps {
   isOpen: boolean;

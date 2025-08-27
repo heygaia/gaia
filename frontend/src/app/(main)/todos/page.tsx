@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useState, useMemo } from "react";
+import { useMemo } from "react";
 
 import Spinner from "@/components/ui/shadcn/spinner";
 import TodoDetailSheet from "@/features/todo/components/TodoDetailSheet";

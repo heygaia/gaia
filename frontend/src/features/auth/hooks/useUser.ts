@@ -1,22 +1,17 @@
-import { useDispatch, useSelector } from "react-redux";
+import { useUserStore } from "@/stores/userStore";
 
-import {
-  clearUser,
-  setUser,
-  updateUser,
-  UserState,
-} from "@/redux/slices/userSlice";
-import type { AppDispatch, RootState } from "@/redux/store";
-
-export const useUser = () => useSelector((state: RootState) => state.user);
+export const useUser = () => {
+  const user = useUserStore((state) => ({
+    profilePicture: state.profilePicture,
+    name: state.name,
+    email: state.email,
+    timezone: state.timezone,
+    onboarding: state.onboarding,
+  }));
+  return user;
+};
 
 export const useUserActions = () => {
-  const dispatch: AppDispatch = useDispatch();
-
-  return {
-    setUser: (userData: UserState) => dispatch(setUser(userData)),
-    updateUser: (userData: Partial<UserState>) =>
-      dispatch(updateUser(userData)),
-    clearUser: () => dispatch(clearUser()),
-  };
+  const { setUser, updateUser, clearUser } = useUserStore();
+  return { setUser, updateUser, clearUser };
 };

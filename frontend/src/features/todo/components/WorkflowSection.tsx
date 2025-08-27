@@ -2,20 +2,18 @@
 
 import { useEffect, useState } from "react";
 
-import { todoApi } from "@/features/todo/api/todoApi";
-import { workflowApi } from "@/features/workflows/api/workflowApi";
-import {
-  WorkflowStatus,
-  Workflow as WorkflowType,
-} from "@/types/features/todoTypes";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-
+import { todoApi } from "@/features/todo/api/todoApi";
 import {
   WorkflowEmptyState,
   WorkflowHeader,
   WorkflowLoadingState,
   WorkflowSteps,
 } from "@/features/workflows/components";
+import {
+  Workflow as WorkflowType,
+  WorkflowStatus,
+} from "@/types/features/todoTypes";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;

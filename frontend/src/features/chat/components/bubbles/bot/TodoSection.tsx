@@ -16,7 +16,6 @@ import { useState } from "react";
 
 import { Button } from "@/components/ui/shadcn/button";
 import { useComposer } from "@/features/chat/contexts/ComposerContext";
-import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import {
   TodoAction,

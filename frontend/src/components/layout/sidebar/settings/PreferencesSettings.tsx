@@ -1,11 +1,11 @@
 "use client";
 
 import {
+  Button,
   Select,
   SelectItem,
   SharedSelection,
   Textarea,
-  Button,
 } from "@heroui/react";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,7 +29,6 @@ import {
   formatTimezoneDisplay,
   getCurrentBrowserTimezone,
   getTimezoneList,
-  getTimezoneInfo,
   normalizeTimezone,
 } from "@/utils/timezoneUtils";
 

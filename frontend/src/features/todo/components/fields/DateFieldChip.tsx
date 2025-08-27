@@ -1,9 +1,9 @@
 "use client";
 
+import { Input } from "@heroui/react";
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { Calendar, X } from "lucide-react";
 
-import { Input } from "@heroui/react";
 import BaseFieldChip from "./BaseFieldChip";
 
 interface DateFieldChipProps {

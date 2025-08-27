@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { Chip } from "@heroui/chip";
 import {
   Dropdown,
   DropdownItem,
@@ -23,20 +24,17 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import WorkflowRegenerationLoader from "./WorkflowRegenerationLoader";
-import WorkflowRegenerationSuccess from "./WorkflowRegenerationSuccess";
-import { Chip } from "@heroui/chip";
+import { CheckmarkCircle02Icon } from "@/components/shared/icons";
+import CustomSpinner from "@/components/ui/shadcn/spinner";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+
 import { Workflow, workflowApi } from "../api/workflowApi";
 import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import { ScheduleBuilder } from "./ScheduleBuilder";
-import { Spinner } from "@heroui/spinner";
 import WorkflowSteps from "./shared/WorkflowSteps";
-import { toast } from "sonner";
-import CustomSpinner from "@/components/ui/shadcn/spinner";
-import { CheckmarkCircle02Icon } from "@/components/shared/icons";
-import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 
 interface WorkflowFormData {
   title: string;

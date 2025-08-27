@@ -10,7 +10,7 @@ import { NotificationsList } from "@/components/Notifications/NotificationsList"
 import { Button } from "@/components/ui";
 import { useAllNotifications } from "@/features/notification/hooks/useAllNotifications";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
-import { NotificationsAPI } from "@/services/api/notifications";
+import { useNotificationContext } from "@/hooks/providers/NotificationContext";
 import {
   ModalConfig,
   NotificationStatus,
@@ -18,6 +18,13 @@ import {
 
 export default function NotificationsPage() {
   const [modalConfig, setModalConfig] = useState<ModalConfig | null>(null);
+
+  // Use shared notification context for consistency
+  const {
+    markAsRead: contextMarkAsRead,
+    bulkMarkAsRead: contextBulkMarkAsRead,
+    unreadCount,
+  } = useNotificationContext();
 
   // Get unread notifications
   const {
@@ -40,11 +47,11 @@ export default function NotificationsPage() {
     channel_type: "inapp",
   });
 
-  // Simple mark as read that refreshes both lists
+  // Use shared context functions for mark as read operations
   const handleMarkAsRead = async (notificationId: string) => {
     try {
-      await NotificationsAPI.markAsRead(notificationId);
-      // Refresh both lists after marking as read
+      await contextMarkAsRead(notificationId);
+      // Refresh local lists after marking as read
       await refetchUnread();
       await refetchAll();
     } catch (error) {
@@ -56,8 +63,8 @@ export default function NotificationsPage() {
     try {
       if (notificationIds.length == 0)
         return toast.error("No events to mark as read");
-      await NotificationsAPI.bulkMarkAsRead(notificationIds);
-      // Refresh both lists after marking as read
+      await contextBulkMarkAsRead(notificationIds);
+      // Refresh local lists after marking as read
       await refetchUnread();
       await refetchAll();
     } catch (error) {
@@ -117,14 +124,10 @@ export default function NotificationsPage() {
             <div className="flex items-center space-x-2">
               <BellRing className="h-4 w-4" />
               <span>Unread</span>
-              {unreadNotifications.length > 0 && (
+              {unreadCount > 0 && (
                 <Badge
                   color="primary"
-                  content={
-                    unreadNotifications.length > 99
-                      ? "99+"
-                      : unreadNotifications.length.toString()
-                  }
+                  content={unreadCount > 99 ? "99+" : unreadCount.toString()}
                   size="sm"
                 >
                   <span />

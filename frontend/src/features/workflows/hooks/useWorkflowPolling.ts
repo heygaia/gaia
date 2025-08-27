@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 
-import { Workflow, workflowApi } from "../api/workflowApi";
 import { usePolling } from "@/hooks/usePolling";
+
+import { Workflow, workflowApi } from "../api/workflowApi";
 
 interface UseWorkflowPollingReturn {
   workflow: Workflow | null;

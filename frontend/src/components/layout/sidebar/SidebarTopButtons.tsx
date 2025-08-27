@@ -4,7 +4,7 @@ import { Button } from "@heroui/button";
 import { CircleArrowUp, ZapIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import {
   CalendarIcon,
@@ -14,31 +14,13 @@ import {
   PinIcon,
   Target04Icon,
 } from "@/components/shared/icons";
-import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import { useNotificationContext } from "@/hooks/providers/NotificationContext";
-import { NotificationStatus } from "@/types/features/notificationTypes";
 
 export default function SidebarTopButtons() {
   const pathname = usePathname();
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
-  const { refreshTrigger } = useNotificationContext();
-  const { notifications, refetch } = useNotifications({
-    status: NotificationStatus.DELIVERED,
-    limit: 50,
-  });
-
-  const [unreadCount, setUnreadCount] = useState(0);
-
-  useEffect(() => {
-    refetch();
-  }, [refreshTrigger, refetch]);
-
-  useEffect(() => {
-    setUnreadCount(
-      notifications.filter((n) => n.status !== NotificationStatus.READ).length,
-    );
-  }, [notifications]);
+  const { unreadCount } = useNotificationContext();
 
   const buttonData = [
     {

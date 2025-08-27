@@ -20,6 +20,7 @@ import { Button as ShadcnButton } from "@/components/";
 import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
+import { useNotificationContext } from "@/hooks/providers/NotificationContext";
 import { useConfirmation } from "@/hooks/useConfirmation";
 
 import {
@@ -196,6 +197,13 @@ export function NotificationCenter({
   const [activeTab, setActiveTab] = useState<"unread" | "all">("unread");
   const router = useRouter();
 
+  // Use shared notification context for count and actions
+  const {
+    unreadCount,
+    markAsRead: contextMarkAsRead,
+    bulkMarkAsRead: contextBulkMarkAsRead,
+  } = useNotificationContext();
+
   const notificationOptions = useMemo(
     () => ({
       status: activeTab === "unread" ? NotificationStatus.DELIVERED : undefined,
@@ -204,15 +212,10 @@ export function NotificationCenter({
     [activeTab],
   );
 
-  const { notifications, loading, markAsRead, bulkMarkAsRead } =
-    useNotifications(notificationOptions);
-
-  const unreadCount = notifications.filter(
-    (n) => n.status === NotificationStatus.DELIVERED,
-  ).length;
+  const { notifications, loading } = useNotifications(notificationOptions);
 
   const handleMarkAsRead = async (notificationId: string) => {
-    await markAsRead(notificationId);
+    await contextMarkAsRead(notificationId);
   };
 
   // const handleArchive = async (notificationId: string) => {
@@ -229,7 +232,7 @@ export function NotificationCenter({
       .map((n) => n.id);
 
     if (unreadIds.length > 0) {
-      await bulkMarkAsRead(unreadIds);
+      await contextBulkMarkAsRead(unreadIds);
     }
   };
 

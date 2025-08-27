@@ -3,7 +3,6 @@
 import { useDrag } from "@use-gesture/react";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
 
 import HeaderManager from "@/components/layout/headers/HeaderManager";
 import Sidebar from "@/components/layout/sidebar/MainSidebar";
@@ -20,11 +19,7 @@ import { TodoProvider } from "@/features/todo/context/TodoContext";
 import { NotificationProvider } from "@/hooks/providers/NotificationContext";
 import { useIsMobile } from "@/hooks/ui/useMobile";
 import SidebarLayout from "@/layouts/SidebarLayout";
-import {
-  setMobileSidebarOpen,
-  setSidebarOpen,
-} from "@/redux/slices/sidebarSlice";
-import { RootState } from "@/redux/store";
+import { useSidebarStore } from "@/stores/sidebarStore";
 
 // Custom SidebarTrigger for header that matches the consistent styling
 const HeaderSidebarTrigger = () => {
@@ -45,10 +40,8 @@ const HeaderSidebarTrigger = () => {
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const dispatch = useDispatch();
-  const { isOpen, isMobileOpen } = useSelector(
-    (state: RootState) => state.sidebar,
-  );
+  const { isOpen, isMobileOpen, setMobileSidebarOpen, setSidebarOpen } =
+    useSidebarStore();
   const isMobile = useIsMobile();
   const [defaultOpen, setDefaultOpen] = useState(true);
   const dragRef = useRef<HTMLDivElement>(null);
@@ -59,9 +52,9 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   // Auto-close sidebar on mobile when pathname changes
   useEffect(() => {
     if (isMobile && isMobileOpen) {
-      dispatch(setMobileSidebarOpen(false));
+      setMobileSidebarOpen(false);
     }
-  }, [pathname, isMobile, isMobileOpen, dispatch]);
+  }, [pathname, isMobile, isMobileOpen, setMobileSidebarOpen]);
 
   // Set default open state based on screen size
   useEffect(() => {
@@ -74,15 +67,15 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   function closeOnTouch(): void {
     if (isMobile && (isMobileOpen || isOpen)) {
-      dispatch(setMobileSidebarOpen(false));
+      setMobileSidebarOpen(false);
     }
   }
 
   function handleOpenChange(open: boolean): void {
     if (isMobile) {
-      dispatch(setMobileSidebarOpen(open));
+      setMobileSidebarOpen(open);
     } else {
-      dispatch(setSidebarOpen(open));
+      setSidebarOpen(open);
     }
   }
 
@@ -99,10 +92,10 @@ export default function MainLayout({ children }: { children: ReactNode }) {
       if (last && Math.abs(mx) > Math.abs(my)) {
         if (mx > 0) {
           // Swipe right to open
-          dispatch(setMobileSidebarOpen(true));
+          setMobileSidebarOpen(true);
         } else if (mx < 0) {
           // Swipe left to close
-          dispatch(setMobileSidebarOpen(false));
+          setMobileSidebarOpen(false);
         }
       }
     },

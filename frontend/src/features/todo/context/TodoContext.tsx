@@ -2,20 +2,19 @@
 
 import React, {
   createContext,
-  useContext,
-  useCallback,
-  useState,
   ReactNode,
+  useCallback,
+  useContext,
+  useState,
 } from "react";
 
 import { todoApi } from "@/features/todo/api/todoApi";
 import {
+  Project,
   Todo,
   TodoCreate,
-  TodoUpdate,
   TodoFilters,
-  Project,
-  Priority,
+  TodoUpdate,
 } from "@/types/features/todoTypes";
 
 interface TodoCounts {

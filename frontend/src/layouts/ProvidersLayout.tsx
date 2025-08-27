@@ -10,22 +10,19 @@ import GlobalInterceptor from "@/hooks/providers/GlobalInterceptor";
 import GlobalNotifications from "@/hooks/providers/GlobalNotifications";
 import { HeroUIProvider } from "@/layouts/HeroUIProvider";
 import QueryProvider from "@/layouts/QueryProvider";
-import ReduxProviders from "@/redux/providers";
 
 export default function ProvidersLayout({ children }: { children: ReactNode }) {
   return (
     <Suspense fallback={<SuspenseLoader fullHeight fullWidth />}>
       <HeroUIProvider>
         <QueryProvider>
-          <ReduxProviders>
-            <GlobalInterceptor />
-            <GlobalNotifications />
-            <GlobalAuth />
-            <LoginModal />
+          <GlobalInterceptor />
+          <GlobalNotifications />
+          <GlobalAuth />
+          <LoginModal />
 
-            <Toaster closeButton richColors position="top-right" theme="dark" />
-            {children}
-          </ReduxProviders>
+          <Toaster closeButton richColors position="top-right" theme="dark" />
+          {children}
         </QueryProvider>
       </HeroUIProvider>
     </Suspense>

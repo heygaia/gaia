@@ -1,41 +1,21 @@
 "use client";
 
 import { useCallback, useEffect } from "react";
-import { useDispatch, useSelector } from "react-redux";
 
-import {
-  clearCalendarError,
-  fetchCalendars,
-  fetchEvents,
-  initializeFromStorage,
-  resetEvents,
-  setSelectedCalendars as setSelectedCalendarsAction,
-  toggleCalendarSelection,
-} from "@/redux/slices/calendarSlice";
-import { AppDispatch, RootState } from "@/redux/store";
+import { useCalendarStore } from "@/stores/calendarStore";
 
 export const useSharedCalendar = () => {
-  const dispatch: AppDispatch = useDispatch();
-
-  const {
-    calendars,
-    selectedCalendars,
-    events,
-    nextPageToken,
-    loading,
-    error,
-    isInitialized,
-  } = useSelector((state: RootState) => state.calendar);
+  const store = useCalendarStore();
 
   // Initialize from localStorage on mount
   useEffect(() => {
-    dispatch(initializeFromStorage());
-  }, [dispatch]);
+    store.initializeFromStorage();
+  }, [store]);
 
   // Load calendars
   const loadCalendars = useCallback(async () => {
-    return dispatch(fetchCalendars());
-  }, [dispatch]);
+    return store.fetchCalendars();
+  }, [store]);
 
   // Load events
   const loadEvents = useCallback(
@@ -44,58 +24,56 @@ export const useSharedCalendar = () => {
       calendarIds?: string[],
       reset = false,
     ) => {
-      const calendarsToUse = calendarIds || selectedCalendars;
+      const calendarsToUse = calendarIds || store.selectedCalendars;
       if (calendarsToUse.length === 0) return;
 
-      return dispatch(
-        fetchEvents({
-          pageToken,
-          calendarIds: calendarsToUse,
-          reset,
-        }),
-      );
+      return store.fetchEvents({
+        pageToken,
+        calendarIds: calendarsToUse,
+        reset,
+      });
     },
-    [dispatch, selectedCalendars],
+    [store],
   );
 
   // Clear events
   const clearEvents = useCallback(() => {
-    dispatch(resetEvents());
-  }, [dispatch]);
+    store.resetEvents();
+  }, [store]);
 
   // Handle calendar selection
   const handleCalendarSelect = useCallback(
     (calendarId: string) => {
-      dispatch(toggleCalendarSelection(calendarId));
+      store.toggleCalendarSelection(calendarId);
     },
-    [dispatch],
+    [store],
   );
 
   // Set selected calendars (bulk operation)
   const setSelectedCalendars = useCallback(
     (calendarIds: string[]) => {
-      dispatch(setSelectedCalendarsAction(calendarIds));
+      store.setSelectedCalendars(calendarIds);
     },
-    [dispatch],
+    [store],
   );
 
   // Clear errors
   const clearError = useCallback(
     (errorType: "calendars" | "events") => {
-      dispatch(clearCalendarError(errorType));
+      store.clearCalendarError(errorType);
     },
-    [dispatch],
+    [store],
   );
 
   return {
     // State
-    calendars,
-    selectedCalendars,
-    events,
-    nextPageToken,
-    loading,
-    error,
-    isInitialized,
+    calendars: store.calendars,
+    selectedCalendars: store.selectedCalendars,
+    events: store.events,
+    nextPageToken: store.nextPageToken,
+    loading: store.loading,
+    error: store.error,
+    isInitialized: store.isInitialized,
 
     // Actions
     loadCalendars,

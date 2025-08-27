@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
 import { useTodoContext } from "@/features/todo/context/TodoContext";
-import { TodoFilters, Todo, Priority } from "@/types/features/todoTypes";
+import { Priority, TodoFilters } from "@/types/features/todoTypes";
 
 interface UseTodoDataOptions {
   filters?: TodoFilters;
