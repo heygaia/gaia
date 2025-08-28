@@ -156,7 +156,7 @@ export default function StarterText() {
               width={45}
               height={45}
             />
-            {`${greetingData}`}!
+            {greetingData}
           </div>
           {/* <div className="text-2xl">
             I'm GAIA, your personal AI assistant!

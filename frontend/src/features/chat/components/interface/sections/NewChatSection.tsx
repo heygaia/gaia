@@ -24,7 +24,7 @@ export const NewChatSection: React.FC<NewChatSectionProps> = ({
   composerProps,
 }) => {
   return (
-    <div className="relative flex w-full snap-start items-center justify-center p-4 pt-[30vh]">
+    <div className="relative flex w-full snap-start items-center justify-center p-4 pt-[25vh]">
       <div className="flex w-full max-w-(--breakpoint-xl) flex-col items-center justify-center gap-10">
         <div className="flex flex-col items-center gap-2">
           <StarterText />

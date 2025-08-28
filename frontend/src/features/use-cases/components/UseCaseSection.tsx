@@ -44,7 +44,11 @@ export default function UseCaseSection({
       trigger: dummySectionRef.current,
       scroller: scrollContainer,
       start: "top 50%",
-      end: "bottom 40%",
+      end: "bottom-=10 40%",
+      // snap: {
+      //   snapTo: 1, // snap to the closest section (1 means each one)
+      //   duration: 0.4, // lower = faster snapping (default is 0.5)
+      // },
 
       onEnter: () => {
         // Scrolling down - auto select featured
@@ -132,7 +136,7 @@ export default function UseCaseSection({
             key={category as string}
             variant={selectedCategory === category ? "solid" : "flat"}
             color={selectedCategory === category ? "primary" : "default"}
-            className="cursor-pointer capitalize"
+            className={`cursor-pointer capitalize ${selectedCategory === category ? "" : "text-foreground-500"} font-light!`}
             size="lg"
             onClick={() => handleCategoryClick(category as string)}
           >
