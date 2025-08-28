@@ -124,6 +124,7 @@ import { getCompleteTimeBasedGreeting } from "@/utils/greetingUtils";
 //     text: "chat with documents",
 //   },
 // ];
+import Image from "next/image";
 
 export default function StarterText() {
   const user = useUser();
@@ -147,10 +148,15 @@ export default function StarterText() {
   return (
     <>
       <div className="my-4 inline-flex flex-wrap items-center justify-center text-center font-medium sm:gap-2">
-        <div className="flex flex-col items-center gap-2">
-          <div className="flex items-center gap-2 text-4xl">
-            {greetingData.greeting}!
-            <span className="text-2xl">{greetingData.emoji}</span>
+        <div className="flex flex-col items-center gap-3">
+          <div className="flex items-center gap-5 text-5xl">
+            <Image
+              alt="GAIA Logo"
+              src="/branding/logo.webp"
+              width={45}
+              height={45}
+            />
+            {`${greetingData}`}!
           </div>
           {/* <div className="text-2xl">
             I'm GAIA, your personal AI assistant!
@@ -163,9 +169,9 @@ export default function StarterText() {
               unoptimized
             />
           </div> */}
-          <div className="text-xl font-light text-gray-600 dark:text-gray-400">
+          {/* <div className="text-xl font-light text-gray-600 dark:text-gray-400">
             {greetingData.context} How can I help you today?
-          </div>
+          </div> */}
         </div>
       </div>
       {/* <div className="flex max-w-[650px] flex-wrap justify-center gap-2">

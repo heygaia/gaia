@@ -13,10 +13,24 @@ const integrationToCategory: Record<string, string> = {
   calendar: "calendar",
   gdocs: "google_docs",
   "google-docs": "google_docs",
+  google_docs: "google_docs",
   notion: "notion",
   linear: "productivity",
   web: "search",
   "web search": "search",
+  search: "search",
+  mail: "mail",
+  email: "mail",
+  productivity: "productivity",
+  documents: "documents",
+  development: "development",
+  memory: "memory",
+  creative: "creative",
+  weather: "weather",
+  goal_tracking: "goal_tracking",
+  webpage: "webpage",
+  support: "support",
+  general: "general",
 };
 
 interface UseCaseCardProps {
@@ -33,14 +47,8 @@ export default function UseCaseCard({
   integrations,
 }: UseCaseCardProps) {
   return (
-    <div className="group relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300 hover:scale-105 hover:border-zinc-600">
-      <ArrowUpRight
-        className="absolute top-4 right-4 text-foreground-400 opacity-0 transition group-hover:opacity-100"
-        width={25}
-        height={25}
-      />
-
-      <div className="mb-4 flex items-center gap-3">
+    <div className="group relative flex min-h-[280px] w-full flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300">
+      <div className="mb-3 flex items-center gap-2">
         {(() => {
           const validIcons = integrations
             .slice(0, 3)
@@ -48,8 +56,8 @@ export default function UseCaseCard({
               const category =
                 integrationToCategory[integration] || integration;
               const IconComponent = getToolCategoryIcon(category, {
-                width: 35,
-                height: 35,
+                width: 25,
+                height: 25,
               });
               return IconComponent ? (
                 <div
@@ -67,8 +75,8 @@ export default function UseCaseCard({
           ) : (
             <div className="flex items-center justify-center">
               <ToolsIcon
-                width={35}
-                height={35}
+                width={25}
+                height={25}
                 className="text-foreground-400"
               />
             </div>
@@ -81,16 +89,17 @@ export default function UseCaseCard({
         )}
       </div>
 
-      <h3 className="mb- text-xl font-medium">{title}</h3>
+      <h3 className="text-xl font-medium">{title}</h3>
       <div className="mb-4 line-clamp-3 flex-1 text-sm text-foreground-500">
         {description}
       </div>
 
       <div className="flex w-full flex-col gap-3">
         <Button
-          color={action_type === "prompt" ? "primary" : "success"}
-          variant="flat"
-          size="md"
+          color="default"
+          // color={action_type === "prompt" ? "primary" : "primary"}
+          // variant="flat"
+          size="sm"
           startContent={
             action_type === "prompt" ? (
               <Play width={16} height={16} />

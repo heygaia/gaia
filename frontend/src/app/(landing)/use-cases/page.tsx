@@ -4,37 +4,28 @@ import { Chip } from "@heroui/chip";
 import { useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import dataJson from "@/features/use-cases/constants/data.json";
-
-interface UseCase {
-  title: string;
-  description: string;
-  action_type: "prompt" | "workflow";
-  integrations: string[];
-  categories?: string[];
-  published_id?: string;
-}
-
-interface UseCaseData {
-  templates: UseCase[];
-}
+import {
+  useCasesData,
+  type UseCase,
+} from "@/features/use-cases/constants/dummy-data";
 
 export default function UseCasesPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
 
-  const data = dataJson as unknown as UseCaseData;
-
   const allCategories = [
     "all",
-    ...Array.from(
-      new Set(data.templates.flatMap((item: UseCase) => item.categories || [])),
-    ),
+    "Students",
+    "Founders",
+    "Engineering",
+    "Marketing",
+    "Knowledge Workers",
+    "Business & Ops",
   ];
 
   const filteredUseCases =
     selectedCategory === "all"
-      ? data.templates
-      : data.templates.filter((useCase: UseCase) =>
+      ? useCasesData
+      : useCasesData.filter((useCase: UseCase) =>
           useCase.categories?.includes(selectedCategory),
         );
 

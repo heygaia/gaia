@@ -1,44 +1,26 @@
-"use client";
-
-import React, { useEffect, useMemo } from "react";
+import React, { useMemo } from "react";
 
 import { GoogleCalendarIcon } from "@/components";
-import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
 import { getEventColor } from "@/features/calendar/utils/eventColors";
+import BaseCardView from "@/features/shared/components/BaseCardView";
+import { CalendarItem } from "@/types/api/calendarApiTypes";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 
 interface UpcomingEventsViewProps {
   onEventClick?: (event: GoogleCalendarEvent) => void;
+  events: GoogleCalendarEvent[];
+  isLoading: boolean;
+  error?: string | null;
+  calendars: CalendarItem[];
 }
 
 const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
   onEventClick,
+  events,
+  isLoading,
+  error,
+  calendars,
 }) => {
-  const {
-    events,
-    loading,
-    error,
-    calendars,
-    selectedCalendars,
-    isInitialized,
-    loadCalendars,
-    loadEvents,
-  } = useSharedCalendar();
-
-  // Initialize calendars on mount
-  useEffect(() => {
-    if (!isInitialized && !loading.calendars) {
-      loadCalendars();
-    }
-  }, [isInitialized, loading.calendars, loadCalendars]);
-
-  // Fetch events when selected calendars change or when calendars are first loaded
-  useEffect(() => {
-    if (selectedCalendars.length > 0 && isInitialized) {
-      loadEvents(null, selectedCalendars, true);
-    }
-  }, [selectedCalendars, isInitialized, loadEvents]);
-
   // Filter and group upcoming events by day (next 7 days)
   const upcomingEventsByDay = useMemo(() => {
     const today = new Date();
@@ -135,105 +117,71 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
 
   const hasEvents = Object.keys(upcomingEventsByDay).length > 0;
 
-  if (loading.events && !hasEvents) {
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <div className="text-sm text-zinc-500">Loading events...</div>
-      </div>
-    );
-  }
-
-  if (error.events) {
-    return (
-      <div className="flex h-full w-full items-center justify-center">
-        <div className="text-sm text-red-400">Error loading events</div>
-      </div>
-    );
-  }
-
   return (
-    <div className="flex h-full w-full flex-col">
-      {/* Sticky Header */}
-      <div className="px-4 py-3">
-        <div className="flex items-center gap-2">
-          <GoogleCalendarIcon className="h-6 w-6 text-zinc-500" />
-          <h3 className="font-medium text-white">Upcoming events</h3>
-        </div>
-      </div>
+    <BaseCardView
+      title="Upcoming events"
+      icon={<GoogleCalendarIcon className="h-6 w-6 text-zinc-500" />}
+      isLoading={isLoading}
+      error={error}
+      isEmpty={!hasEvents}
+      emptyMessage="No upcoming events"
+      errorMessage="Failed to load upcoming events"
+    >
+      <div className="space-y-6 p-4">
+        {Object.entries(upcomingEventsByDay).map(
+          ([dateString, events], index) => (
+            <div key={dateString} className="flex gap-4">
+              {/* Left Side - Date (20% width like 1 of 5 columns) */}
+              <div className="w-1/5 flex-shrink-0">
+                <div className="sticky top-0 z-10 px-2 pt-1">
+                  <span
+                    className={`text-sm ${index == 0 ? "text-primary" : "text-foreground-300"}`}
+                  >
+                    {formatDate(dateString)}
+                  </span>
+                </div>
+              </div>
 
-      {/* Scrollable Content */}
-      <div className="flex-1 overflow-y-auto rounded-2xl bg-[#141414] px-4 pb-4">
-        {/* Card Container */}
-        <div className="p-4">
-          {hasEvents ? (
-            <div className="space-y-6">
-              {Object.entries(upcomingEventsByDay).map(
-                ([dateString, events], index) => (
-                  <div key={dateString} className="flex gap-4">
-                    {/* Left Side - Date (20% width like 1 of 5 columns) */}
-                    <div className="w-1/5 flex-shrink-0">
-                      <div className="sticky top-0 z-10 px-2 pt-1">
-                        <span
-                          className={`text-sm ${index == 0 ? "text-primary" : "text-foreground-300"}`}
-                        >
-                          {formatDate(dateString)}
-                        </span>
+              {/* Right Side - Events (80% width like 4 of 5 columns) */}
+              <div className="flex-1 space-y-2">
+                {events.map((event) => (
+                  <div
+                    key={event.id}
+                    className="relative flex cursor-pointer items-start gap-2 rounded-lg p-2 pl-5 transition-colors hover:bg-zinc-700/30"
+                    onClick={() => onEventClick?.(event)}
+                  >
+                    {/* Colored Pill */}
+                    <div className="absolute top-0 left-1 flex h-full items-center">
+                      <div
+                        className="mt-0.5 h-[80%] w-1 flex-shrink-0 rounded-full"
+                        style={{
+                          backgroundColor: getEventColor(event, calendars),
+                        }}
+                      />
+                    </div>
+
+                    {/* Event Details */}
+                    <div className="min-w-0 flex-1">
+                      {/* Title */}
+                      <div className="text-base leading-tight font-medium text-white">
+                        {event.summary}
+                      </div>
+
+                      {/* Time */}
+                      <div className="mt-0.5 text-xs text-zinc-400">
+                        {event.start.dateTime && event.end.dateTime
+                          ? formatTime(event.start.dateTime, event.end.dateTime)
+                          : "All day"}
                       </div>
                     </div>
-
-                    {/* Right Side - Events (80% width like 4 of 5 columns) */}
-                    <div className="flex-1 space-y-2">
-                      {events.map((event) => (
-                        <div
-                          key={event.id}
-                          className="relative flex cursor-pointer items-start gap-2 rounded-lg p-2 pl-5 transition-colors hover:bg-zinc-700/30"
-                          onClick={() => onEventClick?.(event)}
-                        >
-                          {/* Colored Pill */}
-                          <div className="absolute top-0 left-1 flex h-full items-center">
-                            <div
-                              className="mt-0.5 h-[80%] w-1 flex-shrink-0 rounded-full"
-                              style={{
-                                backgroundColor: getEventColor(
-                                  event,
-                                  calendars,
-                                ),
-                              }}
-                            />
-                          </div>
-
-                          {/* Event Details */}
-                          <div className="min-w-0 flex-1">
-                            {/* Title */}
-                            <div className="text-base leading-tight font-medium text-white">
-                              {event.summary}
-                            </div>
-
-                            {/* Time */}
-                            <div className="mt-0.5 text-xs text-zinc-400">
-                              {event.start.dateTime && event.end.dateTime
-                                ? formatTime(
-                                    event.start.dateTime,
-                                    event.end.dateTime,
-                                  )
-                                : "All day"}
-                            </div>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
                   </div>
-                ),
-              )}
+                ))}
+              </div>
             </div>
-          ) : (
-            <div className="py-8 text-center text-xs text-zinc-500">
-              No upcoming events
-            </div>
-          )}
-        </div>
+          ),
+        )}
       </div>
-    </div>
+    </BaseCardView>
   );
 };
 

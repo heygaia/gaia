@@ -1,37 +1,62 @@
 import { useRouter } from "next/navigation";
-import React from "react";
+import React, { useEffect } from "react";
 
+import { useSharedCalendar } from "@/features/calendar/hooks/useSharedCalendar";
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
+import { useUnreadEmails } from "@/features/mail/hooks/useUnreadEmails";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
 
-interface GridSectionProps {
-  dummySectionRef: React.RefObject<HTMLDivElement | null>;
-}
-
-export const GridSection: React.FC<GridSectionProps> = ({
-  dummySectionRef,
-}) => {
+export const GridSection = () => {
   const router = useRouter();
+
+  // Fetch both email and calendar data simultaneously
+  const {
+    data: unreadEmails,
+    isLoading: emailLoading,
+    error: emailError,
+  } = useUnreadEmails(10);
+  const {
+    events,
+    loading: calendarLoading,
+    error: calendarError,
+    calendars,
+    selectedCalendars,
+    isInitialized,
+    loadCalendars,
+    loadEvents,
+  } = useSharedCalendar();
+
+  // Initialize calendars on mount
+  useEffect(() => {
+    if (!isInitialized && !calendarLoading.calendars) {
+      loadCalendars();
+    }
+  }, [isInitialized, calendarLoading.calendars, loadCalendars]);
+
+  // Fetch events when selected calendars change or when calendars are first loaded
+  useEffect(() => {
+    if (selectedCalendars.length > 0 && isInitialized) {
+      loadEvents(null, selectedCalendars, true);
+    }
+  }, [selectedCalendars, isInitialized, loadEvents]);
+
   return (
-    <div
-      ref={dummySectionRef}
-      className="relative flex h-fit snap-start items-center justify-center p-4 pt-24"
-    >
-      <div className="grid h-screen max-h-[80vh] w-full max-w-7xl grid-cols-2 grid-rows-4 gap-4">
-        <div className="row-span-2 flex items-center justify-center rounded-3xl">
-          <UnreadEmailsView />
-        </div>
-        {/* Top-right */}
-        <div className="row-span-2 flex items-center justify-center rounded-3xl">
-          <UpcomingEventsView
-            onEventClick={(_event) => {
-              router.push("/calendar");
-            }}
-          />
-        </div>
-        {/* <div className="col-span-2 rounded-lg bg-[#141414] p-4">
-          <div className="h-full"></div>
-        </div> */}
+    <div className="relative flex h-fit snap-start flex-col items-center justify-center p-4">
+      <div className="min-h-scree mb-20 grid w-full max-w-7xl grid-cols-1 grid-rows-1 gap-4 space-y-14 sm:min-h-[40vh] sm:grid-cols-2 sm:space-y-0">
+        <UnreadEmailsView
+          emails={unreadEmails}
+          isLoading={emailLoading}
+          error={emailError}
+        />
+        <UpcomingEventsView
+          events={events}
+          isLoading={calendarLoading.events}
+          error={calendarError.events}
+          calendars={calendars}
+          onEventClick={(_event) => {
+            router.push("/calendar");
+          }}
+        />
       </div>
     </div>
   );

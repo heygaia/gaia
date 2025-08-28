@@ -24,21 +24,15 @@ export const NewChatSection: React.FC<NewChatSectionProps> = ({
   composerProps,
 }) => {
   return (
-    <div className="relative flex h-screen min-h-screen snap-start items-center justify-center p-4">
+    <div className="relative flex w-full snap-start items-center justify-center p-4 pt-[30vh]">
       <div className="flex w-full max-w-(--breakpoint-xl) flex-col items-center justify-center gap-10">
         <div className="flex flex-col items-center gap-2">
-          <Image
-            alt="GAIA Logo"
-            src="/branding/logo.webp"
-            width={110}
-            height={110}
-          />
           <StarterText />
         </div>
         <div className="w-full">
           <Composer {...composerProps} />
         </div>
-        <CardStackContainer />
+        {/* <CardStackContainer /> */}
       </div>
     </div>
   );

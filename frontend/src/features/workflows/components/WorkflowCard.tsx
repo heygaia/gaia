@@ -95,7 +95,7 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
       />
 
       {/* Tool icons from workflow steps */}
-      <div className="flex items-start gap-3">
+      <div className="flex items-start gap-2">
         {(() => {
           const categories = [
             ...new Set(workflow.steps.map((step) => step.tool_category)),
@@ -104,13 +104,13 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
             .slice(0, 3)
             .map((category, index) => {
               const IconComponent = getToolCategoryIcon(category, {
-                width: 35,
-                height: 35,
+                width: 25,
+                height: 25,
               });
               return IconComponent ? (
                 <div
                   key={category}
-                  className="mb-5 flex items-center justify-center"
+                  className="mb-3 flex items-center justify-center"
                 >
                   {IconComponent}
                 </div>
@@ -122,7 +122,7 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
         })()}
         {[...new Set(workflow.steps.map((step) => step.tool_category))].length >
           3 && (
-          <div className="flex h-[40px] w-[40px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
+          <div className="relative bottom-1 flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
             +
             {[...new Set(workflow.steps.map((step) => step.tool_category))]
               .length - 3}

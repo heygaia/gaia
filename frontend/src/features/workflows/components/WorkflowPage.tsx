@@ -12,7 +12,7 @@ import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import useCasesData from "@/features/use-cases/constants/data.json";
+import { useCasesData } from "@/features/use-cases/constants/dummy-data";
 
 export default function WorkflowPage() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -181,17 +181,18 @@ export default function WorkflowPage() {
           </div>
         </div>
         <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {useCasesData.templates.slice(0, 8).map((useCase, index) => (
-            <UseCaseCard
-              key={useCase.published_id || index}
-              title={useCase.title || ""}
-              description={useCase.description || ""}
-              action_type={
-                useCase.action_type === "workflow" ? "workflow" : "prompt"
-              }
-              integrations={useCase.integrations || []}
-            />
-          ))}
+          {useCasesData
+            .filter((useCase) => useCase.action_type === "workflow")
+            .slice(0, 8)
+            .map((useCase, index) => (
+              <UseCaseCard
+                key={useCase.published_id || index}
+                title={useCase.title || ""}
+                description={useCase.description || ""}
+                action_type={useCase.action_type}
+                integrations={useCase.integrations || []}
+              />
+            ))}
         </div>
       </div>
 

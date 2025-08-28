@@ -1,6 +1,7 @@
 import React from "react";
 
 import { GridSection, NewChatSection } from "../sections";
+import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
 
 interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
@@ -36,15 +37,15 @@ export const NewChatLayout: React.FC<NewChatLayoutProps> = ({
   return (
     <div
       ref={scrollContainerRef}
-      className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
+      className="h-full space-y-20 overflow-y-auto"
       onScroll={handleNewChatScroll}
       {...dragHandlers}
     >
-      {/* First section: New chat interface */}
-      <NewChatSection composerProps={composerProps} />
-
-      {/* Second section: 2x2 Grid layout */}
-      <GridSection dummySectionRef={dummySectionRef} />
+      <div className="flex w-full flex-col items-center px-4">
+        <NewChatSection composerProps={composerProps} />
+        <UseCaseSection dummySectionRef={dummySectionRef} />
+      </div>
+      <GridSection />
     </div>
   );
 };
