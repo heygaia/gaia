@@ -6,6 +6,7 @@ import React, { useEffect } from "react";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import { useConversation } from "@/features/chat/hooks/useConversation";
+import { chatApi } from "@/features/chat/api/chatApi";
 import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
 
@@ -57,18 +58,31 @@ const ChatPage = React.memo(function MainChat() {
 
   // Message fetching effect
   useEffect(() => {
-    if (convoIdParam) {
-      fetchMessages(convoIdParam, updateConvoMessages, router).then(() => {
-        setTimeout(scrollToBottom, 500);
-      });
-    } else {
-      clearMessages();
-      if (pathname !== "/c") router.push("/c");
-    }
+    const loadMessages = async () => {
+      if (convoIdParam) {
+        try {
+          const messages = await chatApi.fetchMessages(convoIdParam);
+          updateConvoMessages(messages);
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
+      } else {
+        clearMessages();
+      }
+    };
 
-    if (inputRef?.current) inputRef.current.focus();
+    loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convoIdParam]);
+
+  // Handle pending prompt from global composer
+  useEffect(() => {
+    const pendingPrompt = localStorage.getItem("pendingPrompt");
+    if (pendingPrompt && appendToInputRef.current) {
+      appendToInputRef.current(pendingPrompt);
+      localStorage.removeItem("pendingPrompt");
+    }
+  }, []);
 
   // Common composer props
   const composerProps = {

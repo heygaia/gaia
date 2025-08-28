@@ -177,6 +177,7 @@ export default function UseCaseSection({
                     description={useCase.description || ""}
                     action_type={useCase.action_type || "prompt"}
                     integrations={useCase.integrations || []}
+                    prompt={useCase.prompt}
                   />
                 </motion.div>
               ))}

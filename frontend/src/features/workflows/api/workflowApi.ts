@@ -104,7 +104,6 @@ export const workflowApi = {
       "/workflows",
       request,
       {
-        successMessage: "Workflow created successfully",
         errorMessage: "Failed to create workflow",
       },
     );
