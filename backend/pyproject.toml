@@ -107,6 +107,7 @@ dependencies = [
   "dodopayments>=1.49.0",
   "langchain-cerebras>=0.5.0",
   "standardwebhooks>=1.0.0",
+  "langgraph-supervisor>=0.0.29",
 ]
 
 [dependency-groups]

@@ -25,23 +25,25 @@ async def initialize_tools_store():
     from app.langchain.tools.core.registry import tool_registry
 
     # Register both regular and always available tools
-    tool_dict = tool_registry.get_tool_dictionary()
+    tool_categories = tool_registry.get_all_category_objects()
 
     tasks = []
     tools = {}
-    for tool_data in tool_dict.values():
-        tool = tool_data.tool
-        tool_space = tool_data.space
-        tasks.append(
-            _store.aput(
-                (tool_space,),
-                tool.name,
-                {
-                    "description": f"{tool.name}: {tool.description}",
-                },
+
+    for category in tool_categories.values():
+        category_tools = category.tools
+
+        for tool in category_tools:
+            tasks.append(
+                _store.aput(
+                    (category.space,),
+                    tool.name,
+                    {
+                        "description": f"{tool.name}: {tool.tool.description}",
+                    },
+                )
             )
-        )
-        tools[tool.name] = tool
+            tools[tool.name] = tool.tool
 
     # Store all tools for vector search using asyncio batch
     await asyncio.gather(

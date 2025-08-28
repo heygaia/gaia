@@ -107,8 +107,10 @@ async def call_agent(
             initial_state,
             stream_mode=["messages", "custom"],
             config=config,
+            subgraphs=True,
         ):
-            stream_mode, payload = event
+            # Handle subgraph events - when subgraphs=True, events are tuples with 3 elements
+            ns, stream_mode, payload = event
 
             if stream_mode == "messages":
                 chunk, metadata = payload
@@ -126,7 +128,7 @@ async def call_agent(
                             tool_name_raw = tool_call.get("name")
                             if tool_name_raw:
                                 tool_name = tool_name_raw.replace("_", " ").title()
-                                tool_category = tool_registry.get_tool_category(
+                                tool_category = tool_registry.get_category_of_tool(
                                     tool_name_raw
                                 )
                                 progress_data = {

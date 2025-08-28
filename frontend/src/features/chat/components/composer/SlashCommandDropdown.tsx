@@ -219,8 +219,8 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                     {/* Content */}
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm text-foreground-600">
-                          {formatToolName(match.tool.name)}
+                        <span className="truncate text-sm text-foreground-600 capitalize">
+                          {formatToolName(match.tool.name.toLowerCase())}
                         </span>
                         {selectedCategory === "all" && (
                           <span className="rounded-full bg-zinc-600 px-2 py-0.5 text-xs text-zinc-200 capitalize">

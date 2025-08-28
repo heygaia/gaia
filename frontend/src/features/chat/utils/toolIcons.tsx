@@ -32,7 +32,7 @@ export const getToolCategoryIcon = (
 
   switch (category) {
     // Registry categories from backend
-    case "mail":
+    case "gmail":
       return (
         <Image
           alt={`${category} Icon`}

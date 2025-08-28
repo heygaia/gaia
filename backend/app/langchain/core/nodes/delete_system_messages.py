@@ -5,14 +5,17 @@ This module provides functionality to remove system messages from the conversati
 state while preserving all other message types in their original order.
 """
 
-from typing import Any, Dict
-
 from app.config.loggers import chat_logger as logger
 from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
-from langchain_core.messages import AIMessage, RemoveMessage
+from langchain_core.messages import RemoveMessage
+from langchain_core.runnables import RunnableConfig
+from langgraph.store.base import BaseStore
+from langgraph_bigtool.graph import State
 
 
-async def delete_system_messages(state: Dict[str, Any]):
+async def delete_system_messages(
+    state: State, config: RunnableConfig, store: BaseStore
+) -> State:
     """
     Remove all system messages from the conversation state.
 
@@ -41,12 +44,7 @@ async def delete_system_messages(state: Dict[str, Any]):
 
         # Skip if no messages to process
         if not messages or len(messages) < 2:
-            return {}
-
-        last_message = messages[-1]
-        # Skip processing if last message is AI with tool calls
-        if isinstance(last_message, AIMessage) and last_message.tool_calls:
-            return {}
+            return state
 
         messages_to_remove = []
         messages_to_keep = []
@@ -54,15 +52,18 @@ async def delete_system_messages(state: Dict[str, Any]):
         # Separate system messages for removal and keep others
         for msg in state["messages"]:
             # Checking for content match because we don't want to remove memories in SystemMessage
-            if msg.type == "system" and msg.content.startswith(
-                AGENT_SYSTEM_PROMPT[:50]
+            if (
+                msg.type == "system"
+                and isinstance(msg.content, str)
+                and msg.content.startswith(AGENT_SYSTEM_PROMPT[:50])
+                and msg.id
             ):
                 messages_to_remove.append(RemoveMessage(id=msg.id))
             else:
                 messages_to_keep.append(msg)
 
-        return {"messages": messages_to_remove + messages_to_keep}
+        return {**state, "messages": messages_to_remove + messages_to_keep}
 
     except Exception as e:
         logger.error(f"Error in delete system messages node: {e}")
-        return {}
+        return state

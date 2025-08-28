@@ -18,7 +18,7 @@ http_async_client = httpx.AsyncClient(timeout=10.0)
 
 # Mapping of tool categories to required integrations
 TOOL_INTEGRATION_MAPPING = {
-    "mail": "gmail",
+    "gmail": "gmail",
     "calendar": "google_calendar",
     "google_docs": "google_docs",
     "google_drive": "google_drive",
@@ -97,7 +97,7 @@ async def stream_integration_connection_prompt(
             "integration_connection_required": {
                 "integration_id": integration_id,
                 "integration_name": integration.name,
-                "integration_icon": integration.icon,
+                "integration_icon": integration.icons[0],
                 "integration_description": integration.description,
                 "integration_category": integration.category,
                 "tool_name": tool_name,

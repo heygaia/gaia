@@ -90,7 +90,7 @@ async def list_gmail_labels(config: RunnableConfig) -> Dict[str, Any]:
 
 @tool
 @with_doc(LIST_GMAIL_MESSAGES)
-@require_integration("mail")
+@require_integration("gmail")
 async def fetch_gmail_messages(
     config: RunnableConfig,
     max_results: Annotated[
@@ -281,7 +281,7 @@ async def search_gmail_messages(
 @tool
 @with_rate_limiting("mail_actions")
 @with_doc(COMPOSE_EMAIL)
-@require_integration("mail")
+@require_integration("gmail")
 async def compose_email(
     config: RunnableConfig,
     emails: Annotated[
