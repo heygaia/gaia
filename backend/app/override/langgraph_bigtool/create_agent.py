@@ -17,7 +17,7 @@ _llm = llm.with_config(configurable={"model_name": model_name, "provider": provi
 ```
 
 IMPORT CHANGE REQUIRED:
-Replace library import in build_graph.py:
+Replace library import intool_to build_graph.py:
 ```python
 # Change this:
 from langgraph_bigtool import create_agent
@@ -161,23 +161,6 @@ def create_agent(
         # For sync context, we need to run hooks in a new event loop
         _sync_execute_hooks(end_graph_hooks, state, config, store)
 
-        # CRITICAL: Prevent LLM call after subagent handoff
-        # Issue: https://github.com/langchain-ai/langgraph-bigtool/issues/19
-        #
-        # When a subagent is called (e.g., "call_gmail_agent"), it adds a ToolMessage
-        # with content like "Successfully transferred to gmail". Without this check,
-        # the main agent would unnecessarily invoke the LLM again after the handoff.
-        # This optimization prevents redundant LLM calls.
-        messages = state["messages"]
-        last_message = messages[-1]
-        if isinstance(last_message, ToolMessage):
-            tool_name = last_message.name or "Unknow"
-            content = last_message.content or ""
-            match_tool = re.match(r"call_(\w+)_agent", tool_name)
-            match_content = re.match(r"Successfully transferred to (\w+)", content)  # type: ignore[call-arg]
-            if match_tool and match_content:
-                return state
-
         model_configurations = config.get("configurable", {}).get(
             "model_configurations", {}
         )
@@ -201,23 +184,6 @@ def create_agent(
             store,
         )
 
-        # CRITICAL: Prevent LLM call after subagent handoff
-        # Issue: https://github.com/langchain-ai/langgraph-bigtool/issues/19
-        #
-        # When a subagent is called (e.g., "call_composio_agent"), it adds a ToolMessage
-        # with content like "Successfully transferred to composio". Without this check,
-        # the main agent would unnecessarily invoke the LLM again after the handoff.
-        # This optimization prevents redundant LLM calls and improves performance.
-        messages = state["messages"]
-        last_message = messages[-1]
-        if isinstance(last_message, ToolMessage):
-            tool_name = last_message.name or "Unknow"
-            content = last_message.content or ""
-            match_tool = re.match(r"call_(\w+)_agent", tool_name)
-            match_content = re.match(r"Successfully transferred to (\w+)", content)  # type: ignore[call-arg]
-            if match_tool and match_content:
-                return state
-
         model_configurations = config.get("configurable", {}).get(
             "model_configurations", {}
         )
@@ -228,7 +194,7 @@ def create_agent(
             configurable={"model_name": model_name, "provider": provider}
         )
         llm_with_tools = _llm.bind_tools([retrieve_tools, *selected_tools])  # type: ignore[arg-type]
-        response = await llm_with_tools.ainvoke(messages)
+        response = await llm_with_tools.ainvoke(state["messages"])
         return {"messages": [response]}  # type: ignore[return-value]
 
     tool_node = ToolNode(tool for tool in tool_registry.values())  # type: ignore[arg-type]
@@ -308,7 +274,38 @@ def create_agent(
         should_continue,
         path_map=path_map,
     )
-    builder.add_edge("tools", "agent")
+
+    # TODO: Remove this conditional edge if issue #19 is resolved in langgraph_bigtool
+    # This is a temporary fix to prevent redundant LLM calls after subagent handoff
+    def should_continue_after_tool(state: State):
+        # CRITICAL: Prevent LLM call after subagent handoff
+        # Issue: https://github.com/langchain-ai/langgraph-bigtool/issues/19
+        #
+        # When a subagent is called (e.g., "call_gmail_agent"), it adds a ToolMessage
+        # with content like "Successfully transferred to gmail". Without this check,
+        # the main agent would unnecessarily invoke the LLM again after the handoff.
+        # This optimization prevents redundant LLM calls.
+        messages = state["messages"]
+        last_message = messages[-1]
+
+        if isinstance(last_message, ToolMessage):
+            tool_name = last_message.name or "Unknow"
+            content = last_message.content or ""
+            match_tool = re.match(r"call_(\w+)_agent", tool_name)
+            match_content = re.match(r"Successfully transferred to (\w+)", content)  # type: ignore[call-arg]
+            if match_tool and match_content:
+                print("returning end")
+                return END
+
+        return "agent"
+
+    builder.add_conditional_edges(
+        "tools",
+        should_continue_after_tool,
+        path_map=["agent", END],
+    )
+
+    # builder.add_edge("tools", "agent")
     builder.add_edge("select_tools", "agent")
 
     # Handle sub-agents
