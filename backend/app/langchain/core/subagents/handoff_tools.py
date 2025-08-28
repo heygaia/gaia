@@ -39,7 +39,7 @@ that can intelligently manage large tool sets while maintaining specialization.
 import logging
 from typing import Annotated, List, Optional
 
-from app.langchain.prompts.subagents import (
+from app.langchain.prompts.subagent_prompts import (
     GMAIL_AGENT_SYSTEM_PROMPT,
     LINKEDIN_AGENT_SYSTEM_PROMPT,
     NOTION_AGENT_SYSTEM_PROMPT,
@@ -69,8 +69,17 @@ def create_handoff_tool(
         ],
         state: Annotated[MessagesState, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
+        additional_context: Annotated[
+            str,
+            "Optional additional context like user preferences, conversation history, or relevant details that the sub-agent needs to complete the task effectively.",
+        ] = "",
     ) -> Command:
-        task_description_message = {"role": "user", "content": task_description}
+        # Combine task description with additional context
+        full_context = task_description
+        if additional_context.strip():
+            full_context = f"{task_description}\n\nAdditional Context:\n{additional_context}"
+        
+        task_description_message = {"role": "user", "content": full_context}
         system_prompt_message = {"role": "system", "content": system_prompt}
 
         tool_message = {
