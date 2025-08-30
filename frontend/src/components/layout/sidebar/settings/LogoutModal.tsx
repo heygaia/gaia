@@ -3,14 +3,13 @@
 import { Button } from "@heroui/button";
 import { Modal, ModalBody, ModalContent, ModalHeader } from "@heroui/modal";
 import { useRouter } from "next/navigation";
-import { useDispatch } from "react-redux";
 
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
-import { clearConversations } from "@/redux/slices/conversationsSlice";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 import { ModalAction } from "./SettingsMenu";
 
@@ -25,7 +24,7 @@ export default function LogoutModal({
 }: LogoutModalProps) {
   const { clearUser } = useUserActions();
   const router = useRouter();
-  const dispatch = useDispatch();
+  const { clearConversations } = useConversationsStore();
   const fetchConversations = useFetchConversations();
   const { updateConvoMessages } = useConversation();
 
@@ -49,8 +48,8 @@ export default function LogoutModal({
 
       await chatApi.deleteAllConversations();
 
-      // Clear conversations in Redux state immediately
-      dispatch(clearConversations());
+      // Clear conversations in store immediately
+      clearConversations();
 
       // Then fetch from the API to ensure sync with server
       await fetchConversations(1, 20, false);

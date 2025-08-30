@@ -1,5 +1,5 @@
 "use client";
-import { BotIcon, Clock, Star } from "lucide-react";
+import { BotIcon, Star, Zap } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { FC, useEffect, useState } from "react";
 
@@ -62,8 +62,8 @@ export const ChatTab: FC<ChatTabProps> = ({
                     color={currentConvoId === id ? "#00bbff" : "#9b9b9b"}
                     width="19"
                   />
-                ) : systemPurpose === SystemPurpose.REMINDER_PROCESSING ? (
-                  <Clock
+                ) : systemPurpose === SystemPurpose.WORKFLOW_EXECUTION ? (
+                  <Zap
                     color={currentConvoId === id ? "#00bbff" : "#9b9b9b"}
                     width="19"
                   />

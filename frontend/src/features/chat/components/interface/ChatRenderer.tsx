@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import SearchedImageDialog from "@/features/chat/components/bubbles/bot/SearchedImageDialog";
 import ChatBubbleUser from "@/features/chat/components/bubbles/user/ChatBubbleUser";
+import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import GeneratedImageSheet from "@/features/chat/components/image/GeneratedImageSheet";
 import MemoryModal from "@/features/chat/components/memory/MemoryModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
@@ -121,6 +122,8 @@ export default function ChatRenderer() {
       />
 
       <SearchedImageDialog />
+
+      <CreatedByGAIABanner show={conversation?.is_system_generated === true} />
 
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;

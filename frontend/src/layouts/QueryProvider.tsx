@@ -44,7 +44,7 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
       }),
   );
 
-  // Setup indexedDB for storage of cached queries, instead of localStorage
+  // Setup indexedDB for storage of cached queries
   const persister = createIDBPersister();
 
   return (

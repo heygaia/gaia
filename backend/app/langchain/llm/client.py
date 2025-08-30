@@ -1,17 +1,18 @@
-from langchain_cerebras import ChatCerebras
+# from langchain_cerebras import ChatCerebras
 from langchain_google_genai import ChatGoogleGenerativeAI
+from langchain_openai.chat_models.base import ChatOpenAI
 
-# MODEL = "gpt-4o-mini"
+MODEL = "gpt-4o-mini"
 GEMINI_MODEL = "gemini-1.5-flash"
 CEREBRAS_MODEL = "gpt-oss-120b"
 
 
-# def init_llm(streaming: bool = True):
-#     return ChatOpenAI(
-#         model=MODEL,
-#         temperature=0.1,
-#         streaming=streaming,
-#     )
+def init_llm(streaming: bool = True):
+    return ChatOpenAI(
+        model=MODEL,
+        temperature=0.1,
+        streaming=streaming,
+    )
 
 
 def init_gemini_llm():
@@ -21,10 +22,10 @@ def init_gemini_llm():
     )
 
 
-def init_llm(streaming: bool = True):
-    return ChatCerebras(
-        model=CEREBRAS_MODEL,
-        temperature=0.1,
-        streaming=streaming,
-        reasoning_effort="medium",
-    )
+# def init_llm(streaming: bool = True):
+#     return ChatCerebras(
+#         model=CEREBRAS_MODEL,
+#         temperature=0.1,
+#         streaming=streaming,
+#         reasoning_effort="medium",
+#     )

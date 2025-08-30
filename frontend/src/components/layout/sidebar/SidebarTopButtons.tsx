@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { CircleArrowUp } from "lucide-react";
+import { CircleArrowUp, ZapIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import React, { useEffect, useState } from "react";
@@ -16,13 +16,13 @@ import {
 } from "@/components/shared/icons";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
-import { useNotificationContext } from "@/hooks/providers/NotificationContext";
+import { useRefreshTrigger } from "@/stores/notificationStore";
 import { NotificationStatus } from "@/types/features/notificationTypes";
 
 export default function SidebarTopButtons() {
   const pathname = usePathname();
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
-  const { refreshTrigger } = useNotificationContext();
+  const refreshTrigger = useRefreshTrigger();
   const { notifications, refetch } = useNotifications({
     status: NotificationStatus.DELIVERED,
     limit: 50,
@@ -72,10 +72,16 @@ export default function SidebarTopButtons() {
       label: "Pins",
     },
     {
+      route: "/workflows",
+      icon: <ZapIcon />,
+      label: "Workflows",
+    },
+    {
       route: "/c",
       icon: <MessageMultiple02Icon />,
       label: "Chats",
     },
+
     // {
     //   route: "/browser",
     //   icon: <AiBrowserIcon height={23} width={23} />,

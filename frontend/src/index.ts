@@ -13,7 +13,6 @@ export * from "./layouts/QueryProvider";
 export * from "./layouts/SidebarLayout";
 export * from "./lib/index";
 export * from "./middleware";
-export * from "./redux/index";
 export * from "./services/index";
 export * from "./types/index";
 export * from "./utils/index";

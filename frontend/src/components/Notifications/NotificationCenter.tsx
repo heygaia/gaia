@@ -250,7 +250,7 @@ export function NotificationCenter({
         // open={isOpen} onOpenChange={setIsOpen}
         backdrop="blur"
       >
-        <PopoverTrigger asChild>
+        <PopoverTrigger>
           <div className="relative">
             <ShadcnButton
               className={`group rounded-lg hover:bg-[#00bbff]/20`}
