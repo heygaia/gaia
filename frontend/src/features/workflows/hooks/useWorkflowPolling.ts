@@ -1,7 +1,8 @@
 import { useCallback, useState } from "react";
 
-import { Workflow, workflowApi } from "../api/workflowApi";
 import { usePolling } from "@/hooks/usePolling";
+
+import { Workflow, workflowApi } from "../api/workflowApi";
 
 interface UseWorkflowPollingReturn {
   workflow: Workflow | null;
@@ -36,16 +37,16 @@ export const useWorkflowPolling = (): UseWorkflowPollingReturn => {
     },
     {
       initialInterval: 1000, // Start with 1 second
-      maxInterval: 10000, // Max 10 seconds
+      maxInterval: 10_000, // Max 10 seconds
       maxAttempts: 120, // Up to 2 minutes of attempts
-      maxDuration: 300000, // 5 minutes total
+      maxDuration: 300_000, // 5 minutes total
       enableBackoff: true,
       backoffMultiplier: 1.2,
       shouldStop: (workflow: Workflow) => {
         // Stop when workflow has steps (successful generation)
         return workflow?.steps?.length > 0;
       },
-      isError: (workflow: Workflow) => {
+      isError: () => {
         // Only treat as error if we have error_message AND no steps AND it's been a while
         // This prevents premature error states during generation
         return false; // Let the modal handle error logic with more context

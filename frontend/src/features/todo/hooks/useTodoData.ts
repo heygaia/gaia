@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useCallback, useMemo } from "react";
+import { useCallback, useEffect, useMemo } from "react";
 
-import { useTodoContext } from "@/features/todo/context/TodoContext";
-import { TodoFilters, Todo, Priority } from "@/types/features/todoTypes";
+import { useTodoStore } from "@/stores/todoStore";
+import { Priority, TodoFilters } from "@/types/features/todoTypes";
 
 interface UseTodoDataOptions {
   filters?: TodoFilters;
@@ -27,7 +27,7 @@ export function useTodoData(options: UseTodoDataOptions = {}) {
     loadLabels,
     loadCounts,
     refreshAll,
-  } = useTodoContext();
+  } = useTodoStore();
 
   // Filter todos based on provided filters
   const todos = useMemo(() => {
@@ -118,14 +118,13 @@ export function useTodoData(options: UseTodoDataOptions = {}) {
     [loadTodos],
   );
 
-  const loadTodosByLabel = useCallback(
-    async (label: string) => {
-      // Note: Label filtering would need to be implemented in the API
+  const loadTodosByLabel = useCallback(async () =>
+    // label: string
+    {
+      // TODO: Label filtering would need to be implemented in the API
       // For now, we'll load all todos and filter client-side
       await loadTodos();
-    },
-    [loadTodos],
-  );
+    }, [loadTodos]);
 
   return {
     // Filtered data

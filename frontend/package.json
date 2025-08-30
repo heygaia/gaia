@@ -98,7 +98,6 @@
     "@radix-ui/react-tooltip": "^1.2.8",
     "@radix-ui/react-visually-hidden": "^1.2.3",
     "@react-types/shared": "^3.31.0",
-    "@reduxjs/toolkit": "^2.8.2",
     "@sentry/nextjs": "^10.5.0",
     "@tailwindcss/postcss": "^4.1.12",
     "@tailwindcss/typography": "^0.5.16",
@@ -164,7 +163,6 @@
     "react-intersection-observer": "^9.16.0",
     "react-markdown": "^10.1.0",
     "react-pdf": "^9.2.1",
-    "react-redux": "^9.2.0",
     "react-resizable-panels": "^2.1.9",
     "react-swipeable-list": "^1.10.0",
     "react-syntax-highlighter": "^15.6.3",
@@ -173,7 +171,6 @@
     "react-window-infinite-loader": "^1.0.10",
     "reactflow": "^11.11.4",
     "recharts": "^2.15.4",
-    "redux": "^5.0.1",
     "rehype-highlight": "^7.0.2",
     "remark-gfm": "^4.0.1",
     "require-in-the-middle": "^7.5.2",
@@ -184,7 +181,8 @@
     "tailwindcss-animate": "^1.0.7",
     "tinycolor2": "^1.6.0",
     "vaul": "^1.1.2",
-    "zod": "^3.25.76"
+    "zod": "^3.25.76",
+    "zustand": "^5.0.8"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",

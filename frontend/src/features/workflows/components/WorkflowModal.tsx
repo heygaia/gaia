@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { Chip } from "@heroui/chip";
 import {
   Dropdown,
   DropdownItem,
@@ -13,6 +14,7 @@ import { Select, SelectItem } from "@heroui/select";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
+import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import {
   AlertCircle,
   ChevronDown,
@@ -25,21 +27,17 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { toast } from "sonner";
 
-import WorkflowRegenerationLoader from "./WorkflowRegenerationLoader";
-import WorkflowRegenerationSuccess from "./WorkflowRegenerationSuccess";
-import { Chip } from "@heroui/chip";
+import { CheckmarkCircle02Icon } from "@/components/shared/icons";
+import CustomSpinner from "@/components/ui/shadcn/spinner";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+
 import { Workflow, workflowApi } from "../api/workflowApi";
 import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import { ScheduleBuilder } from "./ScheduleBuilder";
-import { Spinner } from "@heroui/spinner";
 import WorkflowSteps from "./shared/WorkflowSteps";
-import { toast } from "sonner";
-import CustomSpinner from "@/components/ui/shadcn/spinner";
-import { CheckmarkCircle02Icon } from "@/components/shared/icons";
-import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-import { DotsVerticalIcon } from "@radix-ui/react-icons";
 
 interface WorkflowFormData {
   title: string;
@@ -130,10 +128,7 @@ export default function WorkflowModal({
 
   // State for step regeneration
   const [isRegeneratingSteps, setIsRegeneratingSteps] = useState(false);
-  const [currentRegenerationReason, setCurrentRegenerationReason] =
-    useState<string>("");
-  const [regenerationTimeoutId, setRegenerationTimeoutId] =
-    useState<NodeJS.Timeout | null>(null);
+  useState<string>("");
   const [regenerationError, setRegenerationError] = useState<string | null>(
     null,
   );
@@ -389,7 +384,6 @@ export default function WorkflowModal({
     if (mode !== "edit" || !currentWorkflow) return;
 
     setIsRegeneratingSteps(true);
-    setCurrentRegenerationReason(reason);
     setRegenerationError(null); // Clear any previous errors
 
     try {
@@ -425,7 +419,6 @@ export default function WorkflowModal({
 
       setRegenerationError(errorMessage);
       setIsRegeneratingSteps(false);
-      setCurrentRegenerationReason("");
     }
     // Note: Don't set isRegeneratingSteps to false here - let polling handle it
   };
@@ -443,7 +436,6 @@ export default function WorkflowModal({
     if (mode !== "edit" || !existingWorkflow) return;
 
     try {
-      // Use selectWorkflow to store in localStorage and navigate to chat with auto-send
       selectWorkflow(existingWorkflow, { autoSend: true });
 
       // Close the modal after navigation starts
@@ -542,7 +534,6 @@ export default function WorkflowModal({
 
         // Regeneration completed - just stop the loading state
         setIsRegeneratingSteps(false);
-        setCurrentRegenerationReason("");
         setRegenerationError(null);
         stopPolling();
       }
@@ -560,7 +551,6 @@ export default function WorkflowModal({
           "Regeneration is taking longer than expected. Please try again.",
         );
         setIsRegeneratingSteps(false);
-        setCurrentRegenerationReason("");
         stopPolling();
 
         toast.error("Regeneration timeout", {

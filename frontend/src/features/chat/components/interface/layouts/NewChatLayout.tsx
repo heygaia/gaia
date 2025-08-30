@@ -1,7 +1,8 @@
 import React from "react";
 
-import { GridSection, NewChatSection } from "../sections";
 import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
+
+import { GridSection, NewChatSection } from "../sections";
 
 interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;

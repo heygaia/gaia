@@ -3,13 +3,13 @@
 import { Button } from "@heroui/button";
 import { ChevronUp, Plus, User } from "lucide-react";
 import Image from "next/image";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { useRouter } from "next/navigation";
 
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
+
 import { CommunityWorkflow, workflowApi } from "../api/workflowApi";
 
 interface CommunityWorkflowCardProps {
@@ -23,8 +23,6 @@ export default function CommunityWorkflowCard({
   const [isUpvoting, setIsUpvoting] = useState(false);
   const [localWorkflow, setLocalWorkflow] = useState(workflow);
   const debounceTimeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const router = useRouter();
 
   const { selectWorkflow } = useWorkflowSelection();
   const { createWorkflow } = useWorkflowCreation();
@@ -150,7 +148,7 @@ export default function CommunityWorkflowCard({
             ];
             const validIcons = categories
               .slice(0, 3)
-              .map((category, index) => {
+              .map((category) => {
                 const IconComponent = getToolCategoryIcon(category, {
                   width: 25,
                   height: 25,

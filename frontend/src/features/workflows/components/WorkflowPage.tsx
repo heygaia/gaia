@@ -5,14 +5,15 @@ import { useDisclosure } from "@heroui/modal";
 import { PlusIcon, RefreshCw } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 
-import { useWorkflowPolling, useWorkflows } from "../hooks";
+import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
+import { useCasesData } from "@/features/use-cases/constants/dummy-data";
+
 import { Workflow } from "../api/workflowApi";
+import { useWorkflowPolling, useWorkflows } from "../hooks";
 import CreateWorkflowModal from "./CreateWorkflowModal";
 import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
-import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import { useCasesData } from "@/features/use-cases/constants/dummy-data";
 
 export default function WorkflowPage() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
@@ -191,6 +192,7 @@ export default function WorkflowPage() {
                 description={useCase.description || ""}
                 action_type={useCase.action_type}
                 integrations={useCase.integrations || []}
+                prompt={useCase.prompt}
               />
             ))}
         </div>

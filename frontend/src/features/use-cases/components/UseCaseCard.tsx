@@ -2,16 +2,16 @@
 
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
-import { ArrowUpRight, Play, Plus } from "lucide-react";
+import { ArrowUpRight, Plus } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { ToolsIcon } from "@/components";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
+import { useAppendToInput } from "@/stores/composerStore";
 
 // Map integration names to the categories used in getToolCategoryIcon
 const integrationToCategory: Record<string, string> = {
@@ -56,9 +56,10 @@ export default function UseCaseCard({
   prompt,
 }: UseCaseCardProps) {
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false);
-  const { appendToInput } = useComposer();
+  const appendToInput = useAppendToInput();
   const { selectWorkflow } = useWorkflowSelection();
   const { createWorkflow } = useWorkflowCreation();
+  const router = useRouter();
 
   const handleCreateWorkflow = async () => {
     setIsCreatingWorkflow(true);
@@ -89,10 +90,12 @@ export default function UseCaseCard({
       setIsCreatingWorkflow(false);
     }
   };
+  console.log(prompt);
 
   const handleInsertPrompt = () => {
     if (prompt) {
       appendToInput(prompt);
+      router.push("/c");
     }
   };
   return (

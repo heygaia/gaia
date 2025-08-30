@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 
-export interface PollingConfig {
+export interface PollingConfig<T = unknown> {
   /** Initial polling interval in milliseconds */
   initialInterval?: number;
   /** Maximum polling interval in milliseconds */
@@ -16,9 +16,9 @@ export interface PollingConfig {
   /** Enable exponential backoff */
   enableBackoff?: boolean;
   /** Function to determine if polling should stop based on data */
-  shouldStop?: (data: any) => boolean;
+  shouldStop?: (data: T) => boolean;
   /** Function to determine if the current state is an error */
-  isError?: (data: any) => boolean;
+  isError?: (data: T) => boolean;
   /** Callback when polling stops */
   onStop?: (
     reason: "success" | "error" | "timeout" | "max-attempts" | "manual",
@@ -51,15 +51,15 @@ export interface UsePollingReturn<T>
   extends PollingState<T>,
     PollingActions<T> {}
 
-export const usePolling = <T = any>(
+export const usePolling = <T = Record<string, unknown>>(
   pollingFunction: () => Promise<T>,
-  config: PollingConfig = {},
+  config: PollingConfig<T> = {},
 ): UsePollingReturn<T> => {
   const {
     initialInterval = 2000,
-    maxInterval = 30000,
+    maxInterval = 30_000,
     maxAttempts = 100,
-    maxDuration = 300000, // 5 minutes
+    maxDuration = 300_000, // 5 minutes
     backoffMultiplier = 1.5,
     enableBackoff = true,
     shouldStop,

@@ -1,7 +1,5 @@
-import Image from "next/image";
 import React from "react";
 
-import CardStackContainer from "@/components/shared/CardStackContainer";
 import Composer from "@/features/chat/components/composer/Composer";
 import StarterText from "@/features/chat/components/interface/StarterText";
 

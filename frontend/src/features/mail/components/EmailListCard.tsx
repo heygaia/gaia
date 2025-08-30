@@ -2,7 +2,7 @@ import { Tooltip } from "@heroui/react";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 
 import { Gmail } from "@/components";
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
+import { useAppendToInput } from "@/stores/composerStore";
 import { EmailFetchData } from "@/types/features/mailTypes";
 
 interface EmailListProps {
@@ -63,7 +63,7 @@ export default function EmailListCard({
   showTitle = true,
   maxHeight = "max-h-[300px]",
 }: EmailListProps) {
-  const { appendToInput } = useComposer();
+  const appendToInput = useAppendToInput();
 
   const handleEmailClick = (email: EmailFetchData) => {
     if (email.thread_id) {

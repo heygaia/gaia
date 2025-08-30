@@ -5,8 +5,8 @@ import { Chip } from "@heroui/chip";
 import { Play } from "lucide-react";
 import { useState } from "react";
 
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { Workflow } from "@/features/workflows/api/workflowApi";
 
 interface UserWorkflowCardProps {
@@ -40,7 +40,7 @@ export default function UserWorkflowCard({ workflow }: UserWorkflowCardProps) {
             ];
             const validIcons = categories
               .slice(0, 3)
-              .map((category, index) => {
+              .map((category) => {
                 const IconComponent = getToolCategoryIcon(category, {
                   width: 25,
                   height: 25,

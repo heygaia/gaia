@@ -1,7 +1,7 @@
 import { Button } from "@heroui/button";
 import { motion } from "framer-motion";
 
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
+import { useAppendToInput } from "@/stores/composerStore";
 
 interface FollowUpActionsProps {
   actions: string[];
@@ -12,7 +12,7 @@ export default function FollowUpActions({
   actions,
   loading,
 }: FollowUpActionsProps) {
-  const { appendToInput } = useComposer();
+  const appendToInput = useAppendToInput();
   const handleActionClick = async (action: string) => {
     if (loading) return;
 

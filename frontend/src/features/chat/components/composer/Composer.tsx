@@ -1,4 +1,3 @@
-import { ArrowRight01Icon } from "@/components/shared/icons";
 import Image from "next/image";
 import React, {
   useEffect,
@@ -9,6 +8,7 @@ import React, {
 } from "react";
 
 import { Button } from "@/components";
+import { ArrowRight01Icon } from "@/components/shared/icons";
 import FilePreview, {
   UploadedFilePreview,
 } from "@/features/chat/components/files/FilePreview";
@@ -17,6 +17,14 @@ import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
+import {
+  useComposerFiles,
+  useComposerModeSelection,
+  useComposerTextActions,
+  useComposerUI,
+  useInputText,
+} from "@/stores/composerStore";
+import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 import { FileData, SearchMode } from "@/types/shared";
 
 import ComposerInput, { ComposerInputRef } from "./ComposerInput";
@@ -48,20 +56,36 @@ const Composer: React.FC<MainSearchbarProps> = ({
 }) => {
   const [currentHeight, setCurrentHeight] = useState<number>(24);
   const composerInputRef = useRef<ComposerInputRef>(null);
-  const [searchbarText, setSearchbarText] = useState<string>("");
-  const [selectedMode, setSelectedMode] = useState<Set<SearchMode>>(
-    new Set([null]),
-  );
-  const [selectedTool, setSelectedTool] = useState<string | null>(null);
-  const [selectedToolCategory, setSelectedToolCategory] = useState<
-    string | null
-  >(null);
-  const [fileUploadModal, setFileUploadModal] = useState<boolean>(false);
-  const [uploadedFiles, setUploadedFiles] = useState<UploadedFilePreview[]>([]);
-  const [uploadedFileData, setUploadedFileData] = useState<FileData[]>([]);
-  const [pendingDroppedFiles, setPendingDroppedFiles] = useState<File[]>([]);
-  const [isSlashCommandDropdownOpen, setIsSlashCommandDropdownOpen] =
-    useState(false);
+
+  // Use Zustand stores instead of local state
+  const inputText = useInputText();
+  const { setInputText, appendToInputText, clearInputText } =
+    useComposerTextActions();
+  const {
+    selectedMode,
+    selectedTool,
+    selectedToolCategory,
+    setSelectedMode,
+    setSelectedTool,
+    setSelectedToolCategory,
+    clearToolSelection,
+  } = useComposerModeSelection();
+  const {
+    fileUploadModal,
+    uploadedFiles,
+    uploadedFileData,
+    pendingDroppedFiles,
+    setFileUploadModal,
+    setUploadedFiles,
+    setUploadedFileData,
+    setPendingDroppedFiles,
+    removeUploadedFile,
+    clearAllFiles,
+  } = useComposerFiles();
+  const { isSlashCommandDropdownOpen, setIsSlashCommandDropdownOpen } =
+    useComposerUI();
+  const { autoSend, setAutoSend } = useWorkflowSelectionStore();
+
   const sendMessage = useSendMessage();
   const { isLoading, setIsLoading } = useLoading();
   const { integrations, isLoading: integrationsLoading } = useIntegrations();
@@ -71,54 +95,38 @@ const Composer: React.FC<MainSearchbarProps> = ({
     [selectedMode],
   );
 
-  // Load saved input from localStorage on mount
-  useEffect(() => {
-    const savedInput = localStorage.getItem("gaia-searchbar-text");
-    if (savedInput) {
-      setSearchbarText(savedInput);
-    }
-  }, []);
-
-  // Save input to localStorage whenever it changes
-  useEffect(() => {
-    localStorage.setItem("gaia-searchbar-text", searchbarText);
-  }, [searchbarText]);
-
   // When workflow is selected, handle auto-send with a brief delay to allow UI to update
   useEffect(() => {
-    if (selectedWorkflow) {
-      const shouldAutoSend = localStorage.getItem("workflowAutoSend");
+    if (!(selectedWorkflow && autoSend)) return;
+    // Clean up the flag immediately
+    setAutoSend(false);
 
-      if (shouldAutoSend === "true") {
-        // Clean up the flag immediately
-        localStorage.removeItem("workflowAutoSend");
+    // Add a small delay to allow SelectedWorkflowIndicator to render briefly
+    const autoSendTimeout = setTimeout(() => {
+      // Set loading state like normal chat messages do
+      setIsLoading(true);
 
-        // Add a small delay to allow SelectedWorkflowIndicator to render briefly
-        const autoSendTimeout = setTimeout(() => {
-          // Set loading state like normal chat messages do
-          setIsLoading(true);
+      // Send the message to chat
+      sendMessage("Run this workflow", [], null, null, selectedWorkflow);
 
-          // Send the message to chat
-          sendMessage("Run this workflow", [], null, null, selectedWorkflow);
+      // Clear composer state like normal messages do for consistency
+      clearSelectedWorkflow();
 
-          // Clear composer state like normal messages do for consistency
-          clearSelectedWorkflow();
-
-          // Focus input after auto-send
-          if (inputRef.current) {
-            inputRef.current.focus();
-          }
-
-          // Scroll to show the new message
-          scrollToBottom();
-        }, 100); // Brief 100ms delay to allow UI to update
-
-        // Cleanup function to clear timeout if component unmounts
-        return () => clearTimeout(autoSendTimeout);
+      // Focus input after auto-send
+      if (inputRef.current) {
+        inputRef.current.focus();
       }
-    }
+
+      // Scroll to show the new message
+      scrollToBottom();
+    }, 100); // Brief 100ms delay to allow UI to update
+
+    // Cleanup function to clear timeout if component unmounts
+    return () => clearTimeout(autoSendTimeout);
   }, [
     selectedWorkflow,
+    autoSend,
+    setAutoSend,
     sendMessage,
     scrollToBottom,
     setIsLoading,
@@ -164,7 +172,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     if (e) e.preventDefault();
     // Only prevent submission if there's no text AND no files AND no selected tool AND no selected workflow
     if (
-      !searchbarText &&
+      !inputText &&
       uploadedFiles.length === 0 &&
       !selectedTool &&
       !selectedWorkflow
@@ -174,7 +182,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     setIsLoading(true);
 
     sendMessage(
-      searchbarText,
+      inputText,
       uploadedFileData,
       selectedTool, // Pass the selected tool name
       selectedToolCategory, // Pass the selected tool category
@@ -182,16 +190,13 @@ const Composer: React.FC<MainSearchbarProps> = ({
     );
 
     // Clear input immediately when message is sent
-    setSearchbarText("");
-    localStorage.removeItem("gaia-searchbar-text");
+    clearInputText();
 
     // Clear uploaded files after sending
-    setUploadedFiles([]);
-    setUploadedFileData([]);
+    clearAllFiles();
 
     // Clear selected tool after sending
-    setSelectedTool(null);
-    setSelectedToolCategory(null);
+    clearToolSelection();
 
     // Clear selected workflow after sending
     clearSelectedWorkflow();
@@ -283,14 +288,14 @@ const Composer: React.FC<MainSearchbarProps> = ({
       return;
     }
     // These are the final uploaded files, replace temp files with final versions
-    setUploadedFiles((prev) => {
-      return prev.map((prevFile) => {
+    setUploadedFiles(
+      files.map((file) => {
         // Find the corresponding final file (if any)
-        const finalFile = files.find((f) => f.tempId === prevFile.id);
+        const finalFile = files.find((f) => f.tempId === file.id);
         // If found, return the final file, otherwise keep the previous file
-        return finalFile || prevFile;
-      });
-    });
+        return finalFile || file;
+      }),
+    );
 
     // Now process the complete file data from the response
     const fileDataArray = files.map((file) => {
@@ -308,15 +313,6 @@ const Composer: React.FC<MainSearchbarProps> = ({
 
     // Store the complete file data
     setUploadedFileData(fileDataArray);
-  };
-
-  const removeUploadedFile = (fileId: string) => {
-    setUploadedFiles((prevFiles) =>
-      prevFiles.filter((file) => file.id !== fileId),
-    );
-    setUploadedFileData((prevData) =>
-      prevData.filter((data) => data.fileId !== fileId),
-    );
   };
 
   // Handle paste event for images
@@ -347,9 +343,9 @@ const Composer: React.FC<MainSearchbarProps> = ({
 
   // Function to append text to the input
   const appendToInput = (text: string) => {
-    const currentText = searchbarText;
+    const currentText = inputText;
     const newText = currentText ? `${currentText} ${text}` : text;
-    setSearchbarText(newText);
+    setInputText(newText);
     // Focus the input after appending
     if (inputRef.current) {
       inputRef.current.focus();
@@ -403,8 +399,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
         />
         <ComposerInput
           ref={composerInputRef}
-          searchbarText={searchbarText}
-          onSearchbarTextChange={setSearchbarText}
+          searchbarText={inputText}
+          onSearchbarTextChange={setInputText}
           handleFormSubmit={handleFormSubmit}
           handleKeyDown={handleKeyDown}
           currentHeight={currentHeight}
@@ -417,7 +413,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
           selectedMode={selectedMode}
           openFileUploadModal={openFileUploadModal}
           handleFormSubmit={handleFormSubmit}
-          searchbarText={searchbarText}
+          searchbarText={inputText}
           handleSelectionChange={handleSelectionChange}
           selectedTool={selectedTool}
           onToggleSlashCommandDropdown={handleToggleSlashCommandDropdown}

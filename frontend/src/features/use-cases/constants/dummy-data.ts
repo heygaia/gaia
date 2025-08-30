@@ -30,6 +30,17 @@ export const useCasesData: UseCase[] = [
     prompt:
       "You are an expert writing tutor. Help me structure and improve my essay on [TOPIC]. First, analyze the topic and suggest a clear thesis statement. Then, provide an outline with main points and supporting evidence. Finally, review my draft and suggest improvements for clarity, flow, and academic style.",
   },
+  {
+    title: "Study Buddy Q&A",
+    description:
+      "Get help understanding complex concepts, practice problems, and exam preparation",
+    action_type: "prompt",
+    integrations: ["search", "memory", "creative"],
+    categories: ["Students"],
+    published_id: "study-buddy-prompt",
+    prompt:
+      "You are a knowledgeable tutor in [SUBJECT]. Help me understand [CONCEPT/TOPIC]. Please: 1) Explain the concept in simple terms with real-world examples, 2) Break down complex ideas into digestible parts, 3) Provide practice questions to test my understanding, 4) Suggest study techniques and memory aids, 5) Connect this topic to related concepts I should know.",
+  },
 
   // Founders
   {
@@ -40,6 +51,17 @@ export const useCasesData: UseCase[] = [
     integrations: ["creative", "google_docs", "productivity"],
     categories: ["Founders", "featured"],
     published_id: "pitch-deck-workflow",
+  },
+  {
+    title: "Startup Idea Validator",
+    description:
+      "Validate your startup idea with market research, feasibility analysis, and competitive assessment",
+    action_type: "prompt",
+    integrations: ["search", "memory", "documents"],
+    categories: ["Founders"],
+    published_id: "startup-validator-prompt",
+    prompt:
+      "You are a startup advisor and venture capitalist. Help me validate my startup idea: [STARTUP IDEA]. Please analyze: 1) Market opportunity and target customer needs, 2) Competitive landscape and differentiation, 3) Business model viability and revenue potential, 4) Technical feasibility and resource requirements, 5) Key risks and mitigation strategies. Provide honest feedback and actionable next steps.",
   },
   {
     title: "Market Research Analyzer",
@@ -64,6 +86,17 @@ export const useCasesData: UseCase[] = [
     published_id: "code-review-workflow",
   },
   {
+    title: "Debug Helper Assistant",
+    description:
+      "Get help debugging code issues, understanding error messages, and finding solutions",
+    action_type: "prompt",
+    integrations: ["development", "search", "memory"],
+    categories: ["Engineering"],
+    published_id: "debug-helper-prompt",
+    prompt:
+      "You are a senior software engineer debugging expert. I'm facing this issue: [ERROR/PROBLEM DESCRIPTION]. Here's my code: [CODE]. Please help me: 1) Identify the root cause of the issue, 2) Explain why this error occurs, 3) Provide step-by-step debugging approach, 4) Suggest specific fixes with code examples, 5) Recommend best practices to prevent similar issues. Be thorough and educational.",
+  },
+  {
     title: "Architecture Design Helper",
     description:
       "Get expert guidance on system architecture, design patterns, and technical decisions",
@@ -84,6 +117,17 @@ export const useCasesData: UseCase[] = [
     integrations: ["creative", "calendar", "productivity"],
     categories: ["Marketing", "featured"],
     published_id: "social-media-campaign-workflow",
+  },
+  {
+    title: "Brand Voice Generator",
+    description:
+      "Develop consistent brand voice, messaging guidelines, and content tone for your business",
+    action_type: "prompt",
+    integrations: ["creative", "memory", "documents"],
+    categories: ["Marketing"],
+    published_id: "brand-voice-prompt",
+    prompt:
+      "You are a brand strategist and copywriter. Help me develop a distinctive brand voice for [BUSINESS/BRAND] targeting [TARGET AUDIENCE]. Please create: 1) Brand personality traits and characteristics, 2) Tone of voice guidelines (formal/casual, friendly/professional, etc.), 3) Key messaging pillars and value propositions, 4) Do's and don'ts for content creation, 5) Example content pieces showing the brand voice in action. Make it authentic and memorable.",
   },
   {
     title: "Content Strategy Planner",
@@ -108,6 +152,17 @@ export const useCasesData: UseCase[] = [
     published_id: "meeting-minutes-workflow",
   },
   {
+    title: "Decision Framework Helper",
+    description:
+      "Structure complex decisions with pros/cons analysis, risk assessment, and recommendation frameworks",
+    action_type: "prompt",
+    integrations: ["memory", "documents", "productivity"],
+    categories: ["Knowledge Workers"],
+    published_id: "decision-framework-prompt",
+    prompt:
+      "You are a strategic decision consultant. I need help making this decision: [DECISION DESCRIPTION]. Please help me: 1) Structure the decision with clear options and criteria, 2) Analyze pros and cons for each option, 3) Assess risks and potential outcomes, 4) Consider short-term vs long-term implications, 5) Provide a recommendation with clear reasoning. Use a systematic decision-making framework.",
+  },
+  {
     title: "Research Synthesis Assistant",
     description:
       "Synthesize information from multiple sources into coherent insights and recommendations",
@@ -128,6 +183,17 @@ export const useCasesData: UseCase[] = [
     integrations: ["documents", "mail", "productivity"],
     categories: ["Business & Ops"],
     published_id: "invoice-processing-workflow",
+  },
+  {
+    title: "Team Performance Analyzer",
+    description:
+      "Analyze team productivity, identify bottlenecks, and recommend improvements for better collaboration",
+    action_type: "prompt",
+    integrations: ["productivity", "memory", "documents"],
+    categories: ["Business & Ops"],
+    published_id: "team-performance-prompt",
+    prompt:
+      "You are an organizational efficiency expert. Help me analyze my team's performance. Team details: [TEAM DESCRIPTION] and current challenges: [CHALLENGES]. Please provide: 1) Performance metrics and KPI analysis, 2) Identification of productivity bottlenecks, 3) Communication and collaboration improvement suggestions, 4) Process optimization recommendations, 5) Action plan with measurable goals. Focus on practical, implementable solutions.",
   },
   {
     title: "Process Optimization Consultant",

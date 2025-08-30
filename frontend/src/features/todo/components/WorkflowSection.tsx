@@ -2,31 +2,26 @@
 
 import { useEffect, useState } from "react";
 
-import { todoApi } from "@/features/todo/api/todoApi";
-import { workflowApi } from "@/features/workflows/api/workflowApi";
-import {
-  WorkflowStatus,
-  Workflow as WorkflowType,
-} from "@/types/features/todoTypes";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-
+import { todoApi } from "@/features/todo/api/todoApi";
 import {
   WorkflowEmptyState,
   WorkflowHeader,
   WorkflowLoadingState,
   WorkflowSteps,
 } from "@/features/workflows/components";
+import {
+  Workflow as WorkflowType,
+  WorkflowStatus,
+} from "@/types/features/todoTypes";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;
   isGenerating?: boolean;
   workflowStatus?: WorkflowStatus;
   todoId: string;
-  todoTitle: string;
-  todoDescription?: string;
   onGenerateWorkflow?: () => void;
   onWorkflowGenerated?: (workflow: WorkflowType) => void;
-  refreshTrigger?: number; // Add refresh trigger prop
   newWorkflow?: WorkflowType; // Direct workflow update prop
 }
 
@@ -35,11 +30,8 @@ export default function WorkflowSection({
   isGenerating = false,
   workflowStatus: initialWorkflowStatus = WorkflowStatus.NOT_STARTED,
   todoId,
-  todoTitle,
-  todoDescription: _todoDescription,
   onGenerateWorkflow,
   onWorkflowGenerated,
-  refreshTrigger,
   newWorkflow,
 }: WorkflowSectionProps) {
   const [workflow, setWorkflow] = useState<WorkflowType | undefined>(
@@ -48,7 +40,6 @@ export default function WorkflowSection({
   const [workflowStatus, setWorkflowStatus] = useState<WorkflowStatus>(
     initialWorkflowStatus,
   );
-  const [isRunning, setIsRunning] = useState(false);
   const [localIsGenerating, setLocalIsGenerating] = useState(
     isGenerating || workflowStatus === WorkflowStatus.GENERATING,
   );
@@ -73,16 +64,15 @@ export default function WorkflowSection({
     };
 
     fetchWorkflow();
-  }, [todoId, refreshTrigger]); // Add refreshTrigger to dependencies
+  }, [todoId]);
 
   // Handle direct workflow updates (for instant updates after generation)
   useEffect(() => {
-    if (newWorkflow) {
-      setWorkflow(newWorkflow);
-      setWorkflowStatus(WorkflowStatus.COMPLETED);
-      setLocalIsGenerating(false); // Ensure we stop generating state
-      onWorkflowGenerated?.(newWorkflow);
-    }
+    if (!newWorkflow) return;
+    setWorkflow(newWorkflow);
+    setWorkflowStatus(WorkflowStatus.COMPLETED);
+    setLocalIsGenerating(false); // Ensure we stop generating state
+    onWorkflowGenerated?.(newWorkflow);
   }, [newWorkflow, onWorkflowGenerated]);
 
   // Poll for workflow completion when generating
@@ -148,7 +138,6 @@ export default function WorkflowSection({
         })),
       };
 
-      // Use selectWorkflow to store in localStorage and navigate to chat with auto-send
       selectWorkflow(workflowData, { autoSend: true });
 
       console.log(
@@ -170,7 +159,6 @@ export default function WorkflowSection({
   return (
     <div className="space-y-2">
       <WorkflowHeader
-        isRunning={isRunning}
         onGenerateWorkflow={onGenerateWorkflow}
         onRunWorkflow={handleRunWorkflow}
       />

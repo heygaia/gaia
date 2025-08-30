@@ -3,17 +3,17 @@
 import { Chip } from "@heroui/chip";
 import { useEffect, useState } from "react";
 
-import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import CommunityWorkflowCard from "@/features/workflows/components/CommunityWorkflowCard";
-import {
-  workflowApi,
-  CommunityWorkflow,
-} from "@/features/workflows/api/workflowApi";
-import {
-  useCasesData,
-  type UseCase,
-} from "@/features/use-cases/constants/dummy-data";
 import Spinner from "@/components/ui/shadcn/spinner";
+import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
+import {
+  type UseCase,
+  useCasesData,
+} from "@/features/use-cases/constants/dummy-data";
+import {
+  CommunityWorkflow,
+  workflowApi,
+} from "@/features/workflows/api/workflowApi";
+import CommunityWorkflowCard from "@/features/workflows/components/CommunityWorkflowCard";
 
 export default function UseCasesPage() {
   const [selectedCategory, setSelectedCategory] = useState("all");
@@ -116,6 +116,7 @@ export default function UseCasesPage() {
                 description={useCase.description || ""}
                 action_type={useCase.action_type || "prompt"}
                 integrations={useCase.integrations || []}
+                prompt={useCase.prompt}
               />
             ))}
           </div>

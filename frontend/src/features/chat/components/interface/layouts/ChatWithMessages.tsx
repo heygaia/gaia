@@ -21,7 +21,6 @@ interface ChatWithMessagesProps {
       openFileUploadModal: () => void;
       handleDroppedFiles: (files: File[]) => void;
     } | null>;
-    appendToInputRef: React.RefObject<((text: string) => void) | null>;
     droppedFiles: File[];
     onDroppedFilesProcessed: () => void;
     hasMessages: boolean;

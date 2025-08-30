@@ -1,11 +1,11 @@
 "use client";
 
 import {
+  Button,
   Select,
   SelectItem,
   SharedSelection,
   Textarea,
-  Button,
 } from "@heroui/react";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -29,7 +29,6 @@ import {
   formatTimezoneDisplay,
   getCurrentBrowserTimezone,
   getTimezoneList,
-  getTimezoneInfo,
   normalizeTimezone,
 } from "@/utils/timezoneUtils";
 
@@ -71,14 +70,6 @@ export default function PreferencesSettings({
   const { updateUser } = useUserActions();
   const [isUpdating, setIsUpdating] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
-  const [currentTimezoneInfo, setCurrentTimezoneInfo] = useState(() => {
-    const browserTz = getCurrentBrowserTimezone();
-    return {
-      timezone: browserTz.label,
-      currentTime: browserTz.currentTime,
-      offset: browserTz.offset,
-    };
-  });
 
   // Get timezone options with enhanced display
   const timezoneOptions = getTimezoneList().map((tz) => ({

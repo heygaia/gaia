@@ -9,6 +9,7 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { streamController } from "@/features/chat/utils/streamController";
+import { useComposerStore } from "@/stores/composerStore";
 import { MessageType } from "@/types/features/convoTypes";
 import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
@@ -265,7 +266,7 @@ export const useChatStream = () => {
           toast.error(`Error while streaming: ${err}`);
           console.error("Stream error:", err);
           // Save the user's input text for restoration on error
-          localStorage.setItem("gaia-searchbar-text", inputText);
+          useComposerStore.getState().setInputText(inputText);
         }
         // Abort errors are now handled in handleStreamClose
       },

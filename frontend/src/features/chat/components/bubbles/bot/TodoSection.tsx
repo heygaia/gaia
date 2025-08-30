@@ -15,8 +15,6 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/shadcn/button";
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
-import { formatToolName } from "@/features/chat/utils/chatUtils";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import {
   TodoAction,
@@ -72,9 +70,6 @@ export default function TodoSection({
   const [expandedTodos, setExpandedTodos] = useState<Set<string>>(new Set());
   const { selectWorkflow } = useWorkflowSelection();
 
-  // Use the composer context to append text to input
-  const { appendToInput } = useComposer();
-
   const toggleTodoExpansion = (todoId: string) => {
     const newExpanded = new Set(expandedTodos);
     if (newExpanded.has(todoId)) {
@@ -102,7 +97,7 @@ export default function TodoSection({
         })),
       };
 
-      // Use selectWorkflow to store in localStorage and navigate to chat with auto-send
+      // Use selectWorkflow to store and navigate to chat with auto-send
       selectWorkflow(workflowData, { autoSend: true });
 
       console.log(

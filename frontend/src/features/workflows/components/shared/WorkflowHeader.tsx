@@ -1,18 +1,16 @@
 import { Button } from "@heroui/button";
 import { Tooltip } from "@heroui/react";
-import { Play, RotateCcw, Sparkles } from "lucide-react";
+import { RotateCcw, Sparkles } from "lucide-react";
 
 import { WorkflowSquare03Icon } from "@/components";
 
 interface WorkflowHeaderProps {
-  isRunning: boolean;
   isRegenerating?: boolean;
   onGenerateWorkflow?: () => void;
   onRunWorkflow: () => void;
 }
 
 export default function WorkflowHeader({
-  isRunning,
   isRegenerating = false,
   onGenerateWorkflow,
   onRunWorkflow,
@@ -51,13 +49,11 @@ export default function WorkflowHeader({
           color="success"
           variant="flat"
           size="sm"
-          isLoading={isRunning}
           onPress={onRunWorkflow}
-          startContent={!isRunning ? <Play className="h-4 w-4" /> : undefined}
           className="bg-green-500/20 text-green-400 hover:bg-green-500/30"
           isDisabled={isRegenerating}
         >
-          {isRunning ? "Running..." : "Run Workflow"}
+          Run Workflow
         </Button>
       </div>
     </div>

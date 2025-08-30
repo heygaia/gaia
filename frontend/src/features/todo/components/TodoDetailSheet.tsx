@@ -1,10 +1,10 @@
 "use client";
 
-import { Button, Drawer, DrawerContent, DrawerBody } from "@heroui/react";
 import { Input, Textarea } from "@heroui/input";
+import { Button, Drawer, DrawerBody, DrawerContent } from "@heroui/react";
 import { formatDistanceToNow } from "date-fns";
 import { Check, Trash2 } from "lucide-react";
-import React, { useState, useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { useUser } from "@/features/auth/hooks/useUser";
@@ -43,7 +43,6 @@ export default function TodoDetailSheet({
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [isEditingDescription, setIsEditingDescription] = useState(false);
   const [isGeneratingWorkflow, setIsGeneratingWorkflow] = useState(false);
-  const [workflowRefreshTrigger, setWorkflowRefreshTrigger] = useState(0);
   const [newGeneratedWorkflow, setNewGeneratedWorkflow] = useState<
     Workflow | undefined
   >();
@@ -121,7 +120,7 @@ export default function TodoDetailSheet({
     }
   };
 
-  const handleWorkflowGenerated = (workflow: Workflow) => {
+  const handleWorkflowGenerated = () => {
     if (!todo) return;
     // Clear the newGeneratedWorkflow after it's been processed
     setNewGeneratedWorkflow(undefined);
@@ -137,7 +136,7 @@ export default function TodoDetailSheet({
       size="lg"
     >
       <DrawerContent>
-        {(onClose) => (
+        {() => (
           <DrawerBody className="w-[500px] max-w-[90vw] overflow-hidden bg-zinc-900 p-0">
             {todo ? (
               <div className="flex h-full flex-col">
@@ -306,11 +305,8 @@ export default function TodoDetailSheet({
                     <WorkflowSection
                       isGenerating={isGeneratingWorkflow}
                       todoId={todo.id}
-                      todoTitle={todo.title}
-                      todoDescription={todo.description}
                       onGenerateWorkflow={handleGenerateWorkflow}
                       onWorkflowGenerated={handleWorkflowGenerated}
-                      refreshTrigger={workflowRefreshTrigger}
                       newWorkflow={newGeneratedWorkflow}
                     />
                   </div>

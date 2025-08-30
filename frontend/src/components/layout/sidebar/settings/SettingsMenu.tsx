@@ -11,7 +11,6 @@ import { Modal, ModalBody, ModalContent, ModalHeader } from "@heroui/modal";
 import { CircleArrowUp } from "lucide-react";
 import { useRouter } from "next/navigation";
 import React, { useState } from "react";
-import { useDispatch } from "react-redux";
 
 import {
   Brain02Icon,
@@ -31,7 +30,7 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import { ContactSupportModal } from "@/features/support";
-import { clearConversations } from "@/redux/slices/conversationsSlice";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 // Only allow these values in our modal state.
 export type ModalAction = "clear_chats" | "logout";
@@ -46,7 +45,7 @@ interface MenuItem {
 export default function SettingsMenu() {
   const { clearUser } = useUserActions();
   const router = useRouter();
-  const dispatch = useDispatch();
+  const { clearConversations } = useConversationsStore();
   const fetchConversations = useFetchConversations();
   const { updateConvoMessages } = useConversation();
 
@@ -77,8 +76,8 @@ export default function SettingsMenu() {
 
       await chatApi.deleteAllConversations();
 
-      // Clear conversations in Redux state immediately
-      dispatch(clearConversations());
+      // Clear conversations in store immediately
+      clearConversations();
 
       // Then fetch from the API to ensure sync with server
       await fetchConversations(1, 20, false);

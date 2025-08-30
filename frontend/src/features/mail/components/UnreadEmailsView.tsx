@@ -1,4 +1,3 @@
-import { Skeleton, Spinner } from "@heroui/react";
 import React from "react";
 
 import { Gmail } from "@/components";

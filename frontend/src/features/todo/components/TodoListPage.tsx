@@ -8,7 +8,7 @@ import TodoHeader from "@/features/todo/components/TodoHeader";
 import TodoList from "@/features/todo/components/TodoList";
 import { useTodoData } from "@/features/todo/hooks/useTodoData";
 import { useUrlTodoSelection } from "@/features/todo/hooks/useUrlTodoSelection";
-import { TodoFilters, Todo, TodoUpdate } from "@/types/features/todoTypes";
+import { Todo, TodoFilters, TodoUpdate } from "@/types/features/todoTypes";
 
 interface TodoListPageProps {
   title: string;

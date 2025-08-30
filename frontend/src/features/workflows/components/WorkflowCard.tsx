@@ -100,7 +100,7 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
           ];
           const validIcons = categories
             .slice(0, 3)
-            .map((category, index) => {
+            .map((category) => {
               const IconComponent = getToolCategoryIcon(category, {
                 width: 25,
                 height: 25,

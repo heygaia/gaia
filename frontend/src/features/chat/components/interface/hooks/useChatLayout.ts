@@ -1,16 +1,13 @@
 import { useParams, useRouter } from "next/navigation";
 import { useMemo, useRef, useState } from "react";
 
-import { Conversation } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { filterEmptyMessagePairs } from "@/features/chat/utils/messageContentUtils";
 
 interface UseChatLayoutReturn {
-  conversation: Conversation | undefined;
   hasMessages: boolean;
   chatRef: React.RefObject<HTMLDivElement | null>;
-  cardStackSectionRef: React.RefObject<HTMLDivElement | null>;
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
   droppedFiles: File[];
@@ -31,7 +28,6 @@ export const useChatLayout = (): UseChatLayoutReturn => {
   const { id: convoIdParam } = useParams<{ id: string }>();
 
   const chatRef = useRef<HTMLDivElement>(null);
-  const cardStackSectionRef = useRef<HTMLDivElement>(null);
   const dummySectionRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [droppedFiles, setDroppedFiles] = useState<File[]>([]);
@@ -66,10 +62,8 @@ export const useChatLayout = (): UseChatLayoutReturn => {
   ]);
 
   return {
-    conversation,
     hasMessages,
     chatRef,
-    cardStackSectionRef,
     dummySectionRef,
     inputRef,
     droppedFiles,

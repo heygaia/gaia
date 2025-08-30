@@ -4,8 +4,8 @@ import React, { useEffect, useState } from "react";
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
 import { apiService } from "@/lib/api";
-import { EmailData } from "@/types/features/mailTypes";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
+import { EmailData } from "@/types/features/mailTypes";
 
 interface UnreadEmailsResponse {
   messages: EmailData[];

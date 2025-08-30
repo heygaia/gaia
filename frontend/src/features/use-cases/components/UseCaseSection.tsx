@@ -1,17 +1,17 @@
 import { Chip } from "@heroui/chip";
-import { motion, AnimatePresence } from "framer-motion";
-import { useEffect, useState, useRef } from "react";
+import { AnimatePresence,motion } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+import { useEffect,useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";
 import {
-  useCasesData,
   type UseCase,
+  useCasesData,
 } from "@/features/use-cases/constants/dummy-data";
-import { useWorkflows } from "@/features/workflows/hooks/useWorkflows";
 import { Workflow } from "@/features/workflows/api/workflowApi";
+import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";
+import { useWorkflows } from "@/features/workflows/hooks/useWorkflows";
 
 // Register GSAP plugin
 gsap.registerPlugin(ScrollTrigger);

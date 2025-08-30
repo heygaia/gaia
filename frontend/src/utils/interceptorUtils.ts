@@ -7,10 +7,10 @@ import {
   showRateLimitToast,
   showTokenLimitToast,
 } from "@/components/shared/RateLimitToast";
+import { useLoginModalStore } from "@/stores/loginModalStore";
 
 // Types
 interface ErrorHandlerDependencies {
-  setLoginModalOpen: (open: boolean) => void;
   router: AppRouterInstance;
 }
 
@@ -39,7 +39,7 @@ export const isOnLandingRoute = (pathname: string): boolean => {
 export const processAxiosError = (
   error: AxiosError,
   pathname: string,
-  { setLoginModalOpen, router }: ErrorHandlerDependencies,
+  { router }: ErrorHandlerDependencies,
 ): void => {
   console.error("Axios Error:", error, "Pathname:", pathname);
 
@@ -60,7 +60,7 @@ export const processAxiosError = (
 
     switch (status) {
       case 401:
-        setLoginModalOpen(true);
+        useLoginModalStore.getState().openModal();
         break;
 
       case 403:

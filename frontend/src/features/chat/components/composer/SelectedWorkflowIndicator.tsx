@@ -1,13 +1,14 @@
 "use client";
 
-import { useState } from "react";
 import { motion } from "framer-motion";
+import { useState } from "react";
+
 import {
+  Cancel01Icon,
   Gmail,
-  Notion,
   GoogleCalendarIcon,
   GoogleDrive,
-  Cancel01Icon,
+  Notion,
 } from "@/components/shared/icons";
 import { SelectedWorkflowData } from "@/features/chat/hooks/useWorkflowSelection";
 

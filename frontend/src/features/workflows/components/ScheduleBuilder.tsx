@@ -1,9 +1,7 @@
 import { Input } from "@heroui/input";
 import { Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
-import { useState, useEffect } from "react";
-import { Card, CardBody } from "@heroui/card";
-import { Chip } from "@heroui/chip";
+import { useEffect,useState } from "react";
 
 import {
   buildCronExpression,
