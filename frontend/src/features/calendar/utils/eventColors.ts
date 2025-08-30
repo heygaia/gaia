@@ -15,5 +15,5 @@ export const getEventColor = (
   );
 
   // Use calendar's background color if available, otherwise use a default color
-  return calendar?.backgroundColor || "#4285f4"; // Google blue as fallback
+  return calendar?.backgroundColor || "#00bbff"; // Google blue as fallback
 };

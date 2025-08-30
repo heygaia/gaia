@@ -149,6 +149,9 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
                     key={event.id}
                     className="relative flex cursor-pointer items-start gap-2 rounded-lg p-2 pl-5 transition-colors hover:bg-zinc-700/30"
                     onClick={() => onEventClick?.(event)}
+                    style={{
+                      backgroundColor: `${getEventColor(event, calendars)}5`,
+                    }}
                   >
                     {/* Colored Pill */}
                     <div className="absolute top-0 left-1 flex h-full items-center">

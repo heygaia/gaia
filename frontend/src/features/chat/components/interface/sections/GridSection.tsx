@@ -1,89 +1,38 @@
 import { useRouter } from "next/navigation";
-import React, { useEffect, useState } from "react";
+import React from "react";
 
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
+import { useUpcomingEventsQuery } from "@/features/calendar/hooks/useUpcomingEventsQuery";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
-import { apiService } from "@/lib/api";
-import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
-import { EmailData } from "@/types/features/mailTypes";
-
-interface UnreadEmailsResponse {
-  messages: EmailData[];
-  nextPageToken?: string;
-}
-
-interface CalendarEventsResponse {
-  events: GoogleCalendarEvent[];
-  nextPageToken?: string;
-}
+import { useUnreadEmailsQuery } from "@/features/mail/hooks/useUnreadEmailsQuery";
 
 export const GridSection = () => {
   const router = useRouter();
 
-  const [emailData, setEmailData] = useState<EmailData[]>([]);
-  const [calendarEvents, setCalendarEvents] = useState<GoogleCalendarEvent[]>(
-    [],
-  );
-  const [isLoading, setIsLoading] = useState(true);
-  const [errors, setErrors] = useState<{
-    email?: Error | null;
-    calendar?: string | null;
-  }>({});
+  // React Query automatically executes these queries in parallel
+  const emailQuery = useUnreadEmailsQuery(20);
+  const calendarQuery = useUpcomingEventsQuery(20);
 
-  useEffect(() => {
-    const fetchData = async () => {
-      setIsLoading(true);
-      setErrors({});
+  // Extract data with fallbacks
+  const emailData = emailQuery.data ?? [];
+  const calendarEvents = calendarQuery.data ?? [];
 
-      try {
-        // Parallel API calls using Promise.all
-        const [emailResponse, calendarResponse] = await Promise.all([
-          apiService
-            .get<UnreadEmailsResponse>(
-              `/gmail/search?is_read=false&max_results=10`,
-              { errorMessage: "Failed to fetch unread emails", silent: true },
-            )
-            .catch((err) => ({ error: err.message || "Email fetch failed" })),
+  // Individual loading states for granular control
+  const emailLoading = emailQuery.isLoading;
+  const calendarLoading = calendarQuery.isLoading;
 
-          apiService
-            .get<CalendarEventsResponse>(`/calendar/events?max_results=10`, {
-              errorMessage: "Failed to fetch calendar events",
-              silent: true,
-            })
-            .catch((err) => ({
-              error: err.message || "Calendar fetch failed",
-            })),
-        ]);
+  // Combined loading state - true if ANY query is still loading
+  const isLoading = emailLoading || calendarLoading;
 
-        // Handle email response
-        if ("error" in emailResponse) {
-          setErrors((prev) => ({
-            ...prev,
-            email: new Error(emailResponse.error),
-          }));
-        } else {
-          setEmailData(emailResponse.messages || []);
-        }
-
-        // Handle calendar response
-        if ("error" in calendarResponse) {
-          setErrors((prev) => ({ ...prev, calendar: calendarResponse.error }));
-        } else {
-          setCalendarEvents(calendarResponse.events || []);
-        }
-      } catch (error) {
-        console.error("Failed to fetch data:", error);
-        setErrors({
-          email: new Error("Failed to load data"),
-          calendar: "Failed to load data",
-        });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
-    fetchData();
-  }, []);
+  // Transform errors to match expected format
+  const errors = {
+    email: emailQuery.error
+      ? new Error(emailQuery.error.message || "Failed to load emails")
+      : null,
+    calendar: calendarQuery.error
+      ? calendarQuery.error.message || "Failed to load events"
+      : null,
+  };
 
   return (
     <div className="relative flex h-fit snap-start flex-col items-center justify-center p-4">
