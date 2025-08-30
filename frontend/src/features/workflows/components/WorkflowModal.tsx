@@ -16,12 +16,14 @@ import { Tooltip } from "@heroui/tooltip";
 import {
   AlertCircle,
   ChevronDown,
+  ExternalLink,
   Info,
   Play,
   RefreshCw,
   Trash2,
 } from "lucide-react";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 
 import WorkflowRegenerationLoader from "./WorkflowRegenerationLoader";
@@ -37,6 +39,7 @@ import { toast } from "sonner";
 import CustomSpinner from "@/components/ui/shadcn/spinner";
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { DotsVerticalIcon } from "@radix-ui/react-icons";
 
 interface WorkflowFormData {
   title: string;
@@ -72,6 +75,7 @@ export default function WorkflowModal({
   mode,
   existingWorkflow,
 }: WorkflowModalProps) {
+  const router = useRouter();
   const {
     isCreating,
     error: creationError,
@@ -727,20 +731,98 @@ export default function WorkflowModal({
                       className="flex-1"
                     />
 
-                    {/* Delete button for edit mode - Icon only */}
+                    {/* Action dropdown for edit mode */}
                     {mode === "edit" && (
-                      <Tooltip content="Delete workflow" placement="left">
-                        <Button
-                          color="danger"
-                          variant="flat"
-                          size="sm"
-                          isIconOnly
-                          onPress={handleDelete}
-                          className="flex-shrink-0"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </Tooltip>
+                      <Dropdown placement="bottom-end" className="max-w-60">
+                        <DropdownTrigger>
+                          <Button variant="flat" size="sm" isIconOnly>
+                            <DotsVerticalIcon />
+                          </Button>
+                        </DropdownTrigger>
+                        <DropdownMenu>
+                          <DropdownItem
+                            key="publish"
+                            startContent={
+                              <Play className="relative top-1 h-4 w-4" />
+                            }
+                            classNames={{
+                              description: "text-wrap",
+                              base: "items-start!",
+                            }}
+                            description={
+                              currentWorkflow?.is_public
+                                ? "Remove from community marketplace"
+                                : "Share to community marketplace"
+                            }
+                            onPress={async () => {
+                              if (!currentWorkflow?.id) return;
+
+                              try {
+                                if (currentWorkflow.is_public) {
+                                  await workflowApi.unpublishWorkflow(
+                                    currentWorkflow.id,
+                                  );
+                                  setCurrentWorkflow((prev) =>
+                                    prev ? { ...prev, is_public: false } : null,
+                                  );
+                                } else {
+                                  await workflowApi.publishWorkflow(
+                                    currentWorkflow.id,
+                                  );
+                                  setCurrentWorkflow((prev) =>
+                                    prev ? { ...prev, is_public: true } : null,
+                                  );
+                                }
+                              } catch (error) {
+                                console.error(
+                                  "Error publishing/unpublishing workflow:",
+                                  error,
+                                );
+                              }
+                            }}
+                          >
+                            {currentWorkflow?.is_public
+                              ? "Unpublish Workflow"
+                              : "Publish Workflow"}
+                          </DropdownItem>
+
+                          {/* Conditionally render marketplace item */}
+                          {currentWorkflow?.is_public ? (
+                            <DropdownItem
+                              key="marketplace"
+                              startContent={
+                                <ExternalLink className="h-4 w-4" />
+                              }
+                              classNames={{
+                                description: "text-wrap",
+                                base: "items-start!",
+                              }}
+                              description="Open community marketplace"
+                              onPress={() => {
+                                router.push("/use-cases#community-section");
+                              }}
+                            >
+                              View on Marketplace
+                            </DropdownItem>
+                          ) : (
+                            <></>
+                          )}
+
+                          <DropdownItem
+                            key="delete"
+                            color="danger"
+                            startContent={<Trash2 className="h-4 w-4" />}
+                            classNames={{
+                              description: "text-wrap",
+                              base: "items-start!",
+                            }}
+                            description="Permanently delete this workflow"
+                            onPress={handleDelete}
+                          >
+                            Delete Workflow
+                          </DropdownItem>
+                        </DropdownMenu>
+                      </Dropdown>
                     )}
                   </div>
 
@@ -858,37 +940,31 @@ export default function WorkflowModal({
                             variant="flat"
                             startContent={<Play className="h-4 w-4" />}
                             onPress={handleRunWorkflow}
+                            size="sm"
                           >
-                            Run Workflow
+                            Run Manually
                           </Button>
                         </Tooltip>
                       )}
 
                       {mode === "edit" && (
-                        <>
-                          <div className="flex items-center gap-3">
-                            <Tooltip
-                              content={
-                                isActivated
-                                  ? "Deactivate this workflow to prevent it from running"
-                                  : "Activate this workflow to allow it to run"
-                              }
-                              placement="top"
-                            >
-                              <Switch
-                                isSelected={isActivated}
-                                onValueChange={handleActivationToggle}
-                                isDisabled={isTogglingActivation}
-                                color="success"
-                                size="sm"
-                              />
-                            </Tooltip>
-                            <span className="text-sm text-zinc-400">
-                              Workflow{" "}
-                              {isActivated ? "activated" : "deactivated"}
-                            </span>
-                          </div>
-                        </>
+                        <div className="flex items-center gap-3">
+                          <Tooltip
+                            content={
+                              isActivated
+                                ? "Deactivate this workflow to prevent it from running"
+                                : "Activate this workflow to allow it to run"
+                            }
+                            placement="top"
+                          >
+                            <Switch
+                              isSelected={isActivated}
+                              onValueChange={handleActivationToggle}
+                              isDisabled={isTogglingActivation}
+                              size="sm"
+                            />
+                          </Tooltip>
+                        </div>
                       )}
                     </div>
 

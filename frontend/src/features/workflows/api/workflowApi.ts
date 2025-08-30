@@ -52,6 +52,33 @@ export interface WorkflowMetadata {
   average_execution_time?: number;
 }
 
+export interface CommunityWorkflowStep {
+  title: string;
+  tool_name: string;
+  tool_category: string;
+  description: string;
+}
+
+export interface CommunityWorkflow {
+  id: string;
+  title: string;
+  description: string;
+  steps: CommunityWorkflowStep[];
+  upvotes: number;
+  is_upvoted: boolean;
+  created_at: string;
+  creator: {
+    id: string;
+    name: string;
+    avatar?: string;
+  };
+}
+
+export interface CommunityWorkflowsResponse {
+  workflows: CommunityWorkflow[];
+  total: number;
+}
+
 export interface Workflow {
   id: string;
   title: string;
@@ -68,6 +95,12 @@ export interface Workflow {
   current_step_index: number;
   execution_logs: string[];
   error_message?: string;
+
+  // Community features
+  is_public?: boolean;
+  created_by?: string;
+  upvotes?: number;
+  upvoted_by?: string[];
 }
 
 export interface CreateWorkflowRequest {
@@ -270,6 +303,61 @@ export const workflowApi = {
       {
         successMessage: "Workflow created from todo successfully",
         errorMessage: "Failed to create workflow from todo",
+      },
+    );
+  },
+
+  // Publish workflow to community
+  publishWorkflow: async (
+    workflowId: string,
+  ): Promise<{ message: string; workflow_id: string }> => {
+    return apiService.post<{ message: string; workflow_id: string }>(
+      `/workflows/${workflowId}/publish`,
+      {},
+      {
+        successMessage: "Workflow published to community",
+        errorMessage: "Failed to publish workflow",
+      },
+    );
+  },
+
+  // Unpublish workflow from community
+  unpublishWorkflow: async (
+    workflowId: string,
+  ): Promise<{ message: string }> => {
+    return apiService.post<{ message: string }>(
+      `/workflows/${workflowId}/unpublish`,
+      {},
+      {
+        successMessage: "Workflow unpublished from community",
+        errorMessage: "Failed to unpublish workflow",
+      },
+    );
+  },
+
+  // Get public workflows from community
+  getCommunityWorkflows: async (
+    limit: number = 20,
+    offset: number = 0,
+  ): Promise<CommunityWorkflowsResponse> => {
+    return apiService.get<CommunityWorkflowsResponse>(
+      `/workflows/community?limit=${limit}&offset=${offset}`,
+      {
+        errorMessage: "Failed to fetch community workflows",
+      },
+    );
+  },
+
+  // Upvote/downvote a community workflow
+  upvoteWorkflow: async (
+    workflowId: string,
+  ): Promise<{ message: string; action: string }> => {
+    return apiService.post<{ message: string; action: string }>(
+      `/workflows/${workflowId}/upvote`,
+      {},
+      {
+        silent: true, // Disable generic toast - component will handle success messages
+        errorMessage: "Failed to update vote",
       },
     );
   },

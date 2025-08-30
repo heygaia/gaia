@@ -9,10 +9,10 @@ import {
   GoogleDrive,
   Cancel01Icon,
 } from "@/components/shared/icons";
-import { WorkflowData } from "@/types/features/workflowTypes";
+import { SelectedWorkflowData } from "@/features/chat/hooks/useWorkflowSelection";
 
 interface SelectedWorkflowIndicatorProps {
-  workflow: WorkflowData | null;
+  workflow: SelectedWorkflowData | null;
   onRemove?: () => void;
 }
 

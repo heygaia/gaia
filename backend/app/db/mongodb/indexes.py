@@ -474,6 +474,15 @@ async def create_workflow_indexes():
             workflows_collection.create_index([("user_id", 1), ("source", 1)]),
             # Sparse index for workflow steps (only workflows with steps)
             workflows_collection.create_index("steps", sparse=True),
+            # Community workflows indexes
+            workflows_collection.create_index([("is_public", 1), ("upvotes", -1)]),
+            workflows_collection.create_index([("is_public", 1), ("created_at", -1)]),
+            workflows_collection.create_index([("created_by", 1)]),
+            workflows_collection.create_index([("upvoted_by", 1)]),
+            # Compound index for public workflows sorted by upvotes
+            workflows_collection.create_index(
+                [("is_public", 1), ("upvotes", -1), ("created_at", -1)]
+            ),
         )
 
         logger.info("Created workflow indexes")

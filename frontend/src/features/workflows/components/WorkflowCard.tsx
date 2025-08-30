@@ -1,15 +1,13 @@
 "use client";
 
 import { Chip } from "@heroui/chip";
-import { Tooltip } from "@heroui/tooltip";
-import { ArrowUpRight, Clock, Mail, MousePointer } from "lucide-react";
+import { ArrowUpRight, Clock, Mail } from "lucide-react";
 
 import { CalendarIcon, CursorMagicSelection03Icon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 
 import { Workflow } from "../api/workflowApi";
 import { getScheduleDescription } from "../utils/cronUtils";
-import { WorkflowGeneratingShimmer } from "./WorkflowGeneratingShimmer";
 
 interface WorkflowCardProps {
   workflow: Workflow;

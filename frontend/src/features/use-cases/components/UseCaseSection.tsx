@@ -5,10 +5,13 @@ import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
+import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";
 import {
   useCasesData,
   type UseCase,
 } from "@/features/use-cases/constants/dummy-data";
+import { useWorkflows } from "@/features/workflows/hooks/useWorkflows";
+import { Workflow } from "@/features/workflows/api/workflowApi";
 
 // Register GSAP plugin
 gsap.registerPlugin(ScrollTrigger);
@@ -19,6 +22,7 @@ export default function UseCaseSection({
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const { workflows, isLoading: isLoadingWorkflows } = useWorkflows();
 
   // Find scroll container
   const getScrollContainer = () => {
@@ -67,6 +71,7 @@ export default function UseCaseSection({
   const allCategories = [
     "all",
     "featured",
+    "workflows",
     "Students",
     "Founders",
     "Engineering",
@@ -144,49 +149,109 @@ export default function UseCaseSection({
               ? "All"
               : category === "featured"
                 ? "Featured"
-                : (category as string)}
+                : category === "workflows"
+                  ? "Your Workflows"
+                  : (category as string)}
           </Chip>
         ))}
       </div>
 
       <AnimatePresence mode="wait">
-        {filteredUseCases.length > 0 && selectedCategory !== null && (
-          <motion.div
-            key={selectedCategory}
-            className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
-            transition={{ duration: 0.3, ease: "easeOut" }}
-          >
-            {filteredUseCases
-              .slice(0, 8)
-              .map((useCase: UseCase, index: number) => (
-                <motion.div
-                  key={useCase.published_id || index}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    duration: 0.3,
-                    delay: index * 0.05, // Stagger animation
-                    ease: "easeOut",
-                  }}
-                >
-                  <UseCaseCard
-                    title={useCase.title || ""}
-                    description={useCase.description || ""}
-                    action_type={useCase.action_type || "prompt"}
-                    integrations={useCase.integrations || []}
-                    prompt={useCase.prompt}
-                  />
-                </motion.div>
-              ))}
-          </motion.div>
-        )}
+        {/* Render Use Cases */}
+        {filteredUseCases.length > 0 &&
+          selectedCategory !== null &&
+          selectedCategory !== "workflows" && (
+            <motion.div
+              key={selectedCategory}
+              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+            >
+              {filteredUseCases
+                .slice(0, 8)
+                .map((useCase: UseCase, index: number) => (
+                  <motion.div
+                    key={useCase.published_id || index}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.3,
+                      delay: index * 0.05, // Stagger animation
+                      ease: "easeOut",
+                    }}
+                  >
+                    <UseCaseCard
+                      title={useCase.title || ""}
+                      description={useCase.description || ""}
+                      action_type={useCase.action_type || "prompt"}
+                      integrations={useCase.integrations || []}
+                      prompt={useCase.prompt}
+                    />
+                  </motion.div>
+                ))}
+            </motion.div>
+          )}
+
+        {/* Render User Workflows */}
+        {selectedCategory === "workflows" &&
+          !isLoadingWorkflows &&
+          workflows.length > 0 && (
+            <motion.div
+              key="workflows"
+              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              transition={{ duration: 0.3, ease: "easeOut" }}
+            >
+              {workflows
+                .slice(0, 8)
+                .map((workflow: Workflow, index: number) => (
+                  <motion.div
+                    key={workflow.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{
+                      duration: 0.3,
+                      delay: index * 0.05, // Stagger animation
+                      ease: "easeOut",
+                    }}
+                  >
+                    <UserWorkflowCard workflow={workflow} />
+                  </motion.div>
+                ))}
+            </motion.div>
+          )}
       </AnimatePresence>
 
-      {filteredUseCases.length === 0 && selectedCategory !== null && (
-        <div className="flex h-48 items-center justify-center"></div>
+      {/* Empty states */}
+      {filteredUseCases.length === 0 &&
+        selectedCategory !== null &&
+        selectedCategory !== "workflows" && (
+          <div className="flex h-48 items-center justify-center"></div>
+        )}
+
+      {selectedCategory === "workflows" &&
+        !isLoadingWorkflows &&
+        workflows.length === 0 && (
+          <div className="flex h-48 items-center justify-center">
+            <div className="text-center">
+              <p className="text-lg text-foreground-500">No workflows found</p>
+              <p className="text-sm text-foreground-600">
+                Create your first workflow to get started
+              </p>
+            </div>
+          </div>
+        )}
+
+      {selectedCategory === "workflows" && isLoadingWorkflows && (
+        <div className="flex h-48 items-center justify-center">
+          <div className="text-center">
+            <p className="text-lg text-foreground-500">Loading workflows...</p>
+          </div>
+        </div>
       )}
     </div>
   );

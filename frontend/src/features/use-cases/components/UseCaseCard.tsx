@@ -3,6 +3,7 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Play, Plus } from "lucide-react";
+import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -77,7 +78,8 @@ export default function UseCaseCard({
 
       if (result.success && result.workflow) {
         toast.success("Workflow created successfully!", { id: toastId });
-        selectWorkflow(result.workflow);
+        // Use selectWorkflow with autoSend option - this handles both navigation and auto-send flag
+        selectWorkflow(result.workflow, { autoSend: true });
       }
     } catch (error) {
       toast.error("Error creating workflow", { id: toastId });
@@ -168,7 +170,6 @@ export default function UseCaseCard({
           onPress={
             action_type === "prompt" ? handleInsertPrompt : handleCreateWorkflow
           }
-          isDisabled={action_type === "prompt" && !prompt}
         >
           {action_type === "prompt" ? "Insert Prompt" : "Create Workflow"}
         </Button>

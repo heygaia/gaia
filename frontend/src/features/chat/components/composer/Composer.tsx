@@ -84,30 +84,37 @@ const Composer: React.FC<MainSearchbarProps> = ({
     localStorage.setItem("gaia-searchbar-text", searchbarText);
   }, [searchbarText]);
 
-  // When workflow is selected, immediately send a message to chat and clear composer like normal messages
+  // When workflow is selected, handle auto-send with a brief delay to allow UI to update
   useEffect(() => {
     if (selectedWorkflow) {
       const shouldAutoSend = localStorage.getItem("workflowAutoSend");
+
       if (shouldAutoSend === "true") {
-        // Clean up the flag
+        // Clean up the flag immediately
         localStorage.removeItem("workflowAutoSend");
 
-        // Set loading state like normal chat messages do
-        setIsLoading(true);
+        // Add a small delay to allow SelectedWorkflowIndicator to render briefly
+        const autoSendTimeout = setTimeout(() => {
+          // Set loading state like normal chat messages do
+          setIsLoading(true);
 
-        // Immediately send the message to chat
-        sendMessage("Run this workflow", [], null, null, selectedWorkflow);
+          // Send the message to chat
+          sendMessage("Run this workflow", [], null, null, selectedWorkflow);
 
-        // Clear composer state like normal messages do for consistency
-        clearSelectedWorkflow();
+          // Clear composer state like normal messages do for consistency
+          clearSelectedWorkflow();
 
-        // Focus input after auto-send
-        if (inputRef.current) {
-          inputRef.current.focus();
-        }
+          // Focus input after auto-send
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
 
-        // Scroll to show the new message
-        scrollToBottom();
+          // Scroll to show the new message
+          scrollToBottom();
+        }, 100); // Brief 100ms delay to allow UI to update
+
+        // Cleanup function to clear timeout if component unmounts
+        return () => clearTimeout(autoSendTimeout);
       }
     }
   }, [

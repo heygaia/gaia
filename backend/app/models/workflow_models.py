@@ -199,6 +199,23 @@ class Workflow(BaseScheduledTask):
     )
     last_executed_at: Optional[datetime] = Field(default=None)
 
+    # Community features
+    is_public: bool = Field(
+        default=False,
+        description="Whether this workflow is published to the community marketplace",
+    )
+    created_by: Optional[str] = Field(
+        default=None,
+        description="User ID of the original creator (for public workflows)",
+    )
+    upvotes: int = Field(
+        default=0, description="Number of upvotes from community users"
+    )
+    upvoted_by: List[str] = Field(
+        default_factory=list,
+        description="List of user IDs who have upvoted this workflow",
+    )
+
     # Execution tracking
     current_step_index: int = Field(
         default=0, description="Index of currently executing step"
@@ -337,11 +354,44 @@ class WorkflowStatusResponse(BaseModel):
 class RegenerateStepsRequest(BaseModel):
     """Request model for regenerating workflow steps."""
 
-    reason: Optional[str] = Field(
-        default=None,
-        description="Optional reason for regeneration (e.g., 'make more efficient', 'use different tools')",
+    instruction: str = Field(
+        min_length=1, description="Instruction for how to modify the workflow"
     )
+    reason: Optional[str] = Field(default=None, description="Reason for regeneration")
     force_different_tools: bool = Field(
-        default=True,
-        description="Whether to explicitly avoid using the same tools as previous steps",
+        default=False, description="Force the use of different tools"
     )
+
+
+class PublishWorkflowRequest(BaseModel):
+    """Request model for publishing a workflow to the community."""
+
+    workflow_id: str = Field(description="ID of the workflow to publish")
+
+
+class UnpublishWorkflowRequest(BaseModel):
+    """Request model for unpublishing a workflow from the community."""
+
+    workflow_id: str = Field(description="ID of the workflow to unpublish")
+
+
+class UpvoteWorkflowRequest(BaseModel):
+    """Request model for upvoting a community workflow."""
+
+    workflow_id: str = Field(description="ID of the workflow to upvote")
+
+
+class PublicWorkflowsResponse(BaseModel):
+    """Response model for listing public workflows."""
+
+    workflows: List[Dict[str, Any]] = Field(
+        description="List of public workflows with creator info"
+    )
+    total: int = Field(description="Total number of public workflows")
+
+
+class PublishWorkflowResponse(BaseModel):
+    """Response model for publishing a workflow."""
+
+    message: str = Field(description="Success message")
+    workflow_id: str = Field(description="ID of the published workflow")
