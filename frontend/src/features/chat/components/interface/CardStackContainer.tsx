@@ -1,7 +1,7 @@
 "use client";
 
-import CardStack from "./CardStack";
 import { Gmail, GoogleCalendarIcon } from "../../../../components/shared/icons";
+import CardStack from "./CardStack";
 
 interface Notification {
   id: string;

@@ -1,8 +1,8 @@
 import Image from "next/image";
 
-import SettingsMenu from "@/features/settings/components/SettingsMenu";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
+import SettingsMenu from "@/features/settings/components/SettingsMenu";
 
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/shadcn/avatar";
 

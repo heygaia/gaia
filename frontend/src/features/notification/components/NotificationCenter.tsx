@@ -22,12 +22,12 @@ import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useConfirmation } from "@/hooks/useConfirmation";
 
+import { NotificationIcon } from "../../../components/shared";
 import {
   NotificationAction,
   NotificationRecord,
   NotificationStatus,
 } from "../../../types/features/notificationTypes";
-import { NotificationIcon } from "../../../components/shared";
 
 interface NotificationCenterProps {
   className?: string;

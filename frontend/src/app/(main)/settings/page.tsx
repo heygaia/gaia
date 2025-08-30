@@ -3,12 +3,12 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import { IntegrationsSettings } from "@/features/integrations/components/IntegrationsSettings";
 import AccountSettings from "@/features/settings/components/AccountSettings";
 import LogoutModal from "@/features/settings/components/LogoutModal";
 import MemorySettings from "@/features/settings/components/MemorySettings";
 import PreferencesSettings from "@/features/settings/components/PreferencesSettings";
 import { ModalAction } from "@/features/settings/components/SettingsMenu";
-import { IntegrationsSettings } from "@/features/integrations/components/IntegrationsSettings";
 import { SubscriptionSettings } from "@/features/settings/components/SubscriptionSettings";
 import UsageSettings from "@/features/settings/components/UsageSettings";
 

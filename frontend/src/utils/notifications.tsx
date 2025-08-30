@@ -2,7 +2,7 @@
 
 import { Bell, Calendar, CheckSquare, Mail, Undo } from "lucide-react";
 
-import { Notification, NotificationSource } from "@/types/notifications";
+import { NotificationSource } from "@/types/notifications";
 
 export const getNotificationIcon = (type: NotificationSource) => {
   switch (type) {

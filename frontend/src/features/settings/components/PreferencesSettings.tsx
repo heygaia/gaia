@@ -11,19 +11,19 @@ import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { CustomResponseStyleInput } from "@/features/settings/components/CustomResponseStyleInput";
-import { LabeledField } from "@/features/settings/components/FormField";
 import {
   MessageMultiple02Icon,
   PencilEdit01Icon,
   UserIcon,
 } from "@/components/shared/icons";
+import { authApi } from "@/features/auth/api/authApi";
+import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
+import { CustomResponseStyleInput } from "@/features/settings/components/CustomResponseStyleInput";
+import { LabeledField } from "@/features/settings/components/FormField";
 import { SettingsCard } from "@/features/settings/components/SettingsCard";
 import { SettingsCardSimple } from "@/features/settings/components/SettingsCardSimple";
 import { SettingsOption } from "@/features/settings/components/SettingsOption";
 import { StatusIndicator } from "@/features/settings/components/StatusIndicator";
-import { authApi } from "@/features/auth/api/authApi";
-import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 import {
   formatTimezoneDisplay,
   getCurrentBrowserTimezone,

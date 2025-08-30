@@ -1,8 +1,8 @@
 import React from "react";
 
 import { Gmail } from "@/components";
-import EmailListCard from "@/features/mail/components/EmailListCard";
 import BaseCardView from "@/features/chat/components/interface/BaseCardView";
+import EmailListCard from "@/features/mail/components/EmailListCard";
 import { EmailData, EmailFetchData } from "@/types/features/mailTypes";
 
 interface UnreadEmailsViewProps {
