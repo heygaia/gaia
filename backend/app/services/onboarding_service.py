@@ -41,7 +41,6 @@ async def complete_onboarding(
 
         # Prepare onboarding preferences with default values for settings page
         preferences = OnboardingPreferences(
-            country=None,  # Will be set later from timezone detection or settings
             profession=onboarding_data.profession,
             response_style="casual",  # Default response style
             custom_instructions=None,

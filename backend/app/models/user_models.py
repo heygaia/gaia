@@ -36,7 +36,6 @@ class UserUpdateResponse(BaseModel):
 
 
 class OnboardingPreferences(BaseModel):
-    country: Optional[str] = Field(None, description="ISO 3166-1 alpha-2 country code")
     profession: Optional[str] = Field(
         None,
         description="User's profession or main area of focus",
@@ -49,20 +48,6 @@ class OnboardingPreferences(BaseModel):
         None, max_length=500, description="Custom instructions for the AI assistant"
     )
     # Removed timezone field - now only stored at user.timezone root level
-
-    @field_validator("country")
-    @classmethod
-    def validate_country(cls, v):
-        if v is not None and v != "":
-            # Ensure country code is uppercase and valid format
-            v = v.upper().strip()
-            if len(v) != 2 or not v.isalpha():
-                raise ValueError(
-                    "Country must be a valid ISO 3166-1 alpha-2 code (e.g., US, GB, DE)"
-                )
-            return v
-        # Return None for empty strings to normalize the data
-        return None if v == "" else v
 
     @field_validator("profession")
     @classmethod
