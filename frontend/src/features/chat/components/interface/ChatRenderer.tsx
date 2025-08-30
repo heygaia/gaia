@@ -3,10 +3,10 @@ import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import SearchedImageDialog from "@/features/chat/components/bubbles/bot/SearchedImageDialog";
 import ChatBubbleUser from "@/features/chat/components/bubbles/user/ChatBubbleUser";
-import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import GeneratedImageSheet from "@/features/chat/components/image/GeneratedImageSheet";
 import MemoryModal from "@/features/chat/components/memory/MemoryModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
