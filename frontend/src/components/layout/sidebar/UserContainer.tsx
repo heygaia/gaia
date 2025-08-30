@@ -1,6 +1,6 @@
 import Image from "next/image";
 
-import SettingsMenu from "@/components/layout/sidebar/settings/SettingsMenu";
+import SettingsMenu from "@/features/settings/components/SettingsMenu";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 

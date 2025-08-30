@@ -9,7 +9,6 @@ export interface UserInfo {
     completed: boolean;
     completed_at?: string;
     preferences?: {
-      country?: string;
       profession?: string;
       response_style?: string;
       custom_instructions?: string;
@@ -84,7 +83,6 @@ export const authApi = {
 
   // Update user preferences (renamed for clarity)
   updateOnboardingPreferences: async (preferences: {
-    country?: string;
     profession?: string;
     response_style?: string;
     custom_instructions?: string | null;

@@ -1,7 +1,7 @@
 "use client";
 
 import { AiBrain01Icon } from "@/components/shared/icons";
-import { SettingsCard } from "@/components/shared/SettingsCard";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
 import MemoryManagement from "@/features/memory/components/MemoryManagement";
 
 export default function MemorySettings() {

@@ -17,7 +17,7 @@ import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
 import { Button as ShadcnButton } from "@/components/";
-import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
+import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useConfirmation } from "@/hooks/useConfirmation";
@@ -26,8 +26,8 @@ import {
   NotificationAction,
   NotificationRecord,
   NotificationStatus,
-} from "../../types/features/notificationTypes";
-import { NotificationIcon } from "../shared";
+} from "../../../types/features/notificationTypes";
+import { NotificationIcon } from "../../../components/shared";
 
 interface NotificationCenterProps {
   className?: string;

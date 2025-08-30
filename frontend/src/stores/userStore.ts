@@ -6,7 +6,6 @@ export interface OnboardingData {
   completed: boolean;
   completed_at?: string;
   preferences?: {
-    country?: string;
     profession?: string;
     response_style?: string;
     custom_instructions?: string;

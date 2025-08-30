@@ -16,7 +16,7 @@ import { toast } from "sonner";
 
 import { mailApi as EmailsAPI } from "@/features/mail/api/mailApi";
 
-import { NotificationsAPI } from "../../services/api/notifications";
+import { NotificationsAPI } from "../../../services/api/notifications";
 
 interface EmailPreviewModalProps {
   isOpen: boolean;

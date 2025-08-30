@@ -9,7 +9,7 @@ import {
 } from "@/types/features/notificationTypes";
 import { groupNotificationsByTimezone } from "@/utils";
 
-import { NotificationIcon } from "../shared/icons";
+import { NotificationIcon } from "../../../components/shared/icons";
 import { EnhancedNotificationCard } from "./EnhancedNotificationCard";
 
 interface NotificationListProps {

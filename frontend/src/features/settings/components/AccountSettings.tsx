@@ -6,10 +6,10 @@ import { Camera, Edit3, LogOut, User } from "lucide-react";
 import React, { useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { LabeledField } from "@/components/shared/FormField";
-import { SettingsCard } from "@/components/shared/SettingsCard";
-import { SettingsCardSimple } from "@/components/shared/SettingsCardSimple";
-import { SettingsOption } from "@/components/shared/SettingsOption";
+import { LabeledField } from "@/features/settings/components/FormField";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
+import { SettingsCardSimple } from "@/features/settings/components/SettingsCardSimple";
+import { SettingsOption } from "@/features/settings/components/SettingsOption";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 
@@ -69,8 +69,6 @@ export default function AccountSection({
         email: response.email,
         profilePicture: response.picture,
       });
-
-    
     } catch (error) {
       console.error("Profile picture update error:", error);
     } finally {

@@ -12,7 +12,7 @@ import {
 } from "lucide-react";
 import { useState } from "react";
 
-import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
+import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { useNotificationActions } from "@/hooks/useNotificationActions";
 import {
   ActionType,
@@ -22,7 +22,7 @@ import {
 } from "@/types/features/notificationTypes";
 import { getNotificationIcon } from "@/utils/notifications";
 
-import { Button } from "../ui";
+import { Button } from "../../../components/ui";
 
 interface EnhancedNotificationCardProps {
   notification: NotificationRecord;

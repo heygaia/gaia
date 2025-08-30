@@ -5,7 +5,7 @@ import { ChevronDown, Undo } from "lucide-react";
 import { Notification } from "@/types/notifications";
 import { getNotificationIcon } from "@/utils/notifications";
 
-import { Button, Card } from "../ui";
+import { Button, Card } from "../../../components/ui";
 
 interface NotificationCardProps {
   notification: Notification;

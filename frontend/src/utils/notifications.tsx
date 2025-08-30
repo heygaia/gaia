@@ -59,17 +59,3 @@ export const getActionColor = (label: string) => {
       return "bg-blue-600";
   }
 };
-
-export const groupNotificationsByTime = (notifications: Notification[]) => {
-  return notifications.reduce(
-    (groups, notification) => {
-      const group = notification.timeGroup;
-      if (!groups[group]) {
-        groups[group] = [];
-      }
-      groups[group].push(notification);
-      return groups;
-    },
-    {} as Record<string, Notification[]>,
-  );
-};

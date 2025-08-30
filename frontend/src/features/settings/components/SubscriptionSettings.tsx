@@ -8,7 +8,7 @@ import { CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { CreditCardIcon } from "@/components";
-import { SettingsCard } from "@/components/shared/SettingsCard";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import {
   convertToUSDCents,

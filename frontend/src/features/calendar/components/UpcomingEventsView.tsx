@@ -2,7 +2,7 @@ import React, { useMemo } from "react";
 
 import { GoogleCalendarIcon } from "@/components";
 import { getEventColor } from "@/features/calendar/utils/eventColors";
-import BaseCardView from "@/features/shared/components/BaseCardView";
+import BaseCardView from "@/features/chat/components/interface/BaseCardView";
 import { CalendarItem } from "@/types/api/calendarApiTypes";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 

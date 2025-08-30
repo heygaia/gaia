@@ -11,18 +11,17 @@ import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
-import { CountrySelector } from "@/components/country-selector";
-import { CustomResponseStyleInput } from "@/components/shared/CustomResponseStyleInput";
-import { LabeledField } from "@/components/shared/FormField";
+import { CustomResponseStyleInput } from "@/features/settings/components/CustomResponseStyleInput";
+import { LabeledField } from "@/features/settings/components/FormField";
 import {
   MessageMultiple02Icon,
   PencilEdit01Icon,
   UserIcon,
 } from "@/components/shared/icons";
-import { SettingsCard } from "@/components/shared/SettingsCard";
-import { SettingsCardSimple } from "@/components/shared/SettingsCardSimple";
-import { SettingsOption } from "@/components/shared/SettingsOption";
-import { StatusIndicator } from "@/components/shared/StatusIndicator";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
+import { SettingsCardSimple } from "@/features/settings/components/SettingsCardSimple";
+import { SettingsOption } from "@/features/settings/components/SettingsOption";
+import { StatusIndicator } from "@/features/settings/components/StatusIndicator";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 import {
@@ -78,7 +77,6 @@ export default function PreferencesSettings({
   }));
 
   const [preferences, setPreferences] = useState({
-    country: user.onboarding?.preferences?.country || "",
     profession: user.onboarding?.preferences?.profession || "",
     response_style: user.onboarding?.preferences?.response_style || "",
     custom_instructions:
@@ -92,7 +90,6 @@ export default function PreferencesSettings({
   // Update preferences when user data changes
   useEffect(() => {
     const newPreferences = {
-      country: user.onboarding?.preferences?.country || "",
       profession: user.onboarding?.preferences?.profession || "",
       response_style: user.onboarding?.preferences?.response_style || "",
       custom_instructions:
@@ -201,21 +198,6 @@ export default function PreferencesSettings({
     };
   }, []);
 
-  const handleCountryChange = (countryCode: string | null) => {
-    if (countryCode) {
-      // Ensure country code is uppercase
-      const normalizedCode = countryCode.toUpperCase();
-      const updatedPreferences = { ...preferences, country: normalizedCode };
-      setPreferences(updatedPreferences);
-      debouncedUpdate(updatedPreferences);
-    } else {
-      // Handle case when country is deselected
-      const updatedPreferences = { ...preferences, country: "" };
-      setPreferences(updatedPreferences);
-      debouncedUpdate(updatedPreferences);
-    }
-  };
-
   const handleProfessionChange = (keys: SharedSelection) => {
     if (keys !== "all" && keys.size > 0) {
       const profession = Array.from(keys)[0] as string;
@@ -297,25 +279,6 @@ export default function PreferencesSettings({
         title="Personal"
       >
         <div className="space-y-3">
-          <LabeledField label="Country">
-            <CountrySelector
-              selectedKey={preferences.country}
-              onSelectionChange={handleCountryChange}
-              placeholder="Select your country"
-              label=""
-              isDisabled={isUpdating}
-              variant="flat"
-              radius="md"
-              classNames={{
-                base: "w-full",
-                popoverContent: "bg-zinc-800 border-zinc-700",
-                listboxWrapper: "bg-zinc-800",
-                selectorButton:
-                  "bg-zinc-800/50 hover:bg-zinc-700/50 border-zinc-700 data-[hover=true]:bg-zinc-700/50 min-h-[36px]",
-              }}
-            />
-          </LabeledField>
-
           <LabeledField label="Profession">
             <Select
               placeholder="Select your profession"
