@@ -46,6 +46,7 @@ export default function CommunityWorkflowCard({
           type: "manual" as const,
           enabled: true,
         },
+        generate_immediately: true,
       };
 
       const result = await createWorkflow(workflowRequest);

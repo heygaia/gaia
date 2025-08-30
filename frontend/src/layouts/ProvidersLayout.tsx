@@ -5,6 +5,7 @@ import { ReactNode, Suspense } from "react";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import { Toaster } from "@/components/ui/shadcn/sonner";
 import LoginModal from "@/features/auth/components/LoginModal";
+import { WorkflowSelectionProvider } from "@/features/chat/contexts/WorkflowSelectionContext";
 import GlobalAuth from "@/hooks/providers/GlobalAuth";
 import GlobalComposer from "@/hooks/providers/GlobalComposer";
 import GlobalInterceptor from "@/hooks/providers/GlobalInterceptor";
@@ -19,20 +20,22 @@ export default function ProvidersLayout({ children }: { children: ReactNode }) {
       <HeroUIProvider>
         <QueryProvider>
           <ReduxProviders>
-            <GlobalComposer>
-              <GlobalInterceptor />
-              <GlobalNotifications />
-              <GlobalAuth />
-              <LoginModal />
+            <WorkflowSelectionProvider>
+              <GlobalComposer>
+                <GlobalInterceptor />
+                <GlobalNotifications />
+                <GlobalAuth />
+                <LoginModal />
 
-              <Toaster
-                closeButton
-                richColors
-                position="top-right"
-                theme="dark"
-              />
-              {children}
-            </GlobalComposer>
+                <Toaster
+                  closeButton
+                  richColors
+                  position="top-right"
+                  theme="dark"
+                />
+                {children}
+              </GlobalComposer>
+            </WorkflowSelectionProvider>
           </ReduxProviders>
         </QueryProvider>
       </HeroUIProvider>
