@@ -1,12 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import {
-  Dropdown,
-  DropdownItem,
-  DropdownMenu,
-  DropdownTrigger,
-} from "@heroui/dropdown";
+import { Popover, PopoverContent, PopoverTrigger } from "@heroui/popover";
 import { Select, SelectItem } from "@heroui/select";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import React, { useState } from "react";
@@ -46,89 +41,87 @@ export const CalendarHeader: React.FC<CalendarHeaderProps> = ({
       <h1 className="text-2xl font-semibold text-white">Calendar</h1>
 
       <div className="relative">
-        <Dropdown
+        <Popover
           isOpen={showMonthYearPicker}
           onOpenChange={setShowMonthYearPicker}
         >
-          <DropdownTrigger>
+          <PopoverTrigger>
             <Button
               variant="flat"
               className="bg-zinc-800 text-lg font-medium text-zinc-300 hover:bg-zinc-700"
             >
               {monthYear}
             </Button>
-          </DropdownTrigger>
-          <DropdownMenu className="min-w-[280px] p-0">
-            <DropdownItem key="picker" className="p-0">
-              <div className="p-4">
-                <h3 className="mb-3 text-sm font-medium text-zinc-300">
-                  Select Month & Year
-                </h3>
+          </PopoverTrigger>
+          <PopoverContent className="min-w-[280px] p-0">
+            <div className="p-4">
+              <h3 className="mb-3 text-sm font-medium text-zinc-300">
+                Select Month & Year
+              </h3>
 
-                {/* Year selector */}
-                <div className="mb-3">
-                  <Select
-                    label="Year"
-                    selectedKeys={[selectedDate.getFullYear().toString()]}
-                    onSelectionChange={(keys) => {
-                      const year = parseInt(Array.from(keys)[0] as string);
-                      handleMonthYearChange(selectedDate.getMonth(), year);
-                    }}
-                    className="mb-3"
-                    classNames={{
-                      trigger: "bg-zinc-900 border-zinc-600",
-                      value: "text-zinc-300",
-                      label: "text-zinc-400",
-                    }}
-                  >
-                    {Array.from({ length: 11 }, (_, i) => {
-                      const year = new Date().getFullYear() - 5 + i;
-                      return (
-                        <SelectItem key={year.toString()}>
-                          {year.toString()}
-                        </SelectItem>
-                      );
-                    })}
-                  </Select>
-                </div>
+              {/* Year selector */}
+              <div className="mb-3">
+                <Select
+                  label="Year"
+                  selectedKeys={[selectedDate.getFullYear().toString()]}
+                  onSelectionChange={(keys) => {
+                    const year = parseInt(Array.from(keys)[0] as string);
+                    handleMonthYearChange(selectedDate.getMonth(), year);
+                  }}
+                  className="mb-3"
+                  classNames={{
+                    trigger: "bg-zinc-900 border-zinc-600",
+                    value: "text-zinc-300",
+                    label: "text-zinc-400",
+                  }}
+                >
+                  {Array.from({ length: 11 }, (_, i) => {
+                    const year = new Date().getFullYear() - 5 + i;
+                    return (
+                      <SelectItem key={year.toString()}>
+                        {year.toString()}
+                      </SelectItem>
+                    );
+                  })}
+                </Select>
+              </div>
 
-                {/* Month grid */}
-                <div>
-                  <label className="mb-2 block text-xs text-zinc-400">
-                    Month
-                  </label>
-                  <div className="grid grid-cols-3 gap-2">
-                    {Array.from({ length: 12 }, (_, i) => {
-                      const monthName = new Date(2025, i, 1).toLocaleDateString(
-                        "en-US",
-                        { month: "short" },
-                      );
-                      const isCurrentMonth = i === selectedDate.getMonth();
-                      return (
-                        <Button
-                          key={i}
-                          size="sm"
-                          variant={isCurrentMonth ? "solid" : "flat"}
-                          color={isCurrentMonth ? "primary" : "default"}
-                          className={`${
-                            isCurrentMonth
-                              ? ""
-                              : "bg-zinc-900 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
-                          }`}
-                          onPress={() =>
-                            handleMonthYearChange(i, selectedDate.getFullYear())
-                          }
-                        >
-                          {monthName}
-                        </Button>
-                      );
-                    })}
-                  </div>
+              {/* Month grid */}
+              <div>
+                <label className="mb-2 block text-xs text-zinc-400">
+                  Month
+                </label>
+                <div className="grid grid-cols-3 gap-2">
+                  {Array.from({ length: 12 }, (_, i) => {
+                    const monthName = new Date(2025, i, 1).toLocaleDateString(
+                      "en-US",
+                      { month: "short" },
+                    );
+                    const isCurrentMonth = i === selectedDate.getMonth();
+                    return (
+                      <Button
+                        key={i}
+                        size="sm"
+                        variant={isCurrentMonth ? "solid" : "flat"}
+                        color={isCurrentMonth ? "primary" : "default"}
+                        className={`${
+                          isCurrentMonth
+                            ? ""
+                            : "bg-zinc-900 text-zinc-400 hover:bg-zinc-700 hover:text-zinc-300"
+                        }`}
+                        onPress={() =>
+                          handleMonthYearChange(i, selectedDate.getFullYear())
+                        }
+                      >
+                        {monthName}
+                      </Button>
+                    );
+                  })}
                 </div>
               </div>
-            </DropdownItem>
-          </DropdownMenu>
-        </Dropdown>
+            </div>
+          </PopoverContent>
+        </Popover>
       </div>
 
       <div className="flex items-center gap-3">

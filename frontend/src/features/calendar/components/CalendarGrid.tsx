@@ -137,17 +137,23 @@ export const CalendarGrid = forwardRef<HTMLDivElement, CalendarGridProps>(
                   return (
                     <div
                       key={`event-${eventIndex}`}
-                      className="absolute cursor-pointer rounded-lg border text-white shadow-lg transition-all duration-200 hover:opacity-80"
+                      className="absolute ml-0.5 flex cursor-pointer overflow-hidden rounded-lg text-white backdrop-blur-3xl transition-all duration-200 hover:opacity-80"
                       style={{
                         top: `${eventPos.top}px`,
                         height: `${eventPos.height}px`,
                         left: `${eventPos.left}%`,
                         width: `${eventPos.width - 1}%`,
-                        backgroundColor: eventColor,
-                        borderColor: eventColor,
+                        // backgroundColor: eventColor,
+                        backgroundColor: `${eventColor}40`,
                       }}
                       onClick={() => onEventClick?.(eventPos.event)}
                     >
+                      <div
+                        className="relative left-0 h-full max-w-1 min-w-1 rounded-full"
+                        style={{
+                          backgroundColor: eventColor,
+                        }}
+                      />
                       <div className="p-3">
                         <div className="line-clamp-2 text-sm leading-tight font-medium">
                           {eventPos.event.summary}

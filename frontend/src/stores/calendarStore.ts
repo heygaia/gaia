@@ -80,9 +80,21 @@ export const useCalendarStore = create<CalendarStore>()(
 
         setEvents: (events, reset = false) =>
           set(
-            (state) => ({
-              events: reset ? events : [...state.events, ...events],
-            }),
+            (state) => {
+              if (reset) {
+                return { events };
+              }
+
+              // Deduplicate events by ID when appending
+              const existingEventIds = new Set(state.events.map((e) => e.id));
+              const newUniqueEvents = events.filter(
+                (e) => e.id && !existingEventIds.has(e.id),
+              );
+
+              return {
+                events: [...state.events, ...newUniqueEvents],
+              };
+            },
             false,
             "setEvents",
           ),
