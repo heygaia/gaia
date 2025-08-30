@@ -15,8 +15,7 @@ import { useRouter } from "next/navigation";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/shadcn/button";
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
-import { formatToolName } from "@/features/chat/utils/chatUtils";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import {
   TodoAction,
   TodoItem,
@@ -69,9 +68,7 @@ export default function TodoSection({
 }: TodoSectionProps) {
   const router = useRouter();
   const [expandedTodos, setExpandedTodos] = useState<Set<string>>(new Set());
-
-  // Use the composer context to append text to input
-  const { appendToInput } = useComposer();
+  const { selectWorkflow } = useWorkflowSelection();
 
   const toggleTodoExpansion = (todoId: string) => {
     const newExpanded = new Set(expandedTodos);
@@ -85,20 +82,30 @@ export default function TodoSection({
   const handleRunWorkflow = (todo: TodoItem) => {
     if (!todo.workflow) return;
 
-    const workflowMessage = `I want to execute a workflow for my todo: "${todo.title}".
+    try {
+      // Convert the todo workflow to the expected format
+      const workflowData = {
+        id: todo.workflow.id,
+        title: `${todo.title} Workflow`,
+        description: `Execute workflow for todo: ${todo.title}`,
+        steps: todo.workflow.steps.map((step) => ({
+          id: step.id,
+          title: step.title,
+          description: step.description,
+          tool_name: step.tool_name,
+          tool_category: step.tool_category,
+        })),
+      };
 
-Here's the workflow plan:
-${todo.workflow.steps
-  .map(
-    (step, index) =>
-      `${index + 1}. ${step.title} (${formatToolName(step.tool_name)}): ${step.description}`,
-  )
-  .join("\n")}
+      // Use selectWorkflow to store and navigate to chat with auto-send
+      selectWorkflow(workflowData, { autoSend: true });
 
-Please execute these steps in order and use the appropriate tools for each step.`;
-
-    appendToInput(workflowMessage);
-    router.push("/c");
+      console.log(
+        "Todo workflow selected for manual execution in chat with auto-send",
+      );
+    } catch (error) {
+      console.error("Failed to select workflow for execution:", error);
+    }
   };
 
   const formatDueDate = (date: string) => {

@@ -5,7 +5,7 @@ import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { AiBrain01Icon } from "@/components/shared/icons";
-import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
+import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import {
   type Memory,
   memoryApi,

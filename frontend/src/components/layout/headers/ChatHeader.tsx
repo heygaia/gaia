@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ChatOptionsDropdown from "@/components/layout/sidebar/ChatOptionsDropdown";
-import { NotificationCenter } from "@/components/Notifications/NotificationCenter";
+import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 import {
   BubbleConversationChatIcon,
   ChatBubbleAddIcon,

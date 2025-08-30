@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
 import { useHeader } from "@/hooks/layout/useHeader";
-import { HeaderComponentType } from "@/redux/slices/headerSlice";
+import { HeaderComponentType } from "@/stores/uiStore";
 
 import BrowserHeader from "./BrowserHeader";
 import ChatHeader from "./ChatHeader";
