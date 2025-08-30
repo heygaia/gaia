@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from functools import lru_cache
 from typing import Optional
 from urllib.parse import urlencode
@@ -551,6 +551,61 @@ async def update_user_preferences(
     except Exception as e:
         logger.error(f"Error updating preferences: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to update preferences")
+
+
+@router.patch("/timezone", response_model=dict)
+async def update_user_timezone(
+    user_timezone: str = Form(
+        ...,
+        description="User's timezone (e.g., 'America/New_York', 'Asia/Kolkata')",
+        alias="timezone",
+    ),
+    user: dict = Depends(get_current_user),
+):
+    """
+    Update user's timezone setting.
+    This updates the root-level timezone field for the user.
+    """
+    try:
+        # Validate timezone
+        import pytz
+
+        try:
+            pytz.timezone(user_timezone.strip())
+        except pytz.UnknownTimeZoneError:
+            if user_timezone.strip().upper() != "UTC":
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid timezone: {user_timezone}. Use standard timezone identifiers like 'America/New_York', 'UTC', 'Asia/Kolkata'",
+                )
+
+        # Update timezone at root level directly
+        from bson import ObjectId
+        from app.db.mongodb.collections import users_collection
+
+        result = await users_collection.update_one(
+            {"_id": ObjectId(user["user_id"])},
+            {
+                "$set": {
+                    "timezone": user_timezone.strip(),
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            },
+        )
+
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        return {
+            "success": True,
+            "message": "Timezone updated successfully",
+            "timezone": user_timezone.strip(),
+        }
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        logger.error(f"Error updating timezone: {str(e)}", exc_info=True)
+        raise HTTPException(status_code=500, detail="Failed to update timezone")
 
 
 @router.patch("/name", response_model=UserUpdateResponse)

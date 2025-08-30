@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
+import { TodoProvider } from "@/features/todo/context/TodoContext";
 import { NotificationProvider } from "@/hooks/providers/NotificationContext";
 import { useIsMobile } from "@/hooks/ui/useMobile";
 import SidebarLayout from "@/layouts/SidebarLayout";
@@ -57,24 +58,18 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   // Auto-close sidebar on mobile when pathname changes
   useEffect(() => {
-    if (isMobile && isMobileOpen) {
-      dispatch(setMobileSidebarOpen(false));
-    }
+    if (isMobile && isMobileOpen) dispatch(setMobileSidebarOpen(false));
   }, [pathname, isMobile, isMobileOpen, dispatch]);
 
   // Set default open state based on screen size
   useEffect(() => {
-    if (isMobile) {
-      setDefaultOpen(false);
-    } else {
-      setDefaultOpen(true);
-    }
+    if (isMobile) setDefaultOpen(false);
+    else setDefaultOpen(true);
   }, [isMobile]);
 
   function closeOnTouch(): void {
-    if (isMobile && (isMobileOpen || isOpen)) {
+    if (isMobile && (isMobileOpen || isOpen))
       dispatch(setMobileSidebarOpen(false));
-    }
   }
 
   function handleOpenChange(open: boolean): void {
@@ -96,13 +91,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
       if (tap || !isMobile) return;
 
       if (last && Math.abs(mx) > Math.abs(my)) {
-        if (mx > 0) {
+        if (mx > 0)
           // Swipe right to open
           dispatch(setMobileSidebarOpen(true));
-        } else if (mx < 0) {
+        else if (mx < 0)
           // Swipe left to close
           dispatch(setMobileSidebarOpen(false));
-        }
       }
     },
     {
@@ -118,34 +112,36 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   return (
     <TooltipProvider>
       <NotificationProvider>
-        <SidebarProvider
-          open={currentOpen}
-          onOpenChange={handleOpenChange}
-          defaultOpen={defaultOpen}
-        >
-          <div
-            className="flex min-h-screen w-full dark"
-            style={{ touchAction: "pan-y" }}
-            ref={dragRef}
+        <TodoProvider>
+          <SidebarProvider
+            open={currentOpen}
+            onOpenChange={handleOpenChange}
+            defaultOpen={defaultOpen}
           >
-            <SidebarLayout>
-              <Sidebar />
-            </SidebarLayout>
+            <div
+              className="flex min-h-screen w-full dark"
+              style={{ touchAction: "pan-y" }}
+              ref={dragRef}
+            >
+              <SidebarLayout>
+                <Sidebar />
+              </SidebarLayout>
 
-            <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
-              <header
-                className="flex flex-shrink-0 items-start justify-between px-4 pt-3"
-                onClick={closeOnTouch}
-              >
-                {!currentOpen && <HeaderSidebarTrigger />}
-                <HeaderManager />
-              </header>
-              <main className="flex flex-1 flex-col overflow-hidden">
-                {children}
-              </main>
-            </SidebarInset>
-          </div>
-        </SidebarProvider>
+              <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
+                <header
+                  className="flex flex-shrink-0 items-start justify-between px-4 pt-3"
+                  onClick={closeOnTouch}
+                >
+                  {!currentOpen && <HeaderSidebarTrigger />}
+                  <HeaderManager />
+                </header>
+                <main className="flex flex-1 flex-col overflow-hidden">
+                  {children}
+                </main>
+              </SidebarInset>
+            </div>
+          </SidebarProvider>
+        </TodoProvider>
       </NotificationProvider>
     </TooltipProvider>
   );

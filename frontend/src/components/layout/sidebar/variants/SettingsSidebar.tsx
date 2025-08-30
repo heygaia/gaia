@@ -44,7 +44,7 @@ export default function SettingsSidebar() {
       href: "/settings?section=usage",
     },
     {
-      label: "Chat",
+      label: "Preferences",
       icon: MessageMultiple02Icon,
       href: "/settings?section=preferences",
     },
@@ -61,7 +61,7 @@ export default function SettingsSidebar() {
   ];
 
   return (
-    <div className="flex h-full max-w-[280px] flex-col">
+    <div className="flex h-full max-w-[280px] flex-col border-t-1 border-zinc-800 pt-3">
       <nav className="flex-1 space-y-1">
         {settingsMenuItems.map((item) => {
           const isActive = currentSection === item.href.split("section=")[1];

@@ -31,6 +31,7 @@ from app.db.mongodb.collections import (
     todos_collection,
     usage_snapshots_collection,
     users_collection,
+    workflows_collection,
 )
 
 
@@ -62,6 +63,7 @@ async def create_all_indexes():
             create_blog_indexes(),
             create_notification_indexes(),
             create_reminder_indexes(),
+            create_workflow_indexes(),
             create_payment_indexes(),
             create_usage_indexes(),
         ]
@@ -82,6 +84,7 @@ async def create_all_indexes():
             "blog",
             "notifications",
             "reminders",
+            "workflows",
             "payments",
             "usage",
         ]
@@ -418,6 +421,77 @@ async def create_reminder_indexes():
         raise
 
 
+async def create_workflow_indexes():
+    """Create indexes for workflows collection for optimal query performance."""
+    try:
+        # Create all workflow indexes concurrently
+        await asyncio.gather(
+            # Primary compound index for user workflows with sorting (most critical)
+            workflows_collection.create_index([("user_id", 1), ("created_at", -1)]),
+            # For activation status queries
+            workflows_collection.create_index([("user_id", 1), ("activated", 1)]),
+            # For workflow listing with status and sorting
+            workflows_collection.create_index(
+                [("user_id", 1), ("activated", 1), ("created_at", -1)]
+            ),
+            # For execution history and monitoring queries
+            workflows_collection.create_index(
+                [("user_id", 1), ("last_executed_at", 1)]
+            ),
+            # For scheduled workflow queries (critical for scheduler)
+            workflows_collection.create_index(
+                [
+                    ("activated", 1),
+                    ("trigger_config.type", 1),
+                    ("trigger_config.enabled", 1),
+                ]
+            ),
+            # Compound index for scheduled workflows with next run time
+            workflows_collection.create_index(
+                [
+                    ("activated", 1),
+                    ("trigger_config.type", 1),
+                    ("trigger_config.enabled", 1),
+                    ("trigger_config.next_run", 1),
+                ]
+            ),
+            # For workflow execution status queries
+            workflows_collection.create_index(
+                [("user_id", 1), ("total_executions", 1)]
+            ),
+            workflows_collection.create_index(
+                [("user_id", 1), ("successful_executions", 1)]
+            ),
+            # For workflow search and filtering by title
+            workflows_collection.create_index([("user_id", 1), ("title", 1)]),
+            # For performance monitoring queries
+            workflows_collection.create_index([("user_id", 1), ("updated_at", -1)]),
+            # Text search index for workflow content
+            workflows_collection.create_index(
+                [("title", "text"), ("description", "text"), ("goal", "text")]
+            ),
+            # For source-based queries (where workflows were created from)
+            workflows_collection.create_index([("user_id", 1), ("source", 1)]),
+            # Sparse index for workflow steps (only workflows with steps)
+            workflows_collection.create_index("steps", sparse=True),
+            # Community workflows indexes
+            workflows_collection.create_index([("is_public", 1), ("upvotes", -1)]),
+            workflows_collection.create_index([("is_public", 1), ("created_at", -1)]),
+            workflows_collection.create_index([("created_by", 1)]),
+            workflows_collection.create_index([("upvoted_by", 1)]),
+            # Compound index for public workflows sorted by upvotes
+            workflows_collection.create_index(
+                [("is_public", 1), ("upvotes", -1), ("created_at", -1)]
+            ),
+        )
+
+        logger.info("Created workflow indexes")
+
+    except Exception as e:
+        logger.error(f"Error creating workflow indexes: {str(e)}")
+        raise
+
+
 async def create_payment_indexes():
     """Create indexes for payment-related collections."""
     try:
@@ -515,6 +589,7 @@ async def get_index_status() -> Dict[str, List[str]]:
             "blog": blog_collection,
             "notifications": notifications_collection,
             "reminders": reminders_collection,
+            "workflows": workflows_collection,
         }
 
         # Get all collection indexes concurrently

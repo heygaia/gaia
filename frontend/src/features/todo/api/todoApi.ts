@@ -397,9 +397,11 @@ export const todoApi = {
     }
   },
 
-  // Generate workflow for a todo
-  generateWorkflow: async (todoId: string): Promise<Todo> => {
-    return apiService.post<Todo>(
+  // Generate workflow for a todo (now creates standalone workflow)
+  generateWorkflow: async (
+    todoId: string,
+  ): Promise<{ workflow: Workflow; message: string }> => {
+    return apiService.post<{ workflow: Workflow; message: string }>(
       `/todos/${todoId}/workflow`,
       {},
       {
@@ -409,7 +411,7 @@ export const todoApi = {
     );
   },
 
-  // Check workflow generation status
+  // Get workflow for a todo (from standalone workflows collection)
   getWorkflowStatus: async (
     todoId: string,
   ): Promise<{

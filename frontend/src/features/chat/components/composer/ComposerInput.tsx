@@ -41,7 +41,7 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
       currentHeight,
       onHeightChange,
       inputRef,
-      hasMessages,
+      hasMessages: _hasMessages,
       onSlashCommandSelect,
     },
     ref,

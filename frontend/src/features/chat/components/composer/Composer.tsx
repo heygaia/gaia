@@ -1,6 +1,5 @@
-import { ChevronRight } from "lucide-react";
+import { ArrowRight01Icon } from "@/components/shared/icons";
 import Image from "next/image";
-import { useParams } from "next/navigation";
 import React, {
   useEffect,
   useImperativeHandle,
@@ -16,12 +15,14 @@ import FilePreview, {
 import FileUpload from "@/features/chat/components/files/FileUpload";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import { FileData, SearchMode } from "@/types/shared";
 
 import ComposerInput, { ComposerInputRef } from "./ComposerInput";
 import ComposerToolbar from "./ComposerToolbar";
 import SelectedToolIndicator from "./SelectedToolIndicator";
+import SelectedWorkflowIndicator from "./SelectedWorkflowIndicator";
 
 interface MainSearchbarProps {
   scrollToBottom: () => void;
@@ -45,7 +46,6 @@ const Composer: React.FC<MainSearchbarProps> = ({
   onDroppedFilesProcessed,
   hasMessages,
 }) => {
-  const { id: convoIdParam } = useParams<{ id: string }>();
   const [currentHeight, setCurrentHeight] = useState<number>(24);
   const composerInputRef = useRef<ComposerInputRef>(null);
   const [searchbarText, setSearchbarText] = useState<string>("");
@@ -65,6 +65,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
   const sendMessage = useSendMessage();
   const { isLoading, setIsLoading } = useLoading();
   const { integrations, isLoading: integrationsLoading } = useIntegrations();
+  const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
   const currentMode = useMemo(
     () => Array.from(selectedMode)[0],
     [selectedMode],
@@ -82,6 +83,48 @@ const Composer: React.FC<MainSearchbarProps> = ({
   useEffect(() => {
     localStorage.setItem("gaia-searchbar-text", searchbarText);
   }, [searchbarText]);
+
+  // When workflow is selected, handle auto-send with a brief delay to allow UI to update
+  useEffect(() => {
+    if (selectedWorkflow) {
+      const shouldAutoSend = localStorage.getItem("workflowAutoSend");
+
+      if (shouldAutoSend === "true") {
+        // Clean up the flag immediately
+        localStorage.removeItem("workflowAutoSend");
+
+        // Add a small delay to allow SelectedWorkflowIndicator to render briefly
+        const autoSendTimeout = setTimeout(() => {
+          // Set loading state like normal chat messages do
+          setIsLoading(true);
+
+          // Send the message to chat
+          sendMessage("Run this workflow", [], null, null, selectedWorkflow);
+
+          // Clear composer state like normal messages do for consistency
+          clearSelectedWorkflow();
+
+          // Focus input after auto-send
+          if (inputRef.current) {
+            inputRef.current.focus();
+          }
+
+          // Scroll to show the new message
+          scrollToBottom();
+        }, 100); // Brief 100ms delay to allow UI to update
+
+        // Cleanup function to clear timeout if component unmounts
+        return () => clearTimeout(autoSendTimeout);
+      }
+    }
+  }, [
+    selectedWorkflow,
+    sendMessage,
+    scrollToBottom,
+    setIsLoading,
+    clearSelectedWorkflow,
+    inputRef,
+  ]);
 
   // Expose file upload functions to parent component via ref
   useImperativeHandle(
@@ -119,8 +162,13 @@ const Composer: React.FC<MainSearchbarProps> = ({
 
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
-    // Only prevent submission if there's no text AND no files AND no selected tool
-    if (!searchbarText && uploadedFiles.length === 0 && !selectedTool) {
+    // Only prevent submission if there's no text AND no files AND no selected tool AND no selected workflow
+    if (
+      !searchbarText &&
+      uploadedFiles.length === 0 &&
+      !selectedTool &&
+      !selectedWorkflow
+    ) {
       return;
     }
     setIsLoading(true);
@@ -130,6 +178,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
       uploadedFileData,
       selectedTool, // Pass the selected tool name
       selectedToolCategory, // Pass the selected tool category
+      selectedWorkflow, // Pass the selected workflow
     );
 
     // Clear input immediately when message is sent
@@ -143,6 +192,9 @@ const Composer: React.FC<MainSearchbarProps> = ({
     // Clear selected tool after sending
     setSelectedTool(null);
     setSelectedToolCategory(null);
+
+    // Clear selected workflow after sending
+    clearSelectedWorkflow();
 
     if (inputRef) inputRef.current?.focus();
     scrollToBottom();
@@ -167,6 +219,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
     // Clear selected tool when mode changes
     setSelectedTool(null);
     setSelectedToolCategory(null);
+    // Clear selected workflow when mode changes
+    clearSelectedWorkflow();
     // If the user selects upload_file mode, open the file selector immediately
     if (mode === "upload_file")
       setTimeout(() => {
@@ -179,6 +233,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
     setSelectedToolCategory(toolCategory);
     // Clear the current mode when a tool is selected via slash command
     setSelectedMode(new Set([null]));
+    // Clear selected workflow when tool is selected
+    clearSelectedWorkflow();
   };
 
   const handleRemoveSelectedTool = () => {
@@ -329,7 +385,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
                 </div>
               ))}
 
-              <ChevronRight width={18} height={18} className="ml-3" />
+              <ArrowRight01Icon width={18} height={18} className="ml-3" />
             </div>
           </div>
         </Button>
@@ -340,6 +396,10 @@ const Composer: React.FC<MainSearchbarProps> = ({
           toolName={selectedTool}
           toolCategory={selectedToolCategory}
           onRemove={handleRemoveSelectedTool}
+        />
+        <SelectedWorkflowIndicator
+          workflow={selectedWorkflow}
+          onRemove={clearSelectedWorkflow}
         />
         <ComposerInput
           ref={composerInputRef}

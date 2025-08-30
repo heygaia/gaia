@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Annotated, Any, Optional, Union
+from typing import Annotated, Any, Optional
 
 from app.config.loggers import reminders_logger as logger
 from app.decorators import with_doc, with_rate_limiting
@@ -16,26 +16,11 @@ from app.docstrings.langchain.tools.reminder_tool_docs import (
 )
 from app.models.reminder_models import (
     AgentType,
-    AIAgentReminderPayload,
     CreateReminderToolRequest,
     ReminderStatus,
     StaticReminderPayload,
 )
-from app.services.reminder_service import (
-    cancel_reminder as svc_delete_reminder,
-)
-from app.services.reminder_service import (
-    create_reminder as svc_create_reminder,
-)
-from app.services.reminder_service import (
-    get_reminder as svc_get_reminder,
-)
-from app.services.reminder_service import (
-    list_user_reminders as svc_list_user_reminders,
-)
-from app.services.reminder_service import (
-    update_reminder as svc_update_reminder,
-)
+from app.services.reminder_service import reminder_scheduler
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool
 
@@ -56,11 +41,11 @@ def _apply_timezone_offset(dt: datetime, offset_str: str) -> datetime:
 async def create_reminder_tool(
     config: RunnableConfig,
     payload: Annotated[
-        Union[AIAgentReminderPayload, StaticReminderPayload],
-        "Additional data for the reminder task",
+        StaticReminderPayload,
+        "Static reminder data with title and body",
     ],
     agent: Annotated[
-        AgentType, "The agent type creating the reminder"
+        AgentType, "The agent type creating the reminder (static only)"
     ] = AgentType.STATIC,
     repeat: Annotated[Optional[str], "Cron expression for recurring reminders"] = None,
     scheduled_at: Annotated[
@@ -111,7 +96,7 @@ async def create_reminder_tool(
         request_model = tool_request.to_create_reminder_request()
 
         # Create the reminder
-        await svc_create_reminder(request_model, user_id=user_id)
+        await reminder_scheduler.create_reminder(request_model, user_id=user_id)
 
         return "Reminder created successfully"
 
@@ -139,7 +124,7 @@ async def list_user_reminders_tool(
         if not user_id:
             return {"error": "User ID is required to list reminders"}
 
-        reminders = await svc_list_user_reminders(
+        reminders = await reminder_scheduler.list_user_reminders(
             user_id=user_id, status=status, limit=100, skip=0
         )
         return [r.model_dump() for r in reminders]
@@ -162,7 +147,7 @@ async def get_reminder_tool(
         if not user_id:
             return {"error": "User ID is required to get reminder"}
 
-        reminder = await svc_get_reminder(reminder_id, user_id)
+        reminder = await reminder_scheduler.get_reminder(reminder_id, user_id)
         if reminder:
             return reminder.model_dump()
         else:
@@ -187,7 +172,7 @@ async def delete_reminder_tool(
             logger.error("Missing user_id in config")
             return {"error": "User ID is required to delete reminder"}
 
-        success = await svc_delete_reminder(reminder_id, user_id)
+        success = await reminder_scheduler.cancel_task(reminder_id, user_id)
         if success:
             return {"status": "cancelled"}
         else:
@@ -257,7 +242,9 @@ async def update_reminder_tool(
         if payload is not None:
             update_data["payload"] = payload
 
-        success = await svc_update_reminder(reminder_id, update_data, user_id)
+        success = await reminder_scheduler.update_reminder(
+            reminder_id, update_data, user_id
+        )
         if success:
             return {"status": "updated"}
         else:
@@ -283,7 +270,9 @@ async def search_reminders_tool(
             logger.error("Missing user_id in config")
             return {"error": "User ID is required to search reminders"}
 
-        reminders = await svc_list_user_reminders(user_id=user_id, limit=100, skip=0)
+        reminders = await reminder_scheduler.list_user_reminders(
+            user_id=user_id, limit=100, skip=0
+        )
 
         results = []
         for r in reminders:

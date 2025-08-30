@@ -1,7 +1,6 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import List
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.core.graph_manager import GraphManager
@@ -9,22 +8,14 @@ from app.langchain.core.messages import construct_langchain_messages
 from app.langchain.prompts.proactive_agent_prompt import (
     PROACTIVE_MAIL_AGENT_MESSAGE_PROMPT,
     PROACTIVE_MAIL_AGENT_SYSTEM_PROMPT,
-    PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT,
-    PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
 )
 from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
 from app.langchain.tools.core.categories import get_tool_category
 from app.models.message_models import MessageRequestWithHistory
-from app.models.reminder_models import ReminderProcessingAgentResult
 from app.utils.memory_utils import store_user_message_memory
 from langchain_core.messages import (
-    AIMessage,
     AIMessageChunk,
-    AnyMessage,
-    HumanMessage,
-    SystemMessage,
 )
-from langchain_core.output_parsers import PydanticOutputParser
 from langsmith import traceable
 
 
@@ -62,6 +53,7 @@ async def call_agent(
                 query=request.message,
                 user_name=user.get("name"),
                 selected_tool=request.selectedTool,
+                selected_workflow=request.selectedWorkflow,
             ),
             GraphManager.get_graph(),
         )
@@ -76,6 +68,7 @@ async def call_agent(
             "mem0_user_id": user_id,
             "conversation_id": conversation_id,
             "selected_tool": request.selectedTool,
+            "selected_workflow": request.selectedWorkflow,
         }
 
         # Begin streaming the AI output
@@ -142,6 +135,113 @@ async def call_agent(
         }
         yield f"data: {json.dumps(error_dict)}\n\n"
         yield "data: [DONE]\n\n"
+
+
+@traceable
+async def call_agent_silent(
+    request: MessageRequestWithHistory,
+    conversation_id,
+    user,
+    user_time: datetime,
+    access_token=None,
+    refresh_token=None,
+) -> tuple[str, dict]:
+    """
+    Execute agent in silent mode for background processing.
+    Returns (complete_message, tool_data) without streaming.
+
+    This reuses the same graph execution logic as call_agent() but captures
+    tool data without yielding stream chunks.
+    """
+    from app.services.chat_service import extract_tool_data
+
+    user_id = user.get("user_id")
+    messages = request.messages
+    complete_message = ""
+    tool_data = {}
+
+    async def store_memory():
+        """Store memory in background."""
+        try:
+            if user_id and request.message:
+                await store_user_message_memory(
+                    user_id, request.message, conversation_id
+                )
+        except Exception as e:
+            logger.error(f"Error in background memory storage: {e}")
+
+    try:
+        # Setup operations that can run in parallel
+        history = await construct_langchain_messages(
+            messages=messages,
+            files_data=request.fileData,
+            currently_uploaded_file_ids=request.fileIds,
+            user_id=user_id,
+            query=request.message,
+            user_name=user.get("name"),
+            selected_tool=request.selectedTool,
+            selected_workflow=request.selectedWorkflow,
+        )
+
+        # Use the default graph (same as normal chat)
+        graph = await GraphManager.get_graph()
+
+        # Start memory storage in background
+        asyncio.create_task(store_memory())
+
+        initial_state = {
+            "query": request.message,
+            "messages": history,
+            "current_datetime": datetime.now(timezone.utc).isoformat(),
+            "mem0_user_id": user_id,
+            "conversation_id": conversation_id,
+            "selected_tool": request.selectedTool,
+            "selected_workflow": request.selectedWorkflow,
+        }
+
+        # Execute graph and capture tool data silently
+        async for event in graph.astream(
+            initial_state,
+            stream_mode=["messages", "custom"],
+            config={
+                "configurable": {
+                    "thread_id": conversation_id,
+                    "user_id": user_id,
+                    "access_token": access_token,
+                    "refresh_token": refresh_token,
+                    "email": user.get("email"),
+                    "user_time": user_time.isoformat(),
+                },
+                "recursion_limit": 25,
+                "metadata": {"user_id": user_id},
+            },
+        ):
+            stream_mode, payload = event
+
+            if stream_mode == "messages":
+                chunk, metadata = payload
+                if chunk is None:
+                    continue
+
+                if isinstance(chunk, AIMessageChunk):
+                    content = str(chunk.content)
+                    if content:
+                        complete_message += content
+
+            elif stream_mode == "custom":
+                # Extract tool data from custom stream events
+                try:
+                    new_data = extract_tool_data(json.dumps(payload))
+                    if new_data:
+                        tool_data.update(new_data)
+                except Exception as e:
+                    logger.error(f"Error extracting tool data in silent mode: {e}")
+
+        return complete_message, tool_data
+
+    except Exception as e:
+        logger.error(f"Error in call_agent_silent: {e}")
+        return f"❌ Error executing workflow: {str(e)}", {}
 
 
 @traceable
@@ -283,122 +383,3 @@ async def call_mail_processing_agent(
     except Exception as e:
         logger.error(f"Error in email processing for user {user_id}: {str(e)}")
         raise e
-
-
-@traceable
-async def call_reminder_agent(
-    instruction: str,
-    user_id: str,
-    reminder_id: str,
-    access_token: str | None = None,
-    refresh_token: str | None = None,
-    old_messages: List[AnyMessage] = [],
-) -> ReminderProcessingAgentResult:
-    """
-    Process reminder instruction with AI agent to process a reminder.
-
-    Args:
-        instruction: The reminder instruction to process
-        user_id: User ID for context
-        access_token: User's access token for API calls
-        refresh_token: User's refresh token
-
-    Returns:
-        None: This function is designed to run as a background task
-    """
-    logger.info(f"Starting reminder processing for user {user_id}")
-
-    messages = [
-        SystemMessage(
-            content=PROACTIVE_REMINDER_AGENT_SYSTEM_PROMPT,
-        ),
-        *old_messages,
-        HumanMessage(
-            content=PROACTIVE_REMINDER_AGENT_MESSAGE_PROMPT.format(
-                reminder_request=instruction,
-                format_instructions=reminder_agent_result_parser.get_format_instructions(),
-            )
-        ),
-    ]
-
-    logger.info(f"Processing reminder for user {user_id}")
-
-    initial_state = {
-        "messages": messages,
-        "current_datetime": datetime.now(timezone.utc).isoformat(),
-        "mem0_user_id": user_id,
-    }
-
-    try:
-        # Get the reminder processing graph
-        graph = await GraphManager.get_graph("reminder_processing")
-
-        if not graph:
-            logger.error(f"No graph found for reminder processing for user {user_id}")
-            raise ValueError(f"Graph not found for reminder processing: {user_id}")
-
-        logger.info(
-            f"Graph for reminder processing retrieved successfully for user {user_id}"
-        )
-
-        # Just invoke the graph directly - no streaming needed
-        result = await graph.ainvoke(
-            initial_state,
-            config={
-                "configurable": {
-                    "thread_id": f"reminder_{reminder_id}",
-                    "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                    "reminder_id": reminder_id,
-                    "initiator": "backend",
-                },
-                "recursion_limit": 20,  # Increased limit for complex reminder processing
-                "metadata": {
-                    "user_id": user_id,
-                    "processing_type": "reminder",
-                },
-            },
-        )
-
-        if not result:
-            logger.warning(
-                f"No result returned from reminder processing for user {user_id}"
-            )
-            raise ValueError(
-                f"No result returned from reminder processing for user {user_id}"
-            )
-
-        # Extract the AI response from the messages
-        ai_response = None
-        if "messages" in result:
-            last_message = result["messages"][-1]
-            if isinstance(last_message, AIMessage):
-                ai_response = last_message.content
-
-        if not ai_response:
-            logger.error(f"No AI response found in result for user {user_id}")
-            raise ValueError(f"No AI response found in result for user {user_id}")
-
-        logger.info(f"AI response content: {ai_response}")
-
-        # Parse the AI response using the parser
-        try:
-            parsed_result = reminder_agent_result_parser.parse(ai_response)  # type: ignore
-            logger.info(f"Successfully parsed reminder result: {parsed_result}")
-
-            return parsed_result
-        except Exception as parse_error:
-            logger.error(f"Failed to parse AI response with parser: {parse_error}")
-            raise ValueError(
-                f"Failed to parse AI response for reminder {reminder_id} for user {user_id}: {parse_error}"
-            )
-    except Exception as e:
-        logger.error(f"Error in reminder processing for user {user_id}: {str(e)}")
-        # Handle the error as needed, e.g., log it, notify the user, etc.
-        raise e
-
-
-reminder_agent_result_parser = PydanticOutputParser(
-    pydantic_object=ReminderProcessingAgentResult
-)

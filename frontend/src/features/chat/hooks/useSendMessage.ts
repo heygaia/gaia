@@ -7,6 +7,7 @@ import { useDispatch } from "react-redux";
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
 import { addMessage } from "@/redux/slices/conversationSlice";
 import { MessageType } from "@/types/features/convoTypes";
+import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
 
@@ -19,6 +20,7 @@ export const useSendMessage = () => {
     fileData: FileData[] = [],
     selectedTool: string | null = null,
     toolCategory: string | null = null,
+    selectedWorkflow: WorkflowData | null = null,
   ) => {
     const botMessageId = String(ObjectID());
     // const isWebSearch = currentMode === "web_search";
@@ -33,6 +35,7 @@ export const useSendMessage = () => {
       fileData,
       selectedTool, // Add selectedTool to the message
       toolCategory, // Add toolCategory to the message
+      selectedWorkflow, // Add selectedWorkflow to the message
     };
 
     dispatch(addMessage(userMessage));
@@ -44,6 +47,7 @@ export const useSendMessage = () => {
       fileData,
       selectedTool,
       toolCategory,
+      selectedWorkflow,
     );
   };
 };

@@ -72,7 +72,7 @@ const ChatDemo: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [typingText, setTypingText] = useState("");
   const [isAiTyping, setIsAiTyping] = useState(false);
   const [showCursor, setShowCursor] = useState(false);
-  const [animationComplete, setAnimationComplete] = useState(false);
+  const [_animationComplete, setAnimationComplete] = useState(false);
 
   const isMounted = useRef(true);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -211,11 +211,6 @@ const ChatDemo: React.FC<{ isActive: boolean }> = ({ isActive }) => {
 };
 
 // --- Roadmap Demo Component ---
-interface RoadmapStep {
-  title: string;
-  duration: string;
-}
-
 interface CustomNodeData {
   label: string;
   isActive: boolean;
@@ -475,7 +470,7 @@ const RoadmapDemo: React.FC<{ isActive: boolean }> = ({ isActive }) => {
 // --- Tracking Demo Component ---
 const TrackingDemo: React.FC<{ isActive: boolean }> = ({ isActive }) => {
   const [progress, setProgress] = useState(0);
-  const [animationComplete, setAnimationComplete] = useState(false);
+  const [_animationComplete, setAnimationComplete] = useState(false);
 
   const isMounted = useRef(true);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);

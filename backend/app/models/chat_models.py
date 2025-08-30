@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from app.models.calendar_models import EventCreateRequest
 from app.models.mail_models import EmailComposeRequest
-from app.models.message_models import FileData
+from app.models.message_models import FileData, SelectedWorkflowData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
@@ -103,6 +103,7 @@ class MessageModel(BaseModel):
     fileData: Optional[List[FileData]] = []
     selectedTool: Optional[str] = None
     toolCategory: Optional[str] = None
+    selectedWorkflow: Optional[SelectedWorkflowData] = None
     calendar_options: Optional[List[EventCreateRequest]] = None
     search_results: Optional[SearchResults] = None
     deep_research_results: Optional[DeepResearchResults] = None
@@ -126,6 +127,7 @@ class MessageModel(BaseModel):
 class SystemPurpose(str, Enum):
     EMAIL_PROCESSING = "email_processing"
     REMINDER_PROCESSING = "reminder_processing"
+    WORKFLOW_EXECUTION = "workflow_execution"
     OTHER = "other"
 
 

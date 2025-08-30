@@ -1,31 +1,38 @@
+from datetime import datetime, timedelta, timezone
 from typing import List, Optional
-from datetime import datetime, timezone, timedelta
 
-from fastapi import APIRouter, Depends, HTTPException, status, Query, Body
-
-from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.api.v1.dependencies.oauth_dependencies import (
+    get_current_user,
+    get_user_timezone_from_preferences,
+)
+from app.db.mongodb.collections import projects_collection, todos_collection
 from app.decorators import tiered_rate_limit
-from app.db.mongodb.collections import todos_collection, projects_collection
 from app.models.todo_models import (
-    TodoCreate,
-    TodoResponse,
-    UpdateTodoRequest,
-    ProjectCreate,
-    ProjectResponse,
-    UpdateProjectRequest,
-    TodoListResponse,
-    TodoSearchParams,
-    Priority,
-    SearchMode,
-    BulkUpdateRequest,
     BulkMoveRequest,
     BulkOperationResponse,
+    BulkUpdateRequest,
+    Priority,
+    ProjectCreate,
+    ProjectResponse,
+    SearchMode,
+    SubTask,
     SubtaskCreateRequest,
     SubtaskUpdateRequest,
-    SubTask,
-    WorkflowStatus,
+    TodoCreate,
+    TodoListResponse,
+    TodoResponse,
+    TodoSearchParams,
+    UpdateProjectRequest,
+    UpdateTodoRequest,
 )
-from app.services.todo_service import TodoService, ProjectService
+from app.models.workflow_models import (
+    CreateWorkflowRequest,
+    TriggerConfig,
+    TriggerType,
+)
+from app.services.todo_service import ProjectService, TodoService
+from app.services.workflow.service import WorkflowService
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
 router = APIRouter()
 
@@ -261,33 +268,43 @@ async def delete_todo(todo_id: str, user: dict = Depends(get_current_user)):
 
 
 # Workflow Generation Endpoint
-@router.post("/todos/{todo_id}/workflow", response_model=TodoResponse)
+@router.post("/todos/{todo_id}/workflow")
 @tiered_rate_limit("todo_operations")
-async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)):
-    """Generate a workflow plan for a specific todo and update the todo with it."""
+async def generate_workflow(
+    todo_id: str,
+    user: dict = Depends(get_current_user),
+    user_timezone: str = Depends(get_user_timezone_from_preferences),
+):
+    """Generate a standalone workflow for a specific todo with automatic timezone detection."""
     try:
         todo = await TodoService.get_todo(todo_id, user["user_id"])
 
-        # Set status to generating first
-        await TodoService.update_workflow_status(
-            todo_id, user["user_id"], WorkflowStatus.GENERATING
+        # Check if workflow already exists for this todo
+        if todo.workflow_id:
+            existing_workflow = await WorkflowService.get_workflow(
+                todo.workflow_id, user["user_id"]
+            )
+            if existing_workflow:
+                return {
+                    "workflow": existing_workflow,
+                    "message": "Workflow already exists for this todo",
+                }
+
+        # Create standalone workflow
+        workflow_request = CreateWorkflowRequest(
+            title=f"Todo: {todo.title}",
+            description=todo.description or f"Workflow for todo: {todo.title}",
+            trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+            generate_immediately=True,  # Generate steps immediately
         )
 
-        workflow_result = await TodoService._generate_workflow_for_todo(
-            todo.title, todo.description or ""
+        workflow = await WorkflowService.create_workflow(
+            workflow_request, user["user_id"], user_timezone=user_timezone
         )
 
-        if not workflow_result.get("success"):
-            # Mark as failed
-            await TodoService.update_workflow_status(
-                todo_id, user["user_id"], WorkflowStatus.FAILED
-            )
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=workflow_result.get("error", "Failed to generate workflow"),
-            )
+        # Update the todo with the workflow_id
+        from app.models.todo_models import UpdateTodoRequest
 
-        # Update the todo with the generated workflow
         update_request = UpdateTodoRequest(
             title=None,
             description=None,
@@ -298,14 +315,12 @@ async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)
             project_id=None,
             completed=None,
             subtasks=None,
-            workflow=workflow_result["workflow"],
-            workflow_status=WorkflowStatus.COMPLETED,
+            workflow_id=workflow.id,
         )
-        updated_todo = await TodoService.update_todo(
-            todo_id, update_request, user["user_id"]
-        )
+        await TodoService.update_todo(todo_id, update_request, user["user_id"])
 
-        return updated_todo
+        return {"workflow": workflow, "message": "Workflow generated successfully"}
+
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
     except HTTPException:
@@ -321,27 +336,28 @@ async def generate_workflow(todo_id: str, user: dict = Depends(get_current_user)
 # @tiered_rate_limit("todo_operations") # Commented out because it's a polling endpoint
 async def get_workflow_status(todo_id: str, user: dict = Depends(get_current_user)):
     """
-    Get the workflow generation status for a todo.
-    Returns whether the workflow has been generated or is still being processed.
+    Get the standalone workflow for a todo.
+    Returns the workflow if it exists, otherwise returns None.
     """
     try:
+        from app.services.workflow.service import WorkflowService
+
+        # Verify todo exists and get workflow_id
         todo = await TodoService.get_todo(todo_id, user["user_id"])
 
-        # Check if workflow exists
-        has_workflow = hasattr(todo, "workflow") and todo.workflow is not None
-
-        # Get workflow status - if not present, assume not started for old todos
-        workflow_status = getattr(todo, "workflow_status", WorkflowStatus.NOT_STARTED)
-
-        # Determine if currently generating (status is generating and no workflow yet)
-        is_generating = workflow_status == WorkflowStatus.GENERATING
+        # Get standalone workflow if workflow_id exists
+        workflow = None
+        if todo.workflow_id:
+            workflow = await WorkflowService.get_workflow(
+                todo.workflow_id, user["user_id"]
+            )
 
         return {
             "todo_id": todo_id,
-            "has_workflow": has_workflow,
-            "is_generating": is_generating,
-            "workflow_status": workflow_status,
-            "workflow": todo.workflow if has_workflow else None,
+            "has_workflow": workflow is not None,
+            "is_generating": False,  # Since we generate immediately now
+            "workflow_status": "completed" if workflow else "not_started",
+            "workflow": workflow,
         }
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
@@ -433,8 +449,7 @@ async def bulk_complete_todos(
             project_id=None,
             completed=True,
             subtasks=None,
-            workflow=None,
-            workflow_status=None,
+            workflow_id=None,
         ),
     )
     try:
@@ -562,8 +577,7 @@ async def create_subtask(
                 project_id=None,
                 completed=None,
                 subtasks=updated_subtasks,
-                workflow=None,
-                workflow_status=None,
+                workflow_id=None,
             ),
             user["user_id"],
         )
@@ -589,14 +603,12 @@ async def update_subtask(
         # Get the current todo
         current_todo = await TodoService.get_todo(todo_id, user["user_id"])
 
-        # Find and update the subtask
+        # Update the subtasks
         updated_subtasks = []
         subtask_found = False
-
         for subtask in current_todo.subtasks:
             if subtask.id == subtask_id:
                 subtask_found = True
-                # Update fields if provided
                 if updates.title is not None:
                     subtask.title = updates.title
                 if updates.completed is not None:
@@ -621,8 +633,7 @@ async def update_subtask(
                 project_id=None,
                 completed=None,
                 subtasks=updated_subtasks,
-                workflow=None,
-                workflow_status=None,
+                workflow_id=None,
             ),
             user["user_id"],
         )
@@ -666,8 +677,7 @@ async def delete_subtask(
                 project_id=None,
                 completed=None,
                 subtasks=updated_subtasks,
-                workflow=None,
-                workflow_status=None,
+                workflow_id=None,
             ),
             user["user_id"],
         )
@@ -720,8 +730,7 @@ async def toggle_subtask_completion(
                 project_id=None,
                 completed=None,
                 subtasks=updated_subtasks,
-                workflow=None,
-                workflow_status=None,
+                workflow_id=None,
             ),
             user["user_id"],
         )

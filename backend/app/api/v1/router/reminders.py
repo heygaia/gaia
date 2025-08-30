@@ -5,9 +5,6 @@ FastAPI endpoints for reminder management.
 from datetime import datetime
 from typing import List, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
-from fastapi import status as http_status
-
 from app.api.v1.dependencies.oauth_dependencies import (
     get_current_user,
     get_user_timezone,
@@ -20,14 +17,10 @@ from app.models.reminder_models import (
     ReminderStatus,
     UpdateReminderRequest,
 )
-from app.services.reminder_service import (
-    cancel_reminder,
-    create_reminder,
-    get_reminder,
-    list_user_reminders,
-    update_reminder,
-)
+from app.services.reminder_service import reminder_scheduler
 from app.utils.cron_utils import get_next_run_time, validate_cron_expression
+from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import status as http_status
 
 router = APIRouter(prefix="/reminders", tags=["reminders"])
 
@@ -65,12 +58,12 @@ async def create_reminder_endpoint(
         reminder_data.base_time = user_time
 
         # Create the reminder
-        reminder_id = await create_reminder(
+        reminder_id = await reminder_scheduler.create_reminder(
             reminder_data=reminder_data, user_id=user_id
         )
 
         # Retrieve and return created reminder
-        reminder = await get_reminder(reminder_id, user_id=user_id)
+        reminder = await reminder_scheduler.get_reminder(reminder_id, user_id=user_id)
         if not reminder:
             raise HTTPException(
                 status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -111,7 +104,7 @@ async def get_reminder_endpoint(
                 detail="User not authenticated",
             )
 
-        reminder = await get_reminder(reminder_id, user_id=user_id)
+        reminder = await reminder_scheduler.get_reminder(reminder_id, user_id=user_id)
 
         if not reminder:
             raise HTTPException(
@@ -160,7 +153,7 @@ async def update_reminder_endpoint(
         update_data = request.model_dump(exclude_none=True)
 
         # Update reminder
-        success = await update_reminder(
+        success = await reminder_scheduler.update_reminder(
             reminder_id, user_id=user_id, update_data=update_data
         )
 
@@ -171,7 +164,9 @@ async def update_reminder_endpoint(
             )
 
         # Get updated reminder
-        updated_reminder = await get_reminder(reminder_id, user_id=user_id)
+        updated_reminder = await reminder_scheduler.get_reminder(
+            reminder_id, user_id=user_id
+        )
         if not updated_reminder:
             raise HTTPException(
                 status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -209,7 +204,7 @@ async def cancel_reminder_endpoint(
                 detail="User not authenticated",
             )
 
-        success = await cancel_reminder(reminder_id, user_id=user_id)
+        success = await reminder_scheduler.cancel_task(reminder_id, user_id=user_id)
 
         if not success:
             raise HTTPException(
@@ -252,7 +247,7 @@ async def list_reminders_endpoint(
                 detail="User not authenticated",
             )
 
-        reminders = await list_user_reminders(
+        reminders = await reminder_scheduler.list_user_reminders(
             user_id=user_id,
             status=status,
             limit=limit,
@@ -294,7 +289,7 @@ async def pause_reminder_endpoint(
             )
 
         # Update status to paused
-        success = await update_reminder(
+        success = await reminder_scheduler.update_reminder(
             reminder_id, {"status": ReminderStatus.PAUSED}, user_id=user_id
         )
 
@@ -305,7 +300,9 @@ async def pause_reminder_endpoint(
             )
 
         # Get updated reminder
-        updated_reminder = await get_reminder(reminder_id, user_id=user_id)
+        updated_reminder = await reminder_scheduler.get_reminder(
+            reminder_id, user_id=user_id
+        )
         if not updated_reminder:
             raise HTTPException(
                 status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -347,7 +344,9 @@ async def resume_reminder_endpoint(
             )
 
         # Check if reminder exists and user owns it
-        existing_reminder = await get_reminder(reminder_id, user_id=user_id)
+        existing_reminder = await reminder_scheduler.get_reminder(
+            reminder_id, user_id=user_id
+        )
         if not existing_reminder:
             raise HTTPException(
                 status_code=http_status.HTTP_404_NOT_FOUND,
@@ -368,7 +367,9 @@ async def resume_reminder_endpoint(
             next_run = get_next_run_time(existing_reminder.repeat)
             update_data["scheduled_at"] = next_run
 
-        success = await update_reminder(reminder_id, update_data, user_id=user_id)
+        success = await reminder_scheduler.update_reminder(
+            reminder_id, update_data, user_id=user_id
+        )
 
         if not success:
             raise HTTPException(
@@ -377,7 +378,9 @@ async def resume_reminder_endpoint(
             )
 
         # Get updated reminder
-        updated_reminder = await get_reminder(reminder_id, user_id=user_id)
+        updated_reminder = await reminder_scheduler.get_reminder(
+            reminder_id, user_id=user_id
+        )
         if not updated_reminder:
             raise HTTPException(
                 status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,

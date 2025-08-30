@@ -39,8 +39,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
-          width={20}
-          height={20}
         />
       );
     case "calendar":
@@ -50,8 +48,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
-          width={18}
-          height={18}
         />
       );
     case "productivity":
@@ -76,8 +72,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png"
-          width={23}
-          height={23}
         />
       );
     case "development":
@@ -94,8 +88,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg"
-          width={22}
-          height={22}
         />
       );
     case "memory":
@@ -119,8 +111,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/1/1e/Weather_%28iOS%29.png"
-          width={25}
-          height={25}
         />
       );
     case "goal_tracking":
@@ -137,8 +127,6 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
-          width={25}
-          height={25}
         />
       );
     case "webpage":
@@ -148,7 +136,21 @@ export const getToolCategoryIcon = (
           className={iconProps.className || "text-purple-400"}
         />
       );
+    case "support":
+      return (
+        <Info
+          {...defaultProps}
+          className={iconProps.className || "text-blue-400"}
+        />
+      );
+    case "general":
+      return (
+        <Info
+          {...defaultProps}
+          className={iconProps.className || "text-gray-400"}
+        />
+      );
     default:
-      return <></>;
+      return null;
   }
 };

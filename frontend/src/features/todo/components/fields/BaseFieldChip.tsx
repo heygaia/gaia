@@ -1,14 +1,10 @@
 "use client";
 
+import { Button } from "@heroui/button";
+import { Popover, PopoverContent, PopoverTrigger } from "@heroui/react";
 import { ChevronDown } from "lucide-react";
 import { useState } from "react";
 
-import { Button } from "@/components/ui/shadcn/button";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/shadcn/dropdown-menu";
 import { cn } from "@/lib/utils";
 
 interface BaseFieldChipProps {
@@ -30,7 +26,7 @@ interface BaseFieldChipProps {
 }
 
 export default function BaseFieldChip({
-  label: _label,
+  label,
   value,
   placeholder,
   icon,
@@ -41,11 +37,6 @@ export default function BaseFieldChip({
   className,
 }: BaseFieldChipProps) {
   const [isOpen, setIsOpen] = useState(false);
-
-  const handleOpenChange = (open: boolean) => {
-    setIsOpen(open);
-    onOpenChange?.(open);
-  };
 
   const hasValue = value !== undefined && value !== null && value !== "";
 
@@ -71,11 +62,21 @@ export default function BaseFieldChip({
   };
 
   return (
-    <DropdownMenu open={isOpen} onOpenChange={handleOpenChange}>
-      <DropdownMenuTrigger asChild>
+    <Popover
+      isOpen={isOpen}
+      onOpenChange={(open) => {
+        setIsOpen(open);
+        onOpenChange?.(open);
+      }}
+      placement="bottom-start"
+      showArrow={true}
+      shouldCloseOnBlur={true}
+    >
+      <PopoverTrigger>
         <Button
-          variant="ghost"
+          variant="light"
           size="sm"
+          aria-label={`${label} selection. Current value: ${hasValue ? (typeof value === "string" ? value : "selected") : "none selected"}`}
           className={cn(
             "h-8 min-w-0 gap-1 border-0 px-3 font-normal ring-0 transition-all outline-none focus:ring-0 focus:outline-none",
             isOpen && "ring-0",
@@ -88,11 +89,7 @@ export default function BaseFieldChip({
           {icon}
           <span className="max-w-[120px] truncate">
             {hasValue ? (
-              typeof value === "string" ? (
-                value
-              ) : (
-                value
-              )
+              value
             ) : (
               <span className="text-zinc-400">{placeholder}</span>
             )}
@@ -102,10 +99,10 @@ export default function BaseFieldChip({
             className={cn("transition-transform", isOpen && "rotate-180")}
           />
         </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent className="min-w-[200px] rounded-lg border-0 bg-zinc-900 shadow-xl backdrop-blur-none">
-        {children}
-      </DropdownMenuContent>
-    </DropdownMenu>
+      </PopoverTrigger>
+      <PopoverContent className="min-w-[200px] rounded-2xl border-zinc-700 bg-zinc-900 p-0 shadow-xl">
+        <div className="w-full">{children}</div>
+      </PopoverContent>
+    </Popover>
   );
 }

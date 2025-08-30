@@ -3,7 +3,8 @@ from typing import List, Optional
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.templates.agent_template import AGENT_PROMPT_TEMPLATE
-from app.models.message_models import FileData, MessageDict
+from app.langchain.prompts.workflow_prompts import WORKFLOW_EXECUTION_PROMPT
+from app.models.message_models import FileData, MessageDict, SelectedWorkflowData
 from app.services.memory_service import memory_service
 from app.services.onboarding_service import get_user_preferences_for_agent
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
@@ -17,6 +18,7 @@ async def construct_langchain_messages(
     user_name: Optional[str] = None,
     query: Optional[str] = None,
     selected_tool: Optional[str] = None,
+    selected_workflow: Optional[SelectedWorkflowData] = None,
 ) -> List[AnyMessage]:
     """
     Convert raw dict messages to LangChain message objects with current datetime.
@@ -29,6 +31,7 @@ async def construct_langchain_messages(
         user_id: Optional user ID for retrieving relevant memories
         query: Optional query string for memory search (usually the latest user message)
         selected_tool: Optional tool selected via slash commands
+        selected_workflow: Optional workflow selected for execution
 
     Returns:
         List of LangChain message objects (SystemMessage + HumanMessage only)
@@ -101,7 +104,33 @@ async def construct_langchain_messages(
             # No user content, just tool selection
             human_message_content = f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_display_name}' tool and wants you to execute it immediately. Use the {selected_tool} tool now. This is a direct tool execution request with no additional context needed. If you don't have tool context, use retrieve_tools to get tool information. Ignore older tools requests and focus on the current tool selection. You must use the {selected_tool} tool to process their request. If requested tool is not available then use `retrieve_tools` to get the relevant tool information."
 
-    # If no human message then return error
+    # Handle workflow execution
+    if selected_workflow:
+        # Format workflow steps for execution
+        workflow_steps = []
+        tool_names = []
+        for i, step in enumerate(selected_workflow.steps, 1):
+            step_text = f"{i}. **{step['title']}** (Tool: {step['tool_name']})\n   Description: {step['description']}"
+            workflow_steps.append(step_text)
+            tool_names.append(step["tool_name"])
+
+        workflow_steps_text = "\n".join(workflow_steps)
+        tool_names_text = ", ".join(tool_names)
+
+        # Create workflow execution prompt
+        workflow_execution_message = WORKFLOW_EXECUTION_PROMPT.format(
+            workflow_title=selected_workflow.title,
+            workflow_description=selected_workflow.description,
+            workflow_steps=workflow_steps_text,
+            tool_names=tool_names_text,
+            user_message=human_message_content
+            or f"Execute workflow: {selected_workflow.title}",
+        )
+
+        # Replace the human message with the workflow execution prompt
+        human_message_content = workflow_execution_message
+
+    # If no human message then return error (but workflow execution should always have content now)
     if not human_message_content:
         raise ValueError("No human message or selected tool")
 

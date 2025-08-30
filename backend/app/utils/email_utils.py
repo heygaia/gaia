@@ -290,6 +290,12 @@ async def send_inactive_user_email(
             last_active = user.get("last_active_at")
             last_email_sent = user.get("last_inactive_email_sent")
 
+            # Ensure datetimes are timezone-aware for comparison
+            if last_active and last_active.tzinfo is None:
+                last_active = last_active.replace(tzinfo=timezone.utc)
+            if last_email_sent and last_email_sent.tzinfo is None:
+                last_email_sent = last_email_sent.replace(tzinfo=timezone.utc)
+
             # Check if user is inactive long enough (7+ days)
             if not last_active or (now - last_active).days < 7:
                 return False
