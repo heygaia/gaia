@@ -3,7 +3,6 @@ import { formatDistanceToNow } from "date-fns";
 import { Play } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
-import { useDispatch } from "react-redux";
 
 import {
   Image02Icon,
@@ -11,7 +10,7 @@ import {
   NewsIcon,
   Video01Icon,
 } from "@/components/shared/icons";
-import { openImageDialog } from "@/redux/slices/imageDialogSlice";
+import { useImageDialog } from "@/stores/uiStore";
 import {
   ImageResult,
   NewsResult,
@@ -121,14 +120,14 @@ interface ImageResultsProps {
 }
 
 function ImageResults({ images }: ImageResultsProps) {
-  const dispatch = useDispatch();
+  const { openDialog } = useImageDialog();
 
   return (
     <div className="grid w-full max-w-(--breakpoint-sm) grid-cols-2 gap-4 pr-2 md:grid-cols-3 lg:grid-cols-4">
       {images.map((image, index) => (
         <div
           key={index}
-          onClick={() => dispatch(openImageDialog(image))}
+          onClick={() => openDialog(image)}
           className={`cursor-pointer overflow-hidden rounded-lg shadow-lg transition-all duration-300 hover:scale-[1.02] hover:opacity-50 ${
             index == 0 ? "col-span-2 row-span-2" : ""
           }`}

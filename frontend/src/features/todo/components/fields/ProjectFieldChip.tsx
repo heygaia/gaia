@@ -2,7 +2,6 @@
 
 import { Folder } from "lucide-react";
 
-import { DropdownMenuItem } from "@/components/ui/shadcn/dropdown-menu";
 import { Project } from "@/types/features/todoTypes";
 
 import BaseFieldChip from "./BaseFieldChip";
@@ -43,19 +42,21 @@ export default function ProjectFieldChip({
       variant={selectedProject ? "primary" : "default"}
       className={className}
     >
-      {projects.map((project) => (
-        <DropdownMenuItem
-          key={project.id}
-          onClick={() => onChange(project.id)}
-          className="cursor-pointer gap-2 border-0 text-zinc-300 outline-none hover:bg-zinc-800 focus:outline-none"
-        >
+      <div className="p-1">
+        {projects.map((project) => (
           <div
-            className="h-3 w-3 flex-shrink-0 rounded-full border-0"
-            style={{ backgroundColor: project.color || "#71717a" }}
-          />
-          <span className="truncate">{project.name}</span>
-        </DropdownMenuItem>
-      ))}
+            key={project.id}
+            onClick={() => onChange(project.id)}
+            className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-zinc-300 transition-colors hover:bg-zinc-800"
+          >
+            <div
+              className="h-3 w-3 flex-shrink-0 rounded-full border-0"
+              style={{ backgroundColor: project.color || "#71717a" }}
+            />
+            <span className="truncate">{project.name}</span>
+          </div>
+        ))}
+      </div>
     </BaseFieldChip>
   );
 }

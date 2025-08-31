@@ -107,7 +107,7 @@ export default function EmailThreadCard({
         >
           <ScrollShadow className="max-h-[50vh]">
             <div className="space-y-3">
-              {emailThreadData.messages.map((message, index) => {
+              {emailThreadData.messages.map((message) => {
                 const { name: senderName, email: senderEmail } = parseEmail(
                   message.from,
                 );

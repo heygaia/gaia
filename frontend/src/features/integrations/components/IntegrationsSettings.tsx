@@ -5,7 +5,7 @@ import { Plus, Puzzle } from "lucide-react";
 import Image from "next/image";
 import React from "react";
 
-import { SettingsCard } from "@/components/shared/SettingsCard";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
 
 import { useIntegrations } from "../hooks/useIntegrations";
 import { Integration } from "../types";

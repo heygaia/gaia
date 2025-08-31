@@ -4,8 +4,8 @@ import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
+import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { AiBrain01Icon } from "@/components/shared/icons";
-import { ConfirmationDialog } from "@/components/ui/ConfirmationDialog";
 import {
   type Memory,
   memoryApi,

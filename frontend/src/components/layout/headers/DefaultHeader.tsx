@@ -2,9 +2,9 @@
 
 import Link from "next/link";
 
-import { NotificationCenter } from "@/components/Notifications/NotificationCenter";
 import { ChatBubbleAddIcon } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
+import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 
 export default function DefaultHeader() {
   return (

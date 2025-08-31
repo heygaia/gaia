@@ -3,6 +3,7 @@ import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
+import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import SearchedImageDialog from "@/features/chat/components/bubbles/bot/SearchedImageDialog";
 import ChatBubbleUser from "@/features/chat/components/bubbles/user/ChatBubbleUser";
@@ -121,6 +122,8 @@ export default function ChatRenderer() {
       />
 
       <SearchedImageDialog />
+
+      <CreatedByGAIABanner show={conversation?.is_system_generated === true} />
 
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;

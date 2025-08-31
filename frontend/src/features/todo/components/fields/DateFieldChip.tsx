@@ -1,14 +1,8 @@
 "use client";
 
-import { DatePicker } from "@heroui/date-picker";
-import { parseDate } from "@internationalized/date";
+import { Input } from "@heroui/react";
 import { format, isToday, isTomorrow, isYesterday } from "date-fns";
 import { Calendar, X } from "lucide-react";
-
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/shadcn/dropdown-menu";
 
 import BaseFieldChip from "./BaseFieldChip";
 
@@ -16,13 +10,21 @@ interface DateFieldChipProps {
   value?: string; // ISO date string
   onChange: (date?: string, timezone?: string) => void;
   className?: string;
+  timezone?: string; // User's preferred timezone
 }
 
 export default function DateFieldChip({
   value,
   onChange,
   className,
+  timezone,
 }: DateFieldChipProps) {
+  // Use user's preferred timezone or fallback to browser timezone
+  // Handle empty string as "auto-detect"
+  const userTimezone =
+    timezone && timezone.trim() !== ""
+      ? timezone
+      : Intl.DateTimeFormat().resolvedOptions().timeZone;
   const formatDisplayDate = (dateString: string) => {
     const date = new Date(dateString);
 
@@ -35,31 +37,20 @@ export default function DateFieldChip({
 
   const displayValue = value ? formatDisplayDate(value) : undefined;
 
-  const handleDateChange = (date: unknown) => {
-    if (
-      date &&
-      typeof date === "object" &&
-      date !== null &&
-      "year" in date &&
-      "month" in date &&
-      "day" in date
-    ) {
-      const d = date as { year: number; month: number; day: number };
-      const jsDate = new Date(d.year, d.month - 1, d.day);
-      onChange(
-        jsDate.toISOString(),
-        Intl.DateTimeFormat().resolvedOptions().timeZone,
-      );
+  const handleDateInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const inputValue = e.target.value;
+    if (inputValue) {
+      const date = new Date(inputValue);
+      onChange(date.toISOString(), userTimezone);
+    } else {
+      onChange(undefined, undefined);
     }
   };
 
   const handleQuickDate = (days: number) => {
     const date = new Date();
     date.setDate(date.getDate() + days);
-    onChange(
-      date.toISOString(),
-      Intl.DateTimeFormat().resolvedOptions().timeZone,
-    );
+    onChange(date.toISOString(), userTimezone);
   };
 
   return (
@@ -71,74 +62,85 @@ export default function DateFieldChip({
       variant={value ? "success" : "default"}
       className={className}
     >
-      {/* Date picker section */}
-      <div className="border-0 bg-zinc-900 p-3">
-        <div className="">
-          <label className="mb-2 block text-xs font-medium text-zinc-400">
-            Select date
+      <div className="p-1">
+        <div className="border-0 bg-zinc-900 p-3">
+          <label
+            htmlFor="due-date-input"
+            className="mb-2 block text-sm text-zinc-300"
+          >
+            Select Date
           </label>
-          <DatePicker
-            value={
-              value ? (parseDate(value.split("T")[0]) as never) : undefined
-            }
-            onChange={handleDateChange}
-            granularity="day"
+          <Input
+            id="due-date-input"
+            type="date"
+            value={value ? value.split("T")[0] : ""}
+            onChange={handleDateInputChange}
             size="sm"
             variant="flat"
-            hideTimeZone
-            className="w-full border-0"
-            classNames={{
-              base: "border-0",
-              input: "border-0 bg-zinc-800 hover:bg-zinc-700 text-zinc-200",
-              popoverContent: "border-0 bg-zinc-900 shadow-xl",
-            }}
+            className="w-full"
+            aria-label="Select due date"
           />
         </div>
+
+        {/* Quick date options */}
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleQuickDate(0);
+          }}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-zinc-300 transition-colors hover:bg-zinc-800"
+        >
+          <Calendar size={14} />
+          Today
+        </div>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleQuickDate(1);
+          }}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-zinc-300 transition-colors hover:bg-zinc-800"
+        >
+          <Calendar size={14} />
+          Tomorrow
+        </div>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleQuickDate(3);
+          }}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-zinc-300 transition-colors hover:bg-zinc-800"
+        >
+          <Calendar size={14} />
+          In 3 days
+        </div>
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            handleQuickDate(7);
+          }}
+          className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-zinc-300 transition-colors hover:bg-zinc-800"
+        >
+          <Calendar size={14} />
+          Next week
+        </div>
+
+        {/* Clear date option */}
+        {value && (
+          <>
+            <div className="my-1 h-px bg-zinc-700" />
+            <div
+              onClick={(e) => {
+                e.stopPropagation();
+                onChange(undefined, undefined);
+              }}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-3 py-2 text-red-400 transition-colors hover:bg-zinc-800"
+            >
+              <X size={14} />
+              Clear date
+            </div>
+          </>
+        )}
       </div>
-
-      {/* Quick date options */}
-      <DropdownMenuItem
-        onClick={() => handleQuickDate(0)}
-        className="cursor-pointer gap-2 border-0 text-zinc-300 outline-none hover:bg-zinc-800 focus:outline-none"
-      >
-        <Calendar size={14} />
-        Today
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => handleQuickDate(1)}
-        className="cursor-pointer gap-2 border-0 text-zinc-300 outline-none hover:bg-zinc-800 focus:outline-none"
-      >
-        <Calendar size={14} />
-        Tomorrow
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => handleQuickDate(3)}
-        className="cursor-pointer gap-2 border-0 text-zinc-300 outline-none hover:bg-zinc-800 focus:outline-none"
-      >
-        <Calendar size={14} />
-        In 3 days
-      </DropdownMenuItem>
-      <DropdownMenuItem
-        onClick={() => handleQuickDate(7)}
-        className="cursor-pointer gap-2 border-0 text-zinc-300 outline-none hover:bg-zinc-800 focus:outline-none"
-      >
-        <Calendar size={14} />
-        Next week
-      </DropdownMenuItem>
-
-      {/* Clear date option */}
-      {value && (
-        <>
-          <DropdownMenuSeparator className="border-0 bg-zinc-700" />
-          <DropdownMenuItem
-            onClick={() => onChange(undefined, undefined)}
-            className="cursor-pointer gap-2 border-0 text-red-400 outline-none hover:bg-zinc-800 focus:outline-none"
-          >
-            <X size={14} />
-            Clear date
-          </DropdownMenuItem>
-        </>
-      )}
     </BaseFieldChip>
   );
 }

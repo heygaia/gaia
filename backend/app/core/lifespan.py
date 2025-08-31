@@ -44,15 +44,29 @@ async def lifespan(app: FastAPI):
 
         # Initialize reminder scheduler and scan for pending reminders
         try:
-            from app.services.reminder_service import initialize_scheduler
+            from app.services.reminder_service import reminder_scheduler
 
-            scheduler = await initialize_scheduler()
-            await scheduler.scan_and_schedule_pending_reminders()
+            await reminder_scheduler.initialize()
+            await reminder_scheduler.scan_and_schedule_pending_tasks()
             logger.info(
                 "Reminder scheduler initialized and pending reminders scheduled"
             )
         except Exception as e:
             logger.error(f"Failed to initialize reminder scheduler: {e}")
+
+        # Initialize workflow scheduler and scan for pending workflows
+        try:
+            from app.services.workflow.scheduler_service import (
+                workflow_scheduler_service,
+            )
+
+            await workflow_scheduler_service.initialize()
+            await workflow_scheduler_service.scheduler.scan_and_schedule_pending_tasks()
+            logger.info(
+                "Workflow scheduler initialized and pending workflows scheduled"
+            )
+        except Exception as e:
+            logger.error(f"Failed to initialize workflow scheduler: {e}")
 
         try:
             await publisher.connect()
@@ -83,12 +97,23 @@ async def lifespan(app: FastAPI):
 
         # Close reminder scheduler
         try:
-            from app.services.reminder_service import close_scheduler
+            from app.services.reminder_service import reminder_scheduler
 
-            await close_scheduler()
+            await reminder_scheduler.close()
             logger.info("Reminder scheduler closed")
         except Exception as e:
             logger.error(f"Error closing reminder scheduler: {e}")
+
+        # Close workflow scheduler
+        try:
+            from app.services.workflow.scheduler_service import (
+                workflow_scheduler_service,
+            )
+
+            await workflow_scheduler_service.close()
+            logger.info("Workflow scheduler closed")
+        except Exception as e:
+            logger.error(f"Error closing workflow scheduler: {e}")
 
         # Stop WebSocket consumer if running in main app
         try:

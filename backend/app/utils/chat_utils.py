@@ -6,7 +6,7 @@ from uuid_extensions import uuid7str
 
 from app.langchain.prompts.convo_prompts import CONVERSATION_DESCRIPTION_GENERATOR
 from app.langchain.core.state import State
-from app.models.message_models import MessageDict
+from app.models.message_models import MessageDict, SelectedWorkflowData
 from app.langchain.llm.chatbot import chatbot
 
 # from uuid_extensions import uuid7, uuid7str
@@ -18,7 +18,10 @@ from app.services.conversation_service import (
 
 @traceable(name="Create Conversation")
 async def create_conversation(
-    last_message: MessageDict | None, user: dict, selectedTool: Optional[str] | None
+    last_message: MessageDict | None,
+    user: dict,
+    selectedTool: Optional[str] | None,
+    selectedWorkflow: Optional[SelectedWorkflowData] | None = None,
 ) -> dict:
     uuid_value = uuid7str()
 
@@ -29,9 +32,16 @@ async def create_conversation(
         else "New conversation started"
     )
 
+    # Create context for description generation
+    workflow_context = ""
+    if selectedWorkflow:
+        workflow_context = f" - Workflow: {selectedWorkflow.title}"
+
     response = await do_prompt_no_stream(
         prompt=CONVERSATION_DESCRIPTION_GENERATOR.format(
-            user_message=user_message, selectedTool=selectedTool
+            user_message=user_message,
+            selectedTool=selectedTool,
+            workflow_context=workflow_context,
         ),
     )
 

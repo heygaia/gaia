@@ -4,13 +4,13 @@ import Link from "next/link";
 import { useParams } from "next/navigation";
 
 import ChatOptionsDropdown from "@/components/layout/sidebar/ChatOptionsDropdown";
-import { NotificationCenter } from "@/components/Notifications/NotificationCenter";
 import {
   BubbleConversationChatIcon,
   ChatBubbleAddIcon,
 } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
+import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 
 export default function ChatHeader() {
   const { conversations } = useConversationList();

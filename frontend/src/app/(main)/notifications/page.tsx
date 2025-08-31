@@ -5,9 +5,9 @@ import { Bell, BellRing } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
-import { EmailPreviewModal } from "@/components/Modals/EmailPreviewModal";
-import { NotificationsList } from "@/components/Notifications/NotificationsList";
 import { Button } from "@/components/ui";
+import { EmailPreviewModal } from "@/features/mail/components/EmailPreviewModal";
+import { NotificationsList } from "@/features/notification/components/NotificationsList";
 import { useAllNotifications } from "@/features/notification/hooks/useAllNotifications";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { NotificationsAPI } from "@/services/api/notifications";
