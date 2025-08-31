@@ -69,6 +69,15 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${getAllFontVariables()} dark`}>
+      <head>
+        <link
+          rel="preconnect"
+          href="https://status.heygaia.io"
+          crossOrigin="anonymous"
+        />
+        <link rel="dns-prefetch" href="https://uptime.betterstack.com" />
+        <link rel="dns-prefetch" href="https://us.i.posthog.com" />
+      </head>
       <body className={`dark ${defaultFont.className}`}>
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>

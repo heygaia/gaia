@@ -21,6 +21,7 @@ export default function CommunitySection() {
             color="#1DA1F2"
             className="rounded-xl text-black!"
             size={"icon"}
+            aria-label="Twitter Link Button"
           >
             <TwitterIcon width={20} height={20} />
           </RaisedButton>
@@ -30,6 +31,7 @@ export default function CommunitySection() {
             color="#25D366"
             className="rounded-xl text-black!"
             size={"icon"}
+            aria-label="WhatsApp Link Button"
           >
             <WhatsappIcon width={20} height={20} />
           </RaisedButton>
@@ -38,6 +40,7 @@ export default function CommunitySection() {
           <RaisedButton
             color="#5865f2"
             className="rounded-xl text-black!"
+            aria-label="Discord Link Button"
             size={"icon"}
           >
             <DiscordIcon width={20} height={20} />
@@ -47,6 +50,7 @@ export default function CommunitySection() {
           <RaisedButton
             className="rounded-xl text-black! before:rounded-xl hover:scale-110"
             color="#a6a6a6"
+            aria-label="GitHub Link Button"
             size={"icon"}
           >
             <Github width={20} height={20} />

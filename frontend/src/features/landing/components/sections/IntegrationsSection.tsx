@@ -19,7 +19,7 @@ const LargeHeader = ({
       {headingText}
     </h2>
 
-    <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-400 md:text-2xl">
+    <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-300 md:text-2xl">
       {subHeadingText}
     </p>
   </div>

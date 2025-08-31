@@ -164,6 +164,7 @@ const DummyComposer: React.FC = () => {
                   <ShadcnButton
                     size="icon"
                     className="group relative h-9 w-9 rounded-full border-none bg-zinc-700 p-0 hover:bg-zinc-600/90"
+                    aria-label="Add context or attach files"
                   >
                     <PlusSignIcon className="min-h-[23px] min-w-[23px] text-zinc-400!" />
                     <span
@@ -214,6 +215,7 @@ const DummyComposer: React.FC = () => {
                     "border-primary/50 bg-primary/20 text-primary"
                   }`}
                   onClick={handleSlashButtonClick}
+                  aria-label="Browse all tools"
                 >
                   <WrenchIcon
                     className="min-h-[20px] min-w-[20px]"
@@ -235,6 +237,7 @@ const DummyComposer: React.FC = () => {
               onClick={handleSend}
               disabled={!message.trim()}
               className="h-9 w-9 rounded-full bg-primary p-0 text-xl hover:bg-primary/90 disabled:opacity-50"
+              aria-label="Send message"
             >
               <ArrowUp width={40} height={40} className="min-h-5 min-w-5" />
             </ShadcnButton>
