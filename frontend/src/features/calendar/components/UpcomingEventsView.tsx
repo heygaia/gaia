@@ -12,6 +12,9 @@ interface UpcomingEventsViewProps {
   isLoading: boolean;
   error?: string | null;
   calendars: CalendarItem[];
+  // Connection state props
+  isConnected?: boolean;
+  onConnect?: (integrationId: string) => void;
 }
 
 const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
@@ -20,6 +23,8 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
   isLoading,
   error,
   calendars,
+  isConnected = true,
+  onConnect,
 }) => {
   // Filter and group upcoming events by day (next 7 days)
   const upcomingEventsByDay = useMemo(() => {
@@ -126,6 +131,10 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
       isEmpty={!hasEvents}
       emptyMessage="No upcoming events"
       errorMessage="Failed to load upcoming events"
+      isConnected={isConnected}
+      connectIntegrationId="google_calendar"
+      onConnect={onConnect}
+      connectButtonText="Connect Calendar"
     >
       <div className="space-y-6 p-4">
         {Object.entries(upcomingEventsByDay).map(

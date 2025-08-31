@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, UseQueryOptions } from "@tanstack/react-query";
 
 import { apiService } from "@/lib/api";
 import { GoogleCalendarEvent } from "@/types/features/calendarTypes";
@@ -11,7 +11,10 @@ interface CalendarEventsResponse {
 /**
  * React Query hook for fetching upcoming calendar events with 5-minute caching
  */
-export const useUpcomingEventsQuery = (maxResults: number = 10) => {
+export const useUpcomingEventsQuery = (
+  maxResults: number = 10,
+  options?: Partial<UseQueryOptions<GoogleCalendarEvent[], Error>>,
+) => {
   return useQuery({
     queryKey: ["upcoming-events", maxResults],
     queryFn: async (): Promise<GoogleCalendarEvent[]> => {
@@ -28,5 +31,6 @@ export const useUpcomingEventsQuery = (maxResults: number = 10) => {
     gcTime: 10 * 60 * 1000, // 10 minutes - cache persistence
     retry: 2,
     refetchOnWindowFocus: false, // Don't refetch on window focus for dashboard
+    ...options,
   });
 };

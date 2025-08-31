@@ -9,12 +9,17 @@ interface UnreadEmailsViewProps {
   emails?: EmailData[];
   isLoading: boolean;
   error?: Error | null;
+  // Connection state props
+  isConnected?: boolean;
+  onConnect?: (integrationId: string) => void;
 }
 
 const UnreadEmailsView: React.FC<UnreadEmailsViewProps> = ({
   emails,
   isLoading,
   error,
+  isConnected = true,
+  onConnect,
 }) => {
   // Convert EmailData to EmailFetchData format expected by EmailListCard
   const formattedEmails: EmailFetchData[] =
@@ -36,6 +41,10 @@ const UnreadEmailsView: React.FC<UnreadEmailsViewProps> = ({
       isEmpty={isEmpty}
       emptyMessage="No unread emails"
       errorMessage="Failed to load unread emails"
+      isConnected={isConnected}
+      connectIntegrationId="gmail"
+      onConnect={onConnect}
+      connectButtonText="Connect Gmail"
     >
       <EmailListCard
         emails={formattedEmails}

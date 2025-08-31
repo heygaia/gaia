@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, UseQueryOptions } from "@tanstack/react-query";
 
 import { apiService } from "@/lib/api";
 import { EmailData } from "@/types/features/mailTypes";
@@ -11,7 +11,10 @@ interface UnreadEmailsResponse {
 /**
  * React Query hook for fetching unread emails with 5-minute caching
  */
-export const useUnreadEmailsQuery = (maxResults: number = 10) => {
+export const useUnreadEmailsQuery = (
+  maxResults: number = 10,
+  options?: Partial<UseQueryOptions<EmailData[], Error>>,
+) => {
   return useQuery({
     queryKey: ["unread-emails", maxResults],
     queryFn: async (): Promise<EmailData[]> => {
@@ -28,5 +31,6 @@ export const useUnreadEmailsQuery = (maxResults: number = 10) => {
     gcTime: 10 * 60 * 1000, // 10 minutes - cache persistence
     retry: 2,
     refetchOnWindowFocus: false, // Don't refetch on window focus for dashboard
+    ...options,
   });
 };

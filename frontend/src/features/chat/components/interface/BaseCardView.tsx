@@ -1,3 +1,4 @@
+import { Button } from "@heroui/button";
 import { Skeleton } from "@heroui/react";
 import React from "react";
 
@@ -11,6 +12,11 @@ interface BaseCardViewProps {
   errorMessage?: string;
   children: React.ReactNode;
   className?: string;
+  // Connection state props
+  isConnected?: boolean;
+  connectIntegrationId?: string;
+  onConnect?: (integrationId: string) => void;
+  connectButtonText?: string;
 }
 
 const BaseCardView: React.FC<BaseCardViewProps> = ({
@@ -23,6 +29,11 @@ const BaseCardView: React.FC<BaseCardViewProps> = ({
   errorMessage = "Failed to load data",
   children,
   className = "",
+  // Connection state props
+  isConnected = true,
+  connectIntegrationId,
+  onConnect,
+  connectButtonText = "Connect",
 }) => {
   const containerClassName = `flex h-full min-h-[40vh] max-h-[40vh] w-full flex-col ${className} rounded-3xl`;
 
@@ -42,7 +53,24 @@ const BaseCardView: React.FC<BaseCardViewProps> = ({
           classNames={{ base: "h-full", content: "h-full" }}
         >
           <div className="h-full max-h-[40vh] min-h-[40vh] w-full overflow-y-auto rounded-2xl bg-[#141414]">
-            {error || isEmpty ? (
+            {!isConnected ? (
+              <div className="flex h-full flex-col items-center justify-center p-6">
+                <div className="mb-4 opacity-50">{icon}</div>
+                <p className="mb-4 text-center text-sm text-foreground/60">
+                  Connect your account to view {title.toLowerCase()}
+                </p>
+                {connectIntegrationId && onConnect && (
+                  <Button
+                    color="primary"
+                    variant="flat"
+                    size="sm"
+                    onPress={() => onConnect(connectIntegrationId)}
+                  >
+                    {connectButtonText}
+                  </Button>
+                )}
+              </div>
+            ) : error || isEmpty ? (
               <div className="flex h-full flex-col items-center justify-center">
                 <div className="mb-2 opacity-50">{icon}</div>
                 <p className="text-sm text-foreground/60">
