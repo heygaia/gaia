@@ -7,12 +7,12 @@ export default function Tired() {
   return (
     <div className="relative flex h-screen flex-col items-center justify-center gap-2 p-10">
       <div
-        className="absolute inset-0 z-0"
+        className="absolute inset-0 z-0 h-[90%]"
         style={{
           backgroundImage: `
           radial-gradient(circle at 50% 100%, rgba(0, 187, 255, 0.1) 0%, transparent 60%),
           radial-gradient(circle at 50% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 70%),
-          radial-gradient(circle at 50% 100%, rgba(0, 187, 255, 0.3) 0%, transparent 80%)
+          radial-gradient(circle at 50% 100%, rgba(0, 187, 255, 0.3) 0%, transparent 70%)
         `,
         }}
       />

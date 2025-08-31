@@ -81,7 +81,7 @@ export default function ChaoticWorkspaceSection() {
   return (
     <section
       ref={sectionRef}
-      className="relative flex min-h-screen items-center justify-center overflow-hidden bg-black"
+      className="relative flex min-h-screen items-center justify-center overflow-hidden"
     >
       {/* Central Text */}
       <div ref={textRef} className="relative z-10 text-center">

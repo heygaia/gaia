@@ -33,13 +33,13 @@ export default function LargeHeader({
         )}
       </div>
       <h2
-        className={`relative z-2 mt-4 mb-3 flex gap-4 text-4xl font-semibold sm:text-5xl ${centered ? "items-center justify-center" : "items-start justify-start"}`}
+        className={`relative z-2 my-2 flex gap-4 text-4xl font-semibold sm:text-6xl ${centered ? "items-center justify-center" : "items-start justify-start"}`}
       >
         {headingText}
       </h2>
       {!!subHeadingText && (
         <div
-          className={`max-w-(--breakpoint-md) text-lg text-foreground-400 ${centered ? "text-center" : ""}`}
+          className={`max-w-(--breakpoint-md) text-xl text-foreground-400 ${centered ? "text-center" : ""} font-light`}
         >
           {subHeadingText}
         </div>

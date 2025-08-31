@@ -7,9 +7,9 @@ import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
 
+import CommunitySection from "@/features/landing/components/sections/CommunitySection";
 import LandingLayout from "./(landing)/layout";
 
-// Lazy load components
 const Personalised = lazy(
   () => import("@/features/landing/components/sections/new/Personalised"),
 );
@@ -19,9 +19,6 @@ const Productivity = lazy(
 const Tired = lazy(
   () =>
     import("@/features/landing/components/sections/new/TiredBoringAssistants"),
-);
-const WorkflowAutomation = lazy(
-  () => import("@/features/landing/components/sections/new/WorkflowAutomation"),
 );
 const ToolsShowcaseSection = lazy(
   () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
@@ -82,14 +79,14 @@ export default function LandingPage() {
             <Suspense fallback={<SuspenseLoader />}>
               <Personalised />
             </Suspense>
-            {/* <Suspense fallback={<SuspenseLoader />}>
-              <WorkflowAutomation />
-            </Suspense> */}
+            <Suspense fallback={<SuspenseLoader />}>
+              <FAQAccordion />
+            </Suspense>
             <Suspense fallback={<SuspenseLoader />}>
               <OpenSource />
             </Suspense>
             <Suspense fallback={<SuspenseLoader />}>
-              <FAQAccordion />
+              <CommunitySection />
             </Suspense>
             <Suspense fallback={<SuspenseLoader />}>
               <FinalSection />

@@ -5,15 +5,12 @@ import { LinkButton } from "@/components/shared/LinkButton";
 import { appConfig, footerSections } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 
-import { Separator } from "../ui";
-
 export default function Footer() {
   const user = useUser();
   const isAuthenticated = user?.email;
 
   return (
-    <div className="relative z-[1] m-0! flex flex-col items-center gap-16 bg-gradient-to-b from-zinc-900 to-black p-5 sm:p-10 sm:pb-5">
-      <Separator className="w-full max-w-(--breakpoint-xl) bg-zinc-800" />
+    <div className="relative z-[1] m-0! flex flex-col items-center gap-16 bg-gradient-to-b from-zinc-900 to-black p-5 outline-1 outline-zinc-800 sm:p-10 sm:pt-20 sm:pb-5">
       <div className="flex h-fit w-screen items-center justify-center">
         <div className="grid w-full max-w-(--breakpoint-lg) grid-cols-2 gap-8 sm:grid-cols-5">
           <div className="flex h-full w-fit flex-col gap-1 text-foreground-600">
