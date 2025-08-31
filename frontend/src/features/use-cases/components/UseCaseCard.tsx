@@ -3,7 +3,6 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Plus } from "lucide-react";
-import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
