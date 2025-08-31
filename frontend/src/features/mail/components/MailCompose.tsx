@@ -304,7 +304,7 @@ export default function MailCompose({ open, onOpenChange }: MailComposeProps) {
                     src={"/branding/logo.webp"}
                     width={25}
                     height={25}
-                    className={`bobbing ml-2`}
+                    className={`ml-2`}
                   />
                 }
                 endContent={

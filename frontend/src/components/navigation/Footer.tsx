@@ -73,6 +73,7 @@ export default function Footer() {
         <iframe
           src="https://status.heygaia.io/badge?theme=dark"
           width="200"
+          title="GAIA API Status"
           height="40"
           scrolling="no"
           style={{ colorScheme: "normal" }}

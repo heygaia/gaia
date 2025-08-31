@@ -83,7 +83,7 @@ export default function HeroVideoDialog({
       <button
         type="button"
         aria-label="Play video"
-        className="group relative cursor-pointer border-0 bg-transparent p-0 block w-full aspect-video"
+        className="group relative block aspect-video w-full cursor-pointer border-0 bg-transparent p-0"
         onClick={() => setIsVideoOpen(true)}
       >
         <Image
@@ -93,7 +93,7 @@ export default function HeroVideoDialog({
           priority
           fetchPriority="high"
           sizes="(max-width: 768px) 100vw, (max-width: 1200px) 90vw, 1200px"
-          className="object-cover w-full h-full rounded-3xl shadow-lg outline-2 outline-zinc-600 transition-all duration-200 ease-out group-hover:brightness-[0.8]"
+          className="h-full w-full rounded-3xl object-cover shadow-lg outline-2 outline-zinc-600 transition-all duration-200 ease-out group-hover:brightness-[0.8]"
         />
         <div className="absolute inset-0 flex scale-[0.9] items-center justify-center rounded-3xl transition-all duration-200 ease-out group-hover:scale-100">
           <div className="flex size-28 items-center justify-center rounded-full bg-primary/10 backdrop-blur-md">
@@ -142,7 +142,7 @@ export default function HeroVideoDialog({
                   className="size-full rounded-2xl"
                   allowFullScreen
                   allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-                ></iframe>
+                />
               </div>
             </motion.div>
           </motion.div>

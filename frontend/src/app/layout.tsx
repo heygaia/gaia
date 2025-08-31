@@ -1,4 +1,4 @@
-import "./styles/globals.css";
+import "./styles/tailwind.css";
 
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
@@ -73,11 +73,6 @@ export default function RootLayout({
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>
         </main>
-        <Script
-          async
-          src="https://accounts.google.com/gsi/client"
-          strategy="lazyOnload"
-        />
 
         {/* JSON-LD Schema */}
         <Script id="json-ld" type="application/ld+json">
