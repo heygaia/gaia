@@ -13,9 +13,7 @@ export default function LandingLayout({ children }: { children: ReactNode }) {
       />
 
       <Navbar />
-
       {children}
-
       <Footer />
     </div>
   );

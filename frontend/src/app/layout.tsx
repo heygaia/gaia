@@ -6,8 +6,8 @@ import Script from "next/script";
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 
 import AnalyticsLayout from "@/layouts/AnalyticsLayout";
-import { defaultFont, getAllFontVariables } from "./fonts";
 import { Suspense } from "react";
+import { defaultFont, getAllFontVariables } from "./fonts";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://heygaia.io"),
