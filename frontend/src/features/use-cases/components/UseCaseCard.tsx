@@ -3,7 +3,7 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Plus } from "lucide-react";
-import { useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -59,7 +59,6 @@ export default function UseCaseCard({
   const appendToInput = useAppendToInput();
   const { selectWorkflow } = useWorkflowSelection();
   const { createWorkflow } = useWorkflowCreation();
-  const router = useRouter();
 
   const handleCreateWorkflow = async () => {
     setIsCreatingWorkflow(true);
@@ -90,13 +89,9 @@ export default function UseCaseCard({
       setIsCreatingWorkflow(false);
     }
   };
-  console.log(prompt);
 
   const handleInsertPrompt = () => {
-    if (prompt) {
-      appendToInput(prompt);
-      router.push("/c");
-    }
+    if (prompt) appendToInput(prompt);
   };
   return (
     <div className="group relative flex min-h-[280px] w-full flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300">

@@ -83,14 +83,19 @@ const initialState: ComposerState = {
 export const useComposerStore = create<ComposerStore>()(
   devtools(
     persist(
-      (set, get) => ({
+      (set) => ({
         ...initialState,
 
         // Text input actions
         appendToInput: (text) => {
           set({ pendingPrompt: text }, false, "appendToInput");
-          if (typeof window !== "undefined") {
-            window.location.href = "/c";
+          // Navigate to chat page if not already there
+          if (
+            typeof window !== "undefined" &&
+            window.location.pathname !== "/c"
+          ) {
+            // Use Next.js programmatic navigation
+            window.location.assign("/c");
           }
         },
 

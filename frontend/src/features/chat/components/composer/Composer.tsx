@@ -56,11 +56,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
 }) => {
   const [currentHeight, setCurrentHeight] = useState<number>(24);
   const composerInputRef = useRef<ComposerInputRef>(null);
-
-  // Use Zustand stores instead of local state
   const inputText = useInputText();
-  const { setInputText, appendToInputText, clearInputText } =
-    useComposerTextActions();
+  const { setInputText, clearInputText } = useComposerTextActions();
   const {
     selectedMode,
     selectedTool,
@@ -98,37 +95,27 @@ const Composer: React.FC<MainSearchbarProps> = ({
   // When workflow is selected, handle auto-send with a brief delay to allow UI to update
   useEffect(() => {
     if (!(selectedWorkflow && autoSend)) return;
-    // Clean up the flag immediately
     setAutoSend(false);
+    setIsLoading(true);
+    sendMessage("Run this workflow", [], null, null, selectedWorkflow);
+    clearSelectedWorkflow();
 
-    // Add a small delay to allow SelectedWorkflowIndicator to render briefly
-    const autoSendTimeout = setTimeout(() => {
-      // Set loading state like normal chat messages do
-      setIsLoading(true);
+    if (inputRef.current) inputRef.current.focus();
 
-      // Send the message to chat
-      sendMessage("Run this workflow", [], null, null, selectedWorkflow);
-
-      // Clear composer state like normal messages do for consistency
-      clearSelectedWorkflow();
-
-      // Focus input after auto-send
+    // Scroll to show the composer instead of bottom when workflow runs
+    setTimeout(() => {
       if (inputRef.current) {
-        inputRef.current.focus();
+        inputRef.current.scrollIntoView({
+          behavior: "smooth",
+          block: "center",
+        });
       }
-
-      // Scroll to show the new message
-      scrollToBottom();
-    }, 100); // Brief 100ms delay to allow UI to update
-
-    // Cleanup function to clear timeout if component unmounts
-    return () => clearTimeout(autoSendTimeout);
+    }, 200); // Small delay to allow message to render
   }, [
     selectedWorkflow,
     autoSend,
     setAutoSend,
     sendMessage,
-    scrollToBottom,
     setIsLoading,
     clearSelectedWorkflow,
     inputRef,
@@ -184,21 +171,14 @@ const Composer: React.FC<MainSearchbarProps> = ({
     sendMessage(
       inputText,
       uploadedFileData,
-      selectedTool, // Pass the selected tool name
-      selectedToolCategory, // Pass the selected tool category
-      selectedWorkflow, // Pass the selected workflow
+      selectedTool,
+      selectedToolCategory,
+      selectedWorkflow,
     );
 
-    // Clear input immediately when message is sent
     clearInputText();
-
-    // Clear uploaded files after sending
     clearAllFiles();
-
-    // Clear selected tool after sending
     clearToolSelection();
-
-    // Clear selected workflow after sending
     clearSelectedWorkflow();
 
     if (inputRef) inputRef.current?.focus();

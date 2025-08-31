@@ -1,4 +1,4 @@
-import { usePathname,useRouter } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useCallback } from "react";
 
 import { Workflow } from "@/features/workflows/api/workflowApi";
@@ -29,7 +29,9 @@ export const useWorkflowSelection = () => {
       storeSelectWorkflow(workflow, options);
 
       // Navigate to chat page if not already there
-      if (pathname !== "/c") router.push("/c");
+      if (pathname !== "/c") {
+        router.push("/c");
+      }
     },
     [storeSelectWorkflow, pathname, router],
   );
