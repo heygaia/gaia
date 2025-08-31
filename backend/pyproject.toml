@@ -82,7 +82,6 @@ dependencies = [
   "mem0ai[graph]>=0.1.110",
   "aio-pika>=9.5.5",
   "aiolimiter>=1.2.1",
-  "pycountry>=24.6.1",
   "arq>=0.26.0",
   "croniter>=3.0.0",
   "e2b-code-interpreter>=1.2.0",

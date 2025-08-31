@@ -53,8 +53,8 @@ async def get_calendar_list(
 async def get_events(
     page_token: Optional[str] = None,
     selected_calendars: Optional[List[str]] = Query(None),
-    time_min: Optional[str] = None,
-    time_max: Optional[str] = None,
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,  # YYYY-MM-DD format
     current_user: dict = Depends(require_google_integration("calendar")),
 ):
     """
@@ -72,6 +72,40 @@ async def get_events(
         user_id = current_user.get("user_id")
         if not user_id:
             raise HTTPException(status_code=400, detail="User ID not found")
+
+        # Convert start_date and end_date to time_min and time_max for Google Calendar API
+        time_min = None
+        time_max = None
+
+        if start_date:
+            try:
+                # Convert YYYY-MM-DD to start of day in UTC
+                from datetime import datetime, timezone
+
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+                time_min = start_dt.isoformat()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+
+        if end_date:
+            try:
+                # Convert YYYY-MM-DD to end of day in UTC
+                from datetime import datetime, timezone, timedelta
+
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+                # Add 24 hours to include the entire end day
+                end_dt = end_dt + timedelta(days=1)
+                time_max = end_dt.isoformat()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
 
         # Get token from repository
         token = await token_repository.get_token(
@@ -94,8 +128,8 @@ async def get_events(
 @router.get("/calendar/{calendar_id}/events", summary="Get Events by Calendar ID")
 async def get_events_by_calendar(
     calendar_id: str,
-    time_min: Optional[str] = None,
-    time_max: Optional[str] = None,
+    start_date: Optional[str] = None,  # YYYY-MM-DD format
+    end_date: Optional[str] = None,  # YYYY-MM-DD format
     page_token: Optional[str] = None,
     current_user: dict = Depends(require_google_integration("calendar")),
 ):
@@ -118,6 +152,40 @@ async def get_events_by_calendar(
         user_id = current_user.get("user_id")
         if not user_id:
             raise HTTPException(status_code=400, detail="User ID not found")
+
+        # Convert start_date and end_date to time_min and time_max for Google Calendar API
+        time_min = None
+        time_max = None
+
+        if start_date:
+            try:
+                # Convert YYYY-MM-DD to start of day in UTC
+                from datetime import datetime, timezone
+
+                start_dt = datetime.strptime(start_date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+                time_min = start_dt.isoformat()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid start_date format. Use YYYY-MM-DD"
+                )
+
+        if end_date:
+            try:
+                # Convert YYYY-MM-DD to end of day in UTC
+                from datetime import datetime, timezone, timedelta
+
+                end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
+                    tzinfo=timezone.utc
+                )
+                # Add 24 hours to include the entire end day
+                end_dt = end_dt + timedelta(days=1)
+                time_max = end_dt.isoformat()
+            except ValueError:
+                raise HTTPException(
+                    status_code=400, detail="Invalid end_date format. Use YYYY-MM-DD"
+                )
 
         # Get token from repository
         token = await token_repository.get_token(

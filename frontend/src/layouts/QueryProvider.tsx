@@ -44,7 +44,7 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
       }),
   );
 
-  // Setup indexedDB for storage of cached queries, instead of localStorage
+  // Setup indexedDB for storage of cached queries
   const persister = createIDBPersister();
 
   return (
@@ -55,11 +55,17 @@ export default function QueryProvider({ children }: { children: ReactNode }) {
         maxAge: 30 * 24 * 60 * 60 * 1000, // Maximum age of persisted data (30 days)
         dehydrateOptions: {
           shouldDehydrateQuery: (query) => {
-            // Persist only successful "url-metadata" queries to storage
-            return (
-              query.queryKey[0] === "url-metadata" &&
-              query.state.status === "success"
-            );
+            // Persist successful queries that we want to cache across page reloads
+            if (query.state.status !== "success") return false;
+
+            const queryKey = query.queryKey[0];
+            return [
+              "url-metadata",
+              "tools",
+              "integrations",
+              "unread-emails",
+              "upcoming-events",
+            ].includes(`${queryKey}`);
           },
         },
       }}

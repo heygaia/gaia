@@ -27,43 +27,48 @@ export const calendarApi = {
     });
   },
 
-  // Fetch events from multiple calendars
+  // Fetch events from multiple calendars with smart date range
   fetchMultipleCalendarEvents: async (
     calendarIds: string[],
     pageToken?: string | null,
+    startDate?: string, // YYYY-MM-DD format
+    endDate?: string, // YYYY-MM-DD format
   ): Promise<CalendarEventsResponse> => {
     try {
-      if (!calendarIds?.length) {
+      if (!calendarIds.length) {
+        if (!pageToken) {
+          toast.dismiss("fetching");
+        }
         toast.error("No calendars selected");
         return { events: [], nextPageToken: null };
-      }
-
-      // Only show loading toast for initial fetch (no pageToken)
+      } // Only show loading toast for initial fetch (no pageToken)
       if (!pageToken) {
         toast.loading("Fetching Events...", { id: "fetching" });
       }
 
-      const allEvents: GoogleCalendarEvent[] = [];
+      // Use the proper multi-calendar endpoint with date range parameters
+      const params = new URLSearchParams();
+      if (pageToken) params.append("page_token", pageToken);
 
-      for (const calendarId of calendarIds) {
-        try {
-          const response = await calendarApi.fetchCalendarEvents(
-            calendarId,
-            pageToken,
-          );
-          allEvents.push(...response.events);
-        } catch (err) {
-          console.error(
-            `Failed to fetch events for calendar ${calendarId}:`,
-            err,
-          );
-        }
+      // Add selected calendars as query parameters
+      calendarIds.forEach((id) => params.append("selected_calendars", id));
+
+      // Use start_date and end_date parameters if provided, otherwise use a default 3-month range
+      if (startDate) {
+        params.append("start_date", startDate);
+      }
+      if (endDate) {
+        params.append("end_date", endDate);
       }
 
+      const url = `/calendar/events?${params.toString()}`;
+
+      const response = await apiService.get<CalendarEventsResponse>(url, {
+        silent: true,
+      });
+
       toast.dismiss("fetching");
-      // Disable pagination for multiple calendars to prevent infinite fetching
-      // Each calendar has its own pagination token, using one token for all doesn't work
-      return { events: allEvents, nextPageToken: null };
+      return response;
     } catch (error) {
       toast.dismiss("fetching");
       toast.error("Failed to fetch calendar events");

@@ -1,10 +1,10 @@
-import { useQuery } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
-import { fetchAvailableTools, ToolInfo } from "../api/toolsApi";
+import { ToolInfo } from "../api/toolsApi";
 import { EnhancedToolInfo } from "../types/enhancedTools";
+import { useToolsQuery } from "./useToolsQuery";
 
 export interface UseToolsWithIntegrationsReturn {
   tools: EnhancedToolInfo[];
@@ -25,16 +25,28 @@ export interface UseToolsWithIntegrationsReturn {
 export const useToolsWithIntegrations = (): UseToolsWithIntegrationsReturn => {
   const { getIntegrationsWithStatus } = useIntegrations();
 
-  // Fetch tools data
+  // Use shared tools query with consistent 3-hour caching
   const {
-    data: toolsData,
+    tools: toolsArray,
     isLoading: toolsLoading,
     error: toolsError,
-  } = useQuery({
-    queryKey: ["tools"],
-    queryFn: fetchAvailableTools,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
-  });
+  } = useToolsQuery();
+
+  // Convert tools array to the expected format with categories
+  const toolsData = useMemo(() => {
+    if (!toolsArray.length) return null;
+
+    // Extract unique categories from tools
+    const categories = Array.from(
+      new Set(toolsArray.map((tool) => tool.category)),
+    );
+
+    return {
+      tools: toolsArray,
+      categories,
+      total_count: toolsArray.length,
+    };
+  }, [toolsArray]);
 
   // Combine tools with integration status
   const enhancedTools = useMemo((): EnhancedToolInfo[] => {
@@ -131,7 +143,7 @@ export const useToolsWithIntegrations = (): UseToolsWithIntegrationsReturn => {
     tools: enhancedTools,
     toolsByCategory,
     isLoading: toolsLoading,
-    error: toolsError,
+    error: toolsError ? new Error(toolsError) : null,
     categories,
     getToolsForCategory,
     isToolLocked,

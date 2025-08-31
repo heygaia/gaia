@@ -1,11 +1,11 @@
 // Shared Components
-export { CustomResponseStyleInput } from "./CustomResponseStyleInput";
+export { CustomResponseStyleInput } from "../../features/settings/components/CustomResponseStyleInput";
+export { SettingsCard } from "../../features/settings/components/SettingsCard";
+export { SettingsCardSimple } from "../../features/settings/components/SettingsCardSimple";
+export { SettingsOption } from "../../features/settings/components/SettingsOption";
+export { StatusIndicator } from "../../features/settings/components/StatusIndicator";
 export { LabeledField } from "./LabeledField";
 export { LinkButton } from "./LinkButton";
-export { SettingsCard } from "./SettingsCard";
-export { SettingsCardSimple } from "./SettingsCardSimple";
-export { SettingsOption } from "./SettingsOption";
-export { StatusIndicator } from "./StatusIndicator";
 
 // Icons
 export * from "./icons";

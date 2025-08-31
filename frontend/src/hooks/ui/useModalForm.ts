@@ -32,7 +32,7 @@ export interface UseModalFormReturn<T> {
   handleSubmit: () => Promise<void>;
   resetForm: () => void;
   validateField: (field: keyof T) => string | null;
-  validateForm: () => boolean;
+  validateForm: () => { isValid: boolean; firstError?: string };
   clearError: (field: keyof T) => void;
   clearAllErrors: () => void;
   updateField: (field: keyof T, value: T[keyof T]) => void;
@@ -114,30 +114,39 @@ export function useModalForm<T extends Record<string, unknown>>({
     [formData, validate],
   );
 
-  const validateForm = useCallback((): boolean => {
-    if (!validate) return true;
+  const validateForm = useCallback((): {
+    isValid: boolean;
+    firstError?: string;
+  } => {
+    if (!validate) return { isValid: true };
 
     const newErrors: Partial<Record<keyof T, string>> = {};
+    let firstError: string | undefined;
 
     if (Array.isArray(validate)) {
       for (const rule of validate) {
         const error = validateField(rule.field);
-        toast.error(error);
         if (error) {
           newErrors[rule.field] = error;
+          if (!firstError) {
+            firstError = error;
+          }
         }
       }
     } else {
       // Custom validation function
       const customError = validate(formData);
       if (customError) {
-        toast.error(customError);
-        return false;
+        firstError = customError;
+        return { isValid: false, firstError };
       }
     }
 
     setErrors(newErrors);
-    return Object.keys(newErrors).length === 0;
+    return {
+      isValid: Object.keys(newErrors).length === 0,
+      firstError,
+    };
   }, [formData, validate, validateField]);
 
   const isValid = Object.keys(errors).length === 0;
@@ -174,7 +183,12 @@ export function useModalForm<T extends Record<string, unknown>>({
   }, [initialData]);
 
   const handleSubmit = useCallback(async () => {
-    if (!validateForm()) {
+    const validation = validateForm();
+    if (!validation.isValid) {
+      // Show validation error only on form submission
+      if (validation.firstError) {
+        toast.error(validation.firstError);
+      }
       return;
     }
 

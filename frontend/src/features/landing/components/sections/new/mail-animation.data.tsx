@@ -151,7 +151,6 @@ import React, { useEffect, useRef, useState } from "react";
 
 import EmailComposeSection from "@/features/chat/components/bubbles/bot/EmailComposeSection";
 import EmailThreadCard from "@/features/chat/components/bubbles/bot/EmailThreadCard";
-import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import {
   EmailComposeData,
@@ -304,21 +303,19 @@ const FetchAnimation = () => {
   }, [isExpanded]);
 
   return (
-    <ComposerProvider value={mockComposerValue}>
-      <motion.div
-        initial={{ opacity: 0, height: "60px" }}
-        animate={{
-          opacity: 1,
-          height: isExpanded ? "350px" : "60px",
-        }}
-        transition={{ duration: 0.5, ease: "easeInOut" }}
-        className="overflow-hidden"
-      >
-        <div ref={scrollContainerRef} className="h-full overflow-y-auto">
-          <EmailListCard emails={visibleEmails} />
-        </div>
-      </motion.div>
-    </ComposerProvider>
+    <motion.div
+      initial={{ opacity: 0, height: "60px" }}
+      animate={{
+        opacity: 1,
+        height: isExpanded ? "350px" : "60px",
+      }}
+      transition={{ duration: 0.5, ease: "easeInOut" }}
+      className="overflow-hidden"
+    >
+      <div ref={scrollContainerRef} className="h-full overflow-y-auto">
+        <EmailListCard emails={visibleEmails} />
+      </div>
+    </motion.div>
   );
 };
 

@@ -1,4 +1,5 @@
-import React, { useEffect, useRef,useState } from "react";
+import Image from "next/image";
+import React, { useEffect, useRef, useState } from "react";
 
 import SectionChip from "../shared/SectionChip";
 
@@ -12,7 +13,6 @@ const LargeHeader = ({
   subHeadingText: string;
 }) => (
   <div className="mb-16 text-center">
-
     <SectionChip text={chipText} />
 
     <h2 className="mb-6 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-medium text-transparent md:text-5xl lg:text-6xl">
@@ -59,10 +59,12 @@ const IntegrationCard = ({
       className={`group relative flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] shadow-lg backdrop-blur-sm transition-all duration-500 ease-out hover:border-[#01BBFF]/20 hover:shadow-xl hover:shadow-[#01BBFF]/5 ${isLarge ? "w-28" : "w-24"} ${isBlurred ? "scale-90 opacity-40" : "scale-100 opacity-100"} ${isVisible ? "translate-y-0" : "translate-y-4"} ${className} `}
     >
       {image ? (
-        <img
+        <Image
           src={image}
           alt={alt}
           className={`${isLarge ? "h-16 w-16" : "h-12 w-12"} object-contain transition-all duration-300 group-hover:scale-110`}
+          width={isLarge ? 64 : 48}
+          height={isLarge ? 64 : 48}
         />
       ) : (
         <div className="h-8 w-8 animate-pulse rounded-lg bg-white/10" />

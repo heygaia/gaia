@@ -21,6 +21,7 @@ interface TodoFieldsRowProps {
   onDateChange: (date?: string, timezone?: string) => void;
   onLabelsChange: (labels: string[]) => void;
   className?: string;
+  userTimezone?: string; // User's preferred timezone
 }
 
 export default function TodoFieldsRow({
@@ -35,6 +36,7 @@ export default function TodoFieldsRow({
   onDateChange,
   onLabelsChange,
   className,
+  userTimezone,
 }: TodoFieldsRowProps) {
   return (
     <div className={`flex flex-wrap gap-2 ${className || ""}`}>
@@ -44,7 +46,11 @@ export default function TodoFieldsRow({
         onChange={onProjectChange}
       />
       <PriorityFieldChip value={priority} onChange={onPriorityChange} />
-      <DateFieldChip value={dueDate} onChange={onDateChange} />
+      <DateFieldChip
+        value={dueDate}
+        onChange={onDateChange}
+        timezone={userTimezone}
+      />
       <LabelsFieldChip value={labels} onChange={onLabelsChange} />
     </div>
   );
