@@ -53,13 +53,13 @@ export default function LandingPage() {
       <LandingLayout>
         <div className="relative overflow-hidden">
           <HeroSection />
-          <div className="relative z-10 flex w-screen items-center justify-center px-20">
+          <div className="relative z-10 flex w-full max-w-6xl mx-auto items-center justify-center px-4 sm:px-6 lg:px-20">
             <HeroVideoDialog
-              className="block rounded-3xl!"
+              className="block rounded-3xl w-full max-w-4xl"
               animationStyle="from-center"
               videoSrc="https://www.youtube.com/embed/K-ZbxMHxReM?si=U9Caazt9Ondagnr8"
               // thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
-              thumbnailSrc="/landing/hero.webp"
+              thumbnailSrc="/landing/hero.webp?q=80"
               thumbnailAlt="Hero Section Video"
             />
           </div>

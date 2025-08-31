@@ -12,12 +12,8 @@ const config = {
   theme: {
     extend: {
       fontFamily: {
-        switzer: "var(--font-switzer), sans-serif",
-        sf: "var(--font-sf-pro-display), var(--font-sf-pro-text), sans-serif",
-        "sf-display": "var(--font-sf-pro-display), sans-serif",
-        "sf-text": "var(--font-sf-pro-text), sans-serif",
-        creato: "var(--font-creato), sans-serif",
-        inter: "'Inter Variable', var(--font-inter), sans-serif",
+        inter: "var(--font-inter), sans-serif",
+        sans: "var(--font-inter), system-ui, sans-serif", // Make Inter the default sans font
       },
       command: {
         bg: "#1E293B",

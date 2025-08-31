@@ -1,4 +1,5 @@
 import React from "react";
+import Image from "next/image";
 
 import DummyComposer from "../demo/DummyComposer";
 import LargeHeader from "../shared/LargeHeader";
@@ -7,13 +8,13 @@ import SectionLayout from "../shared/SectionLayout";
 const FloatingIcon = ({
   src,
   alt,
-  size = "w-12 h-12",
+  size = 48,
   className = "",
   side = "left",
 }: {
   src: string;
   alt: string;
-  size?: string;
+  size?: number;
   className?: string;
   side?: "left" | "right";
 }) => (
@@ -23,7 +24,14 @@ const FloatingIcon = ({
       transform: side === "left" ? "rotate(-8deg)" : "rotate(8deg)",
     }}
   >
-    <img src={src} alt={alt} className={`${size} object-contain`} />
+    <Image
+      src={src}
+      alt={alt}
+      width={size}
+      height={size}
+      className="object-contain"
+      sizes={`${size}px`}
+    />
   </div>
 );
 
@@ -41,7 +49,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/notion.webp"
           alt="Notion"
-          size="w-16 h-16"
+          size={64}
           className="top-[8%] left-[5%]"
           side="left"
         />
@@ -49,7 +57,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/gmail.svg"
           alt="Gmail"
-          size="w-14 h-14"
+          size={56}
           className="top-[26%] left-[12%]"
           side="left"
         />
@@ -58,7 +66,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/googlecalendar.webp"
           alt="Google Calendar"
-          size="w-15 h-15"
+          size={60}
           className="top-[20%] right-[2%]"
           side="right"
         />
@@ -66,7 +74,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/slack.svg"
           alt="Slack"
-          size="w-13 h-13"
+          size={52}
           className="top-[7%] right-[13%]"
           side="right"
         />
@@ -75,7 +83,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/google_docs.webp"
           alt="Google Docs"
-          size="w-12 h-12"
+          size={48}
           className="top-[45%] left-[3%]"
           side="left"
         />
@@ -83,7 +91,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/figma.svg"
           alt="Figma"
-          size="w-12 h-12"
+          size={48}
           className="top-[40%] right-[10%]"
           side="right"
         />
@@ -92,7 +100,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/google_sheets.webp"
           alt="Google Sheets"
-          size="w-10 h-10"
+          size={40}
           className="bottom-[15%] left-[8%] opacity-70"
           side="left"
         />
@@ -100,7 +108,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/github3d.webp"
           alt="GitHub"
-          size="w-11 h-11"
+          size={44}
           className="bottom-[35%] left-[15%] opacity-80"
           side="left"
         />
@@ -108,7 +116,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/whatsapp.webp"
           alt="WhatsApp"
-          size="w-10 h-10"
+          size={40}
           className="right-[12%] bottom-[12%] opacity-70"
           side="right"
         />
@@ -116,7 +124,7 @@ const ToolsShowcaseSection: React.FC = () => {
         <FloatingIcon
           src="/icons/trello.svg"
           alt="Trello"
-          size="w-11 h-11"
+          size={44}
           className="right-[6%] bottom-[35%] opacity-80"
           side="right"
         />

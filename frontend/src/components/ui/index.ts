@@ -3,7 +3,6 @@
  */
 
 export * from "./ConfirmationDialog";
-export * from "./FontSwitcher";
 export * from "./magic-ui/android";
 export * from "./magic-ui/animated-beam";
 export * from "./magic-ui/confetti";

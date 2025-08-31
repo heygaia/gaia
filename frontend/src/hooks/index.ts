@@ -10,7 +10,6 @@ export * from "./providers/GlobalNotifications";
 export * from "./providers/NotificationContext";
 export * from "./ui/useCreateConfetti";
 export * from "./ui/useDragAndDrop";
-export * from "./ui/useFont";
 export * from "./ui/useIntersectionObserver";
 export * from "./ui/useMediaQuery";
 export * from "./ui/useMobile";

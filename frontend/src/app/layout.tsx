@@ -1,6 +1,4 @@
-import "./styles/fonts.css";
 import "./styles/globals.css";
-import "./styles/tailwind.css";
 
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
@@ -9,6 +7,7 @@ import ProvidersLayout from "@/layouts/ProvidersLayout";
 
 import AnalyticsLayout from "@/layouts/AnalyticsLayout";
 import { defaultFont, getAllFontVariables } from "./fonts";
+import { Suspense } from "react";
 
 export const metadata: Metadata = {
   metadataBase: new URL("https://heygaia.io"),
@@ -100,7 +99,9 @@ export default function RootLayout({
           strategy="lazyOnload"
         />
 
-        <AnalyticsLayout />
+        <Suspense fallback={<></>}>
+          <AnalyticsLayout />
+        </Suspense>
       </body>
     </html>
   );
