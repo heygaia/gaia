@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Button as ShadcnButton } from "@/components/";
+import { Button as ShadcnButton, SidebarHeaderButton } from "@/components/";
 import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
@@ -56,17 +56,17 @@ const NotificationItem = ({
 
   return (
     <div className={`w-full rounded-2xl bg-zinc-900 p-4`}>
-      <div className="flex items-start justify-between gap-1">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
-            <h4 className="truncate text-sm font-medium text-zinc-100">
+            <h4 className="max-w-[250px] truncate text-sm font-medium text-zinc-100">
               {content.title}
             </h4>
             {isUnread && (
-              <div className="h-1.5 w-1.5 rounded-full bg-primary" />
+              <div className="h-1.5 w-1.5 flex-shrink-0 rounded-full bg-primary" />
             )}
           </div>
-          <p className="my-1 line-clamp-2 text-left text-sm font-light text-zinc-400">
+          <p className="my-1 line-clamp-2 text-left text-sm font-light break-words text-zinc-400">
             {content.body}
           </p>
           <div className="mt-1 flex items-center gap-2 text-xs text-zinc-600">
@@ -82,7 +82,7 @@ const NotificationItem = ({
         </div>
 
         {isUnread && (
-          <div className="flex items-center gap-1">
+          <div className="flex flex-shrink-0 items-center gap-1">
             <Tooltip content="Mark as Read">
               <Button
                 variant="flat"
@@ -215,14 +215,6 @@ export function NotificationCenter({
     await markAsRead(notificationId);
   };
 
-  // const handleArchive = async (notificationId: string) => {
-  //   await archiveNotification(notificationId);
-  // };
-
-  // const handleSnooze = async (notificationId: string, until: Date) => {
-  //   await snoozeNotification(notificationId, until);
-  // };
-
   const handleMarkAllAsRead = async () => {
     const unreadIds = notifications
       .filter((n) => n.status === NotificationStatus.DELIVERED)
@@ -238,28 +230,14 @@ export function NotificationCenter({
       ? notifications.filter((n) => n.status === NotificationStatus.DELIVERED)
       : notifications;
 
-  // useEffect(() => {
-  //   if (isOpen) {
-  //     refetch();
-  //   }
-  // }, [isOpen]);
-
   return (
     <div className={`relative ${className}`}>
-      <Popover
-        // open={isOpen} onOpenChange={setIsOpen}
-        backdrop="blur"
-      >
+      <Popover backdrop="blur">
         <PopoverTrigger>
           <div className="relative">
-            <ShadcnButton
-              className={`group rounded-lg hover:bg-[#00bbff]/20`}
-              variant="ghost"
-              size="icon"
-              aria-label="Notifications"
-            >
+            <SidebarHeaderButton aria-label="Notifications">
               <NotificationIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
-            </ShadcnButton>
+            </SidebarHeaderButton>
             {unreadCount > 0 && (
               <div className="absolute -right-1 bottom-3 flex h-full items-center justify-center">
                 <div className="flex aspect-square h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-zinc-950">
@@ -300,7 +278,9 @@ export function NotificationCenter({
           </Tabs>
 
           {/* Notifications list */}
-          <ScrollArea className="h-96 w-full">
+          <ScrollArea
+            className={`${filteredNotifications.length === 0 ? "h-[30vh]" : "h-[70vh]"} w-full`}
+          >
             {loading ? (
               <div className="flex items-center justify-center p-8">
                 <div className="h-5 w-5 animate-spin rounded-full border-2 border-zinc-700 border-t-zinc-50" />
@@ -320,7 +300,7 @@ export function NotificationCenter({
                 </p>
               </div>
             ) : (
-              <div className="w-full space-y-2 divide-y divide-zinc-800 p-3">
+              <div className="w-full space-y-2 p-3">
                 {filteredNotifications.map((notification) => (
                   <NotificationItem
                     key={notification.id}

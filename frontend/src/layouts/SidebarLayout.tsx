@@ -23,31 +23,11 @@ import {
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import SearchCommand from "@/features/search/components/SearchCommand";
+import { SidebarHeaderButton } from "@/components";
 
 interface SidebarLayoutProps {
   children: ReactNode;
 }
-
-// Consistent button component for sidebar header buttons
-const SidebarHeaderButton = ({
-  children,
-  onClick,
-  "aria-label": ariaLabel,
-}: {
-  children: React.ReactNode;
-  onClick: () => void;
-  "aria-label": string;
-}) => (
-  <Button
-    aria-label={ariaLabel}
-    size="icon"
-    variant="ghost"
-    className="hover:bg-zinc-950-accent h-8 w-8 rounded-lg text-sidebar-foreground/70 hover:text-sidebar-foreground"
-    onClick={onClick}
-  >
-    {children}
-  </Button>
-);
 
 // Custom SidebarTrigger with dynamic icons
 const CustomSidebarTrigger = () => {

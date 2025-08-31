@@ -4,23 +4,10 @@ import { useShallow } from "zustand/react/shallow";
 
 import { ImageResult } from "@/types/features/convoTypes";
 
-export type HeaderComponentType =
-  | "chat"
-  | "mail"
-  | "goals"
-  | "calendar"
-  | "browser"
-  | "notes"
-  | "settings"
-  | "custom"
-  | "default"
-  | "todos";
+import { ReactNode } from "react";
 
-export interface HeaderProps {
-  customContent?: boolean;
-  jsxContent?: boolean;
-  componentProps?: Record<string, unknown>;
-  [key: string]: unknown;
+export interface HeaderState {
+  component: ReactNode | null;
 }
 
 export type SidebarVariant =
@@ -38,8 +25,7 @@ interface UIState {
   selectedImage: ImageResult | null;
 
   // Header
-  currentHeaderType: HeaderComponentType;
-  headerProps: HeaderProps | null;
+  header: HeaderState;
 
   // Sidebar
   sidebarOpen: boolean;
@@ -56,10 +42,7 @@ interface UIActions {
   closeImageDialog: () => void;
 
   // Header
-  setHeaderComponent: (
-    headerType: HeaderComponentType,
-    props?: HeaderProps,
-  ) => void;
+  setHeader: (component: ReactNode) => void;
 
   // Sidebar
   toggleSidebar: () => void;
@@ -77,8 +60,7 @@ type UIStore = UIState & UIActions;
 const initialState: UIState = {
   imageDialogOpen: false,
   selectedImage: null,
-  currentHeaderType: "default",
-  headerProps: null,
+  header: { component: null },
   sidebarOpen: true,
   mobileSidebarOpen: false,
   sidebarVariant: "default",
@@ -113,14 +95,13 @@ export const useUIStore = create<UIStore>()(
           ),
 
         // Header actions
-        setHeaderComponent: (headerType, props) =>
+        setHeader: (component) =>
           set(
             {
-              currentHeaderType: headerType,
-              headerProps: props || null,
+              header: { component },
             },
             false,
-            "setHeaderComponent",
+            "setHeader",
           ),
 
         // Sidebar actions
@@ -182,9 +163,8 @@ export const useImageDialog = () =>
 export const useHeader = () =>
   useUIStore(
     useShallow((state) => ({
-      currentHeaderType: state.currentHeaderType,
-      headerProps: state.headerProps,
-      setHeaderComponent: state.setHeaderComponent,
+      header: state.header,
+      setHeader: state.setHeader,
     })),
   );
 

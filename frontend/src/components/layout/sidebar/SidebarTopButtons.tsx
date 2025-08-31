@@ -67,11 +67,6 @@ export default function SidebarTopButtons() {
     //   label: "Mail",
     // },
     {
-      route: "/pins",
-      icon: <PinIcon />,
-      label: "Pins",
-    },
-    {
       route: "/workflows",
       icon: <ZapIcon />,
       label: "Workflows",
@@ -114,9 +109,9 @@ export default function SidebarTopButtons() {
       )}
 
       <div className="mb-3 flex flex-col gap-0.5">
-        <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
+        {/* <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
           Menu
-        </div>
+        </div> */}
         {buttonData.map(({ route, icon, label }, index) => (
           <div key={index} className="relative">
             <Button
