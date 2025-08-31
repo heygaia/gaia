@@ -1,22 +1,20 @@
 "use client";
 
+import { Search } from "lucide-react";
 import Link from "next/link";
 import { useParams } from "next/navigation";
+import { useState } from "react";
 
+import { SidebarHeaderButton } from "@/components";
 import ChatOptionsDropdown from "@/components/layout/sidebar/ChatOptionsDropdown";
 import {
   BubbleConversationChatIcon,
   ChatBubbleAddIcon,
   PinIcon,
 } from "@/components/shared/icons";
-import { Button } from "@/components/ui/shadcn/button";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
-import { Input } from "@heroui/input";
-import { useState } from "react";
 import SearchCommand from "@/features/search/components/SearchCommand";
-import { SidebarHeaderButton } from "@/components";
-import { Search } from "lucide-react";
 
 export default function ChatHeader() {
   const { conversations } = useConversationList();
