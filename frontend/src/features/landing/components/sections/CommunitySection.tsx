@@ -13,7 +13,10 @@ export default function CommunitySection() {
       </div>
 
       <div className="mt-2 flex items-center gap-2">
-        <Link href={"https://https://twitter.com/_heygaia"}>
+        <Link
+          href={"https://https://twitter.com/_heygaia"}
+          aria-label="Twitter Link"
+        >
           <RaisedButton
             color="#1DA1F2"
             className="rounded-xl text-black!"
@@ -22,7 +25,7 @@ export default function CommunitySection() {
             <TwitterIcon width={20} height={20} />
           </RaisedButton>
         </Link>
-        <Link href={"https://whatsapp.heygaia.io"}>
+        <Link href={"https://whatsapp.heygaia.io"} aria-label="WhatsApp Link">
           <RaisedButton
             color="#25D366"
             className="rounded-xl text-black!"
@@ -31,7 +34,7 @@ export default function CommunitySection() {
             <WhatsappIcon width={20} height={20} />
           </RaisedButton>
         </Link>
-        <Link href={"https://discord.heygaia.io"}>
+        <Link href={"https://discord.heygaia.io"} aria-label="Discord Link">
           <RaisedButton
             color="#5865f2"
             className="rounded-xl text-black!"
@@ -40,7 +43,7 @@ export default function CommunitySection() {
             <DiscordIcon width={20} height={20} />
           </RaisedButton>
         </Link>
-        <Link href={"https://github.com/heygaia/gaia"}>
+        <Link href={"https://github.com/heygaia/gaia"} aria-label="GitHub Link">
           <RaisedButton
             className="rounded-xl text-black! before:rounded-xl hover:scale-110"
             color="#a6a6a6"

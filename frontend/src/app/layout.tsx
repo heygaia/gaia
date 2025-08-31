@@ -1,12 +1,13 @@
+import "./styles/fonts.css";
 import "./styles/globals.css";
 import "./styles/tailwind.css";
 
-import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 
+import AnalyticsLayout from "@/layouts/AnalyticsLayout";
 import { defaultFont, getAllFontVariables } from "./fonts";
 
 export const metadata: Metadata = {
@@ -73,8 +74,11 @@ export default function RootLayout({
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>
         </main>
-        {/* Google OAuth */}
-        <Script async src="https://accounts.google.com/gsi/client" />
+        <Script
+          async
+          src="https://accounts.google.com/gsi/client"
+          strategy="lazyOnload"
+        />
 
         {/* JSON-LD Schema */}
         <Script id="json-ld" type="application/ld+json">
@@ -96,16 +100,7 @@ export default function RootLayout({
           strategy="lazyOnload"
         />
 
-        {/* Rybbit Analytics */}
-        {/* <Script
-          src="https://analytics.heygaia.io/api/script.js"
-          data-site-id="1"
-          defer
-          data-session-replay="true"
-        /> */}
-
-        {/* Google Analytics */}
-        <GoogleAnalytics gaId="G-R6EGV9FG2Q" />
+        <AnalyticsLayout />
       </body>
     </html>
   );
