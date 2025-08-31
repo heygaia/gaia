@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import { ReactNode, useState } from "react";
 
+import { SidebarHeaderButton } from "@/components";
 import ContactSupport from "@/components/layout/sidebar/ContactSupport";
 import SidebarTopButtons from "@/components/layout/sidebar/SidebarTopButtons";
 import UserContainer from "@/components/layout/sidebar/UserContainer";
@@ -23,7 +24,6 @@ import {
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import SearchCommand from "@/features/search/components/SearchCommand";
-import { SidebarHeaderButton } from "@/components";
 
 interface SidebarLayoutProps {
   children: ReactNode;

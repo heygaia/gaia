@@ -11,7 +11,6 @@ import {
   CheckmarkCircle02Icon,
   MessageMultiple02Icon,
   NotificationIcon,
-  PinIcon,
   Target04Icon,
 } from "@/components/shared/icons";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";

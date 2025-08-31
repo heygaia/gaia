@@ -16,7 +16,7 @@ import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import { Button as ShadcnButton, SidebarHeaderButton } from "@/components/";
+import { SidebarHeaderButton } from "@/components/";
 import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";

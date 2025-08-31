@@ -2,12 +2,12 @@
 
 import { usePathname } from "next/navigation";
 
+import { Button } from "@/components";
 import { useHeader } from "@/hooks/layout/useHeader";
 
 import BrowserHeader from "./BrowserHeader";
 import ChatHeader from "./ChatHeader";
 import SettingsHeader from "./SettingsHeader";
-import { Button } from "@/components";
 
 function getDefaultHeaderForPath(pathname: string) {
   if (pathname.startsWith("/c")) return <ChatHeader />;
