@@ -1,5 +1,3 @@
-import { useParams } from "next/navigation";
-import Image from "next/image";
 import React, {
   useEffect,
   useImperativeHandle,
@@ -8,8 +6,6 @@ import React, {
   useState,
 } from "react";
 
-import { Button } from "@/components";
-import { ArrowRight01Icon } from "@/components/shared/icons";
 import FilePreview, {
   UploadedFilePreview,
 } from "@/features/chat/components/files/FilePreview";
