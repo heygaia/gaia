@@ -24,6 +24,7 @@
     "generate-barrels": "barrelsby --delete --directory ./src --location branch --exclude \"(src/app|src/features)\""
   },
   "dependencies": {
+    "@databuddy/sdk": "^2.0.0",
     "@fontsource-variable/inter": "^5.2.6",
     "@heroui/accordion": "2.2.13",
     "@heroui/autocomplete": "2.3.17",

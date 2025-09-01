@@ -8,6 +8,9 @@ importers:
 
   .:
     dependencies:
+      '@databuddy/sdk':
+        specifier: ^2.0.0
+        version: 2.0.0(react@19.1.0)
       '@fontsource-variable/inter':
         specifier: ^5.2.6
         version: 5.2.6
@@ -681,6 +684,17 @@ packages:
 
   '@chevrotain/utils@11.0.3':
     resolution: {integrity: sha512-YslZMgtJUyuMbZ+aKvfF3x1f5liK4mWNxghFRv7jqRR9C3R3fAOGTTKvxXDa2Y1s9zSbcpuO0cAxDYsc9SrXoQ==}
+
+  '@databuddy/sdk@2.0.0':
+    resolution: {integrity: sha512-jwNeLwg03jN3380W2eyhegjO/eqqVcVXekO01n/d9dzalnaCm6DCEG3lGd8PMBf8ztu/dv1QTivkd4W6rO+tNQ==}
+    peerDependencies:
+      react: '>=18'
+      vue: '>=3'
+    peerDependenciesMeta:
+      react:
+        optional: true
+      vue:
+        optional: true
 
   '@discoveryjs/json-ext@0.5.7':
     resolution: {integrity: sha512-dBVuXR082gk3jsFp7Rd/JI4kytwGHecnCoTtXFb7DB6CNHp4rg5k1bhg0nWdLGLnOV71lmDzGQaLMy8iPLY0pw==}
@@ -9481,6 +9495,10 @@ snapshots:
   '@chevrotain/types@11.0.3': {}
 
   '@chevrotain/utils@11.0.3': {}
+
+  '@databuddy/sdk@2.0.0(react@19.1.0)':
+    optionalDependencies:
+      react: 19.1.0
 
   '@discoveryjs/json-ext@0.5.7': {}
 
