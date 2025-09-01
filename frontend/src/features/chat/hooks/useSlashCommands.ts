@@ -3,6 +3,7 @@ import { useCallback } from "react";
 import { ToolInfo } from "@/features/chat/api/toolsApi";
 
 import { EnhancedToolInfo } from "../types/enhancedTools";
+import { useToolsQuery } from "./useToolsQuery";
 import { useToolsWithIntegrations } from "./useToolsWithIntegrations";
 
 export interface SlashCommandMatch {
@@ -30,19 +31,11 @@ export interface UseSlashCommandsReturn {
 }
 
 export const useSlashCommands = (): UseSlashCommandsReturn => {
-  // Get enhanced tools with integration status - this uses cached data
-  const {
-    tools: enhancedTools,
-    isLoading: isLoadingTools,
-    error,
-  } = useToolsWithIntegrations();
+  // Use React Query hook for fetching tools with caching
+  const { tools, isLoading: isLoadingTools, error } = useToolsQuery();
 
-  // Convert enhanced tools back to base tools for compatibility
-  const tools: ToolInfo[] = enhancedTools.map((enhancedTool) => ({
-    name: enhancedTool.name,
-    category: enhancedTool.category,
-    required_integration: enhancedTool.integration?.requiredIntegration,
-  }));
+  // Get enhanced tools with integration status
+  const { tools: enhancedTools } = useToolsWithIntegrations();
 
   const getSlashCommandSuggestions = useCallback(
     (query: string): SlashCommandMatch[] => {

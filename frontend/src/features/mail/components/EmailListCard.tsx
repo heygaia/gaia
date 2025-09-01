@@ -2,11 +2,14 @@ import { Tooltip } from "@heroui/react";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 
 import { Gmail } from "@/components";
-import { useComposer } from "@/features/chat/contexts/ComposerContext";
+import { useAppendToInput } from "@/stores/composerStore";
 import { EmailFetchData } from "@/types/features/mailTypes";
 
 interface EmailListProps {
   emails?: EmailFetchData[] | null;
+  backgroundColor?: string;
+  showTitle?: boolean;
+  maxHeight?: string;
 }
 
 function extractSenderName(from: string): string {
@@ -54,8 +57,13 @@ function formatTime(time: string | null): string {
   }
 }
 
-export default function EmailListCard({ emails }: EmailListProps) {
-  const { appendToInput } = useComposer();
+export default function EmailListCard({
+  emails,
+  backgroundColor = "bg-zinc-800",
+  showTitle = true,
+  maxHeight = "max-h-[300px]",
+}: EmailListProps) {
+  const appendToInput = useAppendToInput();
 
   const handleEmailClick = (email: EmailFetchData) => {
     if (email.thread_id) {
@@ -68,19 +76,23 @@ export default function EmailListCard({ emails }: EmailListProps) {
 
   if (emails)
     return (
-      <div className="mx-auto mt-3 w-full max-w-2xl rounded-3xl bg-zinc-800 p-3 text-white">
+      <div
+        className={`mx-auto mt-3 w-full max-w-2xl rounded-3xl ${backgroundColor} p-3 text-white`}
+      >
         {/* Header */}
-        <div className="flex items-center justify-between px-3 py-1">
-          <div className="flex items-center gap-2">
-            <Gmail width={20} height={20} />
-            <span className="text-sm font-medium">
-              Fetched {emails.length} Email{emails.length > 0 ? "s" : ""}
-            </span>
+        {showTitle && (
+          <div className="flex items-center justify-between px-3 py-1">
+            <div className="flex items-center gap-2">
+              <Gmail width={20} height={20} />
+              <span className="text-sm font-medium">
+                Fetched {emails.length} Email{emails.length > 0 ? "s" : ""}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Email List */}
-        <ScrollShadow className="max-h-[300px] divide-y divide-gray-700">
+        <ScrollShadow className={`${maxHeight} divide-y divide-gray-700`}>
           {!!emails &&
             emails.length > 0 &&
             emails.map((email) => (

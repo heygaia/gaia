@@ -35,6 +35,7 @@ async def init_postgresql_async():
         logger.error(f"Failed to initialize PostgreSQL database: {e}")
         raise RuntimeError("PostgreSQL initialization failed") from e
 
+
 async def setup_checkpointer_manager():
     """Setup checkpointer manager for LangGraph."""
     try:
@@ -48,6 +49,7 @@ async def setup_checkpointer_manager():
     except Exception as e:
         logger.error(f"Failed to setup checkpointer manager: {e}")
         raise RuntimeError("Checkpointer manager setup failed") from e
+
 
 async def init_cloudinary_async():
     """Initialize Cloudinary service."""
@@ -63,14 +65,26 @@ async def init_cloudinary_async():
 async def init_reminder_service():
     """Initialize reminder scheduler and scan for pending reminders."""
     try:
-        from app.services.reminder_service import initialize_scheduler
+        from app.services.reminder_service import reminder_scheduler
 
-        scheduler = await initialize_scheduler()
-        await scheduler.scan_and_schedule_pending_reminders()
+        await reminder_scheduler.initialize()
+        await reminder_scheduler.scan_and_schedule_pending_tasks()
         logger.info("Reminder scheduler initialized and pending reminders scheduled")
-        return scheduler
     except Exception as e:
         logger.error(f"Failed to initialize reminder scheduler: {e}")
+        raise
+
+
+async def init_workflow_service():
+    """Initialize workflow service."""
+    try:
+        from app.services.workflow.scheduler_service import workflow_scheduler_service
+
+        await workflow_scheduler_service.initialize()
+        await workflow_scheduler_service.scheduler.scan_and_schedule_pending_tasks()
+        logger.info("Workflow service initialized")
+    except Exception as e:
+        logger.error(f"Failed to initialize workflow service: {e}")
         raise
 
 
@@ -128,9 +142,9 @@ async def close_postgresql_async():
 async def close_reminder_scheduler():
     """Close reminder scheduler."""
     try:
-        from app.services.reminder_service import close_scheduler
+        from app.services.reminder_service import reminder_scheduler
 
-        await close_scheduler()
+        await reminder_scheduler.close()
         logger.info("Reminder scheduler closed")
     except Exception as e:
         logger.error(f"Error closing reminder scheduler: {e}")
@@ -153,6 +167,7 @@ async def close_publisher_async():
     except Exception as e:
         logger.error(f"Error closing publisher: {e}")
 
+
 def _process_results(results, service_names):
     failed_services = []
     for i, result in enumerate(results):
@@ -164,6 +179,7 @@ def _process_results(results, service_names):
             error_msg = f"Failed to initialize services: {failed_services}"
             logger.error(error_msg)
             raise RuntimeError(error_msg)
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -188,6 +204,7 @@ async def lifespan(app: FastAPI):
             init_chroma_async(app),
             init_cloudinary_async(),
             init_reminder_service(),
+            init_workflow_service(),
             init_rabbitmq(),
             init_websocket_consumer(),
             init_default_graph(),
@@ -207,6 +224,7 @@ async def lifespan(app: FastAPI):
                 "websocket_consumer",
                 "default_graph",
                 "tools_store",
+                "workflow_service",
             ],
         )
 

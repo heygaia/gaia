@@ -1,13 +1,13 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useMemo } from "react";
 
 import Spinner from "@/components/ui/shadcn/spinner";
 import TodoDetailSheet from "@/features/todo/components/TodoDetailSheet";
 import TodoHeader from "@/features/todo/components/TodoHeader";
 import TodoList from "@/features/todo/components/TodoList";
-import { useTodos } from "@/features/todo/hooks/useTodos";
+import { useTodoData } from "@/features/todo/hooks/useTodoData";
 import { useUrlTodoSelection } from "@/features/todo/hooks/useUrlTodoSelection";
 import {
   Priority,
@@ -18,18 +18,7 @@ import {
 
 export default function TodosPage() {
   const searchParams = useSearchParams();
-  const [_page, setPage] = useState(0);
   const { selectedTodoId, selectTodo, clearSelection } = useUrlTodoSelection();
-
-  const {
-    todos,
-    projects,
-    loading,
-    hasMore,
-    loadTodos,
-    modifyTodo,
-    removeTodo,
-  } = useTodos();
 
   // Get filter from URL params
   const projectId = searchParams.get("project");
@@ -47,61 +36,39 @@ export default function TodosPage() {
       : undefined;
   };
 
-  useEffect(() => {
-    const filters: TodoFilters = {};
+  // Build filters from URL params
+  const filters = useMemo((): TodoFilters => {
+    const urlFilters: TodoFilters = {};
 
     // Only add filters if they are explicitly specified in URL
     if (projectId) {
-      filters.project_id = projectId;
+      urlFilters.project_id = projectId;
     }
 
     if (priority) {
       const priorityValue = getPriorityFilter(priority);
       if (priorityValue) {
-        filters.priority = priorityValue;
+        urlFilters.priority = priorityValue;
       }
     }
 
     // Handle completed filter only if explicitly set
     if (completedParam !== null) {
-      filters.completed = completed;
+      urlFilters.completed = completed;
     }
 
-    // Let the backend handle default inbox behavior when no filters are specified
-    loadTodos(filters, false);
-    setPage(0);
-  }, [projectId, priority, completed, completedParam, loadTodos]);
+    return urlFilters;
+  }, [projectId, priority, completed, completedParam]);
 
-  const handleLoadMore = () => {
-    const filters: TodoFilters = {};
-
-    // Only add filters if they are explicitly specified in URL
-    if (projectId) {
-      filters.project_id = projectId;
-    }
-
-    if (priority) {
-      const priorityValue = getPriorityFilter(priority);
-      if (priorityValue) {
-        filters.priority = priorityValue;
-      }
-    }
-
-    // Handle completed filter only if explicitly set
-    if (completedParam !== null) {
-      filters.completed = completed;
-    }
-
-    loadTodos(filters, true);
-    setPage((prev) => prev + 1);
-  };
+  const { todos, projects, loading, updateTodo, deleteTodo, refresh } =
+    useTodoData({ filters, autoLoad: true });
 
   const handleTodoUpdate = async (todoId: string, updates: TodoUpdate) => {
-    await modifyTodo(todoId, updates);
+    await updateTodo(todoId, updates);
   };
 
   const handleTodoDelete = async (todoId: string) => {
-    await removeTodo(todoId);
+    await deleteTodo(todoId);
     // If the deleted todo was selected (shown in URL), close the detail sheet
     if (selectedTodoId === todoId) {
       clearSelection();
@@ -120,7 +87,7 @@ export default function TodosPage() {
     );
   }
 
-  const incompleteTodos = todos.filter((t) => !t.completed);
+  const incompleteTodos = todos.filter((t: Todo) => !t.completed);
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -128,47 +95,14 @@ export default function TodosPage() {
         <TodoHeader title={getPageTitle()} todoCount={incompleteTodos.length} />
       </div>
 
-      <div
-        className="w-full flex-1 overflow-y-auto px-4"
-        onScroll={(e) => {
-          const target = e.target as HTMLDivElement;
-          if (
-            hasMore &&
-            !loading &&
-            target.scrollHeight - target.scrollTop <= target.clientHeight + 100
-          ) {
-            handleLoadMore();
-          }
-        }}
-      >
+      <div className="w-full flex-1 overflow-y-auto px-4">
         <TodoList
           todos={todos}
           onTodoUpdate={handleTodoUpdate}
           onTodoDelete={handleTodoDelete}
           onTodoEdit={handleTodoEdit}
           onTodoClick={(todo) => selectTodo(todo.id)}
-          onRefresh={() => {
-            const filters: TodoFilters = {};
-
-            // Only add filters if they are explicitly specified in URL
-            if (projectId) {
-              filters.project_id = projectId;
-            }
-
-            if (priority) {
-              const priorityValue = getPriorityFilter(priority);
-              if (priorityValue) {
-                filters.priority = priorityValue;
-              }
-            }
-
-            // Handle completed filter only if explicitly set
-            if (completedParam !== null) {
-              filters.completed = completed;
-            }
-
-            loadTodos(filters, false);
-          }}
+          onRefresh={refresh}
         />
       </div>
 
@@ -176,7 +110,7 @@ export default function TodosPage() {
       <TodoDetailSheet
         todo={
           selectedTodoId
-            ? todos.find((t) => t.id === selectedTodoId) || null
+            ? todos.find((t: Todo) => t.id === selectedTodoId) || null
             : null
         }
         isOpen={!!selectedTodoId}

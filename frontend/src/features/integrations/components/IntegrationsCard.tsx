@@ -2,9 +2,11 @@ import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Chip } from "@heroui/chip";
 import { Selection } from "@heroui/react";
 import Image from "next/image";
-import React, { useEffect, useState } from "react";
+import React, { useEffect } from "react";
 
-import { useIntegrations } from "../hooks/useIntegrations";
+import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
+import { useIntegrationsAccordion } from "@/stores/uiStore";
+
 import { Integration } from "../types";
 import { SpecialIntegrationCard } from "./SpecialIntegrationCard";
 
@@ -85,7 +87,7 @@ export const IntegrationsCard: React.FC<IntegrationsCardProps> = ({
   onClose,
 }) => {
   const {
-    integrations,
+    integrations: _integrations,
     connectIntegration,
     refreshStatus,
     getSpecialIntegrations,
@@ -94,40 +96,16 @@ export const IntegrationsCard: React.FC<IntegrationsCardProps> = ({
     getIntegrationStatus,
   } = useIntegrations();
 
-  // Load saved accordion state from localStorage
-  // This preserves the expand/collapse state of the integrations accordion
-  // across multiple opens of the slash command dropdown
-  const [selectedKeys, setSelectedKeys] = useState<Selection>(() => {
-    if (typeof window === "undefined") {
-      return new Set(["integrations"]);
-    }
+  const { isExpanded, setExpanded } = useIntegrationsAccordion();
 
-    const saved = localStorage.getItem("gaia-integrations-accordion-expanded");
-    if (saved !== null) {
-      try {
-        const isExpanded = JSON.parse(saved);
-        return isExpanded ? new Set(["integrations"]) : new Set([]);
-      } catch {
-        // If parsing fails, default to expanded
-        return new Set(["integrations"]);
-      }
-    }
-    // Default to expanded if no saved state
-    return new Set(["integrations"]);
-  });
+  // Convert boolean to Selection for NextUI Accordion
+  const selectedKeys = isExpanded ? new Set(["integrations"]) : new Set([]);
 
-  // Save accordion state to localStorage whenever it changes
+  // Handle accordion state changes
   const handleSelectionChange = (keys: Selection) => {
-    setSelectedKeys(keys);
-
-    if (typeof window !== "undefined") {
-      const isExpanded =
-        keys === "all" || (keys instanceof Set && keys.has("integrations"));
-      localStorage.setItem(
-        "gaia-integrations-accordion-expanded",
-        JSON.stringify(isExpanded),
-      );
-    }
+    const expanded =
+      keys === "all" || (keys instanceof Set && keys.has("integrations"));
+    setExpanded(expanded);
   };
 
   // Force refresh integration status on mount

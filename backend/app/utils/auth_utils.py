@@ -99,13 +99,11 @@ async def authenticate_workos_session(
             # Prepare user info for return
             user_info = {
                 "user_id": str(user_data.get("_id")),
-                "email": user_email,
-                "name": user_data.get("name"),  # Use name from our database
-                "picture": user_data.get("picture"),
                 "auth_provider": "workos",
-                "selected_model": user_data.get("selected_model"),
+                **user_data,
             }
 
+            user_info.pop("_id", None)
             return user_info, new_session
 
         except Exception as e:

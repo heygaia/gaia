@@ -1,5 +1,7 @@
 // todo types matching the backend models
 
+import { WorkflowStepType } from "@/features/workflows/api/workflowApi";
+
 export enum Priority {
   HIGH = "high",
   MEDIUM = "medium",
@@ -14,20 +16,16 @@ export enum WorkflowStatus {
   FAILED = "failed",
 }
 
-// Workflow types
-export interface WorkflowStep {
-  id: string;
-  title: string;
-  tool_name: string;
-  tool_category: string;
-  description: string;
-  tool_inputs: Record<string, unknown>;
-}
+// Workflow types (using the one from workflowApi)
 
 export interface Workflow {
-  workflow_id: string;
+  id: string;
   title: string;
-  steps: WorkflowStep[];
+  description: string;
+  steps: WorkflowStepType[];
+  activated: boolean;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface SubTask {
@@ -49,10 +47,9 @@ export interface Todo extends Record<string, unknown> {
   project_id: string;
   completed: boolean;
   subtasks: SubTask[];
+  workflow_id?: string;
   created_at: string;
   updated_at: string;
-  workflow?: Workflow; // Add workflow field
-  workflow_status?: WorkflowStatus; // Add workflow status field
 }
 
 export interface TodoCreate extends Record<string, unknown> {
@@ -76,7 +73,7 @@ export interface TodoUpdate {
   project_id?: string;
   completed?: boolean;
   subtasks?: SubTask[];
-  workflow?: Workflow; // Add workflow field
+  workflow_id?: string;
 }
 
 export interface Project {

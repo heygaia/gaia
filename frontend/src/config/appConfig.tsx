@@ -73,6 +73,12 @@ export const appConfig = {
 
     resources: [
       {
+        href: "/use-cases",
+        label: "Use Cases",
+        icon: <Idea01Icon width={19} color={undefined} />,
+        description: "Discover workflows and AI prompts",
+      },
+      {
         href: "/blog",
         label: "Blog",
         icon: <BookOpen02Icon width={19} color={undefined} />,

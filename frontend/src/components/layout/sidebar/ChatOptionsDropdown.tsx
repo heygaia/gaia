@@ -18,7 +18,7 @@ import {
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import { ChevronDown, Star, Trash } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ReactNode, SetStateAction, useState } from "react";
+import { ReactNode, SetStateAction, useEffect,useState } from "react";
 
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";
@@ -47,6 +47,23 @@ export default function ChatOptionsDropdown({
   const [modalAction, setModalAction] = useState<"edit" | "delete" | null>(
     null,
   );
+
+  // Handle Enter key for delete modal
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Enter" && isOpen && modalAction === "delete") {
+        event.preventDefault();
+        handleDelete();
+      }
+    };
+
+    if (isOpen && modalAction === "delete")
+      document.addEventListener("keydown", handleKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [isOpen, modalAction]);
 
   const handleStarToggle = async () => {
     try {

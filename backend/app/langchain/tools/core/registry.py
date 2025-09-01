@@ -16,6 +16,7 @@ from app.langchain.tools import (
     todo_tool,
     weather_tool,
     webpage_tool,
+    workflow_tool,
 )
 from app.services.composio_service import composio_service
 from langchain_core.tools import BaseTool
@@ -60,7 +61,6 @@ class ToolRegistry:
 
         # All tools organized by category
         self._tools_by_category = {
-          
             "productivity": [
                 *todo_tool.tools,
                 *reminder_tool.tools,
@@ -99,11 +99,16 @@ class ToolRegistry:
             "weather": [
                 weather_tool.get_weather,
             ],
+            "workflow": [
+                *workflow_tool.tools,
+            ],
             # Only handler tools in main categories - sub-agents get their own tools separately
             "twitter": composio_service.get_tools(tool_kit="TWITTER"),
             "notion": composio_service.get_tools(tool_kit="NOTION"),
             "linkedin": composio_service.get_tools(tool_kit="LINKEDIN"),
-            "mail": composio_service.get_tools(tool_kit="GMAIL", exclude_tools=["GMAIL_SEND_EMAIL"]),
+            "mail": composio_service.get_tools(
+                tool_kit="GMAIL", exclude_tools=["GMAIL_SEND_EMAIL"]
+            ),
             "google_sheets": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
         }
 

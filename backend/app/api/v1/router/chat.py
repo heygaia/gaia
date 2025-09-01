@@ -66,8 +66,12 @@ async def save_incomplete_conversation(
     if conversation_id is None:
         last_message: MessageDict = {"role": "user", "content": body.message}
         selectedTool = body.selectedTool
+        selectedWorkflow = body.selectedWorkflow
         conversation = await create_conversation(
-            last_message, user=user, selectedTool=selectedTool
+            last_message,
+            user=user,
+            selectedTool=selectedTool,
+            selectedWorkflow=selectedWorkflow,
         )
         conversation_id = conversation.get("conversation_id", "")
 

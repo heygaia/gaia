@@ -9,7 +9,9 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { streamController } from "@/features/chat/utils/streamController";
+import { useComposerStore } from "@/stores/composerStore";
 import { MessageType } from "@/types/features/convoTypes";
+import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
 
@@ -53,6 +55,7 @@ export const useChatStream = () => {
         refs.current.botMessage.fileData || [],
         refs.current.botMessage.selectedTool || null,
         refs.current.botMessage.toolCategory || null,
+        refs.current.botMessage.selectedWorkflow || null,
       );
 
       // Handle navigation for incomplete conversations
@@ -204,6 +207,7 @@ export const useChatStream = () => {
     fileData: FileData[] = [],
     selectedTool: string | null = null,
     toolCategory: string | null = null,
+    selectedWorkflow: WorkflowData | null = null,
   ) => {
     refs.current.accumulatedResponse = "";
     refs.current.userPrompt = inputText;
@@ -222,6 +226,9 @@ export const useChatStream = () => {
       loading: true,
       fileIds: fileData.map((f) => f.fileId),
       fileData,
+      selectedTool,
+      toolCategory,
+      selectedWorkflow,
     };
 
     // Create abort controller for this stream
@@ -258,7 +265,7 @@ export const useChatStream = () => {
           toast.error(`Error while streaming: ${err}`);
           console.error("Stream error:", err);
           // Save the user's input text for restoration on error
-          localStorage.setItem("gaia-searchbar-text", inputText);
+          useComposerStore.getState().setInputText(inputText);
         }
         // Abort errors are now handled in handleStreamClose
       },
@@ -266,6 +273,7 @@ export const useChatStream = () => {
       selectedTool,
       toolCategory,
       controller,
+      selectedWorkflow,
     );
   };
 };

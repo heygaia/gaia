@@ -32,8 +32,10 @@ export const useIntegrations = (): UseIntegrationsReturn => {
   const { data: configData, isLoading: configLoading } = useQuery({
     queryKey: ["integrations", "config"],
     queryFn: integrationsApi.getIntegrationConfig,
-    staleTime: 5 * 60 * 1000, // Cache for 5 minutes
+    staleTime: 3 * 60 * 60 * 1000, // 3 hours - same as tools cache
+    gcTime: 6 * 60 * 60 * 1000, // 6 hours - keep in cache longer
     retry: 2,
+    refetchOnWindowFocus: false, // Don't refetch when user focuses window
   });
 
   // Query for integration status
@@ -44,9 +46,10 @@ export const useIntegrations = (): UseIntegrationsReturn => {
   } = useQuery({
     queryKey: ["integrations", "status"],
     queryFn: integrationsApi.getIntegrationStatus,
-    staleTime: 0, // Always fetch fresh data
-    gcTime: 0, // Don't cache the data
+    staleTime: 30 * 60 * 1000, // 30 minutes - cache status for reasonable time
+    gcTime: 60 * 60 * 1000, // 1 hour - keep in cache longer than staleTime
     retry: 2,
+    refetchOnWindowFocus: false, // Don't refetch when user focuses window
   });
 
   const integrationConfigs = useMemo(

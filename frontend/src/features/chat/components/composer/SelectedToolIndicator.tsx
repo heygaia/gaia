@@ -35,7 +35,7 @@ const SelectedToolIndicator: React.FC<SelectedToolIndicatorProps> = ({
             stiffness: 300,
             duration: 0.2,
           }}
-          className="mx-3 mt-2 mb-1 flex w-fit items-center gap-2 rounded-lg bg-zinc-700 px-2 py-1.5 outline-1 outline-zinc-600"
+          className="mx-3 mt-2 mb-1 flex w-fit items-center gap-2 rounded-xl bg-zinc-700 px-4 py-2 pr-2"
         >
           <div>
             {getToolCategoryIcon(toolCategory || "general", {
@@ -51,9 +51,9 @@ const SelectedToolIndicator: React.FC<SelectedToolIndicatorProps> = ({
               onClick={onRemove}
               whileHover={{ scale: 1.1 }}
               whileTap={{ scale: 0.9 }}
-              className="flex h-4 w-4 items-center justify-center rounded text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
+              className="flex h-6 w-6 cursor-pointer items-center justify-center rounded-md text-zinc-400 transition-colors hover:bg-zinc-600 hover:text-zinc-200"
             >
-              <X size={10} />
+              <X size={15} />
             </motion.button>
           )}
         </motion.div>
