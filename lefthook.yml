@@ -1,0 +1,58 @@
+pre-commit:
+  parallel: true
+
+  commands:
+    frontend-barrels:
+      glob: "*.{ts,tsx}"
+      root: "frontend/"
+      run: pnpm generate-barrels
+      stage_fixed: true
+
+    frontend-lint:
+      glob: "*.{ts,tsx}"
+      root: "frontend/"
+      run: pnpm check:staged
+      stage_fixed: true
+
+    frontend-format:
+      glob: "*.{ts,tsx}"
+      root: "frontend/"
+      run: pnpm format:staged
+      stage_fixed: true
+
+    backend-lint:
+      glob: "*.py"
+      root: "backend/"
+      run: uvx ruff check --fix {staged_files} && uvx ruff format {staged_files}
+      stage_fixed: true
+
+    backend-types:
+      glob: "*.py"
+      root: "backend/"
+      run: uvx ty check {staged_files}
+
+    frontend-types:
+      glob: "*.{ts,tsx}"
+      root: "frontend/"
+      run: pnpm type
+
+    backend-security:
+      glob: "*.py"
+      root: "backend/"
+      run: uvx bandit {staged_files}
+
+    detect-secrets:
+      glob: "**/*"
+      exclude: "frontend/pnpm-lock.yaml|docs/**"
+      run: |
+        if command -v detect-secrets >/dev/null 2>&1; then
+          detect-secrets scan --string {staged_files} || exit 1
+        else
+          echo "detect-secrets not found, skipping secret detection"
+        fi
+
+commit-msg:
+  commands:
+    commitlint:
+      root: "frontend/"
+      run: pnpm dlx commitlint --edit {1}

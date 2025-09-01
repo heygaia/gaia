@@ -6,8 +6,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  frontend-build:
-    # if: ${{ contains(github.event.pull_request.changed_files, 'frontend/') }}
+  frontend:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -30,32 +29,22 @@ jobs:
           cache-dependency-path: "frontend/pnpm-lock.yaml"
 
       - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install lefthook
+        run: npm install -g lefthook
+
+      - name: Run lefthook checks
         run: |
-          pnpm install --frozen-lockfile
+          cd ..
+          lefthook run pre-commit
 
-      - name: Run ESLint with autofix
-        run: pnpm lint:fix
-
-      - name: Commit ESLint fixes (if any)
-        run: |
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-          if ! git diff --exit-code; then
-            echo "Files were modified by ESLint. Committing changes..."
-            git add .
-            git commit -m "ci(auto-fix): Apply ESLint formatting"
-            git push origin HEAD:${{ github.head_ref }}
-          else
-            echo "✅ No ESLint fixes needed"
-          fi
-
-      - name: Create Build
+      - name: Build
         env:
           NEXT_PUBLIC_API_BASE_URL: "http://fake-api-for-build.example.com"
         run: pnpm build
 
-  backend-checks:
+  backend:
     runs-on: ubuntu-latest
     defaults:
       run:
@@ -65,16 +54,14 @@ jobs:
       - uses: actions/checkout@v3
         with:
           fetch-depth: 0
-          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: "3.11"
           cache: "pip"
-          cache-dependency-path: |
-            backend/pyproject.toml
-            backend/.pre-commit-config.yaml
+          cache-dependency-path: "backend/pyproject.toml"
+
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -85,42 +72,18 @@ jobs:
         run: |
           uv venv
           echo "$PWD/.venv/bin" >> $GITHUB_PATH
+
       - name: Install dependencies
         run: |
           source .venv/bin/activate
           uv pip sync pyproject.toml
-          uv add pre-commit ruff mypy types-redis types-requests types-pytz
-          mypy --install-types
-          pre-commit install
-      - name: Set up pre-commit cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/pre-commit
-          key: pre-commit-${{ runner.os }}-${{ hashFiles('.pre-commit-config.yaml') }}
+          uv add ruff mypy types-redis types-requests types-pytz bandit pip-audit detect-secrets
 
-      - name: Run pre-commit checks
+      - name: Install lefthook
+        run: npm install -g lefthook
+
+      - name: Run lefthook checks
         run: |
           source .venv/bin/activate
-          git config --global user.name "GitHub Actions"
-          git config --global user.email "actions@github.com"
-
-          # Run pre-commit
-          echo "Running pre-commit checks..."
-          pre-commit run --all-files --show-diff-on-failure || true
-
-          # Check if there are changes
-          if ! git diff --exit-code; then
-            echo "Files were modified by pre-commit hooks. Changes:"
-            git diff --name-only
-
-            # Commit the changes
-            git add .
-            git commit -m "ci(auto-fix): Apply pre-commit hooks formatting"
-
-            # Push the changes back to the PR branch
-            git push origin HEAD:${{ github.head_ref }}
-
-            echo "✅ Auto-applied formatting fixes and pushed to PR"
-          else
-            echo "✅ No formatting issues found"
-          fi
+          cd ..
+          lefthook run pre-commit

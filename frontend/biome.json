@@ -4,16 +4,12 @@
   "vcs": {
     "enabled": false,
     "clientKind": "git",
-    "useIgnoreFile": false
-  },
-  "files": {
-    "ignoreUnknown": false
+    "useIgnoreFile": true,
+    "root": "../"
   },
   "formatter": {
     "enabled": true,
     "formatWithErrors": false,
-    "indentStyle": "space",
-    "indentWidth": 2,
     "lineEnding": "lf",
     "lineWidth": 80,
     "attributePosition": "auto",
@@ -29,10 +25,19 @@
         "noUselessFragments": "warn"
       },
       "style": {
-        "useBlockStatements": "off"
+        "useBlockStatements": "off",
+        "useFilenamingConvention": {
+          "level": "error",
+          "options": {
+            "filenameCases": ["camelCase", "PascalCase", "export"]
+          }
+        }
       },
       "nursery": {
         "useSortedClasses": "warn"
+      },
+      "performance": {
+        "noBarrelFile": "off"
       }
     }
   },
