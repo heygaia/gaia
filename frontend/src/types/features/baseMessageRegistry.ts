@@ -13,6 +13,7 @@ import {
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
 import { EmailComposeData, EmailFetchData, EmailThreadData } from "./mailTypes";
+import { NotificationRecord } from "./notificationTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";
@@ -52,6 +53,7 @@ export const TOOLS_MESSAGE_SCHEMA = {
     | CalendarListFetchData[]
     | null
     | undefined,
+  notification_data: undefined as NotificationRecord[] | null | undefined,
 };
 
 // BASE_MESSAGE_SCHEMA defines all the fields for message data.
@@ -87,4 +89,3 @@ export type ToolsMessageKey = keyof typeof TOOLS_MESSAGE_SCHEMA;
 export const TOOLS_MESSAGE_KEYS = Object.keys(
   TOOLS_MESSAGE_SCHEMA,
 ) as ToolsMessageKey[];
-

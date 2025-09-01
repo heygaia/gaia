@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Info, Bell } from "lucide-react";
 import Image from "next/image";
 
 import {
@@ -146,6 +146,13 @@ export const getToolCategoryIcon = (
         <Info
           {...defaultProps}
           className={iconProps.className || "text-purple-400"}
+        />
+      );
+    case "notifications":
+      return (
+        <Bell
+          {...defaultProps}
+          className={iconProps.className || "text-blue-400"}
         />
       );
     default:

@@ -9,6 +9,7 @@ from app.langchain.tools import (
     image_tool,
     mail_tool,
     memory_tools,
+    notification_tool,
     reminder_tool,
     search_tool,
     support_tool,
@@ -59,6 +60,9 @@ TOOLS_BY_CATEGORY = {
     ],
     "support": [
         *support_tool.tools,
+    ],
+    "notifications": [
+        *notification_tool.tools,
     ],
 }
 

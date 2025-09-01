@@ -24,6 +24,7 @@ import FollowUpActions from "./FollowUpActions";
 import GoalSection from "./goals/GoalSection";
 import { GoalAction } from "./goals/types";
 import GoogleDocsSection from "./GoogleDocsSection";
+import NotificationSection from "./NotificationSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
 
@@ -51,6 +52,7 @@ export default function TextBubble({
   systemPurpose,
   follow_up_actions,
   loading,
+  notification_data,
 }: ChatBubbleBotProps) {
   return (
     <>
@@ -136,6 +138,10 @@ export default function TextBubble({
 
       {!!support_ticket_data && (
         <SupportTicketSection support_ticket_data={support_ticket_data!} />
+      )}
+
+      {!!notification_data && (
+        <NotificationSection notification_data={notification_data!} />
       )}
 
       {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}

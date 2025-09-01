@@ -4,6 +4,7 @@ from typing import List, Optional
 from app.models.calendar_models import EventCreateRequest
 from app.models.mail_models import EmailComposeRequest
 from app.models.message_models import FileData
+from app.models.notification.notification_models import NotificationRecord
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
@@ -121,6 +122,7 @@ class MessageModel(BaseModel):
     google_docs_data: Optional[dict] = None
     follow_up_actions: Optional[List[str]] = []
     integration_connection_required: Optional[IntegrationConnectionData] = None
+    notification_data: Optional[List[NotificationRecord]] = []
 
 
 class SystemPurpose(str, Enum):

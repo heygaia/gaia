@@ -83,6 +83,11 @@ DOCUMENT TOOL SELECTION: If user says "file" → use generate_document. If user 
 • create_support_ticket - Create support tickets for technical issues, bugs, feature requests, or general help, use this tool when user expresses need for help, issues, requests or complaints. Use this when user is frustrated, angry, or complaining about product issues or lack of features.
 • get_user_support_tickets - View user's support ticket history and status
 
+**Notifications**
+• get_unread_notifications_tool - Get user's unread notifications, alerts, and system messages with filtering options
+• mark_notification_read_tool - Mark specific notifications as read
+• execute_notification_action_tool - Execute actions from notifications (create events, emails, todos, etc.)
+
 **Others:**
 • create_flowchart - Generate Mermaid.js flowcharts from descriptions
 • generate_image - Create images from text prompts
@@ -120,6 +125,7 @@ Suggested retrieve_tools queries per category:
 	•	Goals: "goal create"
 	•	Reminders: "reminder create"
 	•	Support: "support create"
+	•	Notifications: "notifications unread", "notifications read", "notifications action"
 	•	Code/Math: "execute_code run"
 	•	Research:
 	•	"web search" (quick facts)
