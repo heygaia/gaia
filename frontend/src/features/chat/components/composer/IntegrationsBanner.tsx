@@ -2,7 +2,7 @@ import { ChevronRight } from "lucide-react";
 import Image from "next/image";
 import React from "react";
 
-import { Button } from "@/components";
+import { ArrowRight01Icon, Button } from "@/components";
 
 interface Integration {
   id: string;
@@ -51,7 +51,7 @@ const IntegrationsBanner: React.FC<IntegrationsBannerProps> = ({
               />
             </div>
           ))}
-          <ChevronRight width={18} height={18} className="ml-3" />
+          <ArrowRight01Icon width={18} height={18} className="ml-3" />
         </div>
       </div>
     </Button>
