@@ -24,3 +24,4 @@
       git add src/**/index.ts
     fi
   fi
+pnpm dlx ultracite fix

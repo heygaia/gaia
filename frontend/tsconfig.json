@@ -5,7 +5,11 @@
     "disableSolutionSearching": true,
     "disableReferencedProjectLoad": true,
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "strict": true,
     "noEmit": true,
@@ -22,20 +26,22 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"],
-      "@/src": ["./src/*"]
-    }
+      "@/*": [
+        "./src/*"
+      ],
+      "@/src": [
+        "./src/*"
+      ]
+    },
+    "strictNullChecks": true
   },
   "include": [
     "**/*.ts",
     "**/*.tsx",
-    // ".next/types/**/*.ts",
-    // "next-env.d.ts",
-    // ".next/types/**/*.ts",
-    // "next.config.mjs",
-    // "video.d.ts",
-    // "dist/types/**/*.ts"
     ".next/types/**/*.ts"
   ],
-  "exclude": ["node_modules", ".next"]
+  "exclude": [
+    "node_modules",
+    ".next"
+  ]
 }

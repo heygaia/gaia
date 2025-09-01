@@ -8,33 +8,10 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 const nextConfig = {
   reactStrictMode: true,
-  // webpack: (config, { dev, isServer }) => {
-  //   if (dev) {
-  //     // Reduce parallel processing during development
-  //     config.parallelism = 1;
-
-  //     config.cache = false;
-
-  //     // Reduce chunk sizes
-  //     config.optimization.splitChunks = {
-  //       chunks: "all",
-  //       maxInitialRequests: 3,
-  //       cacheGroups: {
-  //         commons: {
-  //           test: /[\\/]node_modules[\\/]/,
-  //           name: "vendor",
-  //           chunks: "all",
-  //         },
-  //       },
-  //     };
-  //   }
-  //   return config;
-  // },
-  // turbopack: {},
-  // experimental: {
-  // webpackMemoryOptimizations: true,
-  // optimizePackageImports: ["@heroui/react"],
-  // },
+  eslint: {
+    // Warning: This allows production builds to successfully complete even if your project has ESLint errors.
+    ignoreDuringBuilds: true,
+  },
   images: {
     remotePatterns: [
       {
