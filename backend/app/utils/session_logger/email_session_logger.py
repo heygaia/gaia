@@ -15,7 +15,7 @@ class EmailProcessingSession(BaseProcessingSession):
     """
 
     def __init__(
-        self, history_id: int, email_address: str, session_id: Optional[str] = None
+        self, history_id: Optional[int], email_address: str, session_id: Optional[str] = None
     ):
         # Email-specific attributes (set before calling super().__init__)
         self.history_id = history_id
@@ -106,7 +106,7 @@ class EmailSessionManager(BaseSessionManager):
         super().__init__(EmailProcessingSession)
 
     def create_session(
-        self, history_id: int, email_address: str
+        self, history_id: Optional[int], email_address: str
     ) -> EmailProcessingSession:
         """Create a new email processing session."""
         session = super().create_session(

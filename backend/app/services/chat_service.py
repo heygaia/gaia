@@ -3,12 +3,12 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from app.config.loggers import chat_logger as logger
-from app.config.token_repository import token_repository
 from app.langchain.core.agent import call_agent
 from app.models.chat_models import MessageModel, UpdateMessagesRequest
 from app.models.message_models import MessageRequestWithHistory
 from app.services.conversation_service import update_messages
 from app.services.file_service import get_files
+from app.services.model_service import get_user_selected_model
 from app.utils.chat_utils import create_conversation
 from fastapi import BackgroundTasks
 
@@ -38,29 +38,21 @@ async def chat_stream(
         f"User {user.get('user_id')} started a conversation with ID {conversation_id}"
     )
 
-    # Get token from repository if available
-    access_token = None
-    refresh_token = None
     user_id = user.get("user_id")
+    user_model_config = None
     if user_id:
         try:
-            token = await token_repository.get_token(
-                str(user_id), "google", renew_if_expired=True
-            )
-            if token:
-                access_token = token.get("access_token")
-                refresh_token = token.get("refresh_token")
+            user_model_config = await get_user_selected_model(user_id)
         except Exception as e:
-            logger.warning(f"Could not get token from repository: {e}")
+            logger.warning(f"Could not get user's selected model, using default: {e}")
 
     # Stream response from the agent
     async for chunk in call_agent(
         request=body,
         user=user,
         conversation_id=conversation_id,
-        access_token=access_token,
-        refresh_token=refresh_token,
         user_time=user_time,
+        user_model_config=user_model_config,
     ):
         # Process complete message marker
         if chunk.startswith("nostream: "):

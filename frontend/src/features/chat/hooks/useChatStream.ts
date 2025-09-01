@@ -1,6 +1,6 @@
-// useChatStream.ts
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
 import { useRouter } from "next/navigation";
+import { redirect } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
 
@@ -60,8 +60,7 @@ export const useChatStream = () => {
 
       // Handle navigation for incomplete conversations
       if (response.conversation_id && !refs.current.newConversation.id) {
-        router.push(`/c/${response.conversation_id}`);
-        fetchConversations();
+        redirect(`/c/${response.conversation_id}`);
       }
     } catch (saveError) {
       console.error("Failed to save incomplete conversation:", saveError);

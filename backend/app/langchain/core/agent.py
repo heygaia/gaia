@@ -1,6 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
+from typing import Optional
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.core.graph_manager import GraphManager
@@ -10,8 +11,9 @@ from app.langchain.prompts.proactive_agent_prompt import (
     PROACTIVE_MAIL_AGENT_SYSTEM_PROMPT,
 )
 from app.langchain.templates.mail_templates import MAIL_RECEIVED_USER_MESSAGE_TEMPLATE
-from app.langchain.tools.core.categories import get_tool_category
+from app.langchain.tools.core.registry import tool_registry
 from app.models.message_models import MessageRequestWithHistory
+from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory
 from langchain_core.messages import (
     AIMessageChunk,
@@ -25,8 +27,7 @@ async def call_agent(
     conversation_id,
     user,
     user_time: datetime,
-    access_token=None,
-    refresh_token=None,
+    user_model_config: Optional[ModelConfig] = None,
 ):
     user_id = user.get("user_id")
     messages = request.messages
@@ -44,19 +45,18 @@ async def call_agent(
 
     try:
         # First gather: Setup operations that can run in parallel
-        history, graph = await asyncio.gather(
-            construct_langchain_messages(
-                messages=messages,
-                files_data=request.fileData,
-                currently_uploaded_file_ids=request.fileIds,
-                user_id=user_id,
-                query=request.message,
-                user_name=user.get("name"),
-                selected_tool=request.selectedTool,
-                selected_workflow=request.selectedWorkflow,
-            ),
-            GraphManager.get_graph(),
+        history_task = construct_langchain_messages(
+            messages=messages,
+            files_data=request.fileData,
+            currently_uploaded_file_ids=request.fileIds,
+            user_id=user_id,
+            query=request.message,
+            user_name=user.get("name"),
+            selected_tool=request.selectedTool,
         )
+        graph_task = GraphManager.get_graph()
+
+        history, graph = await asyncio.gather(history_task, graph_task)
 
         # Start memory storage in background - fire and forget
         asyncio.create_task(store_memory())
@@ -72,21 +72,34 @@ async def call_agent(
         }
 
         # Begin streaming the AI output
+        config = {
+            "configurable": {
+                "thread_id": conversation_id,
+                "user_id": user_id,
+                "email": user.get("email"),
+                "user_time": user_time.isoformat(),
+                "model_configurations": {
+                    "model_name": (
+                        user_model_config.provider_model_name
+                        if user_model_config
+                        else None
+                    ),
+                    "provider": user_model_config.inference_provider.value
+                    if user_model_config
+                    else None,
+                    "max_tokens": (
+                        user_model_config.max_tokens if user_model_config else None
+                    ),
+                },
+            },
+            "recursion_limit": 25,
+            "metadata": {"user_id": user_id},
+        }
+
         async for event in graph.astream(
             initial_state,
             stream_mode=["messages", "custom"],
-            config={
-                "configurable": {
-                    "thread_id": conversation_id,
-                    "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                    "email": user.get("email"),
-                    "user_time": user_time.isoformat(),
-                },
-                "recursion_limit": 25,
-                "metadata": {"user_id": user_id},
-            },
+            config=config,
         ):
             stream_mode, payload = event
 
@@ -106,7 +119,9 @@ async def call_agent(
                             tool_name_raw = tool_call.get("name")
                             if tool_name_raw:
                                 tool_name = tool_name_raw.replace("_", " ").title()
-                                tool_category = get_tool_category(tool_name_raw)
+                                tool_category = tool_registry.get_tool_category(
+                                    tool_name_raw
+                                )
                                 progress_data = {
                                     "progress": {
                                         "message": f"Executing {tool_name}...",
@@ -249,8 +264,6 @@ async def call_mail_processing_agent(
     email_content: str,
     user_id: str,
     email_metadata: dict | None = None,
-    access_token: str | None = None,
-    refresh_token: str | None = None,
 ):
     """
     Process incoming email with AI agent to take appropriate actions.
@@ -323,8 +336,6 @@ async def call_mail_processing_agent(
                 "configurable": {
                     "thread_id": processing_id,
                     "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
                     "initiator": "backend",  # This will be used to identify either to send notification or stream to the user
                 },
                 "recursion_limit": 25,  # Increased limit for complex email processing

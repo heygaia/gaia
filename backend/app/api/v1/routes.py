@@ -8,14 +8,15 @@ from app.api.v1.router import (
     blog,
     calendar,
     chat,
+    composio,
     conversations,
     feedback,
     file,
     goals,
     image,
     mail,
-    mail_webhook,
     memory,
+    models,
     notes,
     notification,
     oauth,
@@ -28,6 +29,7 @@ from app.api.v1.router import (
     tools,
     usage,
     waitlist,
+    webhook,
     websocket,
     workflows,
 )
@@ -35,6 +37,7 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
+router.include_router(composio.router, tags=["composio"])
 router.include_router(chat.router, tags=["Chat"])
 router.include_router(conversations.router, tags=["Conversations"])
 router.include_router(waitlist.router, tags=["Waitlist"])
@@ -52,7 +55,7 @@ router.include_router(team.router, tags=["Team"])
 router.include_router(file.router, tags=["File"])
 router.include_router(notification.router, tags=["Notification"])
 router.include_router(websocket.router, tags=["WebSocket"])
-router.include_router(mail_webhook.router, tags=["Mail Webhook"])
+router.include_router(webhook.router, tags=["Mail Webhook"])
 router.include_router(todos.router, tags=["Todos"])
 router.include_router(workflows.router, tags=["Workflows"])
 router.include_router(reminders.router, tags=["Reminders"])
@@ -60,4 +63,5 @@ router.include_router(support.router, tags=["Support"])
 router.include_router(payments.router, prefix="/payments", tags=["Payments"])
 router.include_router(usage.router, tags=["Usage"])
 router.include_router(tools.router, tags=["Tools"])
+router.include_router(models.router, tags=["Models"])
 # api_router.include_router(audio.router, tags=["Audio"])

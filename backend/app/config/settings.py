@@ -1,9 +1,12 @@
 import datetime
 import os
 
+from dotenv import load_dotenv
 from infisical_sdk import InfisicalSDKClient
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+load_dotenv()
 
 
 class InfisicalConfigError(Exception):
@@ -57,7 +60,10 @@ def inject_infisical_secrets():
             include_imports=True,  # Includes secrets imported from other projects/paths
         )
         for secret in secrets.secrets:
-            os.environ[secret.secretKey] = secret.secretValue
+            if (
+                os.environ.get(secret.secretKey) is None
+            ):  # Avoid overwriting existing environment variables
+                os.environ[secret.secretKey] = secret.secretValue
 
     except Exception as e:
         raise InfisicalConfigError(
@@ -74,6 +80,7 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str
     CHROMADB_PORT: int
     POSTGRES_URL: str
+    RABBITMQ_URL: str
 
     # OAuth & Authentication
     GOOGLE_CLIENT_ID: str
@@ -100,6 +107,10 @@ class Settings(BaseSettings):
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
+    COMPOSIO_KEY: str
+
+    # Webhook Secrets
+    COMPOSIO_WEBHOOK_SECRET: str
 
     # Blog Management
     BLOG_BEARER_TOKEN: str  # Bearer token for blog management operations
@@ -125,9 +136,6 @@ class Settings(BaseSettings):
     MEM0_API_KEY: str
     MEM0_ORG_ID: str
     MEM0_PROJECT_ID: str
-
-    # Celery Configuration
-    RABBITMQ_URL: str
 
     # Code Execution
     E2B_API_KEY: str
@@ -159,6 +167,12 @@ class Settings(BaseSettings):
     def WORKOS_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/workos/callback"
+
+    @computed_field  # type: ignore
+    @property
+    def COMPOSIO_REDIRECT_URI(self) -> str:
+        """Composio OAuth callback URL."""
+        return f"{self.HOST}/api/v1/oauth/composio/callback"
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

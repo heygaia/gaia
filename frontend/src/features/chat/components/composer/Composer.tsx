@@ -1,3 +1,4 @@
+import { useParams } from "next/navigation";
 import Image from "next/image";
 import React, {
   useEffect,
@@ -29,6 +30,7 @@ import { FileData, SearchMode } from "@/types/shared";
 
 import ComposerInput, { ComposerInputRef } from "./ComposerInput";
 import ComposerToolbar from "./ComposerToolbar";
+import IntegrationsBanner from "./IntegrationsBanner";
 import SelectedToolIndicator from "./SelectedToolIndicator";
 import SelectedWorkflowIndicator from "./SelectedWorkflowIndicator";
 
@@ -337,35 +339,12 @@ const Composer: React.FC<MainSearchbarProps> = ({
 
   return (
     <div className="searchbar_container relative pb-1">
-      {!integrationsLoading && integrations.length > 0 && !hasMessages && (
-        <Button
-          className="absolute -top-4 z-[0] flex h-fit w-[92%] rounded-full bg-zinc-800/40 px-4 py-2 pb-8 text-xs text-foreground-300 hover:bg-zinc-800/70 hover:text-zinc-400 sm:w-[46%]"
-          onClick={handleToggleSlashCommandDropdown}
-        >
-          <div className="flex w-full items-center justify-between">
-            <span className="text-xs">Connect your tools to GAIA</span>
-            <div className="ml-3 flex items-center gap-1">
-              {integrations.slice(0, 8).map((integration) => (
-                <div
-                  key={integration.id}
-                  className="opacity-60 transition duration-200 hover:scale-150 hover:rotate-6 hover:opacity-120"
-                  title={integration.name}
-                >
-                  <Image
-                    width={14}
-                    height={14}
-                    src={integration.icons[0]}
-                    alt={integration.name}
-                    className="h-[14px] w-[14px] object-contain"
-                  />
-                </div>
-              ))}
-
-              <ArrowRight01Icon width={18} height={18} className="ml-3" />
-            </div>
-          </div>
-        </Button>
-      )}
+      <IntegrationsBanner
+        integrations={integrations}
+        isLoading={integrationsLoading}
+        hasMessages={hasMessages}
+        onToggleSlashCommand={handleToggleSlashCommandDropdown}
+      />
       <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pt-1 pb-2">
         <FilePreview files={uploadedFiles} onRemove={removeUploadedFile} />
         <SelectedToolIndicator

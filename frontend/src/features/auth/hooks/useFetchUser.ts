@@ -28,6 +28,7 @@ const useFetchUser = () => {
         profilePicture: data?.picture,
         timezone: data?.timezone,
         onboarding: data?.onboarding,
+        selected_model: data?.selected_model,
       });
 
       // Check if onboarding is needed and prevent navigation loops

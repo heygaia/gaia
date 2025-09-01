@@ -33,6 +33,9 @@ export default function RedirectPage() {
               "Authentication failed. No authorization code received.",
             );
             break;
+          case "failed":
+            toast.error("Authentication failed. Please try again.");
+            break;
           default:
             toast.error(
               `Authentication failed: ${oauthError}. Please try again.`,

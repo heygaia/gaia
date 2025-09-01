@@ -10,7 +10,7 @@ importers:
     dependencies:
       '@databuddy/sdk':
         specifier: ^2.0.0
-        version: 2.0.0(react@19.1.0)
+        version: 2.0.0(react@19.1.1)
       '@fontsource-variable/inter':
         specifier: ^5.2.6
         version: 5.2.6
@@ -9465,9 +9465,9 @@ snapshots:
 
   '@chevrotain/utils@11.0.3': {}
 
-  '@databuddy/sdk@2.0.0(react@19.1.0)':
+  '@databuddy/sdk@2.0.0(react@19.1.1)':
     optionalDependencies:
-      react: 19.1.0
+      react: 19.1.1
 
   '@discoveryjs/json-ext@0.5.7': {}
 

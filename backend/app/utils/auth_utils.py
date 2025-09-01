@@ -1,10 +1,9 @@
 from typing import Any, Dict, Optional, Tuple
 
-from workos import AsyncWorkOSClient
-
 from app.config.loggers import auth_logger
 from app.config.settings import settings
 from app.db.mongodb.collections import users_collection
+from workos import AsyncWorkOSClient
 
 # T is the return type of the wrapped function
 
@@ -47,7 +46,7 @@ async def authenticate_workos_session(
         # Handle authentication result
         if auth_response.authenticated:
             # Authentication successful
-            workos_user = auth_response.user
+            workos_user = auth_response.user  # type: ignore[reportOptionalMemberAccess]
         else:
             # Try to refresh the session
             try:
