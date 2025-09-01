@@ -1,5 +1,6 @@
 from typing import Annotated
 
+from langchain_core.tools import BaseTool
 from langgraph.prebuilt import InjectedStore
 from langgraph.store.base import BaseStore
 
@@ -7,6 +8,7 @@ from langgraph.store.base import BaseStore
 def get_retrieve_tools_function(
     tool_space: str = "general",
     include_core_tools: bool = True,
+    additional_tools: list[BaseTool] = [],
 ):
     """
     Get a function to retrieve tools based on a search query.
@@ -46,6 +48,12 @@ def get_retrieve_tools_function(
             core_tool_ids = [tool.name for tool in filtered_core_tools]
 
             tool_ids.extend(core_tool_ids)
+
+        # Include any additional specified tools
+        additional_tool_ids = [
+            tool.name for tool in additional_tools if tool.name not in exclude_tools
+        ]
+        tool_ids.extend(additional_tool_ids)
 
         return tool_ids
 

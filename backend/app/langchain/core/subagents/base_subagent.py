@@ -9,8 +9,10 @@ from typing import Literal
 
 from app.config.loggers import langchain_logger as logger
 from app.langchain.core.nodes import trim_messages_node
+from app.langchain.core.nodes.filter_messages import create_filter_messages_node
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
 from app.langchain.tools.core.store import get_tools_store
+from app.langchain.tools.memory_tools import get_all_memory, search_memory
 from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage
@@ -65,16 +67,25 @@ class SubAgentFactory:
 
             return state
 
+
         # Create agent with entire tool registry and tool retrieval filtering
         # The retrieve_tools_function will filter tools based on tool_space
         builder = create_agent(
             llm=llm,
             tool_registry=tool_registry.get_tool_registry(),
+            agent_name=name,
             retrieve_tools_function=get_retrieve_tools_function(
                 tool_space=tool_space,
                 include_core_tools=False,  # Provider agents don't need core tools
+                additional_tools=[get_all_memory, search_memory],
             ),
-            pre_model_hooks=[trim_messages_node],
+            pre_model_hooks=[
+                create_filter_messages_node(
+                    agent_name=name,
+                    allow_empty_agent_name=False,
+                ),
+                trim_messages_node,
+            ],
             end_graph_hooks=[transform_output],
         )
 

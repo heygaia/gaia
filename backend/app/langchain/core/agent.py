@@ -111,6 +111,7 @@ async def call_agent(
         ):
             # Handle subgraph events - when subgraphs=True, events are tuples with 3 elements
             ns, stream_mode, payload = event
+            is_main_agent = len(ns) == 0
 
             if stream_mode == "messages":
                 chunk, metadata = payload
@@ -140,7 +141,8 @@ async def call_agent(
                                 }
                                 yield f"data: {json.dumps(progress_data)}\n\n"
 
-                    if content:
+                    # Only yield content from the main agent to avoid duplication
+                    if content and is_main_agent:
                         yield f"data: {json.dumps({'response': content})}\n\n"
                         complete_message += content
 

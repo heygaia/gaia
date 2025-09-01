@@ -1,56 +1,24 @@
-"""
-Handoff tools for supervisor agent to delegate tasks to specialized sub-agent graphs.
-
-This module defines tools that allow the main supervisor agent to route
-specific tasks to domain-specialized sub-agent graphs with full tool registry
-and retrieval capabilities.
-
-## Architecture Overview:
-
-### Sub-Agent Graphs Structure:
-Each provider sub-agent is now a full LangGraph with:
-- **Tool Registry**: 40+ provider-specific tools organized by semantic similarity
-- **Tool Retrieval**: Intelligent tool selection based on task requirements
-- **System Prompts**: Domain-specific expertise and guidelines
-- **Graph Manager Integration**: Registered in global GraphManager for routing
-
-### Supported Providers:
-1. **Gmail Agent**: Email management with 23+ Gmail tools
-2. **Notion Agent**: Workspace management with 40+ Notion tools
-3. **Twitter Agent**: Social media management with 40+ Twitter tools
-4. **LinkedIn Agent**: Professional networking with 40+ LinkedIn tools
-
-### Tool Retrieval Benefits:
-- **Semantic Search**: Tools are selected based on task similarity
-- **Efficiency**: Only relevant tools are loaded per task
-- **Scalability**: Can handle 40+ tools per provider without overwhelming the agent
-- **Specialization**: Each agent has deep domain expertise
-
-### Integration with Main Graph:
-- Sub-agents are registered as nodes in the main graph
-- Handoff tools route specific tasks to appropriate sub-agents
-- Each sub-agent operates independently with its own tool ecosystem
-- Results flow back to the main conversation thread
-
-This replaces the previous simple React agents with sophisticated graphs
-that can intelligently manage large tool sets while maintaining specialization.
-"""
-
-import logging
 from typing import Annotated, List, Optional
 
+from app.config.loggers import common_logger as logger
 from app.langchain.prompts.subagent_prompts import (
     GMAIL_AGENT_SYSTEM_PROMPT,
     LINKEDIN_AGENT_SYSTEM_PROMPT,
     NOTION_AGENT_SYSTEM_PROMPT,
     TWITTER_AGENT_SYSTEM_PROMPT,
 )
+from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain_core.tools import InjectedToolCallId, tool
 from langgraph.graph import MessagesState
 from langgraph.prebuilt import InjectedState
 from langgraph.types import Command, Send
 
-logger = logging.getLogger(__name__)
+# Handoff tool description template
+HANDOFF_DESCRIPTION_TEMPLATE = (
+    "Transfer control to the {provider_name} specialist agent for comprehensive {domain}. "
+    "Handles all {provider_name} operations including {capabilities}. "
+    "Provide detailed task description and conversation summary for optimal results."
+)
 
 def create_handoff_tool(
     *,
@@ -69,25 +37,26 @@ def create_handoff_tool(
         ],
         state: Annotated[MessagesState, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
-        additional_context: Annotated[
+        conversation_summary: Annotated[
             str,
-            "Optional additional context like user preferences, conversation history, or relevant details that the sub-agent needs to complete the task effectively.",
+            "Summary of the conversation so far including user query details, available user memories, user intent, preferences, and any relevant context that helps the sub-agent make better decisions.",
         ] = "",
     ) -> Command:
-        # Combine task description with additional context
+        # Combine task description with conversation summary
         full_context = task_description
-        if additional_context.strip():
-            full_context = f"{task_description}\n\nAdditional Context:\n{additional_context}"
-        
-        task_description_message = {"role": "user", "content": full_context}
-        system_prompt_message = {"role": "system", "content": system_prompt}
+        if conversation_summary.strip():
+            full_context = (
+                f"{task_description}\n\nConversation Summary:\n{conversation_summary}"
+            )
 
-        tool_message = {
-            "role": "tool",
-            "content": f"Successfully transferred to {agent_name}",
-            "name": tool_name,
-            "tool_call_id": tool_call_id,
-        }
+        task_description_message = HumanMessage(content=full_context, name=agent_name)
+        system_prompt_message = SystemMessage(content=system_prompt, name=agent_name)
+        tool_message = ToolMessage(
+            content=f"Successfully transferred to {agent_name}",
+            tool_call_id=tool_call_id,
+            name="main_agent",
+        )
+
         agent_input = {
             **state,
             "messages": [system_prompt_message, task_description_message],
@@ -122,7 +91,11 @@ def get_handoff_tools(enabled_providers: Optional[List[str]] = None):
             create_handoff_tool(
                 tool_name="call_gmail_agent",
                 agent_name="gmail_agent",
-                description="Handles Mail related operations",
+                description=HANDOFF_DESCRIPTION_TEMPLATE.format(
+                    provider_name="Gmail",
+                    domain="email management",
+                    capabilities="composing, sending, reading, organizing emails, managing labels, drafts, attachments, and advanced email workflows",
+                ),
                 system_prompt=GMAIL_AGENT_SYSTEM_PROMPT,
             )
         )
@@ -132,7 +105,11 @@ def get_handoff_tools(enabled_providers: Optional[List[str]] = None):
             create_handoff_tool(
                 tool_name="call_notion_agent",
                 agent_name="notion_agent",
-                description="Handles Notion related operations",
+                description=HANDOFF_DESCRIPTION_TEMPLATE.format(
+                    provider_name="Notion",
+                    domain="workspace management",
+                    capabilities="creating pages, managing databases, updating content, organizing workspaces, handling properties, and advanced Notion workflows",
+                ),
                 system_prompt=NOTION_AGENT_SYSTEM_PROMPT,
             )
         )
@@ -142,7 +119,11 @@ def get_handoff_tools(enabled_providers: Optional[List[str]] = None):
             create_handoff_tool(
                 tool_name="call_twitter_agent",
                 agent_name="twitter_agent",
-                description="Handles Twitter related operations",
+                description=HANDOFF_DESCRIPTION_TEMPLATE.format(
+                    provider_name="Twitter",
+                    domain="social media management",
+                    capabilities="posting tweets, managing threads, engaging with content, analyzing metrics, scheduling posts, and advanced Twitter workflows",
+                ),
                 system_prompt=TWITTER_AGENT_SYSTEM_PROMPT,
             )
         )
@@ -152,7 +133,11 @@ def get_handoff_tools(enabled_providers: Optional[List[str]] = None):
             create_handoff_tool(
                 tool_name="call_linkedin_agent",
                 agent_name="linkedin_agent",
-                description="Handles LinkedIn related operations",
+                description=HANDOFF_DESCRIPTION_TEMPLATE.format(
+                    provider_name="LinkedIn",
+                    domain="professional networking management",
+                    capabilities="creating posts, managing connections, networking outreach, profile updates, content engagement, and advanced LinkedIn workflows",
+                ),
                 system_prompt=LINKEDIN_AGENT_SYSTEM_PROMPT,
             )
         )

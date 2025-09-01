@@ -9,6 +9,7 @@ from app.langchain.core.nodes import (
     follow_up_actions_node,
     trim_messages_node,
 )
+from app.langchain.core.nodes.filter_messages import create_filter_messages_node
 from app.langchain.core.subagents.provider_subagents import ProviderSubAgents
 from app.langchain.llm.client import init_llm
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
@@ -37,10 +38,17 @@ async def build_graph(
     # Create main agent with custom tool retrieval logic
     builder = create_agent(
         llm=effective_llm,
+        agent_name="main_agent",
         tool_registry=tool_registry.get_tool_registry(),
         retrieve_tools_function=get_retrieve_tools_function(tool_space="general"),
         sub_agents=sub_agents,  # pyright: ignore[reportArgumentType]
-        pre_model_hooks=[trim_messages_node],
+        pre_model_hooks=[
+            create_filter_messages_node(
+                agent_name="main_agent",
+                allow_empty_agent_name=True,
+            ),
+            trim_messages_node,
+        ],
         end_graph_hooks=[
             follow_up_actions_node,
             delete_system_messages,

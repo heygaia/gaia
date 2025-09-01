@@ -105,6 +105,7 @@ def create_agent(
     retrieve_tools_function: Callable | None = None,
     retrieve_tools_coroutine: Callable | None = None,
     context_schema=None,
+    agent_name: str = "main_agent",
     sub_agents: dict[str, Union[CompiledStateGraph, RunnableCallable]] = {},
     pre_model_hooks: list[HookType] | None = None,
     end_graph_hooks: list[HookType] | None = None,
@@ -172,6 +173,9 @@ def create_agent(
         selected_tools = [tool_registry[id] for id in state["selected_tool_ids"]]
         llm_with_tools = _llm.bind_tools([retrieve_tools, *selected_tools])  # type: ignore[arg-type]
         response = llm_with_tools.invoke(state["messages"])
+
+        # Set the name for the response for filtering
+        response.name = agent_name
         return {"messages": [response]}  # type: ignore[return-value]
 
     async def acall_model(
@@ -195,6 +199,9 @@ def create_agent(
         )
         llm_with_tools = _llm.bind_tools([retrieve_tools, *selected_tools])  # type: ignore[arg-type]
         response = await llm_with_tools.ainvoke(state["messages"])
+
+        # Set the name for the response for filtering
+        response.name = agent_name
         return {"messages": [response]}  # type: ignore[return-value]
 
     tool_node = ToolNode(tool for tool in tool_registry.values())  # type: ignore[arg-type]
@@ -242,6 +249,7 @@ def create_agent(
                     destinations.append(Send("tools", [tool_call]))
 
             return destinations
+
 
     builder = StateGraph(State, context_schema=context_schema)
 
@@ -294,7 +302,6 @@ def create_agent(
             match_tool = re.match(r"call_(\w+)_agent", tool_name)
             match_content = re.match(r"Successfully transferred to (\w+)", content)  # type: ignore[call-arg]
             if match_tool and match_content:
-                print("returning end")
                 return END
 
         return "agent"

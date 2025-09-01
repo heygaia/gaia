@@ -47,14 +47,12 @@ class ToolCategory:
         require_integration: bool = False,
         integration_name: Optional[str] = None,
         is_delegated: bool = False,
-        delegation_target: Optional[str] = None,
     ):
         self.name = name
         self.space = space
         self.require_integration = require_integration
         self.integration_name = integration_name
         self.is_delegated = is_delegated
-        self.delegation_target = delegation_target
         self.tools: List[Tool] = []
 
     def add_tool(
@@ -98,155 +96,94 @@ class ToolRegistry:
     def _initialize_categories(self):
         """Initialize all tool categories with their metadata and tools."""
 
+        # Helper function to create and register categories
+        def add_category(
+            name: str,
+            tools: Optional[List[BaseTool]] = None,
+            core_tools: Optional[List[BaseTool]] = None,
+            space: str = "general",
+            require_integration: bool = False,
+            integration_name: Optional[str] = None,
+            is_delegated: bool = False,
+        ):
+            category = ToolCategory(
+                name=name,
+                space=space,
+                require_integration=require_integration,
+                integration_name=integration_name,
+                is_delegated=is_delegated,
+            )
+            if core_tools:
+                category.add_tools(core_tools, is_core=True)
+            if tools:
+                category.add_tools(tools)
+            self._categories[name] = category
+
         # Core categories (no integration required)
-        search_category = ToolCategory(
-            name="search", space="general", require_integration=False
-        )
-        search_category.add_tools(
-            [
+        add_category(
+            "search",
+            core_tools=[
                 search_tool.web_search_tool,
                 search_tool.deep_research_tool,
                 webpage_tool.fetch_webpages,
             ],
-            is_core=True,
         )
-        self._categories["search"] = search_category
 
-        documents_category = ToolCategory(
-            name="documents", space="general", require_integration=False
+        add_category(
+            "documents",
+            core_tools=[file_tools.query_file],
+            tools=[document_tool.generate_document],
         )
-        documents_category.add_tool(file_tools.query_file, is_core=True)
-        documents_category.add_tool(document_tool.generate_document)
-        self._categories["documents"] = documents_category
 
-        delegation_category = ToolCategory(
-            name="delegation", space="general", require_integration=False
+        add_category(
+            "delegation",
+            tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
         )
-        delegation_category.add_tools(get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]))
-        self._categories["delegation"] = delegation_category
 
-        productivity_category = ToolCategory(
-            name="productivity", space="general", require_integration=False
+        add_category("productivity", tools=[*todo_tool.tools, *reminder_tool.tools])
+        add_category("goal_tracking", tools=goal_tool.tools)
+        add_category("support", tools=[support_tool.create_support_ticket])
+        add_category("memory", tools=memory_tools.tools)
+        add_category(
+            "development",
+            tools=[code_exec_tool.execute_code, flowchart_tool.create_flowchart],
         )
-        productivity_category.add_tools([*todo_tool.tools, *reminder_tool.tools])
-        self._categories["productivity"] = productivity_category
-
-        goal_tracking_category = ToolCategory(
-            name="goal_tracking", space="general", require_integration=False
-        )
-        goal_tracking_category.add_tools(goal_tool.tools)
-        self._categories["goal_tracking"] = goal_tracking_category
-
-        support_category = ToolCategory(
-            name="support", space="general", require_integration=False
-        )
-        support_category.add_tool(support_tool.create_support_ticket)
-        self._categories["support"] = support_category
-
-        memory_category = ToolCategory(
-            name="memory", space="general", require_integration=False
-        )
-        memory_category.add_tools(memory_tools.tools)
-        self._categories["memory"] = memory_category
-
-        development_category = ToolCategory(
-            name="development", space="general", require_integration=False
-        )
-        development_category.add_tools(
-            [
-                code_exec_tool.execute_code,
-                flowchart_tool.create_flowchart,
-            ]
-        )
-        self._categories["development"] = development_category
-
-        creative_category = ToolCategory(
-            name="creative", space="general", require_integration=False
-        )
-        creative_category.add_tool(image_tool.generate_image)
-        self._categories["creative"] = creative_category
-
-        weather_category = ToolCategory(
-            name="weather", space="general", require_integration=False
-        )
-        weather_category.add_tool(weather_tool.get_weather)
-        self._categories["weather"] = weather_category
+        add_category("creative", tools=[image_tool.generate_image])
+        add_category("weather", tools=[weather_tool.get_weather])
 
         # Integration-required categories
-        calendar_category = ToolCategory(
-            name="calendar",
-            space="general",
+        add_category(
+            "calendar",
+            tools=calendar_tool.tools,
             require_integration=True,
             integration_name="google_calendar",
         )
-        calendar_category.add_tools(calendar_tool.tools)
-        self._categories["calendar"] = calendar_category
 
-        google_docs_category = ToolCategory(
-            name="google_docs",
-            space="general",
+        add_category(
+            "google_docs",
+            tools=google_docs_tool.tools,
             require_integration=True,
             integration_name="google_docs",
         )
-        google_docs_category.add_tools(google_docs_tool.tools)
-        self._categories["google_docs"] = google_docs_category
 
-        # Provider categories (integration required)
-        twitter_category = ToolCategory(
-            name="twitter",
-            space="general",
-            is_delegated=True,
-            require_integration=True,
-            integration_name="twitter",
-        )
-        twitter_category.add_tools(composio_service.get_tools(tool_kit="TWITTER"))
-        self._categories["twitter"] = twitter_category
+        # Provider categories (integration required + delegated)
+        provider_configs = [
+            ("twitter", "TWITTER"),
+            ("notion", "NOTION"),
+            ("linkedin", "LINKEDIN"),
+            ("google_sheets", "GOOGLE_SHEETS"),
+            ("gmail", "GMAIL"),
+        ]
 
-        notion_category = ToolCategory(
-            name="notion",
-            space="general",
-            is_delegated=True,
-            require_integration=True,
-            integration_name="notion",
-        )
-        notion_category.add_tools(composio_service.get_tools(tool_kit="NOTION"))
-        self._categories["notion"] = notion_category
-
-        linkedin_category = ToolCategory(
-            name="linkedin",
-            space="general",
-            is_delegated=True,
-            require_integration=True,
-            integration_name="linkedin",
-        )
-        linkedin_category.add_tools(composio_service.get_tools(tool_kit="LINKEDIN"))
-        self._categories["linkedin"] = linkedin_category
-
-        google_sheets_category = ToolCategory(
-            name="google_sheets",
-            space="general",
-            is_delegated=True,
-            require_integration=True,
-            integration_name="google_sheets",
-        )
-        google_sheets_category.add_tools(
-            composio_service.get_tools(tool_kit="GOOGLE_SHEETS")
-        )
-        self._categories["google_sheets"] = google_sheets_category
-
-        # Delegated categories
-        gmail_category = ToolCategory(
-            name="gmail",
-            space="gmail",
-            require_integration=True,
-            integration_name="gmail",
-            is_delegated=True,
-            delegation_target="gmail",
-        )
-        gmail_category.add_tools(
-            composio_service.get_tools(tool_kit="GMAIL", exclude_tools=[])
-        )
-        self._categories["gmail"] = gmail_category
+        for name, toolkit in provider_configs:
+            add_category(
+                name,
+                tools=composio_service.get_tools(tool_kit=toolkit),
+                require_integration=True,
+                integration_name=name,
+                is_delegated=True,
+                space=name,
+            )
 
     def get_category(self, name: str) -> Optional[ToolCategory]:
         """Get a specific category by name."""
