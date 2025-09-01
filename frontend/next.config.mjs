@@ -9,7 +9,23 @@ const withBundleAnalyzer = bundleAnalyzer({
 const nextConfig = {
   reactStrictMode: true,
   experimental: {
-    optimizePackageImports: ["mermaid"],
+    optimizePackageImports: [
+      "mermaid",
+      "react-syntax-highlighter",
+      "cytoscape",
+    ],
+  },
+  webpack: (config, { isServer }) => {
+    // Exclude cytoscape from bundle since it's not used
+    if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        cytoscape: false,
+        "cytoscape-cose-bilkent": false,
+        "cytoscape-fcose": false,
+      };
+    }
+    return config;
   },
   images: {
     remotePatterns: [
