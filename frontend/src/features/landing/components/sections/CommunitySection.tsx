@@ -1,6 +1,7 @@
+import Link from "next/link";
+
 import { DiscordIcon, Github, TwitterIcon, WhatsappIcon } from "@/components";
 import { RaisedButton } from "@/components/ui/shadcn/raised-button";
-import Link from "next/link";
 
 export default function CommunitySection() {
   return (

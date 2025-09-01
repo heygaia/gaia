@@ -1,4 +1,4 @@
-import { Spinner } from "@heroui/react";
+import { Spinner } from "@heroui/spinner";
 import React from "react";
 
 import { Gmail } from "@/components";

@@ -1,6 +1,6 @@
 import { Button } from "@heroui/button";
 import { Textarea } from "@heroui/input";
-import { Kbd } from "@heroui/react";
+import { Kbd } from "@heroui/kbd";
 import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, ChevronRight } from "lucide-react";
 import { WrenchIcon } from "lucide-react";

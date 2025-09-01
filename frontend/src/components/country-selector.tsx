@@ -1,6 +1,6 @@
 "use client";
 
-import { Autocomplete, AutocompleteItem } from "@heroui/react";
+import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Icon } from "@iconify/react";
 import React from "react";
 

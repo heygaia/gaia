@@ -2,11 +2,11 @@ import "./styles/tailwind.css";
 
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
-
-import ProvidersLayout from "@/layouts/ProvidersLayout";
+import { Suspense } from "react";
 
 import AnalyticsLayout from "@/layouts/AnalyticsLayout";
-import { Suspense } from "react";
+import ProvidersLayout from "@/layouts/ProvidersLayout";
+
 import { defaultFont, getAllFontVariables } from "./fonts";
 
 export const metadata: Metadata = {

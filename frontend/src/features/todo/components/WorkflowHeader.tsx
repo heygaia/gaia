@@ -1,5 +1,5 @@
 import { Button } from "@heroui/button";
-import { Tooltip } from "@heroui/react";
+import { Tooltip } from "@heroui/tooltip";
 import { Play, RotateCcw } from "lucide-react";
 
 import { WorkflowSquare03Icon } from "@/components";

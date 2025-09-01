@@ -1,6 +1,8 @@
 "use client";
 
-import { Select, SelectItem, SharedSelection, Textarea } from "@heroui/react";
+import { Textarea } from "@heroui/input";
+import { Select, SelectItem } from "@heroui/select";
+import { SharedSelection } from "@heroui/system";
 import { Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

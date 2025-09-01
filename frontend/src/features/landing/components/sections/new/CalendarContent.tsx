@@ -1,4 +1,6 @@
-import { Chip, ScrollShadow, Tab, Tabs } from "@heroui/react";
+import { Chip } from "@heroui/chip";
+import { ScrollShadow } from "@heroui/scroll-shadow";
+import { Tab, Tabs } from "@heroui/tabs";
 import { useState } from "react";
 
 import { BubbleConversationChatIcon, Calendar01Icon } from "@/components";

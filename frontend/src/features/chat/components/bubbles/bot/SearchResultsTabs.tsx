@@ -1,4 +1,5 @@
-import { Accordion, AccordionItem, Tab, Tabs } from "@heroui/react";
+import { Accordion, AccordionItem } from "@heroui/accordion";
+import { Tab, Tabs } from "@heroui/tabs";
 import { formatDistanceToNow } from "date-fns";
 import { Play } from "lucide-react";
 import Image from "next/image";

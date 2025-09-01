@@ -6,8 +6,8 @@ import { lazy, Suspense, useEffect } from "react";
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
-
 import CommunitySection from "@/features/landing/components/sections/CommunitySection";
+
 import LandingLayout from "./(landing)/layout";
 
 const Personalised = lazy(

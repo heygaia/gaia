@@ -1,5 +1,5 @@
-import { Tooltip } from "@heroui/react";
 import { ScrollShadow } from "@heroui/scroll-shadow";
+import { Tooltip } from "@heroui/tooltip";
 
 import { Gmail } from "@/components";
 import { useComposer } from "@/features/chat/contexts/ComposerContext";

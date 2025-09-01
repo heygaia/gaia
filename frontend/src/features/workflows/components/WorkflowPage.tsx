@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { useDisclosure } from "@heroui/modal";
+import { useDisclosure } from "@heroui/react";
 import { PlusIcon } from "lucide-react";
 
 import CreateWorkflowModal from "./CreateWorkflowModal";

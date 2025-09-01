@@ -1,4 +1,7 @@
-import { Button, Card, CardBody, Pagination, Tab, Tabs } from "@heroui/react";
+import { Button } from "@heroui/button";
+import { Card, CardBody } from "@heroui/card";
+import { Pagination } from "@heroui/pagination";
+import { Tab, Tabs } from "@heroui/tabs";
 import { List, Network, Plus, Trash2 } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useEffect, useState } from "react";

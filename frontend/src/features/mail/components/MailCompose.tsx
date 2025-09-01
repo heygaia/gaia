@@ -1,6 +1,6 @@
 import { Button } from "@heroui/button";
+import { ButtonGroup } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { ButtonGroup } from "@heroui/react";
 import { EditorContent } from "@tiptap/react";
 import { TagInput } from "emblor";
 import { AlertCircle, Check, ChevronDown } from "lucide-react";

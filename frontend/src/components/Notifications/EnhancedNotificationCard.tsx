@@ -1,7 +1,7 @@
 "use client";
 
 import { Button as HeroButton } from "@heroui/button";
-import { Tooltip } from "@heroui/react";
+import { Tooltip } from "@heroui/tooltip";
 import { formatDistanceToNow } from "date-fns";
 import {
   AlertCircle,
