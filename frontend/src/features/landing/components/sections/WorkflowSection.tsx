@@ -1,8 +1,6 @@
 import { Chip } from "@heroui/chip";
 import Image from "next/image"
 
-import OrbitingCircles from "@/components/ui/magic-ui/orbiting-circles";
-
 import { BentoItem } from "./TodosBentoContent";
 
 export default function WorkflowSection() {
