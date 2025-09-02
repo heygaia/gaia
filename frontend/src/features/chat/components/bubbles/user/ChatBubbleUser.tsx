@@ -3,6 +3,7 @@ import Image from "next/image";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
 import { useUser } from "@/features/auth/hooks/useUser";
 import SelectedToolIndicator from "@/features/chat/components/composer/SelectedToolIndicator";
+import SelectedWorkflowIndicator from "@/features/chat/components/composer/SelectedWorkflowIndicator";
 import { ChatBubbleUserProps } from "@/types/features/chatBubbleTypes";
 import { parseDate } from "@/utils/date/dateUtils";
 
@@ -15,8 +16,10 @@ export default function ChatBubbleUser({
   fileData = [],
   selectedTool,
   toolCategory,
+  selectedWorkflow,
 }: ChatBubbleUserProps) {
-  const hasContent = !!text || fileData.length > 0 || !!selectedTool;
+  const hasContent =
+    !!text || fileData.length > 0 || !!selectedTool || !!selectedWorkflow;
 
   const user = useUser();
 
@@ -33,6 +36,12 @@ export default function ChatBubbleUser({
               toolName={selectedTool}
               toolCategory={toolCategory}
             />
+          </div>
+        )}
+
+        {selectedWorkflow && (
+          <div className="flex justify-end">
+            <SelectedWorkflowIndicator workflow={selectedWorkflow} />
           </div>
         )}
 

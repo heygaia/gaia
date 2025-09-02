@@ -8,12 +8,12 @@ import { CreditCard } from "lucide-react";
 import { useRouter } from "next/navigation";
 
 import { CreditCardIcon } from "@/components";
-import { SettingsCard } from "@/components/shared/SettingsCard";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import {
   convertToUSDCents,
   formatUSDFromCents,
 } from "@/features/pricing/utils/currencyConverter";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
 
 export function SubscriptionSettings() {
   const { data: subscriptionStatus, isLoading } = useUserSubscriptionStatus();

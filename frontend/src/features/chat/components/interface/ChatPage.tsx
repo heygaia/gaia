@@ -1,36 +1,33 @@
 "use client";
 
-import {
-  usePathname,
-  useRouter,
-  useSearchParams,
-} from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 
+import { chatApi } from "@/features/chat/api/chatApi";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
-import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import { useConversation } from "@/features/chat/hooks/useConversation";
-import { fetchMessages } from "@/features/chat/utils/chatUtils";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
+import {
+  useComposerTextActions,
+  usePendingPrompt,
+} from "@/stores/composerStore";
 
-import { useChatLayout,useScrollBehavior } from "./hooks";
+import { useChatLayout, useScrollBehavior } from "./hooks";
 import { ChatWithMessages, NewChatLayout } from "./layouts";
 import { ScrollButtons } from "./scroll";
 
 const ChatPage = React.memo(function MainChat() {
-  const router = useRouter();
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const messageId = searchParams.get("messageId");
 
   const { updateConvoMessages, clearMessages } = useConversation();
+  const pendingPrompt = usePendingPrompt();
+  const { clearPendingPrompt } = useComposerTextActions();
 
   // Use our custom hooks
   const {
-    conversation,
     hasMessages,
     chatRef,
-    cardStackSectionRef,
     dummySectionRef,
     inputRef,
     droppedFiles,
@@ -61,18 +58,30 @@ const ChatPage = React.memo(function MainChat() {
 
   // Message fetching effect
   useEffect(() => {
-    if (convoIdParam) {
-      fetchMessages(convoIdParam, updateConvoMessages, router).then(() => {
-        setTimeout(scrollToBottom, 500);
-      });
-    } else {
-      clearMessages();
-      if (pathname !== "/c") router.push("/c");
-    }
+    const loadMessages = async () => {
+      if (convoIdParam) {
+        try {
+          const messages = await chatApi.fetchMessages(convoIdParam);
+          updateConvoMessages(messages);
+        } catch (error) {
+          console.error("Failed to fetch messages:", error);
+        }
+      } else {
+        clearMessages();
+      }
+    };
 
-    if (inputRef?.current) inputRef.current.focus();
+    loadMessages();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [convoIdParam]);
+
+  // Handle pending prompt from global composer
+  useEffect(() => {
+    if (pendingPrompt && appendToInputRef.current) {
+      appendToInputRef.current(pendingPrompt);
+      clearPendingPrompt();
+    }
+  }, [pendingPrompt, clearPendingPrompt]);
 
   // Common composer props
   const composerProps = {
@@ -85,53 +94,43 @@ const ChatPage = React.memo(function MainChat() {
     hasMessages,
   };
 
-  // Function to append text to input
-  const appendToInput = (text: string) => {
-    if (appendToInputRef.current) {
-      appendToInputRef.current(text);
-    }
-  };
-
   return (
-    <ComposerProvider value={{ appendToInput }}>
-      <div className="flex h-full flex-col">
-        <FileDropModal isDragging={isDragging} />
+    <div className="flex h-full flex-col">
+      <FileDropModal isDragging={isDragging} />
 
-        {hasMessages ? (
-          <>
-            <ChatWithMessages
-              scrollContainerRef={scrollContainerRef}
-              chatRef={chatRef}
-              cardStackSectionRef={cardStackSectionRef}
-              handleScroll={handleScroll}
-              dragHandlers={dragHandlers}
-              composerProps={composerProps}
-            />
-            <ScrollButtons
-              containerRef={scrollContainerRef}
-              onScrollToBottom={scrollToBottom}
-              hasMessages={hasMessages}
-            />
-          </>
-        ) : (
-          <>
-            <NewChatLayout
-              scrollContainerRef={scrollContainerRef}
-              dummySectionRef={dummySectionRef}
-              handleNewChatScroll={handleNewChatScroll}
-              dragHandlers={dragHandlers}
-              composerProps={composerProps}
-            />
-            <ScrollButtons
-              containerRef={scrollContainerRef}
-              onScrollToBottom={scrollToBottom}
-              hasMessages={hasMessages}
-              gridSectionRef={dummySectionRef}
-            />
-          </>
-        )}
-      </div>
-    </ComposerProvider>
+      {hasMessages ? (
+        <>
+          <ChatWithMessages
+            scrollContainerRef={scrollContainerRef}
+            chatRef={chatRef}
+            handleScroll={handleScroll}
+            dragHandlers={dragHandlers}
+            composerProps={composerProps}
+          />
+          <ScrollButtons
+            containerRef={scrollContainerRef}
+            onScrollToBottom={scrollToBottom}
+            hasMessages={hasMessages}
+          />
+        </>
+      ) : (
+        <>
+          <NewChatLayout
+            scrollContainerRef={scrollContainerRef}
+            dummySectionRef={dummySectionRef}
+            handleNewChatScroll={handleNewChatScroll}
+            dragHandlers={dragHandlers}
+            composerProps={composerProps}
+          />
+          <ScrollButtons
+            containerRef={scrollContainerRef}
+            onScrollToBottom={scrollToBottom}
+            hasMessages={hasMessages}
+            gridSectionRef={dummySectionRef}
+          />
+        </>
+      )}
+    </div>
   );
 });
 

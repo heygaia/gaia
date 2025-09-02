@@ -18,7 +18,6 @@ class AgentType(str, Enum):
     """Agent type handling the reminder task."""
 
     STATIC = "static"
-    AI_AGENT = "ai_agent"
 
 
 class StaticReminderPayload(BaseModel):
@@ -26,14 +25,6 @@ class StaticReminderPayload(BaseModel):
 
     title: str = Field(..., description="Notification title")
     body: str = Field(..., description="Notification body")
-
-
-class AIAgentReminderPayload(BaseModel):
-    """Payload for AI_AGENT reminders."""
-
-    instructions: str = Field(
-        ..., description="Special instructions for reminder generation"
-    )
 
 
 class ReminderModel(BaseScheduledTask):
@@ -51,11 +42,8 @@ class ReminderModel(BaseScheduledTask):
         default=datetime.now(timezone.utc) + timedelta(days=180),
         description="Stop executing after this date (optional), defaults to 6 months from now",
     )
-    conversation_id: Optional[str] = Field(
-        None, description="Conversation ID for AI agent reminders to track outputs"
-    )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload, Dict[str, Any]] = (
-        Field(..., description="Task-specific data based on agent type")
+    payload: Union[StaticReminderPayload, Dict[str, Any]] = Field(
+        ..., description="Task-specific data based on agent type"
     )
 
 
@@ -63,7 +51,7 @@ class CreateReminderRequest(BaseModel):
     """Request model for creating a new reminder."""
 
     agent: AgentType = Field(
-        ..., description="Agent handling the reminder task (static or ai_agent)"
+        ..., description="Agent handling the reminder task (static only)"
     )
     repeat: Optional[str] = Field(
         None, description="Cron expression for recurring tasks (optional)"
@@ -77,16 +65,12 @@ class CreateReminderRequest(BaseModel):
     stop_after: Optional[datetime] = Field(
         None, description="Stop executing after this date (optional)"
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload] = Field(
-        ..., description="Task-specific data based on agent type"
+    payload: StaticReminderPayload = Field(
+        ..., description="Task-specific data for static reminder"
     )
     base_time: Optional[datetime] = Field(
         None,
         description="Base time for handling time zones and scheduling (optional, defaults to None)",
-    )
-    conversation_id: Optional[str] = Field(
-        None,
-        description="Conversation ID for AI agent reminders (optional, auto-generated if not provided)",
     )
 
     @field_validator("repeat")
@@ -130,10 +114,10 @@ class CreateReminderToolRequest(BaseModel):
 
     agent: AgentType = Field(
         default=AgentType.STATIC,
-        description="Agent handling the reminder task (static or ai_agent)",
+        description="Agent handling the reminder task (static only)",
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload] = Field(
-        ..., description="Task-specific data based on agent type"
+    payload: StaticReminderPayload = Field(
+        ..., description="Task-specific data for static reminder"
     )
     repeat: Optional[str] = Field(
         None, description="Cron expression for recurring tasks (optional)"
@@ -239,7 +223,6 @@ class CreateReminderToolRequest(BaseModel):
             max_occurrences=self.max_occurrences,
             stop_after=processed_stop_after,
             base_time=user_datetime,
-            conversation_id=None,  # Will be auto-generated if needed
         )
 
     def _apply_timezone_offset(self, dt: datetime, offset_str: str) -> datetime:
@@ -269,11 +252,8 @@ class UpdateReminderRequest(BaseModel):
     stop_after: Optional[datetime] = Field(
         None, description="Stop executing after this date"
     )
-    payload: Optional[Union[StaticReminderPayload, AIAgentReminderPayload]] = Field(
+    payload: Optional[StaticReminderPayload] = Field(
         None, description="Task-specific data (optional)"
-    )
-    conversation_id: Optional[str] = Field(
-        None, description="Conversation ID for AI agent reminders (optional)"
     )
 
     @field_validator("repeat")
@@ -344,11 +324,8 @@ class ReminderResponse(BaseModel):
     stop_after: Optional[datetime] = Field(
         None, description="Stop executing after this date"
     )
-    payload: Union[StaticReminderPayload, AIAgentReminderPayload, Dict[str, Any]] = (
-        Field(..., description="Task-specific data")
-    )
-    conversation_id: Optional[str] = Field(
-        None, description="Conversation ID for AI agent reminders"
+    payload: Union[StaticReminderPayload, Dict[str, Any]] = Field(
+        ..., description="Task-specific data"
     )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")

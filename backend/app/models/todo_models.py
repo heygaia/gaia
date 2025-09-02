@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 from pydantic import BaseModel, Field
 
@@ -10,13 +10,6 @@ class Priority(str, Enum):
     MEDIUM = "medium"  # yellow
     LOW = "low"  # blue
     NONE = "none"  # no color
-
-
-class WorkflowStatus(str, Enum):
-    NOT_STARTED = "not_started"
-    GENERATING = "generating"
-    COMPLETED = "completed"
-    FAILED = "failed"
 
 
 class SubTask(BaseModel):
@@ -49,6 +42,9 @@ class TodoModel(BaseModel):
     completed: bool = Field(default=False, description="Whether the todo is completed")
     subtasks: List[SubTask] = Field(
         default_factory=list, max_length=50, description="List of subtasks"
+    )
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
     )
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
@@ -96,11 +92,8 @@ class UpdateTodoRequest(BaseModel):
     subtasks: Optional[List[SubTask]] = Field(
         None, max_length=50, description="List of subtasks"
     )
-    workflow: Optional[Dict[str, Any]] = Field(
-        None, description="AI-generated workflow plan for this todo"
-    )
-    workflow_status: Optional[WorkflowStatus] = Field(
-        WorkflowStatus.NOT_STARTED, description="Status of workflow generation"
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
     )
 
 
@@ -122,14 +115,11 @@ class TodoResponse(BaseModel):
     subtasks: List[SubTask] = Field(
         default_factory=list, description="List of subtasks"
     )
+    workflow_id: Optional[str] = Field(
+        None, description="ID of the associated workflow"
+    )
     created_at: datetime = Field(..., description="Creation timestamp")
     updated_at: datetime = Field(..., description="Last update timestamp")
-    workflow: Optional[Dict[str, Any]] = Field(
-        None, description="AI-generated workflow plan for this todo"
-    )
-    workflow_status: WorkflowStatus = Field(
-        WorkflowStatus.NOT_STARTED, description="Status of workflow generation"
-    )
 
 
 class ProjectModel(BaseModel):

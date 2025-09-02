@@ -1,8 +1,9 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback } from "react";
 
-import { fetchAvailableTools, ToolInfo } from "@/features/chat/api/toolsApi";
+import { ToolInfo } from "@/features/chat/api/toolsApi";
 
 import { EnhancedToolInfo } from "../types/enhancedTools";
+import { useToolsQuery } from "./useToolsQuery";
 import { useToolsWithIntegrations } from "./useToolsWithIntegrations";
 
 export interface SlashCommandMatch {
@@ -30,29 +31,11 @@ export interface UseSlashCommandsReturn {
 }
 
 export const useSlashCommands = (): UseSlashCommandsReturn => {
-  const [tools, setTools] = useState<ToolInfo[]>([]);
-  const [isLoadingTools, setIsLoadingTools] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  // Use React Query hook for fetching tools with caching
+  const { tools, isLoading: isLoadingTools, error } = useToolsQuery();
 
   // Get enhanced tools with integration status
   const { tools: enhancedTools } = useToolsWithIntegrations();
-
-  useEffect(() => {
-    const loadTools = async () => {
-      try {
-        setIsLoadingTools(true);
-        setError(null);
-        const toolsData = await fetchAvailableTools();
-        setTools(toolsData.tools);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to load tools");
-      } finally {
-        setIsLoadingTools(false);
-      }
-    };
-
-    loadTools();
-  }, []);
 
   const getSlashCommandSuggestions = useCallback(
     (query: string): SlashCommandMatch[] => {
@@ -223,7 +206,7 @@ export const useSlashCommands = (): UseSlashCommandsReturn => {
   return {
     tools,
     isLoadingTools,
-    error,
+    error: error?.message || null,
     detectSlashCommand,
     getSlashCommandSuggestions,
     getAllTools,

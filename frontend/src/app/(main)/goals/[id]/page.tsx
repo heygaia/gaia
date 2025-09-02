@@ -20,21 +20,14 @@ import { useParams } from "next/navigation";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
 
-import GoalHeader from "@/components/layout/headers/GoalHeader";
 import { BookIcon1 } from "@/components/shared/icons";
 import { MultiStepLoader } from "@/components/ui/shadcn/multi-step-loader";
 import { goalsApi } from "@/features/goals/api/goalsApi";
-import { useHeader } from "@/hooks/layout/useHeader";
 import { truncateTitle } from "@/lib/utils";
 import { Goal } from "@/types/api/goalsApiTypes";
-import {
-  EdgeType,
-  GoalData,
-  NodeData,
-} from "@/types/features/goalTypes";
+import { EdgeType, GoalData, NodeData } from "@/types/features/goalTypes";
 
 export default function GoalPage() {
-  const { setHeader } = useHeader();
   const [goalData, setGoalData] = useState<GoalData | null>(null);
   const [loading, setLoading] = useState(true);
   const [nodes, setNodes] = useState<Node<NodeData>[]>([]);
@@ -223,7 +216,6 @@ export default function GoalPage() {
         currentlySelectedNodeId,
         updatedIsComplete,
       );
-
     } catch (error) {
       console.error("Error updating node status:", error);
 
@@ -245,16 +237,6 @@ export default function GoalPage() {
   };
 
   // Create a memoized header component using useCallback for stability
-  const HeaderComponent = useCallback(() => {
-    return <GoalHeader goalData={goalData} />;
-  }, [goalData]);
-
-  // Set the header with proper loading and data checks
-  useEffect(() => {
-    // Only set custom header when we have data and loading is complete
-    if (goalData && !loading) setHeader(<HeaderComponent />);
-  }, [goalData, loading, HeaderComponent, setHeader]);
-
   const rawTitle = goalData?.roadmap?.title || goalData?.title || "New Goal";
 
   const truncatedTitle = useMemo(() => truncateTitle(rawTitle), [rawTitle]);

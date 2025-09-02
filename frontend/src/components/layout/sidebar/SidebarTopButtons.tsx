@@ -11,18 +11,17 @@ import {
   CheckmarkCircle02Icon,
   MessageMultiple02Icon,
   NotificationIcon,
-  PinIcon,
   Target04Icon,
 } from "@/components/shared/icons";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
-import { useNotificationContext } from "@/hooks/providers/NotificationContext";
+import { useRefreshTrigger } from "@/stores/notificationStore";
 import { NotificationStatus } from "@/types/features/notificationTypes";
 
 export default function SidebarTopButtons() {
   const pathname = usePathname();
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
-  const { refreshTrigger } = useNotificationContext();
+  const refreshTrigger = useRefreshTrigger();
   const { notifications, refetch } = useNotifications({
     status: NotificationStatus.DELIVERED,
     limit: 50,
@@ -67,9 +66,9 @@ export default function SidebarTopButtons() {
     //   label: "Mail",
     // },
     {
-      route: "/pins",
-      icon: <PinIcon />,
-      label: "Pins",
+      route: "/workflows",
+      icon: <ZapIcon />,
+      label: "Workflows",
     },
     {
       route: "/workflows",
@@ -114,9 +113,9 @@ export default function SidebarTopButtons() {
       )}
 
       <div className="mb-3 flex flex-col gap-0.5">
-        <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
+        {/* <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
           Menu
-        </div>
+        </div> */}
         {buttonData.map(({ route, icon, label }, index) => (
           <div key={index} className="relative">
             <Button

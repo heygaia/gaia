@@ -2,7 +2,7 @@
 
 import { Bell, Calendar, CheckSquare, Mail, Undo } from "lucide-react";
 
-import { Notification, NotificationSource } from "@/types/notifications";
+import { NotificationSource } from "@/types/notifications";
 
 export const getNotificationIcon = (type: NotificationSource) => {
   switch (type) {
@@ -58,18 +58,4 @@ export const getActionColor = (label: string) => {
     default:
       return "bg-blue-600";
   }
-};
-
-export const groupNotificationsByTime = (notifications: Notification[]) => {
-  return notifications.reduce(
-    (groups, notification) => {
-      const group = notification.timeGroup;
-      if (!groups[group]) {
-        groups[group] = [];
-      }
-      groups[group].push(notification);
-      return groups;
-    },
-    {} as Record<string, Notification[]>,
-  );
 };

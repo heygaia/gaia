@@ -136,6 +136,20 @@ export const getToolCategoryIcon = (
           className={iconProps.className || "text-purple-400"}
         />
       );
+    case "support":
+      return (
+        <Info
+          {...defaultProps}
+          className={iconProps.className || "text-blue-400"}
+        />
+      );
+    case "general":
+      return (
+        <Info
+          {...defaultProps}
+          className={iconProps.className || "text-gray-400"}
+        />
+      );
     default:
       return null;
   }

@@ -26,7 +26,35 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
 }) => {
   const [selectedDate, setSelectedDate] = useState(new Date());
   const [currentWeek, setCurrentWeek] = useState(new Date());
+  const [fetchedChunks, setFetchedChunks] = useState<Set<string>>(new Set());
   const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Helper function to get chunk key for a date (YYYY-MM format for quarterly chunks)
+  const getChunkKey = (date: Date): string => {
+    const year = date.getFullYear();
+    const quarter = Math.floor(date.getMonth() / 3);
+    return `${year}-Q${quarter + 1}`;
+  };
+
+  // Helper function to get chunk start/end dates
+  const getChunkDates = (chunkKey: string): { start: Date; end: Date } => {
+    const [year, quarter] = chunkKey.split("-");
+    const quarterNum = parseInt(quarter.replace("Q", "")) - 1;
+
+    const start = new Date(parseInt(year), quarterNum * 3, 1);
+    const end = new Date(parseInt(year), (quarterNum + 1) * 3, 0, 23, 59, 59);
+
+    return { start, end };
+  };
+
+  // Get required chunks for the current extended date range
+  const getRequiredChunks = (dates: Date[]): string[] => {
+    const chunks = new Set<string>();
+    dates.forEach((date) => {
+      chunks.add(getChunkKey(date));
+    });
+    return Array.from(chunks);
+  };
 
   const {
     events,
@@ -37,22 +65,7 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     isInitialized,
     loadCalendars,
     loadEvents,
-    clearEvents,
   } = useSharedCalendar();
-
-  // Initialize calendars on mount
-  useEffect(() => {
-    if (!isInitialized && !loading.calendars) {
-      loadCalendars();
-    }
-  }, [isInitialized, loading.calendars, loadCalendars]);
-
-  // Fetch events when selected calendars change or when calendars are first loaded
-  useEffect(() => {
-    if (selectedCalendars.length > 0 && isInitialized) {
-      loadEvents(null, selectedCalendars, true);
-    }
-  }, [selectedCalendars, isInitialized, loadEvents]);
 
   // Generate hours from 12AM to 11PM for a full day view (24 hours)
   const hours = useMemo(() => {
@@ -73,6 +86,67 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
       return date;
     });
   }, [currentWeek]);
+
+  // Initialize calendars on mount
+  useEffect(() => {
+    if (!isInitialized && !loading.calendars) {
+      loadCalendars();
+    }
+  }, [isInitialized, loading.calendars, loadCalendars]);
+
+  // Fetch events when selected calendars change, when calendars are first loaded, or when new chunks are needed
+  useEffect(() => {
+    if (
+      selectedCalendars.length > 0 &&
+      isInitialized &&
+      extendedDates.length > 0
+    ) {
+      const requiredChunks = getRequiredChunks(extendedDates);
+      const missingChunks = requiredChunks.filter(
+        (chunk) => !fetchedChunks.has(chunk),
+      );
+
+      if (missingChunks.length > 0) {
+        // Fetch all missing chunks in parallel
+        const fetchPromises = missingChunks.map(async (chunkKey) => {
+          const { start, end } = getChunkDates(chunkKey);
+
+          try {
+            await loadEvents(
+              null,
+              selectedCalendars,
+              false, // Always append for chunked fetching
+              start,
+              end,
+            );
+
+            // Mark chunk as fetched
+            setFetchedChunks((prev) => new Set([...prev, chunkKey]));
+          } catch (error) {
+            console.error(`Failed to fetch chunk ${chunkKey}:`, error);
+          }
+        });
+
+        // Execute all chunk fetches
+        Promise.all(fetchPromises);
+      }
+    }
+  }, [
+    selectedCalendars,
+    isInitialized,
+    extendedDates,
+    fetchedChunks,
+    loadEvents,
+  ]);
+
+  // Reset fetched chunks when selected calendars change
+  useEffect(() => {
+    setFetchedChunks(new Set());
+    // Clear existing events when calendars change
+    if (selectedCalendars.length > 0) {
+      loadEvents(null, selectedCalendars, true); // Reset events for new calendars
+    }
+  }, [selectedCalendars, loadEvents]);
 
   // Wrapper function to maintain compatibility with CalendarGrid
   const getEventColorForGrid = (event: GoogleCalendarEvent) => {

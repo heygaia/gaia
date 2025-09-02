@@ -104,7 +104,7 @@ const WorkflowAutomation: React.FC = () => {
   const [showCompleted, setShowCompleted] = useState(false);
   const [calendarEvents, setCalendarEvents] = useState<CalendarEvent[]>([]);
   const [highlightAssignment, setHighlightAssignment] = useState(false);
-  const [eventsAnimated, setEventsAnimated] = useState(false);
+  const [, setEventsAnimated] = useState(false);
 
   const workflowSteps: WorkflowStep[] = [
     {
@@ -267,7 +267,10 @@ const WorkflowAutomation: React.FC = () => {
   };
 
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden">
+    <div className="bg-grid-white/[0.05] relative min-h-screen w-full overflow-x-hidden bg-[radial-gradient(ellipse_at_top_left,_#0f0f0f,_#09090b)] bg-cover bg-fixed bg-no-repeat">
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(1,187,255,0.05),transparent_50%)]" />
+      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
+
       <div className="relative z-10 container mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center gap-12 px-4 py-12 sm:py-16 md:gap-16 md:py-24">
         <LargeHeader
           headingText="Smart Assignment Automation"
@@ -505,7 +508,7 @@ const WorkflowAutomation: React.FC = () => {
                       <div className="border-b border-white/10 p-4">
                         <div className="flex items-center gap-3">
                           <GoogleLogo
-                            src="/icons/googlecalendar.webp"
+                            src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
                             alt="Google Calendar"
                             className="h-5 w-5"
                           />

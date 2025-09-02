@@ -1,14 +1,14 @@
 "use client";
 
-import { useRouter,useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useState } from "react";
 
-import AccountSettings from "@/components/layout/sidebar/settings/AccountSettings";
-import LogoutModal from "@/components/layout/sidebar/settings/LogoutModal";
-import MemorySettings from "@/components/layout/sidebar/settings/MemorySettings";
-import PreferencesSettings from "@/components/layout/sidebar/settings/PreferencesSettings";
-import { ModalAction } from "@/components/layout/sidebar/settings/SettingsMenu";
 import { IntegrationsSettings } from "@/features/integrations/components/IntegrationsSettings";
+import AccountSettings from "@/features/settings/components/AccountSettings";
+import LogoutModal from "@/features/settings/components/LogoutModal";
+import MemorySettings from "@/features/settings/components/MemorySettings";
+import PreferencesSettings from "@/features/settings/components/PreferencesSettings";
+import { ModalAction } from "@/features/settings/components/SettingsMenu";
 import { SubscriptionSettings } from "@/features/settings/components/SubscriptionSettings";
 import UsageSettings from "@/features/settings/components/UsageSettings";
 

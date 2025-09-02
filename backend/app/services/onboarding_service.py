@@ -41,10 +41,10 @@ async def complete_onboarding(
 
         # Prepare onboarding preferences with default values for settings page
         preferences = OnboardingPreferences(
-            country=None,  # Will be set later from timezone detection or settings
             profession=onboarding_data.profession,
             response_style="casual",  # Default response style
             custom_instructions=None,
+            # Timezone removed from preferences - now only stored at root level
         )
 
         # Prepare onboarding data
@@ -61,11 +61,17 @@ async def complete_onboarding(
             "updated_at": datetime.now(timezone.utc),
         }
 
-        # Extract and add timezone if available
+        # Always set timezone at root level from onboarding data
+        if onboarding_data.timezone:
+            update_fields["timezone"] = onboarding_data.timezone.strip()
+
+        # Extract and add timezone if available from detected timezone
         if user_timezone:
             try:
                 timezone_name = get_timezone_from_datetime(user_timezone)
-                update_fields["timezone"] = timezone_name
+                update_fields["timezone"] = (
+                    timezone_name  # This will override the frontend timezone if detected
+                )
             except Exception as e:
                 logger.warning(
                     f"Could not determine timezone name for user {user_id}: {e}"

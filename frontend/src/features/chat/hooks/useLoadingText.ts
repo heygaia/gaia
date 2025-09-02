@@ -1,11 +1,5 @@
 "use client";
-import { useDispatch, useSelector } from "react-redux";
-
-import {
-  resetLoadingText,
-  setLoadingText,
-} from "@/redux/slices/loadingTextSlice";
-import { AppDispatch, RootState } from "@/redux/store";
+import { useLoadingStore } from "@/stores/loadingStore";
 
 interface ToolInfo {
   toolName?: string;
@@ -13,27 +7,21 @@ interface ToolInfo {
 }
 
 export const useLoadingText = () => {
-  const dispatch: AppDispatch = useDispatch();
-  const { loadingText, toolInfo } = useSelector(
-    (state: RootState) => state.loadingText,
-  );
+  const { loadingText, toolInfo, setLoadingText, resetLoadingText } =
+    useLoadingStore();
 
   const updateLoadingText = (text: string, toolInfo?: ToolInfo) => {
     if (toolInfo) {
-      dispatch(setLoadingText({ text, toolInfo }));
+      setLoadingText({ text, toolInfo });
     } else {
-      dispatch(setLoadingText(text));
+      setLoadingText(text);
     }
-  };
-
-  const resetText = () => {
-    dispatch(resetLoadingText());
   };
 
   return {
     loadingText,
     toolInfo,
     setLoadingText: updateLoadingText,
-    resetLoadingText: resetText,
+    resetLoadingText,
   };
 };

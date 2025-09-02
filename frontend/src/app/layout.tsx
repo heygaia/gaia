@@ -1,5 +1,6 @@
 import "./styles/tailwind.css";
 
+import { Databuddy } from "@databuddy/sdk/react";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
 import { Suspense } from "react";
@@ -93,7 +94,6 @@ export default function RootLayout({
             url: "https://heygaia.io",
           })}
         </Script>
-
         {/* Better Stack widget for API Uptime */}
         <Script
           src="https://uptime.betterstack.com/widgets/announcement.js"
@@ -106,6 +106,33 @@ export default function RootLayout({
         <Suspense fallback={<></>}>
           <AnalyticsLayout />
         </Suspense>
+        {/* Rybbit Analytics */}
+        <Script
+          src="https://analytics.heygaia.io/api/script.js"
+          data-site-id="1"
+          defer
+          data-session-replay="true"
+        />
+
+        {process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID && (
+          <Databuddy
+            clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
+            trackHashChanges
+            trackAttributes
+            trackOutgoingLinks
+            trackInteractions
+            trackEngagement
+            trackScrollDepth
+            trackExitIntent
+            trackBounceRate
+            trackWebVitals
+            trackErrors
+            enableBatching
+            batchSize={20}
+            batchTimeout={5000}
+            disabled={process.env.NODE_ENV === "development"}
+          />
+        )}
       </body>
     </html>
   );

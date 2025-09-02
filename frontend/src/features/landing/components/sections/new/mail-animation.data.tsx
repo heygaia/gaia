@@ -151,7 +151,6 @@ import React, { useEffect, useRef, useState } from "react";
 
 import EmailComposeSection from "@/features/chat/components/bubbles/bot/EmailComposeSection";
 import EmailThreadCard from "@/features/chat/components/bubbles/bot/EmailThreadCard";
-import { ComposerProvider } from "@/features/chat/contexts/ComposerContext";
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import {
   EmailComposeData,

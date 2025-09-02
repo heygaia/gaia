@@ -1,6 +1,6 @@
 import React from "react";
 
-import { UseDragAndDropReturn } from "@/hooks/ui/useDragAndDrop";
+import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
 
 import { GridSection, NewChatSection } from "../sections";
 
@@ -8,7 +8,12 @@ interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
   handleNewChatScroll: (event: React.UIEvent) => void;
-  dragHandlers: UseDragAndDropReturn["dragHandlers"];
+  dragHandlers: {
+    onDragEnter: (e: React.DragEvent<HTMLElement>) => void;
+    onDragOver: (e: React.DragEvent<HTMLElement>) => void;
+    onDragLeave: (e: React.DragEvent<HTMLElement>) => void;
+    onDrop: (e: React.DragEvent<HTMLElement>) => void;
+  };
   composerProps: {
     inputRef: React.RefObject<HTMLTextAreaElement | null>;
     scrollToBottom: () => void;
@@ -33,15 +38,15 @@ export const NewChatLayout: React.FC<NewChatLayoutProps> = ({
   return (
     <div
       ref={scrollContainerRef}
-      className="h-full snap-y snap-mandatory overflow-y-auto scroll-smooth"
+      className="h-full space-y-20 overflow-y-auto"
       onScroll={handleNewChatScroll}
       {...dragHandlers}
     >
-      {/* First section: New chat interface */}
-      <NewChatSection composerProps={composerProps} />
-
-      {/* Second section: 2x2 Grid layout */}
-      <GridSection dummySectionRef={dummySectionRef} />
+      <div className="flex w-full flex-col items-center px-4">
+        <NewChatSection composerProps={composerProps} />
+        <UseCaseSection dummySectionRef={dummySectionRef} />
+      </div>
+      <GridSection />
     </div>
   );
 };

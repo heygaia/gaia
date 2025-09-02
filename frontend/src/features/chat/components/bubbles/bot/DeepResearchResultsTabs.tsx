@@ -3,10 +3,9 @@ import { Tab, Tabs } from "@heroui/tabs";
 import { ExternalLinkIcon, LinkIcon, SearchIcon } from "lucide-react";
 import Image from "next/image";
 import { useState } from "react";
-import { useDispatch } from "react-redux";
 
 import { InternetIcon } from "@/components/shared/icons";
-import { openImageDialog } from "@/redux/slices/imageDialogSlice";
+import { useImageDialog } from "@/stores/uiStore";
 import {
   DeepResearchResults,
   EnhancedWebResult,
@@ -106,7 +105,7 @@ interface EnhancedWebResultsProps {
 }
 
 function EnhancedWebResults({ results }: EnhancedWebResultsProps) {
-  const dispatch = useDispatch();
+  const { openDialog } = useImageDialog();
 
   return (
     <div className="space-y-4">
@@ -166,13 +165,11 @@ function EnhancedWebResults({ results }: EnhancedWebResultsProps) {
               <Image
                 onClick={() => {
                   if (result.screenshot_url)
-                    dispatch(
-                      openImageDialog({
-                        url: result.screenshot_url,
-                        title: result.title,
-                        source: result.url,
-                      }),
-                    );
+                    openDialog({
+                      url: result.screenshot_url,
+                      title: result.title,
+                      source: result.url,
+                    });
                 }}
                 src={result.screenshot_url}
                 alt={`Screenshot of ${result.title}`}

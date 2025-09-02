@@ -206,8 +206,9 @@ export default function NotesAdd() {
   }, [id, router]);
 
   useEffect(() => {
-    if (pathname.startsWith("/notes") && pathname != "notes")
+    if (pathname.startsWith("/notes") && pathname !== "/notes") {
       setHeader(<NotesHeader onDeleteNote={deleteNote} />);
+    }
   }, [deleteNote, setHeader, pathname]);
 
   return (
