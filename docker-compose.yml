@@ -24,6 +24,8 @@ services:
     environment:
       DEBUG: 1
       PYTHONUNBUFFERED: 1
+      WATCHFILES_FORCE_POLLING: 1
+      # PYTHONPROFILEIMPORTTIME: 1
       FORCE_COLOR: 1
       WORKER_TYPE: main_app
     env_file:

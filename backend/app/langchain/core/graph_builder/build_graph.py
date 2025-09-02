@@ -1,17 +1,14 @@
+import time
 from contextlib import asynccontextmanager
 from typing import List, Optional
 
+from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.langchain.core.nodes.follow_up_actions_node import follow_up_actions_node
 from app.langchain.llm.client import init_llm
-
-# from app.langchain.tools.core.injectors import (
-# inject_deep_research_tool_call,
-# inject_web_search_tool_call,
-# should_call_tool,
-# )
 from app.langchain.tools.core.registry import ALWAYS_AVAILABLE_TOOLS, tools
 from app.langchain.tools.core.retrieval import retrieve_tools
+from app.utils.embedding_utils import get_or_compute_embeddings
 from langchain_core.language_models import LanguageModelLike
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.checkpoint.memory import InMemorySaver
@@ -50,17 +47,18 @@ async def build_graph(
         }
     )
 
-    # Store all tools for vector search (both regular and always available)
-    for tool in all_tools:
-        store.put(
-            ("tools",),
-            tool.name,
-            {
-                "description": f"{tool.name}: {tool.description}",
-            },
-        )
+    # Store all tools for vector search with cached embeddings
+    embeddings_list, tool_descriptions = await get_or_compute_embeddings(
+        all_tools, embeddings
+    )
 
-    # Create agent with custom tool retrieval logic
+    # Now store with pre-computed embeddings
+    for i, tool in enumerate(all_tools):
+        # Use the pre-computed embedding instead of triggering new computation
+        store._data[("tools", tool.name)] = {
+            "description": tool_descriptions[i],
+            "embedding": embeddings_list[i],
+        }  # Create agent with custom tool retrieval logic
     builder = create_agent(
         llm=chat_llm if chat_llm else llm,
         tool_registry=tool_registry,
@@ -94,7 +92,8 @@ async def build_graph(
         in_memory_checkpointer_instance = InMemorySaver()
         # Setup the checkpointer
         graph = builder.compile(
-            checkpointer=in_memory_checkpointer_instance,  # type: ignore[call-arg]
+            # type: ignore[call-arg]
+            checkpointer=in_memory_checkpointer_instance,
             store=store,
         )
         print(graph.get_graph().draw_mermaid())

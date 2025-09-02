@@ -7,8 +7,6 @@ This module provides routes for checking the health and status of the API.
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from app.config.settings import settings
-
 router = APIRouter()
 
 
@@ -24,6 +22,9 @@ def health_check():
     Returns:
         dict: Status information about the API
     """
+    # Lazy import to avoid loading settings during module import
+    from app.config.settings import settings
+
     return {
         "status": "online",
         "message": "Welcome to the GAIA API!",

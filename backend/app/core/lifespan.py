@@ -1,7 +1,6 @@
 from contextlib import asynccontextmanager
 
 from app.config.cloudinary import init_cloudinary
-from app.config.loggers import app_logger as logger
 from app.db.chromadb import init_chroma
 from app.db.postgresql import close_postgresql_db, init_postgresql_db
 from app.db.rabbitmq import publisher
@@ -11,6 +10,8 @@ from app.utils.websocket_consumer import (
     start_websocket_consumer,
     stop_websocket_consumer,
 )
+from app.config.settings import get_settings
+
 from fastapi import FastAPI
 
 
@@ -21,80 +22,79 @@ async def lifespan(app: FastAPI):
     Handles startup and shutdown events.
     """
     try:
-        logger.info("Starting up the API...")
+        # Load secrets first before other initializations
+        get_settings()
 
+        # ChromaDB initialization
         await init_chroma(app)
+
+        # Cloudinary initialization
         init_cloudinary()
 
+        # PostgreSQL initialization
         try:
             await init_postgresql_db()
         except Exception as e:
-            logger.error(f"Failed to initialize PostgreSQL database: {e}")
             raise RuntimeError("PostgreSQL initialization failed") from e
 
-        # Create all database indexes
+        # MongoDB indexes creation
         try:
             from app.db.mongodb.mongodb import init_mongodb
 
             mongo_client = init_mongodb()
-
             await mongo_client._initialize_indexes()
         except Exception as e:
-            logger.error(f"Failed to create database indexes: {e}")
+            pass
 
-        # Initialize reminder scheduler and scan for pending reminders
+        # Reminder scheduler initialization
         try:
             from app.services.reminder_service import initialize_scheduler
 
             scheduler = await initialize_scheduler()
             await scheduler.scan_and_schedule_pending_reminders()
-            logger.info(
-                "Reminder scheduler initialized and pending reminders scheduled"
-            )
         except Exception as e:
-            logger.error(f"Failed to initialize reminder scheduler: {e}")
+            pass
 
+        # RabbitMQ connection
         try:
             await publisher.connect()
         except Exception as e:
-            logger.error(f"Failed to connect to RabbitMQ: {e}")
+            pass
 
+        # WebSocket consumer startup
         try:
             await start_websocket_consumer()
-            logger.info("WebSocket event consumer started")
         except Exception as e:
-            logger.error(f"Failed to start WebSocket consumer: {e}")
+            pass
 
-        # Initialize the graph and store in GraphManager
+        # Graph initialization
         async with build_graph() as built_graph:
             GraphManager.set_graph(built_graph)
+
+            # This is where the app runs - yield control back to FastAPI
             yield
 
     except Exception as e:
-        logger.error(f"Error during startup: {e}")
         raise RuntimeError("Startup failed") from e
     finally:
-        logger.info("Shutting down the API...")
-
+        # Shutdown sequence
         try:
             await close_postgresql_db()
         except Exception as e:
-            logger.error(f"Error closing PostgreSQL database: {e}")
+            pass
 
         # Close reminder scheduler
         try:
             from app.services.reminder_service import close_scheduler
 
             await close_scheduler()
-            logger.info("Reminder scheduler closed")
         except Exception as e:
-            logger.error(f"Error closing reminder scheduler: {e}")
+            pass
 
         # Stop WebSocket consumer if running in main app
         try:
             await stop_websocket_consumer()
-            logger.info("WebSocket event consumer stopped")
         except Exception as e:
-            logger.error(f"Error stopping WebSocket consumer: {e}")
+            pass
 
         await publisher.close()
