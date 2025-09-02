@@ -11,14 +11,14 @@ import CommunitySection from "@/features/landing/components/sections/CommunitySe
 import LandingLayout from "./(landing)/layout";
 
 const Personalised = lazy(
-  () => import("@/features/landing/components/sections/new/Personalised"),
+  () => import("@/features/landing/components/sections/Personalised"),
 );
 const Productivity = lazy(
-  () => import("@/features/landing/components/sections/new/Productivity"),
+  () => import("@/features/landing/components/sections/Productivity"),
 );
 const Tired = lazy(
   () =>
-    import("@/features/landing/components/sections/new/TiredBoringAssistants"),
+    import("@/features/landing/components/sections/TiredBoringAssistants"),
 );
 const ToolsShowcaseSection = lazy(
   () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
@@ -29,7 +29,7 @@ const FAQAccordion = lazy(() =>
   })),
 );
 const OpenSource = lazy(
-  () => import("@/features/landing/components/sections/new/OpenSource"),
+  () => import("@/features/landing/components/sections/OpenSource"),
 );
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),

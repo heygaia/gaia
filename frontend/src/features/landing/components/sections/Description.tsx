@@ -5,7 +5,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 
 import { OnboardingBackground } from "@/features/onboarding/components/OnboardingBackground";
 
-import GetStartedButton from "../../shared/GetStartedButton";
+import GetStartedButton from "../shared/GetStartedButton";
 
 export default function Description() {
   const textRefs = useRef<(HTMLDivElement | null)[]>([]);

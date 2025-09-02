@@ -5,7 +5,7 @@ import Link from "next/link";
 
 import { RaisedButton } from "@/components/ui/shadcn/raised-button";
 
-import LargeHeader from "../../shared/LargeHeader";
+import LargeHeader from "../shared/LargeHeader";
 
 export default function OpenSource() {
   return (

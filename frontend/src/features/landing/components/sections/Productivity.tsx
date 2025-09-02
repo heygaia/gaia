@@ -11,8 +11,8 @@ import { RaisedButton } from "@/components/ui/shadcn/raised-button";
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import dataJson from "@/features/use-cases/constants/data.json";
 
-import LargeHeader from "../../shared/LargeHeader";
-import WorkflowSection from "../WorkflowSection";
+import LargeHeader from "../shared/LargeHeader";
+import WorkflowSection from "./WorkflowSection";
 
 interface UseCase {
   title: string;

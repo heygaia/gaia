@@ -3,7 +3,7 @@ import Image from "next/image"
 
 import OrbitingCircles from "@/components/ui/magic-ui/orbiting-circles";
 
-import { BentoItem } from "./new/TodosBentoContent";
+import { BentoItem } from "./TodosBentoContent";
 
 export default function WorkflowSection() {
   const triggers = [
@@ -68,7 +68,6 @@ export default function WorkflowSection() {
           title="Proactive by Nature"
           description="GAIA acts before you ask, preparing what you need when you need it."
         >
-          <OrbitingCircles />
         </BentoItem>
         <BentoItem
           title="Seamless Orchestration"

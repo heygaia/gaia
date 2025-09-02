@@ -71,11 +71,6 @@ export default function SidebarTopButtons() {
       label: "Workflows",
     },
     {
-      route: "/workflows",
-      icon: <ZapIcon />,
-      label: "Workflows",
-    },
-    {
       route: "/c",
       icon: <MessageMultiple02Icon />,
       label: "Chats",
