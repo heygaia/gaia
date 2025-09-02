@@ -37,17 +37,9 @@ def create_handoff_tool(
         ],
         state: Annotated[MessagesState, InjectedState],
         tool_call_id: Annotated[str, InjectedToolCallId],
-        conversation_summary: Annotated[
-            str,
-            "Summary of the conversation so far including user query details, available user memories, user intent, preferences, and any relevant context that helps the sub-agent make better decisions.",
-        ] = "",
     ) -> Command:
         # Combine task description with conversation summary
         full_context = task_description
-        if conversation_summary.strip():
-            full_context = (
-                f"{task_description}\n\nConversation Summary:\n{conversation_summary}"
-            )
 
         task_description_message = HumanMessage(content=full_context, name=agent_name)
         system_prompt_message = SystemMessage(content=system_prompt, name=agent_name)
@@ -59,7 +51,9 @@ def create_handoff_tool(
 
         agent_input = {
             **state,
-            "messages": [system_prompt_message, task_description_message],
+            "messages": state["messages"]
+            + [tool_message]
+            + [system_prompt_message, task_description_message],
         }
 
         return Command(

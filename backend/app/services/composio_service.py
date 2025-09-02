@@ -90,10 +90,7 @@ class ComposioService:
             raise
 
     def get_tools(self, tool_kit: str, exclude_tools:Optional[list[str]]=None):
-        tools = self.composio.tools.get(
-            user_id="",
-            toolkits=[tool_kit],
-        )
+        tools = self.composio.tools.get(user_id="", toolkits=[tool_kit], limit=100)
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
         user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
@@ -103,6 +100,7 @@ class ComposioService:
             user_id="",
             toolkits=[tool_kit],
             modifiers=[after_modifier, user_id_modifier],
+            limit=1000,
         )
 
     def check_connection_status(

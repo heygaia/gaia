@@ -6,7 +6,8 @@ state while preserving all other message types in their original order.
 """
 
 from app.config.loggers import chat_logger as logger
-from langchain_core.messages import AIMessage, ToolMessage
+from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
+from langchain_core.messages import AIMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
 from langgraph_bigtool.graph import State
@@ -14,7 +15,7 @@ from langgraph_bigtool.graph import State
 
 def create_filter_messages_node(
     agent_name: str = "main_agent",
-    allow_empty_agent_name: bool = False,
+    allow_memory_system_messages: bool = False,
 ):
     """Create a node that filters out system messages from the conversation state.
     Args:
@@ -42,17 +43,39 @@ def create_filter_messages_node(
             filtered_messages = []
             # Separate system messages for removal and keep others
             for msg in state["messages"]:
-                # Checking for content match because we don't want to remove memories in SystemMessage
-                if (
-                    msg.name == agent_name
-                    or ((msg.name == "" or msg.name is None) and allow_empty_agent_name)
-                    or (
-                        isinstance(msg, ToolMessage)
-                        and msg.tool_call_id in allowed_tool_messages_ids
+                msg_names = msg.name.split(",") if msg.name else []
+
+                # Check if message is from the target agent
+                is_from_target_agent = agent_name in msg_names
+
+                # Note: ToolMessage doesn't have 'name' attribute like other messages
+                # So we are allowing all tool messages that are invoked by AI messages
+
+                # Check if message is an allowed tool message
+                is_allowed_tool_message = (
+                    isinstance(msg, ToolMessage)
+                    and msg.tool_call_id in allowed_tool_messages_ids
+                )
+
+                # Check if memory system messages are allowed
+                # Exclude agent system prompts if memory system messages are allowed
+                is_allowed_memory_system_message = (
+                    allow_memory_system_messages
+                    and isinstance(msg, SystemMessage)
+                    and not (
+                        msg.text().strip().startswith(AGENT_SYSTEM_PROMPT[:100].strip())
                     )
+                )
+
+                # Keep message if it matches either condition
+                if (
+                    is_from_target_agent
+                    or is_allowed_tool_message
+                    or is_allowed_memory_system_message
                 ):
                     filtered_messages.append(msg)
 
+                    # If this is an AI message, track its tool call IDs for future tool messages
                     if isinstance(msg, AIMessage):
                         for tool_call in msg.tool_calls:
                             allowed_tool_messages_ids.add(tool_call.get("id"))

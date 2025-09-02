@@ -5,10 +5,11 @@ This module provides the core framework for building specialized sub-agents
 that can handle specific tool categories with deep domain expertise.
 """
 
-from typing import Literal
-
 from app.config.loggers import langchain_logger as logger
 from app.langchain.core.nodes import trim_messages_node
+from app.langchain.core.nodes.delete_system_messages import (
+    create_delete_system_messages_node,
+)
 from app.langchain.core.nodes.filter_messages import create_filter_messages_node
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
 from app.langchain.tools.core.store import get_tools_store
@@ -18,7 +19,6 @@ from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.store.base import BaseStore
-from langgraph.utils.runnable import RunnableCallable
 from langgraph_bigtool.graph import State
 
 
@@ -29,9 +29,9 @@ class SubAgentFactory:
     def create_provider_subagent(
         provider: str,
         name: str,
+        prompt: str,
         llm: LanguageModelLike,
         tool_space: str = "general",
-        history_type: Literal["last_message", "full_history"] = "last_message",
     ):
         """
         Creates a specialized sub-agent graph for a specific provider with tool registry.
@@ -60,13 +60,17 @@ class SubAgentFactory:
             last_message = messages[-1]
 
             if isinstance(last_message, AIMessage) and not last_message.tool_calls:
-                if history_type == "last_message":
-                    # Keep only the last AI message in history
-                    state["messages"] = [last_message]
-                return state
+                # If the last message is an AI message without tool calls, set its name
+                # to include the agent name for filtering
+                # Note: Here we are adding "main_agent" as the agent name
+                # because last AI Message should be accessible by main agent
+                msg_name = (
+                    [] if last_message.name is None else last_message.name.split(",")
+                )
+                msg_name.append("main_agent")
+                last_message.name = ",".join(msg_name)
 
             return state
-
 
         # Create agent with entire tool registry and tool retrieval filtering
         # The retrieve_tools_function will filter tools based on tool_space
@@ -78,36 +82,24 @@ class SubAgentFactory:
                 tool_space=tool_space,
                 include_core_tools=False,  # Provider agents don't need core tools
                 additional_tools=[get_all_memory, search_memory],
+                limit=10,  # Retrieve up to 10 relevant tools
             ),
             pre_model_hooks=[
                 create_filter_messages_node(
                     agent_name=name,
-                    allow_empty_agent_name=False,
+                    allow_memory_system_messages=True,
                 ),
                 trim_messages_node,
             ],
-            end_graph_hooks=[transform_output],
+            end_graph_hooks=[
+                transform_output,
+                create_delete_system_messages_node(
+                    prompt=prompt,
+                ),
+            ],
         )
 
         subagent_graph = builder.compile(store=store, name=name, checkpointer=False)
 
-        def call_agent(state: State):
-            response = subagent_graph.invoke(state)  # type: ignore[call-arg]
-
-            if history_type == "last_message":
-                # Keep only the last AI message in history
-                response["messages"] = [response["messages"][-1]]
-
-            return {"messages": response["messages"]}
-
-        async def acall_agent(state: State):
-            response = await subagent_graph.ainvoke(state)  # type: ignore[call-arg]
-
-            if history_type == "last_message":
-                # Keep only the last AI message in history
-                response["messages"] = [response["messages"][-1]]
-
-            return {"messages": response["messages"]}
-
         logger.info(f"Successfully created {provider} sub-agent graph")
-        return RunnableCallable(call_agent, acall_agent)
+        return subagent_graph

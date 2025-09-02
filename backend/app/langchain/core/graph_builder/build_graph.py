@@ -5,13 +5,14 @@ from app.langchain.core.graph_builder.checkpointer_manager import (
     checkpointer_manager,
 )
 from app.langchain.core.nodes import (
-    delete_system_messages,
+    create_delete_system_messages_node,
     follow_up_actions_node,
     trim_messages_node,
 )
 from app.langchain.core.nodes.filter_messages import create_filter_messages_node
 from app.langchain.core.subagents.provider_subagents import ProviderSubAgents
 from app.langchain.llm.client import init_llm
+from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
 from app.langchain.tools.core.retrieval import get_retrieve_tools_function
 from app.langchain.tools.core.store import get_tools_store
 from app.override.langgraph_bigtool.create_agent import create_agent
@@ -45,13 +46,14 @@ async def build_graph(
         pre_model_hooks=[
             create_filter_messages_node(
                 agent_name="main_agent",
-                allow_empty_agent_name=True,
             ),
             trim_messages_node,
         ],
         end_graph_hooks=[
             follow_up_actions_node,
-            delete_system_messages,
+            create_delete_system_messages_node(
+                prompt=AGENT_SYSTEM_PROMPT,
+            ),
         ],
     )
 
