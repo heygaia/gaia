@@ -18,6 +18,7 @@ interface UserState {
   email: string;
   timezone?: string;
   onboarding?: OnboardingData;
+  selected_model?: string;
 }
 
 interface UserActions {
@@ -34,6 +35,7 @@ const initialState: UserState = {
   email: "",
   timezone: undefined,
   onboarding: undefined,
+  selected_model: undefined,
 };
 
 export const useUserStore = create<UserStore>()(
@@ -57,6 +59,7 @@ export const useUserStore = create<UserStore>()(
           email: state.email,
           timezone: state.timezone,
           onboarding: state.onboarding,
+          selected_model: state.selected_model,
         }),
       },
     ),

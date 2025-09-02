@@ -206,7 +206,7 @@ export const useSlashCommands = (): UseSlashCommandsReturn => {
   return {
     tools,
     isLoadingTools,
-    error: error?.message || null,
+    error: error || null,
     detectSlashCommand,
     getSlashCommandSuggestions,
     getAllTools,
