@@ -1,13 +1,17 @@
 export function BentoItem({
   title,
   description,
+  children,
 }: {
   title: string;
   description: string;
+  children?: React.ReactNode;
 }) {
   return (
     <div className="flex aspect-square flex-col gap-3">
-      <div className="h-[90%] w-full min-w-full rounded-3xl bg-zinc-800" />
+      <div className="h-[90%] w-full min-w-full rounded-3xl bg-zinc-800/70 flex items-center justify-center p-4">
+        {children}
+      </div>
       <div className="flex flex-col text-xl text-foreground-400">
         <span className="text-foreground">{title}</span>
         <span className="font-light">{description}</span>
