@@ -9,7 +9,6 @@ export * from "./magic-ui/confetti";
 export * from "./magic-ui/flickering-grid";
 export * from "./magic-ui/gradual-spacing";
 export * from "./magic-ui/iphone-15-pro";
-export * from "./magic-ui/orbiting-circles";
 export * from "./magic-ui/particles";
 export * from "./magic-ui/retro-grid";
 export * from "./magic-ui/scroll-based-velocity";
