@@ -1,8 +1,9 @@
 import { Chip } from "@heroui/chip";
-import { BentoItem } from "./new/TodosBentoContent";
 import Image from "next/image"
-import { Select } from "@heroui/select";
+
 import OrbitingCircles from "@/components/ui/magic-ui/orbiting-circles";
+
+import { BentoItem } from "./new/TodosBentoContent";
 
 export default function WorkflowSection() {
   const triggers = [

@@ -26,8 +26,8 @@ import {
 } from "@/components/ui/shadcn/dropdown-menu";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useEmailComposition } from "@/features/mail/hooks/useEmailComposition";
-import { MenuBar } from "@/features/notes/components/NotesMenuBar";
 
+// import { MenuBar } from "@/features/notes/components/NotesMenuBar";
 import { Button as ShadcnButton } from "../../../components/ui/shadcn/button";
 import { AiSearchModal } from "./AiSearchModal";
 
@@ -281,7 +281,7 @@ export default function MailCompose({ open, onOpenChange }: MailComposeProps) {
 
               {editor && (
                 <>
-                  <MenuBar editor={editor} textLength={false} isEmail={true} />
+                  {/* <MenuBar editor={editor} textLength={false} isEmail={true} /> */}
                   <EditorContent className="bg-zinc-800 p-2" editor={editor} />
                 </>
               )}
