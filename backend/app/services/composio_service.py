@@ -89,7 +89,7 @@ class ComposioService:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
-    def get_tools(self, tool_kit: str, exclude_tools:Optional[list[str]]=None):
+    def get_tools(self, tool_kit: str, exclude_tools: Optional[list[str]] = None):
         tools = self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
@@ -179,14 +179,17 @@ class ComposioService:
         print(f"Subscribing triggers for user {user_id}: {triggers}")
         try:
             # Create tasks for each trigger to run them concurrently
+            def create_trigger(trigger: TriggerConfig):
+                return self.composio.triggers.create(
+                    user_id=user_id,
+                    slug=trigger.slug,
+                    trigger_config=trigger.config,
+                )
+
             tasks = [
                 asyncio.get_event_loop().run_in_executor(
                     None,
-                    lambda t=trigger: self.composio.triggers.create(
-                        user_id=user_id,
-                        slug=t.slug,
-                        trigger_config=t.config,
-                    ),
+                    lambda t=trigger: create_trigger(t),
                 )
                 for trigger in triggers
             ]

@@ -104,12 +104,14 @@ class TriggerConfig(BaseModel):
         from app.utils.cron_utils import get_next_run_time
         from datetime import timezone as dt_timezone
         import pytz
+        from typing import Union
 
         try:
             # Use user_timezone parameter, fallback to trigger config timezone, then UTC
             tz_name = user_timezone or self.timezone or "UTC"
 
             # Convert timezone name to timezone object
+            tz: Union[dt_timezone, pytz.BaseTzInfo]
             if tz_name == "UTC":
                 tz = dt_timezone.utc
             else:
