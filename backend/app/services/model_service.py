@@ -65,6 +65,7 @@ async def get_available_models(user_plan: Optional[str] = None) -> List[ModelRes
         logger.error(f"Error fetching available models: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch models")
 
+
 @Cacheable(
     key_pattern="chat_models:model_by_id:{model_id}",
     ttl=3600,  # Cache for 1 hour
@@ -94,6 +95,7 @@ async def get_model_by_id(model_id: str) -> Optional[ModelConfig]:
     except Exception as e:
         logger.error(f"Error fetching model {model_id}: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch model")
+
 
 @CacheInvalidator(key_patterns=["chat_models:selected_model:{user_id}"])
 async def update_user_selected_model(
@@ -164,6 +166,7 @@ async def update_user_selected_model(
         logger.error(f"Error updating user model selection: {e}")
         raise HTTPException(status_code=500, detail="Failed to update model selection")
 
+
 @Cacheable(
     key_pattern="chat_models:selected_model:{user_id}",
     ttl=3600,  # Cache for 1 hour
@@ -197,6 +200,7 @@ async def get_user_selected_model(user_id: str) -> Optional[ModelConfig]:
         logger.error(f"Error fetching user selected model: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch user model")
 
+
 @Cacheable(
     key_pattern="chat_models:default_model",
     ttl=3600,  # Cache for 1 hour
@@ -228,5 +232,3 @@ async def get_default_model() -> Optional[ModelConfig]:
     except Exception as e:
         logger.error(f"Error fetching default model: {e}")
         return None
-
-

@@ -107,7 +107,9 @@ async def start_worker():
     await channel.set_qos(prefetch_count=10)
 
     # Set up Composio email processing queue
-    composio_email_queue = await channel.declare_queue("composio-email-events", durable=True)
+    composio_email_queue = await channel.declare_queue(
+        "composio-email-events", durable=True
+    )
     await composio_email_queue.consume(on_composio_email_message)
 
     # Set up workflow generation queue

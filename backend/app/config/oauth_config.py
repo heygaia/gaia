@@ -251,10 +251,12 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
     ),
 ]
 
+
 @cache
 def get_integration_by_id(integration_id: str) -> Optional[OAuthIntegration]:
     """Get an integration by its ID."""
     return next((i for i in OAUTH_INTEGRATIONS if i.id == integration_id), None)
+
 
 @cache
 def get_integration_scopes(integration_id: str) -> List[str]:
@@ -263,6 +265,7 @@ def get_integration_scopes(integration_id: str) -> List[str]:
     if not integration:
         return []
     return [scope.scope for scope in integration.scopes]
+
 
 @cache
 def get_short_name_mapping() -> Dict[str, str]:

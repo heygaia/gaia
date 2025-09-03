@@ -4,10 +4,12 @@ from composio.types import ToolExecuteParams
 
 FRONTEND_BUILDERS: Dict[str, Callable[[ToolExecuteParams], dict]] = {}
 
+
 def register_frontend_builder(tool: str):
     def decorator(func: Callable[[ToolExecuteParams], dict]):
         FRONTEND_BUILDERS[tool] = func
         return func
+
     return decorator
 
 
