@@ -1,3 +1,4 @@
+import time
 from contextlib import asynccontextmanager
 from typing import Optional
 
@@ -52,7 +53,8 @@ async def build_graph(
         in_memory_checkpointer_instance = InMemorySaver()
         # Setup the checkpointer
         graph = builder.compile(
-            checkpointer=in_memory_checkpointer_instance,  # type: ignore[call-arg]
+            # type: ignore[call-arg]
+            checkpointer=in_memory_checkpointer_instance,
             store=store,
         )
         print(graph.get_graph().draw_mermaid())

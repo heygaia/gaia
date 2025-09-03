@@ -1,5 +1,6 @@
 import asyncio
 
+from app.utils.embedding_utils import get_or_compute_embeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.store.memory import InMemoryStore
 
@@ -26,27 +27,33 @@ async def initialize_tools_store():
 
     # Register both regular and always available tools
     tool_dict = tool_registry.get_tool_dictionary()
+    all_tools = [tool_data.tool for tool_data in tool_dict.values()]
 
+    # Store all tools for vector search with cached embeddings
+    embeddings_list, tool_descriptions = await get_or_compute_embeddings(
+        all_tools, embeddings
+    )
+
+    # Build tasks for batch storage with pre-computed embeddings
     tasks = []
-    tools = {}
-    for tool_data in tool_dict.values():
+    for i, tool_data in enumerate(tool_dict.values()):
         tool = tool_data.tool
         tool_space = tool_data.space
+
+        # Use aput with pre-computed embeddings for proper space handling
         tasks.append(
             _store.aput(
                 (tool_space,),
                 tool.name,
                 {
-                    "description": f"{tool.name}: {tool.description}",
+                    "description": tool_descriptions[i],
+                    "embedding": embeddings_list[i],
                 },
             )
         )
-        tools[tool.name] = tool
 
-    # Store all tools for vector search using asyncio batch
-    await asyncio.gather(
-        *tasks,
-    )
+    # Store all tools using asyncio batch with proper space structure
+    await asyncio.gather(*tasks)
 
 
 def get_tools_store() -> InMemoryStore:

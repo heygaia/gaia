@@ -15,3 +15,11 @@ class FetchError(Exception):
         if self.url:
             base_message += f" - URL: {self.url}"
         return base_message
+
+
+class InfisicalConfigError(Exception):
+    """Exception raised for errors related to Infisical configuration."""
+
+    def __init__(self, message):
+        self.message = message
+        super().__init__(self.message)

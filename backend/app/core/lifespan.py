@@ -129,6 +129,19 @@ async def init_tools_store_async():
         raise
 
 
+async def init_mongodb_async():
+    """Initialize MongoDB and create database indexes."""
+    try:
+        from app.db.mongodb.mongodb import init_mongodb
+
+        mongo_client = init_mongodb()
+        await mongo_client._initialize_indexes()
+        logger.info("MongoDB initialized and indexes created")
+    except Exception as e:
+        logger.error(f"Failed to initialize MongoDB and create indexes: {e}")
+        raise
+
+
 # Shutdown methods
 async def close_postgresql_async():
     """Close PostgreSQL database connection."""
@@ -202,6 +215,7 @@ async def lifespan(app: FastAPI):
         # Initialize all services in parallel
         startup_tasks = [
             init_chroma_async(app),
+            init_mongodb_async(),
             init_cloudinary_async(),
             init_reminder_service(),
             init_workflow_service(),
@@ -219,12 +233,13 @@ async def lifespan(app: FastAPI):
             [
                 "chroma",
                 "cloudinary",
+                "mongodb",
                 "reminder_service",
+                "workflow_service",
                 "rabbitmq",
                 "websocket_consumer",
                 "default_graph",
                 "tools_store",
-                "workflow_service",
             ],
         )
 
