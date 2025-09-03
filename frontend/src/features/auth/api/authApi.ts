@@ -4,16 +4,17 @@ export interface UserInfo {
   name: string;
   email: string;
   picture: string;
+  timezone?: string; // User's timezone
   onboarding?: {
     completed: boolean;
     completed_at?: string;
     preferences?: {
-      country?: string;
       profession?: string;
       response_style?: string;
       custom_instructions?: string;
     };
   };
+  selected_model?: string;
 }
 
 export interface GoogleLoginResponse {
@@ -55,11 +56,15 @@ export const authApi = {
 
   // Logout user
   logout: async (): Promise<void> => {
-    const response = await apiService.post<{ logout_url: string }>("/oauth/logout", {}, {
-      successMessage: "Logged out successfully",
-      errorMessage: "Failed to logout",
-    });
-    
+    const response = await apiService.post<{ logout_url: string }>(
+      "/oauth/logout",
+      {},
+      {
+        successMessage: "Logged out successfully",
+        errorMessage: "Failed to logout",
+      },
+    );
+
     // Redirect to the logout URL returned by the backend
     if (response.logout_url) {
       window.location.href = response.logout_url;
@@ -77,14 +82,24 @@ export const authApi = {
     });
   },
 
-  // Update user preferences
-  updatePreferences: async (preferences: {
-    country?: string;
+  // Update user preferences (renamed for clarity)
+  updateOnboardingPreferences: async (preferences: {
     profession?: string;
     response_style?: string;
     custom_instructions?: string | null;
   }): Promise<{ success: boolean; message: string; user?: UserInfo }> => {
     return apiService.patch("/oauth/onboarding/preferences", preferences, {
+      silent: true,
+    });
+  },
+
+  // Update user timezone separately
+  updateUserTimezone: async (
+    timezone: string,
+  ): Promise<{ success: boolean; message: string; timezone: string }> => {
+    const formData = new FormData();
+    formData.append("timezone", timezone);
+    return apiService.patch("/oauth/timezone", formData, {
       silent: true,
     });
   },

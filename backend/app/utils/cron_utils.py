@@ -31,13 +31,18 @@ def validate_cron_expression(cron_expr: str) -> bool:
         return False
 
 
-def get_next_run_time(cron_expr: str, base_time: Optional[datetime] = None) -> datetime:
+def get_next_run_time(
+    cron_expr: str,
+    base_time: Optional[datetime] = None,
+    user_timezone: Optional[str] = None,
+) -> datetime:
     """
     Get the next scheduled run time based on cron expression.
 
     Args:
         cron_expr: Cron expression (e.g., "0 8 * * *" for daily at 8AM)
         base_time: Base time to calculate from (defaults to current UTC time)
+        user_timezone: User's timezone for cron calculation (e.g., "America/New_York")
 
     Returns:
         Next scheduled datetime in UTC
@@ -48,6 +53,33 @@ def get_next_run_time(cron_expr: str, base_time: Optional[datetime] = None) -> d
     if not validate_cron_expression(cron_expr):
         raise CronError(f"Invalid cron expression: {cron_expr}")
 
+    # Handle timezone-aware calculation
+    if user_timezone and user_timezone != "UTC":
+        try:
+            import pytz
+
+            tz = pytz.timezone(user_timezone)
+
+            # Get base time in user's timezone
+            if base_time is None:
+                base_time = datetime.now(tz)
+            elif base_time.tzinfo is None:
+                base_time = base_time.replace(tzinfo=timezone.utc).astimezone(tz)
+            else:
+                base_time = base_time.astimezone(tz)
+
+            # Calculate next run in user's timezone
+            cron = croniter(cron_expr, base_time)
+            next_time = cron.get_next(datetime)
+
+            # Convert to UTC for storage
+            return next_time.astimezone(timezone.utc)
+
+        except Exception:
+            # Fallback to UTC if timezone conversion fails
+            pass
+
+    # Default UTC calculation
     if base_time is None:
         base_time = datetime.now(timezone.utc)
     elif base_time.tzinfo is None:

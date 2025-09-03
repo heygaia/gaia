@@ -109,14 +109,14 @@ async def fetch_calendar_events(
     """
     url = f"https://www.googleapis.com/calendar/v3/calendars/{calendar_id}/events"
     headers = {"Authorization": f"Bearer {access_token}"}
-    if not time_min:
-        time_min = datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+
     params: Dict[str, Union[str, int, bool]] = {
-        "maxResults": 50,
+        "maxResults": 250,  # Increased to get more events per request
         "singleEvents": True,
         "orderBy": "startTime",
-        "timeMin": time_min,
     }
+    if time_min:
+        params["timeMin"] = time_min
     if time_max:
         params["timeMax"] = time_max
     if page_token:
@@ -175,8 +175,7 @@ async def get_calendar_events(
     Returns:
         dict: A dictionary containing events, nextPageToken, and the selected calendar IDs.
     """
-    if not time_min:
-        time_min = datetime.now(timezone.utc).isoformat()
+    # Don't set any default time filters - let the frontend control the time range
 
     # Get valid access token if not provided
     if not access_token:
@@ -285,8 +284,7 @@ async def get_calendar_events_by_id(
     Returns:
         dict: A dictionary containing the events and a nextPageToken if available.
     """
-    if not time_min:
-        time_min = datetime.now(timezone.utc).isoformat()
+    # Don't set any default time filters - let the frontend control the time range
 
     events_data = await fetch_calendar_events(
         calendar_id, access_token, page_token, time_min, time_max

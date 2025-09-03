@@ -69,11 +69,13 @@ _COLLECTION_MAPPINGS = {
     "todos_collection": "todos",
     "projects_collection": "projects",
     "reminders_collection": "reminders",
+    "workflows_collection": "workflows",
     "support_collection": "support_requests",
     "payments_collection": "payments",
     "subscriptions_collection": "subscriptions",
     "plans_collection": "subscription_plans",
     "usage_snapshots_collection": "usage_snapshots",
+    "ai_models_collection": "ai_models",
 }
 
 

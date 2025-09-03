@@ -5,7 +5,6 @@ Provides functions to format user preferences for agent system prompts.
 
 from typing import Optional, Dict, Any
 from app.config.loggers import app_logger as logger
-from app.utils.country_utils import format_country_for_display
 
 
 def format_response_style_instruction(response_style: str) -> str:
@@ -58,12 +57,6 @@ def build_user_context_parts(preferences: Dict[str, Any]) -> list[str]:
     parts = []
 
     try:
-        # Add location context
-        if preferences.get("country"):
-            country_display = format_country_for_display(preferences["country"])
-            if country_display != "Unknown":
-                parts.append(f"User Location: {country_display}")
-
         # Add profession context
         if preferences.get("profession"):
             profession = format_profession_for_display(preferences["profession"])
@@ -128,12 +121,6 @@ def validate_user_preferences(preferences: Dict[str, Any]) -> Dict[str, Any]:
     validated = {}
 
     try:
-        # Validate country code
-        if preferences.get("country"):
-            country = preferences["country"].strip().upper()
-            if len(country) == 2 and country.isalpha():
-                validated["country"] = country
-
         # Validate profession
         if preferences.get("profession"):
             profession = preferences["profession"].strip()
@@ -172,9 +159,6 @@ def get_user_preference_summary(preferences: Dict[str, Any]) -> str:
         return "No preferences set"
 
     summary_parts = []
-
-    if preferences.get("country"):
-        summary_parts.append(f"Country: {preferences['country']}")
 
     if preferences.get("profession"):
         summary_parts.append(f"Profession: {preferences['profession'][:20]}...")

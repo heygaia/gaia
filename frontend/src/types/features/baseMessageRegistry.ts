@@ -25,6 +25,7 @@ import {
   MemoryData,
 } from "./toolDataTypes";
 import { WeatherData } from "./weatherTypes";
+import { WorkflowData } from "./workflowTypes";
 
 export const TOOLS_MESSAGE_SCHEMA = {
   calendar_options: undefined as CalendarOptions[] | null | undefined,
@@ -67,6 +68,7 @@ export const BASE_MESSAGE_SCHEMA = {
   fileData: undefined as FileData[] | undefined,
   selectedTool: undefined as string | null | undefined,
   toolCategory: undefined as string | null | undefined,
+  selectedWorkflow: undefined as WorkflowData | null | undefined,
   isConvoSystemGenerated: undefined as boolean | undefined,
   follow_up_actions: undefined as string[] | undefined,
   integration_connection_required: undefined as
@@ -87,4 +89,3 @@ export type ToolsMessageKey = keyof typeof TOOLS_MESSAGE_SCHEMA;
 export const TOOLS_MESSAGE_KEYS = Object.keys(
   TOOLS_MESSAGE_SCHEMA,
 ) as ToolsMessageKey[];
-

@@ -265,6 +265,7 @@ export const useOnboarding = () => {
       const onboardingData = {
         name: onboardingState.userResponses.name.trim(),
         profession: onboardingState.userResponses.profession,
+        timezone: Intl.DateTimeFormat().resolvedOptions().timeZone, // Auto-capture timezone
       };
 
       // Send onboarding data to backend with retry logic

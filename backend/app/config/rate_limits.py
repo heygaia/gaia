@@ -97,6 +97,14 @@ FEATURE_LIMITS: Dict[str, TieredRateLimits] = {
             title="Todo Operations", description="Create, update, and manage todo items"
         ),
     ),
+    "workflow_operations": TieredRateLimits(
+        free=RateLimitConfig(day=1, month=30),
+        pro=RateLimitConfig(day=200, month=2000),
+        info=FeatureInfo(
+            title="Workflow Operations",
+            description="Create, execute, and manage AI workflows",
+        ),
+    ),
     "web_search": TieredRateLimits(
         free=RateLimitConfig(day=50, month=500),
         pro=RateLimitConfig(day=1000, month=25000),

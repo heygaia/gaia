@@ -18,6 +18,7 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str
     CHROMADB_PORT: int
     POSTGRES_URL: str
+    RABBITMQ_URL: str
 
     # OAuth & Authentication
     GOOGLE_CLIENT_ID: str
@@ -40,9 +41,14 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str
     OPENWEATHER_API_KEY: str
     RESEND_API_KEY: str
+    RESEND_AUDIENCE_ID: str
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
+    COMPOSIO_KEY: str
+
+    # Webhook Secrets
+    COMPOSIO_WEBHOOK_SECRET: str
 
     # Blog Management
     BLOG_BEARER_TOKEN: str  # Bearer token for blog management operations
@@ -68,9 +74,6 @@ class Settings(BaseSettings):
     MEM0_API_KEY: str
     MEM0_ORG_ID: str
     MEM0_PROJECT_ID: str
-
-    # Celery Configuration
-    RABBITMQ_URL: str
 
     # Code Execution
     E2B_API_KEY: str
@@ -102,6 +105,12 @@ class Settings(BaseSettings):
     def WORKOS_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/workos/callback"
+
+    @computed_field  # type: ignore
+    @property
+    def COMPOSIO_REDIRECT_URI(self) -> str:
+        """Composio OAuth callback URL."""
+        return f"{self.HOST}/api/v1/oauth/composio/callback"
 
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",

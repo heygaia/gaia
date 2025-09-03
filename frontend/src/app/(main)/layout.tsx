@@ -3,7 +3,6 @@
 import { useDrag } from "@use-gesture/react";
 import { usePathname } from "next/navigation";
 import { ReactNode, useEffect, useRef, useState } from "react";
-import { useDispatch, useSelector } from "react-redux";
 
 import HeaderManager from "@/components/layout/headers/HeaderManager";
 import Sidebar from "@/components/layout/sidebar/MainSidebar";
@@ -16,14 +15,9 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
-import { NotificationProvider } from "@/hooks/providers/NotificationContext";
 import { useIsMobile } from "@/hooks/ui/useMobile";
 import SidebarLayout from "@/layouts/SidebarLayout";
-import {
-  setMobileSidebarOpen,
-  setSidebarOpen,
-} from "@/redux/slices/sidebarSlice";
-import { RootState } from "@/redux/store";
+import { useSidebar as useUIStoreSidebar } from "@/stores/uiStore";
 
 // Custom SidebarTrigger for header that matches the consistent styling
 const HeaderSidebarTrigger = () => {
@@ -44,10 +38,7 @@ const HeaderSidebarTrigger = () => {
 
 export default function MainLayout({ children }: { children: ReactNode }) {
   const pathname = usePathname();
-  const dispatch = useDispatch();
-  const { isOpen, isMobileOpen } = useSelector(
-    (state: RootState) => state.sidebar,
-  );
+  const { isOpen, isMobileOpen, setOpen, setMobileOpen } = useUIStoreSidebar();
   const isMobile = useIsMobile();
   const [defaultOpen, setDefaultOpen] = useState(true);
   const dragRef = useRef<HTMLDivElement>(null);
@@ -57,31 +48,24 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   // Auto-close sidebar on mobile when pathname changes
   useEffect(() => {
-    if (isMobile && isMobileOpen) {
-      dispatch(setMobileSidebarOpen(false));
-    }
-  }, [pathname, isMobile, isMobileOpen, dispatch]);
+    if (isMobile && isMobileOpen) setMobileOpen(false);
+  }, [pathname, isMobile, isMobileOpen, setMobileOpen]);
 
   // Set default open state based on screen size
   useEffect(() => {
-    if (isMobile) {
-      setDefaultOpen(false);
-    } else {
-      setDefaultOpen(true);
-    }
+    if (isMobile) setDefaultOpen(false);
+    else setDefaultOpen(true);
   }, [isMobile]);
 
   function closeOnTouch(): void {
-    if (isMobile && (isMobileOpen || isOpen)) {
-      dispatch(setMobileSidebarOpen(false));
-    }
+    if (isMobile && (isMobileOpen || isOpen)) setMobileOpen(false);
   }
 
   function handleOpenChange(open: boolean): void {
     if (isMobile) {
-      dispatch(setMobileSidebarOpen(open));
+      setMobileOpen(open);
     } else {
-      dispatch(setSidebarOpen(open));
+      setOpen(open);
     }
   }
 
@@ -96,13 +80,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
       if (tap || !isMobile) return;
 
       if (last && Math.abs(mx) > Math.abs(my)) {
-        if (mx > 0) {
+        if (mx > 0)
           // Swipe right to open
-          dispatch(setMobileSidebarOpen(true));
-        } else if (mx < 0) {
+          setMobileOpen(true);
+        else if (mx < 0)
           // Swipe left to close
-          dispatch(setMobileSidebarOpen(false));
-        }
+          setMobileOpen(false);
       }
     },
     {
@@ -117,36 +100,34 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   return (
     <TooltipProvider>
-      <NotificationProvider>
-        <SidebarProvider
-          open={currentOpen}
-          onOpenChange={handleOpenChange}
-          defaultOpen={defaultOpen}
+      <SidebarProvider
+        open={currentOpen}
+        onOpenChange={handleOpenChange}
+        defaultOpen={defaultOpen}
+      >
+        <div
+          className="flex min-h-screen w-full dark"
+          style={{ touchAction: "pan-y" }}
+          ref={dragRef}
         >
-          <div
-            className="flex min-h-screen w-full dark"
-            style={{ touchAction: "pan-y" }}
-            ref={dragRef}
-          >
-            <SidebarLayout>
-              <Sidebar />
-            </SidebarLayout>
+          <SidebarLayout>
+            <Sidebar />
+          </SidebarLayout>
 
-            <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
-              <header
-                className="flex flex-shrink-0 items-start justify-between px-4 pt-3"
-                onClick={closeOnTouch}
-              >
-                {!currentOpen && <HeaderSidebarTrigger />}
-                <HeaderManager />
-              </header>
-              <main className="flex flex-1 flex-col overflow-hidden">
-                {children}
-              </main>
-            </SidebarInset>
-          </div>
-        </SidebarProvider>
-      </NotificationProvider>
+          <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
+            <header
+              className="flex flex-shrink-0 items-start justify-between px-4 pt-3"
+              onClick={closeOnTouch}
+            >
+              {!currentOpen && <HeaderSidebarTrigger />}
+              <HeaderManager />
+            </header>
+            <main className="flex flex-1 flex-col overflow-hidden">
+              {children}
+            </main>
+          </SidebarInset>
+        </div>
+      </SidebarProvider>
     </TooltipProvider>
   );
 }

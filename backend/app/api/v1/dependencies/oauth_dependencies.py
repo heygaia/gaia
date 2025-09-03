@@ -2,7 +2,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from app.config.loggers import auth_logger as logger
-from fastapi import Header, HTTPException, Request, WebSocket, status
+from fastapi import Depends, Header, HTTPException, Request, WebSocket, status
 
 
 async def get_current_user(request: Request):
@@ -24,7 +24,6 @@ async def get_current_user(request: Request):
         raise HTTPException(
             status_code=401, detail="Unauthorized: Authentication required"
         )
-
     if not request.state.user:
         logger.error("User marked as authenticated but no user data found")
         raise HTTPException(status_code=401, detail="Unauthorized: User data missing")
@@ -87,3 +86,34 @@ def get_user_timezone(
 
     logger.debug(f"User timezone: {user_tz}, Current time: {now}")
     return now
+
+
+async def get_user_timezone_from_preferences(
+    user: dict = Depends(get_current_user),
+) -> str:
+    """
+    Get the user's timezone from their stored preferences.
+    Falls back to UTC if no timezone is set.
+
+    Args:
+        user: User data from get_current_user dependency
+
+    Returns:
+        User's timezone string (e.g., 'America/New_York', 'UTC')
+    """
+    try:
+        # Only check the root level timezone field
+        timezone = user.get("timezone")
+        logger.debug(f"User timezone from user.timezone: {timezone}")
+
+        if timezone and timezone.strip():
+            logger.debug(f"Using user's stored timezone: {timezone}")
+            return timezone.strip()
+
+        # Fallback to UTC
+        logger.debug("No user timezone found, falling back to UTC")
+        return "UTC"
+
+    except Exception as e:
+        logger.warning(f"Error getting user timezone from preferences: {e}")
+        return "UTC"
