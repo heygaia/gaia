@@ -6,44 +6,14 @@ from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
 from app.models.oauth_models import TriggerConfig
 from app.services.langchain_composio_service import LangchainProvider
+from app.utils.composio_hooks import (
+    master_after_execute_hook,
+    master_before_execute_hook,
+)
 from app.utils.query_utils import add_query_param
-from app.utils.tool_ui_builders import frontend_stream_modifier
-from composio import Composio, before_execute
-from composio.types import ToolExecuteParams
+from composio import Composio, after_execute, before_execute
 
-# Generate COMPOSIO_SOCIAL_CONFIGS dynamically from oauth_config
 COMPOSIO_SOCIAL_CONFIGS = get_composio_social_configs()
-
-
-def extract_user_id_from_params(
-    tool: str,
-    toolkit: str,
-    params: ToolExecuteParams,
-) -> ToolExecuteParams:
-    """
-    Extract user_id from RunnableConfig metadata and add it to tool execution params.
-
-    This function is used as a before_execute modifier for Composio tools to ensure
-    user context is properly passed through during tool execution.
-    """
-    arguments = params.get("arguments", {})
-    if not arguments:
-        return params
-
-    config = arguments.pop("__runnable_config__", None)
-    if config is None:
-        return params
-
-    metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
-    if not metadata:
-        return params
-
-    user_id = metadata.get("user_id")
-    if user_id is None:
-        return params
-
-    params["user_id"] = user_id
-    return params
 
 
 class ComposioService:
@@ -89,17 +59,34 @@ class ComposioService:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
-    def get_tools(self, tool_kit: str, exclude_tools:Optional[list[str]]=None):
+    def get_tools(self, tool_kit: str, exclude_tools: Optional[list[str]] = None):
+        """
+        Get tools for a specific toolkit with unified master hooks.
+
+        The master hooks handle ALL tools automatically including:
+        - User ID extraction from RunnableConfig metadata
+        - Frontend streaming setup
+        - All registered tool-specific hooks (Gmail, etc.)
+        """
         tools = self.composio.tools.get(user_id="", toolkits=[tool_kit], limit=100)
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
-        user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
-        after_modifier = before_execute(tools=tools_name)(frontend_stream_modifier)
+
+        # Use only master hooks - they handle ALL tools automatically
+        master_before_modifier = before_execute(tools=tools_name)(
+            master_before_execute_hook
+        )
+        master_after_modifier = after_execute(tools=tools_name)(
+            master_after_execute_hook
+        )
 
         return self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[after_modifier, user_id_modifier],
+            modifiers=[
+                master_before_modifier,
+                master_after_modifier,
+            ],
             limit=1000,
         )
 

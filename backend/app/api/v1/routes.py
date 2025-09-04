@@ -8,7 +8,6 @@ from app.api.v1.router import (
     blog,
     calendar,
     chat,
-    composio,
     conversations,
     feedback,
     file,
@@ -36,7 +35,6 @@ from fastapi import APIRouter
 
 router = APIRouter()
 
-router.include_router(composio.router, tags=["composio"])
 router.include_router(chat.router, tags=["Chat"])
 router.include_router(conversations.router, tags=["Conversations"])
 router.include_router(waitlist.router, tags=["Waitlist"])
