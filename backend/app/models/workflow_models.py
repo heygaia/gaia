@@ -76,8 +76,14 @@ class TriggerConfig(BaseModel):
     )
 
     # Email trigger configuration
-    email_patterns: Optional[List[str]] = Field(
-        default=None, description="Email patterns to match"
+    sender_patterns: Optional[List[str]] = Field(
+        default=None, description="Sender email patterns to match"
+    )
+    subject_patterns: Optional[List[str]] = Field(
+        default=None, description="Subject line patterns to match"
+    )
+    body_keywords: Optional[List[str]] = Field(
+        default=None, description="Keywords to search in email body"
     )
 
     # Calendar trigger configuration
@@ -169,6 +175,19 @@ class TriggerConfig(BaseModel):
 
             if not validate_cron_expression(v):
                 raise ValueError(f"Invalid cron expression: {v}")
+        return v
+
+    @field_validator("sender_patterns", "subject_patterns", "body_keywords")
+    @classmethod
+    def validate_email_patterns(cls, v):
+        """Validate email trigger patterns."""
+        if v is not None:
+            if not isinstance(v, list):
+                raise ValueError("Email patterns must be a list")
+
+            if any(not pattern.strip() for pattern in v if isinstance(pattern, str)):
+                raise ValueError("Email patterns cannot contain empty strings")
+
         return v
 
 

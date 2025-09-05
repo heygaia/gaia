@@ -446,6 +446,14 @@ async def create_workflow_indexes():
                     ("trigger_config.enabled", 1),
                 ]
             ),
+            workflows_collection.create_index(
+                [
+                    ("user_id", 1),
+                    ("activated", 1),
+                    ("trigger_config.type", 1),
+                    ("trigger_config.enabled", 1),
+                ]
+            ),
             # Compound index for scheduled workflows with next run time
             workflows_collection.create_index(
                 [
