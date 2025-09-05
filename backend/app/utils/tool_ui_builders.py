@@ -27,6 +27,7 @@ def register_frontend_builder(tools: Union[str, List[str]]):
 )
 def gmail_tools_builder(tool: str, params: ToolExecuteParams) -> Optional[dict]:
     args = params.get("arguments", {})
+    print("fucking tool is called")
 
     if tool == "GMAIL_CREATE_EMAIL_DRAFT":
         return {
@@ -61,7 +62,6 @@ def gmail_tools_builder(tool: str, params: ToolExecuteParams) -> Optional[dict]:
         return {"email_thread_data": thread_data}
 
     return None
-
 
 def frontend_stream_modifier(
     tool: str,

@@ -72,7 +72,6 @@ class ComposioService:
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
 
-        # Use only master hooks - they handle ALL tools automatically
         master_before_modifier = before_execute(tools=tools_name)(
             master_before_execute_hook
         )
