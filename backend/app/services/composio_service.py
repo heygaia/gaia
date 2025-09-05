@@ -90,6 +90,45 @@ class ComposioService:
             limit=1000,
         )
 
+    def get_tool(self, tool_name: str, use_before_hook: bool = True, use_after_hook: bool = True):
+        """
+        Get a specific tool by name with configurable hooks.
+        
+        Args:
+            tool_name: Name of the specific tool to retrieve (e.g., 'GMAIL_SEND_EMAIL')
+            use_before_hook: Whether to apply master before execute hook
+            use_after_hook: Whether to apply master after execute hook
+            
+        Returns:
+            The specific tool with selected hooks applied, or None if not found
+        """
+        try:
+            modifiers = []
+            
+            # Add hooks based on flags
+            if use_before_hook:
+                master_before_modifier = before_execute(tools=[tool_name])(
+                    master_before_execute_hook
+                )
+                modifiers.append(master_before_modifier)
+                
+            if use_after_hook:
+                master_after_modifier = after_execute(tools=[tool_name])(
+                    master_after_execute_hook
+                )
+                modifiers.append(master_after_modifier)
+
+            tools = self.composio.tools.get(
+                user_id="",
+                tools=[tool_name],
+                modifiers=modifiers,
+            )
+            
+            return tools[0] if tools else None
+        except Exception as e:
+            logger.error(f"Error getting tool {tool_name}: {e}")
+            return None
+
     def check_connection_status(
         self, providers: list[str], user_id: str
     ) -> dict[str, bool]:
