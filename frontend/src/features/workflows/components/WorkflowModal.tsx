@@ -1,5 +1,6 @@
 "use client";
 
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import {
@@ -14,7 +15,6 @@ import { Select, SelectItem } from "@heroui/select";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
-import { Accordion, AccordionItem } from "@heroui/accordion";
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import {
   AlertCircle,
