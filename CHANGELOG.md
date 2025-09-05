@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-05)
+
+
+### Features
+
+* added cicd for build and deploy ([0078b30](https://github.com/heygaia/gaia/commit/0078b300b97b4a7341ff8834a62c2ce83fc34c45))
+
+
+### Bug Fixes
+
+* fixed few issue in cicd ([ca15ddf](https://github.com/heygaia/gaia/commit/ca15ddf5fc3df24d0c0abf460027bdcb8a6ee372))
+* fixed permission issues ([8296a79](https://github.com/heygaia/gaia/commit/8296a79fcac168dd737f69f1f8a4843ea38c65a6))
+* fixed permission issues [#171](https://github.com/heygaia/gaia/issues/171) ([8296a79](https://github.com/heygaia/gaia/commit/8296a79fcac168dd737f69f1f8a4843ea38c65a6))
+
 ## [0.4.0-beta](https://github.com/heygaia/gaia/compare/v0.3.0-beta...v0.4.0-beta) (2025-09-04)
 
 
