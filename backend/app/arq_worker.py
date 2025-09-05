@@ -158,23 +158,6 @@ async def check_inactive_users(ctx: dict) -> str:
         raise
 
 
-async def renew_gmail_watch_subscriptions(ctx: dict) -> str:
-    """
-    Renew Gmail watch API subscriptions for active users.
-    Uses the optimized function from user_utils with controlled concurrency.
-
-    Args:
-        ctx: ARQ context
-
-    Returns:
-        Processing result message
-    """
-    from app.utils.watch_mail import renew_gmail_watch_subscriptions as renew_function
-
-    # Use the optimized function with controlled concurrency
-    return await renew_function(ctx, max_concurrent=15)
-
-
 async def shutdown(ctx: dict):
     """ARQ worker shutdown function."""
     logger.info("ARQ worker shutting down...")
@@ -193,7 +176,6 @@ class WorkerSettings:
         process_reminder,
         cleanup_expired_reminders,
         check_inactive_users,
-        renew_gmail_watch_subscriptions,
         # cleanup_abandoned_subscriptions_task,
         # reconcile_subscription_payments_task,
     ]
@@ -207,12 +189,6 @@ class WorkerSettings:
         cron(
             check_inactive_users,
             hour=9,  # At 9 AM
-            minute=0,  # At the start of the hour
-            second=0,  # At the start of the minute
-        ),
-        cron(
-            renew_gmail_watch_subscriptions,
-            hour=2,  # At 2 AM (different from other jobs to spread load)
             minute=0,  # At the start of the hour
             second=0,  # At the start of the minute
         ),
