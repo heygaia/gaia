@@ -14,6 +14,7 @@ import { Select, SelectItem } from "@heroui/select";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import {
   AlertCircle,
@@ -49,7 +50,9 @@ interface WorkflowFormData {
     enabled: boolean;
     cron_expression?: string;
     timezone?: string;
-    email_patterns?: string[];
+    sender_patterns?: string[];
+    subject_patterns?: string[];
+    body_keywords?: string[];
     calendar_patterns?: string[];
   };
 }
@@ -644,9 +647,126 @@ export default function WorkflowModal({
         </div>
 
         {selectedTriggerOption && (
-          <p className="mt-2 px-1 text-xs text-zinc-500">
-            {selectedTriggerOption.description}
-          </p>
+          <div className="mt-4 max-w-xl space-y-4">
+            <p className="px-1 text-xs text-zinc-500">
+              {selectedTriggerOption.description}
+            </p>
+
+            {/* Gmail-specific configuration */}
+            {formData.selectedTrigger === "gmail" && (
+              <Accordion className="w-full px-0!" isCompact>
+                <AccordionItem
+                  key="advanced-settings"
+                  aria-label="Advanced Settings"
+                  title={<div className="text-sm">Advanced Settings</div>}
+                  classNames={{
+                    trigger:
+                      "text-xs font-medium text-zinc-300 hover:text-zinc-100 cursor-pointer",
+                    content: "pt-2",
+                    base: "bg-zinc-800 px-3 rounded-xl py-0",
+                  }}
+                >
+                  <div className="space-y-3">
+                    <div>
+                      <Input
+                        label="Sender Patterns (optional)"
+                        variant="faded"
+                        placeholder="e.g., @company.com, support@, john.doe@gmail.com"
+                        value={
+                          formData.trigger_config.sender_patterns?.join(", ") ||
+                          ""
+                        }
+                        onChange={(e) => {
+                          const patterns = e.target.value
+                            .split(",")
+                            .map((p) => p.trim())
+                            .filter((p) => p.length > 0);
+                          updateFormData({
+                            trigger_config: {
+                              ...formData.trigger_config,
+                              sender_patterns:
+                                patterns.length > 0 ? patterns : undefined,
+                            },
+                          });
+                        }}
+                        size="sm"
+                        className="text-sm"
+                        description="Match emails from specific senders. Supports partial
+                        matches and regex."
+                      />
+                    </div>
+
+                    <div>
+                      <Input
+                        label="Subject Patterns (optional)"
+                        variant="faded"
+                        placeholder="e.g., urgent, meeting, invoice"
+                        value={
+                          formData.trigger_config.subject_patterns?.join(
+                            ", ",
+                          ) || ""
+                        }
+                        onChange={(e) => {
+                          const patterns = e.target.value
+                            .split(",")
+                            .map((p) => p.trim())
+                            .filter((p) => p.length > 0);
+                          updateFormData({
+                            trigger_config: {
+                              ...formData.trigger_config,
+                              subject_patterns:
+                                patterns.length > 0 ? patterns : undefined,
+                            },
+                          });
+                        }}
+                        size="sm"
+                        className="text-sm"
+                        description="Match emails with specific words in the subject line."
+                      />
+                    </div>
+
+                    <div>
+                      <Input
+                        placeholder="e.g., project, deadline, payment"
+                        variant="faded"
+                        label="Body Keywords (optional)"
+                        value={
+                          formData.trigger_config.body_keywords?.join(", ") ||
+                          ""
+                        }
+                        onChange={(e) => {
+                          const keywords = e.target.value
+                            .split(",")
+                            .map((k) => k.trim())
+                            .filter((k) => k.length > 0);
+                          updateFormData({
+                            trigger_config: {
+                              ...formData.trigger_config,
+                              body_keywords:
+                                keywords.length > 0 ? keywords : undefined,
+                            },
+                          });
+                        }}
+                        size="sm"
+                        className="text-sm"
+                        description="Match emails containing these keywords in the body text."
+                      />
+                    </div>
+
+                    <div className="mb-2 rounded-xl bg-zinc-900/50 p-3">
+                      <p className="text-xs text-zinc-400">
+                        <strong>Note:</strong> If no patterns are specified, the
+                        workflow will trigger on all new emails. You can use
+                        multiple criteria - all specified patterns must match
+                        for the workflow to trigger. Separate multiple patterns
+                        with commas.
+                      </p>
+                    </div>
+                  </div>
+                </AccordionItem>
+              </Accordion>
+            )}
+          </div>
         )}
       </div>
     );
