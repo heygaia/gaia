@@ -139,3 +139,10 @@ def gmail_compose_hook(tool: str, toolkit: str, response: Any):
         writer = get_stream_writer()
         writer(payload)
     return response
+
+
+@register_after_hook(tools=["GMAIL_FETCH_EMAILS"])
+def gmail_fetch_hook(tool: str, toolkit: str, response: Any):
+    print("this is fetch email tool response but after",response)
+
+    
