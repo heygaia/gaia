@@ -34,7 +34,6 @@ const userSlice = createSlice({
   reducers: {
     // Sets user information
     setUser(state, action: PayloadAction<UserState>) {
-      console.log("Setting user:", action.payload);
       state.profilePicture = action.payload.profilePicture;
       state.name = action.payload.name;
       state.email = action.payload.email;

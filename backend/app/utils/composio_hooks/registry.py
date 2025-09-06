@@ -95,7 +95,6 @@ def master_before_execute_hook(
                 user_id = metadata.get("user_id")
                 if user_id:
                     params["user_id"] = user_id
-    print("this is called before execute thing")
 
     return hook_registry.execute_before_hooks(tool, toolkit, params)
 

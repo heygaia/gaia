@@ -51,7 +51,7 @@ GMAIL_AGENT_SYSTEM_PROMPT = BASE_SUBAGENT_PROMPT.format(
 Below are the exact tool names you can use for Gmail-related tasks. Use retrieve_tools exact_names param to get these tools.
 
 ### Email Management Tools:
-- **GMAIL_FETCH_EMAILS**: Retrieve emails with filters and search queries
+- **GMAIL_FETCH_EMAILS**: Retrieve emails with filters and search queries (fallback max_results argument to 15)
 - **GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID**: Get specific email content by message ID
 - **GMAIL_FETCH_MESSAGE_BY_THREAD_ID**: Get emails in a conversation thread
 - **GMAIL_SEND_EMAIL**: Send emails directly (USE WITH CAUTION - see rules below)

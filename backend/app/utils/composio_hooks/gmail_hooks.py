@@ -1,148 +1,502 @@
 """
 Gmail-specific hooks using the enhanced decorator system.
 
-These hooks demonstrate the power of the new multi-tool/toolkit decorators
-with conditional logic based on tool names.
+These hooks implement writer functionality for frontend streaming
+and response processing for raw Gmail API data.
 """
 
 from typing import Any
 
+from composio.types import ToolExecutionResponse
+from langgraph.config import get_stream_writer
+
 from app.config.loggers import app_logger as logger
 from app.langchain.templates.mail_templates import (
     detailed_message_template,
-    minimal_message_template,
-    thread_template,
+    draft_template,
+    process_get_thread_response,
+    process_list_drafts_response,
+    process_list_messages_response,
 )
-from langgraph.config import get_stream_writer
 
 from .registry import register_after_hook, register_before_hook
 
+# ====================== BEFORE EXECUTE HOOKS ======================
+# These hooks send progress/streaming data to frontend before tool execution
 
-# @register_after_hook(
-#     tools=["GMAIL_FETCH_EMAILS", "GMAIL_LIST_THREADS", "GMAIL_SEND_EMAIL"]
-# )
-# def gmail_output_processor(tool: str, toolkit: str, response: Any) -> Any:
-#     """
-#     Universal Gmail output processor that handles multiple Gmail tools.
-#     Uses conditional logic based on tool name for specific processing.
-#     """
-#     if not response or not isinstance(response, dict):
-#         return response
 
-#     try:
-#         # Handle GMAIL_FETCH_EMAILS
-#         if tool == "GMAIL_FETCH_EMAILS":
-#             emails_data = response.get("data", [])
-#             if not emails_data:
-#                 return response
-
-#             # Check if we should use minimal or detailed template
-#             use_minimal = len(emails_data) > 5
-
-#             processed_emails = []
-#             for email in emails_data:
-#                 if use_minimal:
-#                     processed_email = minimal_message_template(email)
-#                 else:
-#                     processed_email = detailed_message_template(email)
-#                 processed_emails.append(processed_email)
-
-#             # Create processed response
-#             processed_response = {
-#                 **response,
-#                 "data": processed_emails,
-#                 "processed": True,
-#                 "template_used": "minimal" if use_minimal else "detailed",
-#             }
-
-#             logger.debug(
-#                 f"Processed {len(processed_emails)} Gmail emails with {processed_response['template_used']} template"
-#             )
-#             return processed_response
-
-#         # Handle GMAIL_LIST_THREADS
-#         elif tool == "GMAIL_LIST_THREADS":
-#             threads_data = response.get("data", [])
-#             if not threads_data:
-#                 return response
-
-#             processed_threads = []
-#             for thread in threads_data:
-#                 processed_thread = thread_template(thread)
-#                 processed_threads.append(processed_thread)
-
-#             # Create processed response
-#             processed_response = {
-#                 **response,
-#                 "data": processed_threads,
-#                 "processed": True,
-#                 "template_used": "thread_list",
-#             }
-
-#             logger.debug(f"Processed {len(processed_threads)} Gmail threads")
-#             return processed_response
-
-#         # Handle GMAIL_SEND_EMAIL
-#         elif tool == "GMAIL_SEND_EMAIL":
-#             # Check if email was sent successfully
-#             if response.get("success", False) or "message_id" in response.get(
-#                 "data", {}
-#             ):
-#                 user_message = "Email sent successfully!"
-#                 status = "sent"
-#             else:
-#                 user_message = "Failed to send email"
-#                 status = "failed"
-
-#             # Add timestamp if not present
-#             timestamp = response.get("timestamp")
-#             if not timestamp:
-#                 from datetime import datetime
-
-#                 timestamp = datetime.now().isoformat()
-
-#             # Create processed response
-#             processed_response = {
-#                 **response,
-#                 "user_message": user_message,
-#                 "status": status,
-#                 "timestamp": timestamp,
-#             }
-
-#             logger.debug(
-#                 f"Processed Gmail send output: {processed_response.get('status', 'unknown')}"
-#             )
-#             return processed_response
-
-#     except Exception as e:
-#         logger.error(f"Error processing Gmail {tool} output: {e}")
-#         return response
-#     return response
-
-@register_before_hook(
-    tools=["GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT"]
-)
-def gmail_compose_hook(tool: str, toolkit: str, response: Any):
-    payload = None
-    response = response.get("arguments", {})
-    if tool == "GMAIL_CREATE_EMAIL_DRAFT":
-        payload = {
-            "email_compose_data": [
-                {
-                    "to": [response.get("recipient_email")],
-                    "subject": response.get("subject"),
-                    "body": response.get("body"),
-                }
-            ]
-        }
-    if payload:
+@register_before_hook(tools=["GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT"])
+def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle email composition progress and streaming data."""
+    try:
         writer = get_stream_writer()
-        writer(payload)
-    return response
+        if not writer:
+            return params
+
+        arguments = params.get("arguments", {})
+
+        if tool == "GMAIL_SEND_EMAIL":
+            # Send progress for email sending
+            payload = {
+                "email_compose_data": [
+                    {
+                        "to": [arguments.get("recipient_email", "")],
+                        "subject": arguments.get("subject", ""),
+                        "body": arguments.get("body", ""),
+                        "cc": arguments.get("cc", []),
+                        "bcc": arguments.get("bcc", []),
+                    }
+                ],
+            }
+            writer(payload)
+
+        elif tool == "GMAIL_CREATE_EMAIL_DRAFT":
+            # Send progress and draft data for draft creation
+            payload = {
+                "progress": f"Creating draft for {arguments.get('recipient_email', '')}...",
+                "email_compose_data": [
+                    {
+                        "to": [arguments.get("recipient_email", "")]
+                        + arguments.get("extra_recipients", []),
+                        "subject": arguments.get("subject", ""),
+                        "body": arguments.get("body", ""),
+                        "cc": arguments.get("cc", []),
+                        "bcc": arguments.get("bcc", []),
+                    }
+                ],
+            }
+            writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_compose_before_hook for {tool}: {e}")
+
+    return params
+
+@register_before_hook(tools=["GMAIL_FETCH_EMAILS"])
+def gmail_fetch_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle email fetching progress."""
+    try:
+        arguments = params.get("arguments", {})
+        arguments["label_ids"] = (
+            ["INBOX"] if not arguments.get("label_ids") else arguments["label_ids"]
+        )
+        arguments["format"] = "full"
+
+        params["arguments"] = arguments
+    except Exception as e:
+        logger.error(f"Error in gmail_fetch_before_hook: {e}")
+
+    return params
+
+
+# ====================== AFTER EXECUTE HOOKS ======================
+# These hooks process responses and send data to frontend after tool execution
 
 
 @register_after_hook(tools=["GMAIL_FETCH_EMAILS"])
-def gmail_fetch_hook(tool: str, toolkit: str, response: Any):
-    print("this is fetch email tool response but after",response)
+def gmail_fetch_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process email fetch response and send data to frontend."""
+    try:
+        writer = get_stream_writer()
 
-    
+        # Process the raw response to minimize data for LLM
+        processed_response = process_list_messages_response(response["data"])
+
+        print(f"{processed_response=}")
+
+        if writer and processed_response.get("messages"):
+            # Send email data to frontend
+            payload = {
+                "email_fetch_data": processed_response["messages"],
+                "nextPageToken": processed_response.get("nextPageToken"),
+                "resultSize": processed_response.get("resultSize", 0),
+            }
+            writer(payload)
+
+        # Return processed response for LLM
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_fetch_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"])
+def gmail_message_detail_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process single message response to minimize raw data."""
+    try:
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Transform raw message data to detailed but clean format
+        processed_response = detailed_message_template(response["data"])
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_message_detail_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_FETCH_MESSAGE_BY_THREAD_ID"])
+def gmail_thread_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process thread response and send data to frontend."""
+    try:
+        writer = get_stream_writer()
+
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Process the raw thread response
+        processed_response = process_get_thread_response(response["data"])
+
+        if writer and processed_response.get("messages"):
+            # Send thread data to frontend
+            payload = {
+                "email_thread_data": {
+                    "id": processed_response.get("id"),
+                    "messages": processed_response["messages"],
+                    "messageCount": processed_response.get("messageCount", 0),
+                }
+            }
+            writer(payload)
+
+        # Return processed response for LLM
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_thread_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_LIST_DRAFTS"])
+def gmail_drafts_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process drafts list response to minimize raw data."""
+    try:
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Process the raw drafts response
+        processed_response = process_list_drafts_response(response["data"])
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_drafts_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_GET_DRAFT"])
+def gmail_draft_detail_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process single draft response to minimize raw data."""
+    try:
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Transform raw draft data to clean format
+        processed_response = draft_template(response["data"])
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_draft_detail_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_FETCH_ATTACHMENT"])
+def gmail_attachment_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process attachment response to extract metadata only."""
+    try:
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Extract only metadata, not the base64 content
+        processed_response = {
+            "attachmentId": response["data"].get("attachmentId", ""),
+            "filename": response["data"].get("filename", ""),
+            "mimeType": response["data"].get("mimeType", ""),
+            "size": response["data"].get("size", 0),
+            "message": "Attachment content available but not displayed to preserve context",
+        }
+
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_attachment_after_hook: {e}")
+        return response["data"]
+
+
+# ====================== PROGRESS HOOKS FOR OTHER OPERATIONS ======================
+
+
+@register_before_hook(tools=["GMAIL_SEND_DRAFT"])
+def gmail_send_draft_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle draft sending progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        payload = {"progress": "Sending draft..."}
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_send_draft_before_hook: {e}")
+
+    return params
+
+
+@register_before_hook(tools=["GMAIL_TRASH_MESSAGE", "GMAIL_UNTRASH_MESSAGE"])
+def gmail_trash_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle message trash/untrash progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        action = (
+            "Moving to trash"
+            if tool == "GMAIL_TRASH_MESSAGE"
+            else "Restoring from trash"
+        )
+
+        payload = {"progress": f"{action}..."}
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_trash_before_hook for {tool}: {e}")
+
+    return params
+
+
+@register_before_hook(
+    tools=["GMAIL_CREATE_LABEL", "GMAIL_UPDATE_LABEL", "GMAIL_DELETE_LABEL"]
+)
+def gmail_label_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle label management progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        arguments = params.get("arguments", {})
+
+        if tool == "GMAIL_CREATE_LABEL":
+            name = arguments.get("name", "")
+            payload = {"progress": f"Creating label: {name}..."}
+        elif tool == "GMAIL_UPDATE_LABEL":
+            payload = {"progress": "Updating label..."}
+        elif tool == "GMAIL_DELETE_LABEL":
+            payload = {"progress": "Deleting label..."}
+        else:
+            return params
+
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_label_before_hook for {tool}: {e}")
+
+    return params
+
+
+@register_before_hook(tools=["GMAIL_ADD_LABEL_TO_EMAIL", "GMAIL_REMOVE_LABEL"])
+def gmail_modify_labels_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle message label modification progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        arguments = params.get("arguments", {})
+        message_ids = arguments.get("message_ids", [])
+        label_ids = arguments.get("label_ids", [])
+
+        action = (
+            "Adding labels to"
+            if tool == "GMAIL_ADD_LABEL_TO_EMAIL"
+            else "Removing labels from"
+        )
+        message_count = len(message_ids) if isinstance(message_ids, list) else 1
+
+        payload = {
+            "progress": f"{action} {message_count} message(s) with {len(label_ids) if isinstance(label_ids, list) else 1} label(s)..."
+        }
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_modify_labels_before_hook for {tool}: {e}")
+
+    return params
+
+
+@register_before_hook(tools=["GMAIL_UPDATE_DRAFT", "GMAIL_DELETE_DRAFT"])
+def gmail_draft_management_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle draft management progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        action = "Updating" if tool == "GMAIL_UPDATE_DRAFT" else "Deleting"
+        payload = {"progress": f"{action} draft..."}
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_draft_management_before_hook for {tool}: {e}")
+
+    return params
+
+
+@register_before_hook(tools=["GMAIL_LIST_DRAFTS"])
+def gmail_list_drafts_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle drafts listing progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        arguments = params.get("arguments", {})
+        max_results = arguments.get("max_results", 20)
+
+        payload = {"progress": f"Fetching drafts (max {max_results} results)..."}
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_list_drafts_before_hook: {e}")
+
+    return params
+
+
+@register_before_hook(tools=["GMAIL_GET_DRAFT"])
+def gmail_get_draft_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+    """Handle single draft fetching progress."""
+    try:
+        writer = get_stream_writer()
+        if not writer:
+            return params
+
+        payload = {"progress": "Fetching draft..."}
+        writer(payload)
+
+    except Exception as e:
+        logger.error(f"Error in gmail_get_draft_before_hook: {e}")
+
+    return params
+
+
+# ====================== ADDITIONAL AFTER HOOKS FOR RESPONSE PROCESSING ======================
+
+
+@register_after_hook(tools=["GMAIL_FETCH_EMAIL_BY_ID"])
+def gmail_fetch_by_id_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process single email fetch response to minimize raw data."""
+    try:
+        if not response or "error" in response["data"]:
+            return response["data"]
+
+        # Transform raw message data to detailed but clean format
+        processed_response = detailed_message_template(response["data"])
+        return processed_response
+
+    except Exception as e:
+        logger.error(f"Error in gmail_fetch_by_id_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_SEND_EMAIL"])
+def gmail_send_email_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process email send response."""
+    try:
+        writer = get_stream_writer()
+
+        if writer and response["data"].get("successful", True):
+            # Send success notification to frontend
+            payload = {"progress": "Email sent successfully!", "email_sent": True}
+            writer(payload)
+
+        # Keep the response minimal for LLM
+        if "successful" in response["data"] and response["data"]["successful"]:
+            return {
+                "id": response["data"].get("id", ""),
+                "successful": True,
+                "message": "Email sent successfully",
+            }
+        else:
+            return response["data"]
+
+    except Exception as e:
+        logger.error(f"Error in gmail_send_email_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_CREATE_EMAIL_DRAFT"])
+def gmail_create_draft_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process draft creation response."""
+    try:
+        writer = get_stream_writer()
+
+        if writer and response["data"].get("successful", True):
+            # Send success notification to frontend
+            payload = {
+                "progress": "Draft created successfully!",
+                "draft_created": True,
+                "draft_id": response["data"].get("id", ""),
+            }
+            writer(payload)
+
+        # Keep the response minimal for LLM
+        if "successful" in response["data"] and response["data"]["successful"]:
+            return {
+                "id": response["data"].get("id", ""),
+                "successful": True,
+                "message": "Draft created successfully",
+            }
+        else:
+            return response["data"]
+
+    except Exception as e:
+        logger.error(f"Error in gmail_create_draft_after_hook: {e}")
+        return response["data"]
+
+
+@register_after_hook(tools=["GMAIL_SEND_DRAFT"])
+def gmail_send_draft_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
+    """Process draft sending response."""
+    try:
+        writer = get_stream_writer()
+
+        if writer and response["data"].get("successful", True):
+            # Send success notification to frontend
+            payload = {"progress": "Draft sent successfully!", "draft_sent": True}
+            writer(payload)
+
+        # Keep the response minimal for LLM
+        if "successful" in response["data"] and response["data"]["successful"]:
+            return {
+                "id": response["data"].get("id", ""),
+                "successful": True,
+                "message": "Draft sent successfully",
+            }
+        else:
+            return response["data"]
+
+    except Exception as e:
+        logger.error(f"Error in gmail_send_draft_after_hook: {e}")
+        return response["data"]
