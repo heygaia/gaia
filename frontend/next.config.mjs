@@ -1,4 +1,4 @@
-import {withSentryConfig} from "@sentry/nextjs";
+import { withSentryConfig } from "@sentry/nextjs";
 import bundleAnalyzer from "@next/bundle-analyzer";
 import createMDX from "@next/mdx";
 
@@ -8,33 +8,25 @@ const withBundleAnalyzer = bundleAnalyzer({
 
 const nextConfig = {
   reactStrictMode: true,
-  // webpack: (config, { dev, isServer }) => {
-  //   if (dev) {
-  //     // Reduce parallel processing during development
-  //     config.parallelism = 1;
-
-  //     config.cache = false;
-
-  //     // Reduce chunk sizes
-  //     config.optimization.splitChunks = {
-  //       chunks: "all",
-  //       maxInitialRequests: 3,
-  //       cacheGroups: {
-  //         commons: {
-  //           test: /[\\/]node_modules[\\/]/,
-  //           name: "vendor",
-  //           chunks: "all",
-  //         },
-  //       },
-  //     };
-  //   }
-  //   return config;
-  // },
-  // turbopack: {},
-  // experimental: {
-  // webpackMemoryOptimizations: true,
-  // optimizePackageImports: ["@heroui/react"],
-  // },
+  experimental: {
+    optimizePackageImports: [
+      "mermaid",
+      "react-syntax-highlighter",
+      "cytoscape",
+    ],
+  },
+  webpack: (config, { isServer }) => {
+    // Exclude cytoscape from bundle since it's not used
+    if (!isServer) {
+      config.resolve.alias = {
+        ...config.resolve.alias,
+        cytoscape: false,
+        "cytoscape-cose-bilkent": false,
+        "cytoscape-fcose": false,
+      };
+    }
+    return config;
+  },
   images: {
     remotePatterns: [
       {
@@ -81,33 +73,33 @@ const withMDX = createMDX({
 });
 
 export default withSentryConfig(withBundleAnalyzer(withMDX(nextConfig)), {
-// For all available options, see:
-// https://www.npmjs.com/package/@sentry/webpack-plugin#options
+  // For all available options, see:
+  // https://www.npmjs.com/package/@sentry/webpack-plugin#options
 
-org: "gaia-la",
-project: "gaia-frontend",
+  org: "gaia-la",
+  project: "gaia-frontend",
 
-// Only print logs for uploading source maps in CI
-silent: !process.env.CI,
+  // Only print logs for uploading source maps in CI
+  silent: !process.env.CI,
 
-// For all available options, see:
-// https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
+  // For all available options, see:
+  // https://docs.sentry.io/platforms/javascript/guides/nextjs/manual-setup/
 
-// Upload a larger set of source maps for prettier stack traces (increases build time)
-widenClientFileUpload: true,
+  // Upload a larger set of source maps for prettier stack traces (increases build time)
+  widenClientFileUpload: true,
 
-// Uncomment to route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
-// This can increase your server load as well as your hosting bill.
-// Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
-// side errors will fail.
-// tunnelRoute: "/monitoring",
+  // Uncomment to route browser requests to Sentry through a Next.js rewrite to circumvent ad-blockers.
+  // This can increase your server load as well as your hosting bill.
+  // Note: Check that the configured route will not match with your Next.js middleware, otherwise reporting of client-
+  // side errors will fail.
+  // tunnelRoute: "/monitoring",
 
-// Automatically tree-shake Sentry logger statements to reduce bundle size
-disableLogger: true,
+  // Automatically tree-shake Sentry logger statements to reduce bundle size
+  disableLogger: true,
 
-// Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
-// See the following for more information:
-// https://docs.sentry.io/product/crons/
-// https://vercel.com/docs/cron-jobs
-automaticVercelMonitors: true,
+  // Enables automatic instrumentation of Vercel Cron Monitors. (Does not yet work with App Router route handlers.)
+  // See the following for more information:
+  // https://docs.sentry.io/product/crons/
+  // https://vercel.com/docs/cron-jobs
+  automaticVercelMonitors: true,
 });

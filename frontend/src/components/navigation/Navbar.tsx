@@ -1,6 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { StarFilledIcon } from "@radix-ui/react-icons";
 import { motion } from "framer-motion";
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
@@ -12,17 +13,20 @@ import MobileMenu from "@/components/navigation/MobileMenu";
 import { LinkButton } from "@/components/shared/LinkButton";
 import { appConfig } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
+import { useGitHubStars } from "@/hooks";
 import useMediaQuery from "@/hooks/ui/useMediaQuery";
 
-import { BubbleConversationChatIcon } from "../shared";
+import { Github } from "../shared";
+import { RaisedButton } from "../ui/shadcn/raised-button";
 import { NavbarMenu } from "./NavbarMenu";
-import { RainbowGithubButton } from "./RainbowGithubButton";
 
 export default function Navbar() {
   const pathname = usePathname();
   const isMobileScreen = useMediaQuery("(max-width: 990px)");
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
+  const { data: repoData, isLoading: isLoadingStars } =
+    useGitHubStars("heygaia/gaia");
 
   const user = useUser();
 
@@ -78,18 +82,18 @@ export default function Navbar() {
         >
           <Button
             as={Link}
-            radius="full"
             href={"/"}
             variant="light"
-            isIconOnly
-            className="h-10 w-10"
+            className="h-10 w-10 px-12!"
           >
             <Image
               src="/branding/logo.webp"
               alt="GAIA Logo"
-              width={30}
-              height={30}
+              width={25}
+              height={25}
+              className="min-w-[25px]"
             />
+            <span className="text-lg font-medium">GAIA</span>
           </Button>
 
           <div className="hidden items-center gap-1 sm:flex">
@@ -149,8 +153,36 @@ export default function Navbar() {
             <div className="hidden" />
           ) : (
             <div className="hidden items-center gap-3 sm:flex">
-              <RainbowGithubButton />
-              <LinkButton
+              <a
+                target="_blank"
+                href="https://github.com/heygaia/gaia"
+                className="group flex h-fit"
+              >
+                <RaisedButton
+                  size={"sm"}
+                  className="rounded-xl text-white"
+                  color="#121212"
+                >
+                  <Github width={18} />
+                  <span>GitHub</span>
+                  <div className="flex items-center gap-1 text-sm">
+                    <StarFilledIcon className="h-4 w-4 text-yellow-300" />
+                    <span className="font-display inline-block font-medium tracking-wider tabular-nums">
+                      {isLoadingStars ? "..." : repoData?.stargazers_count || 0}
+                    </span>
+                  </div>
+                </RaisedButton>
+              </a>
+              <Link href={user.email ? "/c" : "/signup"}>
+                <RaisedButton
+                  size={"sm"}
+                  className="rounded-xl text-black!"
+                  color="#00bbff"
+                >
+                  {user.email ? "Open Chat" : "Get Started"}
+                </RaisedButton>
+              </Link>
+              {/* <LinkButton
                 size="sm"
                 className="h-9 max-h-9 min-h-9 rounded-xl bg-primary px-4! text-sm font-medium text-black transition-all! hover:scale-105 hover:bg-primary!"
                 as={Link}
@@ -164,7 +196,7 @@ export default function Navbar() {
                   />
                 )}
                 {user.email ? "Chat" : "Get Started"}
-              </LinkButton>
+              </LinkButton> */}
             </div>
           )}
         </div>

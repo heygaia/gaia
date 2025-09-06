@@ -1,6 +1,6 @@
 import React from "react";
 
-import CardStackContainer from "@/features/chat/components/interface/CardStackContainer";
+import CardStackContainer from "@/components/shared/CardStackContainer";
 
 interface CardStackSectionProps {
   cardStackSectionRef: React.RefObject<HTMLDivElement | null>;

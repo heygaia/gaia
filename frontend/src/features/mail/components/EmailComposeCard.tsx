@@ -2,7 +2,7 @@ import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Input, Textarea } from "@heroui/input";
 import { Modal, ModalBody, ModalContent } from "@heroui/modal";
-import { ScrollShadow } from "@heroui/react";
+import { ScrollShadow } from "@heroui/scroll-shadow";
 import { Plus, X } from "lucide-react";
 import React, { useEffect, useState } from "react";
 import { toast } from "sonner";
