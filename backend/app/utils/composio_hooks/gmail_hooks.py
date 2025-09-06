@@ -37,14 +37,19 @@ def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
 
         if tool == "GMAIL_SEND_EMAIL":
             # Send progress for email sending
+            to_list = (
+                [arguments.get("recipient_email", "")]
+                if arguments.get("recipient_email")
+                else []
+            )
+            to_list.extend(arguments.get("extra_recipients", []))
+
             payload = {
                 "email_compose_data": [
                     {
-                        "to": [arguments.get("recipient_email", "")],
+                        "to": to_list,
                         "subject": arguments.get("subject", ""),
                         "body": arguments.get("body", ""),
-                        "cc": arguments.get("cc", []),
-                        "bcc": arguments.get("bcc", []),
                     }
                 ],
             }
@@ -52,16 +57,20 @@ def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
 
         elif tool == "GMAIL_CREATE_EMAIL_DRAFT":
             # Send progress and draft data for draft creation
+            to_list = (
+                [arguments.get("recipient_email", "")]
+                if arguments.get("recipient_email")
+                else []
+            )
+            to_list.extend(arguments.get("extra_recipients", []))
+
             payload = {
                 "progress": f"Creating draft for {arguments.get('recipient_email', '')}...",
                 "email_compose_data": [
                     {
-                        "to": [arguments.get("recipient_email", "")]
-                        + arguments.get("extra_recipients", []),
+                        "to": to_list,
                         "subject": arguments.get("subject", ""),
                         "body": arguments.get("body", ""),
-                        "cc": arguments.get("cc", []),
-                        "bcc": arguments.get("bcc", []),
                     }
                 ],
             }
@@ -107,9 +116,21 @@ def gmail_fetch_after_hook(
         print(f"{processed_response=}")
 
         if writer and processed_response.get("messages"):
+            # Transform to EmailFetchData format for frontend
+            email_fetch_data = []
+            for msg in processed_response["messages"]:
+                email_fetch_data.append(
+                    {
+                        "from": msg.get("from", ""),
+                        "subject": msg.get("subject", ""),
+                        "time": msg.get("time", ""),
+                        "thread_id": msg.get("threadId", ""),
+                    }
+                )
+
             # Send email data to frontend
             payload = {
-                "email_fetch_data": processed_response["messages"],
+                "email_fetch_data": email_fetch_data,
                 "nextPageToken": processed_response.get("nextPageToken"),
                 "resultSize": processed_response.get("resultSize", 0),
             }
@@ -156,12 +177,26 @@ def gmail_thread_after_hook(
         processed_response = process_get_thread_response(response["data"])
 
         if writer and processed_response.get("messages"):
+            # Transform to EmailThreadData format for frontend
+            thread_messages = []
+            for msg in processed_response["messages"]:
+                thread_messages.append(
+                    {
+                        "id": msg.get("id", ""),
+                        "from": msg.get("from", ""),
+                        "subject": msg.get("subject", ""),
+                        "time": msg.get("time", ""),
+                        "snippet": msg.get("snippet", ""),
+                        "body": msg.get("body", ""),
+                    }
+                )
+
             # Send thread data to frontend
             payload = {
                 "email_thread_data": {
-                    "id": processed_response.get("id"),
-                    "messages": processed_response["messages"],
-                    "messageCount": processed_response.get("messageCount", 0),
+                    "thread_id": processed_response.get("id"),
+                    "messages": thread_messages,
+                    "messages_count": processed_response.get("messageCount", 0),
                 }
             }
             writer(payload)
