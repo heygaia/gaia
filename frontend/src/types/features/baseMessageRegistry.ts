@@ -74,11 +74,11 @@ export const TOOLS_MESSAGE_SCHEMA = {
     | DeepResearchResults[]
     | null
     | undefined,
-  image_data: undefined as ImageData[] | ImageData[][] | null | undefined,
+  image_data: undefined as ImageData[] | ImageData | null | undefined,
   todo_data: undefined as TodoToolData | TodoToolData[] | null | undefined,
   document_data: undefined as DocumentData | DocumentData[] | null | undefined,
   code_data: undefined as CodeData | CodeData[] | null | undefined,
-  memory_data: undefined as MemoryData[] | MemoryData[][] | null | undefined,
+  memory_data: undefined as MemoryData | MemoryData[] | null | undefined,
   goal_data: undefined as
     | GoalDataMessageType
     | GoalDataMessageType[]

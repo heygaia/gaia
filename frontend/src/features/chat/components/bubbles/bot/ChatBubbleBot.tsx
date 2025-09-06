@@ -10,7 +10,7 @@ import { useLoading } from "@/features/chat/hooks/useLoading";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { ImageData, MemoryData } from "@/types/features/toolDataTypes";
 import { parseDate } from "@/utils/date/dateUtils";
-import { renderArrayToolData } from "@/utils/toolDataNormalizer";
+import { renderToolData } from "@/utils/toolDataNormalizer";
 
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
@@ -54,7 +54,13 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         <IntegrationConnectionPrompt data={integration_connection_required} />
       );
 
-    if (image_data) return <ImageBubble {...props} />;
+    if (image_data)
+      return renderToolData(
+        image_data,
+        (imageItem: ImageData, index: number) => (
+          <ImageBubble key={index} {...props} image_data={imageItem} />
+        ),
+      );
 
     return <TextBubble {...props} />;
   }, [image_data, props]);
@@ -75,17 +81,17 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
           <div className="flex w-full flex-col gap-2">
             {memory_data && onOpenMemoryModal && (
               <>
-                {renderArrayToolData(memory_data, (memoryItems: MemoryData[], index: number) => (
-                  <div key={index}>
-                    {memoryItems.map((memoryItem, itemIndex) => (
+                {renderToolData(
+                  memory_data,
+                  (memoryItem: MemoryData, index: number) => (
+                    <div key={index}>
                       <MemoryIndicator
-                        key={itemIndex}
                         memoryData={memoryItem}
                         onOpenModal={onOpenMemoryModal}
                       />
-                    ))}
-                  </div>
-                ))}
+                    </div>
+                  ),
+                )}
               </>
             )}
             <div className="chat_bubble_container">{renderedComponent}</div>
@@ -106,13 +112,17 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
 
             {image_data ? (
               <>
-                {renderArrayToolData(image_data, (imageItems: ImageData[], index: number) => (
-                  <div key={index}>
-                    {imageItems.map((imageItem, itemIndex) => (
-                      <ChatBubble_Actions_Image key={itemIndex} image_data={imageItem} />
-                    ))}
-                  </div>
-                ))}
+                {renderToolData(
+                  image_data,
+                  (imageItem: ImageData, index: number) => (
+                    <div key={index}>
+                      <ChatBubble_Actions_Image
+                        key={index}
+                        image_data={imageItem}
+                      />
+                    </div>
+                  ),
+                )}
               </>
             ) : (
               <ChatBubble_Actions
