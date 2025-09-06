@@ -1,7 +1,26 @@
+import dynamic from "next/dynamic";
 import React from "react";
 import { CSSProperties } from "react";
-import { PrismAsyncLight } from "react-syntax-highlighter";
-import { vscDarkPlus } from "react-syntax-highlighter/dist/esm/styles/prism";
+
+// Dynamic import for syntax highlighter - only load specific language
+const PrismAsyncLight = dynamic(
+  () => import("react-syntax-highlighter").then((mod) => mod.PrismAsyncLight),
+  {
+    ssr: false,
+    loading: () => (
+      <div className="flex h-20 items-center justify-center text-sm text-gray-500">
+        Loading syntax highlighter...
+      </div>
+    ),
+  },
+);
+
+// Dynamic import for the theme - split separately
+const loadVscDarkPlusTheme = async () => {
+  return await import(
+    "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus"
+  );
+};
 
 interface SyntaxHighlighterProps {
   style?: CSSProperties;
@@ -27,6 +46,22 @@ const MermaidCode: React.FC<MermaidCodeProps> = ({
   children,
   syntaxHighlighterProps,
 }) => {
+  const [theme, setTheme] = React.useState<{
+    [key: string]: CSSProperties;
+  } | null>(null);
+
+  React.useEffect(() => {
+    loadVscDarkPlusTheme().then(setTheme);
+  }, []);
+
+  if (!theme) {
+    return (
+      <div className="flex h-20 items-center justify-center text-sm text-gray-500">
+        Loading theme...
+      </div>
+    );
+  }
+
   return (
     <PrismAsyncLight
       {...syntaxHighlighterProps}
@@ -34,7 +69,7 @@ const MermaidCode: React.FC<MermaidCodeProps> = ({
       PreTag="div"
       className="m-0 bg-black! p-0 text-[10px]!"
       language="mermaid"
-      style={vscDarkPlus}
+      style={theme}
       customStyle={{} as CSSProperties}
     >
       {String(children).replace(/\n$/, "")}

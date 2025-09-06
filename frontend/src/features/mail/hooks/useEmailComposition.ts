@@ -5,7 +5,6 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Typography from "@tiptap/extension-typography";
 import Underline from "@tiptap/extension-underline";
 import { EditorOptions, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import { Tag } from "emblor";
 import { marked } from "marked";
 import { useCallback, useState } from "react";
@@ -107,7 +106,7 @@ export function useEmailComposition(): UseEmailCompositionReturn {
   // Editor configuration
   const editorConfig: Partial<EditorOptions> = {
     extensions: [
-      StarterKit,
+      //TODO: StarterKit,
       Highlight,
       Typography,
       Underline,

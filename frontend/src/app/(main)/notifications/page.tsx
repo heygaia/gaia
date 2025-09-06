@@ -1,6 +1,7 @@
 "use client";
 
-import { Badge, Tab, Tabs } from "@heroui/react";
+import { Badge } from "@heroui/badge";
+import { Tab, Tabs } from "@heroui/tabs";
 import { Bell, BellRing } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";

@@ -33,7 +33,7 @@ export default function MobileMenu() {
 
   return (
     <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
-      <SheetTrigger>
+      <SheetTrigger aria-label="Menu trigger">
         <div className="rounded-full p-3">
           <Menu01Icon color="foreground" />
         </div>

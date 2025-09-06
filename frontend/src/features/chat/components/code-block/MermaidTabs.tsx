@@ -1,8 +1,25 @@
 import { Tab, Tabs } from "@heroui/tabs";
+import dynamic from "next/dynamic";
 import React from "react";
 
-import FlowchartPreview from "./FlowchartPreview";
-import MermaidCode from "./MermaidCode";
+// Dynamic imports for Mermaid-related components
+const FlowchartPreview = dynamic(() => import("./FlowchartPreview"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-40 items-center justify-center text-sm text-gray-500">
+      Loading preview...
+    </div>
+  ),
+});
+
+const MermaidCode = dynamic(() => import("./MermaidCode"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-20 items-center justify-center text-sm text-gray-500">
+      Loading code...
+    </div>
+  ),
+});
 
 interface SyntaxHighlighterProps {
   language?: string;

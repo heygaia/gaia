@@ -1,16 +1,69 @@
 "use client";
 
-import mermaid from "mermaid";
+import dynamic from "next/dynamic";
 import React, { ReactNode, useEffect, useState } from "react";
 
 import { useLoading } from "@/features/chat/hooks/useLoading";
 
 import CopyButton from "./CopyButton";
-import MermaidTabs from "./MermaidTabs";
 import StandardCodeBlock from "./StandardCodeBlock";
 
-// Initialize mermaid globally (if not already initialized elsewhere)
-mermaid.initialize({});
+// Dynamic import for MermaidTabs with loading fallback
+const MermaidTabs = dynamic(() => import("./MermaidTabs"), {
+  ssr: false,
+  loading: () => (
+    <div className="flex h-40 items-center justify-center text-sm text-gray-500">
+      Loading diagram...
+    </div>
+  ),
+});
+
+// Type for mermaid instance
+interface MermaidInstance {
+  initialize: (config: object) => void;
+  contentLoaded: () => void;
+}
+
+// Dynamic import for mermaid library
+const useMermaid = () => {
+  const [mermaid, setMermaid] = useState<MermaidInstance | null>(null);
+
+  useEffect(() => {
+    const loadMermaid = async () => {
+      if (!mermaid) {
+        const mermaidModule = await import("mermaid");
+        mermaidModule.default.initialize({
+          startOnLoad: true,
+          theme: "dark",
+          flowchart: {
+            useMaxWidth: true,
+            htmlLabels: true,
+            curve: "linear",
+          },
+          // Disable unused diagram types to reduce bundle size
+          gantt: {
+            useMaxWidth: false,
+          },
+          journey: {
+            useMaxWidth: false,
+          },
+          timeline: {
+            useMaxWidth: false,
+          },
+          // Disable cytoscape layouts to prevent loading cytoscape
+          elk: {
+            mergeEdges: false,
+          },
+        });
+        setMermaid(mermaidModule.default);
+      }
+    };
+
+    loadMermaid();
+  }, [mermaid]);
+
+  return mermaid;
+};
 
 interface CodeBlockProps extends React.HTMLAttributes<HTMLElement> {
   inline?: boolean;
@@ -27,14 +80,17 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
   const { isLoading } = useLoading();
   const [activeTab, setActiveTab] = useState("code");
   const [copied, setCopied] = useState(false);
+  const mermaid = useMermaid();
 
   const match = /language-(\w+)/.exec(className || "");
   const isMermaid = match && match[1] === "mermaid";
 
   // When loading or tab changes, reload mermaid diagrams.
   useEffect(() => {
-    mermaid.contentLoaded();
-  }, [isLoading, activeTab]);
+    if (mermaid) {
+      mermaid.contentLoaded();
+    }
+  }, [isLoading, activeTab, mermaid]);
 
   // Automatically switch to preview mode once loading is done.
   useEffect(() => {
@@ -55,7 +111,9 @@ const CodeBlock: React.FC<CodeBlockProps> = ({
           onTabChange={(key) => {
             setActiveTab(key);
             setTimeout(() => {
-              mermaid.contentLoaded();
+              if (mermaid) {
+                mermaid.contentLoaded();
+              }
             }, 10);
           }}
           isLoading={isLoading}

@@ -1,11 +1,11 @@
-import "./styles/globals.css";
 import "./styles/tailwind.css";
 
 import { Databuddy } from "@databuddy/sdk/react";
-import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { Suspense } from "react";
 
+import AnalyticsLayout from "@/layouts/AnalyticsLayout";
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 
 import { defaultFont, getAllFontVariables } from "./fonts";
@@ -70,12 +70,20 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${getAllFontVariables()} dark`}>
+      <head>
+        <link
+          rel="preconnect"
+          href="https://status.heygaia.io"
+          crossOrigin="anonymous"
+        />
+        <link rel="dns-prefetch" href="https://uptime.betterstack.com" />
+        <link rel="dns-prefetch" href="https://us.i.posthog.com" />
+      </head>
       <body className={`dark ${defaultFont.className}`}>
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>
         </main>
-        {/* Google OAuth */}
-        <Script async src="https://accounts.google.com/gsi/client" />
+
         {/* JSON-LD Schema */}
         <Script id="json-ld" type="application/ld+json">
           {JSON.stringify({
@@ -92,7 +100,12 @@ export default function RootLayout({
           data-id="212836"
           async
           type="text/javascript"
+          strategy="lazyOnload"
         />
+
+        <Suspense fallback={<></>}>
+          <AnalyticsLayout />
+        </Suspense>
         {/* Rybbit Analytics */}
         <Script
           src="https://analytics.heygaia.io/api/script.js"
@@ -100,8 +113,6 @@ export default function RootLayout({
           defer
           data-session-replay="true"
         />
-        {/* Google Analytics */}
-        <GoogleAnalytics gaId="G-R6EGV9FG2Q" />
 
         {process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID && (
           <Databuddy

@@ -5,15 +5,21 @@ export default function LargeHeader({
   headingText,
   subHeadingText,
   chipText2,
+  centered = false,
 }: {
   chipText?: string;
   chipText2?: string;
   headingText: string;
   subHeadingText?: string;
+  centered?: boolean;
 }) {
   return (
-    <div className="flex max-w-(--breakpoint-lg) flex-col items-center text-center">
-      <div className="flex w-full items-center justify-center gap-1">
+    <div
+      className={`flex max-w-(--breakpoint-lg) flex-col ${centered ? "items-center text-center" : "items-start text-left"}`}
+    >
+      <div
+        className={`flex w-full gap-1 ${centered ? "items-center justify-center" : "items-start justify-start"}`}
+      >
         {chipText && (
           <Chip variant="flat" color="primary">
             {chipText}
@@ -26,12 +32,14 @@ export default function LargeHeader({
           </Chip>
         )}
       </div>
-      <h2 className="relative z-2 mt-4 mb-2 flex items-center justify-center gap-4 text-4xl font-semibold sm:text-5xl">
+      <h2
+        className={`relative z-2 my-2 flex gap-4 text-4xl font-semibold sm:text-6xl ${centered ? "items-center justify-center" : "items-start justify-start"}`}
+      >
         {headingText}
       </h2>
       {!!subHeadingText && (
         <div
-          className={`max-w-(--breakpoint-md) px-10 text-lg text-foreground-400`}
+          className={`max-w-(--breakpoint-md) text-xl text-foreground-400 ${centered ? "text-center" : ""} font-light`}
         >
           {subHeadingText}
         </div>

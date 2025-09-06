@@ -1,6 +1,6 @@
 "use client";
 
-import { Button } from "@heroui/react";
+import { Button } from "@heroui/button";
 import { useEffect, useState } from "react";
 
 import { AiBrain01Icon } from "@/components/shared/icons";

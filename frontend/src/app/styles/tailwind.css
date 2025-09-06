@@ -1,8 +1,109 @@
-@import "tailwindcss";
+@import "tailwindcss" source("../../../src");
+@import "./globals.css";
 
-@config '../../../tailwind.config.js';
+/* HeroUI */
 @source '../../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
 @custom-variant dark (&:is(.dark *));
+@plugin './hero.ts';
+
+@theme {
+  /* Font Family */
+  --font-family-inter: "var(--font-inter)", sans-serif;
+  --font-family-sans: "var(--font-inter)", system-ui, sans-serif;
+
+  /* Colors */
+  --color-primary: #00bbff;
+  --color-primary-foreground: #000000;
+  --color-white: #ffffff;
+  --color-white-foreground: #000000;
+
+  /* Command colors */
+  --color-command-bg: #1e293b;
+  --color-command-text: #f8fafc;
+  --color-command-border: #334155;
+
+  /* Sidebar colors */
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  /* Border radius */
+  --radius: 0.5rem;
+  --border-radius-lg: var(--radius);
+  --border-radius-md: calc(var(--radius) - 2px);
+  --border-radius-sm: calc(var(--radius) - 4px);
+
+  /* Animations */
+  --animate-shine: shine 5s linear infinite;
+  --animate-orbit: orbit calc(var(--duration) * 1s) linear infinite;
+  --animate-grid: grid 15s linear infinite;
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+  --animate-shiny-text: shiny-text 8s infinite;
+}
+
+@keyframes shine {
+  0% {
+    background-position: 100%;
+  }
+  100% {
+    background-position: -100%;
+  }
+}
+
+@keyframes orbit {
+  0% {
+    transform: rotate(0deg) translateY(calc(var(--radius) * 1px)) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateY(calc(var(--radius) * 1px))
+      rotate(-360deg);
+  }
+}
+
+@keyframes grid {
+  0% {
+    transform: translateY(-50%);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes accordion-down {
+  from {
+    height: 0;
+  }
+  to {
+    height: var(--radix-accordion-content-height);
+  }
+}
+
+@keyframes accordion-up {
+  from {
+    height: var(--radix-accordion-content-height);
+  }
+  to {
+    height: 0;
+  }
+}
+
+@keyframes shiny-text {
+  0%,
+  90%,
+  100% {
+    background-position: calc(-100% - var(--shiny-width)) 0;
+  }
+  30%,
+  60% {
+    background-position: calc(100% + var(--shiny-width)) 0;
+  }
+}
 
 /*
   The default border color has changed to `currentcolor` in Tailwind CSS v4,
@@ -158,44 +259,7 @@
   }
 }
 
-@layer base {
-  :root {
-    --radius: 0.5rem;
-  }
-}
-
 @layer utilities {
-  .pingspinner {
-    --uib-size: 50px;
-    --uib-color: #00bbff;
-    --uib-speed: 1.5s;
-    position: relative;
-    height: var(--uib-size);
-    min-height: var(--uib-size);
-    min-width: var(--uib-size);
-    width: var(--uib-size);
-  }
-  .pingspinner_large {
-    --uib-size: 200px !important;
-  }
-  .pingspinner::before,
-  .pingspinner::after {
-    content: "";
-    position: absolute;
-    top: 0;
-    left: 0;
-    height: 100%;
-    width: 100%;
-    border-radius: 50%;
-    background-color: var(--uib-color);
-    animation: pulse var(--uib-speed) linear infinite;
-    transform: scale(0);
-    opacity: 0;
-    transition: background-color 0.3s ease;
-  }
-  .pingspinner::after {
-    animation-delay: calc(var(--uib-speed) / -2);
-  }
   @keyframes pulse {
     0% {
       transform: scale(0);
@@ -206,16 +270,4 @@
       opacity: 0;
     }
   }
-}
-
-@layer base {
-  /* * {
-    @apply border-border;
-  } */
-  /* body {
-    @apply bg-background text-foreground;
-    font-feature-settings:
-      "rlig" 1,
-      "calt" 1;
-  } */
 }

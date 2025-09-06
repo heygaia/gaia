@@ -1,6 +1,6 @@
 "use client";
 
-import { Input } from "@heroui/react";
+import { Input } from "@heroui/input";
 
 interface CustomResponseStyleInputProps {
   value: string;

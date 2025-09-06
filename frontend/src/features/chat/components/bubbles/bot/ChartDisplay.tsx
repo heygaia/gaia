@@ -1,4 +1,4 @@
-import { Tab, Tabs } from "@heroui/react";
+import { Tab, Tabs } from "@heroui/tabs";
 import { BarChart3, Download, Maximize2, X } from "lucide-react";
 import React, { useState } from "react";
 import {

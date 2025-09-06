@@ -12,5 +12,6 @@ export * from "./ui/useMobile";
 export * from "./ui/useModalForm";
 export * from "./useConfirmation";
 export * from "./useGitHubStars";
+export * from "./useLatestRelease";
 export * from "./useNotificationActions";
 export * from "./usePolling";

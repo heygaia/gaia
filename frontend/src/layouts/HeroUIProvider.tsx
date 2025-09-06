@@ -1,7 +1,7 @@
 // app/HeroUIProvider.tsx
 "use client";
 
-import { HeroUIProvider as HeroUIProviderComponent } from "@heroui/react";
+import { HeroUIProvider as HeroUIProviderComponent } from "@heroui/system";
 import { useRouter } from "next/navigation";
 
 // Only if using TypeScript

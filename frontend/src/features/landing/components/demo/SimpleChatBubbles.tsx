@@ -39,7 +39,6 @@ export function SimpleChatBubbleBot({
 }) {
   return (
     <div className={`relative flex items-end gap-3 ${parentClassName}`}>
-      {/* <div className="pingspinner relative" /> */}
       <div className={cn("chat_bubble bg-zinc-800 select-none!", className)}>
         {children}
       </div>

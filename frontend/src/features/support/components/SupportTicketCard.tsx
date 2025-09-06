@@ -8,7 +8,7 @@ import {
   ModalFooter,
   ModalHeader,
 } from "@heroui/modal";
-import { ScrollShadow } from "@heroui/react";
+import { ScrollShadow } from "@heroui/scroll-shadow";
 import { HelpCircle, MessageSquare } from "lucide-react";
 import React, { useState } from "react";
 import { toast } from "sonner";
