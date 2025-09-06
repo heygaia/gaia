@@ -26,7 +26,9 @@ export function parseStreamData(
   for (const [key, value] of Object.entries(streamChunk)) {
     if (value !== undefined) {
       // Check if this is a tool data key that needs accumulation
-      if (TOOLS_MESSAGE_KEYS.includes(key as any)) {
+      if (
+        TOOLS_MESSAGE_KEYS.includes(key as (typeof TOOLS_MESSAGE_KEYS)[number])
+      ) {
         // Get existing data for this tool key
         const existingData = existingBotMessage?.[key as keyof MessageType];
 

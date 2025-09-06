@@ -192,7 +192,7 @@ export default function TextBubble({
           key={index}
           goals={data.goals}
           stats={data.stats}
-          action={data.action as any}
+          action={data.action as GoalAction}
           message={data.message}
           goal_id={data.goal_id}
           deleted_goal_id={data.deleted_goal_id}
