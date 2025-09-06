@@ -21,6 +21,23 @@ from langchain_core.messages import (
 from langsmith import traceable
 
 
+class CustomJSONEncoder(json.JSONEncoder):
+    """Custom JSON encoder that handles common non-serializable objects."""
+
+    def default(self, o):
+        # Handle Pydantic models
+        if hasattr(o, "model_dump"):
+            return o.model_dump()
+        # Handle datetime objects
+        elif isinstance(o, datetime):
+            return o.isoformat()
+        # Handle other objects with __dict__
+        elif hasattr(o, "__dict__"):
+            return o.__dict__
+        # Let the base class handle the rest
+        return super().default(o)
+
+
 @traceable(run_type="llm", name="Call Agent")
 async def call_agent(
     request: MessageRequestWithHistory,
@@ -160,6 +177,8 @@ async def call_agent_silent(
     user_time: datetime,
     access_token=None,
     refresh_token=None,
+    user_model_config: Optional[ModelConfig] = None,
+    trigger_context: Optional[dict] = None,
 ) -> tuple[str, dict]:
     """
     Execute agent in silent mode for background processing.
@@ -196,6 +215,7 @@ async def call_agent_silent(
             user_name=user.get("name"),
             selected_tool=request.selectedTool,
             selected_workflow=request.selectedWorkflow,
+            trigger_context=trigger_context,
         )
 
         # Use the default graph (same as normal chat)
@@ -212,6 +232,7 @@ async def call_agent_silent(
             "conversation_id": conversation_id,
             "selected_tool": request.selectedTool,
             "selected_workflow": request.selectedWorkflow,
+            "trigger_context": trigger_context,
         }
 
         # Execute graph and capture tool data silently
@@ -226,6 +247,19 @@ async def call_agent_silent(
                     "refresh_token": refresh_token,
                     "email": user.get("email"),
                     "user_time": user_time.isoformat(),
+                    "model_configurations": {
+                        "model_name": (
+                            user_model_config.provider_model_name
+                            if user_model_config
+                            else None
+                        ),
+                        "provider": user_model_config.inference_provider.value
+                        if user_model_config
+                        else None,
+                        "max_tokens": (
+                            user_model_config.max_tokens if user_model_config else None
+                        ),
+                    },
                 },
                 "recursion_limit": 25,
                 "metadata": {"user_id": user_id},
@@ -246,7 +280,9 @@ async def call_agent_silent(
             elif stream_mode == "custom":
                 # Extract tool data from custom stream events
                 try:
-                    new_data = extract_tool_data(json.dumps(payload))
+                    new_data = extract_tool_data(
+                        json.dumps(payload, cls=CustomJSONEncoder)
+                    )
                     if new_data:
                         tool_data.update(new_data)
                 except Exception as e:
@@ -363,7 +399,9 @@ async def call_mail_processing_agent(
                 from app.services.chat_service import extract_tool_data
 
                 try:
-                    new_data = extract_tool_data(json.dumps(payload))
+                    new_data = extract_tool_data(
+                        json.dumps(payload, cls=CustomJSONEncoder)
+                    )
                     if new_data:
                         tool_data.update(new_data)
                 except Exception as e:
