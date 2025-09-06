@@ -8,7 +8,9 @@ import { IntegrationConnectionPrompt } from "@/features/chat/components/integrat
 import MemoryIndicator from "@/features/chat/components/memory/MemoryIndicator";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
+import { ImageData, MemoryData } from "@/types/features/toolDataTypes";
 import { parseDate } from "@/utils/date/dateUtils";
+import { renderArrayToolData } from "@/utils/toolDataNormalizer";
 
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
@@ -72,10 +74,19 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         <div className="chatbubblebot_parent">
           <div className="flex w-full flex-col gap-2">
             {memory_data && onOpenMemoryModal && (
-              <MemoryIndicator
-                memoryData={memory_data}
-                onOpenModal={onOpenMemoryModal}
-              />
+              <>
+                {renderArrayToolData(memory_data, (memoryItems: MemoryData[], index: number) => (
+                  <div key={index}>
+                    {memoryItems.map((memoryItem, itemIndex) => (
+                      <MemoryIndicator
+                        key={itemIndex}
+                        memoryData={memoryItem}
+                        onOpenModal={onOpenMemoryModal}
+                      />
+                    ))}
+                  </div>
+                ))}
+              </>
             )}
             <div className="chat_bubble_container">{renderedComponent}</div>
           </div>
@@ -94,7 +105,15 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
             )}
 
             {image_data ? (
-              <ChatBubble_Actions_Image image_data={image_data} />
+              <>
+                {renderArrayToolData(image_data, (imageItems: ImageData[], index: number) => (
+                  <div key={index}>
+                    {imageItems.map((imageItem, itemIndex) => (
+                      <ChatBubble_Actions_Image key={itemIndex} image_data={imageItem} />
+                    ))}
+                  </div>
+                ))}
+              </>
             ) : (
               <ChatBubble_Actions
                 loading={loading}

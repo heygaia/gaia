@@ -132,7 +132,7 @@ export const useChatStream = () => {
       if (data.status === "generating_image") {
         setLoadingText("Generating image...");
         updateBotMessage({
-          image_data: { url: "", prompt: refs.current.userPrompt },
+          image_data: [{ url: "", prompt: refs.current.userPrompt }],
           response: "",
         });
         return;
@@ -140,7 +140,7 @@ export const useChatStream = () => {
 
       if (data.image_data) {
         updateBotMessage({
-          image_data: data.image_data,
+          image_data: [data.image_data],
           loading: false,
         });
         return;
@@ -152,7 +152,7 @@ export const useChatStream = () => {
       }
 
       // Parse only the data that's actually present in this stream chunk
-      const streamUpdates = parseStreamData(data);
+      const streamUpdates = parseStreamData(data, refs.current.botMessage);
 
       updateBotMessage({
         ...streamUpdates,

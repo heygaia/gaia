@@ -28,29 +28,75 @@ import { WeatherData } from "./weatherTypes";
 import { WorkflowData } from "./workflowTypes";
 
 export const TOOLS_MESSAGE_SCHEMA = {
-  calendar_options: undefined as CalendarOptions[] | null | undefined,
-  calendar_delete_options: undefined as
-    | CalendarDeleteOptions[]
+  calendar_options: undefined as
+    | CalendarOptions[]
+    | CalendarOptions[][]
     | null
     | undefined,
-  calendar_edit_options: undefined as CalendarEditOptions[] | null | undefined,
-  email_compose_data: undefined as EmailComposeData[] | null | undefined,
-  email_fetch_data: undefined as EmailFetchData[] | null | undefined,
-  email_thread_data: undefined as EmailThreadData | null | undefined,
-  support_ticket_data: undefined as SupportTicketData[] | null | undefined,
-  weather_data: undefined as WeatherData | null | undefined,
-  search_results: undefined as SearchResults | null | undefined,
-  deep_research_results: undefined as DeepResearchResults | null | undefined,
-  image_data: undefined as ImageData | null | undefined,
-  todo_data: undefined as TodoToolData | null | undefined,
-  document_data: undefined as DocumentData | null | undefined,
-  code_data: undefined as CodeData | null | undefined,
-  memory_data: undefined as MemoryData | null | undefined,
-  goal_data: undefined as GoalDataMessageType | null | undefined,
-  google_docs_data: undefined as GoogleDocsData | null | undefined,
-  calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
+  calendar_delete_options: undefined as
+    | CalendarDeleteOptions[]
+    | CalendarDeleteOptions[][]
+    | null
+    | undefined,
+  calendar_edit_options: undefined as
+    | CalendarEditOptions[]
+    | CalendarEditOptions[][]
+    | null
+    | undefined,
+  email_compose_data: undefined as
+    | EmailComposeData[]
+    | EmailComposeData[][]
+    | null
+    | undefined,
+  email_fetch_data: undefined as
+    | EmailFetchData[]
+    | EmailFetchData[][]
+    | null
+    | undefined,
+  email_thread_data: undefined as
+    | EmailThreadData
+    | EmailThreadData[]
+    | null
+    | undefined,
+  support_ticket_data: undefined as
+    | SupportTicketData[]
+    | SupportTicketData[][]
+    | null
+    | undefined,
+  weather_data: undefined as WeatherData | WeatherData[] | null | undefined,
+  search_results: undefined as
+    | SearchResults
+    | SearchResults[]
+    | null
+    | undefined,
+  deep_research_results: undefined as
+    | DeepResearchResults
+    | DeepResearchResults[]
+    | null
+    | undefined,
+  image_data: undefined as ImageData[] | ImageData[][] | null | undefined,
+  todo_data: undefined as TodoToolData | TodoToolData[] | null | undefined,
+  document_data: undefined as DocumentData | DocumentData[] | null | undefined,
+  code_data: undefined as CodeData | CodeData[] | null | undefined,
+  memory_data: undefined as MemoryData[] | MemoryData[][] | null | undefined,
+  goal_data: undefined as
+    | GoalDataMessageType
+    | GoalDataMessageType[]
+    | null
+    | undefined,
+  google_docs_data: undefined as
+    | GoogleDocsData
+    | GoogleDocsData[]
+    | null
+    | undefined,
+  calendar_fetch_data: undefined as
+    | CalendarFetchData[]
+    | CalendarFetchData[][]
+    | null
+    | undefined,
   calendar_list_fetch_data: undefined as
     | CalendarListFetchData[]
+    | CalendarListFetchData[][]
     | null
     | undefined,
 };
