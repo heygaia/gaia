@@ -371,9 +371,7 @@ def process_list_messages_response(response: Dict[str, Any]) -> Dict[str, Any]:
         "resultSize": len(response.get("messages", [])),
     }
 
-
     if "messages" in response:
-        print(f"{response['messages'][0]}")
         processed_response["messages"] = [
             minimal_message_template(msg) for msg in response.get("messages", [])
         ]

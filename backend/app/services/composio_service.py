@@ -201,7 +201,7 @@ class ComposioService:
         """
         Handle the subscription trigger for a specific provider.
         """
-        print(f"Subscribing triggers for user {user_id}: {triggers}")
+        logger.info(f"Subscribing triggers for user {user_id}: {triggers}")
         try:
             # Create tasks for each trigger to run them concurrently
             tasks = [

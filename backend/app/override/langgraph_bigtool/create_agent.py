@@ -296,7 +296,7 @@ def create_agent(
         last_message = messages[-1]
 
         if isinstance(last_message, ToolMessage):
-            tool_name = last_message.name or "Unknow"
+            tool_name = last_message.name or "Unknown"
             content = last_message.content or ""
             match_tool = re.match(r"call_(\w+)_agent", tool_name)
             match_content = re.match(r"Successfully transferred to (\w+)", content)  # type: ignore[call-arg]
