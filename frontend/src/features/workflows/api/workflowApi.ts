@@ -22,7 +22,9 @@ export interface TriggerConfig {
   cron_expression?: string;
   timezone?: string;
   next_run?: string;
-  email_patterns?: string[];
+  sender_patterns?: string[];
+  subject_patterns?: string[];
+  body_keywords?: string[];
   email_labels?: string[];
   calendar_patterns?: string[];
   webhook_url?: string;

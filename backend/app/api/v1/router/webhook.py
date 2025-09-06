@@ -1,6 +1,6 @@
 from app.config.loggers import mail_webhook_logger as logger
 from app.models.webhook_models import ComposioWebhookEvent
-from app.services.mail_webhook_service import queue_composio_email_processing
+from app.services.mail_webhook_service import queue_email_processing
 from app.utils.webhook_utils import verify_composio_webhook_signature
 from fastapi import APIRouter, HTTPException, Request
 
@@ -41,7 +41,7 @@ async def webhook_composio(
             )
 
         # Queue email processing with Composio data
-        return await queue_composio_email_processing(user_id, event_data.data)
+        return await queue_email_processing(user_id, event_data.data)
 
     # Log unhandled webhook types for monitoring
     return {"status": "success", "message": "Webhook received"}
