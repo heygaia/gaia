@@ -1,11 +1,12 @@
 import { Card, CardBody } from "@heroui/card";
 import * as d3 from "d3";
 import React, { useEffect, useRef, useState } from "react";
+
 import {
-  DummyNode,
   DummyLink,
-  memoryNodes,
+  DummyNode,
   memoryLinks,
+  memoryNodes,
 } from "../../constants/data";
 
 export default function MemoryGraphDemo() {
