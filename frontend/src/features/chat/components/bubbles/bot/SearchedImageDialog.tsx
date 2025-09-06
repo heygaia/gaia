@@ -1,19 +1,14 @@
 import Image from "next/image";
-import { useDispatch, useSelector } from "react-redux";
 
 import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { Sheet, SheetContent } from "@/components/ui/shadcn/sheet";
-import { closeImageDialog } from "@/redux/slices/imageDialogSlice";
-import { RootState } from "@/redux/store";
+import { useImageDialog } from "@/stores/uiStore";
 
 export default function SearchedImageDialog() {
-  const dispatch = useDispatch();
-  const { isOpen, selectedImage } = useSelector(
-    (state: RootState) => state.imageDialog,
-  );
+  const { isOpen, selectedImage, closeDialog } = useImageDialog();
 
   return (
-    <Sheet open={isOpen} onOpenChange={() => dispatch(closeImageDialog())}>
+    <Sheet open={isOpen} onOpenChange={() => closeDialog()}>
       <SheetContent
         side="right"
         className="border-none bg-zinc-800 p-5 duration-100 sm:max-w-2xl"

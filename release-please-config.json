@@ -1,18 +1,31 @@
 {
+  "separate-pull-requests": false,
+  "include-component-in-tag": false,
+  "plugins": [
+    {
+      "type": "linked-versions",
+      "groupName": "gaia",
+      "components": ["backend", "frontend"],
+      "merge": true
+    }
+  ],
   "packages": {
+    ".": {
+      "release-type": "simple",
+      "changelog-path": "CHANGELOG.md",
+      "pull-request-title-pattern": "release: ${version}"
+    },
     "backend": {
       "path": "backend",
       "release-type": "python",
       "version-file": "pyproject.toml",
-      "changelog-path": "CHANGELOG.md",
-      "skip-empty-release": true
+      "component": "backend"
     },
     "frontend": {
       "path": "frontend",
       "release-type": "node",
       "version-file": "package.json",
-      "changelog-path": "CHANGELOG.md",
-      "skip-empty-release": true
+      "component": "frontend"
     }
   }
 }

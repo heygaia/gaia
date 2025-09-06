@@ -1,12 +1,16 @@
-"""Docstrings for reminder-related LangChain tools."""
+"""Docstrings for reminder-rel3. Limits (only when user asks, explicitly or implicitly):
+   • If user says "stop after 5 days" (daily reminders), set `max_occurrences=5`.
+   • Or use `stop_after` (ISO 8601) to cut off after a date.
+
+PAYLOAD:
+  STATIC → {"title": str, "body": str}n tools."""
 
 # TODO: Improve this prompt to be more concise and focused on the tool's purpose, LLM still sometimes misses that it has capabilities to create reminders with tools, not just static notifications.
 
 CREATE_REMINDER = """
-Create reminder (static or agent-based) for the user.
+Create static reminder for the user.
 
-This tool creates scheduled reminders that can either show simple notifications (static)
-or execute AI-powered tasks using available tools (agent-based). Handles timezone
+This tool creates scheduled reminders that show simple notifications. Handles timezone
 conversion, recurring schedules, and validation automatically.
 
 TIMEZONE HANDLING:
@@ -21,9 +25,7 @@ EXAMPLES (Current time: 2025-08-02T10:30:00Z):
 • User: "Remind me tomorrow at 9 AM EST" → scheduled_at: "2025-08-03 09:00:00", timezone_offset: "-05:00"
 
 WORKFLOW:
-1. Determine reminder type:
-   • STATIC - simple title+body notification.
-   • AI_AGENT - LLM-triggered task using available tools.
+1. Create STATIC reminder with simple title+body notification.
 
 2. Schedule:
    • One-time: use `scheduled_at` (YYYY-MM-DD HH:MM:SS format).
@@ -35,18 +37,11 @@ WORKFLOW:
    • If user says “stop after 5 days” (daily reminders), set `max_occurrences=5`.
    • Or use `stop_after` (ISO 8601) to cut off after a date.
 
-4. AI_AGENT only:
-   • Before creating, verify you have the tools needed.
-   • If not, refuse and explain the limitation.
-   • Instructions must be fully self-contained: include context, tool names, inputs, and exact output format.
-   • Each time the reminder fires, its `instructions` become the "user" message in a new conversation thread (AI_AGENT reminders only).
-
 PAYLOAD:
   STATIC → {"title": str, "body": str}
-  AI_AGENT → {"instructions": str}
 
 Args:
-    agent: "static" or "ai_agent"
+    agent: "static" (default)
     repeat: cron string (e.g. "0 9 * * *", "0 */2 * * *", "30 18 * * 1-5")
     scheduled_at: date/time for first run (YYYY-MM-DD HH:MM:SS format, optional)
     timezone_offset: timezone offset in (+|-)HH:MM format (optional, only if user explicitly mentions timezone)
@@ -63,7 +58,7 @@ Returns:
 LIST_USER_REMINDERS = """
 List all scheduled reminders for a user.
 
-Use this to retrieve all upcoming or past reminders for a user. It returns both static and agent-based reminders, optionally filtered by status.
+Use this to retrieve all upcoming or past reminders for a user. Returns static reminders, optionally filtered by status.
 
 Args:
     status (str, optional): Filter by state (e.g., "scheduled", "completed").
@@ -102,7 +97,7 @@ Returns:
 UPDATE_REMINDER = """
 Update an existing reminder's configuration.
 
-Use this to modify reminder schedule, recurrence, or payload. Useful for rescheduling or changing agent behavior dynamically.
+Use this to modify reminder schedule, recurrence, or payload. Useful for rescheduling or changing static reminder content.
 
 Args:
     reminder_id (str): The ID of the reminder to update.
@@ -110,7 +105,7 @@ Args:
     max_occurrences (int, optional): New limit on runs.
     stop_after (str, optional): New expiration date/time (YYYY-MM-DD HH:MM:SS format).
     stop_after_timezone_offset (str, optional): Timezone offset for stop_after in (+|-)HH:MM format.
-    payload (dict, optional): New metadata/context for the reminder.
+    payload (dict, optional): New title and body for the reminder.
 
 Returns:
     dict: Update status or error.
@@ -120,7 +115,7 @@ Returns:
 SEARCH_REMINDERS = """
 Search through user's reminders using text query.
 
-Use this to semantically search reminders using keywords found in their title, type, or payload. It works across static and agent-based reminders.
+Use this to semantically search reminders using keywords found in their title or content. Works with static reminders.
 
 Args:
     query (str): Natural language query or keyword (e.g., "doctor", "follow up").

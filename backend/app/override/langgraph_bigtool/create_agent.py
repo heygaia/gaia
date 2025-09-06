@@ -250,7 +250,6 @@ def create_agent(
 
             return destinations
 
-
     builder = StateGraph(State, context_schema=context_schema)
 
     if retrieve_tools_function is not None and retrieve_tools_coroutine is not None:

@@ -1,9 +1,10 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { useDisclosure } from "@heroui/modal";
 import { Plus, Tag } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 
 import {
   Appointment01Icon,
@@ -16,7 +17,7 @@ import {
 import Spinner from "@/components/ui/shadcn/spinner";
 import AddProjectModal from "@/features/todo/components/AddProjectModal";
 import TodoModal from "@/features/todo/components/TodoModal";
-import { useTodos } from "@/features/todo/hooks/useTodos";
+import { useTodoData } from "@/features/todo/hooks/useTodoData";
 import { Priority } from "@/types/features/todoTypes";
 
 type MenuItem = {
@@ -109,8 +110,11 @@ const priorityColors: Record<Priority, string> = {
 export default function TodoSidebar() {
   const router = useRouter();
   const pathname = usePathname();
-  const [addTodoOpen, setAddTodoOpen] = useState(false);
-  const [addProjectOpen, setAddProjectOpen] = useState(false);
+  const {
+    isOpen: addProjectOpen,
+    onOpen: openAddProject,
+    onOpenChange: setAddProjectOpen,
+  } = useDisclosure();
   // const [searchQuery, setSearchQuery] = useState("");
 
   const {
@@ -122,7 +126,7 @@ export default function TodoSidebar() {
     loadLabels,
     loadCounts,
     // refreshAllData,
-  } = useTodos();
+  } = useTodoData({ autoLoad: false });
 
   // Load initial data on mount
   useEffect(() => {
@@ -232,19 +236,7 @@ export default function TodoSidebar() {
   return (
     <>
       <div className="flex flex-col space-y-3">
-        {/* Add Task Button */}
-        <div className="w-full">
-          <Button
-            className="w-full justify-start text-sm text-primary"
-            color="primary"
-            size="sm"
-            variant="flat"
-            startContent={<Plus className="h-4 w-4" />}
-            onPress={() => setAddTodoOpen(true)}
-          >
-            Add Task
-          </Button>
-        </div>
+        <TodoModal mode="add" />
 
         {/* TODO: fix implementation on backend then integrate. */}
         {/* <form onSubmit={handleSearch} className="mb-4">
@@ -308,7 +300,7 @@ export default function TodoSidebar() {
                   isIconOnly
                   size="sm"
                   variant="light"
-                  onPress={() => setAddProjectOpen(true)}
+                  onPress={openAddProject}
                   className="h-6 w-6 min-w-6"
                 >
                   <Plus className="h-3 w-3" />
@@ -323,7 +315,6 @@ export default function TodoSidebar() {
         )}
       </div>
 
-      <TodoModal mode="add" open={addTodoOpen} onOpenChange={setAddTodoOpen} />
       <AddProjectModal
         open={addProjectOpen}
         onOpenChange={setAddProjectOpen}

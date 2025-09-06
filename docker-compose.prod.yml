@@ -1,11 +1,10 @@
-name: gaia-dev
+name: gaia-prod
 
 services:
   # FastAPI Application
   gaia-backend:
     container_name: gaia-backend
     profiles: ["", "backend-only"]
-    build: ./backend
     image: ghcr.io/heygaia/gaia:latest
     working_dir: /app
     command:

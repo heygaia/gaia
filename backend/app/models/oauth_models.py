@@ -45,6 +45,7 @@ class OAuthToken(Base):
     #     {"sqlite_autoincrement": True},
     # )
 
+
 class OAuthScope(BaseModel):
     """OAuth scope configuration."""
 

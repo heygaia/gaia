@@ -8,6 +8,7 @@ from app.api.v1.router import (
     blog,
     calendar,
     chat,
+    composio,
     conversations,
     feedback,
     file,
@@ -30,11 +31,13 @@ from app.api.v1.router import (
     waitlist,
     webhook,
     websocket,
+    workflows,
 )
 from fastapi import APIRouter
 
 router = APIRouter()
 
+router.include_router(composio.router, tags=["composio"])
 router.include_router(chat.router, tags=["Chat"])
 router.include_router(conversations.router, tags=["Conversations"])
 router.include_router(waitlist.router, tags=["Waitlist"])
@@ -54,6 +57,7 @@ router.include_router(notification.router, tags=["Notification"])
 router.include_router(websocket.router, tags=["WebSocket"])
 router.include_router(webhook.router, tags=["Mail Webhook"])
 router.include_router(todos.router, tags=["Todos"])
+router.include_router(workflows.router, tags=["Workflows"])
 router.include_router(reminders.router, tags=["Reminders"])
 router.include_router(support.router, tags=["Support"])
 router.include_router(payments.router, prefix="/payments", tags=["Payments"])

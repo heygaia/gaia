@@ -1,120 +1,183 @@
-"""Structured workflow generation tool using Langchain."""
+"""
+Clean workflow tools for GAIA workflow system.
+Includes both workflow generation and chat interface tools.
+"""
 
-from typing import Dict, Any, Optional
-from langchain_core.output_parsers import PydanticOutputParser
-from langchain_core.prompts import PromptTemplate
+from functools import wraps
+from typing import Annotated, Any, Optional, Literal
 
-from app.models.workflow_models import WorkflowPlan
-from app.config.loggers import todos_logger as logger
-from app.langchain.llm.client import init_llm
-from app.langchain.tools.core.registry import tool_names
+from langchain_core.runnables.config import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
+
+from app.config.loggers import general_logger as logger
+from app.decorators import with_rate_limiting
+from app.models.workflow_models import (
+    CreateWorkflowRequest,
+    TriggerConfig,
+    TriggerType,
+)
+from app.services.workflow import WorkflowService
 
 
-async def generate_workflow_plan(
-    todo_title: str, todo_description: str = ""
-) -> WorkflowPlan:
-    """
-    Generate a structured workflow plan for a TODO item using available tools.
+# Helper functions
+def error_response(error_code: str, message: str) -> dict:
+    return {"success": False, "error": error_code, "message": message}
 
-    Creates 2-4 actionable steps that can be completed with available tools including:
-    - mail (email operations)
-    - calendar (scheduling, events)
-    - search (web search, research)
-    - productivity (todos, reminders)
-    - documents (file operations)
-    - weather (weather information)
-    - goal_tracking (goal management)
-    g
-    Args:
-        todo_title: The title of the TODO item
-        todo_description: Optional description providing more context
 
-    Returns:
-        WorkflowPlan: Structured workflow with actionable steps
-    """
+def success_response(data: Any, message: Optional[str] = None) -> dict:
+    response = {"success": True, "data": data}
+    if message:
+        response["message"] = message
+    return response
 
+
+def require_user_auth(func):
+    @wraps(func)
+    async def wrapper(config: RunnableConfig, *args, **kwargs):
+        user_id = config.get("configurable", {}).get("user_id")
+        if not user_id:
+            return error_response("auth_required", "User authentication required")
+        return await func(config, user_id, *args, **kwargs)
+
+    return wrapper
+
+
+@tool
+@with_rate_limiting("workflow_operations")
+@require_user_auth
+async def create_workflow_tool(
+    config: RunnableConfig,
+    user_id: str,
+    title: Annotated[str, "The title of the workflow"],
+    description: Annotated[str, "Description of what the workflow should accomplish"],
+    trigger_type: Annotated[
+        Literal["manual", "schedule", "email", "calendar"], "Type of trigger"
+    ] = "manual",
+    cron_expression: Annotated[
+        Optional[str], "Cron expression for scheduled workflows"
+    ] = None,
+    generate_immediately: Annotated[
+        bool, "Whether to generate steps immediately"
+    ] = True,
+) -> dict:
+    """Create a new workflow from a title and description."""
     try:
-        # Create the parser for structured output
-        parser = PydanticOutputParser(pydantic_object=WorkflowPlan)
+        trigger_config = TriggerConfig(type=TriggerType(trigger_type), enabled=True)
+        if trigger_type == "schedule" and cron_expression:
+            trigger_config.cron_expression = cron_expression
 
-        logger.info(f"Generating workflow for: {todo_title}")
-        # Create structured prompt with format instructions
-        prompt_template = PromptTemplate(
-            template="""Create a practical workflow plan for this TODO task using ONLY the available tools listed below.
-
-            TODO: {todo_title}
-            Description: {todo_description}
-
-            CRITICAL REQUIREMENTS:
-            1. Use ONLY the exact tool names listed above - do not make up or modify tool names
-            2. Choose tools that are logically appropriate for the task
-            3. Each step must specify tool_name using the EXACT name from the list above
-            4. Consider the tool category when selecting appropriate tools
-            5. Use actionable and proper tools that help accomplish the task at hand, no useless tools or doing things that are unnecessary.
-
-            Create 4-7 actionable steps that logically break down this TODO into smaller, executable tasks.
-
-            GOOD WORKFLOW EXAMPLES:
-            - "Plan vacation" → 1) web_search_tool (research destinations), 2) get_weather (check climate), 3) create_calendar_event (schedule trip)
-            - "Organize emails" → 1) search_gmail_messages (find relevant emails), 2) create_gmail_label (create organization), 3) apply_labels_to_emails (organize)
-            - "Submit report" → 1) generate_document (create report), 2) create_calendar_event (schedule deadline), 3) create_reminder (set reminder)
-
-            Available Tools:
-            {tools}
-
-            {format_instructions}
-            """,
-            input_variables=["todo_title", "todo_description", "tools"],
-            partial_variables={"format_instructions": parser.get_format_instructions()},
+        request = CreateWorkflowRequest(
+            title=title,
+            description=description,
+            trigger_config=trigger_config,
+            generate_immediately=generate_immediately,
         )
 
-        # Initialize LLM
-        llm = init_llm(streaming=False)
+        workflow = await WorkflowService.create_workflow(request, user_id)
 
-        # Create chain: prompt | llm | parser
-        chain = prompt_template | llm | parser
+        writer = get_stream_writer()
+        writer(
+            {"workflow_data": {"action": "created", "workflow": workflow.model_dump()}}
+        )
 
-        # Generate workflow plan
-        workflow_plan = await chain.ainvoke(
+        return success_response(workflow.model_dump(), "Workflow created successfully")
+
+    except Exception as e:
+        logger.error(f"Error creating workflow: {e}")
+        return error_response("creation_failed", str(e))
+
+
+@tool
+@with_rate_limiting("workflow_operations")
+@require_user_auth
+async def get_workflow_tool(
+    config: RunnableConfig,
+    user_id: str,
+    workflow_id: Annotated[str, "The ID of the workflow to retrieve"],
+) -> dict:
+    """Get detailed information about a specific workflow."""
+    try:
+        workflow = await WorkflowService.get_workflow(workflow_id, user_id)
+        if not workflow:
+            return error_response("not_found", f"Workflow {workflow_id} not found")
+
+        writer = get_stream_writer()
+        writer({"workflow_data": {"action": "get", "workflow": workflow.model_dump()}})
+
+        return success_response(workflow.model_dump())
+
+    except Exception as e:
+        logger.error(f"Error getting workflow {workflow_id}: {e}")
+        return error_response("fetch_failed", str(e))
+
+
+@tool
+@with_rate_limiting("workflow_operations")
+@require_user_auth
+async def list_workflows_tool(config: RunnableConfig, user_id: str) -> dict:
+    """List all workflows for the current user."""
+    try:
+        workflows = await WorkflowService.list_workflows(user_id)
+
+        writer = get_stream_writer()
+        writer(
             {
-                "todo_title": todo_title,
-                "todo_description": todo_description or "No description provided",
-                "tools": tool_names,
+                "workflow_list": {
+                    "action": "list",
+                    "workflows": [workflow.model_dump() for workflow in workflows],
+                    "total": len(workflows),
+                }
             }
         )
 
-        # Ensure the title includes the todo title if not already present
-        if todo_title not in workflow_plan.title:
-            workflow_plan.title = f"Workflow for: {todo_title}"
-
-        logger.info(
-            f"Generated structured workflow for '{todo_title}' with {len(workflow_plan.steps)} steps"
+        return success_response(
+            {
+                "workflows": [workflow.model_dump() for workflow in workflows],
+                "total": len(workflows),
+            }
         )
-        return workflow_plan
 
     except Exception as e:
-        logger.error(f"Error in structured workflow generation: {str(e)}")
-        raise e
+        logger.error(f"Error listing workflows: {e}")
+        return error_response("fetch_failed", str(e))
 
 
-async def generate_workflow_for_todo(
-    todo_title: str, todo_description: Optional[str] = None
-) -> Dict[str, Any]:
-    """
-    Generate a workflow plan for a TODO item using structured output.
-
-    Args:
-        todo_title: Title of the TODO item
-        todo_description: Optional description of the TODO item
-
-    Returns:
-        Dict containing success status and workflow data
-    """
+@tool
+@with_rate_limiting("workflow_operations")
+@require_user_auth
+async def execute_workflow_tool(
+    config: RunnableConfig,
+    user_id: str,
+    workflow_id: Annotated[str, "The ID of the workflow to execute"],
+) -> dict:
+    """Execute a workflow immediately (run now)."""
     try:
-        workflow_plan = await generate_workflow_plan(todo_title, todo_description or "")
+        from app.models.workflow_models import WorkflowExecutionRequest
 
-        return {"success": True, "workflow": workflow_plan.dict()}
+        result = await WorkflowService.execute_workflow(
+            workflow_id, WorkflowExecutionRequest(), user_id
+        )
+
+        data = {
+            "workflow_id": workflow_id,
+            "execution_id": result.execution_id,
+            "message": result.message,
+        }
+
+        writer = get_stream_writer()
+        writer({"workflow_execution": {"action": "started", "execution": data}})
+
+        return success_response(data)
 
     except Exception as e:
-        logger.error(f"Failed to generate workflow for TODO '{todo_title}': {str(e)}")
-        return {"success": False, "error": str(e)}
+        logger.error(f"Error executing workflow {workflow_id}: {e}")
+        return error_response("execution_failed", str(e))
+
+
+tools = [
+    create_workflow_tool,
+    get_workflow_tool,
+    list_workflows_tool,
+    execute_workflow_tool,
+]

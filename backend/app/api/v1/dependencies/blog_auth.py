@@ -6,8 +6,6 @@ from typing import Optional
 from fastapi import HTTPException, Security, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
-from app.config.settings import settings
-
 # Initialize the security scheme
 security = HTTPBearer()
 
@@ -31,6 +29,8 @@ async def verify_blog_token(
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Invalid authorization code"
         )
+
+    from app.config.settings import settings
 
     # Get the expected token from settings
     expected_token = settings.BLOG_BEARER_TOKEN

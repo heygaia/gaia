@@ -147,8 +147,12 @@ async def initialize_conversation(
     if conversation_id is None:
         last_message = body.messages[-1] if body.messages else None
         selectedTool = body.selectedTool if body.selectedTool else None
+        selectedWorkflow = body.selectedWorkflow if body.selectedWorkflow else None
         conversation = await create_conversation(
-            last_message, user=user, selectedTool=selectedTool
+            last_message,
+            user=user,
+            selectedTool=selectedTool,
+            selectedWorkflow=selectedWorkflow,
         )
         conversation_id = conversation.get("conversation_id", "")
 
@@ -203,6 +207,7 @@ def update_conversation_messages(
         fileData=body.fileData,
         selectedTool=body.selectedTool,
         toolCategory=body.toolCategory,
+        selectedWorkflow=body.selectedWorkflow,
     )
 
     # Create bot message with base properties

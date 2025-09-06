@@ -35,7 +35,7 @@ This Code of Conduct applies across all community spaces and when an individual 
 
 ## Enforcement
 
-If you experience or witness unacceptable behavior, please report it to the community leaders at **your-email@example.com**. Reports will be handled respectfully, promptly, and with confidentiality.
+If you experience or witness unacceptable behavior, please report it to the community leaders at **moderation@heygaia.io**. Reports will be handled respectfully, promptly, and with confidentiality.
 
 ## Enforcement Guidelines
 

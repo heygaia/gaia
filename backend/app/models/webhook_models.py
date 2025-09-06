@@ -138,6 +138,7 @@ class DodoWebhookProcessingResult(BaseModel):
     payment_id: Optional[str] = None
     subscription_id: Optional[str] = None
 
+
 class ComposioWebhookEvent(BaseModel):
     """Composio webhook event structure."""
 

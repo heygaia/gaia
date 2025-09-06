@@ -57,7 +57,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
     // Filter by search query (when opened via button or slash command)
     if (searchQuery.trim()) {
       const query = searchQuery.toLowerCase();
-      filtered = filtered.filter(
+      return filtered.filter(
         (match) =>
           formatToolName(match.tool.name).toLowerCase().includes(query) ||
           match.tool.category.toLowerCase().includes(query),
@@ -65,7 +65,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
     }
 
     return filtered;
-  }, [matches, selectedCategory, searchQuery, openedViaButton]);
+  }, [matches, selectedCategory, searchQuery]);
 
   // Group tools by category and lock status
   const { unlockedMatches, lockedCategories } = useMemo(() => {

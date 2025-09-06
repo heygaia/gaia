@@ -15,7 +15,10 @@ class EmailProcessingSession(BaseProcessingSession):
     """
 
     def __init__(
-        self, history_id: Optional[int], email_address: str, session_id: Optional[str] = None
+        self,
+        history_id: Optional[int],
+        email_address: str,
+        session_id: Optional[str] = None,
     ):
         # Email-specific attributes (set before calling super().__init__)
         self.history_id = history_id

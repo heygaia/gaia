@@ -1,23 +1,24 @@
 <div align="center">
-<img alt="header" src="https://github.com/user-attachments/assets/8a4556e8-29e9-4b23-a7ee-39e7b3883207" />
-<!--   <img src="docs/logo/logo.png" alt="GAIA Logo" width="100" height="100" /> -->
 
-  <br/>
-  <br/>
-  <p>
-    <a href="https://heygaia.io"><img src="https://img.shields.io/badge/Website-00bbff?style=flat-square&logo=globe&logoColor=white" alt="Website" /></a>  
-    <a href="https://docs.heygaia.io"><img src="https://img.shields.io/badge/Docs-00bbff?style=flat-square&logo=gitbook&logoColor=white" alt="Docs" /></a>
-  </p>
+<img alt="logo" src="docs/logo/logo.png" width=150 height=150 /> <br/>
+
+[![GAIA](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/heygaia/gaia/refs/heads/master/frontend/public/badge.json)](https://heygaia.io)
+
+[![Documentation](https://img.shields.io/badge/Documentation-00bbff?style=flat&logo=gitbook&logoColor=white)](https://docs.heygaia.io) [![Latest Release](https://img.shields.io/github/v/release/heygaia/gaia?color=00bbff)](https://github.com/heygaia/gaia/releases)[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/heygaia/gaia)
+
+[![stars](https://img.shields.io/github/stars/heygaia/gaia)](https://github.com/heygaia/gaia/stargazers) [![stars](https://img.shields.io/github/forks/heygaia/gaia)](https://github.com/heygaia/gaia/forks)
+
+[![contributors](https://img.shields.io/github/contributors/heygaia/gaia)](https://github.com/heygaia/gaia/graphs/contributors) [![open issues](https://img.shields.io/github/issues/heygaia/gaia)](https://github.com/heygaia/gaia/issues/) ![last update](https://img.shields.io/github/commit-activity/m/heygaia/gaia) [![Build Status](https://img.shields.io/badge/build-passing-brightgreen)](https://github.com/heygaia/gaia) [![License: PolyForm Noncommercial](https://img.shields.io/badge/License-PolyForm%20Strict-red.svg)](https://polyformproject.org/licenses/noncommercial-1.0.0/)
+
+[![Discord](https://discord-live-members-count-badge.vercel.app/api/discord-members?guildId=585464664650022914&color=5c6af3&label=Discord)](https://discord.heygaia.io) [![Twitter Follow](https://img.shields.io/twitter/follow/_heygaia?style=social)](https://x.com/intent/user?screen_name=_heygaia) [![Whatsapp](https://img.shields.io/badge/WhatsApp-25D366?logo=whatsapp&logoColor=fff&style=flat)](https://whatsapp.heygaia.io)
 
 </div>
 
-## GAIA
+# Introduction
 
-Your proactive, personal AI assistant designed to increase your productivity
+<b>[GAIA](https://heygaia.io)</b> is your proactive, personal AI assistant designed to increase your productivity.
 
-## What is GAIA?
-
-A proactive, personal AI assistant designed to help users manage their digital lives by automating tasks, handling communication, and increasing productivity — going beyond traditional assistants like Siri, Google Assistant and ChatGPT.
+It's designed to help users manage their digital lives by automating tasks, handling communication, and increasing productivity - going beyond traditional assistants like Siri, Google Assistant and ChatGPT.
 
 ## Quick Start
 
@@ -45,6 +46,10 @@ Join our growing community of users and contributors:
 
 ## Contributing
 
+<a href="https://github.com/heygaia/gaia/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=heygaia/gaia" />
+</a>
+
 We welcome contributions of all kinds, from bug fixes and new features to documentation and testing.
 
 Please read our [Contributing Guidelines](https://docs.heygaia.io/developers/contributing) to get started.
@@ -58,6 +63,20 @@ This project is licensed under the [Polyform Strict License 1.0.0](https://polyf
 > **Commercial use, distribution, and modifications are not permitted.**
 
 See the full license terms at [LICENSE.md](LICENSE.md).
+
+## Contact
+
+Feel free to contact the team at contact@heygaia.io or aryan@heygaia.io for any questions
+
+## Star History
+
+<a href="https://www.star-history.com/#heygaia/gaia&Date">
+ <picture>
+   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date&theme=dark" />
+   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date" />
+   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=heygaia/gaia&type=Date" />
+ </picture>
+</a>
 
 ---
 

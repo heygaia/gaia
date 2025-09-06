@@ -1,5 +1,6 @@
 import asyncio
 
+from app.utils.embedding_utils import get_or_compute_embeddings
 from langchain_google_genai import GoogleGenerativeAIEmbeddings
 from langgraph.store.memory import InMemoryStore
 
@@ -25,30 +26,38 @@ async def initialize_tools_store():
     from app.langchain.tools.core.registry import tool_registry
 
     # Register both regular and always available tools
-    tool_categories = tool_registry.get_all_category_objects()
+    tool_dict = tool_registry.get_tool_registry()
+    all_tools = [tool_data for tool_data in tool_dict.values()]
 
-    tasks = []
-    tools = {}
-
-    for category in tool_categories.values():
-        category_tools = category.tools
-
-        for tool in category_tools:
-            tasks.append(
-                _store.aput(
-                    (category.space,),
-                    tool.name,
-                    {
-                        "description": f"{tool.name}: {tool.tool.description}",
-                    },
-                )
-            )
-            tools[tool.name] = tool.tool
-
-    # Store all tools for vector search using asyncio batch
-    await asyncio.gather(
-        *tasks,
+    # Store all tools for vector search with cached embeddings
+    embeddings_list, tool_descriptions = await get_or_compute_embeddings(
+        all_tools, embeddings
     )
+
+    # Build tasks for batch storage with pre-computed embeddings
+    tasks = []
+    for i, tool in enumerate(tool_dict.values()):
+        tool_category = tool_registry.get_category(
+            name=tool_registry.get_category_of_tool(tool.name)
+        )
+
+        if not tool_category:
+            continue
+
+        # Use aput with pre-computed embeddings for proper space handling
+        tasks.append(
+            _store.aput(
+                (tool_category.space,),
+                tool.name,
+                {
+                    "description": tool_descriptions[i],
+                    "embedding": embeddings_list[i],
+                },
+            )
+        )
+
+    # Store all tools using asyncio batch with proper space structure
+    await asyncio.gather(*tasks)
 
 
 def get_tools_store() -> InMemoryStore:
