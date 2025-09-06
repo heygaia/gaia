@@ -3,11 +3,10 @@ import time
 from functools import lru_cache
 
 from app.config.loggers import app_logger as logger
-from pydantic import computed_field
-from pydantic_settings import BaseSettings, SettingsConfigDict
-
 from app.config.secrets import inject_infisical_secrets
 from dotenv import load_dotenv
+from pydantic import computed_field
+from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
 

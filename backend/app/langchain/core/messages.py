@@ -57,7 +57,9 @@ async def construct_langchain_messages(
         user_preferences=user_preferences_str,
     )
 
-    chain_msgs: List[AnyMessage] = [SystemMessage(content=system_prompt)]
+    chain_msgs: List[AnyMessage] = [
+        SystemMessage(content=system_prompt, name="main_agent")
+    ]
 
     # Add relevant memories from memory service if user_id and query are provided
     if user_id and query:
@@ -78,7 +80,9 @@ async def construct_langchain_messages(
                     memory_content += f"- {mem.content}\n"
 
                 # Add memory as a system message
-                memory_message = SystemMessage(content=memory_content.strip())
+                memory_message = SystemMessage(
+                    content=memory_content.strip(), name="main_agent"
+                )
                 chain_msgs.append(memory_message)
 
                 logger.info(f"Added {len(memory_results.memories)} memories to context")
@@ -139,7 +143,7 @@ async def construct_langchain_messages(
         human_message_content += f"\n\n{current_files_str}"
 
     # Add the human message
-    chain_msgs.append(HumanMessage(content=human_message_content))
+    chain_msgs.append(HumanMessage(content=human_message_content, name="main_agent"))
 
     return chain_msgs
 

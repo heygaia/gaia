@@ -10,27 +10,23 @@ from app.models.tools_models import ToolInfo, ToolsCategoryResponse, ToolsListRe
 
 async def get_available_tools() -> ToolsListResponse:
     """Get list of all available tools with their metadata."""
-    all_tools = tool_registry.get_all_tools()
     tool_infos = []
     categories = set()
 
-    for tool in all_tools:
-        # Extract basic info
-        name = tool.name
-        category = tool_registry.get_tool_category(name) or "general"
-        categories.add(category)
+    # Use category-based approach for better performance and integration info
+    _categories = tool_registry.get_all_category_objects(
+        ignore_categories=["delegation"]
+    )
 
-        # Check if this category requires an integration
-        required_integration = tool_registry.get_category_integration_requirement(
-            category
-        )
-
-        tool_info = ToolInfo(
-            name=name,
-            category=category,
-            required_integration=required_integration,
-        )
-        tool_infos.append(tool_info)
+    for category, category_obj in _categories.items():
+        for tool in category_obj.tools:
+            tool_info = ToolInfo(
+                name=tool.name,
+                category=category,
+                required_integration=category_obj.integration_name,
+            )
+            tool_infos.append(tool_info)
+            categories.add(category)
 
     return ToolsListResponse(
         tools=tool_infos,
@@ -41,19 +37,17 @@ async def get_available_tools() -> ToolsListResponse:
 
 async def get_tools_by_category(category: str) -> ToolsCategoryResponse:
     """Get tools filtered by category."""
-    category_tools = tool_registry.get_tools_by_category(category)
+    category_obj = tool_registry.get_category(category)
+
+    if not category_obj:
+        return ToolsCategoryResponse(category=category, tools=[], count=0)
 
     tool_infos = []
-    for tool in category_tools:
-        name = tool.name
-        required_integration = tool_registry.get_category_integration_requirement(
-            category
-        )
-
+    for tool in category_obj.tools:
         tool_info = ToolInfo(
-            name=name,
+            name=tool.name,
             category=category,
-            required_integration=required_integration,
+            required_integration=category_obj.integration_name,
         )
         tool_infos.append(tool_info)
 
@@ -66,8 +60,10 @@ async def get_tool_categories() -> Dict[str, int]:
     """Get all tool categories with their counts."""
     category_counts: Dict[str, int] = {}
 
-    for category in tool_registry.get_all_categories():
-        category_tools = tool_registry.get_tools_by_category(category)
-        category_counts[category] = len(category_tools)
+    # Use the new category-based approach for better performance
+    all_categories = tool_registry.get_all_category_objects()
+
+    for category_name, category_obj in all_categories.items():
+        category_counts[category_name] = len(category_obj.tools)
 
     return category_counts
