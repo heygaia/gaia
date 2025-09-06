@@ -12,6 +12,10 @@ import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils"
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
+import {
+  renderArrayToolData,
+  renderToolData,
+} from "@/utils/toolDataNormalizer";
 
 import MarkdownRenderer from "../../interface/MarkdownRenderer";
 import { CalendarDeleteSection } from "./CalendarDeleteSection";
@@ -54,21 +58,25 @@ export default function TextBubble({
 }: ChatBubbleBotProps) {
   return (
     <>
-      {!!search_results && (
-        <SearchResultsTabs search_results={search_results!} />
-      )}
+      {/* Search Results - render all instances */}
+      {renderToolData(search_results, (result, index) => (
+        <SearchResultsTabs key={index} search_results={result} />
+      ))}
 
-      {!!deep_research_results && (
-        <DeepResearchResultsTabs
-          deep_research_results={deep_research_results!}
-        />
-      )}
+      {/* Deep Research Results - render all instances */}
+      {renderToolData(deep_research_results, (result, index) => (
+        <DeepResearchResultsTabs key={index} deep_research_results={result} />
+      ))}
 
-      {!!weather_data && <WeatherCard weatherData={weather_data!} />}
+      {/* Weather Data - render all instances */}
+      {renderToolData(weather_data, (data, index) => (
+        <WeatherCard key={index} weatherData={data} />
+      ))}
 
-      {!!email_thread_data && (
-        <EmailThreadCard emailThreadData={email_thread_data} />
-      )}
+      {/* Email Thread Data - render all instances */}
+      {renderToolData(email_thread_data, (thread, index) => (
+        <EmailThreadCard key={index} emailThreadData={thread} />
+      ))}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (
         <div className="chat_bubble bg-zinc-800">
@@ -116,67 +124,86 @@ export default function TextBubble({
         </div>
       )}
 
-      {!!calendar_options && (
-        <CalendarEventSection calendar_options={calendar_options!} />
-      )}
+      {/* Calendar Options - handle array tool data */}
+      {renderArrayToolData(calendar_options, (options, index) => (
+        <CalendarEventSection key={index} calendar_options={options} />
+      ))}
 
-      {!!calendar_delete_options && (
-        <CalendarDeleteSection
-          calendar_delete_options={calendar_delete_options!}
-        />
-      )}
+      {/* Calendar Delete Options - handle array tool data */}
+      {renderArrayToolData(calendar_delete_options, (options, index) => (
+        <CalendarDeleteSection key={index} calendar_delete_options={options} />
+      ))}
 
-      {!!calendar_edit_options && (
-        <CalendarEditSection calendar_edit_options={calendar_edit_options!} />
-      )}
+      {/* Calendar Edit Options - handle array tool data */}
+      {renderArrayToolData(calendar_edit_options, (options, index) => (
+        <CalendarEditSection key={index} calendar_edit_options={options} />
+      ))}
 
-      {!!email_compose_data && (
-        <EmailComposeSection email_compose_data={email_compose_data!} />
-      )}
+      {/* Email Compose Data - handle array tool data */}
+      {renderArrayToolData(email_compose_data, (data, index) => (
+        <EmailComposeSection key={index} email_compose_data={data} />
+      ))}
 
-      {!!support_ticket_data && (
-        <SupportTicketSection support_ticket_data={support_ticket_data!} />
-      )}
+      {/* Support Ticket Data - handle array tool data */}
+      {renderArrayToolData(support_ticket_data, (data, index) => (
+        <SupportTicketSection key={index} support_ticket_data={data} />
+      ))}
 
-      {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}
+      {/* Email Fetch Data - handle array tool data */}
+      {renderArrayToolData(email_fetch_data, (emails, index) => (
+        <EmailListCard key={index} emails={emails} />
+      ))}
 
-      {!!calendar_fetch_data && (
-        <CalendarListCard events={calendar_fetch_data!} />
-      )}
+      {/* Calendar Fetch Data - handle array tool data */}
+      {renderArrayToolData(calendar_fetch_data, (events, index) => (
+        <CalendarListCard key={index} events={events} />
+      ))}
 
-      {!!calendar_list_fetch_data && (
-        <CalendarListFetchCard calendars={calendar_list_fetch_data} />
-      )}
+      {/* Calendar List Fetch Data - handle array tool data */}
+      {renderArrayToolData(calendar_list_fetch_data, (calendars, index) => (
+        <CalendarListFetchCard key={index} calendars={calendars} />
+      ))}
 
-      {!!todo_data && (
+      {/* Todo Data - render all instances */}
+      {renderToolData(todo_data, (data, index) => (
         <TodoSection
-          todos={todo_data!.todos}
-          projects={todo_data!.projects}
-          stats={todo_data!.stats}
-          action={todo_data!.action}
-          message={todo_data!.message}
+          key={index}
+          todos={data.todos}
+          projects={data.projects}
+          stats={data.stats}
+          action={data.action}
+          message={data.message}
         />
-      )}
+      ))}
 
-      {!!document_data && <DocumentSection document_data={document_data!} />}
+      {/* Document Data - render all instances */}
+      {renderToolData(document_data, (data, index) => (
+        <DocumentSection key={index} document_data={data} />
+      ))}
 
-      {!!google_docs_data && (
-        <GoogleDocsSection google_docs_data={google_docs_data!} />
-      )}
+      {/* Google Docs Data - render all instances */}
+      {renderToolData(google_docs_data, (data, index) => (
+        <GoogleDocsSection key={index} google_docs_data={data} />
+      ))}
 
-      {!!goal_data && (
+      {/* Goal Data - render all instances */}
+      {renderToolData(goal_data, (data, index) => (
         <GoalSection
-          goals={goal_data!.goals}
-          stats={goal_data!.stats}
-          action={goal_data!.action as GoalAction}
-          message={goal_data!.message}
-          goal_id={goal_data!.goal_id}
-          deleted_goal_id={goal_data!.deleted_goal_id}
-          error={goal_data!.error}
+          key={index}
+          goals={data.goals}
+          stats={data.stats}
+          action={data.action as GoalAction}
+          message={data.message}
+          goal_id={data.goal_id}
+          deleted_goal_id={data.deleted_goal_id}
+          error={data.error}
         />
-      )}
+      ))}
 
-      {!!code_data && <CodeExecutionSection code_data={code_data!} />}
+      {/* Code Data - render all instances */}
+      {renderToolData(code_data, (data, index) => (
+        <CodeExecutionSection key={index} code_data={data} />
+      ))}
 
       {!!follow_up_actions && follow_up_actions?.length > 0 && (
         <FollowUpActions actions={follow_up_actions} loading={!!loading} />

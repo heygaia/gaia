@@ -65,7 +65,12 @@ async def chat_stream(
                 # Extract tool data from the chunk
                 new_data = extract_tool_data(chunk[6:])
                 if new_data:
-                    tool_data.update(new_data)
+                    # Properly accumulate arrays for multiple tool calls
+                    for key, value in new_data.items():
+                        if key not in tool_data:
+                            tool_data[key] = []
+                        # Always append to make arrays for multiple instances
+                        tool_data[key].append(value)
             except Exception as e:
                 logger.error(f"Error extracting tool data: {e}")
             yield chunk
