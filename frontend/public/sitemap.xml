@@ -7,13 +7,6 @@
     <changefreq>daily</changefreq>
     <priority>1.0</priority>
   </url>
-  <!-- About Page
-  <url>
-    <loc>https://heygaia.io/about</loc>
-    <lastmod>2025-02-23</lastmod>
-    <changefreq>monthly</changefreq>
-    <priority>0.8</priority>
-  </url> -->
   <!-- Contact Page -->
   <url>
     <loc>https://heygaia.io/contact</loc>
