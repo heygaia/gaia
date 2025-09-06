@@ -1,6 +1,7 @@
 // ImageBubble.tsx
 import { Skeleton } from "@heroui/skeleton";
 import Image from "next/image";
+
 import type { ImageData } from "@/types";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 

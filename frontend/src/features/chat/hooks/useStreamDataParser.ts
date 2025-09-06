@@ -1,5 +1,5 @@
-import { MessageType } from "@/types/features/convoTypes";
 import { TOOLS_MESSAGE_KEYS } from "@/types/features/baseMessageRegistry";
+import { MessageType } from "@/types/features/convoTypes";
 
 /**
  * Parses stream data and accumulates tool data for multiple tool calls.
