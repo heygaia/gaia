@@ -6,13 +6,13 @@ import ReactMarkdown from "react-markdown";
 import { AuthorTooltip } from "@/features/blog/components/AuthorTooltip";
 import type { AboutData, Author } from "@/types/api/aboutApiTypes";
 export const metadata: Metadata = {
-  title: "About",
+  title: "Manifesto",
   description:
     "Learn more about GAIA, your personal AI assistant designed to enhance productivity, automate tasks, and assist in daily activities.",
   openGraph: {
-    title: "About",
+    title: "Manifesto",
     siteName: "GAIA - Personal Assistant",
-    url: "https://heygaia.io/about",
+    url: "https://heygaia.io/manifesto",
     type: "website",
     description:
       "Learn more about GAIA, your personal AI assistant designed to enhance productivity, automate tasks, and assist in daily activities.",
@@ -42,7 +42,7 @@ export const metadata: Metadata = {
 export default async function About() {
   const aboutData: AboutData | null = {
     content:
-      "Hey, I’m building GAIA because I’ve always wanted a personal assistant that actually does things for me—not just answer questions or pretend to help. The truth is, tools like Siri, Alexa, and even ChatGPT are helpful in small ways, but they’re not real assistants.\n\nThey don’t remember you, they don’t handle your work, and they don’t make your life easier the way a human would.\n\nGAIA is our attempt to change that.\n\nWe’re building a general-purpose personal assistant that’s always by your side. It connects to your digital life, learns how you work, and starts taking care of the boring stuff—emails, meetings, scheduling, reminders, calls, your goals, your habits—so you can focus on what actually matters.\n\nIt’s not a chatbot. It’s an assistant that gets things done.\n\nI envision a world where everyone has their own personal AI assistant—something like Jarvis from Iron Man. Not just a tool, but a proactive, intelligent presence that knows you, helps you, and works with you. That’s the kind of future I want to help build.\n\nGAIA was founded by me and [Dhruv](https://www.linkedin.com/in/dhruvmaradiya/). As of June 2025, we’re a really small team of under 5 people—building fast, learning fast, and trying to solve one of the hardest and most exciting problems in tech today.\n\nWe’re just getting started, and there’s a lot more to come. I hope you find what we’re building useful, thoughtful, and maybe even a little magical. Thanks for being here.",
+      "Hey\n\nWe're building GAIA because we've always wanted a personal assistant that actually does things for us, not just answer questions or pretend to help. The truth is, tools like Siri, Alexa, and even ChatGPT are helpful in small ways, but they are not real assistants.\n\nThey don’t remember you, they don’t handle your work, and they don’t make your life easier the way a human would.\n\nGAIA is our attempt to change that.\n\nWe’re building GAIA, which stands for General-purpose AI Assistant, as a personal assistant that’s always by your side. It connects to your digital life, learns how you work, and starts taking care of automating the boring stuff such as emails, meetings, scheduling, reminders, calls, your goals, and your habits so you can focus on what actually matters.\n\n Our end goal is for GAIA to be on every device, for every person in the world. We believe that building something that powerful starts by focusing on productivity and helping people get real work done today.\n\nThe possibilities of an assistant that knows everything you do, is deeply integrated with your life and tools, has endless memory about your life, and stays by your side are endless.\n\nPrivacy and security are our top priorities. We will never sell your data or use it to train models. We are building GAIA because we love creating tools that make a difference, and we would do it even if we weren’t being paid.\n\nWe’re also open source because we want to be fully transparent. Being open source not only allows the community to see exactly how GAIA works, it also reinforces privacy by design, everyone can verify that data is handled responsibly. As founders, we’ve had amazing experiences with the open-source community. It’s incredible how people come together to build something bigger than themselves, and we want to give back to that same spirit.\n\nWe envision a world where everyone has their own personal AI assistant like Jarvis from Iron Man. Not just a tool, but a proactive, intelligent presence that knows you, helps you, and works with you. That is the kind of future we want to help build.\n\nWe’re a really small team building fast, learning fast, and trying to solve one of the hardest and most exciting problems in tech today.\n\nWe’re just getting started, and there’s a lot more to come. We hope you find\n\nWe appreciate every bit of support. Thanks for being here.",
     authors: [
       {
         name: "Aryan Randeriya",
@@ -50,6 +50,15 @@ export default async function About() {
         role: "Founder & CEO",
         linkedin: "https://www.linkedin.com/in/aryanranderiya/",
         twitter: "https://twitter.com/aryanranderiya",
+        github: "https://github.com/aryanranderiya",
+      },
+      {
+        name: "Dhruv Maradiya",
+        avatar: "https://github.com/dhruv-maradiya.png",
+        role: "Founder & CTO",
+        linkedin: "https://www.linkedin.com/in/dhruvmaradiya/",
+        twitter: "https://twitter.com/dhruvmaradiya",
+        github: "https://github.com/dhruv-maradiya",
       },
     ],
   };
@@ -121,7 +130,7 @@ export default async function About() {
           </div>
         </Suspense>
 
-        <div className="flex items-start">
+        <div className="flex items-center gap-3">
           <div className="flex items-center -space-x-2">
             {aboutData.authors.map((author: Author) => (
               <AuthorTooltip
@@ -132,12 +141,7 @@ export default async function About() {
               />
             ))}
           </div>
-          <div className="ml-4">
-            <div className="font-medium">{aboutData.authors[0]?.name}</div>
-            <div className="text-sm text-foreground-500">
-              — {aboutData.authors[0]?.role}
-            </div>
-          </div>
+          <div className="text-foreground-500">— The Founders</div>
         </div>
       </div>
     </div>

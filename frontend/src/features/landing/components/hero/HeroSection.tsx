@@ -22,7 +22,7 @@ export default function HeroSection() {
           <ShinyText
             text={`Public Beta ${isReleaseLoading ? "" : release?.name.replace("-beta", "")}`}
             speed={10}
-            className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-2 px-4 text-sm font-light outline-1 outline-zinc-800 transition-colors hover:bg-zinc-800"
+            className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-1 px-4 text-sm font-light outline-1 outline-zinc-800 transition-colors hover:bg-zinc-800"
           />
         </Link>
 

@@ -17,8 +17,7 @@ const Productivity = lazy(
   () => import("@/features/landing/components/sections/Productivity"),
 );
 const Tired = lazy(
-  () =>
-    import("@/features/landing/components/sections/TiredBoringAssistants"),
+  () => import("@/features/landing/components/sections/TiredBoringAssistants"),
 );
 const ToolsShowcaseSection = lazy(
   () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
@@ -67,9 +66,11 @@ export default function LandingPage() {
             <Suspense fallback={<SuspenseLoader />}>
               <ChaoticWorkspaceSection />
             </Suspense>
+
             <Suspense fallback={<SuspenseLoader />}>
               <ToolsShowcaseSection />
             </Suspense>
+
             <Suspense fallback={<SuspenseLoader />}>
               <Productivity />
             </Suspense>

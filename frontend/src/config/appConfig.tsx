@@ -108,8 +108,8 @@ export const appConfig = {
 
     company: [
       {
-        href: "/about",
-        label: "About",
+        href: "/manifesto",
+        label: "Manifesto",
         icon: <GlobalIcon width={19} color={undefined} />,
         description: "Learn about our mission",
       },

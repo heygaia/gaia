@@ -25,7 +25,7 @@ const LANDING_ROUTES = [
   "/login",
   "/signup",
   "/contact",
-  "/about",
+  "/manifesto",
   "/blog",
   "/pricing",
 ];

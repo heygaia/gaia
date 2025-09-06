@@ -252,7 +252,10 @@ export default function MemoryGraphDemo() {
 
   return (
     <div className="relative h-full w-full">
-      <div ref={containerRef} className="h-full w-full">
+      <div
+        ref={containerRef}
+        className="h-full w-full cursor-grab active:cursor-grabbing"
+      >
         <svg ref={svgRef} width="100%" height="100%" />
       </div>
 
