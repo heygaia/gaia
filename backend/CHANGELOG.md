@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-06)
+
+
+### Features
+
+* added cicd for build and deploy ([0078b30](https://github.com/heygaia/gaia/commit/0078b300b97b4a7341ff8834a62c2ce83fc34c45))
+
 ## [0.4.0-beta](https://github.com/heygaia/gaia/compare/v0.3.0-beta...v0.4.0-beta) (2025-09-04)
 
 
