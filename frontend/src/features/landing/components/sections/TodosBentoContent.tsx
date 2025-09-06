@@ -1,15 +1,24 @@
+import { cn } from "@/lib";
+
 export function BentoItem({
   title,
   description,
   children,
+  childrenClassName,
 }: {
   title: string;
   description: string;
   children?: React.ReactNode;
+  childrenClassName?: string;
 }) {
   return (
     <div className="flex aspect-square flex-col gap-3">
-      <div className="h-[90%] w-full min-w-full rounded-3xl bg-zinc-800/70 flex items-center justify-center p-4">
+      <div
+        className={cn(
+          "flex h-[90%] w-full min-w-full items-center justify-center rounded-3xl bg-zinc-800/70 p-4",
+          childrenClassName,
+        )}
+      >
         {children}
       </div>
       <div className="flex flex-col text-xl text-foreground-400">

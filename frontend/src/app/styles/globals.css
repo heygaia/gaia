@@ -54,6 +54,7 @@ li {
   flex-direction: column;
   height: fit-content;
   max-width: 40vw;
+  padding: 7px 15px;
   user-select: auto;
   width: fit-content;
 }
