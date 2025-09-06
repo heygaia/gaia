@@ -1,54 +1,60 @@
 #!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
+# Detect python
+PYTHON=$(command -v python3 || command -v python)
+
 # --- Environment Setup ---
-echo "Setting up environment variables..."
+echo "🔧 Setting up environment variables..."
 
-# Copy backend .env.example to .env if it doesn't exist
-if [ ! -f "backend/.env" ]; then
-    echo "Copying backend/.env.example to backend/.env..."
-    cp backend/.env.example backend/.env
+[ ! -f "backend/.env" ] && cp backend/.env.example backend/.env && echo "Created backend/.env" || echo "backend/.env already exists, skipping..."
+[ ! -f "frontend/.env" ] && cp frontend/.env.example frontend/.env && echo "Created frontend/.env" || echo "frontend/.env already exists, skipping..."
+
+# --- Docker ---
+echo "🐳 Starting Docker services..."
+if command -v docker compose &> /dev/null; then
+    docker compose up -d
 else
-    echo "backend/.env already exists, skipping..."
+    docker-compose up -d
 fi
-
-# Copy frontend .env.example to .env if it doesn't exist
-if [ ! -f "frontend/.env" ]; then
-    echo "Copying frontend/.env.example to frontend/.env..."
-    cp frontend/.env.example frontend/.env
-else
-    echo "frontend/.env already exists, skipping..."
-fi
-
-# --- Docker Compose ---
-echo "Starting Docker services in the background..."
-docker-compose up -d
 
 # --- Backend Setup ---
-echo "Setting up backend..."
+echo "⚙️ Setting up backend..."
+cd backend
 if [ ! -d ".venv" ]; then
     echo "Creating Python virtual environment..."
-    python3 -m venv .venv
+    $PYTHON -m venv .venv
 fi
 
-echo "Activating virtual environment..."
-source .venv/bin/activate
+# Activate venv
+if [ -f ".venv/bin/activate" ]; then
+    source .venv/bin/activate
+elif [ -f ".venv/Scripts/activate" ]; then
+    source .venv/Scripts/activate
+else
+    echo "Could not find virtual environment activation script."
+    exit 1
+fi
 
-echo "Installing backend dependencies with uv..."
-cd ../backend
+# Ensure uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "Installing uv..."
+    $PYTHON -m pip install --upgrade pip
+    $PYTHON -m pip install uv
+fi
+
+echo "Installing backend dependencies..."
 uv sync
-
-# --- Frontend Setup ---
-echo "Setting up frontend..."
-cd ../frontend
-
-echo "Installing frontend dependencies with pnpm..."
-pnpm install
-
 cd ..
 
+# --- Frontend Setup ---
+echo "⚙️ Setting up frontend..."
+cd frontend
+pnpm install
+cd ..
+
+# --- Done ---
+echo ""
 echo "Setup complete!"
 echo ""
 echo "🔑 IMPORTANT: Configure your environment variables"
