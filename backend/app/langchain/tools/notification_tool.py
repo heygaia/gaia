@@ -42,7 +42,7 @@ async def get_notifications(
     config: RunnableConfig,
     status: Annotated[
         Optional[NotificationStatus], "Filter by notification status"
-    ] = None,
+    ] = NotificationStatus.DELIVERED,
     notification_type: Annotated[
         Optional[NotificationType], "Filter by notification type"
     ] = None,
@@ -58,10 +58,12 @@ async def get_notifications(
         if not user_id:
             return {"error": "User authentication required", "notifications": []}
 
-        # Get notifications
+        # Get notifications with all filters
         notifications = await notification_service.get_user_notifications(
             user_id=user_id,
             status=status,
+            notification_type=notification_type,
+            source=source,
             limit=limit,
             offset=offset,
         )
