@@ -3,8 +3,8 @@ import {
   BASE_MESSAGE_KEYS,
   BASE_MESSAGE_SCHEMA,
   BaseMessageData,
-  TOOLS_MESSAGE_KEYS,
-} from "@/types/features/baseMessageRegistry";
+} from "@/config/registries/baseMessageRegistry";
+import { TOOLS_MESSAGE_KEYS } from "@/config/registries/toolRegistry";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { ConversationMessage, MessageType } from "@/types/features/convoTypes";
 

@@ -1,6 +1,6 @@
 // todo types matching the backend models
 
-import { WorkflowStepType } from "@/features/workflows/api/workflowApi";
+import type { WorkflowStepType } from "./workflowTypes";
 
 export enum Priority {
   HIGH = "high",
@@ -14,18 +14,6 @@ export enum WorkflowStatus {
   GENERATING = "generating",
   COMPLETED = "completed",
   FAILED = "failed",
-}
-
-// Workflow types (using the one from workflowApi)
-
-export interface Workflow {
-  id: string;
-  title: string;
-  description: string;
-  steps: WorkflowStepType[];
-  activated: boolean;
-  created_at: string;
-  updated_at: string;
 }
 
 export interface SubTask {

@@ -5,8 +5,16 @@ Contains all workflow-related background tasks and execution logic.
 
 from datetime import datetime, timezone
 from typing import Optional, Tuple
+from uuid import uuid4
 
 from app.config.loggers import arq_worker_logger as logger
+from app.config.token_repository import token_repository
+from app.langchain.core.agent import call_agent_silent
+from app.models.message_models import (
+    MessageRequestWithHistory,
+    SelectedWorkflowData,
+)
+from app.services.model_service import get_user_selected_model
 from bson import ObjectId
 
 
@@ -26,8 +34,6 @@ async def get_user_authentication_tokens(
         Tuple of (access_token, refresh_token) or (None, None) if not available
     """
     try:
-        from app.config.token_repository import token_repository
-
         token = await token_repository.get_token(
             str(user_id), "google", renew_if_expired=True
         )
@@ -202,10 +208,8 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
     Returns:
         List of MessageModel objects from the execution
     """
-    from uuid import uuid4
-
     from app.models.chat_models import MessageModel
-    from app.services.workflow_conversation_service import (
+    from app.services.workflow.conversation_service import (
         get_or_create_workflow_conversation,
     )
 
@@ -245,19 +249,20 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
             logger.warning(f"Could not get user data for {user_id}: {e}")
             # Continue with minimal user object
 
+        user_model_config = None
+        try:
+            user_model_config = await get_user_selected_model(user_id)
+        except Exception as e:
+            logger.warning(
+                f"Could not get user's selected model for workflow, using default: {e}"
+            )
+
         # Get or create the workflow conversation for thread context
         conversation = await get_or_create_workflow_conversation(
             workflow_id=workflow.id,
             user_id=user_id,
             workflow_title=workflow.title,
         )
-
-        # Convert workflow to SelectedWorkflowData format for proper handling
-        from app.models.message_models import (
-            SelectedWorkflowData,
-            MessageRequestWithHistory,
-        )
-        from app.langchain.core.agent import call_agent_silent
 
         # Convert workflow steps to the format expected by SelectedWorkflowData
         workflow_steps = []
@@ -297,6 +302,8 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
             user_time=datetime.now(timezone.utc),
             access_token=access_token,
             refresh_token=refresh_token,
+            user_model_config=user_model_config,
+            trigger_context=context,
         )
 
         # Create execution messages with proper tool data
@@ -455,7 +462,7 @@ async def create_workflow_completion_notification(
             RedirectConfig,
         )
         from app.services.notification_service import notification_service
-        from app.services.workflow_conversation_service import (
+        from app.services.workflow.conversation_service import (
             add_workflow_execution_messages,
             get_or_create_workflow_conversation,
         )

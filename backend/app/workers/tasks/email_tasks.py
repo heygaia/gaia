@@ -4,6 +4,13 @@ Email-related ARQ tasks.
 
 from app.config.loggers import arq_worker_logger as logger
 
+from app.utils.session_logger.email_session_logger import (
+    create_session,
+    end_session,
+)
+from app.db.mongodb.collections import workflows_collection
+from app.services.trigger_matching_service import find_matching_workflows
+
 
 async def renew_gmail_watch_subscriptions(ctx: dict) -> str:
     """
@@ -35,19 +42,9 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
         Processing result message
     """
     try:
-        logger.info(f"Processing email for user {user_id}")
-
-        from app.services.trigger_matching_service import GmailTriggerMatchingService
-        from app.utils.session_logger.email_session_logger import (
-            create_session,
-            end_session,
-        )
-        from app.db.mongodb.collections import workflows_collection
-
-        # Create processing session for the entire email processing pipeline
+        # Create processing session
         message_id = email_data.get("message_id", "unknown")
         session = create_session(message_id, user_id)
-
         workflow_executions = []
 
         try:
@@ -60,16 +57,10 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
                 },
             )
 
-            # Step 1: Find workflow matches (doesn't queue them)
-            trigger_service = GmailTriggerMatchingService()
-            trigger_result = await trigger_service.process_gmail_event(
-                user_id, email_data
-            )
+            # Find workflow matches
+            matching_workflows = await find_matching_workflows(user_id)
 
-            matching_workflows = trigger_result.get("matching_workflows", [])
-            logger.info(f"Found {len(matching_workflows)} matching workflows")
-
-            # Step 2: Execute matched workflows directly in this context
+            # Execute matched workflows
             if matching_workflows:
                 from datetime import datetime, timezone
                 from app.workers.tasks.workflow_tasks import execute_workflow_as_chat
@@ -82,9 +73,6 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
 
                 for workflow in matching_workflows:
                     try:
-                        logger.info(f"Executing triggered workflow {workflow.id}")
-
-                        # Execute workflow directly
                         execution_messages = await execute_workflow_as_chat(
                             workflow, user_id, trigger_context
                         )
@@ -112,10 +100,7 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
                         )
 
                     except Exception as workflow_error:
-                        error_msg = (
-                            f"Error executing workflow {workflow.id}: {workflow_error}"
-                        )
-                        logger.error(error_msg, exc_info=True)  # Include stack trace
+                        logger.error(f"Workflow {workflow.id} failed: {workflow_error}")
 
                         workflow_executions.append(
                             {
@@ -132,12 +117,8 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
                                 {"$inc": {"total_executions": 1}},
                             )
                         except Exception as stats_error:
-                            logger.error(
-                                f"Failed to update workflow failure stats: {stats_error}"
-                            )
-                            # Don't fail the entire email processing for stats errors
-
-            # Step 3: Basic email processing (placeholder for future features)
+                            logger.error(f"Failed to update stats: {stats_error}")
+            # Basic email processing
             email_result = "Email processed successfully"
 
             session.log_session_summary(
@@ -152,11 +133,14 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
                 }
             )
 
-            logger.info(
-                f"Email processing completed for user {user_id}: {len(matching_workflows)} workflows triggered"
+            successful_executions = len(
+                [w for w in workflow_executions if w["status"] == "success"]
+            )
+            failed_executions = len(
+                [w for w in workflow_executions if w["status"] == "error"]
             )
 
-            return f"Email processed successfully: {len(matching_workflows)} workflows triggered, {len(workflow_executions)} executed"
+            return f"Email processed successfully: {len(matching_workflows)} workflows triggered, {len(workflow_executions)} executed (✅ {successful_executions} success, ❌ {failed_executions} failed)"
 
         finally:
             if session:
@@ -164,5 +148,5 @@ async def process_email_task(ctx: dict, user_id: str, email_data: dict) -> str:
 
     except Exception as e:
         error_msg = f"Failed to process email for user {user_id}: {str(e)}"
-        logger.error(error_msg, exc_info=True)  # Include stack trace for debugging
+        logger.error(error_msg, exc_info=True)
         raise

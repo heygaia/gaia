@@ -58,8 +58,8 @@ async def construct_langchain_messages(
 
     # Priority: workflow > tool selection > user message
     content = (
-        format_workflow_execution_message(
-            selected_workflow, trigger_context, user_content
+        await format_workflow_execution_message(
+            selected_workflow, user_id, trigger_context, user_content
         )
         if selected_workflow
         else format_tool_selection_message(selected_tool, user_content)

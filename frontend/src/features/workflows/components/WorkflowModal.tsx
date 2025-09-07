@@ -1,5 +1,6 @@
 "use client";
 
+import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import {
@@ -14,7 +15,6 @@ import { Select, SelectItem } from "@heroui/select";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
-import { Accordion, AccordionItem } from "@heroui/accordion";
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import {
   AlertCircle,
@@ -33,28 +33,21 @@ import { toast } from "sonner";
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";
 import CustomSpinner from "@/components/ui/shadcn/spinner";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
 import { Workflow, workflowApi } from "../api/workflowApi";
-import { triggerOptions } from "../data/workflowData";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
+import { getTriggerEnabledIntegrations } from "../utils/triggerDisplay";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 import WorkflowSteps from "./shared/WorkflowSteps";
+import { TriggerConfig } from "@/config/registries/triggerRegistry";
 
 interface WorkflowFormData {
   title: string;
   description: string;
   activeTab: "manual" | "schedule" | "trigger";
   selectedTrigger: string;
-  trigger_config: {
-    type: "manual" | "schedule" | "email" | "calendar" | "webhook";
-    enabled: boolean;
-    cron_expression?: string;
-    timezone?: string;
-    sender_patterns?: string[];
-    subject_patterns?: string[];
-    body_keywords?: string[];
-    calendar_patterns?: string[];
-  };
+  trigger_config: TriggerConfig;
 }
 
 interface WorkflowModalProps {
@@ -88,6 +81,7 @@ export default function WorkflowModal({
   const { isPolling, startPolling, stopPolling } = useWorkflowPolling();
 
   const { selectWorkflow } = useWorkflowSelection();
+  const { integrations } = useIntegrations();
 
   // Single source of truth for workflow data
   const [currentWorkflow, setCurrentWorkflow] = useState<Workflow | null>(null);
@@ -122,7 +116,9 @@ export default function WorkflowModal({
     trigger_config: {
       type: "schedule",
       enabled: true,
-    },
+      cron_expression: "0 9 * * *",
+      timezone: "UTC",
+    } as TriggerConfig,
   });
 
   // State for workflow activation toggle
@@ -188,8 +184,7 @@ export default function WorkflowModal({
         description: currentWorkflow.description,
         activeTab:
           currentWorkflow.trigger_config.type === "email" ||
-          currentWorkflow.trigger_config.type === "calendar" ||
-          currentWorkflow.trigger_config.type === "webhook"
+          currentWorkflow.trigger_config.type === "calendar"
             ? "trigger"
             : (currentWorkflow.trigger_config.type as "manual" | "schedule"),
         selectedTrigger:
@@ -213,7 +208,7 @@ export default function WorkflowModal({
           type: "schedule",
           enabled: true,
           cron_expression: "0 9 * * *", // Default: daily at 9 AM
-        },
+        } as TriggerConfig,
       });
       // Reset activation state for create mode
       setIsActivated(true);
@@ -234,7 +229,8 @@ export default function WorkflowModal({
         type: "schedule",
         enabled: true,
         cron_expression: "0 9 * * *", // Default: daily at 9 AM
-      },
+        timezone: "UTC",
+      } as TriggerConfig,
     });
     setCreationPhase("form");
     resetCreation();
@@ -287,7 +283,6 @@ export default function WorkflowModal({
           description: formData.description,
           trigger_config: {
             ...formData.trigger_config,
-            selected_trigger: formData.selectedTrigger,
           },
         };
 
@@ -381,7 +376,7 @@ export default function WorkflowModal({
 
   // Handle step regeneration
   const handleRegenerateSteps = async (
-    reason: string = "Generate alternative workflow approach",
+    instruction: string = "Generate alternative workflow approach",
     forceDifferentTools: boolean = true,
   ) => {
     if (mode !== "edit" || !currentWorkflow) return;
@@ -390,11 +385,11 @@ export default function WorkflowModal({
     setRegenerationError(null); // Clear any previous errors
 
     try {
-      // Call the enhanced regenerate steps API with selected reason
+      // Call the enhanced regenerate steps API with selected instruction
       const result = await workflowApi.regenerateWorkflowSteps(
         currentWorkflow.id,
         {
-          reason,
+          instruction,
           force_different_tools: forceDifferentTools,
         },
       );
@@ -426,9 +421,9 @@ export default function WorkflowModal({
     // Note: Don't set isRegeneratingSteps to false here - let polling handle it
   };
 
-  // Handle regeneration with specific reason
-  const handleRegenerateWithReason = (reasonKey: string) => {
-    const reason = regenerationReasons.find((r) => r.key === reasonKey);
+  // Handle regeneration with specific instruction
+  const handleRegenerateWithReason = (instructionKey: string) => {
+    const reason = regenerationReasons.find((r) => r.key === instructionKey);
     if (reason) {
       handleRegenerateSteps(reason.label, true); // Always force different tools for regeneration
     }
@@ -584,6 +579,7 @@ export default function WorkflowModal({
   }, [isOpen, countdownInterval]);
 
   const renderTriggerTab = () => {
+    const triggerOptions = getTriggerEnabledIntegrations(integrations);
     const selectedTriggerOption = triggerOptions.find(
       (t) => t.id === formData.selectedTrigger,
     );
@@ -610,7 +606,7 @@ export default function WorkflowModal({
                       ? "email"
                       : selectedTrigger === "calendar"
                         ? "calendar"
-                        : "webhook",
+                        : "manual",
                 },
               });
             }}
@@ -651,121 +647,6 @@ export default function WorkflowModal({
             <p className="px-1 text-xs text-zinc-500">
               {selectedTriggerOption.description}
             </p>
-
-            {/* Gmail-specific configuration */}
-            {formData.selectedTrigger === "gmail" && (
-              <Accordion className="w-full px-0!" isCompact>
-                <AccordionItem
-                  key="advanced-settings"
-                  aria-label="Advanced Settings"
-                  title={<div className="text-sm">Advanced Settings</div>}
-                  classNames={{
-                    trigger:
-                      "text-xs font-medium text-zinc-300 hover:text-zinc-100 cursor-pointer",
-                    content: "pt-2",
-                    base: "bg-zinc-800 px-3 rounded-xl py-0",
-                  }}
-                >
-                  <div className="space-y-3">
-                    <div>
-                      <Input
-                        label="Sender Patterns (optional)"
-                        variant="faded"
-                        placeholder="e.g., @company.com, support@, john.doe@gmail.com"
-                        value={
-                          formData.trigger_config.sender_patterns?.join(", ") ||
-                          ""
-                        }
-                        onChange={(e) => {
-                          const patterns = e.target.value
-                            .split(",")
-                            .map((p) => p.trim())
-                            .filter((p) => p.length > 0);
-                          updateFormData({
-                            trigger_config: {
-                              ...formData.trigger_config,
-                              sender_patterns:
-                                patterns.length > 0 ? patterns : undefined,
-                            },
-                          });
-                        }}
-                        size="sm"
-                        className="text-sm"
-                        description="Match emails from specific senders. Supports partial
-                        matches and regex."
-                      />
-                    </div>
-
-                    <div>
-                      <Input
-                        label="Subject Patterns (optional)"
-                        variant="faded"
-                        placeholder="e.g., urgent, meeting, invoice"
-                        value={
-                          formData.trigger_config.subject_patterns?.join(
-                            ", ",
-                          ) || ""
-                        }
-                        onChange={(e) => {
-                          const patterns = e.target.value
-                            .split(",")
-                            .map((p) => p.trim())
-                            .filter((p) => p.length > 0);
-                          updateFormData({
-                            trigger_config: {
-                              ...formData.trigger_config,
-                              subject_patterns:
-                                patterns.length > 0 ? patterns : undefined,
-                            },
-                          });
-                        }}
-                        size="sm"
-                        className="text-sm"
-                        description="Match emails with specific words in the subject line."
-                      />
-                    </div>
-
-                    <div>
-                      <Input
-                        placeholder="e.g., project, deadline, payment"
-                        variant="faded"
-                        label="Body Keywords (optional)"
-                        value={
-                          formData.trigger_config.body_keywords?.join(", ") ||
-                          ""
-                        }
-                        onChange={(e) => {
-                          const keywords = e.target.value
-                            .split(",")
-                            .map((k) => k.trim())
-                            .filter((k) => k.length > 0);
-                          updateFormData({
-                            trigger_config: {
-                              ...formData.trigger_config,
-                              body_keywords:
-                                keywords.length > 0 ? keywords : undefined,
-                            },
-                          });
-                        }}
-                        size="sm"
-                        className="text-sm"
-                        description="Match emails containing these keywords in the body text."
-                      />
-                    </div>
-
-                    <div className="mb-2 rounded-xl bg-zinc-900/50 p-3">
-                      <p className="text-xs text-zinc-400">
-                        <strong>Note:</strong> If no patterns are specified, the
-                        workflow will trigger on all new emails. You can use
-                        multiple criteria - all specified patterns must match
-                        for the workflow to trigger. Separate multiple patterns
-                        with commas.
-                      </p>
-                    </div>
-                  </div>
-                </AccordionItem>
-              </Accordion>
-            )}
           </div>
         )}
       </div>
@@ -783,15 +664,21 @@ export default function WorkflowModal({
   const renderScheduleTab = () => (
     <div className="w-full">
       <ScheduleBuilder
-        value={formData.trigger_config.cron_expression || ""}
-        onChange={(cronExpression) =>
-          updateFormData({
-            trigger_config: {
-              ...formData.trigger_config,
-              cron_expression: cronExpression,
-            },
-          })
+        value={
+          formData.trigger_config.type === "schedule"
+            ? formData.trigger_config.cron_expression || ""
+            : ""
         }
+        onChange={(cronExpression) => {
+          if (formData.trigger_config.type === "schedule") {
+            updateFormData({
+              trigger_config: {
+                ...formData.trigger_config,
+                cron_expression: cronExpression,
+              },
+            });
+          }
+        }}
       />
     </div>
   );
@@ -992,8 +879,13 @@ export default function WorkflowModal({
                               activeTab: tabKey,
                               trigger_config: {
                                 ...formData.trigger_config,
-                                type: tabKey === "trigger" ? "email" : tabKey,
-                              },
+                                type:
+                                  tabKey === "trigger"
+                                    ? "email"
+                                    : tabKey === "schedule"
+                                      ? "schedule"
+                                      : "manual",
+                              } as TriggerConfig,
                             });
                           }}
                         >
@@ -1091,6 +983,7 @@ export default function WorkflowModal({
                           !formData.title.trim() ||
                           !formData.description.trim() ||
                           (formData.activeTab === "schedule" &&
+                            formData.trigger_config.type === "schedule" &&
                             !formData.trigger_config.cron_expression)
                         }
                       >
@@ -1274,7 +1167,7 @@ export default function WorkflowModal({
               <div className="text-center">
                 <h3 className="text-lg font-medium">Generating Steps</h3>
                 <p className="text-sm text-zinc-400">
-                  AI is creating workflow steps for: "{formData.title}"
+                  Creating workflow steps for: "{formData.title}"
                 </p>
                 {currentWorkflow && (
                   <p className="mt-2 text-xs text-zinc-500">

@@ -10,6 +10,7 @@ from app.langchain.prompts.workflow_prompts import (
 from app.models.message_models import FileData, SelectedWorkflowData
 from app.services.memory_service import memory_service
 from app.services.onboarding_service import get_user_preferences_for_agent
+from app.services.workflow import WorkflowService
 from langchain_core.messages import SystemMessage
 
 
@@ -73,24 +74,43 @@ def format_tool_selection_message(selected_tool: str, existing_content: str) -> 
     return f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_name}' tool and wants you to execute it immediately. Use the {selected_tool} tool now. This is a direct tool execution request with no additional context needed. If you don't have tool context, use retrieve_tools to get tool information. Ignore older tools requests and focus on the current tool selection. {base_instruction} If requested tool is not available then use `retrieve_tools` to get the relevant tool information."
 
 
-def format_workflow_execution_message(
+async def format_workflow_execution_message(
     selected_workflow: SelectedWorkflowData,
+    user_id: Optional[str] = None,
     trigger_context: Optional[dict] = None,
     existing_content: str = "",
 ) -> str:
     """Format workflow execution message, handling both manual and automated triggers."""
-    # Format workflow steps for agent execution
-    steps_text = "\n".join(
-        f"{i}. **{step['title']}** (Tool: {step['tool_name']})\n   Description: {step['description']}"
-        for i, step in enumerate(selected_workflow.steps, 1)
-    )
+    # Fetch the latest workflow data from database
+    workflow = None
+    if user_id:
+        try:
+            workflow = await WorkflowService.get_workflow(selected_workflow.id, user_id)
+        except Exception as e:
+            logger.error(f"Failed to fetch workflow {selected_workflow.id}: {e}")
 
-    tools_text = ", ".join(step["tool_name"] for step in selected_workflow.steps)
+    # Use fresh database data if available, otherwise use passed data
+    if workflow and workflow.steps:
+        steps_text = "\n".join(
+            f"{i}. **{step.title}** (Tool: {step.tool_name})\n   Description: {step.description}"
+            for i, step in enumerate(workflow.steps, 1)
+        )
+        tools_text = ", ".join(step.tool_name for step in workflow.steps)
+        workflow_title = workflow.title
+        workflow_description = workflow.description
+    else:
+        # Fallback to passed data
+        steps_text = "\n".join(
+            f"{i}. **{step['title']}** (Tool: {step['tool_name']})\n   Description: {step['description']}"
+            for i, step in enumerate(selected_workflow.steps, 1)
+        )
+        tools_text = ", ".join(step["tool_name"] for step in selected_workflow.steps)
+        workflow_title = selected_workflow.title
+        workflow_description = selected_workflow.description
 
-    # Common template arguments for both trigger types
     common_args = {
-        "workflow_title": selected_workflow.title,
-        "workflow_description": selected_workflow.description,
+        "workflow_title": workflow_title,
+        "workflow_description": workflow_description,
         "workflow_steps": steps_text,
         "tool_names": tools_text,
     }
@@ -111,7 +131,7 @@ def format_workflow_execution_message(
 
     # Manual workflow execution
     return WORKFLOW_EXECUTION_PROMPT.format(
-        user_message=existing_content or f"Execute workflow: {selected_workflow.title}",
+        user_message=existing_content or f"Execute workflow: {workflow_title}",
         **common_args,
     )
 

@@ -4,7 +4,7 @@ import React, { Dispatch } from "react";
 
 import { SystemPurpose } from "@/features/chat/api/chatApi";
 
-import { BaseMessageData } from "./baseMessageRegistry";
+import { BaseMessageData } from "@/config/registries/baseMessageRegistry";
 import {
   CalendarDeleteOptions,
   CalendarEditOptions,
