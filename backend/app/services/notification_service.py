@@ -1,4 +1,3 @@
-import logging
 from typing import Any, Dict, List, Optional
 
 from app.models.notification.notification_models import (
@@ -6,9 +5,9 @@ from app.models.notification.notification_models import (
     BulkActions,
     NotificationRecord,
     NotificationRequest,
+    NotificationSourceEnum,
     NotificationStatus,
     NotificationType,
-    NotificationSourceEnum,
 )
 from app.utils.common_utils import websocket_manager
 from app.utils.notification.actions import (
@@ -17,10 +16,6 @@ from app.utils.notification.actions import (
 from app.utils.notification.channels import ChannelAdapter
 from app.utils.notification.orchestrator import NotificationOrchestrator
 from fastapi import Request
-
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
 
 
 # Service Factory
