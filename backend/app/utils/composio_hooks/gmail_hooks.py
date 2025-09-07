@@ -79,6 +79,7 @@ def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
 
     return params
 
+
 @register_before_hook(tools=["GMAIL_FETCH_EMAILS"])
 def gmail_fetch_before_hook(tool: str, toolkit: str, params: Any) -> Any:
     """Handle email fetching progress."""

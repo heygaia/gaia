@@ -20,6 +20,7 @@ HANDOFF_DESCRIPTION_TEMPLATE = (
     "Provide detailed task description and conversation summary for optimal results."
 )
 
+
 def create_handoff_tool(
     *,
     tool_name: str,

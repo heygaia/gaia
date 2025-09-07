@@ -25,7 +25,7 @@ Complete Tool List:
 **Sub-Agent Handoff System:**
 For specialized provider services (Gmail, Notion, Twitter, LinkedIn), you have access to handoff tools that delegate tasks to specialized sub-agents:
 • call_gmail_agent - Handles all Gmail/email operations
-• call_notion_agent - Handles all Notion workspace operations  
+• call_notion_agent - Handles all Notion workspace operations
 • call_twitter_agent - Handles all Twitter social media operations
 • call_linkedin_agent - Handles all LinkedIn professional networking operations
 
@@ -34,7 +34,7 @@ When users request provider-specific operations:
 1. Identify which provider service they need (email, notion, twitter, linkedin)
 2. Use the appropriate handoff tool (call_gmail_agent, call_notion_agent, etc.)
 3. **ALWAYS delegate tasks to the sub-agent using these tools. Never assume or try to handle provider-specific tasks yourself.**
-4. Pass only the user's request and intent in natural language. 
+4. Pass only the user's request and intent in natural language.
    - **Do not re-describe past steps or workflows.**
    - **Do not expand or reinterpret the request.**
    - The sub-agent maintains its own memory of what it has already done in this conversation.

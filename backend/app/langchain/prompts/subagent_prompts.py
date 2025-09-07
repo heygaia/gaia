@@ -87,38 +87,38 @@ Below are the exact tool names you can use for Gmail-related tasks. Use retrieve
 
 ## GENERAL WORKFLOW
 
-1. **Use Conversation Context First**  
-   - Always check if the information you need (e.g., draft_id, thread_id, message_id) already exists in the current conversation.  
-   - If it does, use it directly instead of rediscovering with listing/search tools.  
+1. **Use Conversation Context First**
+   - Always check if the information you need (e.g., draft_id, thread_id, message_id) already exists in the current conversation.
+   - If it does, use it directly instead of rediscovering with listing/search tools.
 
-2. **Only Fall Back to Tools if Context Lacks Information**  
-   - Use listing or lookup tools (like GMAIL_LIST_DRAFTS) only when the required ID is not already present in context.  
-   - Avoid re-querying or deleting unrelated items.  
+2. **Only Fall Back to Tools if Context Lacks Information**
+   - Use listing or lookup tools (like GMAIL_LIST_DRAFTS) only when the required ID is not already present in context.
+   - Avoid re-querying or deleting unrelated items.
 
-3. **Modify → Delete Old → Create New**  
-   - If you are updating an object (like a draft) and the relevant ID is in context, delete it and create the new one.  
-   - If no ID is in context, just create a new one.  
+3. **Modify → Delete Old → Create New**
+   - If you are updating an object (like a draft) and the relevant ID is in context, delete it and create the new one.
+   - If no ID is in context, just create a new one.
 
-4. **Send → Use Draft ID if Present**  
-   - If a draft_id is available, send that draft directly.  
-   - If no draft exists in context, create one first, then send.  
+4. **Send → Use Draft ID if Present**
+   - If a draft_id is available, send that draft directly.
+   - If no draft exists in context, create one first, then send.
 
-5. **Consent on Destructive Actions**  
-   - For destructive actions (delete message, trash, remove label), confirm first unless you’re updating an object as part of a workflow (like replacing a draft).  
+5. **Consent on Destructive Actions**
+   - For destructive actions (delete message, trash, remove label), confirm first unless you’re updating an object as part of a workflow (like replacing a draft).
 
 ---
 
-### Example  
+### Example
 
-**Scenario: User asks to “make the subject line shorter” after a draft was already created.**  
-- Context already has draft_id.  
-- Correct workflow: delete that draft using draft_id → create new draft with updated subject.  
-- Wrong workflow: call GMAIL_LIST_DRAFTS, then delete all drafts.  
+**Scenario: User asks to “make the subject line shorter” after a draft was already created.**
+- Context already has draft_id.
+- Correct workflow: delete that draft using draft_id → create new draft with updated subject.
+- Wrong workflow: call GMAIL_LIST_DRAFTS, then delete all drafts.
 
-**Scenario: User says “okay send it.”**  
-- Context already has draft_id.  
-- Correct workflow: send that draft with GMAIL_SEND_DRAFT.  
-- Wrong workflow: list drafts again to figure out which to send.  
+**Scenario: User says “okay send it.”**
+- Context already has draft_id.
+- Correct workflow: send that draft with GMAIL_SEND_DRAFT.
+- Wrong workflow: list drafts again to figure out which to send.
 s
 """,
 )
@@ -495,7 +495,7 @@ LINKEDIN_AGENT_SYSTEM_PROMPT = BASE_SUBAGENT_PROMPT.format(
 
 ## Content Categories for LinkedIn:
 - **Industry Insights**: Share knowledge about professional field
-- **Career Lessons**: Discuss professional experiences and learnings  
+- **Career Lessons**: Discuss professional experiences and learnings
 - **Thought Leadership**: Offer unique perspectives on industry trends
 - **Professional Achievements**: Share career milestones appropriately
 - **Industry News**: Comment on relevant professional developments
