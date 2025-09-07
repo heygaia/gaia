@@ -49,53 +49,6 @@ from app.models.oauth_models import (
 
 # Define all integrations dynamically
 OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
-    # Google Workspace - Unified Integration
-    OAuthIntegration(
-        id="google_workspace",
-        name="Google Workspace",
-        description="Connect all Google tools at once",
-        icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c1/Google_%22G%22_logo.svg/1920px-Google_%22G%22_logo.svg.png",
-            "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/640px-Google_Drive_icon_%282020%29.svg.png",
-        ],
-        category="productivity",
-        provider="google",
-        scopes=[
-            # Combined scopes from all Google integrations
-            OAuthScope(
-                scope="https://www.googleapis.com/auth/gmail.modify",
-                description="Read, compose, and send emails",
-            ),
-            OAuthScope(
-                scope="https://www.googleapis.com/auth/calendar.events",
-                description="Create and manage calendar events",
-            ),
-            OAuthScope(
-                scope="https://www.googleapis.com/auth/calendar.readonly",
-                description="View calendar events",
-            ),
-            OAuthScope(
-                scope="https://www.googleapis.com/auth/documents",
-                description="Create and edit documents",
-            ),
-            OAuthScope(
-                scope="https://www.googleapis.com/auth/drive.file",
-                description="Create and manage files",
-            ),
-        ],
-        is_special=True,
-        display_priority=100,
-        included_integrations=[
-            "gmail",
-            "google_calendar",
-            "google_docs",
-            "google_drive",
-        ],
-        managed_by="self",
-    ),
     # Individual Google integrations
     OAuthIntegration(
         id="google_calendar",

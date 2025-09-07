@@ -2,13 +2,12 @@
 
 from typing import List
 
-from langchain_core.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
-
 from app.config.loggers import general_logger as logger
 from app.langchain.llm.client import init_llm
 from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
 from app.models.workflow_models import WorkflowStep
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
 
 
 class WorkflowPlan(BaseModel):
@@ -34,8 +33,11 @@ class WorkflowGenerationService:
 
             # Create structured tool information with categories
             tools_with_categories = []
-            for category in tool_registry.get_all_categories():
-                category_tools = tool_registry.get_tools_by_category(category)
+            category_names = []
+            categories = tool_registry.get_all_category_objects()
+            for category in categories.keys():
+                category_names.append(category)
+                category_tools = categories[category].get_tool_objects()
                 tool_names = [
                     tool.name if hasattr(tool, "name") else str(tool)
                     for tool in category_tools
@@ -58,7 +60,7 @@ class WorkflowGenerationService:
                     "description": description,
                     "title": title,
                     "tools": "\n".join(tools_with_categories),
-                    "categories": ", ".join(tool_registry.get_all_categories()),
+                    "categories": ", ".join(category_names),
                     "format_instructions": parser.get_format_instructions(),
                 }
             )

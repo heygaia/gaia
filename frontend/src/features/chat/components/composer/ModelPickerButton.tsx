@@ -6,7 +6,7 @@ import {
   SharedSelection,
 } from "@heroui/react";
 import { Cpu } from "lucide-react";
-import React from "react";
+import React, { useMemo } from "react";
 
 import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 
@@ -47,6 +47,11 @@ const ModelPickerButton: React.FC = () => {
     }
   };
 
+  // Find the default model from the models list
+  const defaultModel = useMemo(() => {
+    return models?.find((model) => model.is_default);
+  }, [models]);
+
   // Don't render the button if models are still loading or not available
   if (isLoading || !models || models.length === 0) {
     return null;
@@ -56,7 +61,11 @@ const ModelPickerButton: React.FC = () => {
     <Select
       placeholder="Model"
       selectedKeys={
-        currentModel?.model_id ? new Set([currentModel.model_id]) : new Set()
+        currentModel?.model_id
+          ? new Set([currentModel.model_id])
+          : defaultModel?.model_id
+            ? new Set([defaultModel.model_id])
+            : new Set()
       }
       onSelectionChange={handleSelectionChange}
       isDisabled={selectModelMutation.isPending}

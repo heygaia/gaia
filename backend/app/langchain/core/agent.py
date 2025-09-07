@@ -100,8 +100,11 @@ async def call_agent(
             initial_state,
             stream_mode=["messages", "custom"],
             config=config,
+            subgraphs=True,
         ):
-            stream_mode, payload = event
+            # Handle subgraph events - when subgraphs=True, events are tuples with 3 elements
+            ns, stream_mode, payload = event
+            is_main_agent = len(ns) == 0
 
             if stream_mode == "messages":
                 chunk, metadata = payload
@@ -119,7 +122,7 @@ async def call_agent(
                             tool_name_raw = tool_call.get("name")
                             if tool_name_raw:
                                 tool_name = tool_name_raw.replace("_", " ").title()
-                                tool_category = tool_registry.get_tool_category(
+                                tool_category = tool_registry.get_category_of_tool(
                                     tool_name_raw
                                 )
                                 progress_data = {
@@ -131,7 +134,8 @@ async def call_agent(
                                 }
                                 yield f"data: {json.dumps(progress_data)}\n\n"
 
-                    if content:
+                    # Only yield content from the main agent to avoid duplication
+                    if content and is_main_agent:
                         yield f"data: {json.dumps({'response': content})}\n\n"
                         complete_message += content
 
