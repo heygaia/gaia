@@ -187,6 +187,13 @@ FEATURE_LIMITS: Dict[str, TieredRateLimits] = {
             title="Chat Messages", description="Send messages to AI assistants"
         ),
     ),
+    "notification_operations": TieredRateLimits(
+        free=RateLimitConfig(day=200, month=50000),
+        pro=RateLimitConfig(day=10000, month=1000000),
+        info=FeatureInfo(
+            title="Notification Operations", description="Manage user notifications"
+        ),
+    ),
 }
 
 
