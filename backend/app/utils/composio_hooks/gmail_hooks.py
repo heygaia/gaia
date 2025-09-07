@@ -112,8 +112,6 @@ def gmail_fetch_after_hook(
         # Process the raw response to minimize data for LLM
         processed_response = process_list_messages_response(response["data"])
 
-        print(f"{processed_response=}")
-
         if writer and processed_response.get("messages"):
             # Transform to EmailFetchData format for frontend
             email_fetch_data = []
