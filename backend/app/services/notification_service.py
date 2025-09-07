@@ -1,14 +1,14 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from fastapi import Request
-
 from app.models.notification.notification_models import (
     ActionResult,
     BulkActions,
     NotificationRecord,
     NotificationRequest,
     NotificationStatus,
+    NotificationType,
+    NotificationSourceEnum,
 )
 from app.utils.common_utils import websocket_manager
 from app.utils.notification.actions import (
@@ -16,6 +16,7 @@ from app.utils.notification.actions import (
 )
 from app.utils.notification.channels import ChannelAdapter
 from app.utils.notification.orchestrator import NotificationOrchestrator
+from fastapi import Request
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -58,6 +59,8 @@ class NotificationService:
         limit: int = 50,
         offset: int = 0,
         channel_type: Optional[str] = None,
+        notification_type: Optional[NotificationType] = None,
+        source: Optional[NotificationSourceEnum] = None,
     ) -> List[Dict[str, Any]]:
         return await self.orchestrator.get_user_notifications(
             user_id,
@@ -65,6 +68,8 @@ class NotificationService:
             limit,
             offset,
             channel_type,
+            notification_type,
+            source,
         )
 
     async def get_notification(
