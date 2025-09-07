@@ -1,12 +1,13 @@
 name: Deploy to GCP
 
 on:
-  push:
-    branches: [develop, master]
   repository_dispatch:
     types: [deploy]
   workflow_dispatch:
 
+permissions:
+  contents: read
+  statuses: write
 
 env:
   PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
@@ -48,36 +49,18 @@ jobs:
 
       - name: Deploy application on GCP VM
         run: |
-          gcloud compute ssh gaia-backend \
+          gcloud compute ssh ubuntu@gaia-backend \
             --zone=${{ secrets.GCP_ZONE }} \
             --command="
               set -e
-              echo '=== Environment Information ==='
-              echo 'Current user:' \$(whoami)
-              echo 'Home directory (~):' \$HOME
-              echo 'Current working directory:' \$(pwd)
-              echo 'Available disk space:'
-              df -h \$HOME
-              echo ''
-              echo '=== Directory Listing ==='
-              echo 'Contents of home directory:'
-              ls -la \$HOME
-              echo ''
-              echo '=== Docker Information ==='
-              echo 'Docker version:'
-              docker --version
-              echo 'Docker compose version:'
-              docker compose version
-              echo 'Running containers:'
-              docker ps
-              echo ''
-              echo '=== System Information ==='
-              echo 'OS Information:'
-              cat /etc/os-release | head -5
-              echo 'Memory usage:'
-              free -h
-              echo 'CPU info:'
-              lscpu | grep 'Model name'
+              cd /home/aryan/gaia
+              git fetch origin
+              git checkout master
+              git pull origin master
+
+              docker compose -f docker-compose.prod.yml pull
+              docker compose -f docker-compose.prod.yml up -d
+              docker image prune -f
             "
 
       - name: Verify deployment
