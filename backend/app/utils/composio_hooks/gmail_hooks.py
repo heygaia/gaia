@@ -7,9 +7,6 @@ and response processing for raw Gmail API data.
 
 from typing import Any
 
-from composio.types import ToolExecutionResponse
-from langgraph.config import get_stream_writer
-
 from app.config.loggers import app_logger as logger
 from app.langchain.templates.mail_templates import (
     detailed_message_template,
@@ -18,6 +15,8 @@ from app.langchain.templates.mail_templates import (
     process_list_drafts_response,
     process_list_messages_response,
 )
+from composio.types import ToolExecutionResponse
+from langgraph.config import get_stream_writer
 
 from .registry import register_after_hook, register_before_hook
 
@@ -65,7 +64,6 @@ def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
             to_list.extend(arguments.get("extra_recipients", []))
 
             payload = {
-                "progress": f"Creating draft for {arguments.get('recipient_email', '')}...",
                 "email_compose_data": [
                     {
                         "to": to_list,
