@@ -8,8 +8,9 @@ from app.db.mongodb.collections import (
 from app.models.notification.notification_models import (
     NotificationRecord,
     NotificationStatus,
+    NotificationType,
+    NotificationSourceEnum,
 )
-
 
 # class NotificationStorage(ABC):
 #     """Abstract storage interface"""
@@ -104,6 +105,8 @@ class MongoDBNotificationStorage:
         limit: int = 50,
         offset: int = 0,
         channel_type: Optional[str] = None,
+        notification_type: Optional[NotificationType] = None,
+        source: Optional[NotificationSourceEnum] = None,
     ) -> List[NotificationRecord]:
         """Get user's notifications with optional filtering"""
         query = {"user_id": user_id}
@@ -113,6 +116,14 @@ class MongoDBNotificationStorage:
         # Filter by channel type if specified
         if channel_type is not None:
             query["channels.channel_type"] = channel_type
+
+        # Filter by notification type if specified
+        if notification_type is not None:
+            query["notification_type"] = notification_type
+
+        # Filter by source if specified
+        if source is not None:
+            query["source"] = source
 
         cursor = notifications_collection.find(query)
         cursor = cursor.sort("created_at", -1).skip(offset).limit(limit)

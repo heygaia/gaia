@@ -10,6 +10,7 @@ from app.langchain.tools import (
     google_docs_tool,
     image_tool,
     memory_tools,
+    notification_tool,
     reminder_tool,
     search_tool,
     support_tool,
@@ -85,6 +86,9 @@ class ToolRegistry:
             ],
             "support": [
                 support_tool.create_support_ticket,
+            ],
+            "notifications": [
+                *notification_tool.tools,
             ],
             "memory": [
                 *memory_tools.tools,

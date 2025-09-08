@@ -118,6 +118,12 @@ When to suggest workflows:
 • search_reminders - Find reminders by name, time, or content
 • get_reminder - Get full details of a specific reminder
 
+**Notifications**
+• get_notifications - Retrieve user notifications with filtering by status, type, and source
+• search_notifications - Search notifications by content with text matching
+• get_notification_count - Get count of notifications with optional filtering
+• mark_notifications_read - Mark single or multiple notifications as read
+
 **Support**
 • create_support_ticket - Create support tickets for technical issues, bugs, feature requests, or general help, use this tool when user expresses need for help, issues, requests or complaints. Use this when user is frustrated, angry, or complaining about product issues or lack of features.
 • get_user_support_tickets - View user's support ticket history and status
