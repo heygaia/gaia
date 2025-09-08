@@ -25,46 +25,50 @@ from .registry import register_after_hook, register_before_hook
 
 
 @register_after_hook(tools=["GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT"])
-def gmail_compose_after_hook(tool: str, toolkit: str, response: ToolExecutionResponse) -> Any:
+def gmail_compose_after_hook(
+    tool: str, toolkit: str, response: ToolExecutionResponse
+) -> Any:
     """Handle email composition response and streaming data."""
     try:
         writer = get_stream_writer()
-        
+
         if not writer:
             return response["data"]
-            
+
         # Check if the operation was successful
         if response["data"].get("successful", True):
             if tool == "GMAIL_CREATE_EMAIL_DRAFT":
                 # This is a draft creation - get draft details to send compose data
                 draft_id = response["data"].get("id", "")
-                
+
                 # Extract email details from the response if available
                 # The response typically contains the message data
                 message_data = response["data"].get("message", {})
-                
+
                 # Build the email compose data with draft_id
-                emails_data = [{
-                    "to": message_data.get("to", []),
-                    "subject": message_data.get("subject", ""),
-                    "body": message_data.get("body", ""),
-                    "draft_id": draft_id,
-                    "thread_id": message_data.get("threadId", None),
-                }]
-                
+                emails_data = [
+                    {
+                        "to": message_data.get("to", []),
+                        "subject": message_data.get("subject", ""),
+                        "body": message_data.get("body", ""),
+                        "draft_id": draft_id,
+                        "thread_id": message_data.get("threadId", None),
+                    }
+                ]
+
                 # Send compose data to frontend with draft_id
                 payload = {
                     "email_compose_data": emails_data,
                     "progress": "Draft created successfully!",
                     "draft_created": True,
-                    "draft_id": draft_id
+                    "draft_id": draft_id,
                 }
                 writer(payload)
-                
+
             elif tool == "GMAIL_SEND_EMAIL":
                 # This is direct email sending
                 message_data = response["data"].get("message", {})
-                
+
                 # Send email sent data to frontend
                 payload = {
                     "email_sent_data": {
@@ -76,7 +80,7 @@ def gmail_compose_after_hook(tool: str, toolkit: str, response: ToolExecutionRes
                     }
                 }
                 writer(payload)
-        
+
         return response["data"]
 
     except Exception as e:
@@ -455,6 +459,7 @@ def gmail_fetch_by_id_after_hook(
 
 # Removed duplicate after hooks - now handled by gmail_compose_after_hook above
 
+
 @register_after_hook(tools=["GMAIL_SEND_DRAFT"])
 def gmail_send_draft_after_hook(
     tool: str, toolkit: str, response: ToolExecutionResponse
@@ -466,7 +471,7 @@ def gmail_send_draft_after_hook(
         if writer and response["data"].get("successful", True):
             # Send email sent data to frontend
             message_data = response["data"].get("message", {})
-            
+
             payload = {
                 "email_sent_data": {
                     "message_id": response["data"].get("id", ""),

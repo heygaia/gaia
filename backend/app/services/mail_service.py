@@ -87,10 +87,11 @@ async def send_email(
     """
     try:
         # Prepare parameters for GMAIL_SEND_EMAIL tool
-        parameters = {
+        parameters: dict[str, Any] = {
             "to": to_list,
             "subject": subject,
             "body": body,
+            "is_html": is_html,
         }
 
         # Add optional parameters if provided
@@ -99,7 +100,7 @@ async def send_email(
         if bcc_list:
             parameters["bcc"] = bcc_list
         if is_html:
-            parameters["html"] = True
+            parameters["is_html"] = True
         if attachments:
             # Convert UploadFile objects to format expected by Composio
             parameters["attachments"] = [
@@ -665,7 +666,7 @@ async def create_draft(
     """
     logger.info(f"Creating draft email to {to_list} with subject: {subject}")
     try:
-        parameters = {
+        parameters: dict[str, Any] = {
             "to": to_list,
             "subject": subject,
             "body": body,

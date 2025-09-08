@@ -6,7 +6,7 @@ import email.message
 import email.parser
 import email.policy
 from html import unescape
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from app.langchain.prompts.mail_prompts import (
     COMPOSE_EMAIL_SUMMARY,
@@ -19,6 +19,7 @@ from langchain_core.prompts import PromptTemplate
 # ============================================================================
 # GmailMessageParser - Class-based email parsing using email.parser
 # ============================================================================
+
 
 class GmailMessageParser:
     """
@@ -34,7 +35,7 @@ class GmailMessageParser:
             gmail_message (dict): Gmail API message object
         """
         self.gmail_message = gmail_message
-        self.email_message = None
+        self.email_message: Optional[email.message.EmailMessage] = None
         self._parsed = False
 
     def parse(self) -> bool:
@@ -54,7 +55,7 @@ class GmailMessageParser:
             self._parsed = False
             return False
 
-    def _parse_with_email_parser(self) -> email.message.EmailMessage | None:
+    def _parse_with_email_parser(self) -> Optional[email.message.EmailMessage]:
         """Parse Gmail message using manual parsing of payload structure."""
         # Try raw email data first (most reliable)
         raw_data = self.gmail_message.get("raw")
@@ -70,7 +71,9 @@ class GmailMessageParser:
 
         return None
 
-    def _parse_payload_manually(self, payload: dict) -> email.message.EmailMessage:
+    def _parse_payload_manually(
+        self, payload: dict
+    ) -> Optional[email.message.EmailMessage]:
         """Parse Gmail payload structure manually into EmailMessage."""
         msg = email.message.EmailMessage()
 
@@ -490,7 +493,6 @@ def process_list_messages_response(response: Dict[str, Any]) -> Dict[str, Any]:
         processed_response["error"] = response["error"]
 
     return processed_response
-
 
 
 def process_list_drafts_response(response: Dict[str, Any]) -> Dict[str, Any]:

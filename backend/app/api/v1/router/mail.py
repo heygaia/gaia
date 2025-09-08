@@ -1064,12 +1064,12 @@ async def send_draft_route(
                 "message_id": sent_message.get("id", ""),
                 "thread_id": sent_message.get("threadId", ""),
                 "status": "Draft sent successfully",
-                "successful": True
+                "successful": True,
             }
         else:
             raise HTTPException(
-                status_code=500, 
-                detail=sent_message.get("error", "Failed to send draft")
+                status_code=500,
+                detail=sent_message.get("error", "Failed to send draft"),
             )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
