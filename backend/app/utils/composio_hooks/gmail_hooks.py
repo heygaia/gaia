@@ -80,14 +80,16 @@ def gmail_compose_before_hook(tool: str, toolkit: str, params: Any) -> Any:
     return params
 
 
-@register_before_hook(tools=["GMAIL_FETCH_EMAILS"])
+@register_before_hook(tools=["GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"])
 def gmail_fetch_before_hook(tool: str, toolkit: str, params: Any) -> Any:
     """Handle email fetching progress."""
     try:
         arguments = params.get("arguments", {})
-        arguments["label_ids"] = (
-            ["INBOX"] if not arguments.get("label_ids") else arguments["label_ids"]
-        )
+
+        if tool == "GMAIL_FETCH_EMAILS":
+            arguments["label_ids"] = (
+                ["INBOX"] if not arguments.get("label_ids") else arguments["label_ids"]
+            )
         arguments["format"] = "full"
 
         params["arguments"] = arguments
@@ -185,6 +187,7 @@ def gmail_thread_after_hook(
                         "time": msg.get("time", ""),
                         "snippet": msg.get("snippet", ""),
                         "body": msg.get("body", ""),
+                        "content": msg.get("content", ""),
                     }
                 )
 

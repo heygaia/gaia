@@ -107,6 +107,7 @@ export type EmailThreadData = {
     time: string;
     snippet: string;
     body: string;
+    content?: { text: string; html: string };
   }>;
   messages_count: number;
 };

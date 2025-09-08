@@ -55,7 +55,7 @@ class GmailMessageParser:
             return False
 
     def _parse_with_email_parser(self) -> email.message.EmailMessage | None:
-        """Parse Gmail message using email.parser exclusively."""
+        """Parse Gmail message using manual parsing of payload structure."""
         # Try raw email data first (most reliable)
         raw_data = self.gmail_message.get("raw")
         if raw_data:
@@ -63,70 +63,102 @@ class GmailMessageParser:
             parser = email.parser.BytesParser(policy=email.policy.default)
             return parser.parsebytes(raw_email_bytes)
 
-        # Fallback: reconstruct from payload
+        # Manual parsing from payload structure
         payload = self.gmail_message.get("payload", {})
         if payload:
-            raw_email_string = self._reconstruct_raw_email(payload)
-            if raw_email_string:
-                parser = email.parser.Parser(policy=email.policy.default)
-                return parser.parsestr(raw_email_string)
+            return self._parse_payload_manually(payload)
 
         return None
 
-    def _reconstruct_raw_email(self, payload: dict) -> str:
-        """Reconstruct raw email from Gmail payload for email.parser."""
-        lines = []
+    def _parse_payload_manually(self, payload: dict) -> email.message.EmailMessage:
+        """Parse Gmail payload structure manually into EmailMessage."""
+        msg = email.message.EmailMessage()
 
-        # Headers
+        # Set headers
         headers = payload.get("headers", [])
         for header in headers:
             name = header.get("name", "")
             value = header.get("value", "")
             if name and value:
-                lines.append(f"{name}: {value}")
+                msg[name] = value
 
-        # Content-Type if missing
+        # Handle body content based on mime type
         mime_type = payload.get("mimeType", "text/plain")
-        if not any(h.get("name", "").lower() == "content-type" for h in headers):
-            lines.append(f"Content-Type: {mime_type}")
-
-        # Separator
-        lines.append("")
-
-        # Body
-        body = self._reconstruct_body(payload)
-        if body:
-            lines.append(body)
-
-        return "\r\n".join(lines)
-
-    def _reconstruct_body(self, payload: dict) -> str:
-        """Reconstruct email body from payload."""
-        mime_type = payload.get("mimeType", "")
 
         if mime_type.startswith("multipart/"):
-            # Multipart message
-            boundary = "----=_GmailParser_Boundary_12345"
-            lines = [f'Content-Type: {mime_type}; boundary="{boundary}"\r\n']
-
-            parts = payload.get("parts", [])
-            for part in parts:
-                lines.append(f"--{boundary}")
-                part_content = self._reconstruct_raw_email(part)
-                lines.append(part_content)
-
-            lines.append(f"--{boundary}--")
-            return "\r\n".join(lines)
+            # Handle multipart messages
+            self._parse_multipart_payload(msg, payload)
         else:
-            # Single part
-            data = payload.get("body", {}).get("data", "")
-            if data:
-                try:
-                    decoded_bytes = base64.urlsafe_b64decode(data)
-                    return decoded_bytes.decode("utf-8", errors="ignore")
-                except Exception:
-                    return data
-        return ""
+            # Handle single part messages
+            self._parse_single_part_payload(msg, payload)
+
+        return msg
+
+    def _parse_multipart_payload(self, msg: email.message.EmailMessage, payload: dict):
+        """Parse multipart payload and attach parts to message."""
+        parts = payload.get("parts", [])
+        for part_data in parts:
+            part_mime_type = part_data.get("mimeType", "text/plain")
+
+            # Create a part message
+            part = email.message.EmailMessage()
+            # part.set_type(part_mime_type, requote=False)
+
+            # Set part headers
+            part_headers = part_data.get("headers", [])
+            for header in part_headers:
+                name = header.get("name", "")
+                value = header.get("value", "")
+                if name and value:
+                    part[name] = value
+
+            # Set part content
+            if part_mime_type.startswith("multipart/"):
+                # Recursive multipart
+                self._parse_multipart_payload(part, part_data)
+            else:
+                # Single part content
+                body_data = part_data.get("body", {}).get("data", "")
+                if body_data:
+                    try:
+                        decoded_content = base64.urlsafe_b64decode(body_data).decode(
+                            "utf-8", errors="ignore"
+                        )
+                        if part_mime_type == "text/html":
+                            part.set_content(decoded_content, subtype="html")
+                        else:
+                            part.set_content(decoded_content)
+                    except Exception:
+                        part.set_content(body_data)
+
+                # Handle attachments
+                filename = part_data.get("filename")
+                if filename:
+                    part.add_header(
+                        "Content-Disposition", "attachment", filename=filename
+                    )
+
+            # Attach part to main message
+            msg.attach(part)
+
+    def _parse_single_part_payload(
+        self, msg: email.message.EmailMessage, payload: dict
+    ):
+        """Parse single part payload content."""
+        body_data = payload.get("body", {}).get("data", "")
+        mime_type = payload.get("mimeType", "text/plain")
+
+        if body_data:
+            try:
+                decoded_content = base64.urlsafe_b64decode(body_data).decode(
+                    "utf-8", errors="ignore"
+                )
+                if mime_type == "text/html":
+                    msg.set_content(decoded_content, subtype="html")
+                else:
+                    msg.set_content(decoded_content)
+            except Exception:
+                msg.set_content(body_data)
 
     def _handle_composio_message(self):
         """Handle Composio message format."""
@@ -326,11 +358,12 @@ def minimal_message_template(
     parser.parse()
 
     content = parser.content if include_both_formats else None
+
     body_content = content["text"] if content else parser.text_content
     labels = parser.labels
 
     result = {
-        "id": email_data.get("id", ""),
+        "id": email_data.get("messageId") or email_data.get("id", ""),
         "threadId": email_data.get("threadId", ""),
         "from": parser.sender,
         "to": parser.to,
@@ -372,7 +405,7 @@ def detailed_message_template(email_data: Dict[str, Any]) -> Dict[str, Any]:
     labels = parser.labels
 
     return {
-        "id": email_data.get("id", ""),
+        "id": email_data.get("messageId") or email_data.get("id", ""),
         "threadId": email_data.get("threadId", ""),
         "from": parser.sender,
         "to": parser.to,
@@ -406,36 +439,6 @@ def thread_template(thread_data: Dict[str, Any]) -> Dict[str, Any]:
             for msg in thread_data.get("messages", [])
         ],
         "messageCount": len(thread_data.get("messages", [])),
-        "instructions": """
-        Understand the **actual email body content** and summarize it intelligently using the following framework.
-
-        Your job is to extract meaning from the email — do not repeat sender, subject, or metadata that is already visible to the user.
-
-        🎯 Focus on summarizing the **actual email message**, not the headers.
-
-        Use this analysis framework to guide your summary:
-
-        ✓ Urgent Action Required:
-        - Highlight time-sensitive tasks, deadlines, or urgent requests
-
-        ✓ Key Issues Identified:
-        - Summarize problems, blockers, concerns, or recurring issues
-
-        ✓ Required Actions:
-        - Extract any tasks, decisions, or next steps
-        - Mention who's responsible if it's clear
-
-        ✓ Timeline:
-        - Pull out any mentioned deadlines, meetings, or delays
-
-        ✓ Current Status:
-        - Describe progress, decisions made, or what's still pending
-
-        📌 Be concise. Avoid copy-pasting text or restating obvious content.
-        📌 If none of the framework categories apply, simply summarize the email’s **core message or intent**.
-        📌 Never repeat information the user already sees (like sender name or subject).
-        📌 The goal is to help the user quickly understand **what the email is actually saying or asking**, in plain, helpful language.
-        """,
     }
 
 
