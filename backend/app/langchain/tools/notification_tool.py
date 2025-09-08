@@ -179,18 +179,18 @@ async def mark_notifications_read(
 
         # Handle single notification
         if len(notification_ids) == 1:
-            result = await notification_service.mark_as_read(
+            single_result = await notification_service.mark_as_read(
                 notification_ids[0], user_id
             )
-            success = bool(result)
+            success = bool(single_result)
         else:
             # Handle multiple notifications
-            result = await notification_service.bulk_actions(
+            bulk_result = await notification_service.bulk_actions(
                 notification_ids=notification_ids,
                 user_id=user_id,
                 action=BulkActions.MARK_READ,
             )
-            success = any(result.values())
+            success = any(bulk_result.values())
 
         return {"success": success}
 
