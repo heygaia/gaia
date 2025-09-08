@@ -10,6 +10,7 @@ from uuid import uuid4
 from app.config.loggers import arq_worker_logger as logger
 from app.config.token_repository import token_repository
 from app.langchain.core.agent import call_agent_silent
+from app.middleware.tiered_rate_limiter import tiered_rate_limit
 from app.models.message_models import (
     MessageRequestWithHistory,
     SelectedWorkflowData,
@@ -176,7 +177,7 @@ async def execute_workflow_by_id(
 
             # Execute the workflow and get messages
             execution_messages = await execute_workflow_as_chat(
-                workflow, workflow.user_id, context or {}
+                workflow, {"user_id": workflow.user_id}, context or {}
             )
 
             # Store messages and send notification
@@ -195,14 +196,15 @@ async def execute_workflow_by_id(
         return error_msg
 
 
-async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> list:
+@tiered_rate_limit("email_workflow_executions")
+async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
     """
     Execute workflow as a single chat session, just like normal user chat.
     This creates proper tool calls and messages identical to normal chat flow.
 
     Args:
         workflow: The workflow object to execute
-        user_id: User ID for context
+        user: User dict containing user_id (for rate limiting compatibility)
         context: Optional execution context
 
     Returns:
@@ -212,6 +214,9 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
     from app.services.workflow.conversation_service import (
         get_or_create_workflow_conversation,
     )
+
+    # Extract user_id from user dict for backward compatibility
+    user_id = user["user_id"]
 
     try:
         logger.info(

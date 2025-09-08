@@ -131,27 +131,19 @@ class EmailWebhookRequest(BaseModel):
     subscription: str
 
 
-class EmailProcessingPlan(BaseModel):
-    """Plan to follow for email processing with structured output"""
+class EmailWorkflowFilterDecision(BaseModel):
+    """Model for LLM decision on whether to process an email for a specific workflow"""
 
-    steps: List[str] = Field(
-        description="Different steps to follow for processing the email, should be in sorted order"
+    should_process: bool = Field(
+        description="Boolean decision: true if this email should trigger the workflow, false if it should be skipped"
     )
-
-
-class EmailProcessingReplanResult(BaseModel):
-    """Result model for email processing replanning step"""
-
-    action: str = Field(
-        description="Action to take: 'continue' to continue with remaining steps, 'complete' to finish processing"
+    reasoning: str = Field(
+        description="Brief explanation of why this email should or should not trigger the workflow"
     )
-    steps: Optional[List[str]] = Field(
-        default=None,
-        description="Remaining steps to execute if action is 'continue'. Not needed if action is 'complete'",
-    )
-    response: Optional[str] = Field(
-        default=None,
-        description="Final response to user if action is 'complete'. Not needed if action is 'continue'",
+    confidence: float = Field(
+        ge=0.0,
+        le=1.0,
+        description="Confidence level in the decision (0.0 to 1.0)",
     )
 
 
