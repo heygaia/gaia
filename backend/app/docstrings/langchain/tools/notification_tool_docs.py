@@ -3,7 +3,7 @@
 GET_NOTIFICATIONS = """
 Get user notifications with filtering options.
 
-Retrieves notifications from the user's notification inbox with support 
+Retrieves notifications from the user's notification inbox with support
 for filtering by status, type, and source. Returns a notification list UI.
 
 When to use:
