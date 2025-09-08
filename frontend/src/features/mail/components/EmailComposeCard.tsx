@@ -32,6 +32,8 @@ interface EmailData {
   to: string[];
   subject: string;
   body: string;
+  draft_id?: string;
+  thread_id?: string;
 }
 
 interface EmailComposeCardProps {
@@ -314,17 +316,38 @@ export default function EmailComposeCard({
 
     setIsSending(true);
     try {
-      // Create FormData for the Gmail API endpoint
-      const formData = new FormData();
-      formData.append("to", selectedEmails.join(", "));
-      formData.append("subject", editData.subject);
-      formData.append("body", editData.body);
+      // Check if this is a draft (has draft_id) or needs to be sent directly
+      if (emailData.draft_id) {
+        // Send existing draft
+        const result = await mailApi.sendDraft(emailData.draft_id);
+        if (result.successful) {
+          toast.success("Draft sent successfully!");
+          onSent?.();
+        } else {
+          toast.error("Failed to send draft");
+        }
+      } else {
+        // Send email directly (existing logic)
+        const formData = new FormData();
+        formData.append("to", selectedEmails.join(", "));
+        formData.append("subject", editData.subject);
+        formData.append("body", editData.body);
+        
+        if (emailData.thread_id) {
+          formData.append("thread_id", emailData.thread_id);
+        }
 
-      await mailApi.sendEmail(formData);
-      onSent?.();
+        const result = await mailApi.sendEmail(formData);
+        if (result.success) {
+          toast.success("Email sent successfully!");
+          onSent?.();
+        } else {
+          toast.error("Failed to send email");
+        }
+      }
     } catch (error) {
-      console.error("Failed to send email:", error);
-      toast.error("Failed to send email. Please try again.");
+      console.error("Error sending email:", error);
+      toast.error("Failed to send email");
     } finally {
       setIsSending(false);
     }
@@ -405,7 +428,14 @@ export default function EmailComposeCard({
         <div className="flex items-center justify-between px-6 py-1">
           <div className="flex flex-row items-center gap-2 pt-3 pb-2">
             <Gmail width={18} height={18} />
-            <span className="text-sm font-medium">Email Draft</span>
+            <span className="text-sm font-medium">
+              {emailData.draft_id ? "Email Draft" : "Compose Email"}
+            </span>
+            {emailData.thread_id && (
+              <Chip size="sm" variant="flat" color="primary">
+                Reply
+              </Chip>
+            )}
           </div>
         </div>
         <div className="flex flex-col gap-1 px-6">
@@ -473,7 +503,12 @@ export default function EmailComposeCard({
             radius="full"
             className="font-medium"
           >
-            {isSending ? "Sending..." : "Send"}
+            {isSending 
+              ? "Sending..." 
+              : emailData.draft_id 
+                ? "Send Draft" 
+                : "Send"
+            }
           </Button>
         </div>
       </div>

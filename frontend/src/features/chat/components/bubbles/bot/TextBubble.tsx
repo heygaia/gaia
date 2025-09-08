@@ -10,6 +10,7 @@ import EmailThreadCard from "@/features/chat/components/bubbles/bot/EmailThreadC
 import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResultsTabs";
 import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import EmailListCard from "@/features/mail/components/EmailListCard";
+import EmailSentCard from "@/features/mail/components/EmailSentCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 
@@ -36,6 +37,7 @@ export default function TextBubble({
   email_compose_data,
   email_fetch_data,
   email_thread_data,
+  email_sent_data,
   support_ticket_data,
   calendar_fetch_data,
   calendar_list_fetch_data,
@@ -68,6 +70,10 @@ export default function TextBubble({
 
       {!!email_thread_data && (
         <EmailThreadCard emailThreadData={email_thread_data} />
+      )}
+
+      {!!email_sent_data && (
+        <EmailSentCard emailSentData={email_sent_data} />
       )}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (

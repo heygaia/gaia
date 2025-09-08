@@ -1059,11 +1059,18 @@ async def send_draft_route(
         # Send draft using the new async function
         sent_message = await send_draft(user_id=str(user_id), draft_id=draft_id)
 
-        return {
-            "message_id": sent_message.get("id", ""),
-            "thread_id": sent_message.get("threadId", ""),
-            "status": "Draft sent successfully",
-        }
+        if sent_message.get("successful", True):
+            return {
+                "message_id": sent_message.get("id", ""),
+                "thread_id": sent_message.get("threadId", ""),
+                "status": "Draft sent successfully",
+                "successful": True
+            }
+        else:
+            raise HTTPException(
+                status_code=500, 
+                detail=sent_message.get("error", "Failed to send draft")
+            )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
