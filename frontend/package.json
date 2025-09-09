@@ -190,7 +190,9 @@
     "tinycolor2": "^1.6.0",
     "uuid": "^11.1.0",
     "vaul": "^1.1.2",
-    "zod": "^3.24.3"
+    "zod": "^3.24.3",
+    "dexie": "^3.2.3",
+    "dexie-react-hooks": "^1.0.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3.3.1",
@@ -207,7 +209,8 @@
     "eslint-plugin-unused-imports": "^4.1.4",
     "husky": "^9.1.7",
     "prettier": "^3.5.3",
-    "typescript": "^5.8.3"
+    "typescript": "^5.8.3",
+    "@types/react-redux": "^7.1.34"
   },
   "pnpm": {
     "ignoredBuiltDependencies": [

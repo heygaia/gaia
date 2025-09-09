@@ -15,6 +15,7 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
+import { putMessage } from "@/services/indexedDb/chatDb";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
@@ -95,6 +96,18 @@ export const useChatStream = () => {
     }
 
     updateConvoMessages(currentConvo);
+
+    // Persist the current bot message state so reloads show streaming progress
+    try {
+      if (refs.current.botMessage) {
+        // store/loading intermediate
+        putMessage(refs.current.botMessage as any).catch((e) =>
+          console.error("putMessage streaming error:", e),
+        );
+      }
+    } catch (err) {
+      console.error("Failed to persist bot message:", err);
+    }
   };
 
   /**
@@ -175,6 +188,15 @@ export const useChatStream = () => {
       ...preservedBotMessage,
       loading: false,
     });
+
+    // Ensure final bot message is persisted as finalized state
+    try {
+      if (preservedBotMessage) {
+        await putMessage({ ...preservedBotMessage, loading: false } as any);
+      }
+    } catch (err) {
+      console.error("Failed to persist final bot message:", err);
+    }
 
     setIsLoading(false);
     resetLoadingText();

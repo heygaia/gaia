@@ -1,6 +1,7 @@
 import { createAsyncThunk, createSlice, PayloadAction } from "@reduxjs/toolkit";
 
 import { chatApi, type Conversation } from "@/features/chat/api/chatApi";
+import { putConversationsBulk } from "@/services/indexedDb/chatDb";
 
 // Re-export the Conversation type for compatibility
 export type { Conversation };
@@ -43,6 +44,12 @@ export const fetchConversations = createAsyncThunk<
   async ({ page = 1, limit = 20, append = true }, { rejectWithValue }) => {
     try {
       const data = await chatApi.fetchConversations(page, limit);
+      // Persist into IndexedDB in background
+      if (data?.conversations && data.conversations.length > 0) {
+        putConversationsBulk(data.conversations as any).catch((e) =>
+          console.error("putConversationsBulk error:", e),
+        );
+      }
       return {
         conversations: data.conversations ?? [],
         paginationMeta: {

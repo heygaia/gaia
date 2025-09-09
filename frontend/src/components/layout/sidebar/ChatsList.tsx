@@ -15,6 +15,10 @@ import {
   useConversationList,
   useFetchConversations,
 } from "@/features/chat/hooks/useConversationList";
+import { useChatDb } from "@/features/chat/hooks/useChatDb";
+import { syncConversationsToDb } from "@/services/indexedDb/syncService";
+import { useDispatch } from "react-redux";
+import { setConversations } from "@/redux/slices/conversationsSlice";
 
 import { ChatTab } from "./ChatTab";
 
@@ -62,14 +66,44 @@ const timeFramePriority = (timeFrame: string): number => {
 export default function ChatsList() {
   const { conversations, paginationMeta } = useConversationList();
   const fetchConversations = useFetchConversations();
+  const { loadConversations } = useChatDb();
+  const dispatch = useDispatch();
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
+  // Hydrate conversations from IndexedDB first (fast path), then refresh from network
   useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+    let mounted = true;
+
+    (async () => {
+      try {
+        const localConvos = await loadConversations();
+        if (mounted && localConvos && localConvos.length > 0) {
+          // Dispatch to redux to render immediately
+          dispatch(setConversations(localConvos as any));
+        }
+      } catch (err) {
+        console.error("Failed to load local conversations:", err);
+      } finally {
+        // Trigger network refresh regardless of local results
+        try {
+          await fetchConversations();
+          // Also persist network conversations into DB in background
+          syncConversationsToDb().catch((e) =>
+            console.error("background syncConversationsToDb error:", e),
+          );
+        } catch (err) {
+          console.error("Failed to fetch conversations:", err);
+        }
+      }
+    })();
+
+    return () => {
+      mounted = false;
+    };
+  }, [fetchConversations, loadConversations, dispatch]);
 
   // We assume the provider auto-fetches the first page.
   // Once paginationMeta is available, we consider the initial load complete.

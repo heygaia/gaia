@@ -6,6 +6,7 @@ import { useDispatch } from "react-redux";
 
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
 import { addMessage } from "@/redux/slices/conversationSlice";
+import { putMessage } from "@/services/indexedDb/chatDb";
 import { MessageType } from "@/types/features/convoTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
@@ -36,6 +37,13 @@ export const useSendMessage = () => {
     };
 
     dispatch(addMessage(userMessage));
+
+    // Persist user message locally so UI can reload quickly / work offline
+    try {
+      await putMessage(userMessage as any);
+    } catch (err) {
+      console.error("Failed to persist user message to IndexedDB:", err);
+    }
 
     await fetchChatStream(
       inputText,

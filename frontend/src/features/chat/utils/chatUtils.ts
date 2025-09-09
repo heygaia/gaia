@@ -3,6 +3,7 @@ import { Dispatch, SetStateAction } from "react";
 
 import { chatApi } from "@/features/chat/api/chatApi";
 import { MessageType } from "@/types/features/convoTypes";
+import { getMessagesForConversation, putMessagesBulk } from "@/services/indexedDb/chatDb";
 
 export const fetchMessages = async (
   conversationId: string,
@@ -11,8 +12,27 @@ export const fetchMessages = async (
 ) => {
   try {
     if (!conversationId) return;
+
+    // Fast-path: load from IndexedDB first
+    try {
+      const local = await getMessagesForConversation(conversationId);
+      if (local && local.length > 0) {
+        setConvoMessages(local as MessageType[]);
+      }
+    } catch (dbErr) {
+      console.error("Failed to read messages from IndexedDB:", dbErr);
+    }
+
+    // Then fetch authoritative messages from the server
     const messages = await chatApi.fetchMessages(conversationId);
-    if (messages && messages.length > 1) setConvoMessages(messages);
+
+    if (messages && messages.length > 0) {
+      setConvoMessages(messages);
+      // Persist into IndexedDB (background)
+      putMessagesBulk(messages as any).catch((e) =>
+        console.error("putMessagesBulk error:", e),
+      );
+    }
   } catch (e) {
     console.error("Failed to fetch messages:", e);
     router.push("/c");
