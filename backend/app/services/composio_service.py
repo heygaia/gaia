@@ -4,6 +4,7 @@ from typing import Optional
 from app.config.loggers import app_logger as logger
 from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
+from app.decorators.caching import Cacheable, CacheInvalidator
 from app.models.oauth_models import TriggerConfig
 from app.services.langchain_composio_service import LangchainProvider
 from app.utils.composio_hooks import (
@@ -22,7 +23,12 @@ class ComposioService:
             provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY
         )
 
-    def connect_account(
+    @CacheInvalidator(
+        key_patterns=[
+            "composio:connection_status:{user_id}:*",
+        ]
+    )
+    async def connect_account(
         self, provider: str, user_id: str, frontend_redirect_path: Optional[str] = None
     ) -> dict:
         """
@@ -44,10 +50,15 @@ class ComposioService:
                 else settings.COMPOSIO_REDIRECT_URI
             )
 
-            connection_request = self.composio.connected_accounts.initiate(
-                user_id=user_id,
-                auth_config_id=config.auth_config_id,
-                callback_url=callback_url,
+            # Run the synchronous Composio call in a thread pool
+            loop = asyncio.get_event_loop()
+            connection_request = await loop.run_in_executor(
+                None,
+                lambda: self.composio.connected_accounts.initiate(
+                    user_id=user_id,
+                    auth_config_id=config.auth_config_id,
+                    callback_url=callback_url,
+                ),
             )
 
             return {
@@ -69,6 +80,7 @@ class ComposioService:
         - All registered tool-specific hooks (Gmail, etc.)
         """
         tools = self.composio.tools.get(user_id="", toolkits=[tool_kit], limit=100)
+
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
 
@@ -130,7 +142,13 @@ class ComposioService:
             logger.error(f"Error getting tool {tool_name}: {e}")
             return None
 
-    def check_connection_status(
+    @Cacheable(
+        key_pattern="composio:connection_status:{user_id}",
+        ttl=300,  # 5 minutes
+        serializer=lambda result: result,
+        deserializer=lambda result: result,
+    )
+    async def check_connection_status(
         self, providers: list[str], user_id: str
     ) -> dict[str, bool]:
         """
@@ -149,11 +167,15 @@ class ComposioService:
                 )
 
         try:
-            # Get all connected accounts for the user
-            user_accounts = self.composio.connected_accounts.list(
-                user_ids=[user_id],
-                auth_config_ids=required_auth_config_ids,
-                limit=len(required_auth_config_ids),
+            # Get all connected accounts for the user (run in thread pool)
+            loop = asyncio.get_event_loop()
+            user_accounts = await loop.run_in_executor(
+                None,
+                lambda: self.composio.connected_accounts.list(
+                    user_ids=[user_id],
+                    auth_config_ids=required_auth_config_ids,
+                    limit=len(required_auth_config_ids),
+                ),
             )
 
             # Create a mapping of auth_config_ids to check
@@ -168,8 +190,8 @@ class ComposioService:
                 # Only check active accounts
                 if not account.auth_config.is_disabled and account.status == "ACTIVE":
                     account_auth_config_id = account.auth_config.id
-
-                    result[auth_config_provider_map[account_auth_config_id]] = True
+                    if account_auth_config_id in auth_config_provider_map:
+                        result[auth_config_provider_map[account_auth_config_id]] = True
 
             return result
 

@@ -149,6 +149,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="notion",
         scopes=[],
         available=True,
+        short_name="notion",
         managed_by="composio",
         composio_config=ComposioConfig(
             auth_config_id="ac_DR3IWp9-Kezl", toolkit="NOTION"
@@ -165,6 +166,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="twitter",
         scopes=[],
         available=True,
+        short_name="twitter",
         managed_by="composio",
         composio_config=ComposioConfig(
             auth_config_id="ac_vloH3fnhIeUa", toolkit="TWITTER"
@@ -181,6 +183,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="google_sheets",
         scopes=[],
         available=True,
+        short_name="sheets",
         managed_by="composio",
         composio_config=ComposioConfig(
             auth_config_id="ac_18I3fRfWyXDu", toolkit="GOOGLE_SHEETS"
@@ -197,6 +200,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         provider="linkedin",
         scopes=[],
         available=True,
+        short_name="linkedin",
         managed_by="composio",
         composio_config=ComposioConfig(
             auth_config_id="ac_GMeJBELf3z_m", toolkit="LINKEDIN"

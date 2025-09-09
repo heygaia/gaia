@@ -153,7 +153,7 @@ async def fetch_detailed_messages(
             try:
                 parameters = {"message_id": message_id}
                 result = await invoke_gmail_tool(
-                    user_id, "GMAIL_FETCH_EMAIL_BY_ID", parameters
+                    user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", parameters
                 )
 
                 if result.get("successful", True):
@@ -870,6 +870,89 @@ async def send_draft(user_id: str, draft_id: str) -> Dict[str, Any]:
         return {"error": str(error), "successful": False}
 
 
+async def list_labels(user_id: str) -> Dict[str, Any]:
+    """
+    List all Gmail labels using Composio Gmail tool.
+
+    Args:
+        user_id: User ID for Composio authentication
+
+    Returns:
+        Dict containing labels list
+    """
+    logger.info(f"Listing Gmail labels for user {user_id}")
+    try:
+        parameters = {}  # No parameters needed for listing labels
+        result = await invoke_gmail_tool(user_id, "GMAIL_LIST_LABELS", parameters)
+
+        if result.get("successful", True):
+            labels = result.get("labels", [])
+            return {
+                "success": True,
+                "labels": labels,
+                "count": len(labels),
+            }
+        else:
+            logger.error(f"Error from GMAIL_LIST_LABELS: {result.get('error')}")
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "labels": [],
+            }
+
+    except Exception as error:
+        logger.error(f"Error listing Gmail labels: {error}")
+        return {
+            "success": False,
+            "error": str(error),
+            "labels": [],
+        }
+
+
+async def get_email_by_id(user_id: str, message_id: str) -> Dict[str, Any]:
+    """
+    Get a Gmail message by its ID using Composio Gmail tool.
+
+    Args:
+        user_id: User ID for Composio authentication
+        message_id: Gmail message ID to retrieve
+
+    Returns:
+        Gmail message data
+    """
+    logger.info(f"Fetching email with ID: {message_id}")
+    try:
+        parameters = {"message_id": message_id}
+        result = await invoke_gmail_tool(
+            user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", parameters
+        )
+
+        if result.get("successful", True):
+            # Transform the message data for easier frontend processing
+            transformed_message = transform_gmail_message(result)
+            return {
+                "success": True,
+                "message": transformed_message,
+            }
+        else:
+            logger.error(
+                f"Error from GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: {result.get('error')}"
+            )
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "message": None,
+            }
+
+    except Exception as error:
+        logger.error(f"Error fetching email {message_id}: {error}")
+        return {
+            "success": False,
+            "error": str(error),
+            "message": None,
+        }
+
+
 async def get_contact_list(user_id: str, max_results=100):
     """
     Extract a list of unique contacts (email addresses and names) from the user's Gmail history.
@@ -910,7 +993,7 @@ async def get_contact_list(user_id: str, max_results=100):
             # Fetch full message details
             msg_params = {"message_id": msg_id}
             msg_result = await invoke_gmail_tool(
-                user_id, "GMAIL_FETCH_EMAIL_BY_ID", msg_params
+                user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", msg_params
             )
 
             if not msg_result.get("successful", True):

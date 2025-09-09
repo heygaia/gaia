@@ -187,10 +187,10 @@ async def login_integration(
     composio_providers = set([k for k in COMPOSIO_SOCIAL_CONFIGS.keys()])
     if integration.provider in composio_providers:
         provider_key = integration.provider
-        url = composio_service.connect_account(
+        url = await composio_service.connect_account(
             provider_key, user["user_id"], frontend_redirect_path=redirect_path
-        )["redirect_url"]
-        return RedirectResponse(url=url)
+        )
+        return RedirectResponse(url=url["redirect_url"])
     elif integration.provider == "google":
         # Get base scopes
         base_scopes = ["openid", "profile", "email"]
@@ -456,7 +456,7 @@ async def get_integrations_status(
 
         # Batch check Composio providers
         composio_status = {}
-        composio_status = composio_service.check_connection_status(
+        composio_status = await composio_service.check_connection_status(
             list(COMPOSIO_SOCIAL_CONFIGS.keys()), str(user_id)
         )
 
@@ -628,8 +628,8 @@ async def update_user_timezone(
                 )
 
         # Update timezone at root level directly
-        from bson import ObjectId
         from app.db.mongodb.collections import users_collection
+        from bson import ObjectId
 
         result = await users_collection.update_one(
             {"_id": ObjectId(user["user_id"])},
