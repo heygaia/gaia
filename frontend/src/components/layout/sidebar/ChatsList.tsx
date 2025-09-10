@@ -17,6 +17,7 @@ import {
 } from "@/features/chat/hooks/useConversationList";
 
 import { ChatTab } from "./ChatTab";
+import Spinner from "@/components/ui/shadcn/spinner";
 
 // Reusable accordion item styles
 const accordionItemStyles = {
@@ -282,7 +283,7 @@ export default function ChatsList() {
       {/* Sentinel element for the IntersectionObserver */}
       <div
         ref={loadMoreRef}
-        className="flex h-[250px] items-center justify-center p-2"
+        className="flex h-[50px] items-center justify-center p-2"
       >
         {isFetchingMore && <Loader className="animate-spin text-[#00bbff]" />}
       </div>

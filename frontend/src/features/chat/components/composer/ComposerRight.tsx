@@ -19,9 +19,8 @@ export default function RightSide({
   const { isLoading, stopStream } = useLoading();
   const { selectedWorkflow } = useWorkflowSelection();
   const hasText = searchbarText.trim().length > 0;
-  const hasSelectedTool = selectedTool !== null && selectedTool !== undefined;
-  const hasSelectedWorkflow =
-    selectedWorkflow !== null && selectedWorkflow !== undefined;
+  const hasSelectedTool = selectedTool != null;
+  const hasSelectedWorkflow = selectedWorkflow != null;
   const isDisabled =
     isLoading || (!hasText && !hasSelectedTool && !hasSelectedWorkflow);
 
@@ -56,8 +55,8 @@ export default function RightSide({
       <Tooltip
         content={getTooltipContent()}
         placement="right"
-        color={isLoading ? "danger" : "primary"}
         showArrow
+        color="primary"
       >
         <Button
           isIconOnly
@@ -65,7 +64,7 @@ export default function RightSide({
           className={`h-9 min-h-9 w-9 max-w-9 min-w-9 ${isLoading ? "cursor-pointer" : ""}`}
           color={
             isLoading
-              ? "primary"
+              ? "default"
               : hasText || hasSelectedTool || hasSelectedWorkflow
                 ? "primary"
                 : "default"
@@ -76,7 +75,7 @@ export default function RightSide({
           onPress={handleButtonPress}
         >
           {isLoading ? (
-            <Square color="black" width={17} height={17} fill="black" />
+            <Square color="lightgray" width={17} height={17} fill="lightgray" />
           ) : (
             <ArrowUp
               color={

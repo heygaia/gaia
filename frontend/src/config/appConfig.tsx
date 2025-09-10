@@ -139,7 +139,7 @@ export const appConfig = {
         label: "Discord",
         icon: <DiscordIcon width={19} />,
         external: true,
-        description: "Join the Community Discord",
+        description: "Join Discord Community",
       },
       {
         href: "https://x.com/_heygaia",

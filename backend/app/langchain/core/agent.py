@@ -1,7 +1,7 @@
 import asyncio
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import AsyncGenerator, List, Optional, Union
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.core.graph_manager import GraphManager
@@ -12,6 +12,7 @@ from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory
 from langchain_core.messages import (
     AIMessageChunk,
+    AnyMessage,
 )
 from langsmith import traceable
 

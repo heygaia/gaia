@@ -39,7 +39,6 @@ const ComposerToolbar: React.FC<SearchbarToolbarProps> = ({
         />
       </div>
       <div className="flex items-center gap-2">
-        <ModelPickerButton />
         <SearchbarRightSendBtn
           handleFormSubmit={handleFormSubmit}
           searchbarText={searchbarText}

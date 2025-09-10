@@ -17,7 +17,6 @@ import {
   BubbleChatQuestionIcon,
   CustomerService01Icon,
   DiscordIcon,
-  Logout02Icon,
   Settings01Icon,
   ThreeDotsMenu,
   WhatsappIcon,
@@ -50,7 +49,6 @@ export default function SettingsMenu() {
   const { updateConvoMessages } = useConversation();
 
   const discordLink = getLinkByLabel("Discord");
-  const whatsappLink = getLinkByLabel("WhatsApp");
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
@@ -154,20 +152,6 @@ export default function SettingsMenu() {
         ),
     },
     {
-      key: "whatsapp",
-      label: (
-        <div className="flex items-center gap-2 text-[#25d366]">
-          <WhatsappIcon color="#25d366" width={18} />
-          {whatsappLink?.description || "WhatsApp Community"}
-        </div>
-      ),
-      action: () =>
-        window.open(
-          whatsappLink?.href || "https://whatsapp.heygaia.io",
-          "_blank",
-        ),
-    },
-    {
       key: "settings",
       label: (
         <div className="flex items-center gap-2">
@@ -176,17 +160,6 @@ export default function SettingsMenu() {
         </div>
       ),
       action: () => router.push("/settings"),
-    },
-    {
-      key: "logout",
-      label: (
-        <div className="flex items-center gap-2">
-          <Logout02Icon color={undefined} width={18} />
-          Logout
-        </div>
-      ),
-      action: () => setModalAction("logout"),
-      color: "danger",
     },
   ];
 

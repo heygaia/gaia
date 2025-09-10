@@ -15,6 +15,7 @@ import {
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 import SearchCommand from "@/features/search/components/SearchCommand";
+import ModelPickerButton from "@/features/chat/components/composer/ModelPickerButton";
 
 export default function ChatHeader() {
   const { conversations } = useConversationList();
@@ -23,35 +24,7 @@ export default function ChatHeader() {
 
   return (
     <div className="flex w-full justify-between pb-3">
-      <div />
-      <div className="flex">
-        {convoIdParam && (
-          <ChatOptionsDropdown
-            btnChildren={
-              <div className="flex max-w-[250px] items-center gap-2 truncate text-sm!">
-                <BubbleConversationChatIcon height={18} width={18} />
-
-                {conversations.find(
-                  (convo) => convo.conversation_id == convoIdParam,
-                )?.description || "New chat"}
-              </div>
-            }
-            buttonHovered={true}
-            chatId={convoIdParam}
-            chatName={
-              conversations.find(
-                (convo) => convo.conversation_id == convoIdParam,
-              )?.description || "New chat"
-            }
-            logo2={true}
-            starred={
-              conversations.find(
-                (convo) => convo.conversation_id == convoIdParam,
-              )?.starred || false
-            }
-          />
-        )}
-      </div>
+      <ModelPickerButton />
       <div className="z-[100] flex">
         <SearchCommand
           openSearchDialog={openSearchDialog}
