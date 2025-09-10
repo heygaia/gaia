@@ -16,23 +16,6 @@ from langchain_core.messages import (
 from langsmith import traceable
 
 
-class CustomJSONEncoder(json.JSONEncoder):
-    """Custom JSON encoder that handles common non-serializable objects."""
-
-    def default(self, o):
-        # Handle Pydantic models
-        if hasattr(o, "model_dump"):
-            return o.model_dump()
-        # Handle datetime objects
-        elif isinstance(o, datetime):
-            return o.isoformat()
-        # Handle other objects with __dict__
-        elif hasattr(o, "__dict__"):
-            return o.__dict__
-        # Let the base class handle the rest
-        return super().default(o)
-
-
 @traceable(run_type="llm", name="Call Agent")
 async def call_agent(
     request: MessageRequestWithHistory,
@@ -83,8 +66,6 @@ async def call_agent(
             "selected_tool": request.selectedTool,
             "selected_workflow": request.selectedWorkflow,
         }
-
-        print(request.selectedWorkflow)
 
         # Begin streaming the AI output
         config = {
@@ -226,16 +207,30 @@ async def call_agent_silent(
         # Start memory storage in background
         asyncio.create_task(store_memory())
 
-        initial_state = {
-            "query": request.message,
-            "messages": history,
-            "current_datetime": datetime.now(timezone.utc).isoformat(),
-            "mem0_user_id": user_id,
-            "conversation_id": conversation_id,
-            "selected_tool": request.selectedTool,
-            "selected_workflow": request.selectedWorkflow,
-            "trigger_context": trigger_context,
-        }
+        try:
+            initial_state = {
+                "query": request.message,
+                "messages": history,
+                "current_datetime": datetime.now(timezone.utc).isoformat(),
+                "mem0_user_id": user_id,
+                "conversation_id": conversation_id,
+                "selected_tool": request.selectedTool,
+                "selected_workflow": request.selectedWorkflow,
+                "trigger_context": trigger_context,
+            }
+        except Exception as e:
+            logger.error(f"Error constructing initial state: {e}")
+            initial_state = {
+                "query": request.message,
+                "messages": history,
+                "current_datetime": datetime.now(timezone.utc).isoformat(),
+                "mem0_user_id": user_id,
+                "conversation_id": conversation_id,
+                "selected_tool": request.selectedTool,
+                "selected_workflow": request.selectedWorkflow,
+            }
+
+        logger.info(f"{initial_state=}")
 
         # Execute graph and capture tool data silently
         async for event in graph.astream(
@@ -282,9 +277,13 @@ async def call_agent_silent(
             elif stream_mode == "custom":
                 # Extract tool data from custom stream events
                 try:
-                    new_data = extract_tool_data(
-                        json.dumps(payload, cls=CustomJSONEncoder)
-                    )
+                    # Simple JSON serialization with fallback to string
+                    try:
+                        serialized = json.dumps(payload)
+                    except (TypeError, ValueError):
+                        serialized = str(payload)
+
+                    new_data = extract_tool_data(serialized)
                     if new_data:
                         tool_data.update(new_data)
                 except Exception as e:

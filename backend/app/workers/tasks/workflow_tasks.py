@@ -6,16 +6,22 @@ Contains all workflow-related background tasks and execution logic.
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from app.config.loggers import arq_worker_logger as logger
 from app.config.token_repository import token_repository
 from app.langchain.core.agent import call_agent_silent
 from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.models.chat_models import MessageModel
 from app.models.message_models import (
     MessageRequestWithHistory,
     SelectedWorkflowData,
 )
 from app.services.model_service import get_user_selected_model
+from app.services.user_service import get_user_by_id
+from app.services.workflow.conversation_service import (
+    get_or_create_workflow_conversation,
+)
 from bson import ObjectId
 
 
@@ -210,11 +216,6 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
     Returns:
         List of MessageModel objects from the execution
     """
-    from app.models.chat_models import MessageModel
-    from app.services.workflow.conversation_service import (
-        get_or_create_workflow_conversation,
-    )
-
     # Extract user_id from user dict for backward compatibility
     user_id = user["user_id"]
 
@@ -235,24 +236,20 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
                 f"Access token available for user {user_id} - tools can authenticate"
             )
 
-        # Get user information for tools that may need it (e.g., email tools)
-        user_obj: dict = {"user_id": user_id}
+        # Get user data and create timezone-aware datetime
         try:
-            from app.services.user_service import get_user_by_id
-
             user_data = await get_user_by_id(user_id)
             if user_data:
-                if user_data.get("email"):
-                    user_obj["email"] = str(user_data.get("email"))
-                if user_data.get("name"):
-                    user_obj["name"] = str(user_data.get("name"))
-                user_obj["user_id"] = user_id
-                logger.info(
-                    f"Enhanced user object for workflow execution: email={bool(user_obj.get('email'))}, name={bool(user_obj.get('name'))}"
-                )
+                user_data["user_id"] = user_id  # Ensure user_id is present
+                user_tz = ZoneInfo(user_data.get("timezone", "UTC"))
+            else:
+                user_data = {"user_id": user_id}
+                user_tz = ZoneInfo("UTC")
+            user_time = datetime.now(user_tz)
         except Exception as e:
             logger.warning(f"Could not get user data for {user_id}: {e}")
-            # Continue with minimal user object
+            user_data = {"user_id": user_id}
+            user_time = datetime.now(timezone.utc)
 
         user_model_config = None
         try:
@@ -303,8 +300,8 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
         complete_message, tool_data = await call_agent_silent(
             request=request,
             conversation_id=conversation["conversation_id"],
-            user=user_obj,
-            user_time=datetime.now(timezone.utc),
+            user=user_data,
+            user_time=user_time,
             access_token=access_token,
             refresh_token=refresh_token,
             user_model_config=user_model_config,
