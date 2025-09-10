@@ -1,10 +1,8 @@
 name: Docker Build & Push
 
 on:
-  push:
-    branches:
-      - develop
-      - master
+  repository_dispatch:
+    types: [build]
   workflow_dispatch:
 
 env:
@@ -66,7 +64,7 @@ jobs:
   trigger-deploy:
     needs: [build-backend]
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/master'
+    if: github.ref == 'refs/heads/master'
 
     steps:
       - name: Trigger deployment workflow
@@ -74,3 +72,24 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: deploy
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
+
+  trigger-frontend:
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master'
+    
+    steps:
+      - name: Trigger Frontend Deployment
+        uses: peter-evans/repository-dispatch@v3
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          event-type: deploy-frontend
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }

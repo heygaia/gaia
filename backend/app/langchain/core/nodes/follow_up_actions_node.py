@@ -6,7 +6,7 @@ to users based on the conversation context and tool usage patterns.
 """
 
 import asyncio
-from typing import Any, Dict, List
+from typing import List
 
 from app.config.loggers import chat_logger as logger
 from app.docstrings.langchain.tools.follow_up_actions_tool_docs import (
@@ -14,10 +14,12 @@ from app.docstrings.langchain.tools.follow_up_actions_tool_docs import (
 )
 from app.langchain.llm.client import init_llm
 from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
-from langchain_core.messages import AIMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
+from langgraph.store.base import BaseStore
+from langgraph_bigtool.graph import State
 from pydantic import BaseModel, Field
 
 
@@ -32,7 +34,9 @@ class FollowUpActions(BaseModel):
 llm = init_llm()
 
 
-async def follow_up_actions_node(state: Dict[str, Any]):
+async def follow_up_actions_node(
+    state: State, config: RunnableConfig, store: BaseStore
+) -> State:
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
@@ -62,11 +66,7 @@ async def follow_up_actions_node(state: Dict[str, Any]):
 
         # Skip if insufficient conversation history for meaningful suggestions
         if not messages or len(messages) < 2:
-            return {}
-
-        last_message = messages[-1]
-        if isinstance(last_message, AIMessage) and last_message.tool_calls:
-            return {}
+            return state
 
         # Set up structured output parsing
         parser = PydanticOutputParser(pydantic_object=FollowUpActions)
@@ -107,8 +107,8 @@ async def follow_up_actions_node(state: Dict[str, Any]):
         logger.info(
             f"Follow-up actions generated and streamed: {len(result.actions)} actions"
         )
-        return {}
+        return state
 
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
-        return {}
+        return state

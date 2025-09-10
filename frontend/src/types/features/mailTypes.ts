@@ -55,6 +55,8 @@ export type EmailComposeData = {
   to: string[];
   subject: string;
   body: string;
+  draft_id?: string;
+  thread_id?: string;
 };
 
 // AI Email Analysis Types
@@ -107,6 +109,15 @@ export type EmailThreadData = {
     time: string;
     snippet: string;
     body: string;
+    content?: { text: string; html: string };
   }>;
   messages_count: number;
+};
+
+export type EmailSentData = {
+  message_id?: string;
+  message: string;
+  timestamp?: string;
+  recipients?: string[];
+  subject?: string;
 };

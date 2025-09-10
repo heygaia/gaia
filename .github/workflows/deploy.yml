@@ -18,6 +18,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    if: github.event.client_payload.ref == 'refs/heads/master'
 
     # Needed for OIDC → WIF
     permissions:
@@ -59,49 +60,55 @@ jobs:
               git pull origin master
 
               docker compose -f docker-compose.prod.yml pull
-              docker compose -f docker-compose.prod.yml up -d
+              
+              # Recreate only services with updated images
+              docker compose -f docker-compose.prod.yml up -d --remove-orphans --no-deps
               docker image prune -f
             "
 
       - name: Verify deployment
         run: |
-          sleep 30
-          gcloud compute ssh gaia-prod \
+          gcloud compute ssh ubuntu@gaia-backend \
             --zone=${{ secrets.GCP_ZONE }} \
             --command="
-              cd ~/gaia-deploy
+              cd /home/aryan/gaia
               docker compose -f docker-compose.prod.yml ps
             "
 
-      - name: Health check
+      - name: Docker Cleanup
         run: |
-          EXTERNAL_IP=$(gcloud compute instances describe gaia-prod \
+          gcloud compute ssh ubuntu@gaia-backend \
             --zone=${{ secrets.GCP_ZONE }} \
-            --format='get(networkInterfaces[0].accessConfigs[0].natIP)')
+            --command="
+              echo 'Starting Docker cleanup...'
+              
+              # Remove dangling images
+              docker image prune -f
 
-          timeout 300 bash -c "
-            until curl -sf http://\$EXTERNAL_IP:8000/health > /dev/null; do
-              echo 'Waiting for backend to be ready...'
-              sleep 10
-            done
-          "
+              # Remove stopped containers
+              docker container prune -f
+              
+              # Remove unused networks
+              docker network prune -f
 
-          echo "Deployment successful! Backend is accessible at http://\$EXTERNAL_IP:8000"
+              echo '✅ Docker cleanup completed.'
+            "
 
-      - name: Notify deployment status
+      - name: Notify to Discord
         if: always()
-        uses: actions/github-script@v7
+        uses: appleboy/discord-action@v1.2.0
         with:
-          script: |
-            const status = '${{ job.status }}' === 'success' ? '✅ Success' : '❌ Failed';
-            const sha = '${{ github.sha }}';
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          username: "Gaia Deploy Bot"
+          color: "#48f442"
+          message: |
+            🚀 **Deployment to GCP**
 
-            github.rest.repos.createCommitStatus({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              sha: sha,
-              state: '${{ job.status }}' === 'success' ? 'success' : 'failure',
-              target_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
-              description: `Deployment to production ${status.toLowerCase()}`,
-              context: 'production'
-            });
+            **Repository:** ${{ github.repository }}
+            **Branch:** ${{ github.ref_name }}
+            **Commit:** ${{ github.sha }}
+            **Status:** ${{ job.status }}
+            **Deployed by:** ${{ github.actor }}
+            **Timestamp:** ${{ github.run_id }}
+
+

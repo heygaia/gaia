@@ -1,0 +1,48 @@
+name: Deploy Frontend
+
+on:
+  repository_dispatch:
+    types: [deploy-frontend]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync_and_deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.client_payload.ref == 'refs/heads/master'
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sync master to private fork
+        uses: TobKed/github-forks-sync-action@master
+        with:
+          github_token: ${{ secrets.PRIVATE_FORK_TOKEN }}
+          upstream_repository: ${{ github.repository }}
+          target_repository: ${{ secrets.PRIVATE_FORK_REPO }}
+          upstream_branch: master
+          target_branch: master
+          force: true
+
+      - name: Notify Discord of deployment
+        if: always()
+        uses: appleboy/discord-action@v1.2.0
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          username: "Gaia Deploy Bot"
+          color: ${{ job.status == 'success' && '#00d4aa' || '#ff6b6b' }}
+          message: |
+            🌐 **Frontend Deployment ${{ job.status == 'success' && 'Triggered' || 'Failed' }}**
+            **Repo:** ${{ github.repository }}
+            **Branch:** master
+            **Commit:** ${{ github.sha }}
+            **Status:** ${{ job.status == 'success' && 'Synced to private fork' || 'Sync failed' }}
+            **Next Step:** ${{ job.status == 'success' && 'Vercel will auto-deploy' || 'Check logs' }}
+            **Triggered by:** ${{ github.actor }}

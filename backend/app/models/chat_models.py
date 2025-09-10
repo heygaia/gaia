@@ -53,6 +53,14 @@ class EmailThreadData(BaseModel):
     messages_count: int
 
 
+class EmailSentData(BaseModel):
+    message_id: Optional[str] = None
+    message: str
+    timestamp: Optional[str] = None
+    recipients: Optional[List[str]] = None
+    subject: Optional[str] = None
+
+
 class IntegrationConnectionData(BaseModel):
     """Data structure for integration connection prompts."""
 
@@ -111,6 +119,7 @@ class MessageModel(BaseModel):
     email_compose_data: Optional[List[EmailComposeRequest]] = None
     email_fetch_data: Optional[List[EmailFetchData]] = None
     email_thread_data: Optional[EmailThreadData] = None
+    email_sent_data: Optional[EmailSentData] = None
     support_ticket_data: Optional[List[SupportTicketData]] = None
     calendar_fetch_data: Optional[List[CalendarFetchData]] = None
     calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
