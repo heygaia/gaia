@@ -1,3 +1,14 @@
+"""
+Infisical secrets management for Gaia production environments.
+
+Infisical streamlines environment variable sharing within the Gaia team for
+production and staging deployments. Not required for self-hosting or
+contributor development - use local .env files and refer to the docs
+configuration section instead.
+
+Local environment variables take precedence over Infisical secrets.
+"""
+
 import os
 import time
 

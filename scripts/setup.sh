@@ -3,24 +3,19 @@
 # Exit immediately if a command exits with a non-zero status.
 set -e
 
-# --- Environment Setup ---
-echo "Setting up environment variables..."
-
-# Copy backend .env.example to .env if it doesn't exist
-if [ ! -f "backend/.env" ]; then
-    echo "Copying backend/.env.example to backend/.env..."
-    cp backend/.env.example backend/.env
-else
-    echo "backend/.env already exists, skipping..."
+# Check if .env files exist
+if [ ! -f "backend/.env" ] || [ ! -f "frontend/.env" ]; then
+    echo "❌ Environment files not found!"
+    echo ""
+    echo "Please copy the example environment files first:"
+    echo "  cp backend/.env.example backend/.env"
+    echo "  cp frontend/.env.example frontend/.env"
+    echo ""
+    echo "Then configure your environment variables and run this script again."
+    exit 1
 fi
 
-# Copy frontend .env.example to .env if it doesn't exist
-if [ ! -f "frontend/.env" ]; then
-    echo "Copying frontend/.env.example to frontend/.env..."
-    cp frontend/.env.example frontend/.env
-else
-    echo "frontend/.env already exists, skipping..."
-fi
+echo "✅ Environment files found. Continuing with setup..."
 
 # --- Docker Compose ---
 echo "Starting Docker services in the background..."

@@ -49,59 +49,44 @@ Before you begin, ensure you have the following installed:
 
 To start developing on GAIA, you need to set up your local environment. You can choose between an automated setup using our script or a manual setup.
 
-<CardGroup cols={2}>
-  <Card title="Automated Setup" icon="rocket" href="#automated-setup">
-    The easiest way to get started. Our script handles everything for you.
-  </Card>
-  <Card title="Manual Setup" icon="wrench" href="#manual-setup">
-    For those who want more control over the setup process.
-  </Card>
-</CardGroup>
+<Tabs>
+  <Tab title="Automated Setup" icon="rocket">
+    We provide a script that automates the entire setup process. This is the recommended method for most users.
 
-## Automated Setup
+    <Steps>
+      <Step title="Setup Environment Variables">
+        First, copy the example environment files and configure them:
 
-We provide a script that automates the entire setup process. This is the recommended method for most users.
+        ```bash
+        cp backend/.env.example backend/.env
+        cp frontend/.env.example frontend/.env
+        ```
 
-<Steps>
-  <Step title="Run the Setup Script">
-    Open your terminal and run the following command from the project root:
+        Then configure your environment variables by following the [Environment Variables Reference](/configuration/environment-variables).
 
-    ```bash
-    ./scripts/setup.sh
-    ```
+      </Step>
+      <Step title="Run the Setup Script">
+        Open your terminal and run the following command from the project root:
 
-    This script will:
-    - Copy environment configuration files from examples (`.env.example` → `.env`).
-    - Start all Docker services
-    - Create a Python virtual environment.
-    - Install backend dependencies with `uv`.
-    - Install frontend dependencies with `pnpm`.
+        ```bash
+        ./scripts/setup.sh
+        ```
 
-  </Step>
-  <Step title="Configure Environment Variables">
-    After the script completes, you'll need to configure your environment variables:
+        This script will:
+        - Start all Docker services
+        - Create a Python virtual environment.
+        - Install backend dependencies with `uv`.
+        - Install frontend dependencies with `pnpm`.
 
-    <Note>
-      The script creates `.env` files from examples, but you need to add your API keys and secrets.
-    </Note>
+      </Step>
+      <Step title="You're Ready!">
+        Your development environment is now ready to go!
+      </Step>
+    </Steps>
 
-    Edit the created configuration files:
-    - `backend/.env` - Add your API keys (OpenAI, Google OAuth, etc.)
-    - `frontend/.env` - Configure API URLs and tokens
-
-    For detailed configuration instructions, see:
-    - [Environment Variables Reference](/configuration/environment-variables)
-    - [Infisical Setup Guide](/configuration/infisical-setup) (recommended for production)
-
-  </Step>
-  <Step title="You're Ready!">
-    Once you've configured your environment variables, your development environment is ready to go!
-  </Step>
-</Steps>
-
-## Manual Setup
-
-If you prefer to set up your environment manually, follow these steps.
+  </Tab>
+  <Tab title="Manual Setup" icon="wrench">
+    If you prefer to set up your environment manually, follow these steps.
 
 ### Environment Variables
 
@@ -203,3 +188,6 @@ Before you start the services, you need to configure your environment variables.
     ```
   </Step>
 </Steps>
+
+  </Tab>
+</Tabs>

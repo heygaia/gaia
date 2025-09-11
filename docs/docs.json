@@ -7,6 +7,13 @@
     "light": "#00bbff",
     "dark": "#00bbff"
   },
+  "seo": {
+    "indexing": "all",
+    "metatags": {
+      "og:type": "website",
+      "og:site_name": "GAIA Documentation"
+    }
+  },
   "favicon": "/logo/logo.png",
   "navigation": {
     "tabs": [
@@ -15,15 +22,9 @@
         "groups": [
           {
             "group": "Get Started",
-            "pages": [
-              "introduction",
-              "quick-start"
-            ]
+            "pages": ["introduction", "quick-start", "resources"]
           },
-          {
-            "group": "Self-Hosting",
-            "pages": ["self-hosting/overview", "self-hosting/docker-setup"]
-          },
+
           {
             "group": "For Developers",
             "pages": [
@@ -33,10 +34,15 @@
             ]
           },
           {
+            "group": "Self-Hosting",
+            "pages": ["self-hosting/overview", "self-hosting/docker-setup"]
+          },
+          {
             "group": "Configuration",
             "pages": [
               "configuration/environment-variables",
-              "configuration/infisical-setup"
+              "configuration/conventional-commits",
+              "configuration/docker"
             ]
           }
         ]
@@ -74,16 +80,19 @@
   "navbar": {
     "links": [
       {
+        "label": "Website",
+        "href": "https://heygaia.io",
+        "icon": "globe"
+      },
+      {
         "label": "Contact",
-        "href": "https://heygaia.io/contact"
+        "href": "https://heygaia.io/contact",
+        "icon": "phone"
       }
     ],
     "primary": {
-      "type": "button",
-      "label": "Get Started",
-
-
-      "href": "https://heygaia.io"
+      "type": "github",
+      "href": "https://github.com/heygaia/gaia"
     }
   },
   "footer": {
@@ -94,5 +103,17 @@
       "discord": "https://discord.heygaia.io",
       "linkedin": "https://linkedin.com/company/heygaia"
     }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
   }
 }
