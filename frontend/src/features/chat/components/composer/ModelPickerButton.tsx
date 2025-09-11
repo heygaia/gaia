@@ -101,120 +101,114 @@ const ModelPickerButton: React.FC = () => {
   }
 
   return (
-    <Tooltip content="Select a Model" showArrow color="primary" size="sm">
-      <Select
-        placeholder="Model"
-        selectedKeys={
-          currentModel?.model_id
-            ? new Set([currentModel.model_id])
-            : defaultModel?.model_id
-              ? new Set([defaultModel.model_id])
-              : new Set()
-        }
-        onSelectionChange={handleSelectionChange}
-        isDisabled={selectModelMutation.isPending}
-        size="sm"
-        variant={"flat"}
-        aria-label="Select AI Model"
-        className="!w-fit !max-w-none"
-        popoverProps={{
-          classNames: {
-            content: "min-w-[300px] max-w-none bg-zinc-800",
-          },
-        }}
-        classNames={{
-          trigger:
-            "cursor-pointer bg-transparent transition hover:bg-zinc-800 !min-w-fit !w-auto !max-w-none whitespace-nowrap pl-3 pr-8",
-          value:
-            "text-zinc-400! text-xs font-medium whitespace-nowrap !w-auto ",
-          base: "!max-w-none !w-auto",
-          innerWrapper: "!w-auto !max-w-none",
-          mainWrapper: "!w-auto !max-w-none",
-        }}
-        scrollShadowProps={{
-          isEnabled: false,
-        }}
-        startContent={
-          currentModel?.logo_url ? (
-            <Image
-              src={currentModel.logo_url}
-              alt={currentModel.name}
-              height={40}
-              width={40}
-              className={`h-4 w-4 object-contain ${currentModel.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
-            />
-          ) : (
-            <Icon
-              icon="lucide:cpu"
-              className="h-3 w-3 shrink-0 text-zinc-400"
-            />
-          )
-        }
-        renderValue={(items) => {
-          if (!items.length) return "Model";
-          const item = items[0];
-          const model = models?.find((m) => m.model_id === item.key);
-          // Remove text-nowrap to prevent truncation
-          return <span>{model?.name || "Model"}</span>;
-        }}
-      >
-        {Object.entries(groupedModels).map(([provider, providerModels]) => (
-          <SelectSection
-            key={provider}
-            classNames={{
-              heading: headingClasses,
-            }}
-            title={provider}
-          >
-            {providerModels?.map((model) => (
-              <SelectItem
-                key={model.model_id}
-                classNames={{
-                  title: "text-zinc-200",
-                  description: "text-zinc-400 mt-1",
-                }}
-                startContent={
-                  model.logo_url ? (
-                    <Image
-                      src={model.logo_url}
-                      alt={model.name}
-                      height={40}
-                      width={40}
-                      className={`h-4 w-4 object-contain ${model.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
-                    />
-                  ) : (
-                    <Icon
-                      icon="lucide:cpu"
-                      className="h-4 w-4 shrink-0 text-zinc-400"
-                    />
-                  )
-                }
-                description={
-                  <div className="flex items-center justify-between text-xs">
-                    <div className="flex items-center gap-2">
-                      {model.lowest_tier.toLowerCase() !== "free" && (
-                        <span className={getTierColor(model.lowest_tier)}>
-                          {getTierDisplayName(model.lowest_tier)}+ Plan
-                        </span>
-                      )}
-                    </div>
+    <Select
+      placeholder="Model"
+      selectedKeys={
+        currentModel?.model_id
+          ? new Set([currentModel.model_id])
+          : defaultModel?.model_id
+            ? new Set([defaultModel.model_id])
+            : new Set()
+      }
+      onSelectionChange={handleSelectionChange}
+      isDisabled={selectModelMutation.isPending}
+      size="sm"
+      variant={"flat"}
+      aria-label="Select AI Model"
+      className="!w-fit !max-w-none"
+      popoverProps={{
+        classNames: {
+          content: "min-w-[300px] max-w-none bg-zinc-800",
+        },
+      }}
+      classNames={{
+        trigger:
+          "cursor-pointer bg-transparent transition hover:bg-zinc-800 !min-w-fit !w-auto !max-w-none whitespace-nowrap pl-3 pr-8",
+        value: "text-zinc-400! text-xs font-medium whitespace-nowrap !w-auto ",
+        base: "!max-w-none !w-auto",
+        innerWrapper: "!w-auto !max-w-none",
+        mainWrapper: "!w-auto !max-w-none",
+      }}
+      scrollShadowProps={{
+        isEnabled: false,
+      }}
+      startContent={
+        currentModel?.logo_url ? (
+          <Image
+            src={currentModel.logo_url}
+            alt={currentModel.name}
+            height={40}
+            width={40}
+            className={`h-4 w-4 object-contain ${currentModel.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
+          />
+        ) : (
+          <Icon icon="lucide:cpu" className="h-3 w-3 shrink-0 text-zinc-400" />
+        )
+      }
+      renderValue={(items) => {
+        if (!items.length) return "Model";
+        const item = items[0];
+        const model = models?.find((m) => m.model_id === item.key);
+        // Remove text-nowrap to prevent truncation
+        return <span>{model?.name || "Model"}</span>;
+      }}
+    >
+      {Object.entries(groupedModels).map(([provider, providerModels]) => (
+        <SelectSection
+          key={provider}
+          classNames={{
+            heading: headingClasses,
+          }}
+          title={provider}
+        >
+          {providerModels?.map((model) => (
+            <SelectItem
+              key={model.model_id}
+              classNames={{
+                title: "text-zinc-200",
+                description: "text-zinc-400 mt-1",
+              }}
+              startContent={
+                model.logo_url ? (
+                  <Image
+                    src={model.logo_url}
+                    alt={model.name}
+                    height={40}
+                    width={40}
+                    className={`h-4 w-4 object-contain ${model.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
+                  />
+                ) : (
+                  <Icon
+                    icon="lucide:cpu"
+                    className="h-4 w-4 shrink-0 text-zinc-400"
+                  />
+                )
+              }
+              description={
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    {model.lowest_tier.toLowerCase() !== "free" && (
+                      <span className={getTierColor(model.lowest_tier)}>
+                        {getTierDisplayName(model.lowest_tier)}+ Plan
+                      </span>
+                    )}
                   </div>
-                }
-              >
-                <div className="flex items-center justify-between gap-2">
-                  <span>{model.name}</span>
-                  {model.is_default && (
-                    <Chip size="sm" color="success" variant="flat">
-                      Default
-                    </Chip>
-                  )}
                 </div>
-              </SelectItem>
-            )) || []}
-          </SelectSection>
-        ))}
-      </Select>
-    </Tooltip>
+              }
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>{model.name}</span>
+                {model.is_default && (
+                  <Chip size="sm" color="success" variant="flat">
+                    Default
+                  </Chip>
+                )}
+              </div>
+            </SelectItem>
+          )) || []}
+        </SelectSection>
+      ))}
+    </Select>
   );
 };
 

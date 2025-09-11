@@ -30,36 +30,37 @@ interface SidebarLayoutProps {
 }
 
 // Custom SidebarTrigger with dynamic icons
-const CustomSidebarTrigger = () => {
+export const CustomSidebarTrigger = () => {
   const { open, toggleSidebar } = useSidebar();
 
   return (
-    <SidebarHeaderButton onClick={toggleSidebar} aria-label="Toggle Sidebar">
+    <SidebarHeaderButton
+      onClick={toggleSidebar}
+      aria-label="Toggle Sidebar"
+      tooltip={open ? "Collapse Sidebar" : "Open Sidebar"}
+    >
       {open ? (
-        <SidebarLeft01Icon className="max-h-5 min-h-5 max-w-5 min-w-5" />
+        <SidebarLeft01Icon
+          className="max-h-5 min-h-5 max-w-5 min-w-5 text-zinc-400 transition group-hover/btn:text-primary"
+          color={undefined}
+        />
       ) : (
-        <SidebarRight01Icon className="max-h-5 min-h-5 max-w-5 min-w-5" />
+        <SidebarRight01Icon
+          className="max-h-5 min-h-5 max-w-5 min-w-5 text-zinc-400 transition group-hover/btn:text-primary"
+          color={undefined}
+        />
       )}
     </SidebarHeaderButton>
   );
 };
 
 export default function SidebarLayout({ children }: SidebarLayoutProps) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const [openSearchDialog, setOpenSearchDialog] = useState(false);
-
   return (
     <Sidebar
       variant="sidebar"
       collapsible="offcanvas"
       className="sidebar border-none!"
     >
-      <SearchCommand
-        openSearchDialog={openSearchDialog}
-        setOpenSearchDialog={setOpenSearchDialog}
-      />
-
       <SidebarHeader className="pb-0">
         <div className="flex items-center justify-between">
           <Link href={"/"}>
@@ -72,41 +73,20 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
               />
             </Button>
           </Link>
-
-          <div className="flex items-center gap-1">
-            <SidebarHeaderButton
-              onClick={() => setOpenSearchDialog(true)}
-              aria-label="Search"
-            >
-              <Search className="max-h-5 min-h-5 max-w-5 min-w-5" />
-            </SidebarHeaderButton>
-            {!pathname.startsWith("/c") && (
-              <SidebarHeaderButton
-                onClick={() => router.push("/c")}
-                aria-label="New chat"
-              >
-                <ChatBubbleAddIcon
-                  className="max-h-5 min-h-5 max-w-5 min-w-5"
-                  color={undefined}
-                />
-              </SidebarHeaderButton>
-            )}
-            <CustomSidebarTrigger />
-          </div>
+          <CustomSidebarTrigger />
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="flex-1">
+      <SidebarContent className="flex-1 px-1">
         <SidebarGroup>
           <SidebarGroupContent className="space-y-1 overflow-hidden">
             <SidebarTopButtons />
-
             {children}
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
 
-      <SidebarFooter className="relative z-[4] p-2">
+      <SidebarFooter className="relative z-[4] p-2 px-3 pb-3">
         <ContactSupport />
         <UserContainer />
       </SidebarFooter>

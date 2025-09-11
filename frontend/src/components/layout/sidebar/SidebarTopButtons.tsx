@@ -155,9 +155,10 @@ export default function SidebarTopButtons() {
         ))}
       </div>
 
+      {/*
       <div className="mb-3 px-1">
         <Separator className="bg-zinc-800" />
-      </div>
+      </div> */}
     </div>
   );
 }

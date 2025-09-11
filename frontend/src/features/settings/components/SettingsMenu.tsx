@@ -10,7 +10,7 @@ import {
 import { Modal, ModalBody, ModalContent, ModalHeader } from "@heroui/modal";
 import { CircleArrowUp } from "lucide-react";
 import { useRouter } from "next/navigation";
-import React, { useState } from "react";
+import React, { ReactNode, useState } from "react";
 
 import {
   Brain02Icon,
@@ -41,7 +41,15 @@ interface MenuItem {
   action?: () => void;
 }
 
-export default function SettingsMenu() {
+export default function SettingsMenu({
+  children = (
+    <Button isIconOnly aria-label="Three Dots Menu" variant="light">
+      <ThreeDotsMenu />
+    </Button>
+  ),
+}: {
+  children?: ReactNode;
+}) {
   const { clearUser } = useUserActions();
   const router = useRouter();
   const { clearConversations } = useConversationsStore();
@@ -49,6 +57,7 @@ export default function SettingsMenu() {
   const { updateConvoMessages } = useConversation();
 
   const discordLink = getLinkByLabel("Discord");
+  const whatsappLink = getLinkByLabel("WhatsApp");
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
@@ -107,26 +116,26 @@ export default function SettingsMenu() {
           },
         ]),
 
-    {
-      key: "contact_support",
-      label: (
-        <div className="flex items-center gap-2">
-          <CustomerService01Icon color={"#9b9b9b"} width={18} />
-          Contact Support
-        </div>
-      ),
-      action: () => setSupportModalOpen(true),
-    },
-    {
-      key: "feature_request",
-      label: (
-        <div className="flex items-center gap-2">
-          <BubbleChatQuestionIcon color={"#9b9b9b"} width={18} />
-          Feature Request
-        </div>
-      ),
-      action: () => setSupportModalOpen(true),
-    },
+    // {
+    //   key: "contact_support",
+    //   label: (
+    //     <div className="flex items-center gap-2">
+    //       <CustomerService01Icon color={"#9b9b9b"} width={18} />
+    //       Contact Support
+    //     </div>
+    //   ),
+    //   action: () => setSupportModalOpen(true),
+    // },
+    // {
+    //   key: "feature_request",
+    //   label: (
+    //     <div className="flex items-center gap-2">
+    //       <BubbleChatQuestionIcon color={"#9b9b9b"} width={18} />
+    //       Feature Request
+    //     </div>
+    //   ),
+    //   action: () => setSupportModalOpen(true),
+    // },
     {
       key: "manage_memories",
       label: (
@@ -148,6 +157,20 @@ export default function SettingsMenu() {
       action: () =>
         window.open(
           discordLink?.href || "https://discord.heygaia.io",
+          "_blank",
+        ),
+    },
+    {
+      key: "whatsapp",
+      label: (
+        <div className="flex items-center gap-2 text-[#25d366]">
+          <WhatsappIcon color="#25d366" width={18} />
+          {whatsappLink?.description || "WhatsApp Community"}
+        </div>
+      ),
+      action: () =>
+        window.open(
+          discordLink?.href || "https://whasapp.heygaia.io",
           "_blank",
         ),
     },
@@ -203,12 +226,8 @@ export default function SettingsMenu() {
         </ModalContent>
       </Modal>
 
-      <Dropdown className="text-foreground dark" backdrop="blur">
-        <DropdownTrigger>
-          <Button isIconOnly aria-label="Three Dots Menu" variant="light">
-            <ThreeDotsMenu />
-          </Button>
-        </DropdownTrigger>
+      <Dropdown className="text-foreground dark">
+        <DropdownTrigger>{children}</DropdownTrigger>
         <DropdownMenu aria-label="Dynamic Actions">
           {items.map((item) => (
             <DropdownItem

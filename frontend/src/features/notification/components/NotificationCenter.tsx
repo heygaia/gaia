@@ -235,7 +235,10 @@ export function NotificationCenter({
       <Popover backdrop="blur">
         <PopoverTrigger>
           <div className="relative">
-            <SidebarHeaderButton aria-label="Notifications">
+            <SidebarHeaderButton
+              aria-label="Notifications"
+              tooltip="Notifications"
+            >
               <NotificationIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
             </SidebarHeaderButton>
             {unreadCount > 0 && (
