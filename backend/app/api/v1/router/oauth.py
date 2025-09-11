@@ -33,7 +33,6 @@ from app.services.onboarding_service import (
 )
 from app.services.user_service import update_user_profile
 from app.utils.oauth_utils import fetch_user_info_from_google, get_tokens_from_code
-from app.utils.watch_mail import watch_mail
 from fastapi import (
     APIRouter,
     BackgroundTasks,
@@ -388,15 +387,6 @@ async def callback(
         # Redirect URL can include tokens if needed
         redirect_url = f"{settings.FRONTEND_URL}/redirect"
         response = RedirectResponse(url=redirect_url)
-
-        # Add background task to register user to watch emails
-        background_tasks.add_task(
-            watch_mail,
-            email=user_email,
-            access_token=access_token,
-            user_id=user_id,
-            refresh_token=refresh_token,
-        )
 
         return response
 
