@@ -4,6 +4,7 @@ import { ArrowUp, Square } from "lucide-react";
 
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { Kbd } from "@heroui/react";
 
 interface RightSideProps {
   handleFormSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
@@ -39,7 +40,17 @@ export default function RightSide({
         .join(" ");
       return `Send with ${formattedToolName}`;
     }
-    return "Send message";
+
+    if (!hasText && !hasSelectedTool && !hasSelectedWorkflow) {
+      return "Message requires text";
+    }
+
+    return (
+      <div className="flex items-center gap-2">
+        Send Message
+        <Kbd className="text-zinc-400" keys={["enter"]}></Kbd>
+      </div>
+    );
   };
 
   const handleButtonPress = () => {
@@ -52,12 +63,7 @@ export default function RightSide({
 
   return (
     <div className="ml-2 flex items-center gap-1">
-      <Tooltip
-        content={getTooltipContent()}
-        placement="right"
-        showArrow
-        color="primary"
-      >
+      <Tooltip content={getTooltipContent()} placement="right" showArrow>
         <Button
           isIconOnly
           aria-label={isLoading ? "Stop generation" : "Send message"}
