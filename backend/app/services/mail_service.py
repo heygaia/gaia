@@ -56,12 +56,28 @@ async def invoke_gmail_tool(
         return {"error": str(e), "successful": False}
 
 
+def _process_attachments(attachments: List[UploadFile]) -> List[Dict[str, Any]]:
+    """Process UploadFile objects into format expected by Composio."""
+    processed = [
+        {
+            "filename": att.filename,
+            "content": att.file.read(),
+            "content_type": att.content_type,
+        }
+        for att in attachments
+    ]
+    # Reset file pointers
+    for att in attachments:
+        att.file.seek(0)
+    return processed
+
+
 async def send_email(
     user_id: str,
-    sender: str,
     to: str,
     subject: str,
     body: str,
+    thread_id: Optional[str] = None,
     is_html: bool = False,
     extra_recipients: List[str] = [],
     cc_list: Optional[List[str]] = None,
@@ -69,55 +85,58 @@ async def send_email(
     attachments: Optional[List[UploadFile]] = None,
 ) -> Dict[str, Any]:
     """
-    Send an email using Composio Gmail tool.
+    Send an email using Composio Gmail tools.
+
+    Automatically chooses between GMAIL_SEND_EMAIL (for new emails) and
+    GMAIL_REPLY_TO_THREAD (when thread_id is provided) to handle both
+    new emails and thread replies appropriately.
 
     Args:
         user_id: User ID for Composio authentication
-        sender: Email address of the sender
-        to_list: Email addresses of recipients
+        to: Primary recipient email address
         subject: Email subject
         body: Email body content
+        thread_id: Optional thread ID - if provided, uses GMAIL_REPLY_TO_THREAD
         is_html: Whether the body is HTML content
+        extra_recipients: Additional recipient email addresses
         cc_list: Optional list of CC recipients
         bcc_list: Optional list of BCC recipients
         attachments: Optional list of files to attach
 
     Returns:
-        Sent message data from the Composio Gmail tool
+        Sent message data from the appropriate Composio Gmail tool
     """
     try:
-        # Prepare parameters for GMAIL_SEND_EMAIL tool
-        parameters: dict[str, Any] = {
+        # Determine tool and body parameter name
+        is_reply = bool(thread_id)
+        tool_name = "GMAIL_REPLY_TO_THREAD" if is_reply else "GMAIL_SEND_EMAIL"
+        body_param = "message_body" if is_reply else "body"
+        
+        # Build parameters
+        parameters: Dict[str, Any] = {
             "recipient_email": to,
             "extra_recipients": extra_recipients,
+            body_param: body,
             "subject": subject,
-            "body": body,
             "is_html": is_html,
         }
 
-        # Add optional parameters if provided
+        # Add thread_id for replies
+        if is_reply:
+            parameters["thread_id"] = thread_id
+
+        # Add optional parameters
         if cc_list:
             parameters["cc"] = cc_list
         if bcc_list:
             parameters["bcc"] = bcc_list
-        if is_html:
-            parameters["is_html"] = True
         if attachments:
-            # Convert UploadFile objects to format expected by Composio
-            parameters["attachments"] = [
-                {
-                    "filename": att.filename,
-                    "content": att.file.read(),
-                    "content_type": att.content_type,
-                }
-                for att in attachments
-            ]
-            # Reset file pointers
-            for att in attachments:
-                att.file.seek(0)
+            parameters["attachments"] = _process_attachments(attachments)
 
-        result = await invoke_gmail_tool(user_id, "GMAIL_SEND_EMAIL", parameters)
-        return result
+        logger.info(f"Using {tool_name} to {'reply to thread ' + thread_id if is_reply else 'send new email to ' + to}")
+        
+        return await invoke_gmail_tool(user_id, tool_name, parameters)
+        
     except Exception as e:
         logger.error(f"Error sending email for user {user_id}: {e}")
         return {"error": str(e), "successful": False}

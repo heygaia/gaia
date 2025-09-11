@@ -326,6 +326,7 @@ async def send_email_route(
             cc_list=cc_list,
             bcc_list=bcc_list,
             attachments=attachments,
+            thread_id=thread_id,
         )
 
         return {
