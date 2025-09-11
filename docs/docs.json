@@ -47,31 +47,7 @@
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Discord",
-          "href": "https://discord.heygaia.io",
-          "icon": "discord"
-        },
-        {
-          "anchor": "Twitter",
-          "href": "https://twitter.com/_heygaia",
-          "icon": "twitter"
-        },
-        {
-          "anchor": "WhatsApp",
-          "href": "https://whatsapp.heygaia.io",
-          "icon": "whatsapp"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://heygaia.io/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    ]
   },
   "logo": {
     "light": "/logo/logo.png",
@@ -80,14 +56,14 @@
   "navbar": {
     "links": [
       {
+        "label": "Discord",
+        "href": "https://discord.heygaia.io",
+        "icon": "discord"
+      },
+      {
         "label": "Website",
         "href": "https://heygaia.io",
         "icon": "globe"
-      },
-      {
-        "label": "Contact",
-        "href": "https://heygaia.io/contact",
-        "icon": "phone"
       }
     ],
     "primary": {
@@ -98,7 +74,7 @@
   "footer": {
     "socials": {
       "website": "https://heygaia.io",
-      "x": "https://x.com/_heygaia",
+      "twitter": "https://x.com/_heygaia",
       "github": "https://github.com/heygaia",
       "discord": "https://discord.heygaia.io",
       "linkedin": "https://linkedin.com/company/heygaia"
