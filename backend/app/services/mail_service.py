@@ -10,7 +10,7 @@ from fastapi import UploadFile
 
 
 @lru_cache(maxsize=None)
-def get_gmail_tool(tool_name: str):
+def get_gmail_tool(tool_name: str, user_id: str):
     """
     Get a specific Gmail tool by name with caching using ComposioService.
 
@@ -21,7 +21,9 @@ def get_gmail_tool(tool_name: str):
         The specific Gmail tool or None if not found
     """
     try:
-        return composio_service.get_tool(tool_name)
+        return composio_service.get_tool(
+            tool_name, use_before_hook=False, use_after_hook=False, user_id=user_id
+        )
     except Exception as e:
         logger.error(f"Error getting Gmail tool {tool_name}: {e}")
         return None
@@ -42,13 +44,10 @@ async def invoke_gmail_tool(
         Response from the tool execution
     """
     try:
-        tool = get_gmail_tool(tool_name)
+        tool = get_gmail_tool(tool_name, user_id)
 
         if not tool:
             return {"error": f"Tool {tool_name} not found", "successful": False}
-
-        # Add user_id to parameters
-        parameters["user_id"] = user_id
 
         result = await tool.ainvoke(parameters)
         return result

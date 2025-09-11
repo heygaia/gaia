@@ -15,7 +15,7 @@ from app.langchain.templates.mail_templates import (
     process_list_drafts_response,
     process_list_messages_response,
 )
-from composio.types import ToolExecutionResponse
+from composio.types import ToolExecuteParams, ToolExecutionResponse
 from langgraph.config import get_stream_writer
 
 from .registry import register_after_hook, register_before_hook
@@ -24,72 +24,56 @@ from .registry import register_after_hook, register_before_hook
 # These hooks send progress/streaming data to frontend before tool execution
 
 
-@register_after_hook(tools=["GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT"])
-def gmail_compose_after_hook(
-    tool: str, toolkit: str, response: ToolExecutionResponse
-) -> Any:
+@register_before_hook(tools=["GMAIL_SEND_EMAIL", "GMAIL_CREATE_EMAIL_DRAFT"])
+def gmail_compose_before_hook(
+    tool: str, toolkit: str, params: ToolExecuteParams
+) -> ToolExecuteParams:
     """Handle email composition response and streaming data."""
     try:
         writer = get_stream_writer()
+        arguments = params.get("arguments", {})
 
-        if not writer:
-            return response["data"]
+        recipients = [
+            arguments.get("recipient_email", ""),
+            *arguments.get("extra_recipients", []),
+        ]
 
+        # Build the email compose data with draft_id
+        emails_data = [
+            {
+                "to": recipients,
+                "subject": arguments.get("subject", ""),
+                "body": arguments.get("body", ""),
+                "thread_id": arguments.get("thread_id", ""),
+                "bcc": arguments.get("bcc", []),
+                "cc": arguments.get("cc", []),
+                "is_html": arguments.get("is_html", False),
+            }
+        ]
         # Check if the operation was successful
-        if response["data"].get("successful", True):
-            if tool == "GMAIL_CREATE_EMAIL_DRAFT":
-                # This is a draft creation - get draft details to send compose data
-                draft_id = response["data"].get("id", "")
+        if tool == "GMAIL_CREATE_EMAIL_DRAFT":
+            # Send compose data to frontend with draft_id
+            payload = {
+                "email_compose_data": emails_data,
+            }
+            writer(payload)
 
-                # Extract email details from the response if available
-                # The response typically contains the message data
-                message_data = response["data"].get("message", {})
+        elif tool == "GMAIL_SEND_EMAIL":
+            # Send email sent data to frontend
+            payload = {"email_sent_data": emails_data}
+            writer(payload)
 
-                # Build the email compose data with draft_id
-                emails_data = [
-                    {
-                        "to": message_data.get("to", []),
-                        "subject": message_data.get("subject", ""),
-                        "body": message_data.get("body", ""),
-                        "draft_id": draft_id,
-                        "thread_id": message_data.get("threadId", None),
-                    }
-                ]
-
-                # Send compose data to frontend with draft_id
-                payload = {
-                    "email_compose_data": emails_data,
-                    "progress": "Draft created successfully!",
-                    "draft_created": True,
-                    "draft_id": draft_id,
-                }
-                writer(payload)
-
-            elif tool == "GMAIL_SEND_EMAIL":
-                # This is direct email sending
-                message_data = response["data"].get("message", {})
-
-                # Send email sent data to frontend
-                payload = {
-                    "email_sent_data": {
-                        "message_id": response["data"].get("id", ""),
-                        "message": "Email sent successfully!",
-                        "timestamp": response["data"].get("timestamp", ""),
-                        "recipients": message_data.get("to", []),
-                        "subject": message_data.get("subject", ""),
-                    }
-                }
-                writer(payload)
-
-        return response["data"]
+        return params
 
     except Exception as e:
         logger.error(f"Error in gmail_compose_after_hook: {e}")
-        return response["data"]
+        return params
 
 
 @register_before_hook(tools=["GMAIL_FETCH_EMAILS", "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID"])
-def gmail_fetch_before_hook(tool: str, toolkit: str, params: Any) -> Any:
+def gmail_fetch_before_hook(
+    tool: str, toolkit: str, params: ToolExecuteParams
+) -> ToolExecuteParams:
     """Handle email fetching progress."""
     try:
         arguments = params.get("arguments", {})
