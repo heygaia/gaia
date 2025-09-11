@@ -59,10 +59,11 @@ async def invoke_gmail_tool(
 async def send_email(
     user_id: str,
     sender: str,
-    to_list: List[str],
+    to: str,
     subject: str,
     body: str,
     is_html: bool = False,
+    extra_recipients: List[str] = [],
     cc_list: Optional[List[str]] = None,
     bcc_list: Optional[List[str]] = None,
     attachments: Optional[List[UploadFile]] = None,
@@ -87,7 +88,8 @@ async def send_email(
     try:
         # Prepare parameters for GMAIL_SEND_EMAIL tool
         parameters: dict[str, Any] = {
-            "to": to_list,
+            "recipient_email": to,
+            "extra_recipients": extra_recipients,
             "subject": subject,
             "body": body,
             "is_html": is_html,
