@@ -317,7 +317,6 @@ async def send_email_route(
         # Send the email using the new async function
         sent_message = await send_email(
             user_id=str(user_id),
-            sender=current_user.get("email", ""),  # Use user's email from current_user
             to=to_list[0],
             extra_recipients=to_list[1:],
             subject=subject,
@@ -361,7 +360,6 @@ async def send_email_json(
         # Send the email using the new async function
         sent_message = await send_email(
             user_id=str(user_id),
-            sender=current_user.get("email", ""),  # Use user's email from current_user
             to=request.to[0],
             extra_recipients=request.to[1:],
             subject=request.subject,
