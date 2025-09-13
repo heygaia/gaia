@@ -14,6 +14,10 @@ import { parseDate } from "@/utils/date/dateUtils";
 import FollowUpActions from "./FollowUpActions";
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
+import {
+  isBotMessageEmpty,
+  shouldShowTextBubble,
+} from "@/features/chat/utils/messageContentUtils";
 
 export default function ChatBubbleBot(props: ChatBubbleBotProps) {
   const {
@@ -72,17 +76,23 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         id={message_id}
         onMouseOver={handleMouseOver}
         onMouseOut={handleMouseOut}
-        className="relative flex flex-col pb-8"
+        className="relative flex flex-col pb-9"
       >
         <div className="flex items-end gap-1">
           <div className="relative bottom-0 min-w-[40px] flex-shrink-0">
-            <Image
-              alt="GAIA Logo"
-              src={"/branding/logo.webp"}
-              width={30}
-              height={30}
-              className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
-            />
+            {shouldShowTextBubble(
+              text,
+              isConvoSystemGenerated,
+              systemPurpose,
+            ) && (
+              <Image
+                alt="GAIA Logo"
+                src={"/branding/logo.webp"}
+                width={30}
+                height={30}
+                className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
+              />
+            )}
           </div>
 
           <div className="chatbubblebot_parent flex-1">
@@ -105,11 +115,11 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
 
           <div
             ref={actionsRef}
-            className="absolute -bottom-4 flex flex-col transition-all"
+            className={`absolute -bottom-5 flex flex-col transition-all ${loading ? "opacity-0!" : "opacity-100"}`}
             style={{ opacity: 0, visibility: "hidden" }}
           >
             {date && (
-              <span className="text-opacity-40 flex flex-col p-1 text-xs text-zinc-400 select-text">
+              <span className="text-opacity-40 flex flex-col p-1 py-2 text-xs text-zinc-400 select-text">
                 {parseDate(date)}
               </span>
             )}

@@ -1,6 +1,6 @@
 import { Spinner } from "@heroui/spinner";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
@@ -24,6 +24,9 @@ import {
 } from "@/types/features/chatBubbleTypes";
 import { MessageType } from "@/types/features/convoTypes";
 import { getRandomThinkingMessage } from "@/utils/playfulThinking";
+
+import { DateSeparator } from "./DateSeparator";
+import { formatMessageDate, isDifferentDay } from "../../utils/dateUtils";
 
 export default function ChatRenderer() {
   const { convoMessages } = useConversation();
@@ -135,23 +138,38 @@ export default function ChatRenderer() {
 
         if (!messageProps) return null; // Skip rendering if messageProps is null
 
-        if (
+        // Check if we need to show a date separator
+        const showDateSeparator =
+          index === 0 ||
+          (message.date &&
+            filteredMessages[index - 1]?.date &&
+            isDifferentDay(message.date, filteredMessages[index - 1].date!));
+
+        const messageElement =
           message.type === "bot" &&
-          !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
-        )
-          return (
+          !isBotMessageEmpty(messageProps as ChatBubbleBotProps) ? (
             <ChatBubbleBot
               key={message.message_id || index}
               {...getMessageProps(message, "bot", messagePropsOptions)}
             />
+          ) : (
+            <ChatBubbleUser
+              key={message.message_id || index}
+              {...messageProps}
+            />
           );
 
         return (
-          <ChatBubbleUser key={message.message_id || index} {...messageProps} />
+          <React.Fragment key={`message-group-${message.message_id || index}`}>
+            {showDateSeparator && message.date && (
+              <DateSeparator date={formatMessageDate(message.date)} />
+            )}
+            {messageElement}
+          </React.Fragment>
         );
       })}
       {isLoading && (
-        <div className="flex items-center gap-4 pt-3 pl-[40px] text-sm font-medium">
+        <div className="flex items-center gap-4 pt-3 pl-[44px] text-sm font-medium">
           {toolInfo?.toolCategory && (
             <>
               {getToolCategoryIcon(toolInfo.toolCategory, {
