@@ -8,6 +8,7 @@ import CalendarListFetchCard from "@/features/calendar/components/CalendarListFe
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
 import EmailThreadCard from "@/features/chat/components/bubbles/bot/EmailThreadCard";
 import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResultsTabs";
+import { splitMessageByBreaks } from "@/features/chat/utils/messageBreakUtils";
 import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import EmailSentCard from "@/features/mail/components/EmailSentCard";
@@ -50,8 +51,6 @@ export default function TextBubble({
   google_docs_data,
   isConvoSystemGenerated,
   systemPurpose,
-  follow_up_actions,
-  loading,
 }: ChatBubbleBotProps) {
   return (
     <>
@@ -73,51 +72,137 @@ export default function TextBubble({
 
       {!!email_sent_data && <EmailSentCard emailSentData={email_sent_data} />}
 
-      {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (
-        <div className="chat_bubble bg-zinc-800">
-          <div className="flex flex-col gap-3">
-            {!!search_results && (
-              <Chip
-                color="primary"
-                startContent={<InternetIcon color="#00bbff" height={20} />}
-                variant="flat"
-              >
-                <div className="flex items-center gap-1 font-medium text-primary">
-                  Live Search Results from the Web
-                </div>
-              </Chip>
-            )}
+      {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) &&
+        (() => {
+          // Split text content by NEW_MESSAGE_BREAK tokens
+          const textParts = splitMessageByBreaks(text?.toString() || "");
 
-            {!!deep_research_results && (
-              <Chip
-                color="primary"
-                startContent={<InternetIcon color="#00bbff" height={20} />}
-                variant="flat"
-              >
-                <div className="flex items-center gap-1 font-medium text-primary">
-                  Deep Search Results from the Web
-                </div>
-              </Chip>
-            )}
+          if (textParts.length > 1) {
+            // Render multiple iMessage-style bubbles for split content
+            return (
+              <div className="flex flex-col">
+                {textParts.map((part, index) => {
+                  const isFirst = index === 0;
+                  const isLast = index === textParts.length - 1;
+                  // const isMiddle = !isFirst && !isLast;
 
-            {!!text && <MarkdownRenderer content={text.toString()} />}
+                  // iMessage grouped styling classes
+                  const groupedClasses = isFirst
+                    ? "imessage-grouped-first mb-1.5"
+                    : isLast
+                      ? "imessage-grouped-last"
+                      : "imessage-grouped-middle mb-1.5";
 
-            {!!disclaimer && (
-              <Chip
-                className="text-xs font-medium text-warning-500"
-                color="warning"
-                size="sm"
-                startContent={
-                  <AlertTriangleIcon className="text-warning-500" height={17} />
-                }
-                variant="flat"
-              >
-                {disclaimer!}
-              </Chip>
-            )}
-          </div>
-        </div>
-      )}
+                  return (
+                    <div
+                      key={index}
+                      className={`imessage-bubble imessage-from-them ${groupedClasses}`}
+                    >
+                      <div className="flex flex-col gap-3">
+                        {!!search_results && index === 0 && (
+                          <Chip
+                            color="primary"
+                            startContent={
+                              <InternetIcon color="#00bbff" height={20} />
+                            }
+                            variant="flat"
+                          >
+                            <div className="flex items-center gap-1 font-medium text-primary">
+                              Live Search Results from the Web
+                            </div>
+                          </Chip>
+                        )}
+
+                        {!!deep_research_results && index === 0 && (
+                          <Chip
+                            color="primary"
+                            startContent={
+                              <InternetIcon color="#00bbff" height={20} />
+                            }
+                            variant="flat"
+                          >
+                            <div className="flex items-center gap-1 font-medium text-primary">
+                              Deep Search Results from the Web
+                            </div>
+                          </Chip>
+                        )}
+
+                        <MarkdownRenderer content={part} />
+
+                        {!!disclaimer && index === textParts.length - 1 && (
+                          <Chip
+                            className="text-xs font-medium text-warning-500"
+                            color="warning"
+                            size="sm"
+                            startContent={
+                              <AlertTriangleIcon
+                                className="text-warning-500"
+                                height={17}
+                              />
+                            }
+                            variant="flat"
+                          >
+                            {disclaimer!}
+                          </Chip>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          }
+
+          // Single iMessage bubble (normal behavior)
+          return (
+            <div className="imessage-bubble imessage-from-them">
+              <div className="flex flex-col gap-3">
+                {!!search_results && (
+                  <Chip
+                    color="primary"
+                    startContent={<InternetIcon color="#00bbff" height={20} />}
+                    variant="flat"
+                  >
+                    <div className="flex items-center gap-1 font-medium text-primary">
+                      Live Search Results from the Web
+                    </div>
+                  </Chip>
+                )}
+
+                {!!deep_research_results && (
+                  <Chip
+                    color="primary"
+                    startContent={<InternetIcon color="#00bbff" height={20} />}
+                    variant="flat"
+                  >
+                    <div className="flex items-center gap-1 font-medium text-primary">
+                      Deep Search Results from the Web
+                    </div>
+                  </Chip>
+                )}
+
+                {!!text && <MarkdownRenderer content={text.toString()} />}
+
+                {!!disclaimer && (
+                  <Chip
+                    className="text-xs font-medium text-warning-500"
+                    color="warning"
+                    size="sm"
+                    startContent={
+                      <AlertTriangleIcon
+                        className="text-warning-500"
+                        height={17}
+                      />
+                    }
+                    variant="flat"
+                  >
+                    {disclaimer!}
+                  </Chip>
+                )}
+              </div>
+            </div>
+          );
+        })()}
 
       {!!calendar_options && (
         <CalendarEventSection calendar_options={calendar_options!} />

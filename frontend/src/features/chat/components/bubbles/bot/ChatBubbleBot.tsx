@@ -74,14 +74,14 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         onMouseOut={handleMouseOut}
         className="relative flex flex-col pb-8"
       >
-        <div className="flex items-end">
+        <div className="flex items-end gap-1">
           <div className="relative bottom-0 min-w-[40px] flex-shrink-0">
             <Image
               alt="GAIA Logo"
               src={"/branding/logo.webp"}
               width={30}
               height={30}
-              className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative transition duration-900`}
+              className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
             />
           </div>
 

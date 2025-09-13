@@ -46,7 +46,7 @@ export default function ChatBubbleUser({
         )}
 
         {text?.trim() && (
-          <div className="chat_bubble user">
+          <div className="imessage-bubble imessage-from-me">
             {!!text && (
               <div className="flex max-w-[30vw] text-wrap whitespace-pre-wrap select-text">
                 {text}
