@@ -1,6 +1,5 @@
 import json
 import time
-from functools import lru_cache
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
@@ -9,7 +8,6 @@ from app.utils.general_utils import transform_gmail_message
 from fastapi import UploadFile
 
 
-@lru_cache(maxsize=None)
 def get_gmail_tool(tool_name: str, user_id: str):
     """
     Get a specific Gmail tool by name with caching using ComposioService.
