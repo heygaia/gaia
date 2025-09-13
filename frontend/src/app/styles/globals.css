@@ -66,10 +66,86 @@
 .chat_bubble_container.user {
   align-items: flex-end;
 }
-.chatbubblebot_parent {
-  align-items: flex-end;
-  display: flex;
-  gap: 0.5em;
+
+/* iMessage-style chat bubbles */
+.imessage-bubble {
+  max-width: 40vw;
+  word-wrap: break-word;
+  line-height: 24px;
+  position: relative;
+  padding: 8px 20px;
+  border-radius: 20px;
+}
+
+.imessage-bubble::before,
+.imessage-bubble::after {
+  content: "";
+  position: absolute;
+  bottom: 0;
+  height: 18px;
+}
+
+.imessage-grouped-first {
+  border-radius: 20px 20px 20px 20px !important;
+}
+
+.imessage-grouped-last {
+  border-radius: 20px 20px 20px 20px !important;
+}
+
+.imessage-grouped-middle {
+  border-radius: 20px 20px 20px 20px !important;
+}
+
+/* Bot messages (from-them style) */
+.imessage-from-them {
+  background: #27272a;
+  color: black;
+  align-self: flex-start;
+}
+
+.imessage-from-them::before {
+  left: -7px;
+  width: 20px;
+  background-color: #27272a;
+  border-bottom-right-radius: 16px;
+}
+
+.imessage-from-them::after {
+  left: -26px;
+  width: 26px;
+  background-color: #1a1a1a;
+  border-bottom-right-radius: 10px;
+}
+
+/* User messages (from-me style) */
+.imessage-from-me {
+  color: black;
+  background: #00bbff;
+  align-self: flex-end;
+}
+
+.imessage-from-me::before {
+  right: -7px;
+  width: 20px;
+  background-color: #00bbff;
+  border-bottom-left-radius: 16px 14px;
+}
+
+.imessage-from-me::after {
+  right: -26px;
+  width: 26px;
+  background-color: #18181b;
+  border-bottom-left-radius: 10px;
+}
+
+/* Grouped iMessage bubbles for NEW_MESSAGE_BREAK */
+/* Hide tails for grouped messages except the last one */
+.imessage-grouped-first::before,
+.imessage-grouped-first::after,
+.imessage-grouped-middle::before,
+.imessage-grouped-middle::after {
+  display: none;
 }
 .conversation_history {
   display: flex;
@@ -373,9 +449,6 @@ div,
   .chat_bubble,
   .chat_bubble.user div {
     max-width: 90vw;
-  }
-  .chatbubblebot_parent {
-    margin-left: -0.5em;
   }
   .landing_img_container img:hover {
     transform: scale(2.2) translateY(10%);

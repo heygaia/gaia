@@ -46,7 +46,7 @@ export default function ChatBubbleUser({
         )}
 
         {text?.trim() && (
-          <div className="chat_bubble user">
+          <div className="imessage-bubble imessage-from-me">
             {!!text && (
               <div className="flex max-w-[30vw] text-wrap whitespace-pre-wrap select-text">
                 {text}
@@ -57,14 +57,14 @@ export default function ChatBubbleUser({
 
         <div className="flex justify-end opacity-0 transition-all group-hover:opacity-100">
           {date && (
-            <span className="text-opacity-45 flex flex-col pt-[2px] text-xs text-white select-text">
+            <span className="flex flex-col pt-1 text-xs text-zinc-400 select-text">
               {parseDate(date)}
             </span>
           )}
         </div>
       </div>
-      <div className="sticky -bottom-3 min-w-[40px]">
-        <Avatar className="relative bottom-4 rounded-full bg-black">
+      <div className="min-w-[40px]">
+        <Avatar className="relative bottom-5 rounded-full bg-black">
           <AvatarImage src={user?.profilePicture} alt="User Avatar" />
           <AvatarFallback>
             <Image
