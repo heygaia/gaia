@@ -1,9 +1,9 @@
-import Image from "next/image";
 import { Button } from "@heroui/button";
+import Image from "next/image";
 import { toast } from "sonner";
 
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
 import { Task01Icon } from "@/components/shared/icons";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
 import { useUser } from "@/features/auth/hooks/useUser";
 import SelectedToolIndicator from "@/features/chat/components/composer/SelectedToolIndicator";
 import SelectedWorkflowIndicator from "@/features/chat/components/composer/SelectedWorkflowIndicator";
