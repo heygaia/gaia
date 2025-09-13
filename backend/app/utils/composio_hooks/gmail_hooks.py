@@ -15,6 +15,8 @@ from app.langchain.templates.mail_templates import (
     process_list_drafts_response,
     process_list_messages_response,
 )
+from app.models.chat_models import EmailSentData
+from app.models.mail_models import EmailComposeRequest
 from composio.types import ToolExecutionResponse
 from langgraph.config import get_stream_writer
 
@@ -46,19 +48,17 @@ def gmail_compose_after_hook(
                 message_data = response["data"].get("message", {})
 
                 # Build the email compose data with draft_id
-                emails_data = [
-                    {
-                        "to": message_data.get("to", []),
-                        "subject": message_data.get("subject", ""),
-                        "body": message_data.get("body", ""),
-                        "draft_id": draft_id,
-                        "thread_id": message_data.get("threadId", None),
-                    }
-                ]
+                email_compose_instance = EmailComposeRequest(
+                    to=message_data.get("to", []),
+                    subject=message_data.get("subject", ""),
+                    body=message_data.get("body", ""),
+                    draft_id=draft_id,
+                    thread_id=message_data.get("threadId", None),
+                )
 
                 # Send compose data to frontend with draft_id
                 payload = {
-                    "email_compose_data": emails_data,
+                    "email_compose_data": [email_compose_instance.model_dump()],
                     "progress": "Draft created successfully!",
                     "draft_created": True,
                     "draft_id": draft_id,
@@ -70,15 +70,15 @@ def gmail_compose_after_hook(
                 message_data = response["data"].get("message", {})
 
                 # Send email sent data to frontend
-                payload = {
-                    "email_sent_data": {
-                        "message_id": response["data"].get("id", ""),
-                        "message": "Email sent successfully!",
-                        "timestamp": response["data"].get("timestamp", ""),
-                        "recipients": message_data.get("to", []),
-                        "subject": message_data.get("subject", ""),
-                    }
-                }
+                email_sent_instance = EmailSentData(
+                    message_id=response["data"].get("id", ""),
+                    message="Email sent successfully!",
+                    timestamp=response["data"].get("timestamp", ""),
+                    recipients=message_data.get("to", []),
+                    subject=message_data.get("subject", ""),
+                )
+
+                payload = {"email_sent_data": email_sent_instance.model_dump()}
                 writer(payload)
 
         return response["data"]

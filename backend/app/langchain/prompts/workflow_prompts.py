@@ -14,7 +14,7 @@ AVAILABLE TOOL CATEGORIES: {categories}
 ## HOW WORKFLOWS WORK (User's Perspective):
 
 **What is a workflow?**
-A workflow is an automated sequence of 4-7 actionable steps that accomplish a complex goal by chaining together multiple tools in logical order.
+A workflow is an automated sequence of 1-5 HIGHLY OPTIMIZED steps that accomplish a complex goal by chaining together multiple tools in the most efficient order possible. Each workflow is designed for maximum impact with minimum steps.
 
 **CRITICAL UNDERSTANDING: YOU (the LLM) execute these workflows**
 - **You are the executor**: The workflow steps are instructions for YOU, not separate systems
@@ -29,8 +29,14 @@ A workflow is an automated sequence of 4-7 actionable steps that accomplish a co
 5. **Results delivered**: Each step produces outputs that feed into subsequent steps with your intelligent interpretation
 
 **Real Examples:**
-- "Prepare for client meeting" → 1) Search emails for client history 2) Research client online 3) Block prep time on calendar 4) Set follow-up reminder
-- "Weekly team update" → 1) Get project status from Linear 2) Search recent emails 3) Create summary document 4) Email team with updates
+- "Prepare for client meeting" → 1) Search emails for complete client history and recent context 2) Create calendar event with meeting, prep time, and automatic follow-up
+- "Weekly team update" → 1) Comprehensive search across emails, projects, and documents for all team updates 2) Generate and distribute complete status document with action items
+
+**EFFICIENCY-FIRST APPROACH:**
+- **CONSOLIDATE OPERATIONS**: Use tools that can handle multiple related tasks in one call
+- **STRATEGIC SEQUENCING**: Order steps to create maximum information flow between tools
+- **ELIMINATE REDUNDANCY**: Never create multiple steps that could be combined into one powerful action
+- **SMART TOOL SELECTION**: Choose tools that inherently handle complexity rather than breaking into simple steps
 
 **Key Principles for Step Generation:**
 - Each step must be a concrete TOOL ACTION that interfaces with external systems
@@ -39,13 +45,42 @@ A workflow is an automated sequence of 4-7 actionable steps that accomplish a co
 - You inherently understand context, so steps don't need to explain obvious connections
 - User should get clear value from the automated tool sequence with your intelligent orchestration
 
+**OPTIMIZATION PRINCIPLES - CREATE ULTRA-EFFICIENT WORKFLOWS:**
+- **MINIMIZE STEPS**: Aim for 3-5 steps max. Every additional step reduces efficiency
+- **COMBINE OPERATIONS**: Look for tools that can accomplish multiple objectives in a single call
+- **ELIMINATE REDUNDANCY**: Remove any duplicate or overlapping actions between steps
+- **SEQUENCE OPTIMIZATION**: Order steps to minimize back-and-forth between different systems
+- **DATA REUSE**: Design steps so outputs can be maximally reused in subsequent steps
+- **BATCH OPERATIONS**: Use tools that can handle multiple items/actions at once when possible
+- **SMART DEFAULTS**: Choose tools and parameters that require minimal configuration
+- **DIRECT PATHS**: Avoid intermediate steps when direct action is possible
+
+**EXTREME NECESSITY FILTER - ONLY CREATE ABSOLUTELY ESSENTIAL STEPS:**
+- **RUTHLESS ELIMINATION**: If a step is not 100% CRITICAL to achieving the end goal, DO NOT INCLUDE IT
+- **NECESSITY TEST**: Ask "Is this step absolutely impossible to avoid?" - If answer is no, eliminate it
+- **SINGLE PURPOSE RULE**: Each step must serve a unique, irreplaceable function that cannot be accomplished by any other step
+- **NO CONVENIENCE STEPS**: Do not add steps just because they "might be helpful" - only include what is MANDATORY
+- **ESSENTIAL ACTION ONLY**: Every step must represent an external action that is fundamentally required, not optional
+- **ZERO TOLERANCE**: There is no room for "nice to have" steps - be extremely selective and only include what is absolutely necessary
+- **CONSOLIDATION MANDATE**: If two steps can possibly be combined, they MUST be combined - no exceptions
+
+**EFFICIENCY PATTERNS:**
+- Instead of: 1) Search emails → 2) Read each email → 3) Categorize → 4) Create labels → 5) Apply labels
+- Do: 1) Search emails with filters → 2) Create and apply labels in one operation
+- Instead of: 1) Search web → 2) Read results → 3) Search more → 4) Create document → 5) Save document
+- Do: 1) Comprehensive web search → 2) Generate complete document with all findings
+- Instead of: 1) Get calendar → 2) Find conflicts → 3) Create meeting → 4) Send invites → 5) Set reminders
+- Do: 1) Create smart calendar event with auto-conflict resolution → 2) Batch send invites with reminders
+
 CRITICAL REQUIREMENTS:
 1. Use ONLY the exact tool names from the list below - do not make up or modify tool names
 2. Use ONLY the exact category names shown in parentheses for each tool
 3. Each step must specify tool_name using the EXACT name from the available tools
 4. Each step must specify tool_category using the EXACT category shown in parentheses for each tool
-5. Create 4-7 actionable steps that logically break down this goal into executable tasks
+5. Create 3-5 HIGHLY OPTIMIZED steps that accomplish the goal with maximum efficiency
 6. Use practical and helpful tools that accomplish the goal, avoid unnecessary tools
+7. PRIORITIZE TOOLS that can handle multiple operations or achieve multiple objectives
+8. ELIMINATE any step that doesn't directly contribute to the end goal
 
 FORBIDDEN STEP TYPES (DO NOT CREATE):
 - Do NOT create steps for "generating summaries," "analyzing data," or "processing information" - the LLM does this inherently
@@ -91,14 +126,22 @@ BAD WORKFLOW EXAMPLES (DO NOT CREATE):
 ❌ "Search for the email that triggered this" → Redundant when email trigger provides the data
 ❌ "Get email details" → Email trigger already includes sender, subject, content
 
-GOOD WORKFLOW EXAMPLES (EXTERNAL TOOL ACTIONS):
-✅ "Plan vacation to Europe" → 1) web_search_tool (category: search), 2) get_weather (category: weather), 3) create_calendar_event (category: calendar)
-✅ "Organize project emails" → 1) search_gmail_messages (category: mail), 2) create_gmail_label (category: mail), 3) apply_labels_to_emails (category: mail)
-✅ "Prepare for client meeting" → 1) search_gmail_messages (category: mail), 2) web_search_tool (category: search), 3) create_calendar_event (category: calendar)
-✅ "Submit quarterly report" → 1) query_file (category: documents), 2) generate_document (category: documents), 3) create_reminder (category: productivity)
-✅ "Follow up on email" → 1) search_gmail_messages (find original), 2) compose_gmail_message (draft reply), 3) create_reminder (schedule follow-up)
-✅ "Email trigger: Auto-reply to customer" → 1) compose_email (create reply), 2) create_calendar_event (schedule follow-up), 3) create_reminder (check status)
-✅ "Email trigger: Process support request" → 1) web_search_tool (research issue), 2) compose_email (send solution), 3) update_crm_contact (log interaction)
+GOOD WORKFLOW EXAMPLES (OPTIMIZED EXTERNAL TOOL ACTIONS):
+✅ "Plan vacation to Europe" → 1) web_search_tool (comprehensive Europe travel research), 2) get_weather (multi-city forecast), 3) create_calendar_event (complete trip with all dates)
+✅ "Organize project emails" → 1) search_gmail_messages (all project-related), 2) create_gmail_labels_and_apply (batch organize in one step)
+✅ "Prepare for client meeting" → 1) search_gmail_messages (client history + recent context), 2) create_calendar_event (meeting + prep time + follow-up)
+✅ "Submit quarterly report" → 1) query_file (get all quarterly data), 2) generate_document (complete report with analysis)
+✅ "Follow up on email chain" → 1) search_gmail_messages (entire conversation), 2) compose_gmail_message (contextual reply with action items)
+✅ "Email trigger: Customer support response" → 1) web_search_tool (research issue + solution), 2) compose_email (complete resolution + follow-up)
+✅ "Email trigger: Meeting request" → 1) create_calendar_event (auto-find time + send invites), 2) compose_email (confirmation + agenda)
+
+ANTI-PATTERNS TO AVOID (INEFFICIENT WORKFLOWS):
+❌ "Plan vacation" → 1) Search flights 2) Search hotels 3) Search activities 4) Check weather 5) Create itinerary 6) Book calendar 7) Set reminders
+   ↳ INSTEAD: 1) Comprehensive travel search 2) Weather forecast 3) Complete calendar event
+❌ "Email organization" → 1) List emails 2) Read each 3) Categorize 4) Create label 5) Apply to each 6) Clean up 7) Archive
+   ↳ INSTEAD: 1) Search filtered emails 2) Batch create and apply labels
+❌ "Project planning" → 1) Research topic 2) Analyze requirements 3) Create outline 4) Write sections 5) Review content 6) Format document 7) Save file
+   ↳ INSTEAD: 1) Comprehensive research 2) Generate complete project plan
 
 Available Tools:
 {tools}

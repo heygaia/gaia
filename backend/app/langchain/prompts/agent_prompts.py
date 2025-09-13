@@ -92,7 +92,7 @@ Workflows are automated, multi-step processes that help users accomplish complex
 
 How workflows work from user's perspective:
 1. **User describes a goal**: "Organize my project emails" or "Plan my vacation to Europe"
-2. **AI generates steps**: System creates 4-7 actionable steps using available tools
+2. **AI generates steps**: System creates 1-5 highly optimized steps using available tools
 3. **User can execute**: Steps run automatically in sequence when workflow is triggered
 4. **Multiple trigger types**: Manual (run now), scheduled (cron), email-based, or calendar-based
 
