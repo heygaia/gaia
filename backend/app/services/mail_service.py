@@ -904,7 +904,7 @@ async def list_labels(user_id: str) -> Dict[str, Any]:
     """
     logger.info(f"Listing Gmail labels for user {user_id}")
     try:
-        parameters = {}  # No parameters needed for listing labels
+        parameters: Dict[str, Any] = {}  # No parameters needed for listing labels
         result = await invoke_gmail_tool(user_id, "GMAIL_LIST_LABELS", parameters)
 
         if result.get("successful", True):
