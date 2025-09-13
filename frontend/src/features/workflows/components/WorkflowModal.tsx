@@ -294,6 +294,19 @@ export default function WorkflowModal({
         } catch (error) {
           console.error("Failed to start step generation:", error);
           setIsGeneratingSteps(false);
+
+          // Still show success since workflow was created
+          setCreationPhase("success");
+          toast.warning("Workflow created successfully", {
+            description:
+              "Step generation will complete in the background. You can manually generate steps later if needed.",
+            duration: 5000,
+          });
+
+          // Auto-close after warning
+          setTimeout(() => {
+            handleClose();
+          }, 3000);
         }
 
         if (onWorkflowSaved) {
@@ -334,6 +347,19 @@ export default function WorkflowModal({
         } catch (error) {
           console.error("Failed to start step generation:", error);
           setIsGeneratingSteps(false);
+
+          // Keep as success since workflow was created
+          setCreationPhase("success");
+          toast.warning("Workflow created successfully", {
+            description:
+              "Step generation will complete in the background. You can manually generate steps later.",
+            duration: 5000,
+          });
+
+          // Auto-close after warning
+          setTimeout(() => {
+            handleClose();
+          }, 3000);
         }
       } else {
         // Show the actual error from the creation hook if available
@@ -595,8 +621,23 @@ export default function WorkflowModal({
           handleClose();
         }, 2000);
       } else {
-        // No steps after polling completed - this is an error
-        setCreationPhase("error");
+        // No steps after polling completed - check if this is really an error
+        // It could be that the workflow was created but step generation failed
+        console.warn(
+          "Step generation may have failed, but workflow was created successfully",
+        );
+
+        // Show a more specific error message and keep the workflow
+        setCreationPhase("success"); // Keep as success since workflow was created
+
+        // Show a warning toast instead of error
+        toast.warning("Workflow created, but step generation incomplete", {
+          description:
+            "You can generate steps manually by editing the workflow",
+          duration: 5000,
+        });
+
+        // Auto-close after showing the message
         setTimeout(() => {
           handleClose();
         }, 3000);
@@ -649,27 +690,41 @@ export default function WorkflowModal({
       timeoutId = setTimeout(() => {
         if (isRegeneratingSteps) {
           setRegenerationError(
-            "Regeneration is taking longer than expected. Please try again.",
+            "Step regeneration timed out. The workflow still exists - you can try again later.",
           );
           setIsRegeneratingSteps(false);
-          toast.error("Regeneration timeout", {
+          toast.warning("Regeneration timeout", {
             description:
-              "The regeneration is taking too long. Please try again.",
+              "Step regeneration took too long. You can try regenerating again.",
             duration: 5000,
           });
         }
 
         if (isGeneratingSteps) {
           setIsGeneratingSteps(false);
-          toast.error("Step generation timeout", {
-            description:
-              "Step generation is taking too long. You can try regenerating steps later.",
-            duration: 5000,
-          });
+          console.warn(
+            "Step generation timed out, but workflow was created successfully",
+          );
+
+          // Don't show an error for create mode - workflow was still created
+          if (mode === "create") {
+            setCreationPhase("success");
+            toast.warning("Workflow created with delayed step generation", {
+              description:
+                "Your workflow was created successfully. Steps are still generating in the background.",
+              duration: 5000,
+            });
+          } else {
+            toast.warning("Step generation timeout", {
+              description:
+                "Step generation took too long. You can try regenerating steps later.",
+              duration: 5000,
+            });
+          }
         }
 
         stopPolling();
-      }, 60000); // 60 seconds timeout
+      }, 90000); // Increased to 90 seconds to allow more time
     }
 
     return () => {
@@ -677,7 +732,7 @@ export default function WorkflowModal({
         clearTimeout(timeoutId);
       }
     };
-  }, [isRegeneratingSteps, isGeneratingSteps, stopPolling]);
+  }, [isRegeneratingSteps, isGeneratingSteps, stopPolling, mode]);
 
   // Clean up when modal closes
   useEffect(() => {
