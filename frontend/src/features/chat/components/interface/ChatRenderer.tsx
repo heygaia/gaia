@@ -128,41 +128,23 @@ export default function ChatRenderer() {
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;
 
-        if (message.type === "bot") {
+        if (message.type === "bot")
           messageProps = getMessageProps(message, "bot", messagePropsOptions);
-        } else if (message.type === "user") {
+        else if (message.type === "user")
           messageProps = getMessageProps(message, "user", messagePropsOptions);
-        }
 
-        if (!messageProps) {
-          return null; // Skip rendering if messageProps is null
-        }
+        if (!messageProps) return null; // Skip rendering if messageProps is null
 
         if (
           message.type === "bot" &&
           !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
-        ) {
+        )
           return (
-            <div
+            <ChatBubbleBot
               key={message.message_id || index}
-              className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
-            >
-              <div className="sticky bottom-0 min-w-[40px]">
-                <Image
-                  alt="GAIA Logo"
-                  src={"/branding/logo.webp"}
-                  width={30}
-                  height={30}
-                  className={`${isLoading && index == filteredMessages.length - 1 ? "animate-spin" : ""} relative transition duration-900`}
-                />
-              </div>
-
-              <ChatBubbleBot
-                {...getMessageProps(message, "bot", messagePropsOptions)}
-              />
-            </div>
+              {...getMessageProps(message, "bot", messagePropsOptions)}
+            />
           );
-        }
 
         return (
           <ChatBubbleUser key={message.message_id || index} {...messageProps} />

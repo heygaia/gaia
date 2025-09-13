@@ -12,6 +12,9 @@ import { parseDate } from "@/utils/date/dateUtils";
 
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
+import { isBotMessageEmpty } from "@/features/chat/utils/messageContentUtils";
+import Image from "next/image";
+import FollowUpActions from "./FollowUpActions";
 
 export default function ChatBubbleBot(props: ChatBubbleBotProps) {
   const {
@@ -26,6 +29,7 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
     isConvoSystemGenerated,
     systemPurpose,
     integration_connection_required,
+    follow_up_actions,
   } = props;
   const { isLoading } = useLoading();
 
@@ -69,8 +73,18 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         onMouseOver={handleMouseOver}
         onMouseOut={handleMouseOut}
       >
-        <div className="chatbubblebot_parent">
-          <div className="flex w-full flex-col gap-2">
+        <div className="relative flex flex-row items-end">
+          <div className="relative bottom-24 min-w-[40px]">
+            {!isBotMessageEmpty(props as ChatBubbleBotProps) && (
+              <Image
+                alt="GAIA Logo"
+                src={"/branding/logo.webp"}
+                width={30}
+                height={30}
+              />
+            )}
+          </div>
+          <div className="flex w-full flex-col">
             {memory_data && onOpenMemoryModal && (
               <MemoryIndicator
                 memoryData={memory_data}
@@ -78,33 +92,40 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
               />
             )}
             <div className="chat_bubble_container">{renderedComponent}</div>
-          </div>
-        </div>
 
-        {!loading && !isLoading && (
-          <div
-            ref={actionsRef}
-            className="absolute flex flex-col transition-all"
-            style={{ opacity: 0, visibility: "hidden" }}
-          >
-            {date && (
-              <span className="text-opacity-40 flex flex-col p-1 text-xs text-white select-text">
-                {parseDate(date)}
-              </span>
-            )}
-
-            {image_data ? (
-              <ChatBubble_Actions_Image image_data={image_data} />
-            ) : (
-              <ChatBubble_Actions
-                loading={loading}
-                message_id={message_id}
-                pinned={pinned}
-                text={text}
+            {!!follow_up_actions && follow_up_actions?.length > 0 && (
+              <FollowUpActions
+                actions={follow_up_actions}
+                loading={!!loading}
               />
             )}
+
+            {!loading && !isLoading && (
+              <div
+                ref={actionsRef}
+                className="flex flex-col gap-1 transition-all"
+                style={{ opacity: 0, visibility: "hidden" }}
+              >
+                {date && (
+                  <span className="text-opacity-40 flex flex-col p-1 text-xs text-zinc-400 select-text">
+                    {parseDate(date)}
+                  </span>
+                )}
+
+                {image_data ? (
+                  <ChatBubble_Actions_Image image_data={image_data} />
+                ) : (
+                  <ChatBubble_Actions
+                    loading={loading}
+                    message_id={message_id}
+                    pinned={pinned}
+                    text={text}
+                  />
+                )}
+              </div>
+            )}
           </div>
-        )}
+        </div>
       </div>
     )
   );
