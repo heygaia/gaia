@@ -50,6 +50,8 @@ export default function TextBubble({
   google_docs_data,
   isConvoSystemGenerated,
   systemPurpose,
+  follow_up_actions,
+  loading,
 }: ChatBubbleBotProps) {
   return (
     <>

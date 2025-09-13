@@ -44,6 +44,7 @@ export interface BotMessageData extends BaseMessageData {
   disclaimer?: string;
   filename?: string;
   systemPurpose?: SystemPurpose;
+  isLastMessage?: boolean;
 
   // UI callback functions
   setOpenImage: React.Dispatch<React.SetStateAction<boolean>>;

@@ -1,5 +1,4 @@
 import { Spinner } from "@heroui/spinner";
-import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -19,12 +18,12 @@ import {
 } from "@/features/chat/utils/messageContentUtils";
 import { getMessageProps } from "@/features/chat/utils/messagePropsUtils";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { getRandomThinkingMessage } from "@/utils/playfulThinking";
 import {
   ChatBubbleBotProps,
   SetImageDataType,
 } from "@/types/features/chatBubbleTypes";
 import { MessageType } from "@/types/features/convoTypes";
+import { getRandomThinkingMessage } from "@/utils/playfulThinking";
 
 export default function ChatRenderer() {
   const { convoMessages } = useConversation();
@@ -141,24 +140,10 @@ export default function ChatRenderer() {
           !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
         )
           return (
-            <div
+            <ChatBubbleBot
               key={message.message_id || index}
-              className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
-            >
-              <div className="relative bottom-12 min-w-[40px]">
-                <Image
-                  alt="GAIA Logo"
-                  src={"/branding/logo.webp"}
-                  width={30}
-                  height={30}
-                  className={`${isLoading && index == filteredMessages.length - 1 ? "animate-spin" : ""} relative transition duration-900`}
-                />
-              </div>
-
-              <ChatBubbleBot
-                {...getMessageProps(message, "bot", messagePropsOptions)}
-              />
-            </div>
+              {...getMessageProps(message, "bot", messagePropsOptions)}
+            />
           );
 
         return (
