@@ -133,7 +133,9 @@ async def send_email(
         if attachments:
             parameters["attachments"] = _process_attachments(attachments)
 
-        logger.info(f"Using {tool_name} to {'reply to thread ' + thread_id if is_reply else 'send new email to ' + to}")
+        logger.info(
+            f"Using {tool_name} to {'reply to thread ' + (thread_id or '') if is_reply else 'send new email to ' + to}"
+        )
         
         return await invoke_gmail_tool(user_id, tool_name, parameters)
         
@@ -686,7 +688,7 @@ async def create_draft(
     """
     logger.info(f"Creating draft email to {to_list} with subject: {subject}")
     try:
-        parameters: dict[str, Any] = {
+        parameters: Dict[str, Any] = {
             "to": to_list,
             "subject": subject,
             "body": body,
