@@ -62,7 +62,7 @@ class GmailMessageParser:
         if raw_data:
             raw_email_bytes = base64.urlsafe_b64decode(raw_data)
             parser = email.parser.BytesParser(policy=email.policy.default)
-            return parser.parsebytes(raw_email_bytes)
+            return parser.parsebytes(raw_email_bytes)  # type: ignore
 
         # Manual parsing from payload structure
         payload = self.gmail_message.get("payload", {})

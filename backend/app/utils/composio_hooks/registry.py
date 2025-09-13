@@ -7,9 +7,8 @@ ALL Composio tools with built-in user_id extraction and frontend streaming.
 
 from typing import Any, Callable, List, Optional, Union
 
-from composio.types import ToolExecuteParams
-
 from app.config.loggers import app_logger as logger
+from composio.types import ToolExecuteParams
 
 
 class ComposioHookRegistry:
