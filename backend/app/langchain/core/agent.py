@@ -164,5 +164,5 @@ async def call_agent_silent(
         return await execute_graph_silent(graph, initial_state, config)
 
     except Exception as exc:
-        logger.error(f"Error when calling agent: {exc}")
-        return f"❌ Error executing workflow: {str(exc)}", {}
+        logger.error(f"Error when calling silent agent: {exc}")
+        return f"Error when calling silent agent: {str(exc)}", {}

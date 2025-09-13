@@ -186,13 +186,13 @@ class EmailComposeRequest(BaseModel):
 
     body: str = Field(
         ...,
-        min_length=1,
+        min_length=0,
         max_length=10000,
         description="Body content of the email",
     )
     subject: str = Field(
         ...,
-        min_length=1,
+        min_length=0,
         max_length=200,
         description="Subject line for the email",
     )

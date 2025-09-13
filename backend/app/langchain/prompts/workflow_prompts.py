@@ -147,22 +147,23 @@ For specialized provider services, ALWAYS use handoff tools instead of any manua
 1. **NO MANUAL TOOL RETRIEVAL**: Do NOT use `retrieve_tools` for provider-specific steps
 2. **NO DIRECT TOOL EXECUTION**: Do NOT try to execute GMAIL_*, NOTION_*, TWITTER_*, LINKEDIN_* tools directly
 3. **HANDOFF ONLY**: For provider steps, use ONLY the appropriate handoff tool
-4. **PASS FULL CONTEXT**: When using handoff tools, pass the complete step description and user context
+4. **PASS SPECIFIC TOOL INFO**: When using handoff tools, include the EXACT tool name and step details
 
 **Execution Approach:**
 For each workflow step:
-- If step involves Gmail/email → `call_gmail_agent("[step description and context]")`
-- If step involves Notion → `call_notion_agent("[step description and context]")`
-- If step involves Twitter → `call_twitter_agent("[step description and context]")`
-- If step involves LinkedIn → `call_linkedin_agent("[step description and context]")`
+- If step involves Gmail/email → `call_gmail_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]")`
+- If step involves Notion → `call_notion_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]")`
+- If step involves Twitter → `call_twitter_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]")`
+- If step involves LinkedIn → `call_linkedin_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]")`
 - For general tools (calendar, todos, web search, etc.) → Execute directly
 
 **Execution Guidelines:**
 1. Process steps in the exact order shown
-2. For provider-specific steps, use sub-agent handoffs ONLY
+2. For provider-specific steps, use sub-agent handoffs ONLY with specific tool names
 3. For general steps, execute directly using available tools
-4. Provide clear updates on progress and tool results
-5. If a step fails, use your reasoning to determine the best recovery approach
+4. Always mention the exact tool_name when handing off to sub-agents
+5. Provide clear updates on progress and tool results
+6. If a step fails, use your reasoning to determine the best recovery approach
 6. Connect information between steps using your natural understanding
 7. Adapt handoff descriptions based on user context and previous step results
 
@@ -221,22 +222,23 @@ For specialized provider services, ALWAYS use handoff tools instead of any manua
 1. **NO MANUAL TOOL RETRIEVAL**: Do NOT use `retrieve_tools` for provider-specific steps
 2. **NO DIRECT TOOL EXECUTION**: Do NOT try to execute GMAIL_*, NOTION_*, TWITTER_*, LINKEDIN_* tools directly
 3. **HANDOFF ONLY**: For provider steps, use ONLY the appropriate handoff tool
-4. **PASS FULL CONTEXT**: When using handoff tools, pass the complete step description, email context, and user context
+4. **PASS SPECIFIC TOOL INFO**: When using handoff tools, include the EXACT tool name and step details with email context
 
 **Execution Approach:**
 For each workflow step:
-- If step involves Gmail/email → `call_gmail_agent("[step description with email context]")`
-- If step involves Notion → `call_notion_agent("[step description with email context]")`
-- If step involves Twitter → `call_twitter_agent("[step description with email context]")`
-- If step involves LinkedIn → `call_linkedin_agent("[step description with email context]")`
+- If step involves Gmail/email → `call_gmail_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]. Email context: From {email_sender}, Subject: {email_subject}")`
+- If step involves Notion → `call_notion_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]. Email context: From {email_sender}, Subject: {email_subject}")`
+- If step involves Twitter → `call_twitter_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]. Email context: From {email_sender}, Subject: {email_subject}")`
+- If step involves LinkedIn → `call_linkedin_agent("Execute step: [step title]. Use tool: [exact tool_name]. Description: [step description]. Email context: From {email_sender}, Subject: {email_subject}")`
 - For general tools (calendar, todos, web search, etc.) → Execute directly
 
 **Execution Guidelines:**
 1. Process steps in the exact order shown
-2. For provider-specific steps, use sub-agent handoffs ONLY
+2. For provider-specific steps, use sub-agent handoffs ONLY with specific tool names
 3. For general steps, execute directly using available tools
-4. Use email context to make smart decisions about handoff descriptions
-5. Provide clear updates on progress while maintaining email context awareness
+4. Always mention the exact tool_name when handing off to sub-agents
+5. Use email context to make smart decisions about handoff descriptions
+6. Provide clear updates on progress while maintaining email context awareness
 6. If a step fails, use your reasoning to determine the best path forward
 7. Remember the email context throughout - this workflow was triggered for a reason
 

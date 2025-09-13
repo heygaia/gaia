@@ -1,10 +1,14 @@
 import json
 from typing import Optional
+from datetime import datetime, timezone
+from uuid import uuid4
 
 from langchain_core.messages import ToolCall
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.tools.core.registry import tool_registry
+from app.models.chat_models import MessageModel, UpdateMessagesRequest
+from app.services.conversation_service import update_messages
 
 
 def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
@@ -92,3 +96,45 @@ def process_custom_event_for_tools(payload) -> dict:
     except Exception as e:
         logger.error(f"Error extracting tool data: {e}")
         return {}
+
+
+async def store_agent_progress(
+    conversation_id: str, user_id: str, current_message: str, current_tool_data: dict
+) -> None:
+    """Store agent execution progress in real-time.
+
+    Generic function for storing bot messages during agent execution.
+    Works for any agent execution - workflows, normal chat, etc.
+
+    Args:
+        conversation_id: Conversation ID for storage
+        user_id: User ID for authorization
+        current_message: Current accumulated LLM response
+        current_tool_data: Current accumulated tool outputs
+    """
+    try:
+        # Create bot message using same pattern as chat_service.py
+        bot_message = MessageModel(
+            type="bot",
+            response=current_message,
+            date=datetime.now(timezone.utc).isoformat(),
+            message_id=str(uuid4()),
+        )
+
+        # Apply tool data to message (same as chat_service.py)
+        if current_tool_data:
+            for key, value in current_tool_data.items():
+                setattr(bot_message, key, value)
+
+        # Store immediately using existing service
+        await update_messages(
+            UpdateMessagesRequest(
+                conversation_id=conversation_id,
+                messages=[bot_message],
+            ),
+            user={"user_id": user_id},
+        )
+
+    except Exception as e:
+        # Don't break agent execution for storage failures
+        logger.error(f"Failed to store agent progress: {str(e)}")

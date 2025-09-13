@@ -15,6 +15,7 @@ from app.langchain.core.agent_utils import (
     format_sse_response,
     format_tool_progress,
     process_custom_event_for_tools,
+    store_agent_progress,
 )
 from app.models.models_models import ModelConfig
 from langchain_core.messages import AIMessageChunk
@@ -120,11 +121,14 @@ def build_initial_state(
 async def execute_graph_silent(
     graph, initial_state: dict, config: dict
 ) -> tuple[str, dict]:
-    """Execute LangGraph in silent mode without streaming output.
+    """Execute LangGraph in silent mode with real-time progress storage.
 
     Runs the agent graph asynchronously and accumulates all results including
     the complete message content and extracted tool data. Used for background
     processing and workflow triggers where real-time streaming is not needed.
+
+    Stores intermediate messages and tool outputs as they happen during execution,
+    using the same storage patterns as normal chat.
 
     Args:
         graph: LangGraph instance to execute
@@ -138,6 +142,10 @@ async def execute_graph_silent(
     """
     complete_message = ""
     tool_data = {}
+
+    # Get storage context from config
+    conversation_id = config.get("configurable", {}).get("thread_id")
+    user_id = config.get("configurable", {}).get("user_id")
 
     async for event in graph.astream(
         initial_state,
@@ -158,6 +166,12 @@ async def execute_graph_silent(
             new_data = process_custom_event_for_tools(payload)
             if new_data:
                 tool_data.update(new_data)
+
+                # Store progress immediately when tool completes (same pattern as chat)
+                if conversation_id and user_id:
+                    await store_agent_progress(
+                        conversation_id, user_id, complete_message, tool_data
+                    )
 
     return complete_message, tool_data
 
