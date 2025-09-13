@@ -24,7 +24,8 @@ export const shouldShowTextBubble = (
     return false;
   }
 
-  return !!text.trim();
+  // Check if text has meaningful content (not null, undefined, empty, or just whitespace)
+  return text != null && text.trim().length > 0;
 };
 
 /**
@@ -33,15 +34,24 @@ export const shouldShowTextBubble = (
 export const isBotMessageEmpty = (props: ChatBubbleBotProps): boolean => {
   const { text, loading, isConvoSystemGenerated, systemPurpose } = props;
 
+  // Loading messages are considered not empty
   if (loading) return false;
 
-  // Only check keys that are in TOOLS_MESSAGE_KEYS
-  const hasAnyContent = TOOLS_MESSAGE_KEYS.some((key) => !!props[key]);
+  // Check if any tool-specific content exists
+  const hasToolContent = TOOLS_MESSAGE_KEYS.some((key) => {
+    const value = props[key];
+    return value != null && value !== undefined;
+  });
 
-  return !(
-    hasAnyContent ||
-    shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose)
+  // Check if text content is meaningful
+  const hasTextContent = shouldShowTextBubble(
+    text,
+    isConvoSystemGenerated,
+    systemPurpose,
   );
+
+  // Message is empty only if it has neither tool content nor meaningful text
+  return !hasToolContent && !hasTextContent;
 };
 
 /**

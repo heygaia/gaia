@@ -1,7 +1,6 @@
 import { Spinner } from "@heroui/spinner";
-import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 
 import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
@@ -24,6 +23,10 @@ import {
   SetImageDataType,
 } from "@/types/features/chatBubbleTypes";
 import { MessageType } from "@/types/features/convoTypes";
+import { getRandomThinkingMessage } from "@/utils/playfulThinking";
+
+import { formatMessageDate, isDifferentDay } from "../../utils/dateUtils";
+import { DateSeparator } from "./DateSeparator";
 
 export default function ChatRenderer() {
   const { convoMessages } = useConversation();
@@ -128,48 +131,45 @@ export default function ChatRenderer() {
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;
 
-        if (message.type === "bot") {
+        if (message.type === "bot")
           messageProps = getMessageProps(message, "bot", messagePropsOptions);
-        } else if (message.type === "user") {
+        else if (message.type === "user")
           messageProps = getMessageProps(message, "user", messagePropsOptions);
-        }
 
-        if (!messageProps) {
-          return null; // Skip rendering if messageProps is null
-        }
+        if (!messageProps) return null; // Skip rendering if messageProps is null
 
-        if (
+        // Check if we need to show a date separator
+        const showDateSeparator =
+          index === 0 ||
+          (message.date &&
+            filteredMessages[index - 1]?.date &&
+            isDifferentDay(message.date, filteredMessages[index - 1].date!));
+
+        const messageElement =
           message.type === "bot" &&
-          !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
-        ) {
-          return (
-            <div
+          !isBotMessageEmpty(messageProps as ChatBubbleBotProps) ? (
+            <ChatBubbleBot
               key={message.message_id || index}
-              className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
-            >
-              <div className="sticky bottom-0 min-w-[40px]">
-                <Image
-                  alt="GAIA Logo"
-                  src={"/branding/logo.webp"}
-                  width={30}
-                  height={30}
-                  className={`${isLoading && index == filteredMessages.length - 1 ? "animate-spin" : ""} relative transition duration-900`}
-                />
-              </div>
-
-              <ChatBubbleBot
-                {...getMessageProps(message, "bot", messagePropsOptions)}
-              />
-            </div>
+              {...getMessageProps(message, "bot", messagePropsOptions)}
+            />
+          ) : (
+            <ChatBubbleUser
+              key={message.message_id || index}
+              {...messageProps}
+            />
           );
-        }
 
         return (
-          <ChatBubbleUser key={message.message_id || index} {...messageProps} />
+          <React.Fragment key={`message-group-${message.message_id || index}`}>
+            {showDateSeparator && message.date && (
+              <DateSeparator date={formatMessageDate(message.date)} />
+            )}
+            {messageElement}
+          </React.Fragment>
         );
       })}
       {isLoading && (
-        <div className="flex items-center gap-4 pt-3 pl-[40px] text-sm font-medium">
+        <div className="flex items-center gap-4 pt-3 pl-[44px] text-sm font-medium">
           {toolInfo?.toolCategory && (
             <>
               {getToolCategoryIcon(toolInfo.toolCategory, {
@@ -179,7 +179,7 @@ export default function ChatRenderer() {
               })}
             </>
           )}
-          <span>{loadingText || "GAIA is thinking..."}</span>
+          <span>{loadingText || getRandomThinkingMessage()}</span>
           <Spinner variant="dots" color="primary" />
         </div>
       )}
