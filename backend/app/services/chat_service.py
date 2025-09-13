@@ -47,7 +47,7 @@ async def chat_stream(
             logger.warning(f"Could not get user's selected model, using default: {e}")
 
     # Stream response from the agent
-    async for chunk in call_agent(
+    async for chunk in await call_agent(
         request=body,
         user=user,
         conversation_id=conversation_id,

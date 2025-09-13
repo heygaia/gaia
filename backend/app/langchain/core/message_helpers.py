@@ -62,16 +62,14 @@ async def get_memory_message(user_id: str, query: str) -> Optional[SystemMessage
 def format_tool_selection_message(selected_tool: str, existing_content: str) -> str:
     """Format tool selection message, handling both standalone and combined requests."""
     tool_name = selected_tool.replace("_", " ").title()
-    base_instruction = (
-        f"You must use the {selected_tool} tool to process their request."
-    )
+    base_instruction = f"The user has selected the {selected_tool} tool and wants you to execute it immediately."
 
     # If user provided content, append tool instruction to their message
     if existing_content:
-        return f"{existing_content}\n\n**TOOL SELECTION:** The user has specifically selected the '{tool_name}' tool and wants you to execute it to handle their request above. {base_instruction} Do not suggest alternatives - the user has already chosen this specific tool for their task."
+        return f"{existing_content}\n\n**TOOL SELECTION:** The user has specifically selected the '{tool_name}' tool and wants you to execute it to handle their request above. {base_instruction} Follow your system prompt instructions for provider-specific tools and use appropriate handoff tools when needed. Do not ask for additional information - execute the selected functionality now."
 
     # Pure tool execution without user message
-    return f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_name}' tool and wants you to execute it immediately. Use the {selected_tool} tool now. This is a direct tool execution request with no additional context needed. If you don't have tool context, use retrieve_tools to get tool information. Ignore older tools requests and focus on the current tool selection. {base_instruction} If requested tool is not available then use `retrieve_tools` to get the relevant tool information."
+    return f"**TOOL EXECUTION REQUEST:** The user has selected the '{tool_name}' tool and wants you to execute it immediately. {base_instruction} Follow your system prompt instructions for provider-specific tools and use appropriate handoff tools when needed. Do not ask for additional information or clarification - proceed with executing the selected tool functionality right away."
 
 
 async def format_workflow_execution_message(

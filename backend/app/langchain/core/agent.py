@@ -1,297 +1,168 @@
+"""Agent execution module providing streaming and silent execution modes.
+
+This module handles the core agent execution logic with two distinct patterns:
+
+1. Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
+   - Required for interactive chat where users need immediate feedback
+   - Cannot return awaited results directly due to AsyncGenerator yield semantics
+   - Must yield SSE-formatted strings as they're produced
+
+2. Silent Mode (call_agent_silent): Returns awaited tuple for background processing
+   - Used for workflow triggers and batch processing where streaming isn't needed
+   - Can return complete results after full execution
+   - More efficient for automation and server-to-server communication
+
+The separation exists because Python async functions cannot both yield values
+(AsyncGenerator) and return awaited results simultaneously. Each pattern serves
+different use cases in the agent architecture.
+"""
+
 import asyncio
 import json
-from datetime import datetime, timezone
-from typing import AsyncGenerator, List, Optional, Union
+from datetime import datetime
+from typing import AsyncGenerator, Optional
 
 from app.config.loggers import llm_logger as logger
+from app.langchain.core.agent_helpers import (
+    build_agent_config,
+    build_initial_state,
+    execute_graph_silent,
+    execute_graph_streaming,
+)
 from app.langchain.core.graph_manager import GraphManager
 from app.langchain.core.messages import construct_langchain_messages
-from app.langchain.tools.core.registry import tool_registry
 from app.models.message_models import MessageRequestWithHistory
 from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory
-from langchain_core.messages import (
-    AIMessageChunk,
-    AnyMessage,
-)
-from langsmith import traceable
 
 
-@traceable(run_type="llm", name="Call Agent")
+async def _core_agent_logic(
+    request: MessageRequestWithHistory,
+    conversation_id: str,
+    user: dict,
+    user_time: datetime,
+    user_model_config: Optional[ModelConfig] = None,
+    access_token: Optional[str] = None,
+    refresh_token: Optional[str] = None,
+    trigger_context: Optional[dict] = None,
+):
+    """Core agent initialization logic shared between streaming and silent execution modes.
+
+    Handles the common setup required for both streaming and silent agent execution
+    including message construction, graph initialization, state building, and
+    background memory storage. Centralizes the preparation logic to avoid duplication.
+
+    Args:
+        request: Message request with conversation history and file data
+        conversation_id: Unique identifier for the conversation thread
+        user: User information dictionary with ID, email, and name
+        user_time: Current datetime in user's timezone
+        user_model_config: Optional model configuration for inference
+        access_token: Optional OAuth access token for authenticated requests
+        refresh_token: Optional OAuth refresh token for token renewal
+        trigger_context: Optional context data from workflow triggers
+
+    Returns:
+        Tuple containing:
+        - graph: Initialized LangGraph instance ready for execution
+        - initial_state: Prepared state dictionary with all context
+        - config: Configuration dictionary with user settings and tokens
+    """
+    user_id = user.get("user_id")
+
+    # Build langchain messages with context
+    history = await construct_langchain_messages(
+        messages=request.messages,
+        files_data=request.fileData,
+        currently_uploaded_file_ids=request.fileIds,
+        user_id=user_id,
+        query=request.message,
+        user_name=user.get("name"),
+        selected_tool=request.selectedTool,
+        selected_workflow=request.selectedWorkflow,
+        trigger_context=trigger_context,
+    )
+
+    # Get the graph and setup initial state
+    graph = await GraphManager.get_graph()
+    initial_state = build_initial_state(
+        request, user_id or "", conversation_id, history, trigger_context
+    )
+
+    # Start memory storage in background (fire and forget)
+    if user_id and request.message:
+        asyncio.create_task(
+            store_user_message_memory(user_id, request.message, conversation_id)
+        )
+
+    # Build config with optional tokens
+    config = build_agent_config(
+        conversation_id, user, user_time, user_model_config, access_token, refresh_token
+    )
+
+    return graph, initial_state, config
+
+
 async def call_agent(
     request: MessageRequestWithHistory,
-    conversation_id,
-    user,
+    conversation_id: str,
+    user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
-):
-    user_id = user.get("user_id")
-    messages = request.messages
-    complete_message = ""
+) -> AsyncGenerator[str, None]:
+    """
+    Execute agent in streaming mode for interactive chat.
 
-    async def store_memory():
-        """Store memory in background."""
-        try:
-            if user_id and request.message:
-                await store_user_message_memory(
-                    user_id, request.message, conversation_id
-                )
-        except Exception as e:
-            logger.error(f"Error in background memory storage: {e}")
-
+    Returns an AsyncGenerator that yields SSE-formatted streaming data.
+    """
     try:
-        # First gather: Setup operations that can run in parallel
-        history_task = construct_langchain_messages(
-            messages=messages,
-            files_data=request.fileData,
-            currently_uploaded_file_ids=request.fileIds,
-            user_id=user_id,
-            query=request.message,
-            user_name=user.get("name"),
-            selected_tool=request.selectedTool,
-            selected_workflow=request.selectedWorkflow,
+        graph, initial_state, config = await _core_agent_logic(
+            request, conversation_id, user, user_time, user_model_config
         )
-        graph_task = GraphManager.get_graph()
 
-        history, graph = await asyncio.gather(history_task, graph_task)
+        return execute_graph_streaming(graph, initial_state, config)
 
-        # Start memory storage in background - fire and forget
-        asyncio.create_task(store_memory())
+    except Exception as exc:
+        logger.error(f"Error when calling agent: {exc}")
+        error_message = f"Error when calling agent: {str(exc)}"
 
-        initial_state = {
-            "query": request.message,
-            "messages": history,
-            "current_datetime": datetime.now(timezone.utc).isoformat(),
-            "mem0_user_id": user_id,
-            "conversation_id": conversation_id,
-            "selected_tool": request.selectedTool,
-            "selected_workflow": request.selectedWorkflow,
-        }
+        async def error_generator():
+            error_dict = {"error": error_message}
+            yield f"data: {json.dumps(error_dict)}\n\n"
+            yield "data: [DONE]\n\n"
 
-        # Begin streaming the AI output
-        config = {
-            "configurable": {
-                "thread_id": conversation_id,
-                "user_id": user_id,
-                "email": user.get("email"),
-                "user_time": user_time.isoformat(),
-                "model_configurations": {
-                    "model_name": (
-                        user_model_config.provider_model_name
-                        if user_model_config
-                        else None
-                    ),
-                    "provider": user_model_config.inference_provider.value
-                    if user_model_config
-                    else None,
-                    "max_tokens": (
-                        user_model_config.max_tokens if user_model_config else None
-                    ),
-                },
-            },
-            "recursion_limit": 25,
-            "metadata": {"user_id": user_id},
-        }
-
-        async for event in graph.astream(
-            initial_state,
-            stream_mode=["messages", "custom"],
-            config=config,
-            subgraphs=True,
-        ):
-            # Handle subgraph events - when subgraphs=True, events are tuples with 3 elements
-            ns, stream_mode, payload = event
-            is_main_agent = len(ns) == 0
-
-            if stream_mode == "messages":
-                chunk, metadata = payload
-                if chunk is None:
-                    continue
-
-                # If we remove this check, all tool outputs will be yielded
-                if isinstance(chunk, AIMessageChunk):
-                    content = str(chunk.content)
-                    tool_calls = chunk.tool_calls
-
-                    if tool_calls:
-                        for tool_call in tool_calls:
-                            logger.info(f"{tool_call=}")
-                            tool_name_raw = tool_call.get("name")
-                            if tool_name_raw:
-                                tool_name = tool_name_raw.replace("_", " ").title()
-                                tool_category = tool_registry.get_category_of_tool(
-                                    tool_name_raw
-                                )
-                                progress_data = {
-                                    "progress": {
-                                        "message": f"Executing {tool_name}...",
-                                        "tool_name": tool_name_raw,
-                                        "tool_category": tool_category,
-                                    }
-                                }
-                                yield f"data: {json.dumps(progress_data)}\n\n"
-
-                    # Only yield content from the main agent to avoid duplication
-                    if content and is_main_agent:
-                        yield f"data: {json.dumps({'response': content})}\n\n"
-                        complete_message += content
-
-            elif stream_mode == "custom":
-                yield f"data: {json.dumps(payload)}\n\n"
-
-        # After streaming, yield complete message in order to store in db
-        yield f"nostream: {json.dumps({'complete_message': complete_message})}"
-
-        yield "data: [DONE]\n\n"
-
-    except Exception as e:
-        logger.error(f"Error when calling agent: {e}")
-        error_dict = {
-            "error": f"Error when calling agent: {e}",
-        }
-        yield f"data: {json.dumps(error_dict)}\n\n"
-        yield "data: [DONE]\n\n"
+        return error_generator()
 
 
-@traceable
 async def call_agent_silent(
     request: MessageRequestWithHistory,
-    conversation_id,
-    user,
+    conversation_id: str,
+    user: dict,
     user_time: datetime,
-    access_token=None,
-    refresh_token=None,
     user_model_config: Optional[ModelConfig] = None,
+    access_token: Optional[str] = None,
+    refresh_token: Optional[str] = None,
     trigger_context: Optional[dict] = None,
 ) -> tuple[str, dict]:
     """
     Execute agent in silent mode for background processing.
-    Returns (complete_message, tool_data) without streaming.
 
-    This reuses the same graph execution logic as call_agent() but captures
-    tool data without yielding stream chunks.
+    Returns a tuple of (complete_message, tool_data_dict).
     """
-    from app.services.chat_service import extract_tool_data
-
-    user_id = user.get("user_id")
-    messages = request.messages
-    complete_message = ""
-    tool_data = {}
-
-    async def store_memory():
-        """Store memory in background."""
-        try:
-            if user_id and request.message:
-                await store_user_message_memory(
-                    user_id, request.message, conversation_id
-                )
-        except Exception as e:
-            logger.error(f"Error in background memory storage: {e}")
-
     try:
-        # Setup operations that can run in parallel
-        history = await construct_langchain_messages(
-            messages=messages,
-            files_data=request.fileData,
-            currently_uploaded_file_ids=request.fileIds,
-            user_id=user_id,
-            query=request.message,
-            user_name=user.get("name"),
-            selected_tool=request.selectedTool,
-            selected_workflow=request.selectedWorkflow,
-            trigger_context=trigger_context,
+        graph, initial_state, config = await _core_agent_logic(
+            request,
+            conversation_id,
+            user,
+            user_time,
+            user_model_config,
+            access_token,
+            refresh_token,
+            trigger_context,
         )
 
-        # Use the default graph (same as normal chat)
-        graph = await GraphManager.get_graph()
+        return await execute_graph_silent(graph, initial_state, config)
 
-        # Start memory storage in background
-        asyncio.create_task(store_memory())
-
-        try:
-            initial_state = {
-                "query": request.message,
-                "messages": history,
-                "current_datetime": datetime.now(timezone.utc).isoformat(),
-                "mem0_user_id": user_id,
-                "conversation_id": conversation_id,
-                "selected_tool": request.selectedTool,
-                "selected_workflow": request.selectedWorkflow,
-                "trigger_context": trigger_context,
-            }
-        except Exception as e:
-            logger.error(f"Error constructing initial state: {e}")
-            initial_state = {
-                "query": request.message,
-                "messages": history,
-                "current_datetime": datetime.now(timezone.utc).isoformat(),
-                "mem0_user_id": user_id,
-                "conversation_id": conversation_id,
-                "selected_tool": request.selectedTool,
-                "selected_workflow": request.selectedWorkflow,
-            }
-
-        logger.info(f"{initial_state=}")
-
-        # Execute graph and capture tool data silently
-        async for event in graph.astream(
-            initial_state,
-            stream_mode=["messages", "custom"],
-            config={
-                "configurable": {
-                    "thread_id": conversation_id,
-                    "user_id": user_id,
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
-                    "email": user.get("email"),
-                    "user_time": user_time.isoformat(),
-                    "model_configurations": {
-                        "model_name": (
-                            user_model_config.provider_model_name
-                            if user_model_config
-                            else None
-                        ),
-                        "provider": user_model_config.inference_provider.value
-                        if user_model_config
-                        else None,
-                        "max_tokens": (
-                            user_model_config.max_tokens if user_model_config else None
-                        ),
-                    },
-                },
-                "recursion_limit": 25,
-                "metadata": {"user_id": user_id},
-            },
-        ):
-            stream_mode, payload = event
-
-            if stream_mode == "messages":
-                chunk, metadata = payload
-                if chunk is None:
-                    continue
-
-                if isinstance(chunk, AIMessageChunk):
-                    content = str(chunk.content)
-                    if content:
-                        complete_message += content
-
-            elif stream_mode == "custom":
-                # Extract tool data from custom stream events
-                try:
-                    # Simple JSON serialization with fallback to string
-                    try:
-                        serialized = json.dumps(payload)
-                    except (TypeError, ValueError):
-                        serialized = str(payload)
-
-                    new_data = extract_tool_data(serialized)
-                    if new_data:
-                        tool_data.update(new_data)
-                except Exception as e:
-                    logger.error(f"Error extracting tool data in silent mode: {e}")
-
-        return complete_message, tool_data
-
-    except Exception as e:
-        logger.error(f"Error in call_agent_silent: {e}")
-        return f"❌ Error executing workflow: {str(e)}", {}
+    except Exception as exc:
+        logger.error(f"Error when calling agent: {exc}")
+        return f"❌ Error executing workflow: {str(exc)}", {}

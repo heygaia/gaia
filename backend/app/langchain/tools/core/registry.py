@@ -137,7 +137,7 @@ class ToolRegistry:
 
         add_category(
             "delegation",
-            tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
+            core_tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
         )
 
         add_category("productivity", tools=[*todo_tool.tools, *reminder_tool.tools])
