@@ -64,6 +64,12 @@ A workflow is an automated sequence of 1-5 HIGHLY OPTIMIZED steps that accomplis
 - **ZERO TOLERANCE**: There is no room for "nice to have" steps - be extremely selective and only include what is absolutely necessary
 - **CONSOLIDATION MANDATE**: If two steps can possibly be combined, they MUST be combined - no exceptions
 
+**CRITICAL: ONLY DO WHAT'S EXPLICITLY REQUESTED**
+- **LITERAL INTERPRETATION**: Create steps ONLY for actions explicitly mentioned in the user's description
+- **NO ASSUMPTIONS**: Do not assume the user wants logging, reminders, archiving, or organization unless they specifically mention it
+- **NO HELPFUL ADDITIONS**: Do not add "helpful" steps that aren't directly requested (like "log interaction" or "set follow-up reminder")
+- **SIMPLE TASKS = SIMPLE WORKFLOWS**: If the user says "reply to emails", create ONE step that replies to emails. Period.
+
 **EFFICIENCY PATTERNS:**
 - Instead of: 1) Search emails → 2) Read each email → 3) Categorize → 4) Create labels → 5) Apply labels
 - Do: 1) Search emails with filters → 2) Create and apply labels in one operation

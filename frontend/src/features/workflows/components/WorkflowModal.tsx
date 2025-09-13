@@ -12,6 +12,7 @@ import {
 import { Input, Textarea } from "@heroui/input";
 import { Modal, ModalBody, ModalContent } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
+import { Skeleton } from "@heroui/skeleton";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
@@ -127,10 +128,14 @@ export default function WorkflowModal({
 
   // State for step regeneration
   const [isRegeneratingSteps, setIsRegeneratingSteps] = useState(false);
-  useState<string>("");
+  const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
   const [regenerationError, setRegenerationError] = useState<string | null>(
     null,
   );
+
+  // Original form data for change detection
+  const [originalFormData, setOriginalFormData] =
+    useState<WorkflowFormData | null>(null);
 
   // State for countdown close timer
   const [countdown, setCountdown] = useState<number>(0);
@@ -179,7 +184,7 @@ export default function WorkflowModal({
   // Initialize form data based on mode and currentWorkflow
   useEffect(() => {
     if (mode === "edit" && currentWorkflow) {
-      setFormData({
+      const initialFormData = {
         title: currentWorkflow.title,
         description: currentWorkflow.description,
         activeTab:
@@ -194,12 +199,14 @@ export default function WorkflowModal({
               ? "calendar"
               : "",
         trigger_config: currentWorkflow.trigger_config,
-      });
+      };
+      setFormData(initialFormData);
+      setOriginalFormData(initialFormData);
       // Initialize activation state from current workflow
       setIsActivated(currentWorkflow.activated);
     } else {
       // Reset to default for create mode
-      setFormData({
+      const defaultFormData = {
         title: "",
         description: "",
         activeTab: "schedule",
@@ -209,7 +216,9 @@ export default function WorkflowModal({
           enabled: true,
           cron_expression: "0 9 * * *", // Default: daily at 9 AM
         } as TriggerConfig,
-      });
+      };
+      setFormData(defaultFormData);
+      setOriginalFormData(null);
       // Reset activation state for create mode
       setIsActivated(true);
     }
@@ -217,6 +226,20 @@ export default function WorkflowModal({
 
   const updateFormData = (updates: Partial<WorkflowFormData>) => {
     setFormData((prev) => ({ ...prev, ...updates }));
+  };
+
+  // Check if form has actual changes for edit mode
+  const hasFormChanges = () => {
+    if (mode === "create" || !originalFormData) return true;
+
+    return (
+      formData.title !== originalFormData.title ||
+      formData.description !== originalFormData.description ||
+      formData.activeTab !== originalFormData.activeTab ||
+      formData.selectedTrigger !== originalFormData.selectedTrigger ||
+      JSON.stringify(formData.trigger_config) !==
+        JSON.stringify(originalFormData.trigger_config)
+    );
   };
 
   const resetForm = () => {
@@ -232,7 +255,11 @@ export default function WorkflowModal({
         timezone: "UTC",
       } as TriggerConfig,
     });
+    setOriginalFormData(null);
     setCreationPhase("form");
+    setIsGeneratingSteps(false);
+    setIsRegeneratingSteps(false);
+    setRegenerationError(null);
     resetCreation();
     stopPolling();
     clearCreationError();
@@ -253,7 +280,7 @@ export default function WorkflowModal({
           // Include selected trigger for future implementation
           selected_trigger: formData.selectedTrigger,
         },
-        generate_immediately: true,
+        generate_immediately: false, // Create without steps for instant success
       };
 
       const result = await createWorkflow(createRequest);
@@ -261,8 +288,27 @@ export default function WorkflowModal({
       if (result.success && result.workflow) {
         // Update currentWorkflow with the newly created workflow
         setCurrentWorkflow(result.workflow);
-        setCreationPhase("generating");
-        startPolling(result.workflow.id);
+
+        // Show immediate success
+        setCreationPhase("success");
+
+        // Start generating steps in the background
+        setIsGeneratingSteps(true);
+
+        // Trigger step generation
+        try {
+          await workflowApi.regenerateWorkflowSteps(result.workflow.id, {
+            instruction: "Generate workflow steps",
+            force_different_tools: false,
+          });
+
+          // Start polling for the generated steps
+          startPolling(result.workflow.id);
+        } catch (error) {
+          console.error("Failed to start step generation:", error);
+          setIsGeneratingSteps(false);
+        }
+
         if (onWorkflowSaved) {
           onWorkflowSaved(result.workflow.id);
         }
@@ -433,6 +479,16 @@ export default function WorkflowModal({
   const handleRunWorkflow = async () => {
     if (mode !== "edit" || !existingWorkflow) return;
 
+    // Check if workflow has steps before allowing execution
+    if (!currentWorkflow?.steps || currentWorkflow.steps.length === 0) {
+      toast.error("Cannot run workflow", {
+        description:
+          "This workflow doesn't have any steps generated yet. Please wait for step generation to complete.",
+        duration: 4000,
+      });
+      return;
+    }
+
     try {
       selectWorkflow(existingWorkflow, { autoSend: true });
 
@@ -447,19 +503,15 @@ export default function WorkflowModal({
     }
   };
 
-  // Handle polling results (only for create mode)
+  // Handle step generation completion for create mode
   useEffect(() => {
-    if (
-      mode === "create" &&
-      currentWorkflow &&
-      creationPhase === "generating"
-    ) {
+    if (mode === "create" && currentWorkflow && isGeneratingSteps) {
       // Check if workflow has steps and is ready
       const hasSteps =
         currentWorkflow.steps && currentWorkflow.steps.length > 0;
 
       if (hasSteps) {
-        setCreationPhase("success");
+        setIsGeneratingSteps(false);
         stopPolling(); // Stop polling on success
 
         // Refresh workflow list when steps are generated successfully
@@ -467,28 +519,16 @@ export default function WorkflowModal({
           onWorkflowListRefresh();
         }
 
-        // Start countdown
-        setCountdown(5); // 5 seconds countdown
-        const interval = setInterval(() => {
-          setCountdown((prev) => {
-            if (prev <= 1) {
-              clearInterval(interval);
-              handleClose();
-              return 0;
-            }
-            return prev - 1;
-          });
-        }, 1000);
-        setCountdownInterval(interval);
+        // Show success toast
+        toast.success("Workflow created successfully!", {
+          description: `${currentWorkflow.steps?.length || 0} steps generated`,
+          duration: 3000,
+        });
 
         return;
       }
-
-      // For error handling, we'll rely on polling timeout rather than immediate error_message
-      // This prevents showing error for temporary generation issues
-      // The polling hook will stop after maxDuration (5 minutes) or maxAttempts (120)
     }
-  }, [currentWorkflow, creationPhase, stopPolling, mode]);
+  }, [currentWorkflow, isGeneratingSteps, stopPolling, mode]);
 
   // Handle polling timeout/completion for error states
   useEffect(() => {
@@ -530,31 +570,45 @@ export default function WorkflowModal({
           duration: 3000,
         });
 
-        // Regeneration completed - just stop the loading state
-        setIsRegeneratingSteps(false);
-        setRegenerationError(null);
-        stopPolling();
+        // Small delay before stopping shimmer to show the toast
+        setTimeout(() => {
+          setIsRegeneratingSteps(false);
+          setRegenerationError(null);
+          stopPolling();
+        }, 1000);
       }
     }
   }, [currentWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
 
-  // Timeout mechanism for regeneration
+  // Timeout mechanism for regeneration and generation
   useEffect(() => {
     let timeoutId: NodeJS.Timeout;
 
-    if (isRegeneratingSteps) {
-      // Set a 60-second timeout for regeneration
+    if (isRegeneratingSteps || isGeneratingSteps) {
+      // Set a 60-second timeout for regeneration/generation
       timeoutId = setTimeout(() => {
-        setRegenerationError(
-          "Regeneration is taking longer than expected. Please try again.",
-        );
-        setIsRegeneratingSteps(false);
-        stopPolling();
+        if (isRegeneratingSteps) {
+          setRegenerationError(
+            "Regeneration is taking longer than expected. Please try again.",
+          );
+          setIsRegeneratingSteps(false);
+          toast.error("Regeneration timeout", {
+            description:
+              "The regeneration is taking too long. Please try again.",
+            duration: 5000,
+          });
+        }
 
-        toast.error("Regeneration timeout", {
-          description: "The regeneration is taking too long. Please try again.",
-          duration: 5000,
-        });
+        if (isGeneratingSteps) {
+          setIsGeneratingSteps(false);
+          toast.error("Step generation timeout", {
+            description:
+              "Step generation is taking too long. You can try regenerating steps later.",
+            duration: 5000,
+          });
+        }
+
+        stopPolling();
       }, 60000); // 60 seconds timeout
     }
 
@@ -563,7 +617,7 @@ export default function WorkflowModal({
         clearTimeout(timeoutId);
       }
     };
-  }, [isRegeneratingSteps, stopPolling]);
+  }, [isRegeneratingSteps, isGeneratingSteps, stopPolling]);
 
   // Clean up when modal closes
   useEffect(() => {
@@ -934,7 +988,12 @@ export default function WorkflowModal({
                     <div className="flex items-center gap-4">
                       {existingWorkflow && (
                         <Tooltip
-                          content="Manually run workflow"
+                          content={
+                            !currentWorkflow?.steps ||
+                            currentWorkflow.steps.length === 0
+                              ? "Cannot run workflow without generated steps"
+                              : "Manually run workflow"
+                          }
                           placement="top"
                         >
                           <Button
@@ -943,6 +1002,10 @@ export default function WorkflowModal({
                             startContent={<Play className="h-4 w-4" />}
                             onPress={handleRunWorkflow}
                             size="sm"
+                            isDisabled={
+                              !currentWorkflow?.steps ||
+                              currentWorkflow.steps.length === 0
+                            }
                           >
                             Run Manually
                           </Button>
@@ -984,7 +1047,8 @@ export default function WorkflowModal({
                           !formData.description.trim() ||
                           (formData.activeTab === "schedule" &&
                             formData.trigger_config.type === "schedule" &&
-                            !formData.trigger_config.cron_expression)
+                            !formData.trigger_config.cron_expression) ||
+                          (mode === "edit" && !hasFormChanges())
                         }
                       >
                         {getButtonText()}
@@ -1090,9 +1154,28 @@ export default function WorkflowModal({
                             </div>
                           </div>
                           <div className="min-h-0 flex-1 overflow-y-auto">
-                            <WorkflowSteps
-                              steps={currentWorkflow.steps || []}
-                            />
+                            {isRegeneratingSteps || isGeneratingSteps ? (
+                              // Show shimmer while regenerating/generating
+                              <div className="space-y-4 py-5">
+                                {Array.from({ length: 3 }).map((_, i) => (
+                                  <div
+                                    key={i}
+                                    className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3"
+                                  >
+                                    <Skeleton className="h-8 w-8 flex-shrink-0 rounded-full" />
+                                    <div className="flex-1 space-y-2">
+                                      <Skeleton className="h-5 w-3/4 rounded" />
+                                      <Skeleton className="h-4 w-full rounded" />
+                                      <Skeleton className="h-4 w-1/2 rounded" />
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <WorkflowSteps
+                                steps={currentWorkflow.steps || []}
+                              />
+                            )}
                           </div>
                         </>
                       ) : (
@@ -1200,20 +1283,27 @@ export default function WorkflowModal({
                   <p className="text-sm text-zinc-400">
                     "{formData.title}" is ready to use
                   </p>
-                  {currentWorkflow && (
-                    <p className="mt-2 text-xs text-zinc-500">
-                      {currentWorkflow?.steps?.length || 0} steps generated
+                  {isGeneratingSteps ? (
+                    <p className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
+                      <CustomSpinner variant="simple" className="h-3 w-3" />
+                      Generating steps in background...
                     </p>
+                  ) : (
+                    currentWorkflow && (
+                      <p className="mt-2 text-xs text-zinc-500">
+                        {currentWorkflow?.steps?.length || 0} steps generated
+                      </p>
+                    )
                   )}
                 </div>
-                {/* Countdown close button */}
+                {/* Close button */}
                 <Button
                   color="primary"
                   variant="flat"
                   onPress={handleClose}
                   className="mt-4"
                 >
-                  Close {countdown > 0 && `(${countdown}s)`}
+                  Close
                 </Button>
               </div>
 
