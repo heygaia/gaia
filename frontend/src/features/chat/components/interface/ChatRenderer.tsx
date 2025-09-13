@@ -25,8 +25,8 @@ import {
 import { MessageType } from "@/types/features/convoTypes";
 import { getRandomThinkingMessage } from "@/utils/playfulThinking";
 
-import { DateSeparator } from "./DateSeparator";
 import { formatMessageDate, isDifferentDay } from "../../utils/dateUtils";
+import { DateSeparator } from "./DateSeparator";
 
 export default function ChatRenderer() {
   const { convoMessages } = useConversation();

@@ -8,16 +8,15 @@ import ChatBubble_Actions_Image from "@/features/chat/components/bubbles/actions
 import { IntegrationConnectionPrompt } from "@/features/chat/components/integration/IntegrationConnectionPrompt";
 import MemoryIndicator from "@/features/chat/components/memory/MemoryIndicator";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import {
+  shouldShowTextBubble,
+} from "@/features/chat/utils/messageContentUtils";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { parseDate } from "@/utils/date/dateUtils";
 
 import FollowUpActions from "./FollowUpActions";
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
-import {
-  isBotMessageEmpty,
-  shouldShowTextBubble,
-} from "@/features/chat/utils/messageContentUtils";
 
 export default function ChatBubbleBot(props: ChatBubbleBotProps) {
   const {
