@@ -21,7 +21,6 @@ import CalendarEventSection from "./CalendarEventSection";
 import CodeExecutionSection from "./CodeExecutionSection";
 import DocumentSection from "./DocumentSection";
 import EmailComposeSection from "./EmailComposeSection";
-import FollowUpActions from "./FollowUpActions";
 import GoalSection from "./goals/GoalSection";
 import { GoalAction } from "./goals/types";
 import GoogleDocsSection from "./GoogleDocsSection";
@@ -51,8 +50,6 @@ export default function TextBubble({
   google_docs_data,
   isConvoSystemGenerated,
   systemPurpose,
-  follow_up_actions,
-  loading,
 }: ChatBubbleBotProps) {
   return (
     <>
@@ -72,9 +69,7 @@ export default function TextBubble({
         <EmailThreadCard emailThreadData={email_thread_data} />
       )}
 
-      {!!email_sent_data && (
-        <EmailSentCard emailSentData={email_sent_data} />
-      )}
+      {!!email_sent_data && <EmailSentCard emailSentData={email_sent_data} />}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (
         <div className="chat_bubble bg-zinc-800">
@@ -183,10 +178,6 @@ export default function TextBubble({
       )}
 
       {!!code_data && <CodeExecutionSection code_data={code_data!} />}
-
-      {!!follow_up_actions && follow_up_actions?.length > 0 && (
-        <FollowUpActions actions={follow_up_actions} loading={!!loading} />
-      )}
     </>
   );
 }

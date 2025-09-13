@@ -66,11 +66,6 @@
 .chat_bubble_container.user {
   align-items: flex-end;
 }
-.chatbubblebot_parent {
-  align-items: flex-end;
-  display: flex;
-  gap: 0.5em;
-}
 .conversation_history {
   display: flex;
   flex-direction: column;
@@ -373,9 +368,6 @@ div,
   .chat_bubble,
   .chat_bubble.user div {
     max-width: 90vw;
-  }
-  .chatbubblebot_parent {
-    margin-left: -0.5em;
   }
   .landing_img_container img:hover {
     transform: scale(2.2) translateY(10%);
