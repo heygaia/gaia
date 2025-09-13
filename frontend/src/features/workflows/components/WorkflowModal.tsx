@@ -16,6 +16,7 @@ import { Skeleton } from "@heroui/skeleton";
 import { Switch } from "@heroui/switch";
 import { Tab, Tabs } from "@heroui/tabs";
 import { Tooltip } from "@heroui/tooltip";
+import { zodResolver } from "@hookform/resolvers/zod";
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import {
   AlertCircle,
@@ -29,6 +30,7 @@ import {
 import Image from "next/image";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { Controller, useForm } from "react-hook-form";
 import { toast } from "sonner";
 
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";
@@ -38,18 +40,16 @@ import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
 import { Workflow, workflowApi } from "../api/workflowApi";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
+import {
+  workflowFormSchema,
+  type WorkflowFormData,
+  getDefaultFormValues,
+  workflowToFormData,
+} from "../schemas/workflowFormSchema";
+import { useWorkflowModalStore } from "../stores/workflowModalStore";
 import { getTriggerEnabledIntegrations } from "../utils/triggerDisplay";
 import { ScheduleBuilder } from "./ScheduleBuilder";
 import WorkflowSteps from "./shared/WorkflowSteps";
-import { TriggerConfig } from "@/config/registries/triggerRegistry";
-
-interface WorkflowFormData {
-  title: string;
-  description: string;
-  activeTab: "manual" | "schedule" | "trigger";
-  selectedTrigger: string;
-  trigger_config: TriggerConfig;
-}
 
 interface WorkflowModalProps {
   isOpen: boolean;
@@ -84,8 +84,41 @@ export default function WorkflowModal({
   const { selectWorkflow } = useWorkflowSelection();
   const { integrations } = useIntegrations();
 
+  // Zustand UI state
+  const {
+    creationPhase,
+    isGeneratingSteps,
+    isRegeneratingSteps,
+    isTogglingActivation,
+    regenerationError,
+    isActivated,
+    setCreationPhase,
+    setIsGeneratingSteps,
+    setIsRegeneratingSteps,
+    setIsTogglingActivation,
+    setRegenerationError,
+    setIsActivated,
+    resetToForm,
+    resetAll,
+  } = useWorkflowModalStore();
+
   // Single source of truth for workflow data
   const [currentWorkflow, setCurrentWorkflow] = useState<Workflow | null>(null);
+
+  // React Hook Form setup
+  const form = useForm<WorkflowFormData>({
+    resolver: zodResolver(workflowFormSchema),
+    defaultValues: getDefaultFormValues(),
+  });
+
+  const {
+    control,
+    handleSubmit,
+    reset: resetFormValues,
+    setValue,
+    watch,
+    formState: { errors, isDirty },
+  } = form;
 
   // Manage the single workflow state from all sources
   useEffect(() => {
@@ -105,42 +138,18 @@ export default function WorkflowModal({
     }
   }, [pollingWorkflow, currentWorkflow?.id]);
 
-  const [creationPhase, setCreationPhase] = useState<
-    "form" | "creating" | "generating" | "success" | "error"
-  >("form");
-
-  const [formData, setFormData] = useState<WorkflowFormData>({
-    title: "",
-    description: "",
-    activeTab: "schedule",
-    selectedTrigger: "",
-    trigger_config: {
-      type: "schedule",
-      enabled: true,
-      cron_expression: "0 9 * * *",
-      timezone: "UTC",
-    } as TriggerConfig,
-  });
-
-  // State for workflow activation toggle
-  const [isActivated, setIsActivated] = useState(true);
-  const [isTogglingActivation, setIsTogglingActivation] = useState(false);
-
-  // State for step regeneration
-  const [isRegeneratingSteps, setIsRegeneratingSteps] = useState(false);
-  const [isGeneratingSteps, setIsGeneratingSteps] = useState(false);
-  const [regenerationError, setRegenerationError] = useState<string | null>(
-    null,
-  );
-
-  // Original form data for change detection
-  const [originalFormData, setOriginalFormData] =
-    useState<WorkflowFormData | null>(null);
+  // Watch form data for change detection
+  const formData = watch();
 
   // State for countdown close timer
   const [countdown, setCountdown] = useState<number>(0);
   const [countdownInterval, setCountdownInterval] =
     useState<NodeJS.Timeout | null>(null);
+
+  // Handle initial step generation (for empty workflows)
+  const handleInitialGeneration = () => {
+    handleRegenerateSteps("Generate workflow steps", false); // Don't force different tools for initial generation
+  };
 
   // Regeneration reason options (only for existing workflows)
   const regenerationReasons = [
@@ -176,114 +185,87 @@ export default function WorkflowModal({
     },
   ];
 
-  // Handle initial step generation (for empty workflows)
-  const handleInitialGeneration = () => {
-    handleRegenerateSteps("Generate workflow steps", false); // Don't force different tools for initial generation
-  };
-
   // Initialize form data based on mode and currentWorkflow
   useEffect(() => {
     if (mode === "edit" && currentWorkflow) {
-      const initialFormData = {
-        title: currentWorkflow.title,
-        description: currentWorkflow.description,
-        activeTab:
-          currentWorkflow.trigger_config.type === "email" ||
-          currentWorkflow.trigger_config.type === "calendar"
-            ? "trigger"
-            : (currentWorkflow.trigger_config.type as "manual" | "schedule"),
-        selectedTrigger:
-          currentWorkflow.trigger_config.type === "email"
-            ? "gmail"
-            : currentWorkflow.trigger_config.type === "calendar"
-              ? "calendar"
-              : "",
-        trigger_config: currentWorkflow.trigger_config,
-      };
-      setFormData(initialFormData);
-      setOriginalFormData(initialFormData);
+      const formValues = workflowToFormData(currentWorkflow);
+      resetFormValues(formValues);
       // Initialize activation state from current workflow
       setIsActivated(currentWorkflow.activated);
     } else {
       // Reset to default for create mode
-      const defaultFormData = {
-        title: "",
-        description: "",
-        activeTab: "schedule",
-        selectedTrigger: "",
-        trigger_config: {
-          type: "schedule",
-          enabled: true,
-          cron_expression: "0 9 * * *", // Default: daily at 9 AM
-        } as TriggerConfig,
-      };
-      setFormData(defaultFormData);
-      setOriginalFormData(null);
+      resetFormValues(getDefaultFormValues());
       // Reset activation state for create mode
       setIsActivated(true);
     }
-  }, [mode, currentWorkflow, isOpen]);
-
-  const updateFormData = (updates: Partial<WorkflowFormData>) => {
-    setFormData((prev) => ({ ...prev, ...updates }));
-  };
+  }, [mode, currentWorkflow, isOpen, resetFormValues, setIsActivated]);
 
   // Check if form has actual changes for edit mode
   const hasFormChanges = () => {
-    if (mode === "create" || !originalFormData) return true;
+    if (mode === "create") return true;
+
+    if (!existingWorkflow) return true;
+
+    const currentFormData = workflowToFormData(existingWorkflow);
 
     return (
-      formData.title !== originalFormData.title ||
-      formData.description !== originalFormData.description ||
-      formData.activeTab !== originalFormData.activeTab ||
-      formData.selectedTrigger !== originalFormData.selectedTrigger ||
+      formData.title !== currentFormData.title ||
+      formData.description !== currentFormData.description ||
+      formData.activeTab !== currentFormData.activeTab ||
+      formData.selectedTrigger !== currentFormData.selectedTrigger ||
       JSON.stringify(formData.trigger_config) !==
-        JSON.stringify(originalFormData.trigger_config)
+        JSON.stringify(currentFormData.trigger_config)
     );
   };
 
-  const resetForm = () => {
-    setFormData({
-      title: "",
-      description: "",
-      activeTab: "schedule",
-      selectedTrigger: "",
-      trigger_config: {
-        type: "schedule",
-        enabled: true,
-        cron_expression: "0 9 * * *", // Default: daily at 9 AM
-        timezone: "UTC",
-      } as TriggerConfig,
-    });
-    setOriginalFormData(null);
-    setCreationPhase("form");
-    setIsGeneratingSteps(false);
-    setIsRegeneratingSteps(false);
-    setRegenerationError(null);
-    resetCreation();
+  const handleFormReset = () => {
+    resetFormValues(getDefaultFormValues());
+    resetToForm();
     stopPolling();
     clearCreationError();
   };
 
-  const handleSave = async () => {
+  const handleSave = async (data: any) => {
+    const formData = data as WorkflowFormData;
     if (!formData.title.trim() || !formData.description.trim()) return;
 
     if (mode === "create") {
       setCreationPhase("creating");
 
+      // Log the request for debugging
+      console.log("Creating workflow with data:", formData);
+
+      // Validate the trigger config before sending
+      try {
+        const validationResult = workflowFormSchema.safeParse(formData);
+        if (!validationResult.success) {
+          console.error("Form validation failed:", validationResult.error);
+          setCreationPhase("error");
+          return;
+        }
+        console.log("Form validation passed");
+      } catch (validationError) {
+        console.error("Form validation error:", validationError);
+        setCreationPhase("error");
+        return;
+      }
+
       // Create the request object that matches the backend API
       const createRequest = {
         title: formData.title,
         description: formData.description,
-        trigger_config: {
-          ...formData.trigger_config,
-          // Include selected trigger for future implementation
-          selected_trigger: formData.selectedTrigger,
-        },
+        trigger_config: formData.trigger_config, // Use the trigger config as-is, don't add extra fields
         generate_immediately: false, // Create without steps for instant success
       };
 
+      console.log("Sending create request:", createRequest);
+
       const result = await createWorkflow(createRequest);
+
+      console.log("Create result:", result);
+      console.log("Result success:", result.success);
+      console.log("Result workflow:", result.workflow);
+      console.log("Creation error from hook:", creationError);
 
       if (result.success && result.workflow) {
         // Update currentWorkflow with the newly created workflow
@@ -292,10 +274,15 @@ export default function WorkflowModal({
         // Show immediate success
         setCreationPhase("success");
 
+        // Immediately refresh workflow list so user sees the workflow without steps
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+
         // Start generating steps in the background
         setIsGeneratingSteps(true);
-
-        // Trigger step generation
+        // Switch to generating phase to show the loading UI
+        setCreationPhase("generating"); // Trigger step generation
         try {
           await workflowApi.regenerateWorkflowSteps(result.workflow.id, {
             instruction: "Generate workflow steps",
@@ -316,8 +303,61 @@ export default function WorkflowModal({
         if (onWorkflowListRefresh) {
           onWorkflowListRefresh();
         }
+      } else if (result.workflow) {
+        // Special case: workflow exists but success=false
+        // This can happen if the backend returns error status but still creates the workflow
+        console.warn(
+          "Workflow was created despite success=false, treating as success",
+        );
+        setCurrentWorkflow(result.workflow);
+        setCreationPhase("success");
+
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+
+        if (onWorkflowSaved) {
+          onWorkflowSaved(result.workflow.id);
+        }
+
+        // Also try to start step generation for this case
+        try {
+          setIsGeneratingSteps(true);
+          setCreationPhase("generating");
+
+          await workflowApi.regenerateWorkflowSteps(result.workflow.id, {
+            instruction: "Generate workflow steps",
+            force_different_tools: false,
+          });
+
+          startPolling(result.workflow.id);
+        } catch (error) {
+          console.error("Failed to start step generation:", error);
+          setIsGeneratingSteps(false);
+        }
       } else {
-        setCreationPhase("error");
+        // Show the actual error from the creation hook if available
+        console.error("Workflow creation failed!");
+        console.error("Result success:", result.success);
+        console.error("Result workflow:", result.workflow);
+        console.error("Creation error from hook:", creationError);
+
+        // Only set error phase if we're sure it actually failed
+        // Sometimes result.success might be false but the workflow was created
+        if (!result.workflow) {
+          setCreationPhase("error");
+        } else {
+          // If we have a workflow but success is false, treat it as success
+          console.warn(
+            "Workflow was created despite success=false, treating as success",
+          );
+          setCurrentWorkflow(result.workflow);
+          setCreationPhase("success");
+
+          if (onWorkflowListRefresh) {
+            onWorkflowListRefresh();
+          }
+        }
       }
     } else {
       // Edit mode - update the existing workflow
@@ -366,7 +406,7 @@ export default function WorkflowModal({
       setCountdownInterval(null);
     }
     setCountdown(0);
-    resetForm();
+    resetFormValues(getDefaultFormValues());
     onOpenChange(false);
   };
 
@@ -514,16 +554,24 @@ export default function WorkflowModal({
         setIsGeneratingSteps(false);
         stopPolling(); // Stop polling on success
 
-        // Refresh workflow list when steps are generated successfully
-        if (onWorkflowListRefresh) {
-          onWorkflowListRefresh();
-        }
-
         // Show success toast
         toast.success("Workflow created successfully!", {
           description: `${currentWorkflow.steps?.length || 0} steps generated`,
           duration: 3000,
         });
+
+        // Refresh workflow list when steps are generated successfully
+        if (onWorkflowListRefresh) {
+          onWorkflowListRefresh();
+        }
+
+        // Switch back to success phase briefly before auto-closing
+        setCreationPhase("success");
+
+        // Auto-close modal after showing success
+        setTimeout(() => {
+          handleClose();
+        }, 2000);
 
         return;
       }
@@ -575,10 +623,22 @@ export default function WorkflowModal({
           setIsRegeneratingSteps(false);
           setRegenerationError(null);
           stopPolling();
+
+          // Refresh workflow list when regeneration completes
+          if (onWorkflowListRefresh) {
+            onWorkflowListRefresh();
+          }
         }, 1000);
       }
     }
-  }, [currentWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
+  }, [
+    currentWorkflow?.steps, // Watch the entire steps array, not just length
+    currentWorkflow?.id, // Also watch the workflow ID to ensure it's the right workflow
+    isRegeneratingSteps,
+    stopPolling,
+    mode,
+    onWorkflowListRefresh,
+  ]);
 
   // Timeout mechanism for regeneration and generation
   useEffect(() => {
@@ -651,18 +711,25 @@ export default function WorkflowModal({
             }
             onSelectionChange={(keys) => {
               const selectedTrigger = Array.from(keys)[0] as string;
-              updateFormData({
-                selectedTrigger,
-                trigger_config: {
-                  ...formData.trigger_config,
-                  type:
-                    selectedTrigger === "gmail"
-                      ? "email"
-                      : selectedTrigger === "calendar"
-                        ? "calendar"
-                        : "manual",
-                },
-              });
+              setValue("selectedTrigger", selectedTrigger);
+
+              // Update trigger config based on selection
+              if (selectedTrigger === "gmail") {
+                setValue("trigger_config", {
+                  type: "email",
+                  enabled: true,
+                });
+              } else if (selectedTrigger === "calendar") {
+                setValue("trigger_config", {
+                  type: "calendar",
+                  enabled: true,
+                });
+              } else {
+                setValue("trigger_config", {
+                  type: "manual",
+                  enabled: true,
+                });
+              }
             }}
             startContent={
               selectedTriggerOption && (
@@ -725,11 +792,9 @@ export default function WorkflowModal({
         }
         onChange={(cronExpression) => {
           if (formData.trigger_config.type === "schedule") {
-            updateFormData({
-              trigger_config: {
-                ...formData.trigger_config,
-                cron_expression: cronExpression,
-              },
+            setValue("trigger_config", {
+              ...formData.trigger_config,
+              cron_expression: cronExpression,
             });
           }
         }}
@@ -747,7 +812,7 @@ export default function WorkflowModal({
       key={currentWorkflow?.id || "new-workflow"}
       isOpen={isOpen}
       onOpenChange={(open) => {
-        if (!open) resetForm();
+        if (!open) handleFormReset();
         onOpenChange(open);
       }}
       hideCloseButton
@@ -762,24 +827,29 @@ export default function WorkflowModal({
               <div className="flex min-h-0 flex-1 flex-col">
                 <div className="min-h-0 flex-1 space-y-6 overflow-y-auto">
                   <div className="flex items-center gap-3">
-                    <Input
-                      autoFocus
-                      placeholder={
-                        mode === "edit"
-                          ? "Edit workflow name"
-                          : "Enter workflow name"
-                      }
-                      value={formData.title}
-                      variant="underlined"
-                      classNames={{
-                        input: "font-medium! text-4xl",
-                        inputWrapper: "px-0",
-                      }}
-                      onChange={(e) =>
-                        updateFormData({ title: e.target.value })
-                      }
-                      isRequired
-                      className="flex-1"
+                    <Controller
+                      name="title"
+                      control={control}
+                      render={({ field }) => (
+                        <Input
+                          {...field}
+                          autoFocus
+                          placeholder={
+                            mode === "edit"
+                              ? "Edit workflow name"
+                              : "Enter workflow name"
+                          }
+                          variant="underlined"
+                          classNames={{
+                            input: "font-medium! text-4xl",
+                            inputWrapper: "px-0",
+                          }}
+                          isRequired
+                          className="flex-1"
+                          isInvalid={!!errors.title}
+                          errorMessage={errors.title?.message}
+                        />
+                      )}
                     />
 
                     {/* Action dropdown for edit mode */}
@@ -929,18 +999,30 @@ export default function WorkflowModal({
                               | "manual"
                               | "schedule"
                               | "trigger";
-                            updateFormData({
-                              activeTab: tabKey,
-                              trigger_config: {
-                                ...formData.trigger_config,
-                                type:
-                                  tabKey === "trigger"
-                                    ? "email"
-                                    : tabKey === "schedule"
-                                      ? "schedule"
-                                      : "manual",
-                              } as TriggerConfig,
-                            });
+                            setValue("activeTab", tabKey);
+
+                            // Set appropriate trigger config based on tab
+                            if (tabKey === "schedule") {
+                              setValue("trigger_config", {
+                                type: "schedule",
+                                enabled: true,
+                                cron_expression:
+                                  formData.trigger_config.type === "schedule"
+                                    ? formData.trigger_config.cron_expression
+                                    : "0 9 * * *",
+                                timezone: "UTC",
+                              });
+                            } else if (tabKey === "trigger") {
+                              setValue("trigger_config", {
+                                type: "email",
+                                enabled: true,
+                              });
+                            } else {
+                              setValue("trigger_config", {
+                                type: "manual",
+                                enabled: true,
+                              });
+                            }
                           }}
                         >
                           <Tab key="schedule" title="Schedule">
@@ -962,20 +1044,25 @@ export default function WorkflowModal({
 
                   {/* Description Section */}
                   <div className="space-y-4">
-                    <Textarea
-                      placeholder={
-                        mode === "edit"
-                          ? "Edit workflow description"
-                          : "Describe what this workflow should do when triggered"
-                      }
-                      value={formData.description}
-                      onChange={(e) =>
-                        updateFormData({ description: e.target.value })
-                      }
-                      minRows={4}
-                      variant="underlined"
-                      className="text-sm"
-                      isRequired
+                    <Controller
+                      name="description"
+                      control={control}
+                      render={({ field }) => (
+                        <Textarea
+                          {...field}
+                          placeholder={
+                            mode === "edit"
+                              ? "Edit workflow description"
+                              : "Describe what this workflow should do when triggered"
+                          }
+                          minRows={4}
+                          variant="underlined"
+                          className="text-sm"
+                          isRequired
+                          isInvalid={!!errors.description}
+                          errorMessage={errors.description?.message}
+                        />
+                      )}
                     />
                   </div>
                 </div>
@@ -1040,7 +1127,7 @@ export default function WorkflowModal({
                       </Button>
                       <Button
                         color="primary"
-                        onPress={handleSave}
+                        onPress={() => handleSubmit(handleSave)()}
                         isLoading={isCreating}
                         isDisabled={
                           !formData.title.trim() ||
@@ -1154,28 +1241,16 @@ export default function WorkflowModal({
                             </div>
                           </div>
                           <div className="min-h-0 flex-1 overflow-y-auto">
-                            {isRegeneratingSteps || isGeneratingSteps ? (
-                              // Show shimmer while regenerating/generating
-                              <div className="space-y-4 py-5">
-                                {Array.from({ length: 3 }).map((_, i) => (
-                                  <div
-                                    key={i}
-                                    className="flex items-start gap-3 rounded-lg border border-zinc-800 p-3"
-                                  >
-                                    <Skeleton className="h-8 w-8 flex-shrink-0 rounded-full" />
-                                    <div className="flex-1 space-y-2">
-                                      <Skeleton className="h-5 w-3/4 rounded" />
-                                      <Skeleton className="h-4 w-full rounded" />
-                                      <Skeleton className="h-4 w-1/2 rounded" />
-                                    </div>
-                                  </div>
-                                ))}
-                              </div>
-                            ) : (
+                            <Skeleton
+                              className="h-full rounded-2xl"
+                              isLoaded={
+                                !(isRegeneratingSteps || isGeneratingSteps)
+                              }
+                            >
                               <WorkflowSteps
                                 steps={currentWorkflow.steps || []}
                               />
-                            )}
+                            </Skeleton>
                           </div>
                         </>
                       ) : (
@@ -1281,11 +1356,12 @@ export default function WorkflowModal({
                     Workflow {mode === "create" ? "Created" : "Updated"}!
                   </h3>
                   <p className="text-sm text-zinc-400">
-                    "{formData.title}" is ready to use
+                    "{currentWorkflow?.title || "Untitled Workflow"}" is ready
+                    to use
                   </p>
                   {isGeneratingSteps ? (
                     <p className="mt-2 flex items-center gap-2 text-xs text-zinc-500">
-                      <CustomSpinner variant="simple" className="h-3 w-3" />
+                      <CustomSpinner variant="simple" />
                       Generating steps in background...
                     </p>
                   ) : (
