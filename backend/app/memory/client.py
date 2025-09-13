@@ -22,7 +22,10 @@ class MemoryClientManager:
                 project_id=settings.MEM0_PROJECT_ID,
             )
             # Configure the project with graph enabled
-            await client.project.update(enable_graph=True)
+
+            if client.project:
+                await client.project.update(enable_graph=True)
+
             self._client = client
 
         return self._client

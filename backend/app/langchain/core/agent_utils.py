@@ -105,6 +105,7 @@ async def store_agent_progress(
 
     Generic function for storing bot messages during agent execution.
     Works for any agent execution - workflows, normal chat, etc.
+    Only stores messages that have meaningful content (message text or tool data).
 
     Args:
         conversation_id: Conversation ID for storage
@@ -113,6 +114,16 @@ async def store_agent_progress(
         current_tool_data: Current accumulated tool outputs
     """
     try:
+        # Only store if there's meaningful content
+        has_content = (
+            current_message.strip() or any(current_tool_data.values())
+            if current_tool_data
+            else False
+        )
+
+        if not has_content:
+            return  # Skip storing empty messages
+
         # Create bot message using same pattern as chat_service.py
         bot_message = MessageModel(
             type="bot",
