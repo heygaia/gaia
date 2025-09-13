@@ -19,6 +19,7 @@ import {
 } from "@/features/chat/utils/messageContentUtils";
 import { getMessageProps } from "@/features/chat/utils/messagePropsUtils";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { getRandomThinkingMessage } from "@/utils/playfulThinking";
 import {
   ChatBubbleBotProps,
   SetImageDataType,
@@ -128,26 +129,23 @@ export default function ChatRenderer() {
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;
 
-        if (message.type === "bot") {
+        if (message.type === "bot")
           messageProps = getMessageProps(message, "bot", messagePropsOptions);
-        } else if (message.type === "user") {
+        else if (message.type === "user")
           messageProps = getMessageProps(message, "user", messagePropsOptions);
-        }
 
-        if (!messageProps) {
-          return null; // Skip rendering if messageProps is null
-        }
+        if (!messageProps) return null; // Skip rendering if messageProps is null
 
         if (
           message.type === "bot" &&
           !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
-        ) {
+        )
           return (
             <div
               key={message.message_id || index}
               className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
             >
-              <div className="sticky bottom-0 min-w-[40px]">
+              <div className="relative bottom-12 min-w-[40px]">
                 <Image
                   alt="GAIA Logo"
                   src={"/branding/logo.webp"}
@@ -162,7 +160,6 @@ export default function ChatRenderer() {
               />
             </div>
           );
-        }
 
         return (
           <ChatBubbleUser key={message.message_id || index} {...messageProps} />
@@ -179,7 +176,7 @@ export default function ChatRenderer() {
               })}
             </>
           )}
-          <span>{loadingText || "GAIA is thinking..."}</span>
+          <span>{loadingText || getRandomThinkingMessage()}</span>
           <Spinner variant="dots" color="primary" />
         </div>
       )}
