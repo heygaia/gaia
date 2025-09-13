@@ -111,7 +111,7 @@ async def send_email(
         is_reply = bool(thread_id)
         tool_name = "GMAIL_REPLY_TO_THREAD" if is_reply else "GMAIL_SEND_EMAIL"
         body_param = "message_body" if is_reply else "body"
-        
+
         # Build parameters
         parameters: Dict[str, Any] = {
             "recipient_email": to,
@@ -136,9 +136,9 @@ async def send_email(
         logger.info(
             f"Using {tool_name} to {'reply to thread ' + (thread_id or '') if is_reply else 'send new email to ' + to}"
         )
-        
+
         return await invoke_gmail_tool(user_id, tool_name, parameters)
-        
+
     except Exception as e:
         logger.error(f"Error sending email for user {user_id}: {e}")
         return {"error": str(e), "successful": False}
