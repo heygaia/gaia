@@ -5,6 +5,7 @@ import {
   ConversationPaginationMeta,
   useConversationsStore,
 } from "@/stores/conversationsStore";
+import { putConversationsBulk } from "@/services/indexedDb/chatDb";
 
 export const useConversationsOperations = () => {
   const {
@@ -33,6 +34,17 @@ export const useConversationsOperations = () => {
 
         setConversations(conversations, append);
         setPaginationMeta(paginationMeta);
+
+        // Persist server-fetched conversations into IndexedDB in background
+        try {
+          if (conversations && conversations.length > 0) {
+            putConversationsBulk(conversations as any).catch((e) =>
+              console.error("putConversationsBulk error:", e),
+            );
+          }
+        } catch (e) {
+          console.error("Error persisting conversations to IndexedDB:", e);
+        }
 
         return { conversations, paginationMeta };
       } catch (error) {

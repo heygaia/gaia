@@ -1,5 +1,6 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
+import type { SetState } from "zustand";
 
 import { Conversation } from "@/features/chat/api/chatApi";
 
@@ -32,7 +33,7 @@ interface ConversationsActions {
   removeConversation: (conversationId: string) => void;
 }
 
-type ConversationsStore = ConversationsState & ConversationsActions;
+export type ConversationsStore = ConversationsState & ConversationsActions;
 
 const initialState: ConversationsState = {
   conversations: [],
@@ -43,12 +44,12 @@ const initialState: ConversationsState = {
 
 export const useConversationsStore = create<ConversationsStore>()(
   devtools(
-    (set) => ({
+    (set: SetState<ConversationsStore>) => ({
       ...initialState,
 
-      setConversations: (conversations, append = false) =>
+      setConversations: (conversations: Conversation[], append = false) =>
         set(
-          (state) => {
+          (state: ConversationsStore) => {
             if (append) {
               // Merge and deduplicate
               const combined = [...state.conversations, ...conversations];
@@ -63,12 +64,12 @@ export const useConversationsStore = create<ConversationsStore>()(
           "setConversations",
         ),
 
-      setPaginationMeta: (paginationMeta) =>
+      setPaginationMeta: (paginationMeta: ConversationPaginationMeta) =>
         set({ paginationMeta }, false, "setPaginationMeta"),
 
-      setLoading: (loading) => set({ loading }, false, "setLoading"),
+      setLoading: (loading: boolean) => set({ loading }, false, "setLoading"),
 
-      setError: (error) => set({ error }, false, "setError"),
+      setError: (error: string | null) => set({ error }, false, "setError"),
 
       clearConversations: () =>
         set(
@@ -82,19 +83,19 @@ export const useConversationsStore = create<ConversationsStore>()(
 
       clearError: () => set({ error: null }, false, "clearError"),
 
-      addConversation: (conversation) =>
+      addConversation: (conversation: Conversation) =>
         set(
-          (state) => ({
+          (state: ConversationsStore) => ({
             conversations: [conversation, ...state.conversations],
           }),
           false,
           "addConversation",
         ),
 
-      updateConversation: (conversationId, updates) =>
+      updateConversation: (conversationId: string, updates: Partial<Conversation>) =>
         set(
-          (state) => ({
-            conversations: state.conversations.map((conv) =>
+          (state: ConversationsStore) => ({
+            conversations: state.conversations.map((conv: Conversation) =>
               conv.conversation_id === conversationId
                 ? { ...conv, ...updates }
                 : conv,
@@ -104,11 +105,11 @@ export const useConversationsStore = create<ConversationsStore>()(
           "updateConversation",
         ),
 
-      removeConversation: (conversationId) =>
+      removeConversation: (conversationId: string) =>
         set(
-          (state) => ({
+          (state: ConversationsStore) => ({
             conversations: state.conversations.filter(
-              (conv) => conv.conversation_id !== conversationId,
+              (conv: Conversation) => conv.conversation_id !== conversationId,
             ),
           }),
           false,
@@ -121,10 +122,10 @@ export const useConversationsStore = create<ConversationsStore>()(
 
 // Selectors
 export const useConversations = () =>
-  useConversationsStore((state) => state.conversations);
+  useConversationsStore((state: ConversationsStore) => state.conversations);
 export const useConversationsPagination = () =>
-  useConversationsStore((state) => state.paginationMeta);
+  useConversationsStore((state: ConversationsStore) => state.paginationMeta);
 export const useConversationsLoading = () =>
-  useConversationsStore((state) => state.loading);
+  useConversationsStore((state: ConversationsStore) => state.loading);
 export const useConversationsError = () =>
-  useConversationsStore((state) => state.error);
+  useConversationsStore((state: ConversationsStore) => state.error);

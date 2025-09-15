@@ -6,6 +6,7 @@ import React, { useEffect } from "react";
 import { chatApi } from "@/features/chat/api/chatApi";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
+import { useHydrateMessages } from "@/features/chat/hooks/useHydrateMessages";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
 import {
   useComposerTextActions,
@@ -56,24 +57,8 @@ const ChatPage = React.memo(function MainChat() {
     multiple: true,
   });
 
-  // Message fetching effect
-  useEffect(() => {
-    const loadMessages = async () => {
-      if (convoIdParam) {
-        try {
-          const messages = await chatApi.fetchMessages(convoIdParam);
-          updateConvoMessages(messages);
-        } catch (error) {
-          console.error("Failed to fetch messages:", error);
-        }
-      } else {
-        clearMessages();
-      }
-    };
-
-    loadMessages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convoIdParam]);
+  // Hydrate messages using DB-first strategy
+  useHydrateMessages(convoIdParam);
 
   // Handle pending prompt from global composer
   useEffect(() => {

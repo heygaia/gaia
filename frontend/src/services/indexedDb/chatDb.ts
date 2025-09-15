@@ -106,4 +106,13 @@ export async function clearMessagesForConversation(conversationId: string) {
   }
 }
 
+export async function clearAllConversations() {
+  try {
+    await chatDb.messages.clear();
+    await chatDb.conversations.clear();
+  } catch (err) {
+    console.error("chatDb.clearAllConversations error:", err);
+  }
+}
+
 export default chatDb;

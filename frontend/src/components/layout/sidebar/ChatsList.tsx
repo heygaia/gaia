@@ -11,13 +11,9 @@ import {
   AccordionTrigger,
 } from "@/components/ui/shadcn/accordion";
 import { Conversation } from "@/features/chat/api/chatApi";
-import {
-  useConversationList,
-  useFetchConversations,
-} from "@/features/chat/hooks/useConversationList";
-import { useChatDb } from "@/features/chat/hooks/useChatDb";
-import { syncConversationsToDb } from "@/services/indexedDb/syncService";
-import { useConversationsStore } from "@/stores/conversationsStore";
+import { useConversationList, useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import { useHydrateConversations } from "@/features/chat/hooks/useHydrateConversations";
+import { useConversationsStore, ConversationsStore } from "@/stores/conversationsStore";
 
 import { ChatTab } from "./ChatTab";
 
@@ -65,44 +61,14 @@ const timeFramePriority = (timeFrame: string): number => {
 export default function ChatsList() {
   const { conversations, paginationMeta } = useConversationList();
   const fetchConversations = useFetchConversations();
-  const { loadConversations } = useChatDb();
-  const setConversations = useConversationsStore((s) => s.setConversations);
+  const setConversations = useConversationsStore((s: ConversationsStore) => s.setConversations);
+  useHydrateConversations();
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
   const loadMoreRef = useRef<HTMLDivElement | null>(null);
 
-  // Hydrate conversations from IndexedDB first (fast path), then refresh from network
-  useEffect(() => {
-    let mounted = true;
-
-    (async () => {
-      try {
-        const localConvos = await loadConversations();
-        if (mounted && localConvos && localConvos.length > 0) {
-          // Set conversations in zustand store to render immediately
-          setConversations(localConvos as any, false);
-        }
-      } catch (err) {
-        console.error("Failed to load local conversations:", err);
-      } finally {
-        // Trigger network refresh regardless of local results
-        try {
-          await fetchConversations();
-          // Also persist network conversations into DB in background
-          syncConversationsToDb().catch((e) =>
-            console.error("background syncConversationsToDb error:", e),
-          );
-        } catch (err) {
-          console.error("Failed to fetch conversations:", err);
-        }
-      }
-    })();
-
-    return () => {
-      mounted = false;
-    };
-  }, [fetchConversations, loadConversations, setConversations]);
+  // Hydration handled by useHydrateConversations hook
 
   // We assume the provider auto-fetches the first page.
   // Once paginationMeta is available, we consider the initial load complete.

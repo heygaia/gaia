@@ -7,6 +7,7 @@ import { useRouter } from "next/navigation";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
+import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useConversationsStore } from "@/stores/conversationsStore";
@@ -50,6 +51,11 @@ export default function LogoutModal({
 
       // Clear conversations in store immediately
       clearConversations();
+
+      // Clear IndexedDB tables as well
+      clearAllConversations().catch((e) =>
+        console.error("Failed to clear IndexedDB conversations:", e),
+      );
 
       // Then fetch from the API to ensure sync with server
       await fetchConversations(1, 20, false);

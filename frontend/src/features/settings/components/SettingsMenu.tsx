@@ -26,6 +26,7 @@ import { getLinkByLabel } from "@/config/appConfig";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
+import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
@@ -78,6 +79,11 @@ export default function SettingsMenu() {
 
       // Clear conversations in store immediately
       clearConversations();
+
+      // Clear IndexedDB
+      clearAllConversations().catch((e) =>
+        console.error("Failed to clear IndexedDB conversations:", e),
+      );
 
       // Then fetch from the API to ensure sync with server
       await fetchConversations(1, 20, false);

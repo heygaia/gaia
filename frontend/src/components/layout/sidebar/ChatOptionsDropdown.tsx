@@ -23,6 +23,7 @@ import { ReactNode, SetStateAction, useEffect,useState } from "react";
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import { deleteConversation as deleteConversationFromDb } from "@/services/indexedDb/chatDb";
 
 export default function ChatOptionsDropdown({
   buttonHovered,
@@ -93,6 +94,10 @@ export default function ChatOptionsDropdown({
     try {
       router.push("/c");
       await chatApi.deleteConversation(chatId);
+      // Remove conversation and its messages from IndexedDB
+      deleteConversationFromDb(chatId).catch((e) =>
+        console.error("Failed to delete conversation from IndexedDB:", e),
+      );
       closeModal();
       await fetchConversations(1, 20, false);
     } catch (error) {
