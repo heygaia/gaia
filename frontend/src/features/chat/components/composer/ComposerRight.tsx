@@ -3,6 +3,7 @@ import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, Square } from "lucide-react";
 
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 
 interface RightSideProps {
   handleFormSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;
@@ -16,12 +17,20 @@ export default function RightSide({
   selectedTool,
 }: RightSideProps) {
   const { isLoading, stopStream } = useLoading();
+  const { selectedWorkflow } = useWorkflowSelection();
   const hasText = searchbarText.trim().length > 0;
   const hasSelectedTool = selectedTool !== null && selectedTool !== undefined;
-  const isDisabled = isLoading || (!hasText && !hasSelectedTool);
+  const hasSelectedWorkflow =
+    selectedWorkflow !== null && selectedWorkflow !== undefined;
+  const isDisabled =
+    isLoading || (!hasText && !hasSelectedTool && !hasSelectedWorkflow);
 
   const getTooltipContent = () => {
     if (isLoading) return "Stop generation";
+
+    if (hasSelectedWorkflow && !hasText && !hasSelectedTool) {
+      return `Send with ${selectedWorkflow?.title}`;
+    }
 
     if (hasSelectedTool && !hasText) {
       // Format tool name to be more readable
@@ -57,7 +66,7 @@ export default function RightSide({
           color={
             isLoading
               ? "primary"
-              : hasText || hasSelectedTool
+              : hasText || hasSelectedTool || hasSelectedWorkflow
                 ? "primary"
                 : "default"
           }
@@ -69,7 +78,13 @@ export default function RightSide({
           {isLoading ? (
             <Square color="black" width={17} height={17} fill="black" />
           ) : (
-            <ArrowUp color={hasText || hasSelectedTool ? "black" : "gray"} />
+            <ArrowUp
+              color={
+                hasText || hasSelectedTool || hasSelectedWorkflow
+                  ? "black"
+                  : "gray"
+              }
+            />
           )}
         </Button>
       </Tooltip>

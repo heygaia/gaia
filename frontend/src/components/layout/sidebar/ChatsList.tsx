@@ -17,8 +17,7 @@ import {
 } from "@/features/chat/hooks/useConversationList";
 import { useChatDb } from "@/features/chat/hooks/useChatDb";
 import { syncConversationsToDb } from "@/services/indexedDb/syncService";
-import { useDispatch } from "react-redux";
-import { setConversations } from "@/redux/slices/conversationsSlice";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 import { ChatTab } from "./ChatTab";
 
@@ -67,7 +66,7 @@ export default function ChatsList() {
   const { conversations, paginationMeta } = useConversationList();
   const fetchConversations = useFetchConversations();
   const { loadConversations } = useChatDb();
-  const dispatch = useDispatch();
+  const setConversations = useConversationsStore((s) => s.setConversations);
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
   const [isFetchingMore, setIsFetchingMore] = useState(false);
@@ -81,8 +80,8 @@ export default function ChatsList() {
       try {
         const localConvos = await loadConversations();
         if (mounted && localConvos && localConvos.length > 0) {
-          // Dispatch to redux to render immediately
-          dispatch(setConversations(localConvos as any));
+          // Set conversations in zustand store to render immediately
+          setConversations(localConvos as any, false);
         }
       } catch (err) {
         console.error("Failed to load local conversations:", err);
@@ -103,7 +102,7 @@ export default function ChatsList() {
     return () => {
       mounted = false;
     };
-  }, [fetchConversations, loadConversations, dispatch]);
+  }, [fetchConversations, loadConversations, setConversations]);
 
   // We assume the provider auto-fetches the first page.
   // Once paginationMeta is available, we consider the initial load complete.
@@ -153,18 +152,20 @@ export default function ChatsList() {
   }, [currentPage, isFetchingMore, paginationMeta, fetchConversations]);
 
   // Separate system-generated conversations using the new flags
-  const systemConversations = conversations.filter(
-    (conversation) => conversation.is_system_generated === true,
+  const convs = conversations as Conversation[];
+
+  const systemConversations: Conversation[] = convs.filter(
+    (conversation: Conversation) => conversation.is_system_generated === true,
   );
 
   // Regular conversations (excluding system-generated ones)
-  const regularConversations = conversations.filter(
-    (conversation) => conversation.is_system_generated !== true,
+  const regularConversations: Conversation[] = convs.filter(
+    (conversation: Conversation) => conversation.is_system_generated !== true,
   );
 
   // Group regular conversations by time frame.
-  const groupedConversations = regularConversations.reduce(
-    (acc, conversation) => {
+  const groupedConversations: Record<string, Conversation[]> = regularConversations.reduce(
+    (acc: Record<string, Conversation[]>, conversation: Conversation) => {
       const timeFrame = getTimeFrame(conversation.createdAt);
 
       if (!acc[timeFrame]) {
@@ -178,14 +179,38 @@ export default function ChatsList() {
   );
 
   // Sort time frames by defined priority.
-  const sortedTimeFrames = Object.entries(groupedConversations).sort(
-    ([timeFrameA], [timeFrameB]) =>
-      timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
+  const sortedTimeFrames: [string, Conversation[]][] = Object.entries(
+    groupedConversations,
+  ).sort(([timeFrameA], [timeFrameB]) =>
+    timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
   );
 
-  const starredConversations = regularConversations.filter(
-    (conversation) => conversation.starred,
+  const starredConversations: Conversation[] = regularConversations.filter(
+    (conversation: Conversation) => conversation.starred,
   );
+
+  // Calculate which accordions should be open by default - show ALL expanded
+  const getDefaultAccordionValues = () => {
+    const defaultValues: string[] = [];
+
+    // Add system conversations if they exist
+    if (systemConversations.length > 0) {
+      defaultValues.push("system-conversations");
+    }
+
+    // Add starred chats if they exist
+    if (starredConversations.length > 0) {
+      defaultValues.push("starred-chats");
+    }
+
+    // Add ALL time frame sections - show everything expanded by default
+    const timeFrameValues = sortedTimeFrames.map(([timeFrame]) =>
+      timeFrame.toLowerCase().replace(/\s+/g, "-"),
+    );
+    defaultValues.push(...timeFrameValues);
+
+    return defaultValues;
+  };
 
   return (
     <>
@@ -197,13 +222,7 @@ export default function ChatsList() {
         <Accordion
           type="multiple"
           className="w-full p-0"
-          defaultValue={[
-            ...(systemConversations.length > 0 ? ["system-conversations"] : []),
-            "starred-chats",
-            ...(sortedTimeFrames.length > 0
-              ? ["today", "previous-7-days", "yesterday"]
-              : []),
-          ]}
+          defaultValue={getDefaultAccordionValues()}
         >
           {/* System-generated conversations */}
           {systemConversations.length > 0 && (

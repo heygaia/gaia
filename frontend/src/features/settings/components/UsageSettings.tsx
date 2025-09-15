@@ -9,8 +9,8 @@ import { BarChart3, Calendar, TrendingUp } from "lucide-react";
 import Link from "next/link";
 import { useState } from "react";
 
-import { SettingsCard } from "@/components/shared/SettingsCard";
 import Spinner from "@/components/ui/shadcn/spinner";
+import { SettingsCard } from "@/features/settings/components/SettingsCard";
 
 import { useUsageSummary } from "../hooks/useUsage";
 

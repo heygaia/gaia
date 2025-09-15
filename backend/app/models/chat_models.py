@@ -3,7 +3,7 @@ from typing import List, Optional
 
 from app.models.calendar_models import EventCreateRequest
 from app.models.mail_models import EmailComposeRequest
-from app.models.message_models import FileData
+from app.models.message_models import FileData, SelectedWorkflowData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
@@ -51,6 +51,14 @@ class EmailThreadData(BaseModel):
     thread_id: str
     messages: List[EmailThreadMessage]
     messages_count: int
+
+
+class EmailSentData(BaseModel):
+    message_id: Optional[str] = None
+    message: str
+    timestamp: Optional[str] = None
+    recipients: Optional[List[str]] = None
+    subject: Optional[str] = None
 
 
 class IntegrationConnectionData(BaseModel):
@@ -103,6 +111,7 @@ class MessageModel(BaseModel):
     fileData: Optional[List[FileData]] = []
     selectedTool: Optional[str] = None
     toolCategory: Optional[str] = None
+    selectedWorkflow: Optional[SelectedWorkflowData] = None
     calendar_options: Optional[List[EventCreateRequest]] = None
     search_results: Optional[SearchResults] = None
     deep_research_results: Optional[DeepResearchResults] = None
@@ -110,6 +119,7 @@ class MessageModel(BaseModel):
     email_compose_data: Optional[List[EmailComposeRequest]] = None
     email_fetch_data: Optional[List[EmailFetchData]] = None
     email_thread_data: Optional[EmailThreadData] = None
+    email_sent_data: Optional[EmailSentData] = None
     support_ticket_data: Optional[List[SupportTicketData]] = None
     calendar_fetch_data: Optional[List[CalendarFetchData]] = None
     calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
@@ -126,6 +136,7 @@ class MessageModel(BaseModel):
 class SystemPurpose(str, Enum):
     EMAIL_PROCESSING = "email_processing"
     REMINDER_PROCESSING = "reminder_processing"
+    WORKFLOW_EXECUTION = "workflow_execution"
     OTHER = "other"
 
 

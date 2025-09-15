@@ -1,11 +1,10 @@
-name: gaia-dev
+name: gaia-prod
 
 services:
   # FastAPI Application
   gaia-backend:
     container_name: gaia-backend
     profiles: ["", "backend-only"]
-    build: ./backend
     image: ghcr.io/heygaia/gaia:latest
     working_dir: /app
     command:
@@ -120,7 +119,7 @@ services:
   # Scheduler Worker
   worker:
     container_name: worker
-    image: gaia
+    image: ghcr.io/heygaia/gaia:latest
     profiles: ["", "backend-only"]
     working_dir: /app
     env_file:
@@ -140,7 +139,7 @@ services:
   # Arq Worker
   arq_worker:
     container_name: arq_worker
-    image: gaia
+    image: ghcr.io/heygaia/gaia:latest
     profiles: ["", "backend-only"]
     working_dir: /app
     env_file:

@@ -6,8 +6,8 @@ from app.config.loggers import llm_logger as logger
 from app.memory.client import memory_client_manager
 from app.models.memory_models import (
     MemoryEntry,
-    MemorySearchResult,
     MemoryRelation,
+    MemorySearchResult,
 )
 
 
@@ -270,6 +270,7 @@ class MemoryService:
                 infer=True,
                 version="v2",
                 run_id=conversation_id,
+                output_format="v1.1",
             )
 
             self.logger.info(f"Memory stored for user {user_id}")

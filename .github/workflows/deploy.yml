@@ -1,0 +1,114 @@
+name: Deploy to GCP
+
+on:
+  repository_dispatch:
+    types: [deploy]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  statuses: write
+
+env:
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  SERVICE_NAME: gaia
+  REGION: ${{ secrets.GCP_REGION }}
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    if: github.event.client_payload.ref == 'refs/heads/master'
+
+    # Needed for OIDC → WIF
+    permissions:
+      contents: "read"
+      id-token: "write"
+
+    steps:
+      - name: Authenticate to Google Cloud via Workload Identity Federation
+        uses: google-github-actions/auth@v2
+        with:
+          token_format: access_token
+          workload_identity_provider: ${{ secrets.GCP_WIF_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ env.PROJECT_ID }}
+
+      - name: Configure Docker to use gcloud as credential helper
+        run: gcloud auth configure-docker
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Deploy application on GCP VM
+        run: |
+          gcloud compute ssh ubuntu@gaia-backend \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --command="
+              set -e
+              cd /home/aryan/gaia
+              git fetch origin
+              git checkout master
+              git pull origin master
+
+              docker compose -f docker-compose.prod.yml pull
+              
+              # Recreate only services with updated images
+              docker compose -f docker-compose.prod.yml up -d --remove-orphans --no-deps
+              docker image prune -f
+            "
+
+      - name: Verify deployment
+        run: |
+          gcloud compute ssh ubuntu@gaia-backend \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --command="
+              cd /home/aryan/gaia
+              docker compose -f docker-compose.prod.yml ps
+            "
+
+      - name: Docker Cleanup
+        run: |
+          gcloud compute ssh ubuntu@gaia-backend \
+            --zone=${{ secrets.GCP_ZONE }} \
+            --command="
+              echo 'Starting Docker cleanup...'
+              
+              # Remove dangling images
+              docker image prune -f
+
+              # Remove stopped containers
+              docker container prune -f
+              
+              # Remove unused networks
+              docker network prune -f
+
+              echo '✅ Docker cleanup completed.'
+            "
+
+      - name: Notify to Discord
+        if: always()
+        uses: appleboy/discord-action@v1.2.0
+        with:
+          webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
+          username: "Gaia Deploy Bot"
+          color: "#48f442"
+          message: |
+            🚀 **Deployment to GCP**
+
+            **Repository:** ${{ github.repository }}
+            **Branch:** ${{ github.ref_name }}
+            **Commit:** ${{ github.sha }}
+            **Status:** ${{ job.status }}
+            **Deployed by:** ${{ github.actor }}
+            **Timestamp:** ${{ github.run_id }}
+
+

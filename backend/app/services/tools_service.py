@@ -3,41 +3,30 @@ Service for managing and retrieving tool information.
 """
 
 from typing import Dict
-from langchain_core.tools import BaseTool
 
-from app.langchain.tools.core.registry import (
-    tools,
-    ALWAYS_AVAILABLE_TOOLS,
-    CATEGORY_INTEGRATION_REQUIREMENTS,
-)
-from app.langchain.tools.core.categories import get_tool_category
-from app.models.tools_models import ToolInfo, ToolsListResponse, ToolsCategoryResponse
+from app.langchain.tools.core.registry import tool_registry
+from app.models.tools_models import ToolInfo, ToolsCategoryResponse, ToolsListResponse
 
 
 async def get_available_tools() -> ToolsListResponse:
     """Get list of all available tools with their metadata."""
-    all_tools = tools + ALWAYS_AVAILABLE_TOOLS
     tool_infos = []
     categories = set()
 
-    for tool in all_tools:
-        if not isinstance(tool, BaseTool):
-            continue
+    # Use category-based approach for better performance and integration info
+    _categories = tool_registry.get_all_category_objects(
+        ignore_categories=["delegation"]
+    )
 
-        # Extract basic info
-        name = tool.name
-        category = get_tool_category(name)
-        categories.add(category)
-
-        # Check if this category requires an integration
-        required_integration = CATEGORY_INTEGRATION_REQUIREMENTS.get(category)
-
-        tool_info = ToolInfo(
-            name=name,
-            category=category,
-            required_integration=required_integration,
-        )
-        tool_infos.append(tool_info)
+    for category, category_obj in _categories.items():
+        for tool in category_obj.tools:
+            tool_info = ToolInfo(
+                name=tool.name,
+                category=category,
+                required_integration=category_obj.integration_name,
+            )
+            tool_infos.append(tool_info)
+            categories.add(category)
 
     return ToolsListResponse(
         tools=tool_infos,
@@ -48,23 +37,33 @@ async def get_available_tools() -> ToolsListResponse:
 
 async def get_tools_by_category(category: str) -> ToolsCategoryResponse:
     """Get tools filtered by category."""
-    all_tools_response = await get_available_tools()
-    filtered_tools = [
-        tool for tool in all_tools_response.tools if tool.category == category.lower()
-    ]
+    category_obj = tool_registry.get_category(category)
+
+    if not category_obj:
+        return ToolsCategoryResponse(category=category, tools=[], count=0)
+
+    tool_infos = []
+    for tool in category_obj.tools:
+        tool_info = ToolInfo(
+            name=tool.name,
+            category=category,
+            required_integration=category_obj.integration_name,
+        )
+        tool_infos.append(tool_info)
 
     return ToolsCategoryResponse(
-        category=category, tools=filtered_tools, count=len(filtered_tools)
+        category=category, tools=tool_infos, count=len(tool_infos)
     )
 
 
 async def get_tool_categories() -> Dict[str, int]:
     """Get all tool categories with their counts."""
-    all_tools_response = await get_available_tools()
     category_counts: Dict[str, int] = {}
 
-    for tool in all_tools_response.tools:
-        category = tool.category
-        category_counts[category] = category_counts.get(category, 0) + 1
+    # Use the new category-based approach for better performance
+    all_categories = tool_registry.get_all_category_objects()
+
+    for category_name, category_obj in all_categories.items():
+        category_counts[category_name] = len(category_obj.tools)
 
     return category_counts

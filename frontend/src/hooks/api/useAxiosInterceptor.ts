@@ -3,12 +3,10 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
-import { useLoginModalActions } from "@/features/auth/hooks/useLoginModal";
 import { apiauth } from "@/lib/api";
 import { isOnLandingRoute, processAxiosError } from "@/utils";
 
 export default function useAxiosInterceptor() {
-  const { setLoginModalOpen } = useLoginModalActions();
   const pathname = usePathname();
   const router = useRouter();
 
@@ -20,7 +18,6 @@ export default function useAxiosInterceptor() {
         try {
           // Process the error and handle authentication or routing side effects
           processAxiosError(error, pathname, {
-            setLoginModalOpen,
             router,
           });
         } catch (handlerError) {
@@ -40,5 +37,5 @@ export default function useAxiosInterceptor() {
     return () => {
       apiauth.interceptors.response.eject(interceptor);
     };
-  }, [pathname, setLoginModalOpen, router]);
+  }, [pathname, router]);
 }

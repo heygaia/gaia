@@ -24,6 +24,8 @@ services:
     environment:
       DEBUG: 1
       PYTHONUNBUFFERED: 1
+      WATCHFILES_FORCE_POLLING: 1
+      # PYTHONPROFILEIMPORTTIME: 1
       FORCE_COLOR: 1
       WORKER_TYPE: main_app
     env_file:
@@ -51,25 +53,6 @@ services:
       interval: 30s
       timeout: 10s
       retries: 5
-
-  frontend:
-    container_name: gaia-frontend
-    profiles: [""]
-    build:
-      context: ./frontend
-    working_dir: /app
-    ports:
-      - "3000:3000"
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules # Avoid host overwriting container deps
-    restart: on-failure
-    networks:
-      - gaia_network
-    depends_on:
-      - gaia-backend
-    env_file:
-      - ./frontend/.env
 
   # ChromaDB Service
   chromadb:
@@ -105,6 +88,8 @@ services:
       POSTGRES_DB: postgres
     volumes:
       - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
     restart: on-failure
     healthcheck:
       test: ["CMD", "pg_isready", "-U", "postgres"]
@@ -120,7 +105,7 @@ services:
     container_name: redis
     profiles: ["", "backend-only"]
     ports:
-      - "6381:6379"
+      - "6379:6379"
     volumes:
       - redis_data:/data
     restart: on-failure
@@ -140,6 +125,8 @@ services:
     volumes:
       - mongo_data:/data/db
     restart: on-failure
+    ports:
+      - "27017:27017"
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s

@@ -29,7 +29,6 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Add the connection to our manager
     connection_manager.add_connection(user_id=user_id, websocket=websocket)
-    logger.info(f"WebSocket connection established for user: {user_id}")
 
     # Remove the connection when the WebSocket is closed
     try:
@@ -38,7 +37,6 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         # Handle disconnection - WebSocket is already closed, so just clean up
-        logger.info(f"WebSocket disconnected for user: {user_id}")
         connection_manager.remove_connection(user_id=user_id, websocket=websocket)
     except Exception as e:
         # Handle any other exceptions

@@ -1,6 +1,6 @@
 [project]
 name = "gaia"
-version = "0.2.0-beta"
+version = "0.6.0-beta"
 description = "Backend of GAIA - The personal AI assistant"
 readme = "../README.md"
 requires-python = ">=3.11"
@@ -82,7 +82,6 @@ dependencies = [
   "mem0ai[graph]>=0.1.110",
   "aio-pika>=9.5.5",
   "aiolimiter>=1.2.1",
-  "pycountry>=24.6.1",
   "arq>=0.26.0",
   "croniter>=3.0.0",
   "e2b-code-interpreter>=1.2.0",
@@ -101,10 +100,12 @@ dependencies = [
   "workos>=5.24.0",
   "asyncpg>=0.30.0",
   "authlib>=1.6.1",
+  "composio>=0.8.7",
+  "composio-langchain==0.8.0",
+  "langchain>=0.3.26",
+  "dodopayments>=1.49.0",
   "langchain-cerebras>=0.5.0",
-  "dodopayments>=1.44.0",
   "standardwebhooks>=1.0.0",
-  "sentry-sdk[fastapi]>=2.32.0",
 ]
 
 [dependency-groups]

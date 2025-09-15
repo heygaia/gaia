@@ -1,3 +1,6 @@
+import hashlib
+import inspect
+import time
 from typing import Any, List, Optional, Tuple
 
 from bson import ObjectId
@@ -6,6 +9,67 @@ from langchain_core.documents import Document
 from app.config.loggers import chat_logger as logger
 from app.db.chromadb import ChromaClient
 from app.db.mongodb.collections import files_collection, notes_collection
+from app.db.redis import redis_cache
+
+
+async def get_or_compute_embeddings(all_tools, embeddings):
+    """Get cached embeddings or compute them via Google API."""
+    # Collect all descriptions and code hashes
+    tool_descriptions = []
+    tool_hashes = []
+
+    for tool in all_tools:
+        description = f"{tool.name}: {tool.description}"
+        tool_descriptions.append(description)
+
+        # Get code hash for the tool function
+        try:
+            # Get the actual function source code
+            if hasattr(tool, "func") and callable(tool.func):
+                code_source = inspect.getsource(tool.func)
+            elif callable(tool):
+                code_source = inspect.getsource(tool)
+            else:
+                # Fallback: use string representation
+                code_source = str(tool)
+
+            code_hash = hashlib.md5(code_source.encode()).hexdigest()
+
+            # Get tool name safely
+            tool_name = getattr(tool, "name", getattr(tool, "__name__", str(tool)))
+            tool_hashes.append(f"{tool_name}:{code_hash}")
+        except (OSError, TypeError):
+            # Fallback if we can't get source (built-in functions, etc.)
+            tool_name = getattr(tool, "name", getattr(tool, "__name__", str(tool)))
+            tool_hashes.append(f"{tool_name}:no_source")
+
+    # Generate combined hash for descriptions + code
+    combined_description = "||".join(tool_descriptions)
+    combined_code_hash = "||".join(tool_hashes)
+    tools_hash = hashlib.md5(
+        f"{combined_description}::{combined_code_hash}".encode()
+    ).hexdigest()
+    cache_key = f"embed:batch:{tools_hash}"
+
+    # Check cache first
+    cached_embeddings = await redis_cache.get(cache_key)
+
+    if cached_embeddings:
+        logger.info("Using cached embeddings (description + code hash)")
+        return cached_embeddings, tool_descriptions
+    else:
+        # Compute embeddings in one batch call
+        logger.info("Sending batch request to Google Embeddings API...")
+        embed_start = time.time()
+        embeddings_list = embeddings.embed_documents(tool_descriptions)
+        embed_time = time.time() - embed_start
+        logger.info(
+            f"Batch computed {len(embeddings_list)} embeddings in {embed_time:.3f}s"
+        )
+
+        # Cache the results
+        await redis_cache.set(cache_key, embeddings_list, ttl=604800)  # 7 days
+        return embeddings_list, tool_descriptions
 
 
 async def search_by_similarity(

@@ -5,10 +5,11 @@ Clean webhook models for Dodo Payments based on actual webhook format.
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel, Field
+from app.models.oauth_models import TRIGGER_TYPES
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
-class WebhookEventType(str, Enum):
+class DodoWebhookEventType(str, Enum):
     """Dodo Payments webhook event types."""
 
     # Payment events
@@ -27,7 +28,7 @@ class WebhookEventType(str, Enum):
     SUBSCRIPTION_PLAN_CHANGED = "subscription.plan_changed"
 
 
-class CustomerData(BaseModel):
+class DodoCustomerData(BaseModel):
     """Customer info from webhook."""
 
     customer_id: str
@@ -35,7 +36,7 @@ class CustomerData(BaseModel):
     name: str
 
 
-class BillingData(BaseModel):
+class DodoBillingData(BaseModel):
     """Billing address from webhook."""
 
     city: str
@@ -45,15 +46,15 @@ class BillingData(BaseModel):
     zipcode: str
 
 
-class PaymentData(BaseModel):
+class DodoPaymentData(BaseModel):
     """Payment data from payment webhook."""
 
     payment_id: str
     subscription_id: Optional[str] = None
     business_id: str
     brand_id: str
-    customer: CustomerData
-    billing: BillingData
+    customer: DodoCustomerData
+    billing: DodoBillingData
     currency: str
     total_amount: int
     settlement_amount: int
@@ -73,13 +74,13 @@ class PaymentData(BaseModel):
     error_message: Optional[str] = None
 
 
-class SubscriptionData(BaseModel):
+class DodoSubscriptionData(BaseModel):
     """Subscription data from subscription webhook."""
 
     subscription_id: str
     product_id: str
-    customer: CustomerData
-    billing: BillingData
+    customer: DodoCustomerData
+    billing: DodoBillingData
     status: str
     currency: str
     quantity: int
@@ -105,30 +106,30 @@ class DodoWebhookEvent(BaseModel):
     """Dodo webhook event structure."""
 
     business_id: str
-    type: WebhookEventType
+    type: DodoWebhookEventType
     timestamp: str
     data: Dict[str, Any]
 
-    def get_payment_data(self) -> Optional[PaymentData]:
+    def get_payment_data(self) -> Optional[DodoPaymentData]:
         """Extract payment data if payment event."""
         if self.type.value.startswith("payment."):
             try:
-                return PaymentData(**self.data)
+                return DodoPaymentData(**self.data)
             except Exception:
                 return None
         return None
 
-    def get_subscription_data(self) -> Optional[SubscriptionData]:
+    def get_subscription_data(self) -> Optional[DodoSubscriptionData]:
         """Extract subscription data if subscription event."""
         if self.type.value.startswith("subscription."):
             try:
-                return SubscriptionData(**self.data)
+                return DodoSubscriptionData(**self.data)
             except Exception:
                 return None
         return None
 
 
-class WebhookProcessingResult(BaseModel):
+class DodoWebhookProcessingResult(BaseModel):
     """Result of webhook processing."""
 
     event_type: str
@@ -136,3 +137,26 @@ class WebhookProcessingResult(BaseModel):
     message: str
     payment_id: Optional[str] = None
     subscription_id: Optional[str] = None
+
+
+class ComposioWebhookEvent(BaseModel):
+    """Composio webhook event structure."""
+
+    type: TRIGGER_TYPES
+    timestamp: str
+    data: Dict[str, Any]
+    connection_id: str
+    connection_nano_id: str
+    trigger_nano_id: str
+    trigger_id: str
+    user_id: str
+
+    model_config = ConfigDict(extra="allow")
+
+    @field_validator("type", mode="before")
+    @classmethod
+    def normalize_trigger_type(cls, v):
+        """Convert trigger type to uppercase to match TRIGGER_TYPES definition."""
+        if isinstance(v, str):
+            return v.upper()
+        return v

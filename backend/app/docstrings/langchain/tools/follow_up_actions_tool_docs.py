@@ -1,18 +1,3 @@
-from app.langchain.tools.core.registry import tools, ALWAYS_AVAILABLE_TOOLS
-
-
-# Extract tool names from registry
-def get_tool_names():
-    all_tools = tools + ALWAYS_AVAILABLE_TOOLS
-    seen = set()
-    unique_tools = []
-    for tool in all_tools:
-        if tool.name not in seen:
-            seen.add(tool.name)
-            unique_tools.append(tool)
-    return [tool.name for tool in unique_tools]
-
-
 SUGGEST_FOLLOW_UP_ACTIONS = """
 Based on the conversation so far, suggest 2-4 relevant follow-up actions that the user might want to do next.
 

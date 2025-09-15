@@ -12,7 +12,7 @@ import {
   CalendarOptions,
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
-import { EmailComposeData, EmailFetchData, EmailThreadData } from "./mailTypes";
+import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";
@@ -25,6 +25,7 @@ import {
   MemoryData,
 } from "./toolDataTypes";
 import { WeatherData } from "./weatherTypes";
+import { WorkflowData } from "./workflowTypes";
 
 export const TOOLS_MESSAGE_SCHEMA = {
   calendar_options: undefined as CalendarOptions[] | null | undefined,
@@ -36,6 +37,7 @@ export const TOOLS_MESSAGE_SCHEMA = {
   email_compose_data: undefined as EmailComposeData[] | null | undefined,
   email_fetch_data: undefined as EmailFetchData[] | null | undefined,
   email_thread_data: undefined as EmailThreadData | null | undefined,
+  email_sent_data: undefined as EmailSentData | null | undefined,
   support_ticket_data: undefined as SupportTicketData[] | null | undefined,
   weather_data: undefined as WeatherData | null | undefined,
   search_results: undefined as SearchResults | null | undefined,
@@ -67,6 +69,7 @@ export const BASE_MESSAGE_SCHEMA = {
   fileData: undefined as FileData[] | undefined,
   selectedTool: undefined as string | null | undefined,
   toolCategory: undefined as string | null | undefined,
+  selectedWorkflow: undefined as WorkflowData | null | undefined,
   isConvoSystemGenerated: undefined as boolean | undefined,
   follow_up_actions: undefined as string[] | undefined,
   integration_connection_required: undefined as
@@ -87,4 +90,3 @@ export type ToolsMessageKey = keyof typeof TOOLS_MESSAGE_SCHEMA;
 export const TOOLS_MESSAGE_KEYS = Object.keys(
   TOOLS_MESSAGE_SCHEMA,
 ) as ToolsMessageKey[];
-

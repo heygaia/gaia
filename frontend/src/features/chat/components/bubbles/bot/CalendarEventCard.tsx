@@ -28,20 +28,6 @@ export function CalendarEventCard({
   onDummyAddEvent,
 }: EventCardProps) {
   const [status, setStatus] = useState<"idle" | "loading" | "added">("idle");
-  // const dispatch = useDispatch();
-
-  // const handleEditPress = useCallback(() => {
-  //   dispatch(
-  //     openModal({
-  //       event,
-  //       isDummy,
-  //       onSuccess: () => {
-  //         setStatus("added");
-  //         onDummyAddEvent?.();
-  //       },
-  //     }),
-  //   );
-  // }, [event, isDummy, onDummyAddEvent, dispatch]);
 
   const handleAddEvent = useCallback(async () => {
     if (isDummy) {
@@ -182,39 +168,6 @@ export function CalendarEventsList({
   onDummyAddEvent,
   disableAnimation = false,
 }: UnifiedCalendarEventsListProps) {
-  // const [isAddingAll, setIsAddingAll] = useState(false);
-  // const dispatch = useDispatch();
-
-  // const handleAddAll = useCallback(async () => {
-  //   setIsAddingAll(true);
-  //   let successCount = 0;
-
-  //   for (let i = 0; i < events.length; i++) {
-  //     await new Promise<void>((resolve) => {
-  //       dispatch(
-  //         openModal({
-  //           event: events[i],
-  //           isDummy,
-  //           onSuccess: () => {
-  //             successCount++;
-  //             onDummyAddEvent?.(i);
-  //             resolve();
-  //           },
-  //         }),
-  //       );
-  //     });
-  //   }
-
-  //   // Show single toast after all events are processed
-  //   if (successCount > 0) {
-  //     toast.success(
-  //       `Added ${successCount} ${successCount === 1 ? "event" : "events"} to calendar!`,
-  //     );
-  //   }
-
-  //   setIsAddingAll(false);
-  // }, [events, isDummy, onDummyAddEvent, dispatch]);
-
   return (
     <MotionContainer
       disableAnimation={disableAnimation}
@@ -234,21 +187,6 @@ export function CalendarEventsList({
           onDummyAddEvent={() => onDummyAddEvent?.(index)}
         />
       ))}
-      {/* {events.length > 1 && (
-        <div>
-          <Button
-            color="primary"
-            variant="flat"
-            className="mt-2 w-full font-medium text-primary"
-            isLoading={isAddingAll}
-            onClick={handleAddAll}
-          >
-            <CalendarAdd01Icon width={22} color={undefined} />
-            Add all to calendar ({events.length}{" "}
-            {events.length > 1 ? "events" : "event"})
-          </Button>
-        </div>
-      )} */}
     </MotionContainer>
   );
 }

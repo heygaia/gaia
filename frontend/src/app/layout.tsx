@@ -1,6 +1,7 @@
 import "./styles/globals.css";
 import "./styles/tailwind.css";
 
+import { Databuddy } from "@databuddy/sdk/react";
 import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
@@ -75,7 +76,6 @@ export default function RootLayout({
         </main>
         {/* Google OAuth */}
         <Script async src="https://accounts.google.com/gsi/client" />
-
         {/* JSON-LD Schema */}
         <Script id="json-ld" type="application/ld+json">
           {JSON.stringify({
@@ -86,7 +86,6 @@ export default function RootLayout({
             url: "https://heygaia.io",
           })}
         </Script>
-
         {/* Better Stack widget for API Uptime */}
         <Script
           src="https://uptime.betterstack.com/widgets/announcement.js"
@@ -94,7 +93,6 @@ export default function RootLayout({
           async
           type="text/javascript"
         />
-
         {/* Rybbit Analytics */}
         <Script
           src="https://analytics.heygaia.io/api/script.js"
@@ -102,9 +100,28 @@ export default function RootLayout({
           defer
           data-session-replay="true"
         />
-
         {/* Google Analytics */}
         <GoogleAnalytics gaId="G-R6EGV9FG2Q" />
+
+        {process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID && (
+          <Databuddy
+            clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
+            trackHashChanges
+            trackAttributes
+            trackOutgoingLinks
+            trackInteractions
+            trackEngagement
+            trackScrollDepth
+            trackExitIntent
+            trackBounceRate
+            trackWebVitals
+            trackErrors
+            enableBatching
+            batchSize={20}
+            batchTimeout={5000}
+            disabled={process.env.NODE_ENV === "development"}
+          />
+        )}
       </body>
     </html>
   );

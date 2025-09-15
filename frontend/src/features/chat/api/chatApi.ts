@@ -5,6 +5,7 @@ import {
 
 import { apiService } from "@/lib/api";
 import { MessageType } from "@/types/features/convoTypes";
+import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
 
 export interface FileUploadResponse {
@@ -24,7 +25,7 @@ export interface GenerateImageResponse {
 
 export enum SystemPurpose {
   EMAIL_PROCESSING = "email_processing",
-  REMINDER_PROCESSING = "reminder_processing",
+  WORKFLOW_EXECUTION = "workflow_execution",
   OTHER = "other", // Add more purposes as needed
 }
 
@@ -174,6 +175,7 @@ export const chatApi = {
     fileData: FileData[] = [],
     selectedTool: string | null = null,
     toolCategory: string | null = null,
+    selectedWorkflow: WorkflowData | null = null,
   ): Promise<{ success: boolean; conversation_id: string }> => {
     const fileIds = fileData.map((file) => file.fileId);
 
@@ -186,6 +188,7 @@ export const chatApi = {
         fileData,
         selectedTool,
         toolCategory,
+        selectedWorkflow,
         incomplete_response: incompleteResponse,
       },
     );
@@ -203,6 +206,7 @@ export const chatApi = {
     selectedTool: string | null = null,
     toolCategory: string | null = null,
     externalController?: AbortController,
+    selectedWorkflow: WorkflowData | null = null,
   ) => {
     const controller = externalController || new AbortController();
 
@@ -237,6 +241,7 @@ export const chatApi = {
           fileData, // Send complete file data
           selectedTool, // Add selectedTool to the request body
           toolCategory, // Add toolCategory to the request body
+          selectedWorkflow, // Add selectedWorkflow to the request body
           messages: convoMessages
             .slice(-30)
             .filter(({ response }) => response.trim().length > 0)

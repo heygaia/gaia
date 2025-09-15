@@ -1,68 +1,14 @@
 import datetime
-import os
+import time
+from functools import lru_cache
 
-from infisical_sdk import InfisicalSDKClient
+from app.config.loggers import app_logger as logger
+from app.config.secrets import inject_infisical_secrets
+from dotenv import load_dotenv
 from pydantic import computed_field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-
-class InfisicalConfigError(Exception):
-    """Exception raised for errors related to Infisical configuration."""
-
-    def __init__(self, message):
-        self.message = message
-        super().__init__(self.message)
-
-
-def inject_infisical_secrets():
-    INFISICAL_TOKEN = os.getenv("INFISICAL_TOKEN")
-    INFISICAL_PROJECT_ID = os.getenv("INFISICAL_PROJECT_ID")
-    ENV = os.getenv("ENV", "production")
-    CLIENT_ID = os.getenv("INFISICAL_MACHINE_INDENTITY_CLIENT_ID")
-    CLIENT_SECRET = os.getenv("INFISICAL_MACHINE_INDENTITY_CLIENT_SECRET")
-
-    if not INFISICAL_TOKEN:
-        raise InfisicalConfigError(
-            "INFISICAL_TOKEN is missing. This is required for secrets management."
-        )
-    elif not INFISICAL_PROJECT_ID:
-        raise InfisicalConfigError(
-            "INFISICAL_PROJECT_ID is missing. This is required for secrets management."
-        )
-
-    elif not CLIENT_ID:
-        raise InfisicalConfigError(
-            "INFISICAL_MACHINE_INDENTITY_CLIENT_ID is missing. This is required for secrets management."
-        )
-
-    elif not CLIENT_SECRET:
-        raise InfisicalConfigError(
-            "INFISICAL_MACHINE_INDENTITY_CLIENT_SECRET is missing. This is required for secrets management."
-        )
-
-    try:
-        client = InfisicalSDKClient(host="https://app.infisical.com")
-        client.auth.universal_auth.login(
-            client_id=CLIENT_ID,
-            client_secret=CLIENT_SECRET,
-        )
-        secrets = client.secrets.list_secrets(
-            project_id=INFISICAL_PROJECT_ID,  # The unique identifier for your Infisical project
-            environment_slug=ENV,  # Environment name (e.g., "development", "production")
-            # Root path for secrets in the project
-            secret_path="/",  # nosec B322 - Bandit in pre-commit flags as unsafe.
-            expand_secret_references=True,  # Resolves any referenced secrets (e.g., ${SECRET})
-            view_secret_value=True,  # Returns decrypted secret values, not just keys
-            recursive=False,  # Does not fetch secrets from nested paths
-            include_imports=True,  # Includes secrets imported from other projects/paths
-        )
-        for secret in secrets.secrets:
-            os.environ[secret.secretKey] = secret.secretValue
-
-    except Exception as e:
-        raise InfisicalConfigError(
-            f"Failed to fetch secrets from Infisical: {e}"
-        ) from e
+load_dotenv()
 
 
 class Settings(BaseSettings):
@@ -74,6 +20,7 @@ class Settings(BaseSettings):
     CHROMADB_HOST: str
     CHROMADB_PORT: int
     POSTGRES_URL: str
+    RABBITMQ_URL: str
 
     # OAuth & Authentication
     GOOGLE_CLIENT_ID: str
@@ -96,9 +43,14 @@ class Settings(BaseSettings):
     DEEPGRAM_API_KEY: str
     OPENWEATHER_API_KEY: str
     RESEND_API_KEY: str
+    RESEND_AUDIENCE_ID: str
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
     CLOUDINARY_API_SECRET: str
+    COMPOSIO_KEY: str
+
+    # Webhook Secrets
+    COMPOSIO_WEBHOOK_SECRET: str
 
     # Blog Management
     BLOG_BEARER_TOKEN: str  # Bearer token for blog management operations
@@ -124,9 +76,6 @@ class Settings(BaseSettings):
     MEM0_API_KEY: str
     MEM0_ORG_ID: str
     MEM0_PROJECT_ID: str
-
-    # Celery Configuration
-    RABBITMQ_URL: str
 
     # Code Execution
     E2B_API_KEY: str
@@ -159,6 +108,12 @@ class Settings(BaseSettings):
         """WorkOS OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/workos/callback"
 
+    @computed_field  # type: ignore
+    @property
+    def COMPOSIO_REDIRECT_URI(self) -> str:
+        """Composio OAuth callback URL."""
+        return f"{self.HOST}/api/v1/oauth/composio/callback"
+
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
         extra="allow",
@@ -167,5 +122,22 @@ class Settings(BaseSettings):
     MAX_REMINDER_DURATION: datetime.timedelta = datetime.timedelta(days=180)
 
 
-inject_infisical_secrets()
-settings = Settings()  # type: ignore
+@lru_cache(maxsize=1)
+def get_settings() -> Settings:
+    """
+    Get cached settings instance.
+
+    This function uses LRU cache to ensure settings are instantiated only once,
+    avoiding expensive Pydantic validation on every import.
+    """
+    logger.info("Starting settings initialization...")
+
+    infisical_start = time.time()
+    inject_infisical_secrets()
+    logger.info(f"Infisical secrets loaded in {(time.time() - infisical_start):.3f}s")
+
+    return Settings()  # type: ignore
+    # because we are initializing settings with environment variables
+
+
+settings = get_settings()

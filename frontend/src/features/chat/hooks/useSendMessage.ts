@@ -2,17 +2,17 @@
 "use client";
 
 import ObjectID from "bson-objectid";
-import { useDispatch } from "react-redux";
 
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
-import { addMessage } from "@/redux/slices/conversationSlice";
+import { useConversationStore } from "@/stores/conversationStore";
 import { putMessage } from "@/services/indexedDb/chatDb";
 import { MessageType } from "@/types/features/convoTypes";
+import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
 import fetchDate from "@/utils/date/dateUtils";
 
 export const useSendMessage = () => {
-  const dispatch = useDispatch();
+  const { addMessage } = useConversationStore();
   const fetchChatStream = useChatStream();
 
   return async (
@@ -20,6 +20,7 @@ export const useSendMessage = () => {
     fileData: FileData[] = [],
     selectedTool: string | null = null,
     toolCategory: string | null = null,
+    selectedWorkflow: WorkflowData | null = null,
   ) => {
     const botMessageId = String(ObjectID());
     // const isWebSearch = currentMode === "web_search";
@@ -34,9 +35,10 @@ export const useSendMessage = () => {
       fileData,
       selectedTool, // Add selectedTool to the message
       toolCategory, // Add toolCategory to the message
+      selectedWorkflow, // Add selectedWorkflow to the message
     };
 
-    dispatch(addMessage(userMessage));
+    addMessage(userMessage);
 
     // Persist user message locally so UI can reload quickly / work offline
     try {
@@ -52,6 +54,7 @@ export const useSendMessage = () => {
       fileData,
       selectedTool,
       toolCategory,
+      selectedWorkflow,
     );
   };
 };
