@@ -123,6 +123,7 @@ class MessageModel(BaseModel):
     support_ticket_data: Optional[List[SupportTicketData]] = None
     calendar_fetch_data: Optional[List[CalendarFetchData]] = None
     calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
+    notification_data: Optional[dict] = None
     memory_data: Optional[dict] = None
     todo_data: Optional[dict] = None
     document_data: Optional[dict] = None

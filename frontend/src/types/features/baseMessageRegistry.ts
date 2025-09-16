@@ -12,6 +12,7 @@ import {
   CalendarOptions,
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
+import { NotificationRecord } from "./notificationTypes";
 import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
@@ -52,6 +53,10 @@ export const TOOLS_MESSAGE_SCHEMA = {
   calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
   calendar_list_fetch_data: undefined as
     | CalendarListFetchData[]
+    | null
+    | undefined,
+  notification_data: undefined as
+    | { notifications: NotificationRecord[] }
     | null
     | undefined,
 };
