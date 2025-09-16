@@ -1,10 +1,10 @@
 import { Button } from "@heroui/button";
+import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, Square } from "lucide-react";
 
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-import { Kbd } from "@heroui/react";
 
 interface RightSideProps {
   handleFormSubmit: (e?: React.FormEvent<HTMLFormElement>) => void;

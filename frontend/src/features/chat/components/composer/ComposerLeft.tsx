@@ -1,3 +1,4 @@
+import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
 import { Check, WrenchIcon } from "lucide-react";
 import React from "react";
@@ -13,7 +14,6 @@ import {
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { cn } from "@/lib/utils";
 import { SearchMode } from "@/types/shared";
-import { Kbd } from "@heroui/react";
 
 interface SearchbarLeftDropdownProps {
   selectedMode: Set<SearchMode>;

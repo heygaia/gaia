@@ -14,8 +14,6 @@ import React, { ReactNode, useState } from "react";
 
 import {
   Brain02Icon,
-  BubbleChatQuestionIcon,
-  CustomerService01Icon,
   DiscordIcon,
   Settings01Icon,
   ThreeDotsMenu,

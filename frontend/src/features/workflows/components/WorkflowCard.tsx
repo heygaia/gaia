@@ -2,6 +2,7 @@
 
 import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Clock, Mail } from "lucide-react";
+import Image from "next/image";
 
 import { CursorMagicSelection03Icon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
@@ -9,7 +10,6 @@ import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
 import { Workflow } from "../api/workflowApi";
 import { getTriggerDisplay } from "../utils/triggerDisplay";
-import Image from "next/image";
 
 interface WorkflowCardProps {
   workflow: Workflow;

@@ -1,6 +1,5 @@
 "use client";
 
-import { Accordion, AccordionItem } from "@heroui/accordion";
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import {
@@ -41,9 +40,9 @@ import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import { Workflow, workflowApi } from "../api/workflowApi";
 import { useWorkflowCreation, useWorkflowPolling } from "../hooks";
 import {
-  workflowFormSchema,
-  type WorkflowFormData,
   getDefaultFormValues,
+  type WorkflowFormData,
+  workflowFormSchema,
   workflowToFormData,
 } from "../schemas/workflowFormSchema";
 import { useWorkflowModalStore } from "../stores/workflowModalStore";
@@ -76,7 +75,6 @@ export default function WorkflowModal({
     error: creationError,
     createWorkflow,
     clearError: clearCreationError,
-    reset: resetCreation,
   } = useWorkflowCreation();
 
   const { isPolling, startPolling, stopPolling } = useWorkflowPolling();
@@ -99,7 +97,6 @@ export default function WorkflowModal({
     setRegenerationError,
     setIsActivated,
     resetToForm,
-    resetAll,
   } = useWorkflowModalStore();
 
   // Single source of truth for workflow data
@@ -117,7 +114,7 @@ export default function WorkflowModal({
     reset: resetFormValues,
     setValue,
     watch,
-    formState: { errors, isDirty },
+    formState: { errors },
   } = form;
 
   // Manage the single workflow state from all sources
@@ -140,11 +137,6 @@ export default function WorkflowModal({
 
   // Watch form data for change detection
   const formData = watch();
-
-  // State for countdown close timer
-  const [countdown, setCountdown] = useState<number>(0);
-  const [countdownInterval, setCountdownInterval] =
-    useState<NodeJS.Timeout | null>(null);
 
   // Handle initial step generation (for empty workflows)
   const handleInitialGeneration = () => {
@@ -192,12 +184,12 @@ export default function WorkflowModal({
       resetFormValues(formValues);
       // Initialize activation state from current workflow
       setIsActivated(currentWorkflow.activated);
-    } else {
-      // Reset to default for create mode
-      resetFormValues(getDefaultFormValues());
-      // Reset activation state for create mode
-      setIsActivated(true);
+      return;
     }
+    // Reset to default for create mode
+    resetFormValues(getDefaultFormValues());
+    // Reset activation state for create mode
+    setIsActivated(true);
   }, [mode, currentWorkflow, isOpen, resetFormValues, setIsActivated]);
 
   // Check if form has actual changes for edit mode
@@ -225,19 +217,18 @@ export default function WorkflowModal({
     clearCreationError();
   };
 
-  const handleSave = async (data: any) => {
-    const formData = data as WorkflowFormData;
-    if (!formData.title.trim() || !formData.description.trim()) return;
+  const handleSave = async (data: WorkflowFormData) => {
+    if (!data.title.trim() || !data.description.trim()) return;
 
     if (mode === "create") {
       setCreationPhase("creating");
 
       // Log the request for debugging
-      console.log("Creating workflow with data:", formData);
+      console.log("Creating workflow with data:", data);
 
       // Validate the trigger config before sending
       try {
-        const validationResult = workflowFormSchema.safeParse(formData);
+        const validationResult = workflowFormSchema.safeParse(data);
         if (!validationResult.success) {
           console.error("Form validation failed:", validationResult.error);
           setCreationPhase("error");
@@ -252,10 +243,10 @@ export default function WorkflowModal({
 
       // Create the request object that matches the backend API
       const createRequest = {
-        title: formData.title,
-        description: formData.description,
-        trigger_config: formData.trigger_config, // Use the trigger config as-is, don't add extra fields
-        generate_immediately: false, // Create without steps for instant success
+        title: data.title,
+        description: data.description,
+        trigger_config: data.trigger_config, // Use the trigger config as-is, don't add extra fields
+        generate_immediately: false,
       };
 
       console.log("Sending create request:", createRequest);
@@ -385,53 +376,47 @@ export default function WorkflowModal({
           }
         }
       }
-    } else {
-      // Edit mode - update the existing workflow
-      if (!currentWorkflow) return;
+      return;
+    }
+    // Edit mode - update the existing workflow
+    if (!currentWorkflow) return;
 
-      try {
-        const updateRequest = {
-          title: formData.title,
-          description: formData.description,
-          trigger_config: {
-            ...formData.trigger_config,
-          },
-        };
+    try {
+      const updateRequest = {
+        title: data.title,
+        description: data.description,
+        trigger_config: {
+          ...data.trigger_config,
+        },
+      };
 
-        const updatedWorkflow = await workflowApi.updateWorkflow(
-          currentWorkflow.id,
-          updateRequest,
-        );
+      const updatedWorkflow = await workflowApi.updateWorkflow(
+        currentWorkflow.id,
+        updateRequest,
+      );
 
-        // Update currentWorkflow with the updated data
-        if (updatedWorkflow) {
-          setCurrentWorkflow({
-            ...currentWorkflow,
-            ...updateRequest,
-          });
-        }
-
-        if (onWorkflowSaved) {
-          onWorkflowSaved(currentWorkflow.id);
-        }
-        // Refresh workflow list after update
-        if (onWorkflowListRefresh) {
-          onWorkflowListRefresh();
-        }
-        handleClose();
-      } catch (error) {
-        console.error("Failed to update workflow:", error);
+      // Update currentWorkflow with the updated data
+      if (updatedWorkflow) {
+        setCurrentWorkflow({
+          ...currentWorkflow,
+          ...updateRequest,
+        });
       }
+
+      if (onWorkflowSaved) {
+        onWorkflowSaved(currentWorkflow.id);
+      }
+      // Refresh workflow list after update
+      if (onWorkflowListRefresh) {
+        onWorkflowListRefresh();
+      }
+      handleClose();
+    } catch (error) {
+      console.error("Failed to update workflow:", error);
     }
   };
 
   const handleClose = () => {
-    // Clear countdown interval if active
-    if (countdownInterval) {
-      clearInterval(countdownInterval);
-      setCountdownInterval(null);
-    }
-    setCountdown(0);
     resetFormValues(getDefaultFormValues());
     onOpenChange(false);
   };
@@ -737,15 +722,9 @@ export default function WorkflowModal({
   // Clean up when modal closes
   useEffect(() => {
     if (!isOpen) {
-      // Clear countdown interval if active
-      if (countdownInterval) {
-        clearInterval(countdownInterval);
-        setCountdownInterval(null);
-      }
-      setCountdown(0);
       // Don't call resetForm here - it's already called in onOpenChange
     }
-  }, [isOpen, countdownInterval]);
+  }, [isOpen]);
 
   const renderTriggerTab = () => {
     const triggerOptions = getTriggerEnabledIntegrations(integrations);

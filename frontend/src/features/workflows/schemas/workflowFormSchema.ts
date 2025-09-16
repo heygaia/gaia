@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { Workflow } from "@/types/features/workflowTypes";
+
 // Define the base trigger config schema
 const baseTriggerConfigSchema = z.object({
   type: z.enum(["manual", "schedule", "email", "calendar"]),
@@ -65,7 +67,7 @@ export const getDefaultFormValues = (): WorkflowFormData => ({
 });
 
 // Helper function to convert existing workflow to form data
-export const workflowToFormData = (workflow: any): WorkflowFormData => ({
+export const workflowToFormData = (workflow: Workflow): WorkflowFormData => ({
   title: workflow.title,
   description: workflow.description,
   activeTab:

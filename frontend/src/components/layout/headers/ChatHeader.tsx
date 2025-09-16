@@ -9,8 +9,6 @@ import { ChatBubbleAddIcon, PinIcon } from "@/components/shared/icons";
 import ModelPickerButton from "@/features/chat/components/composer/ModelPickerButton";
 import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 import SearchCommand from "@/features/search/components/SearchCommand";
-import { Input } from "@heroui/input";
-import { Kbd } from "@heroui/react";
 
 export default function ChatHeader() {
   const [openSearchDialog, setOpenSearchDialog] = useState(false);

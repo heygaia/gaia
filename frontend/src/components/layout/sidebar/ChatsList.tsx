@@ -17,7 +17,6 @@ import {
 } from "@/features/chat/hooks/useConversationList";
 
 import { ChatTab } from "./ChatTab";
-import Spinner from "@/components/ui/shadcn/spinner";
 
 // Reusable accordion item styles
 const accordionItemStyles = {

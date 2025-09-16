@@ -2,10 +2,11 @@
  * Utility functions for displaying trigger information using integration data
  */
 
-import { Workflow } from "../api/workflowApi";
-import { Integration } from "@/features/integrations/types";
-import { getScheduleDescription } from "./cronUtils";
 import { TRIGGER_CONFIG } from "@/config/registries/triggerRegistry";
+import { Integration } from "@/features/integrations/types";
+
+import { Workflow } from "../api/workflowApi";
+import { getScheduleDescription } from "./cronUtils";
 
 /**
  * Get trigger configuration for a workflow type

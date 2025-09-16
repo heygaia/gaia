@@ -1,11 +1,11 @@
 // Workflow-related types for comprehensive workflow management
 
 import type {
-  TriggerConfig,
-  EmailTriggerConfig,
   CalendarTriggerConfig,
-  ScheduleTriggerConfig,
+  EmailTriggerConfig,
   ManualTriggerConfig,
+  ScheduleTriggerConfig,
+  TriggerConfig,
 } from "@/config/registries/triggerRegistry";
 
 // Legacy workflow step data (for message components)
@@ -40,11 +40,11 @@ export interface WorkflowStepType {
 
 // Re-export trigger types for convenience
 export type {
-  TriggerConfig,
-  EmailTriggerConfig,
   CalendarTriggerConfig,
-  ScheduleTriggerConfig,
+  EmailTriggerConfig,
   ManualTriggerConfig,
+  ScheduleTriggerConfig,
+  TriggerConfig,
 };
 
 // Execution configuration for workflows

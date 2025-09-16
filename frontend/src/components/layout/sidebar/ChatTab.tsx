@@ -2,7 +2,7 @@
 import { Button } from "@heroui/button";
 import { BotIcon, Star, Zap } from "lucide-react";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { usePathname } from "next/navigation";
 import React, { FC, useEffect, useState } from "react";
 
 import {

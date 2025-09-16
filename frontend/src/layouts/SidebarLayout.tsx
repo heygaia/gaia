@@ -1,15 +1,12 @@
-import { Search } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
-import { ReactNode, useState } from "react";
+import { ReactNode } from "react";
 
 import { SidebarHeaderButton } from "@/components";
 import ContactSupport from "@/components/layout/sidebar/ContactSupport";
 import SidebarTopButtons from "@/components/layout/sidebar/SidebarTopButtons";
 import UserContainer from "@/components/layout/sidebar/UserContainer";
 import {
-  ChatBubbleAddIcon,
   SidebarLeft01Icon,
   SidebarRight01Icon,
 } from "@/components/shared/icons";
@@ -23,7 +20,6 @@ import {
   SidebarHeader,
   useSidebar,
 } from "@/components/ui/shadcn/sidebar";
-import SearchCommand from "@/features/search/components/SearchCommand";
 
 interface SidebarLayoutProps {
   children: ReactNode;

@@ -6,12 +6,9 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 
 import HeaderManager from "@/components/layout/headers/HeaderManager";
 import Sidebar from "@/components/layout/sidebar/MainSidebar";
-import { SidebarRight01Icon } from "@/components/shared/icons";
-import { Button } from "@/components/ui/shadcn/button";
 import {
   SidebarInset,
   SidebarProvider,
-  useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";

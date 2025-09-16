@@ -1,15 +1,14 @@
 import {
-  Avatar,
   Chip,
   Select,
   SelectItem,
   SelectSection,
   SharedSelection,
-  Tooltip,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import React, { useMemo } from "react";
 import Image from "next/image";
+import React, { useMemo } from "react";
+
 import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 
 import {

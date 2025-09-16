@@ -5,9 +5,9 @@
  * It imports and extends the tools message schema to provide a complete message data structure.
  */
 
-import { FileData } from "@/types/shared/fileTypes";
 import { IntegrationConnectionData } from "@/types/features/integrationTypes";
 import { WorkflowData } from "@/types/features/workflowTypes";
+import { FileData } from "@/types/shared/fileTypes";
 
 import { TOOLS_MESSAGE_SCHEMA } from "./toolRegistry";
 

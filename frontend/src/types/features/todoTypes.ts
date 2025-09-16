@@ -1,6 +1,5 @@
 // todo types matching the backend models
 
-import type { WorkflowStepType } from "./workflowTypes";
 
 export enum Priority {
   HIGH = "high",

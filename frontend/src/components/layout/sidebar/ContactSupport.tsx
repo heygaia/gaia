@@ -4,9 +4,8 @@ import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
 import { Tooltip } from "@heroui/react";
 
-import { HealtcareIcon, HelpCircleIcon } from "@/components/shared/icons";
+import { HealtcareIcon } from "@/components/shared/icons";
 import { ContactSupportModal } from "@/features/support";
-import { Heart } from "lucide-react";
 
 export default function ContactSupport() {
   const { isOpen, onOpen, onOpenChange } = useDisclosure();

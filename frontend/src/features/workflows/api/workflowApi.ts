@@ -16,7 +16,7 @@ import type {
 } from "@/types/features/workflowTypes";
 
 // Re-export types for convenience
-export type { Workflow, CreateWorkflowRequest };
+export type { CreateWorkflowRequest,Workflow };
 
 export const workflowApi = {
   // Create a new workflow

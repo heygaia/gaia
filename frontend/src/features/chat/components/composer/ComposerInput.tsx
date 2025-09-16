@@ -1,5 +1,4 @@
 import { Textarea } from "@heroui/input";
-import { Kbd } from "@heroui/react";
 import React, {
   useCallback,
   useEffect,

@@ -17,7 +17,6 @@ import { useNotifications } from "@/features/notification/hooks/useNotifications
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import { useRefreshTrigger } from "@/stores/notificationStore";
 import { NotificationStatus } from "@/types/features/notificationTypes";
-import { Separator } from "@/components/ui";
 
 export default function SidebarTopButtons() {
   const pathname = usePathname();

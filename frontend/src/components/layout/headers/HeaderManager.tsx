@@ -1,9 +1,9 @@
 "use client";
 
+import { Tooltip } from "@heroui/react";
 import { usePathname } from "next/navigation";
 
 import { Button } from "@/components";
-import { Tooltip } from "@heroui/react";
 import { useHeader } from "@/hooks/layout/useHeader";
 
 import BrowserHeader from "./BrowserHeader";

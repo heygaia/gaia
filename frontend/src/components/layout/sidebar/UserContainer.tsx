@@ -1,11 +1,11 @@
+import { Button } from "@heroui/button";
+import { ChevronsUpDownIcon } from "lucide-react";
 import Image from "next/image";
 
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import SettingsMenu from "@/features/settings/components/SettingsMenu";
 
-import { Button } from "@heroui/button";
-import { ChevronsUpDownIcon } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/shadcn/avatar";
 
 export default function UserContainer() {

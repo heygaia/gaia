@@ -31,7 +31,12 @@ export const useWorkflowCreation = (): UseWorkflowCreationReturn => {
       console.error("useWorkflowCreation: API call failed:", err);
 
       // Check if this is a network error vs server error
-      const error = err as any;
+      const error = err as Error & {
+        response?: {
+          status?: number;
+          data?: { workflow?: Workflow };
+        };
+      };
       const statusCode = error?.response?.status;
       const responseData = error?.response?.data;
 
