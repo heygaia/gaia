@@ -7,10 +7,8 @@ This module initializes and runs the FastAPI application.
 import time
 
 from app.config.loggers import app_logger as logger
-
-
-from app.core.app_factory import create_app
 from app.config.sentry import init_sentry
+from app.core.app_factory import create_app
 
 # Create the FastAPI application
 logger.info("Starting application initialization...")

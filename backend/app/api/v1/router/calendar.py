@@ -1,6 +1,6 @@
 from typing import List, Optional
 
-from app.api.v1.dependencies.google_scope_dependencies import require_google_integration
+from app.api.v1.dependencies.google_scope_dependencies import require_integration
 from app.config.token_repository import token_repository
 from app.decorators import tiered_rate_limit
 from app.models.calendar_models import (
@@ -21,7 +21,7 @@ router = APIRouter()
 
 @router.get("/calendar/list", summary="Get Calendar List")
 async def get_calendar_list(
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Retrieve the list of calendars for the authenticated user.
@@ -55,7 +55,7 @@ async def get_events(
     selected_calendars: Optional[List[str]] = Query(None),
     start_date: Optional[str] = None,  # YYYY-MM-DD format
     end_date: Optional[str] = None,  # YYYY-MM-DD format
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Retrieve events from the user's selected calendars. If no calendars are provided,
@@ -94,7 +94,7 @@ async def get_events(
         if end_date:
             try:
                 # Convert YYYY-MM-DD to end of day in UTC
-                from datetime import datetime, timezone, timedelta
+                from datetime import datetime, timedelta, timezone
 
                 end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
                     tzinfo=timezone.utc
@@ -131,7 +131,7 @@ async def get_events_by_calendar(
     start_date: Optional[str] = None,  # YYYY-MM-DD format
     end_date: Optional[str] = None,  # YYYY-MM-DD format
     page_token: Optional[str] = None,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Fetch events for a specific calendar identified by its ID.
@@ -174,7 +174,7 @@ async def get_events_by_calendar(
         if end_date:
             try:
                 # Convert YYYY-MM-DD to end of day in UTC
-                from datetime import datetime, timezone, timedelta
+                from datetime import datetime, timedelta, timezone
 
                 end_dt = datetime.strptime(end_date, "%Y-%m-%d").replace(
                     tzinfo=timezone.utc
@@ -208,7 +208,7 @@ async def get_events_by_calendar(
 @tiered_rate_limit("calendar_management")
 async def create_event(
     event: EventCreateRequest,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Create a new calendar event. This endpoint accepts non-canonical timezone names
@@ -245,7 +245,7 @@ async def create_event(
 async def get_all_events(
     time_min: Optional[str] = None,
     time_max: Optional[str] = None,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Retrieve events from every calendar associated with the user concurrently.
@@ -276,7 +276,7 @@ async def get_all_events(
 
 @router.get("/calendar/preferences", summary="Get User Calendar Preferences")
 async def get_calendar_preferences(
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Retrieve the user's selected calendar preferences from the database.
@@ -301,7 +301,7 @@ async def get_calendar_preferences(
 @tiered_rate_limit("calendar_management")
 async def update_calendar_preferences(
     preferences: CalendarPreferencesUpdateRequest,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Update the user's selected calendar preferences in the database.
@@ -327,7 +327,7 @@ async def update_calendar_preferences(
 @tiered_rate_limit("calendar_management")
 async def delete_event(
     event: EventDeleteRequest,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Delete a calendar event. This endpoint requires the event ID and optionally the calendar ID.
@@ -361,7 +361,7 @@ async def delete_event(
 @tiered_rate_limit("calendar_management")
 async def update_event(
     event: EventUpdateRequest,
-    current_user: dict = Depends(require_google_integration("calendar")),
+    current_user: dict = Depends(require_integration("calendar")),
 ):
     """
     Update a calendar event. This endpoint allows partial updates of event fields.

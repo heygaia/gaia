@@ -208,6 +208,14 @@ class EmailComposeRequest(BaseModel):
         ...,
         description="List of recipient email addresses",
     )
+    draft_id: Optional[str] = Field(
+        None,
+        description="ID of the created draft email",
+    )
+    thread_id: Optional[str] = Field(
+        None,
+        description="ID of the email thread this reply belongs to",
+    )
 
     @model_validator(mode="after")
     def validate_emails(self) -> "EmailComposeRequest":

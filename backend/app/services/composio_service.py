@@ -4,46 +4,17 @@ from typing import Optional
 from app.config.loggers import app_logger as logger
 from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
+from app.decorators.caching import Cacheable, CacheInvalidator
 from app.models.oauth_models import TriggerConfig
 from app.services.langchain_composio_service import LangchainProvider
+from app.utils.composio_hooks import (
+    master_after_execute_hook,
+    master_before_execute_hook,
+)
 from app.utils.query_utils import add_query_param
-from app.utils.tool_ui_builders import frontend_stream_modifier
-from composio import Composio, before_execute
-from composio.types import ToolExecuteParams
+from composio import Composio, after_execute, before_execute
 
-# Generate COMPOSIO_SOCIAL_CONFIGS dynamically from oauth_config
 COMPOSIO_SOCIAL_CONFIGS = get_composio_social_configs()
-
-
-def extract_user_id_from_params(
-    tool: str,
-    toolkit: str,
-    params: ToolExecuteParams,
-) -> ToolExecuteParams:
-    """
-    Extract user_id from RunnableConfig metadata and add it to tool execution params.
-
-    This function is used as a before_execute modifier for Composio tools to ensure
-    user context is properly passed through during tool execution.
-    """
-    arguments = params.get("arguments", {})
-    if not arguments:
-        return params
-
-    config = arguments.pop("__runnable_config__", None)
-    if config is None:
-        return params
-
-    metadata = config.get("metadata", {}) if isinstance(config, dict) else {}
-    if not metadata:
-        return params
-
-    user_id = metadata.get("user_id")
-    if user_id is None:
-        return params
-
-    params["user_id"] = user_id
-    return params
 
 
 class ComposioService:
@@ -52,7 +23,12 @@ class ComposioService:
             provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY
         )
 
-    def connect_account(
+    @CacheInvalidator(
+        key_patterns=[
+            "composio:connection_status:{user_id}",
+        ]
+    )
+    async def connect_account(
         self, provider: str, user_id: str, frontend_redirect_path: Optional[str] = None
     ) -> dict:
         """
@@ -74,10 +50,15 @@ class ComposioService:
                 else settings.COMPOSIO_REDIRECT_URI
             )
 
-            connection_request = self.composio.connected_accounts.initiate(
-                user_id=user_id,
-                auth_config_id=config.auth_config_id,
-                callback_url=callback_url,
+            # Run the synchronous Composio call in a thread pool
+            loop = asyncio.get_event_loop()
+            connection_request = await loop.run_in_executor(
+                None,
+                lambda: self.composio.connected_accounts.initiate(
+                    user_id=user_id,
+                    auth_config_id=config.auth_config_id,
+                    callback_url=callback_url,
+                ),
             )
 
             return {
@@ -90,22 +71,88 @@ class ComposioService:
             raise
 
     def get_tools(self, tool_kit: str, exclude_tools: Optional[list[str]] = None):
-        tools = self.composio.tools.get(
-            user_id="",
-            toolkits=[tool_kit],
-        )
+        """
+        Get tools for a specific toolkit with unified master hooks.
+
+        The master hooks handle ALL tools automatically including:
+        - User ID extraction from RunnableConfig metadata
+        - Frontend streaming setup
+        - All registered tool-specific hooks (Gmail, etc.)
+        """
+        tools = self.composio.tools.get(user_id="", toolkits=[tool_kit], limit=100)
+
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
-        user_id_modifier = before_execute(tools=tools_name)(extract_user_id_from_params)
-        after_modifier = before_execute(tools=tools_name)(frontend_stream_modifier)
+
+        master_before_modifier = before_execute(tools=tools_name)(
+            master_before_execute_hook
+        )
+        master_after_modifier = after_execute(tools=tools_name)(
+            master_after_execute_hook
+        )
 
         return self.composio.tools.get(
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[after_modifier, user_id_modifier],
+            modifiers=[
+                master_before_modifier,
+                master_after_modifier,
+            ],
+            limit=1000,
         )
 
-    def check_connection_status(
+    def get_tool(
+        self,
+        tool_name: str,
+        use_before_hook: bool = True,
+        use_after_hook: bool = True,
+        user_id: str = "",
+    ):
+        """
+        Get a specific tool by name with configurable hooks.
+
+        Args:
+            tool_name: Name of the specific tool to retrieve (e.g., 'GMAIL_SEND_EMAIL')
+            use_before_hook: Whether to apply master before execute hook
+            use_after_hook: Whether to apply master after execute hook
+
+        Returns:
+            The specific tool with selected hooks applied, or None if not found
+        """
+        try:
+            modifiers = []
+
+            # Add hooks based on flags
+            if use_before_hook:
+                master_before_modifier = before_execute(tools=[tool_name])(
+                    master_before_execute_hook
+                )
+                modifiers.append(master_before_modifier)
+
+            if use_after_hook:
+                master_after_modifier = after_execute(tools=[tool_name])(
+                    master_after_execute_hook
+                )
+                modifiers.append(master_after_modifier)
+
+            tools = self.composio.tools.get(
+                user_id=user_id,
+                tools=[tool_name],
+                modifiers=modifiers,
+            )
+
+            return tools[0] if tools else None
+        except Exception as e:
+            logger.error(f"Error getting tool {tool_name}: {e}")
+            return None
+
+    @Cacheable(
+        key_pattern="composio:connection_status:{user_id}",
+        ttl=300,  # 5 minutes
+        serializer=lambda result: result,
+        deserializer=lambda result: result,
+    )
+    async def check_connection_status(
         self, providers: list[str], user_id: str
     ) -> dict[str, bool]:
         """
@@ -124,11 +171,15 @@ class ComposioService:
                 )
 
         try:
-            # Get all connected accounts for the user
-            user_accounts = self.composio.connected_accounts.list(
-                user_ids=[user_id],
-                auth_config_ids=required_auth_config_ids,
-                limit=len(required_auth_config_ids),
+            # Get all connected accounts for the user (run in thread pool)
+            loop = asyncio.get_event_loop()
+            user_accounts = await loop.run_in_executor(
+                None,
+                lambda: self.composio.connected_accounts.list(
+                    user_ids=[user_id],
+                    auth_config_ids=required_auth_config_ids,
+                    limit=len(required_auth_config_ids),
+                ),
             )
 
             # Create a mapping of auth_config_ids to check
@@ -143,8 +194,8 @@ class ComposioService:
                 # Only check active accounts
                 if not account.auth_config.is_disabled and account.status == "ACTIVE":
                     account_auth_config_id = account.auth_config.id
-
-                    result[auth_config_provider_map[account_auth_config_id]] = True
+                    if account_auth_config_id in auth_config_provider_map:
+                        result[auth_config_provider_map[account_auth_config_id]] = True
 
             return result
 
@@ -176,7 +227,7 @@ class ComposioService:
         """
         Handle the subscription trigger for a specific provider.
         """
-        print(f"Subscribing triggers for user {user_id}: {triggers}")
+        logger.info(f"Subscribing triggers for user {user_id}: {triggers}")
         try:
             # Create tasks for each trigger to run them concurrently
             def create_trigger(trigger: TriggerConfig):
