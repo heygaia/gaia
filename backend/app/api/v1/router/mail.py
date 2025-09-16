@@ -32,9 +32,7 @@ from app.services.mail_service import (
     delete_label,
     fetch_thread,
     get_draft,
-    get_email_by_id as get_email_by_id_service,
     list_drafts,
-    list_labels as list_labels_service,
     mark_messages_as_read,
     mark_messages_as_unread,
     move_to_inbox,
@@ -48,6 +46,12 @@ from app.services.mail_service import (
     untrash_messages,
     update_draft,
     update_label,
+)
+from app.services.mail_service import (
+    get_email_by_id as get_email_by_id_service,
+)
+from app.services.mail_service import (
+    list_labels as list_labels_service,
 )
 from app.utils.chat_utils import do_prompt_no_stream
 from app.utils.embedding_utils import search_notes_by_similarity
@@ -283,6 +287,8 @@ async def send_email_route(
     to: str = Form(...),
     subject: str = Form(...),
     body: str = Form(...),
+    thread_id: Optional[str] = Form(None),
+    is_html: Optional[bool] = Form(False),
     cc: Optional[str] = Form(None),
     bcc: Optional[str] = Form(None),
     attachments: Optional[List[UploadFile]] = File(None),
@@ -308,20 +314,18 @@ async def send_email_route(
         cc_list = [email.strip() for email in cc.split(",")] if cc else None
         bcc_list = [email.strip() for email in bcc.split(",")] if bcc else None
 
-        # Convert newlines to HTML breaks for proper display
-        html_body = body.replace("\n", "<br>")
-
         # Send the email using the new async function
         sent_message = await send_email(
             user_id=str(user_id),
-            sender=current_user.get("email", ""),  # Use user's email from current_user
-            to_list=to_list,
+            to=to_list[0],
+            extra_recipients=to_list[1:],
             subject=subject,
-            body=html_body,
-            is_html=True,
+            body=body,
+            is_html=is_html or False,
             cc_list=cc_list,
             bcc_list=bcc_list,
             attachments=attachments,
+            thread_id=thread_id,
         )
 
         return {
@@ -356,8 +360,8 @@ async def send_email_json(
         # Send the email using the new async function
         sent_message = await send_email(
             user_id=str(user_id),
-            sender=current_user.get("email", ""),  # Use user's email from current_user
-            to_list=request.to,
+            to=request.to[0],
+            extra_recipients=request.to[1:],
             subject=request.subject,
             body=request.body,
             is_html=False,

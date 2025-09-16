@@ -34,6 +34,9 @@ interface EmailData {
   body: string;
   draft_id?: string;
   thread_id?: string;
+  bcc?: string[];
+  cc?: string[];
+  is_html?: boolean;
 }
 
 interface EmailComposeCardProps {
@@ -332,18 +335,18 @@ export default function EmailComposeCard({
         formData.append("to", selectedEmails.join(", "));
         formData.append("subject", editData.subject);
         formData.append("body", editData.body);
-        
+        formData.append("is_html", String(emailData.is_html || false));
+        if (emailData.bcc && emailData.bcc.length > 0) {
+          formData.append("bcc", emailData.bcc.join(", "));
+        }
+        if (emailData.cc && emailData.cc.length > 0) {
+          formData.append("cc", emailData.cc.join(", "));
+        }
         if (emailData.thread_id) {
           formData.append("thread_id", emailData.thread_id);
         }
 
-        const result = await mailApi.sendEmail(formData);
-        if (result.success) {
-          toast.success("Email sent successfully!");
-          onSent?.();
-        } else {
-          toast.error("Failed to send email");
-        }
+        await mailApi.sendEmail(formData);
       }
     } catch (error) {
       console.error("Error sending email:", error);
@@ -503,12 +506,11 @@ export default function EmailComposeCard({
             radius="full"
             className="font-medium"
           >
-            {isSending 
-              ? "Sending..." 
-              : emailData.draft_id 
-                ? "Send Draft" 
-                : "Send"
-            }
+            {isSending
+              ? "Sending..."
+              : emailData.draft_id
+                ? "Send Draft"
+                : "Send"}
           </Button>
         </div>
       </div>

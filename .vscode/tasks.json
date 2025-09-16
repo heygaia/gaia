@@ -6,11 +6,20 @@
         {
             "label": "Run Backend",
             "type": "shell",
-            "command": "uv sync && docker compose --profile scheduler up",
+            "command": "cd backend && source .venv/bin/activate && python -m uvicorn app.main:app --port 8000 --reload",
             "problemMatcher": [],
             "presentation": {
                 "panel": "new"
             }
         },
+        {
+            "label": "Run Frontend",
+            "type": "shell",
+            "command": "cd frontend && pnpm dev",
+            "problemMatcher": [],
+            "presentation": {
+                "panel": "new"
+            }
+        }
     ]
 }

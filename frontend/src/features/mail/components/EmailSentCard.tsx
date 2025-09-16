@@ -26,20 +26,15 @@ export default function EmailSentCard({ emailSentData }: EmailSentCardProps) {
   };
 
   return (
-    <div className="mx-auto mt-3 w-full max-w-2xl rounded-2xl bg-green-900/20 border border-green-700/30 p-4 text-white">
+    <div className="mx-auto my-3 w-full max-w-2xl rounded-2xl border border-green-700/30 bg-green-900/20 p-4 text-white">
       {/* Header */}
-      <div className="flex items-center justify-between mb-3">
+      <div className="mb-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Gmail width={20} height={20} />
           <CheckCircleIcon className="h-5 w-5 text-green-400" />
           <span className="text-sm font-medium text-green-400">Email Sent</span>
         </div>
-        <Chip 
-          size="sm" 
-          variant="flat" 
-          color="success"
-          className="text-xs"
-        >
+        <Chip size="sm" variant="flat" color="success" className="text-xs">
           {formatTime(emailSentData.timestamp)}
         </Chip>
       </div>
@@ -52,7 +47,7 @@ export default function EmailSentCard({ emailSentData }: EmailSentCardProps) {
             <span className="text-gray-200">{emailSentData.subject}</span>
           </div>
         )}
-        
+
         {emailSentData.recipients && emailSentData.recipients.length > 0 && (
           <div className="text-sm">
             <span className="text-gray-400">To: </span>
@@ -62,7 +57,7 @@ export default function EmailSentCard({ emailSentData }: EmailSentCardProps) {
           </div>
         )}
 
-        <div className="text-sm text-green-400 font-medium">
+        <div className="text-sm font-medium text-green-400">
           {emailSentData.message}
         </div>
       </div>

@@ -25,7 +25,7 @@ class ComposioService:
 
     @CacheInvalidator(
         key_patterns=[
-            "composio:connection_status:{user_id}:*",
+            "composio:connection_status:{user_id}",
         ]
     )
     async def connect_account(
@@ -102,7 +102,11 @@ class ComposioService:
         )
 
     def get_tool(
-        self, tool_name: str, use_before_hook: bool = True, use_after_hook: bool = True
+        self,
+        tool_name: str,
+        use_before_hook: bool = True,
+        use_after_hook: bool = True,
+        user_id: str = "",
     ):
         """
         Get a specific tool by name with configurable hooks.
@@ -132,7 +136,7 @@ class ComposioService:
                 modifiers.append(master_after_modifier)
 
             tools = self.composio.tools.get(
-                user_id="",
+                user_id=user_id,
                 tools=[tool_name],
                 modifiers=modifiers,
             )
