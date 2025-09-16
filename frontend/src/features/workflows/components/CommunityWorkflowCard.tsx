@@ -77,7 +77,7 @@ export default function CommunityWorkflowCard({
     const predictedAction = localWorkflow.is_upvoted ? "removed" : "added";
 
     // Apply optimistic update immediately
-    setLocalWorkflow((prev) => ({
+    setLocalWorkflow((prev: CommunityWorkflow) => ({
       ...prev,
       is_upvoted: predictedAction === "added",
       upvotes:
@@ -89,7 +89,7 @@ export default function CommunityWorkflowCard({
 
       // Verify optimistic update was correct, if not, apply correct state
       if (result.action !== predictedAction) {
-        setLocalWorkflow((prev) => ({
+        setLocalWorkflow((prev: CommunityWorkflow) => ({
           ...prev,
           is_upvoted: result.action === "added",
           upvotes:
@@ -103,7 +103,7 @@ export default function CommunityWorkflowCard({
       toast.error("Failed to update vote. Please try again.");
 
       // Rollback to previous state on error
-      setLocalWorkflow((prev) => ({
+      setLocalWorkflow((prev: CommunityWorkflow) => ({
         ...prev,
         is_upvoted: previousState.is_upvoted,
         upvotes: previousState.upvotes,
@@ -144,18 +144,22 @@ export default function CommunityWorkflowCard({
         <div className="flex items-center gap-2">
           {(() => {
             const categories = [
-              ...new Set(localWorkflow.steps.map((step) => step.tool_category)),
+              ...new Set(
+                localWorkflow.steps.map(
+                  (step: { tool_category: string }) => step.tool_category,
+                ),
+              ),
             ];
             const validIcons = categories
               .slice(0, 3)
               .map((category) => {
-                const IconComponent = getToolCategoryIcon(category, {
+                const IconComponent = getToolCategoryIcon(category as string, {
                   width: 25,
                   height: 25,
                 });
                 return IconComponent ? (
                   <div
-                    key={category}
+                    key={category as string}
                     className="flex items-center justify-center"
                   >
                     {IconComponent}
@@ -166,13 +170,20 @@ export default function CommunityWorkflowCard({
 
             return validIcons.length > 0 ? validIcons : null;
           })()}
-          {[...new Set(localWorkflow.steps.map((step) => step.tool_category))]
-            .length > 3 && (
+          {[
+            ...new Set(
+              localWorkflow.steps.map(
+                (step: { tool_category: string }) => step.tool_category,
+              ),
+            ),
+          ].length > 3 && (
             <div className="flex h-[25px] w-[25px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
               +
               {[
                 ...new Set(
-                  localWorkflow.steps.map((step) => step.tool_category),
+                  localWorkflow.steps.map(
+                    (step: { tool_category: string }) => step.tool_category,
+                  ),
                 ),
               ].length - 3}
             </div>

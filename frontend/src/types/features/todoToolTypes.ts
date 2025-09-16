@@ -1,6 +1,7 @@
 // todo Tool Types for AI Assistant Integration
 
-import { Priority, Workflow } from "./todoTypes";
+import { Priority } from "./todoTypes";
+import type { Workflow } from "./workflowTypes";
 
 export interface TodoToolData {
   todos?: TodoItem[];
@@ -32,7 +33,7 @@ export interface TodoItem {
   subtasks: TodoSubtask[];
   created_at: string;
   updated_at: string;
-  workflow?: Workflow; // Add workflow field
+  workflow?: Workflow;
 }
 
 export interface TodoSubtask {

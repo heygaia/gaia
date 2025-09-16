@@ -5,6 +5,7 @@
 
 import { apiService } from "@/lib/api";
 import type {
+  CommunityWorkflow,
   CommunityWorkflowsResponse,
   CreateWorkflowRequest,
   Workflow,
@@ -16,7 +17,7 @@ import type {
 } from "@/types/features/workflowTypes";
 
 // Re-export types for convenience
-export type { CreateWorkflowRequest,Workflow };
+export type { CommunityWorkflow, CreateWorkflowRequest, Workflow };
 
 export const workflowApi = {
   // Create a new workflow

@@ -1,6 +1,3 @@
-// todo types matching the backend models
-
-
 export enum Priority {
   HIGH = "high",
   MEDIUM = "medium",

@@ -16,6 +16,7 @@ import {
 import {
   EmailComposeData,
   EmailFetchData,
+  EmailSentData,
   EmailThreadData,
 } from "@/types/features/mailTypes";
 import {
@@ -44,6 +45,7 @@ export const TOOLS_MESSAGE_SCHEMA = {
   email_compose_data: undefined as EmailComposeData[] | null | undefined,
   email_fetch_data: undefined as EmailFetchData[] | null | undefined,
   email_thread_data: undefined as EmailThreadData | null | undefined,
+  email_sent_data: undefined as EmailSentData | null | undefined,
   support_ticket_data: undefined as SupportTicketData[] | null | undefined,
   weather_data: undefined as WeatherData | null | undefined,
   search_results: undefined as SearchResults | null | undefined,
