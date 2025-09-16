@@ -282,7 +282,7 @@ export default function ChatsList() {
       {/* Sentinel element for the IntersectionObserver */}
       <div
         ref={loadMoreRef}
-        className="flex h-[250px] items-center justify-center p-2"
+        className="flex h-[50px] items-center justify-center p-2"
       >
         {isFetchingMore && <Loader className="animate-spin text-[#00bbff]" />}
       </div>

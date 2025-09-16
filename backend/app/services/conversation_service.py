@@ -1,15 +1,14 @@
 import asyncio
 from datetime import datetime, timezone
 
-from bson import ObjectId
-from fastapi import HTTPException, status
-
 from app.db.mongodb.collections import conversations_collection
 from app.models.chat_models import (
     ConversationModel,
     SystemPurpose,
     UpdateMessagesRequest,
 )
+from bson import ObjectId
+from fastapi import HTTPException, status
 
 
 async def create_conversation_service(
@@ -216,10 +215,7 @@ async def update_messages(request: UpdateMessagesRequest, user: dict) -> dict:
     for message in request.messages:
         message_dict = message.model_dump(exclude={"loading"})
         # Remove None values to keep the document clean
-        message_dict = {
-            key: value for key, value in message_dict.items() if value is not None
-        }
-        # Ensure message has an ID
+        message_dict = {k: v for k, v in message_dict.items() if v is not None}
         message_dict.setdefault("message_id", str(ObjectId()))
         messages.append(message_dict)
 

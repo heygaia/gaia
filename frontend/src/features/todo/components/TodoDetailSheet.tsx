@@ -15,8 +15,8 @@ import {
   SubTask,
   Todo,
   TodoUpdate,
-  Workflow,
 } from "@/types/features/todoTypes";
+import type { Workflow } from "@/types/features/workflowTypes";
 
 import SubtaskManager from "./shared/SubtaskManager";
 import TodoFieldsRow from "./shared/TodoFieldsRow";

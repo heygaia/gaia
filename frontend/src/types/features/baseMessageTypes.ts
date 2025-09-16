@@ -2,9 +2,9 @@
 
 import React, { Dispatch } from "react";
 
+import { BaseMessageData } from "@/config/registries/baseMessageRegistry";
 import { SystemPurpose } from "@/features/chat/api/chatApi";
 
-import { BaseMessageData } from "./baseMessageRegistry";
 import {
   CalendarDeleteOptions,
   CalendarEditOptions,

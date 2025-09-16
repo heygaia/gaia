@@ -106,6 +106,7 @@ dependencies = [
   "dodopayments>=1.49.0",
   "langchain-cerebras>=0.5.0",
   "standardwebhooks>=1.0.0",
+  "psycopg[binary,pool]>=3.2.10",
 ]
 
 [dependency-groups]

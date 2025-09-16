@@ -1,5 +1,4 @@
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
-import { useRouter } from "next/navigation";
 import { redirect } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -23,7 +22,9 @@ export const useChatStream = () => {
   const { updateConvoMessages, convoMessages } = useConversation();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
-  const router = useRouter();
+
+  // Add ref to track if a stream is already in progress
+  const streamInProgressRef = useRef(false);
 
   // Unified ref storage
   const refs = useRef({
@@ -43,9 +44,7 @@ export const useChatStream = () => {
   }, [convoMessages]);
 
   const saveIncompleteConversation = async () => {
-    if (!refs.current.botMessage || !refs.current.accumulatedResponse) {
-      return;
-    }
+    if (!refs.current.botMessage || !refs.current.accumulatedResponse) return;
 
     try {
       const response = await chatApi.saveIncompleteConversation(
@@ -167,6 +166,8 @@ export const useChatStream = () => {
   };
 
   const handleStreamClose = async () => {
+    streamInProgressRef.current = false; // Reset stream progress flag
+
     if (!refs.current.botMessage) return;
 
     // Create a shallow copy of the current bot message to preserve all existing data
@@ -209,6 +210,13 @@ export const useChatStream = () => {
     toolCategory: string | null = null,
     selectedWorkflow: WorkflowData | null = null,
   ) => {
+    // Prevent concurrent stream requests
+    // if (streamInProgressRef.current) {
+    //   console.warn("Stream already in progress, ignoring duplicate request");
+    //   return;
+    // }
+
+    // streamInProgressRef.current = true;
     refs.current.accumulatedResponse = "";
     refs.current.userPrompt = inputText;
 
@@ -256,6 +264,7 @@ export const useChatStream = () => {
       handleStreamEvent,
       handleStreamClose,
       (err) => {
+        streamInProgressRef.current = false; // Reset on error too
         setIsLoading(false);
         resetLoadingText();
         streamController.clear();

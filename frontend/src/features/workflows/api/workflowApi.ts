@@ -4,142 +4,29 @@
  */
 
 import { apiService } from "@/lib/api";
+import type {
+  CommunityWorkflow,
+  CommunityWorkflowsResponse,
+  CreateWorkflowRequest,
+  Workflow,
+  WorkflowExecutionRequest,
+  WorkflowExecutionResponse,
+  WorkflowListResponse,
+  WorkflowResponse,
+  WorkflowStatusResponse,
+} from "@/types/features/workflowTypes";
 
-export interface WorkflowStepType {
-  id: string;
-  title: string;
-  tool_name: string;
-  tool_category: string;
-  description: string;
-  tool_inputs: Record<string, unknown>;
-  order: number;
-  executed_at?: string;
-  result?: Record<string, unknown>;
-}
-
-export interface TriggerConfig {
-  type: "manual" | "schedule" | "email" | "calendar" | "webhook";
-  cron_expression?: string;
-  timezone?: string;
-  next_run?: string;
-  email_patterns?: string[];
-  email_labels?: string[];
-  calendar_patterns?: string[];
-  webhook_url?: string;
-  webhook_secret?: string;
-  enabled: boolean;
-}
-
-export interface ExecutionConfig {
-  method: "chat" | "background" | "hybrid";
-  timeout_seconds: number;
-  max_retries: number;
-  retry_delay_seconds: number;
-  notify_on_completion: boolean;
-  notify_on_failure: boolean;
-}
-
-export interface WorkflowMetadata {
-  created_from: "chat" | "modal" | "todo" | "template" | "api";
-  template_id?: string;
-  related_todo_id?: string;
-  related_conversation_id?: string;
-  tags: string[];
-  category?: string;
-  total_executions: number;
-  successful_executions: number;
-  last_execution_at?: string;
-  average_execution_time?: number;
-}
-
-export interface CommunityWorkflowStep {
-  title: string;
-  tool_name: string;
-  tool_category: string;
-  description: string;
-}
-
-export interface CommunityWorkflow {
-  id: string;
-  title: string;
-  description: string;
-  steps: CommunityWorkflowStep[];
-  upvotes: number;
-  is_upvoted: boolean;
-  created_at: string;
-  creator: {
-    id: string;
-    name: string;
-    avatar?: string;
-  };
-}
-
-export interface CommunityWorkflowsResponse {
-  workflows: CommunityWorkflow[];
-  total: number;
-}
-
-export interface Workflow {
-  id: string;
-  title: string;
-  description: string;
-  steps: WorkflowStepType[];
-  trigger_config: TriggerConfig;
-  execution_config: ExecutionConfig;
-  metadata: WorkflowMetadata;
-  activated: boolean;
-  user_id: string;
-  created_at: string;
-  updated_at: string;
-  last_executed_at?: string;
-  current_step_index: number;
-  execution_logs: string[];
-  error_message?: string;
-
-  // Community features
-  is_public?: boolean;
-  created_by?: string;
-  upvotes?: number;
-  upvoted_by?: string[];
-}
-
-export interface CreateWorkflowRequest {
-  title: string;
-  description: string;
-  trigger_config: TriggerConfig;
-  execution_config?: ExecutionConfig;
-  metadata?: Partial<WorkflowMetadata>;
-  generate_immediately?: boolean;
-}
-
-export interface WorkflowExecutionRequest {
-  execution_method?: "chat" | "background" | "hybrid";
-  context?: Record<string, unknown>;
-}
-
-export interface WorkflowStatusResponse {
-  workflow_id: string;
-  activated: boolean;
-  current_step_index: number;
-  total_steps: number;
-  progress_percentage: number;
-  last_updated: string;
-  error_message?: string;
-  logs: string[];
-}
+// Re-export types for convenience
+export type { CommunityWorkflow, CreateWorkflowRequest, Workflow };
 
 export const workflowApi = {
   // Create a new workflow
   createWorkflow: async (
     request: CreateWorkflowRequest,
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.post<{ workflow: Workflow; message: string }>(
-      "/workflows",
-      request,
-      {
-        errorMessage: "Failed to create workflow",
-      },
-    );
+  ): Promise<WorkflowResponse> => {
+    return apiService.post<WorkflowResponse>("/workflows", request, {
+      errorMessage: "Failed to create workflow",
+    });
   },
 
   // List workflows with filtering
@@ -148,12 +35,7 @@ export const workflowApi = {
     source?: string;
     limit?: number;
     skip?: number;
-  }): Promise<{
-    workflows: Workflow[];
-    total_count: number;
-    page: number;
-    page_size: number;
-  }> => {
+  }): Promise<WorkflowListResponse> => {
     const searchParams = new URLSearchParams();
     if (params?.activated !== undefined)
       searchParams.append("activated", params.activated.toString());
@@ -164,33 +46,25 @@ export const workflowApi = {
     const queryString = searchParams.toString();
     const url = queryString ? `/workflows?${queryString}` : "/workflows";
 
-    return apiService.get<{
-      workflows: Workflow[];
-      total_count: number;
-      page: number;
-      page_size: number;
-    }>(url);
+    return apiService.get<WorkflowListResponse>(url);
   },
 
   // Get a specific workflow
   getWorkflow: async (
     workflowId: string,
     options?: { silent?: boolean },
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.get<{ workflow: Workflow; message: string }>(
-      `/workflows/${workflowId}`,
-      {
-        silent: options?.silent,
-      },
-    );
+  ): Promise<WorkflowResponse> => {
+    return apiService.get<WorkflowResponse>(`/workflows/${workflowId}`, {
+      silent: options?.silent,
+    });
   },
 
   // Update a workflow
   updateWorkflow: async (
     workflowId: string,
     updates: Partial<CreateWorkflowRequest>,
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.put<{ workflow: Workflow; message: string }>(
+  ): Promise<WorkflowResponse> => {
+    return apiService.put<WorkflowResponse>(
       `/workflows/${workflowId}`,
       updates,
       {
@@ -209,10 +83,8 @@ export const workflowApi = {
   },
 
   // Activate a workflow
-  activateWorkflow: async (
-    workflowId: string,
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.post<{ workflow: Workflow; message: string }>(
+  activateWorkflow: async (workflowId: string): Promise<WorkflowResponse> => {
+    return apiService.post<WorkflowResponse>(
       `/workflows/${workflowId}/activate`,
       {},
       {
@@ -223,10 +95,8 @@ export const workflowApi = {
   },
 
   // Deactivate a workflow
-  deactivateWorkflow: async (
-    workflowId: string,
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.post<{ workflow: Workflow; message: string }>(
+  deactivateWorkflow: async (workflowId: string): Promise<WorkflowResponse> => {
+    return apiService.post<WorkflowResponse>(
       `/workflows/${workflowId}/deactivate`,
       {},
       {
@@ -240,14 +110,14 @@ export const workflowApi = {
   regenerateWorkflowSteps: async (
     workflowId: string,
     options?: {
-      reason?: string;
+      instruction?: string;
       force_different_tools?: boolean;
     },
-  ): Promise<{ workflow: Workflow; message: string }> => {
-    return apiService.post<{ workflow: Workflow; message: string }>(
+  ): Promise<WorkflowResponse> => {
+    return apiService.post<WorkflowResponse>(
       `/workflows/${workflowId}/regenerate-steps`,
       {
-        reason: options?.reason,
+        instruction: options?.instruction || "Generate workflow steps",
         force_different_tools: options?.force_different_tools ?? true,
       },
       {
@@ -260,19 +130,15 @@ export const workflowApi = {
   executeWorkflow: async (
     workflowId: string,
     request?: WorkflowExecutionRequest,
-  ): Promise<{
-    execution_id: string;
-    message: string;
-    estimated_completion_time?: string;
-  }> => {
-    return apiService.post<{
-      execution_id: string;
-      message: string;
-      estimated_completion_time?: string;
-    }>(`/workflows/${workflowId}/execute`, request || {}, {
-      successMessage: "Workflow execution started",
-      errorMessage: "Failed to execute workflow",
-    });
+  ): Promise<WorkflowExecutionResponse> => {
+    return apiService.post<WorkflowExecutionResponse>(
+      `/workflows/${workflowId}/execute`,
+      request || {},
+      {
+        successMessage: "Workflow execution started",
+        errorMessage: "Failed to execute workflow",
+      },
+    );
   },
 
   // Get workflow status

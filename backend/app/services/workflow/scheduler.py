@@ -100,7 +100,7 @@ class WorkflowScheduler(BaseSchedulerService):
                 raise ValueError("Workflow ID is required for execution")
 
             # Execute the workflow using the chat execution function directly
-            await execute_workflow_as_chat(workflow, workflow.user_id, {})
+            await execute_workflow_as_chat(workflow, {"user_id": workflow.user_id}, {})
 
             return TaskExecutionResult(
                 success=True,

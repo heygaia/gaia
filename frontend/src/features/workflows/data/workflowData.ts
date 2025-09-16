@@ -1,76 +1,9 @@
-export interface TriggerOption {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-}
-
 export interface IntegrationOption {
   id: string;
   name: string;
   icon: string;
   category: string;
 }
-
-export const triggerOptions: TriggerOption[] = [
-  {
-    id: "slack",
-    name: "Slack",
-    icon: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
-    description: "Trigger when new messages arrive",
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
-    description: "Trigger when new emails arrive",
-  },
-  {
-    id: "calendar",
-    name: "Google Calendar",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
-    description: "Trigger when new events are created",
-  },
-];
-
-export const integrationOptions: IntegrationOption[] = [
-  {
-    id: "notion",
-    name: "Notion",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
-    category: "productivity",
-  },
-  {
-    id: "google-docs",
-    name: "Google Docs",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
-    category: "documents",
-  },
-  {
-    id: "google-drive",
-    name: "Google Drive",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/640px-Google_Drive_icon_%282020%29.svg.png",
-    category: "storage",
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
-    category: "communication",
-  },
-  {
-    id: "google-calendar",
-    name: "Google Calendar",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
-    category: "productivity",
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    icon: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
-    category: "communication",
-  },
-];
 
 export const scheduleFrequencyOptions = [
   { key: "every", label: "Every" },
