@@ -19,20 +19,7 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
 
-
-def get_user_id_from_config(config: RunnableConfig) -> str:
-    """Extract user ID from the config."""
-    if not config:
-        logger.error("Notification tool called without config")
-        return ""
-
-    metadata = config.get("metadata", {})
-    user_id = metadata.get("user_id", "")
-
-    if not user_id:
-        logger.error("No user_id found in config metadata")
-
-    return user_id
+from app.utils.chat_utils import get_user_id_from_config
 
 
 @tool
