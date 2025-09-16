@@ -170,7 +170,7 @@ export default function SettingsMenu({
       ),
       action: () =>
         window.open(
-          discordLink?.href || "https://whasapp.heygaia.io",
+          whatsappLink?.href || "https://whatsapp.heygaia.io",
           "_blank",
         ),
     },
