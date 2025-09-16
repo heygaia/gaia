@@ -12,8 +12,8 @@ import {
   CalendarOptions,
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
-import { NotificationRecord } from "./notificationTypes";
 import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
+import { NotificationRecord } from "./notificationTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";
