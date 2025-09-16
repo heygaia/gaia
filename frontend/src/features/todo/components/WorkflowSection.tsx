@@ -10,8 +10,8 @@ import {
   WorkflowLoadingState,
   WorkflowSteps,
 } from "@/features/workflows/components";
-import type { Workflow as WorkflowType } from "@/types/features/workflowTypes";
 import { WorkflowStatus } from "@/types/features/todoTypes";
+import type { Workflow as WorkflowType } from "@/types/features/workflowTypes";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;
