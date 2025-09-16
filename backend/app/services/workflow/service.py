@@ -510,34 +510,3 @@ class WorkflowService:
         except Exception as e:
             logger.error(f"Error generating workflow steps for {workflow_id}: {str(e)}")
             await handle_workflow_error(workflow_id, user_id, e)
-
-    @staticmethod
-    async def _subscribe_to_composio_triggers(user_id: str) -> None:
-        """
-        Subscribe to Composio triggers for email workflows.
-
-        Args:
-            user_id: User ID to subscribe triggers for
-        """
-        try:
-            from app.services.composio_service import ComposioService
-            from app.config.oauth_config import get_integration_by_id
-
-            composio_service = ComposioService()
-
-            # Get Gmail integration triggers
-            gmail_integration = get_integration_by_id("gmail")
-
-            if gmail_integration and gmail_integration.associated_triggers:
-                logger.info(f"Subscribing to Gmail triggers for user {user_id}")
-                await composio_service.handle_subscribe_trigger(
-                    user_id, gmail_integration.associated_triggers
-                )
-                logger.info(
-                    f"Successfully subscribed to Gmail triggers for user {user_id}"
-                )
-
-        except Exception as e:
-            logger.error(
-                f"Error subscribing to Composio triggers for user {user_id}: {str(e)}"
-            )
