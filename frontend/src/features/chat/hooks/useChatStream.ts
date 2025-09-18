@@ -9,6 +9,7 @@ import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { streamController } from "@/features/chat/utils/streamController";
+import { putMessage } from "@/services/indexedDb/chatDb";
 import { useComposerStore } from "@/stores/composerStore";
 import { MessageType } from "@/types/features/convoTypes";
 import { WorkflowData } from "@/types/features/workflowTypes";
@@ -17,7 +18,6 @@ import fetchDate from "@/utils/date/dateUtils";
 
 import { useLoadingText } from "./useLoadingText";
 import { parseStreamData } from "./useStreamDataParser";
-import { putMessage } from "@/services/indexedDb/chatDb";
 
 export const useChatStream = () => {
   const { setIsLoading, setAbortController } = useLoading();
@@ -103,7 +103,7 @@ export const useChatStream = () => {
     try {
       if (refs.current.botMessage) {
         // store/loading intermediate
-        putMessage(refs.current.botMessage as any).catch((e) =>
+        putMessage(refs.current.botMessage).catch((e) =>
           console.error("putMessage streaming error:", e),
         );
       }
@@ -194,7 +194,7 @@ export const useChatStream = () => {
     // Ensure final bot message is persisted as finalized state
     try {
       if (preservedBotMessage) {
-        await putMessage({ ...preservedBotMessage, loading: false } as any);
+        await putMessage({ ...preservedBotMessage, loading: false });
       }
     } catch (err) {
       console.error("Failed to persist final bot message:", err);

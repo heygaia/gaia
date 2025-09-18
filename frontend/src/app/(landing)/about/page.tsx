@@ -75,7 +75,7 @@ export default async function About() {
               height={80}
             />
           </div>
-          <div className="prose prose-zinc dark:prose-invert max-w-xl">
+          <div className="prose max-w-xl prose-zinc dark:prose-invert">
             <ReactMarkdown
               components={{
                 h1: ({ children }) => (

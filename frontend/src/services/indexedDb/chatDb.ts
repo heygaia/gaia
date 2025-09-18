@@ -48,7 +48,9 @@ export async function getAllConversations(): Promise<ConversationRecord[]> {
   }
 }
 
-export async function putConversationsBulk(conversations: ConversationRecord[]) {
+export async function putConversationsBulk(
+  conversations: ConversationRecord[],
+) {
   try {
     if (!conversations || conversations.length === 0) return;
     await chatDb.conversations.bulkPut(conversations as ConversationRecord[]);
@@ -60,7 +62,10 @@ export async function putConversationsBulk(conversations: ConversationRecord[]) 
 export async function deleteConversation(conversationId: string) {
   try {
     await chatDb.conversations.delete(conversationId);
-    await chatDb.messages.where("conversation_id").equals(conversationId).delete();
+    await chatDb.messages
+      .where("conversation_id")
+      .equals(conversationId)
+      .delete();
   } catch (err) {
     console.error("chatDb.deleteConversation error:", err);
   }
@@ -81,18 +86,40 @@ export async function getMessagesForConversation(
   }
 }
 
-export async function putMessagesBulk(messages: MessageRecord[]) {
+function ensureString(v: unknown): string {
+  return typeof v === "string" ? v : "";
+}
+
+export async function putMessagesBulk(
+  messages: MessageType[] | MessageRecord[],
+) {
   try {
     if (!messages || messages.length === 0) return;
-    await chatDb.messages.bulkPut(messages as MessageRecord[]);
+    const normalized = (messages as MessageType[]).map((m) => {
+      const mAny = m as unknown as Record<string, unknown>;
+      return {
+        message_id: ensureString(mAny["message_id"]) || "",
+        conversation_id: ensureString(mAny["conversation_id"]) || "",
+        date: ensureString(mAny["date"]) || new Date().toISOString(),
+        ...(m as unknown as Record<string, unknown>),
+      } as MessageRecord;
+    });
+    await chatDb.messages.bulkPut(normalized);
   } catch (err) {
     console.error("chatDb.putMessagesBulk error:", err);
   }
 }
 
-export async function putMessage(message: MessageRecord) {
+export async function putMessage(message: MessageType | MessageRecord) {
   try {
-    await chatDb.messages.put(message as MessageRecord);
+    const mAny = message as unknown as Record<string, unknown>;
+    const normalized: MessageRecord = {
+      message_id: ensureString(mAny["message_id"]) || "",
+      conversation_id: ensureString(mAny["conversation_id"]) || "",
+      date: ensureString(mAny["date"]) || new Date().toISOString(),
+      ...(message as unknown as Record<string, unknown>),
+    } as MessageRecord;
+    await chatDb.messages.put(normalized);
   } catch (err) {
     console.error("chatDb.putMessage error:", err);
   }
@@ -100,7 +127,10 @@ export async function putMessage(message: MessageRecord) {
 
 export async function clearMessagesForConversation(conversationId: string) {
   try {
-    await chatDb.messages.where("conversation_id").equals(conversationId).delete();
+    await chatDb.messages
+      .where("conversation_id")
+      .equals(conversationId)
+      .delete();
   } catch (err) {
     console.error("chatDb.clearMessagesForConversation error:", err);
   }

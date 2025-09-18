@@ -4,8 +4,8 @@
 import ObjectID from "bson-objectid";
 
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
-import { useConversationStore } from "@/stores/conversationStore";
 import { putMessage } from "@/services/indexedDb/chatDb";
+import { useConversationStore } from "@/stores/conversationStore";
 import { MessageType } from "@/types/features/convoTypes";
 import { WorkflowData } from "@/types/features/workflowTypes";
 import { FileData } from "@/types/shared";
@@ -42,7 +42,7 @@ export const useSendMessage = () => {
 
     // Persist user message locally so UI can reload quickly / work offline
     try {
-      await putMessage(userMessage as any);
+      await putMessage(userMessage);
     } catch (err) {
       console.error("Failed to persist user message to IndexedDB:", err);
     }

@@ -12,7 +12,7 @@ import {
   User,
   Zap,
 } from "lucide-react";
-import React, { useEffect,useState } from "react";
+import React, { useEffect, useState } from "react";
 
 import SectionChip from "../../shared/SectionChip";
 
@@ -244,10 +244,8 @@ export default function Todo() {
       <div className="bg relative z-10 container mx-auto max-w-7xl py-20">
         {/* Header Section */}
         <div className="mb-16 text-center">
-          
-          
-            <SectionChip icon={CheckCircle} text="To-do lists" />
-          
+          <SectionChip icon={CheckCircle} text="To-do lists" />
+
           <div className="relative mb-3">
             <h1 className="relative z-10 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-bold text-transparent md:text-5xl lg:text-6xl">
               Save Hours on&nbsp;

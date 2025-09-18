@@ -19,6 +19,7 @@ import AddProjectModal from "@/features/todo/components/AddProjectModal";
 import TodoModal from "@/features/todo/components/TodoModal";
 import { useTodoData } from "@/features/todo/hooks/useTodoData";
 import { Priority } from "@/types/features/todoTypes";
+import { Project } from "@/types/features/todoTypes";
 
 type MenuItem = {
   label: string;
@@ -206,7 +207,7 @@ export default function TodoSidebar() {
   // Label items - show top 5 most used labels or empty state
   const labelMenuItems: MenuItem[] =
     labels.length > 0
-      ? labels.slice(0, 5).map((label) => ({
+      ? labels.slice(0, 5).map((label: { name: string; count?: number }) => ({
           label: label.name,
           icon: () => <Tag className="w-[20px]" strokeWidth={1.5} />,
           href: `/todos/label/${encodeURIComponent(label.name)}`,
@@ -224,9 +225,9 @@ export default function TodoSidebar() {
   };
 
   // Project items - convert projects to menu items or empty state
-  const projectMenuItems: MenuItem[] = projects
-    .filter((p) => !p.is_default)
-    .map((project) => ({
+  const projectMenuItems: MenuItem[] = (projects as Project[])
+    .filter((p: Project) => !p.is_default)
+    .map((project: Project) => ({
       label: project.name,
       icon: () => <ProjectIcon color={project.color} />,
       href: `/todos/project/${project.id}`,

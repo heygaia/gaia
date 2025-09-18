@@ -14,7 +14,7 @@ export default function ProjectTodosPage() {
   const { projects } = useTodoData({ autoLoad: false });
 
   const project = useMemo(() => {
-    return projects.find((p) => p.id === projectId);
+    return projects.find((p: { id: string }) => p.id === projectId);
   }, [projects, projectId]);
 
   const projectName = project?.name || "Project";

@@ -1,8 +1,8 @@
 import { Chip } from "@heroui/chip";
-import { AnimatePresence,motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useEffect,useState } from "react";
+import { useEffect, useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import {

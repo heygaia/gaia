@@ -9,13 +9,13 @@ export default function LandingLayout({ children }: { children: ReactNode }) {
     <>
       <div className="relative">
         {/* Backdrop blur overlay */}
-        <div 
+        <div
           id="navbar-backdrop"
-          className="fixed inset-0 bg-black/20 backdrop-blur-sm opacity-0 pointer-events-none transition-opacity duration-300 ease-in-out z-40"
+          className="pointer-events-none fixed inset-0 z-40 bg-black/20 opacity-0 backdrop-blur-sm transition-opacity duration-300 ease-in-out"
         />
-        
+
         <Navbar />
-        
+
         {children}
 
         <Footer />

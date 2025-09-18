@@ -97,7 +97,7 @@ export default async function BlogPostPage({ params }: PageProps) {
                 className="mb-10"
               />
 
-              <div className="prose prose-lg dark:prose-invert max-w-2xl text-foreground-600">
+              <div className="prose prose-lg max-w-2xl text-foreground-600 dark:prose-invert">
                 <MarkdownWrapper content={blog.content.toString()} />
               </div>
 

@@ -72,9 +72,7 @@ export default function TextBubble({
         <EmailThreadCard emailThreadData={email_thread_data} />
       )}
 
-      {!!email_sent_data && (
-        <EmailSentCard emailSentData={email_sent_data} />
-      )}
+      {!!email_sent_data && <EmailSentCard emailSentData={email_sent_data} />}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (
         <div className="chat_bubble bg-zinc-800">

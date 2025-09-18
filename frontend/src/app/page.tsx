@@ -100,9 +100,9 @@ export default function LandingPage() {
       </div>
 
       {/* Product Hunt Badge - Fixed Bottom Right */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <a 
-          href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6" 
+      <div className="fixed right-6 bottom-6 z-50">
+        <a
+          href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6"
           target="_blank"
           rel="noopener noreferrer"
           className="block transition-transform"

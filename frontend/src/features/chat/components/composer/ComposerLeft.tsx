@@ -2,10 +2,7 @@ import { Tooltip } from "@heroui/tooltip";
 import { Check, WrenchIcon } from "lucide-react";
 import React from "react";
 
-import {
-  AttachmentIcon,
-  PlusSignIcon,
-} from "@/components/shared/icons";
+import { AttachmentIcon, PlusSignIcon } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,

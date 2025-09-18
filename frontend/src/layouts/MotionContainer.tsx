@@ -16,13 +16,13 @@ interface AnimatedSectionProps
 
 const STATIC_ITEM_VARIANTS = {
   hidden: { opacity: 0, filter: "blur(10px)" },
-  visible: { 
-    opacity: 1, 
+  visible: {
+    opacity: 1,
     filter: "blur(0px)",
     transition: {
       duration: 0.8,
-      ease: "easeOut"
-    }
+      ease: "easeOut",
+    },
   },
 };
 

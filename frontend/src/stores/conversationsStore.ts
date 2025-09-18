@@ -1,6 +1,6 @@
+import type { SetState } from "zustand";
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
-import type { SetState } from "zustand";
 
 import { Conversation } from "@/features/chat/api/chatApi";
 
@@ -92,7 +92,10 @@ export const useConversationsStore = create<ConversationsStore>()(
           "addConversation",
         ),
 
-      updateConversation: (conversationId: string, updates: Partial<Conversation>) =>
+      updateConversation: (
+        conversationId: string,
+        updates: Partial<Conversation>,
+      ) =>
         set(
           (state: ConversationsStore) => ({
             conversations: state.conversations.map((conv: Conversation) =>

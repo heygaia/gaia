@@ -46,9 +46,9 @@ export const fetchConversations = createAsyncThunk<
       const data = await chatApi.fetchConversations(page, limit);
       // Persist into IndexedDB in background
       if (data?.conversations && data.conversations.length > 0) {
-        putConversationsBulk(data.conversations as any).catch((e) =>
-          console.error("putConversationsBulk error:", e),
-        );
+        putConversationsBulk(
+          data.conversations as unknown as import("@/services/indexedDb/chatDb").ConversationRecord[],
+        ).catch((e) => console.error("putConversationsBulk error:", e));
       }
       return {
         conversations: data.conversations ?? [],

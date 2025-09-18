@@ -3,7 +3,6 @@
 import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 
-import { chatApi } from "@/features/chat/api/chatApi";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useHydrateMessages } from "@/features/chat/hooks/useHydrateMessages";

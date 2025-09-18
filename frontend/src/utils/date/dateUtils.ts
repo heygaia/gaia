@@ -1,6 +1,5 @@
 import { isValid, parseISO } from "date-fns";
 
-
 const nth = (date: number): string => {
   if (date > 3 && date < 21) return "th";
   switch (date % 10) {
@@ -60,7 +59,6 @@ export function parseDate2(isoDateString: string): string {
 
   return `${day}${nth(day)} ${month}`.trim();
 }
-
 
 /**
  * Formats a date string into a human-readable date format

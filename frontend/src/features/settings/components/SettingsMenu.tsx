@@ -26,11 +26,11 @@ import { getLinkByLabel } from "@/config/appConfig";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
-import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
 import { useUserSubscriptionStatus } from "@/features/pricing/hooks/usePricing";
 import { ContactSupportModal } from "@/features/support";
+import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversationsStore } from "@/stores/conversationsStore";
 
 // Only allow these values in our modal state.

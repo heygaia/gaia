@@ -18,7 +18,7 @@ import {
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import { ChevronDown, Star, Trash } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ReactNode, SetStateAction, useEffect,useState } from "react";
+import { ReactNode, SetStateAction, useEffect, useState } from "react";
 
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";

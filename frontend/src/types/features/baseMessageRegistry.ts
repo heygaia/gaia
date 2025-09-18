@@ -12,7 +12,12 @@ import {
   CalendarOptions,
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
-import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
+import {
+  EmailComposeData,
+  EmailFetchData,
+  EmailSentData,
+  EmailThreadData,
+} from "./mailTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";

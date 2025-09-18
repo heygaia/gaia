@@ -7,9 +7,9 @@ import { useRouter } from "next/navigation";
 import { authApi } from "@/features/auth/api/authApi";
 import { useUserActions } from "@/features/auth/hooks/useUser";
 import { chatApi } from "@/features/chat/api/chatApi";
-import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import { clearAllConversations } from "@/services/indexedDb/chatDb";
 import { useConversationsStore } from "@/stores/conversationsStore";
 
 import { ModalAction } from "./SettingsMenu";

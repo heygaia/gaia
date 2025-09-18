@@ -1,10 +1,5 @@
-import { AnimatePresence,motion } from "framer-motion";
-import {
-  CheckCircle2,
-  ExternalLink,
-  Globe,
-  Search,
-} from "lucide-react";
+import { AnimatePresence, motion } from "framer-motion";
+import { CheckCircle2, ExternalLink, Globe, Search } from "lucide-react";
 import Image from "next/image";
 import React, { useEffect, useState } from "react";
 
@@ -98,39 +93,60 @@ const mainFeaturesData = [
     icon: Search,
     title: "Always Up-to-Date",
     subtitle: "Web Search",
-    description: "Most AI models have a knowledge cutoff, but GAIA can fetch real-time updates from the internet. Whether it's breaking news or the latest industry trends, you'll always have access to the most up-to-date insights.",
+    description:
+      "Most AI models have a knowledge cutoff, but GAIA can fetch real-time updates from the internet. Whether it's breaking news or the latest industry trends, you'll always have access to the most up-to-date insights.",
     features: [
       "Real-time answers, never outdated.",
       "Instant fact-checking from live sources.",
       "Goes beyond preloaded AI knowledge.",
     ],
-    component: <ImageCarousel images={[
-        { src: "/landing/web/0.webp", alt: "Web search Screenshot weather" },
-        { src: "/landing/web/1.webp", alt: "Web search Screenshot 1" },
-        { src: "/landing/web/2.webp", alt: "Web search Screenshot 2" },
-        { src: "/landing/web/3.webp", alt: "Web search Screenshot 3" },
-        { src: "/landing/web/4.webp", alt: "Web search Screenshot 4" },
-    ]} />,
+    component: (
+      <ImageCarousel
+        images={[
+          { src: "/landing/web/0.webp", alt: "Web search Screenshot weather" },
+          { src: "/landing/web/1.webp", alt: "Web search Screenshot 1" },
+          { src: "/landing/web/2.webp", alt: "Web search Screenshot 2" },
+          { src: "/landing/web/3.webp", alt: "Web search Screenshot 3" },
+          { src: "/landing/web/4.webp", alt: "Web search Screenshot 4" },
+        ]}
+      />
+    ),
   },
   {
     icon: ExternalLink,
     title: "Let AI Read for You",
     subtitle: "Fetch Webpages",
-    description: "Ever wished your AI assistant could read and understand content from webpages? GAIA fetches and processes web content, so you get instant insights without endless scrolling.",
+    description:
+      "Ever wished your AI assistant could read and understand content from webpages? GAIA fetches and processes web content, so you get instant insights without endless scrolling.",
     features: [
       "Instantly fetch and summarize any webpage.",
       "No more searching through clutter—get key insights fast.",
       "Works on articles, research papers, blogs, and more.",
     ],
-    component: <ImageCarousel images={[
-        { src: "/landing/web/fetch/0.webp", alt: "Fetch Webpage Screenshot 4" },
-        { src: "/landing/web/fetch/1.webp", alt: "Fetch Webpage Screenshot 1" },
-        { src: "/landing/web/fetch/3.webp", alt: "Fetch Webpage Screenshot 3" },
-        { src: "/landing/web/fetch/2.webp", alt: "Fetch Webpage Screenshot 2" },
-    ]} />,
+    component: (
+      <ImageCarousel
+        images={[
+          {
+            src: "/landing/web/fetch/0.webp",
+            alt: "Fetch Webpage Screenshot 4",
+          },
+          {
+            src: "/landing/web/fetch/1.webp",
+            alt: "Fetch Webpage Screenshot 1",
+          },
+          {
+            src: "/landing/web/fetch/3.webp",
+            alt: "Fetch Webpage Screenshot 3",
+          },
+          {
+            src: "/landing/web/fetch/2.webp",
+            alt: "Fetch Webpage Screenshot 2",
+          },
+        ]}
+      />
+    ),
   },
 ];
-
 
 // --- MAIN COMPONENT WITH ALL ENHANCEMENTS ---
 
@@ -158,7 +174,7 @@ export default function Internet() {
         whileInView="visible"
         viewport={{ once: true, amount: 0.1 }}
         variants={containerVariants}
-        className="relative z-10 mx-auto max-w-7xl container py-24 px-4"
+        className="relative z-10 container mx-auto max-w-7xl px-4 py-24"
       >
         <div className="mb-16 text-center">
           <motion.div variants={itemVariants}>
@@ -166,7 +182,7 @@ export default function Internet() {
           </motion.div>
           <motion.h1
             variants={itemVariants}
-            className="relative z-10 bg-gradient-to-br from-white via-gray-200 to-gray-400 bg-clip-text text-4xl font-bold leading-tight text-transparent md:text-5xl lg:text-6xl"
+            className="relative z-10 bg-gradient-to-br from-white via-gray-200 to-gray-400 bg-clip-text text-4xl leading-tight font-bold text-transparent md:text-5xl lg:text-6xl"
           >
             Real-Time Internet Access
           </motion.h1>
@@ -174,7 +190,8 @@ export default function Internet() {
             variants={itemVariants}
             className="mx-auto mt-4 max-w-3xl text-lg leading-relaxed text-gray-400 md:text-xl"
           >
-            Break free from knowledge cutoffs. GAIA accesses live information, delivering up-to-the-minute insights and answers.
+            Break free from knowledge cutoffs. GAIA accesses live information,
+            delivering up-to-the-minute insights and answers.
           </motion.p>
         </div>
 
@@ -187,15 +204,21 @@ export default function Internet() {
               <div className="flex h-full flex-col p-6 md:p-8">
                 <motion.div variants={itemVariants} className="mb-6">
                   <div className="mb-4 flex items-center gap-4">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-slate-800/70 border border-white/10">
-                        <card.icon className="h-6 w-6 text-[#01BBFF]" />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl border border-white/10 bg-slate-800/70">
+                      <card.icon className="h-6 w-6 text-[#01BBFF]" />
                     </div>
                     <div>
-                        <h3 className="text-xl font-bold text-white md:text-2xl">{card.title}</h3>
-                        <p className="text-sm font-medium text-[#01BBFF]">{card.subtitle}</p>
+                      <h3 className="text-xl font-bold text-white md:text-2xl">
+                        {card.title}
+                      </h3>
+                      <p className="text-sm font-medium text-[#01BBFF]">
+                        {card.subtitle}
+                      </p>
                     </div>
                   </div>
-                  <p className="text-sm text-gray-400 md:text-base">{card.description}</p>
+                  <p className="text-sm text-gray-400 md:text-base">
+                    {card.description}
+                  </p>
                 </motion.div>
                 <motion.ul variants={itemVariants} className="mb-8 space-y-3">
                   {card.features.map((feature, i) => (

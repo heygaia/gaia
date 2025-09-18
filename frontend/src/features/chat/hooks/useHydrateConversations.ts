@@ -1,7 +1,16 @@
 import { useEffect } from "react";
-import { useConversationsStore, ConversationsStore } from "@/stores/conversationsStore";
+
+import type { Conversation } from "@/features/chat/api/chatApi";
 import { useChatDb } from "@/features/chat/hooks/useChatDb";
-import { syncConversationsToDb, syncMessagesForConversation } from "@/services/indexedDb/syncService";
+import {
+  syncConversationsToDb,
+  syncMessagesForConversation,
+} from "@/services/indexedDb/syncService";
+import {
+  ConversationsStore,
+  useConversationsStore,
+} from "@/stores/conversationsStore";
+
 import { useConversationsOperations } from "./useConversationsOperations";
 
 /**
@@ -22,10 +31,16 @@ export const useHydrateConversations = () => {
       try {
         const localConvos = await loadConversations();
         if (mounted && localConvos && localConvos.length > 0) {
-          setConversations(localConvos as any, false);
+          setConversations(
+            localConvos as import("@/services/indexedDb/chatDb").ConversationRecord[],
+            false,
+          );
         }
       } catch (err) {
-        console.error("useHydrateConversations: failed to load local conversations:", err);
+        console.error(
+          "useHydrateConversations: failed to load local conversations:",
+          err,
+        );
       }
 
       // Fire network refresh and persist server results
@@ -35,7 +50,7 @@ export const useHydrateConversations = () => {
         // Background prefetch messages for GAIA-created conversations only
         try {
           const gaiaConvos = (conversations || []).filter(
-            (c: any) => c.is_system_generated === true,
+            (c: Conversation) => c.is_system_generated === true,
           );
 
           for (const convo of gaiaConvos) {
@@ -53,7 +68,10 @@ export const useHydrateConversations = () => {
           console.error("syncConversationsToDb error:", e),
         );
       } catch (err) {
-        console.error("useHydrateConversations: failed to fetch conversations:", err);
+        console.error(
+          "useHydrateConversations: failed to fetch conversations:",
+          err,
+        );
       }
     })();
 

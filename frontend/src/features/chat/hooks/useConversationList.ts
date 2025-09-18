@@ -1,6 +1,4 @@
-import {
-  useConversationsStore,
-} from "@/stores/conversationsStore";
+import { useConversationsStore } from "@/stores/conversationsStore";
 
 import { useConversationsOperations } from "./useConversationsOperations";
 

@@ -24,7 +24,7 @@ export function MarkdownPreview({ content, title }: MarkdownPreviewProps) {
         {title && (
           <h1 className="mb-4 text-2xl font-bold text-foreground">{title}</h1>
         )}
-        <div className="prose prose-sm dark:prose-invert max-w-none">
+        <div className="prose prose-sm max-w-none dark:prose-invert">
           <Markdown
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeHighlight]}

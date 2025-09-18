@@ -2,8 +2,11 @@ import { AppRouterInstance } from "next/dist/shared/lib/app-router-context.share
 import { Dispatch, SetStateAction } from "react";
 
 import { chatApi } from "@/features/chat/api/chatApi";
+import {
+  getMessagesForConversation,
+  putMessagesBulk,
+} from "@/services/indexedDb/chatDb";
 import { MessageType } from "@/types/features/convoTypes";
-import { getMessagesForConversation, putMessagesBulk } from "@/services/indexedDb/chatDb";
 
 export const fetchMessages = async (
   conversationId: string,
@@ -29,7 +32,7 @@ export const fetchMessages = async (
     if (messages && messages.length > 0) {
       setConvoMessages(messages);
       // Persist into IndexedDB (background)
-      putMessagesBulk(messages as any).catch((e) =>
+      putMessagesBulk(messages).catch((e) =>
         console.error("putMessagesBulk error:", e),
       );
     }

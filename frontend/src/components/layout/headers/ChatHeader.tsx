@@ -12,6 +12,7 @@ import {
   ChatBubbleAddIcon,
   PinIcon,
 } from "@/components/shared/icons";
+import type { Conversation } from "@/features/chat/api/chatApi";
 import { useConversationList } from "@/features/chat/hooks/useConversationList";
 import { NotificationCenter } from "@/features/notification/components/NotificationCenter";
 import SearchCommand from "@/features/search/components/SearchCommand";
@@ -32,7 +33,8 @@ export default function ChatHeader() {
                 <BubbleConversationChatIcon height={18} width={18} />
 
                 {conversations.find(
-                  (convo) => convo.conversation_id == convoIdParam,
+                  (convo: Conversation) =>
+                    convo.conversation_id === convoIdParam,
                 )?.description || "New chat"}
               </div>
             }
@@ -40,13 +42,13 @@ export default function ChatHeader() {
             chatId={convoIdParam}
             chatName={
               conversations.find(
-                (convo) => convo.conversation_id == convoIdParam,
+                (convo: Conversation) => convo.conversation_id === convoIdParam,
               )?.description || "New chat"
             }
             logo2={true}
             starred={
               conversations.find(
-                (convo) => convo.conversation_id == convoIdParam,
+                (convo: Conversation) => convo.conversation_id === convoIdParam,
               )?.starred || false
             }
           />

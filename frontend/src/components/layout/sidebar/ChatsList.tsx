@@ -11,9 +11,11 @@ import {
   AccordionTrigger,
 } from "@/components/ui/shadcn/accordion";
 import { Conversation } from "@/features/chat/api/chatApi";
-import { useConversationList, useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import {
+  useConversationList,
+  useFetchConversations,
+} from "@/features/chat/hooks/useConversationList";
 import { useHydrateConversations } from "@/features/chat/hooks/useHydrateConversations";
-import { useConversationsStore, ConversationsStore } from "@/stores/conversationsStore";
 
 import { ChatTab } from "./ChatTab";
 
@@ -61,7 +63,7 @@ const timeFramePriority = (timeFrame: string): number => {
 export default function ChatsList() {
   const { conversations, paginationMeta } = useConversationList();
   const fetchConversations = useFetchConversations();
-  const setConversations = useConversationsStore((s: ConversationsStore) => s.setConversations);
+  // const setConversations = useConversationsStore((s: ConversationsStore) => s.setConversations);
   useHydrateConversations();
   const [loading, setLoading] = useState(true);
   const [currentPage, setCurrentPage] = useState(1);
@@ -130,25 +132,27 @@ export default function ChatsList() {
   );
 
   // Group regular conversations by time frame.
-  const groupedConversations: Record<string, Conversation[]> = regularConversations.reduce(
-    (acc: Record<string, Conversation[]>, conversation: Conversation) => {
-      const timeFrame = getTimeFrame(conversation.createdAt);
+  const groupedConversations: Record<string, Conversation[]> =
+    regularConversations.reduce(
+      (acc: Record<string, Conversation[]>, conversation: Conversation) => {
+        const timeFrame = getTimeFrame(conversation.createdAt);
 
-      if (!acc[timeFrame]) {
-        acc[timeFrame] = [];
-      }
-      acc[timeFrame].push(conversation);
+        if (!acc[timeFrame]) {
+          acc[timeFrame] = [];
+        }
+        acc[timeFrame].push(conversation);
 
-      return acc;
-    },
-    {} as Record<string, Conversation[]>,
-  );
+        return acc;
+      },
+      {} as Record<string, Conversation[]>,
+    );
 
   // Sort time frames by defined priority.
   const sortedTimeFrames: [string, Conversation[]][] = Object.entries(
     groupedConversations,
-  ).sort(([timeFrameA], [timeFrameB]) =>
-    timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
+  ).sort(
+    ([timeFrameA], [timeFrameB]) =>
+      timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
   );
 
   const starredConversations: Conversation[] = regularConversations.filter(

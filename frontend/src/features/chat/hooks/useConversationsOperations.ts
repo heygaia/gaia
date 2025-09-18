@@ -1,11 +1,11 @@
 import { useCallback } from "react";
 
 import { chatApi } from "@/features/chat/api/chatApi";
+import { putConversationsBulk } from "@/services/indexedDb/chatDb";
 import {
   ConversationPaginationMeta,
   useConversationsStore,
 } from "@/stores/conversationsStore";
-import { putConversationsBulk } from "@/services/indexedDb/chatDb";
 
 export const useConversationsOperations = () => {
   const {
@@ -38,9 +38,9 @@ export const useConversationsOperations = () => {
         // Persist server-fetched conversations into IndexedDB in background
         try {
           if (conversations && conversations.length > 0) {
-            putConversationsBulk(conversations as any).catch((e) =>
-              console.error("putConversationsBulk error:", e),
-            );
+            putConversationsBulk(
+              conversations as unknown as import("@/services/indexedDb/chatDb").ConversationRecord[],
+            ).catch((e) => console.error("putConversationsBulk error:", e));
           }
         } catch (e) {
           console.error("Error persisting conversations to IndexedDB:", e);

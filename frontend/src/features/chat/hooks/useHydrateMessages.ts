@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useChatDb } from "@/features/chat/hooks/useChatDb";
 import { useConversation } from "@/features/chat/hooks/useConversation";
@@ -25,7 +26,9 @@ export const useHydrateMessages = (conversationId?: string | null) => {
         // Fast path: load from DB
         const local = await loadMessages(conversationId);
         if (mounted && local && local.length > 0) {
-          updateConvoMessages(local as any);
+          updateConvoMessages(
+            local as import("@/services/indexedDb/chatDb").MessageRecord[] as unknown as import("@/types/features/convoTypes").MessageType[],
+          );
         }
       } catch (err) {
         console.error("Failed to load local messages:", err);
@@ -35,7 +38,9 @@ export const useHydrateMessages = (conversationId?: string | null) => {
       try {
         const messages = await chatApi.fetchMessages(conversationId);
         if (mounted) {
-          updateConvoMessages(messages as any);
+          updateConvoMessages(
+            messages as import("@/types/features/convoTypes").MessageType[],
+          );
         }
         // Persist to DB in background
         saveMessages(messages).catch((e) =>

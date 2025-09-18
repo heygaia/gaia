@@ -11,11 +11,11 @@ interface EmailSentCardProps {
 export default function EmailSentCard({ emailSentData }: EmailSentCardProps) {
   const formatTime = (timestamp?: string) => {
     if (!timestamp) return "Just now";
-    
+
     const date = new Date(timestamp);
     const now = new Date();
     const diffInSeconds = (now.getTime() - date.getTime()) / 1000;
-    
+
     if (diffInSeconds < 60) return "Just now";
     if (diffInSeconds < 3600) return `${Math.floor(diffInSeconds / 60)}m ago`;
     return date.toLocaleTimeString("en-US", {
