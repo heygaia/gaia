@@ -54,8 +54,7 @@ async def setup_checkpointer_manager():
 async def init_cloudinary_async():
     """Initialize Cloudinary service."""
     try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, init_cloudinary)
+        init_cloudinary()
         logger.info("Cloudinary initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize Cloudinary: {e}")

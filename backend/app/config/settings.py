@@ -337,6 +337,7 @@ def get_settings():
             settings_obj.SHOW_MISSING_KEY_WARNINGS,
             is_production=settings_obj.ENV == "production",
         )
+
         settings_validator.validate_settings(settings_obj)
         if settings_obj.SHOW_MISSING_KEY_WARNINGS:
             settings_validator.log_validation_results()
