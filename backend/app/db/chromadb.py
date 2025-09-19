@@ -136,7 +136,6 @@ class ChromaClient:
             )
         return instance
 
-    # no helper methods; collection creation is handled inside the provider loader
 
 
 @lazy_provider(
