@@ -5,8 +5,9 @@ from typing import Literal, Optional
 
 from app.config.loggers import app_logger as logger
 from app.config.secrets import inject_infisical_secrets
+from app.config.settings_validator import settings_validator
 from dotenv import load_dotenv
-from pydantic import computed_field
+from pydantic import computed_field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 load_dotenv()
@@ -16,7 +17,31 @@ class BaseAppSettings(BaseSettings):
     """Base configuration settings for the application."""
 
     ENV: Literal["production", "development"] = "production"
-    model_config = SettingsConfigDict(extra="allow")
+    SHOW_MISSING_KEY_WARNINGS: bool = True
+
+    model_config = SettingsConfigDict(
+        extra="allow",
+        env_file_encoding="utf-8",
+        validate_default=False,  # Skip validation of default values
+    )
+
+    # For handling both normal env var loading and dict constructor
+    @classmethod
+    def from_env(cls, **kwargs):
+        """Create settings from environment variables."""
+        try:
+            return cls(**kwargs)
+        except Exception as e:
+            logger.warning(f"Error creating settings: {str(e)}")
+            # Create a minimal instance with empty strings for required fields
+            fields = cls.model_fields
+            defaults = {
+                field_name: ""
+                for field_name in fields
+                if field_name not in kwargs
+                and "str" in str(fields[field_name].annotation)
+            }
+            return cls(**defaults, **kwargs)
 
 
 class CommonSettings(BaseAppSettings):
@@ -71,6 +96,26 @@ class CommonSettings(BaseAppSettings):
     def GOOGLE_CALLBACK_URL(self) -> str:
         """Google OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/google/callback"
+
+    model_config = SettingsConfigDict(
+        env_file_encoding="utf-8",
+        extra="allow",
+        validate_default=False,
+        arbitrary_types_allowed=True,
+    )
+
+    @model_validator(mode="after")
+    def validate_settings(self):
+        """Custom validation logic for settings."""
+        settings_validator.configure(
+            self.SHOW_MISSING_KEY_WARNINGS, is_production=self.ENV == "production"
+        )
+        settings_validator.validate_settings(self)
+
+        if self.SHOW_MISSING_KEY_WARNINGS:
+            settings_validator.log_validation_results()
+
+        return self
 
 
 class ProductionSettings(CommonSettings):
@@ -253,6 +298,9 @@ class DevelopmentSettings(CommonSettings):
     # ----------------------------------------------
     ENV: Literal["production", "development"] = "development"
 
+    # Default to show warnings in development environment
+    SHOW_MISSING_KEY_WARNINGS: bool = True
+
     model_config = SettingsConfigDict(
         env_file_encoding="utf-8",
         extra="allow",
@@ -269,17 +317,41 @@ def get_settings():
     """
     logger.info("Starting settings initialization...")
 
+    # Load environment variables from Infisical
     infisical_start = time.time()
     inject_infisical_secrets()
     logger.info(f"Infisical secrets loaded in {(time.time() - infisical_start):.3f}s")
 
     env = os.getenv("ENV", "production")
 
-    if env == "development":
-        return DevelopmentSettings()  # type: ignore
+    try:
+        # Initialize settings based on environment
+        if env == "development":
+            settings_obj = DevelopmentSettings.from_env()
+        else:
+            settings_obj = ProductionSettings.from_env()
+            logger.info("Production settings initialized")
 
-    return ProductionSettings()  # type: ignore
-    # type ignore because we are initializing settings with environment variables
+        # Validate settings after full initialization
+        settings_validator.configure(
+            settings_obj.SHOW_MISSING_KEY_WARNINGS,
+            is_production=settings_obj.ENV == "production",
+        )
+        settings_validator.validate_settings(settings_obj)
+        if settings_obj.SHOW_MISSING_KEY_WARNINGS:
+            settings_validator.log_validation_results()
+
+        return settings_obj
+
+    except Exception as e:
+        logger.error(f"Error initializing settings: {str(e)}")
+        # In case of error, we still need to return a settings object
+        # Use development settings with defaults as fallback
+        if env == "development":
+            return DevelopmentSettings.from_env(SHOW_MISSING_KEY_WARNINGS=True)
+        else:
+            logger.critical("Critical error initializing production settings!")
+            raise
 
 
 settings = get_settings()
