@@ -93,7 +93,7 @@ class ChromaClient:
 
         # Dynamically register a provider for this collection and auto-initialize it
         def _loader() -> Chroma:
-            logger.info(
+            logger.debug(
                 f"Creating Langchain client for collection '{collection_name}' via provider '{provider_name}'"
             )
             constructor_client = providers.get("chromadb_constructor")
@@ -174,8 +174,6 @@ async def init_chromadb_client():
     Returns:
         AsyncClientAPI: The ChromaDB async client
     """
-    logger.info("Initializing ChromaDB connection...")
-
     host: str = settings.CHROMADB_HOST  # type: ignore
     port: int = settings.CHROMADB_PORT  # type: ignore
 
@@ -186,8 +184,8 @@ async def init_chromadb_client():
     )
 
     response = await client.heartbeat()
-    logger.info(f"ChromaDB heartbeat response: {response}")
-    logger.info(f"Successfully connected to ChromaDB at {host}:{port}")
+    logger.debug(f"ChromaDB heartbeat response: {response}")
+    logger.info(f"Connected to ChromaDB at {host}:{port}")
 
     # Create default collections if they don't exist
     existing_collections = await client.list_collections()
@@ -197,17 +195,13 @@ async def init_chromadb_client():
     # Create collections if they don't exist
     for collection_name in collection_names:
         if collection_name not in existing_collection_names:
-            logger.info(
-                f"'{collection_name}' collection not found. Creating new collection..."
-            )
+            logger.debug(f"Creating collection '{collection_name}'")
             await client.create_collection(
                 name=collection_name, metadata={"hnsw:space": "cosine"}
             )
-            logger.info(f"'{collection_name}' collection created successfully.")
+            logger.debug(f"Collection '{collection_name}' created")
         else:
-            logger.info(
-                f"Collection '{collection_name}' already exists, skipping creation."
-            )
+            logger.debug(f"Collection '{collection_name}' exists")
 
     return client
 
@@ -230,7 +224,7 @@ def init_chromadb_constructor():
     Returns:
         ClientAPI: The ChromaDB constructor client
     """
-    logger.info("Initializing ChromaDB constructor client...")
+    logger.debug("Initializing ChromaDB constructor client")
 
     host: str = settings.CHROMADB_HOST  # type: ignore
     port: int = settings.CHROMADB_PORT  # type: ignore
@@ -262,7 +256,7 @@ def init_langchain_chroma():
     Returns:
         Chroma: The default Langchain Chroma client
     """
-    logger.info("Initializing default Langchain Chroma client...")
+    logger.debug("Initializing default Langchain Chroma client")
 
     # Get the constructor client
     constructor_client = providers.get("chromadb_constructor")
