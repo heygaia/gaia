@@ -33,6 +33,7 @@ import {
   GoogleDocsData,
   ImageData,
   MemoryData,
+  ToolDataEntry,
 } from "@/types/features/toolDataTypes";
 import { WeatherData } from "@/types/features/weatherTypes";
 
@@ -67,6 +68,7 @@ export const TOOLS_MESSAGE_SCHEMA = {
     | { notifications: NotificationRecord[] }
     | null
     | undefined,
+  tool_data: undefined as ToolDataEntry[] | null | undefined,
 };
 
 export type ToolsMessageData = typeof TOOLS_MESSAGE_SCHEMA;

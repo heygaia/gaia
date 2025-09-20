@@ -102,7 +102,7 @@ def get_retrieve_tools_function(
         # Lazy import to avoid circular dependency
         from app.langchain.tools.core.registry import tool_registry
 
-        tool_ids = []
+        tool_ids = set()
 
         # Get all available tool names for validation
         available_tool_names = tool_registry.get_tool_names()
@@ -114,7 +114,7 @@ def get_retrieve_tools_function(
             query_tool_ids = [
                 result.key for result in results if result.key in available_tool_names
             ]
-            tool_ids.extend(query_tool_ids)
+            tool_ids.update(query_tool_ids)
 
         if include_core_tools:
             # Filter core tools based on exclusions
@@ -127,7 +127,7 @@ def get_retrieve_tools_function(
             # Core tools are essential tools that should be accessible regardless of semantic search results
             core_tool_ids = [tool.name for tool in filtered_core_tools]
 
-            tool_ids.extend(core_tool_ids)
+            tool_ids.update(core_tool_ids)
 
         # Include any additional specified tools (validate they exist)
         if additional_tools:
@@ -136,7 +136,7 @@ def get_retrieve_tools_function(
                 for tool in additional_tools
                 if tool.name not in exclude_tools and tool.name in available_tool_names
             ]
-            tool_ids.extend(additional_tool_ids)
+            tool_ids.update(additional_tool_ids)
 
         # Add exact tool names if specified (validate they exist in registry)
         if exact_tool_names:
@@ -147,8 +147,8 @@ def get_retrieve_tools_function(
                 and tool_name not in tool_ids
                 and tool_name in available_tool_names
             ]
-            tool_ids.extend(exact_tool_ids)
+            tool_ids.update(exact_tool_ids)
 
-        return tool_ids
+        return list(tool_ids)
 
     return retrieve_tools

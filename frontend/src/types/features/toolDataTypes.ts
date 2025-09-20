@@ -135,3 +135,11 @@ export type GoogleDocsData = {
   message: string;
   type: string;
 };
+
+// Unified tool data entry structure (matches backend TypedDict)
+export interface ToolDataEntry {
+  tool_name: string;
+  tool_category: string;
+  data: unknown;
+  timestamp: string | null;
+}
