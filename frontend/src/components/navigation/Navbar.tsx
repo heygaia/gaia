@@ -1,20 +1,20 @@
 "use client";
 
-import { Button } from "@heroui/button";
-import { StarFilledIcon } from "@radix-ui/react-icons";
-import { motion } from "framer-motion";
-import { ChevronDown } from "lucide-react";
-import Image from "next/image";
-import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
-
 import MobileMenu from "@/components/navigation/MobileMenu";
 import { LinkButton } from "@/components/shared/LinkButton";
 import { appConfig } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useGitHubStars } from "@/hooks";
 import useMediaQuery from "@/hooks/ui/useMediaQuery";
+import { Button } from "@heroui/button";
+import { StarFilledIcon } from "@radix-ui/react-icons";
+import AnimatedNumber from "animated-number-react";
+import { motion } from "framer-motion";
+import { ChevronDown } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
+import { useEffect, useState } from "react";
 
 import { Github } from "../shared";
 import { RaisedButton } from "../ui/shadcn/raised-button";
@@ -152,23 +152,31 @@ export default function Navbar() {
           {isMobileScreen ? (
             <div className="hidden" />
           ) : (
-            <div className="hidden items-center gap-3 sm:flex">
+            <div className="group hidden items-center gap-3 sm:flex">
               <a
-                target="_blank"
                 href="https://github.com/heygaia/gaia"
-                className="group flex h-fit"
+                target="_blank"
+                rel="noopener noreferrer"
               >
                 <RaisedButton
                   size={"sm"}
-                  className="rounded-xl text-white"
-                  color="#121212"
+                  className="group rounded-xl"
+                  color="#1c1c1c"
                 >
-                  <Github width={18} />
-                  <span>GitHub</span>
+                  <div className="flex items-center">
+                    <Github className="mr-1 size-4 fill-white" />
+                    <span className="ml-1 lg:hidden">Star</span>
+                    <span className="ml-1 hidden lg:inline">GitHub</span>
+                  </div>
                   <div className="flex items-center gap-1 text-sm">
-                    <StarFilledIcon className="h-4 w-4 text-yellow-300" />
-                    <span className="font-display inline-block font-medium tracking-wider tabular-nums">
-                      {isLoadingStars ? "..." : repoData?.stargazers_count || 0}
+                    <StarFilledIcon className="relative top-px size-4 text-white group-hover:text-yellow-300" />
+                    <span className="font-medium text-white">
+                      <AnimatedNumber
+                        value={repoData?.stargazers_count.toFixed(0)}
+                        className="font-medium text-white"
+                        duration={1000}
+                        formatValue={(n: number) => Math.round(n).toString()}
+                      />
                     </span>
                   </div>
                 </RaisedButton>
@@ -181,22 +189,8 @@ export default function Navbar() {
                 >
                   {user.email ? "Open Chat" : "Get Started"}
                 </RaisedButton>
+                {/* #1c1c1c */}
               </Link>
-              {/* <LinkButton
-                size="sm"
-                className="h-9 max-h-9 min-h-9 rounded-xl bg-primary px-4! text-sm font-medium text-black transition-all! hover:scale-105 hover:bg-primary!"
-                as={Link}
-                href={user.email ? "/c" : "/signup"}
-              >
-                {user.email && (
-                  <BubbleConversationChatIcon
-                    className="w-[15px] min-w-[15px]"
-                    color="#000000"
-                    width="19"
-                  />
-                )}
-                {user.email ? "Chat" : "Get Started"}
-              </LinkButton> */}
             </div>
           )}
         </div>

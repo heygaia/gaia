@@ -54,6 +54,14 @@ We welcome contributions of all kinds, from bug fixes and new features to docume
 
 Please read our [Contributing Guidelines](https://docs.heygaia.io/developers/contributing) to get started.
 
+## Supporters
+
+We're grateful to the organizations that have supported GAIA
+
+<img src="https://11labs-nonprd-15f22c1d.s3.eu-west-3.amazonaws.com/0b9cd3e1-9fad-4a5b-b3a0-c96b0a1f1d2b/elevenlabs-logo-white.png" width="40%" /> <img src="https://upload.wikimedia.org/wikipedia/commons/5/51/Google_Cloud_logo.svg" width="40%" />
+
+<img src="https://raw.githubusercontent.com/ComposioHQ/.github/master/profile/composio_logo_dark.svg#gh-dark-mode-only" width="40%" /> <img src="https://media.cleanshot.cloud/media/126270/ANVfWtg9T9tf0kQp5Nl2xDkEO8mDgKMQ1TPM4fGp.jpeg?Expires=1758396160&Signature=WY8WHJCKyiQzdcbeX~NgGaXsAGDTPTRfYaD~NnbsXqszpfZefvxn2ga6K8RNXRuL0hZWbMhHCF6TM5~-3wxa2wyko5oS3PsRWi1SDLQTPz8J5A0esLKjdjb6~If2aYPhHkKHFqfk2KcsElR3FBmJ-7DQP8hGDx76eMEaHBLyt4njUyboqX8JjBMnBUbysyVtnCYUL8ECKnMkLgOhRUyoZ~mVC7ZHJG9yiHKt7E234OTPDsOGhfEilq4mT0BQrNecO~lpa57HFMzxduynFp8IlFiWfgj3kxe7Smlm~ROMpTobon5~sVd43ze-5N8hIsSguxX1jiuhV0Yrg3r0RQpITA__&Key-Pair-Id=K269JMAT9ZF4GZ" width="40%" />
+
 ## License
 
 This project is licensed under the [Polyform Strict License 1.0.0](https://polyformproject.org/licenses/strict/1.0.0/).
