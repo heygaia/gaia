@@ -1,6 +1,6 @@
 import {
-  getRelevantLoadingMessage,
   DEFAULT_SIMILARITY_CONFIG,
+  getRelevantLoadingMessage,
   type SimilarityConfig,
 } from "./similarity";
 

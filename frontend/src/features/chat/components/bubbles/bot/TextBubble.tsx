@@ -3,6 +3,7 @@ import { Chip } from "@heroui/chip";
 import { AlertTriangleIcon } from "lucide-react";
 
 import { InternetIcon } from "@/components/shared/icons";
+import { ToolsMessageKey } from "@/config/registries/toolRegistry";
 import CalendarListCard from "@/features/calendar/components/CalendarListCard";
 import CalendarListFetchCard from "@/features/calendar/components/CalendarListFetchCard";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
@@ -13,7 +14,29 @@ import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils"
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import EmailSentCard from "@/features/mail/components/EmailSentCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
+import {
+  CalendarDeleteOptions,
+  CalendarEditOptions,
+  CalendarOptions,
+  CodeData,
+  DeepResearchResults,
+  DocumentData,
+  EmailComposeData,
+  EmailThreadData,
+  GoalDataMessageType,
+  GoogleDocsData,
+  SearchResults,
+  TodoToolData,
+  WeatherData,
+} from "@/types";
+import {
+  CalendarFetchData,
+  CalendarListFetchData,
+} from "@/types/features/calendarTypes";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
+import { EmailFetchData } from "@/types/features/mailTypes";
+import { SupportTicketData } from "@/types/features/supportTypes";
+
 import MarkdownRenderer from "../../interface/MarkdownRenderer";
 import { CalendarDeleteSection } from "./CalendarDeleteSection";
 import { CalendarEditSection } from "./CalendarEditSection";
@@ -27,28 +50,6 @@ import GoogleDocsSection from "./GoogleDocsSection";
 import NotificationListSection from "./NotificationListSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
-import {
-  SearchResults,
-  DeepResearchResults,
-  WeatherData,
-  EmailThreadData,
-  DocumentData,
-  GoogleDocsData,
-  CodeData,
-  TodoToolData,
-  GoalDataMessageType,
-  EmailComposeData,
-  CalendarOptions,
-  CalendarDeleteOptions,
-  CalendarEditOptions,
-} from "@/types";
-import {
-  CalendarFetchData,
-  CalendarListFetchData,
-} from "@/types/features/calendarTypes";
-import { EmailFetchData } from "@/types/features/mailTypes";
-import { SupportTicketData } from "@/types/features/supportTypes";
-import { ToolsMessageKey } from "@/config/registries/toolRegistry";
 
 // Map of tool_name -> renderer function using TOOLS_MESSAGE_SCHEMA keys
 // This avoids scattering switch/case or if/else across the component
