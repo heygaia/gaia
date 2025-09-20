@@ -125,6 +125,9 @@ importers:
       '@internationalized/date':
         specifier: ^3.8.2
         version: 3.9.0
+      '@lottiefiles/dotlottie-react':
+        specifier: ^0.17.1
+        version: 0.17.1(react@19.1.1)
       '@mdx-js/loader':
         specifier: ^3.1.0
         version: 3.1.1(webpack@5.101.0)
@@ -2185,6 +2188,14 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.30':
     resolution: {integrity: sha512-GQ7Nw5G2lTu/BtHTKfXhKHok2WGetd4XYcVKGx00SjAk8GMwgJM3zr6zORiPGuOE+/vkc90KtTosSSvaCjKb2Q==}
+
+  '@lottiefiles/dotlottie-react@0.17.1':
+    resolution: {integrity: sha512-n31+90TrG40/n6tNaF8l3uFvDqsFHtNPqlk+OyKrtOoM7Bb7jooe+KXp62gK5vObH/JqVGYQdWDeE/i49zXQcQ==}
+    peerDependencies:
+      react: ^17 || ^18 || ^19
+
+  '@lottiefiles/dotlottie-web@0.52.2':
+    resolution: {integrity: sha512-aeXCMUB5RdusHrvZ3Py2KaMgQ0w7SdA8NFbPK+SpwqC1UW1CDFZl5vPLueZHju7vLhB1rpPvpQ5fQ0L/KEZt7w==}
 
   '@mdx-js/loader@3.1.1':
     resolution: {integrity: sha512-0TTacJyZ9mDmY+VefuthVshaNIyCGZHJG2fMnGaDttCt8HmjUF7SizlHJpaCDoGnN635nK1wpzfpx/Xx5S4WnQ==}
@@ -12087,6 +12098,13 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
+
+  '@lottiefiles/dotlottie-react@0.17.1(react@19.1.1)':
+    dependencies:
+      '@lottiefiles/dotlottie-web': 0.52.2
+      react: 19.1.1
+
+  '@lottiefiles/dotlottie-web@0.52.2': {}
 
   '@mdx-js/loader@3.1.1(webpack@5.101.0)':
     dependencies:

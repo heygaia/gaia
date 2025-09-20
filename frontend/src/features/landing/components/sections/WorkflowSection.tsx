@@ -1,26 +1,29 @@
 import { Chip } from "@heroui/chip";
-import Image from "next/image"
+import { DotLottie, DotLottieReact } from "@lottiefiles/dotlottie-react";
+import Image from "next/image";
 
 import { BentoItem } from "./TodosBentoContent";
+import { useState } from "react";
 
 export default function WorkflowSection() {
-  const triggers = [
+  const [dotLottie, setDotLottie] = useState<DotLottie | null>(null);
 
+  const triggers = [
     {
       icon: "/icons/slack.svg",
       title: "Slack",
-      description: "Trigger on Slack mention"
+      description: "Trigger on Slack mention",
     },
     {
       icon: "/icons/googlecalendar.webp",
       title: "Calendar",
-      description: "Trigger on calendar event"
+      description: "Trigger on calendar event",
     },
 
     {
       icon: "/icons/gmail.svg",
       title: "Gmail",
-      description: "Trigger on new email"
+      description: "Trigger on new email",
     },
   ];
 
@@ -38,26 +41,30 @@ export default function WorkflowSection() {
           title="Smart Triggers"
           description="Set conditions once, automate actions forever."
         >
-          <div className="flex flex-col gap-3 w-full justify-center items-center px-1">
+          <div className="flex w-full flex-col items-center justify-center gap-3 px-1">
             {triggers.map((trigger, index) => (
               <div
                 key={index}
-                className={`flex items-center gap-3 bg-zinc-800 rounded-2xl p-3 w-full `}
+                className={`flex w-full items-center gap-3 rounded-2xl bg-zinc-800 p-3`}
               >
                 <Image
                   src={trigger.icon}
                   alt={trigger.title}
-                  className="w-8 h-8"
+                  className="h-8 w-8"
                   width={32}
                   height={32}
                 />
                 <div className="flex flex-col">
-                  <span className="text-white text-base font-medium">{trigger.title}</span>
-                  <span className="text-zinc-300 text-sm">{trigger.description}</span>
+                  <span className="text-base font-medium text-white">
+                    {trigger.title}
+                  </span>
+                  <span className="text-sm text-zinc-300">
+                    {trigger.description}
+                  </span>
                 </div>
               </div>
             ))}
-            <Chip color="primary" variant="flat" className="text-primary mt-2">
+            <Chip color="primary" variant="flat" className="mt-2 text-primary">
               Automatically run workflows on triggers
             </Chip>
           </div>
@@ -65,7 +72,15 @@ export default function WorkflowSection() {
         <BentoItem
           title="Proactive by Nature"
           description="GAIA acts before you ask, preparing what you need when you need it."
+          childrenClassName="p-0!"
         >
+          <DotLottieReact
+            src="/landing/animations/proactive.lottie"
+            // loop
+            // autoplay
+            speed={0.7}
+            playOnHover
+          />
         </BentoItem>
         <BentoItem
           title="Seamless Orchestration"
