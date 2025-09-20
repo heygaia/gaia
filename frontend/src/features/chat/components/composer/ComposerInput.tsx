@@ -59,6 +59,9 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
         width: number;
       },
       openedViaButton: false, // Track if dropdown was opened via button
+      selectedCategory: "all",
+      categories: [] as string[],
+      selectedCategoryIndex: 0,
     });
 
     // Expose methods to parent component
@@ -96,6 +99,12 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
                 width: rect.width, // Match the composer width
               };
 
+              // Get unique categories from matches
+              const uniqueCategories = Array.from(
+                new Set(allMatches.map((match) => match.tool.category)),
+              );
+              const categories = ["all", ...uniqueCategories.sort()];
+
               setSlashCommandState({
                 isActive: true,
                 matches: allMatches,
@@ -104,6 +113,9 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
                 commandEnd: 0,
                 dropdownPosition: position,
                 openedViaButton: true, // Mark as opened via button
+                selectedCategory: "all",
+                categories,
+                selectedCategoryIndex: 0,
               });
             }
           }
@@ -127,6 +139,12 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
               composerContainer?.getBoundingClientRect() ||
               textarea.getBoundingClientRect();
 
+            // Get unique categories from matches
+            const uniqueCategories = Array.from(
+              new Set(detection.matches.map((match) => match.tool.category)),
+            );
+            const categories = ["all", ...uniqueCategories.sort()];
+
             setSlashCommandState({
               isActive: true,
               matches: detection.matches,
@@ -139,6 +157,9 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
                 width: rect.width, // Match the composer width
               },
               openedViaButton: false, // This is a normal slash command detection
+              selectedCategory: "all",
+              categories,
+              selectedCategoryIndex: 0,
             });
           }
         } else {
@@ -199,6 +220,20 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
       (e: React.KeyboardEvent) => {
         if (!slashCommandState.isActive) return false;
 
+        // Get filtered matches based on current category
+        const getFilteredMatches = (
+          category: string,
+          matches: SlashCommandMatch[],
+        ) => {
+          if (category === "all") return matches;
+          return matches.filter((match) => match.tool.category === category);
+        };
+
+        const currentFilteredMatches = getFilteredMatches(
+          slashCommandState.selectedCategory,
+          slashCommandState.matches,
+        );
+
         switch (e.key) {
           case "ArrowUp":
             e.preventDefault();
@@ -210,24 +245,64 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
 
           case "ArrowDown":
             e.preventDefault();
-            setSlashCommandState((prev) => ({
-              ...prev,
-              selectedIndex: Math.min(
-                prev.matches.length - 1,
-                prev.selectedIndex + 1,
-              ),
-            }));
+            setSlashCommandState((prev) => {
+              const filteredMatches = getFilteredMatches(
+                prev.selectedCategory,
+                prev.matches,
+              );
+              return {
+                ...prev,
+                selectedIndex: Math.min(
+                  filteredMatches.length - 1,
+                  prev.selectedIndex + 1,
+                ),
+              };
+            });
+            return true;
+
+          case "ArrowLeft":
+            e.preventDefault();
+            setSlashCommandState((prev) => {
+              const newCategoryIndex = Math.max(
+                0,
+                prev.selectedCategoryIndex - 1,
+              );
+              const newCategory = prev.categories[newCategoryIndex];
+              return {
+                ...prev,
+                selectedCategory: newCategory,
+                selectedCategoryIndex: newCategoryIndex,
+                selectedIndex: 0, // Reset to first item when switching categories
+              };
+            });
+            return true;
+
+          case "ArrowRight":
+            e.preventDefault();
+            setSlashCommandState((prev) => {
+              const newCategoryIndex = Math.min(
+                prev.categories.length - 1,
+                prev.selectedCategoryIndex + 1,
+              );
+              const newCategory = prev.categories[newCategoryIndex];
+              return {
+                ...prev,
+                selectedCategory: newCategory,
+                selectedCategoryIndex: newCategoryIndex,
+                selectedIndex: 0, // Reset to first item when switching categories
+              };
+            });
             return true;
 
           case "Enter":
           case "Tab":
             e.preventDefault();
-            // If there's only one match, automatically select it regardless of selectedIndex
-            if (slashCommandState.matches.length === 1) {
-              handleSlashCommandSelect(slashCommandState.matches[0]);
+            // If there's only one filtered match, automatically select it
+            if (currentFilteredMatches.length === 1) {
+              handleSlashCommandSelect(currentFilteredMatches[0]);
             } else {
               const selectedMatch =
-                slashCommandState.matches[slashCommandState.selectedIndex];
+                currentFilteredMatches[slashCommandState.selectedIndex];
               if (selectedMatch) {
                 handleSlashCommandSelect(selectedMatch);
               }
@@ -358,6 +433,48 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
           position={slashCommandState.dropdownPosition}
           isVisible={slashCommandState.isActive}
           openedViaButton={slashCommandState.openedViaButton}
+          selectedCategory={slashCommandState.selectedCategory}
+          categories={slashCommandState.categories}
+          onCategoryChange={(category: string) => {
+            const categoryIndex =
+              slashCommandState.categories.indexOf(category);
+            setSlashCommandState((prev) => ({
+              ...prev,
+              selectedCategory: category,
+              selectedCategoryIndex: categoryIndex,
+              selectedIndex: 0, // Reset to first item when switching categories
+            }));
+          }}
+          onNavigateUp={() => {
+            setSlashCommandState((prev) => ({
+              ...prev,
+              selectedIndex: Math.max(0, prev.selectedIndex - 1),
+            }));
+          }}
+          onNavigateDown={() => {
+            setSlashCommandState((prev) => {
+              const getFilteredMatches = (
+                category: string,
+                matches: SlashCommandMatch[],
+              ) => {
+                if (category === "all") return matches;
+                return matches.filter(
+                  (match) => match.tool.category === category,
+                );
+              };
+              const filteredMatches = getFilteredMatches(
+                prev.selectedCategory,
+                prev.matches,
+              );
+              return {
+                ...prev,
+                selectedIndex: Math.min(
+                  filteredMatches.length - 1,
+                  prev.selectedIndex + 1,
+                ),
+              };
+            });
+          }}
         />
       </>
     );

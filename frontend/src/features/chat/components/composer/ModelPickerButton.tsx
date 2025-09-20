@@ -163,6 +163,7 @@ const ModelPickerButton: React.FC = () => {
           {providerModels?.map((model) => (
             <SelectItem
               key={model.model_id}
+              textValue={`${model.name}${model.is_default ? " (Default)" : ""}`}
               classNames={{
                 title: "text-zinc-200",
                 description: "text-zinc-400 mt-1",
