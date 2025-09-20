@@ -269,7 +269,7 @@ export const chatApi = {
         },
         onerror: (err) => {
           onError(err);
-          controller.abort();
+          throw err; // This stops any retry attempts
         },
       },
     );
