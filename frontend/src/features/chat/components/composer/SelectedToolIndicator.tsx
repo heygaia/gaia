@@ -12,9 +12,12 @@ interface SelectedToolIndicatorProps {
 
 const formatToolName = (toolName: string): string => {
   return toolName
+    .toLowerCase() // First convert to lowercase
     .split("_")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(" ");
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ")
+    .replace(/\s+tool$/i, "") // Remove "Tool" suffix (case insensitive)
+    .trim();
 };
 
 const SelectedToolIndicator: React.FC<SelectedToolIndicatorProps> = ({

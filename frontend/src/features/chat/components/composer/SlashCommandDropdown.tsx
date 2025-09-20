@@ -315,8 +315,8 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                     ) : (
                       getToolCategoryIcon(category)
                     )}
-                    <span className="capitalize">
-                      {category === "all" ? "All" : category.replace("_", " ")}
+                    <span>
+                      {category === "all" ? "All" : formatToolName(category)}
                     </span>
                     <CategoryIntegrationStatus category={category} />
                   </button>
@@ -328,7 +328,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
           {/* Tool List */}
           <div
             ref={scrollContainerRef}
-            className="relative z-[1] h-fit max-h-80 overflow-y-auto"
+            className="relative z-[1] h-fit max-h-72 overflow-y-auto"
           >
             <div className="py-2">
               {/* Integrations Card - Only show in "all" category and when not filtering */}
@@ -371,12 +371,12 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                       {/* Content */}
                       <div className="min-w-0 flex-1">
                         <div className="flex items-center justify-between gap-2">
-                          <span className="truncate text-sm text-foreground-600 capitalize">
-                            {formatToolName(match.tool.name.toLowerCase())}
+                          <span className="truncate text-sm text-foreground-600">
+                            {formatToolName(match.tool.name)}
                           </span>
                           {selectedCategory === "all" && (
-                            <span className="rounded-full bg-zinc-600 px-2 py-0.5 text-xs text-zinc-200 capitalize">
-                              {match.tool.category.replace("_", " ")}
+                            <span className="rounded-full bg-zinc-600 px-2 py-0.5 text-xs text-zinc-200">
+                              {formatToolName(match.tool.category)}
                             </span>
                           )}
                         </div>
