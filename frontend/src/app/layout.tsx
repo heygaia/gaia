@@ -78,6 +78,26 @@ export default function RootLayout({
         />
         <link rel="dns-prefetch" href="https://uptime.betterstack.com" />
         <link rel="dns-prefetch" href="https://us.i.posthog.com" />
+        {/* Preconnect to Databuddy origins for 130ms savings */}
+        <link
+          rel="preconnect"
+          href="https://databuddy.cc"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preconnect"
+          href="https://cdn.databuddy.cc"
+          crossOrigin="anonymous"
+        />
+        {/* Preload critical hero image to improve LCP - reduce 1,160ms load delay */}
+        <link
+          rel="preload"
+          as="image"
+          href="/images/hero.webp?q=80"
+          fetchPriority="high"
+        />
+
+        <link rel="preconnect" href="https://i.ytimg.com" />
       </head>
       <body className={`dark ${defaultFont.className}`}>
         <main>
@@ -94,44 +114,43 @@ export default function RootLayout({
             url: "https://heygaia.io",
           })}
         </Script>
-        {/* Better Stack widget for API Uptime */}
+        {/* Defer all analytics to improve LCP and reduce unused JS */}
         <Script
           src="https://uptime.betterstack.com/widgets/announcement.js"
           data-id="212836"
-          async
-          type="text/javascript"
-          strategy="lazyOnload"
+          strategy="afterInteractive"
+        />
+        <Script
+          src="https://analytics.heygaia.io/api/script.js"
+          data-site-id="1"
+          strategy="afterInteractive"
+          data-session-replay="true"
         />
 
         <Suspense fallback={<></>}>
           <AnalyticsLayout />
         </Suspense>
-        {/* Rybbit Analytics */}
-        <Script
-          src="https://analytics.heygaia.io/api/script.js"
-          data-site-id="1"
-          defer
-          data-session-replay="true"
-        />
 
         {process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID && (
-          <Databuddy
-            clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
-            trackHashChanges
-            trackAttributes
-            trackOutgoingLinks
-            trackInteractions
-            trackEngagement
-            trackScrollDepth
-            trackExitIntent
-            trackBounceRate
-            trackWebVitals
-            trackErrors
-            enableBatching
-            batchSize={20}
-            batchTimeout={5000}
-            disabled={process.env.NODE_ENV === "development"}
-          />
+          <Suspense fallback={<></>}>
+            <Databuddy
+              clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
+              trackHashChanges
+              trackAttributes
+              trackOutgoingLinks
+              trackInteractions
+              trackEngagement
+              trackScrollDepth
+              trackExitIntent
+              trackBounceRate
+              trackWebVitals
+              trackErrors
+              enableBatching
+              batchSize={20}
+              batchTimeout={5000}
+              disabled={process.env.NODE_ENV === "development"}
+            />
+          </Suspense>
         )}
       </body>
     </html>

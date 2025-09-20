@@ -438,6 +438,7 @@ const DummySlashCommandDropdown: React.FC<DummySlashCommandDropdownProps> = ({
                 size="sm"
                 radius="full"
                 variant="flat"
+                aria-label="Close button dummy composer"
               >
                 <X size={14} />
               </Button>

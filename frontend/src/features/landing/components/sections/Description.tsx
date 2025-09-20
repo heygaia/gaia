@@ -54,190 +54,197 @@ export default function Description() {
     splitTextsRef.current.forEach((st) => st?.revert());
     splitTextsRef.current = [];
 
-    const newSplitTexts = textRefs.current.map((textRef) => {
-      if (!textRef) return null;
-      return new SplitText(textRef, { type: "words" });
-    });
-    splitTextsRef.current = newSplitTexts;
+    // Defer GSAP setup to avoid forced reflows during initial render
+    const setupAnimation = () => {
+      const newSplitTexts = textRefs.current.map((textRef) => {
+        if (!textRef) return null;
+        return new SplitText(textRef, { type: "words" });
+      });
+      splitTextsRef.current = newSplitTexts;
 
-    const totalHeight = sectionRef.current.offsetHeight;
-    const sectionHeight = totalHeight / paragraphs.length;
+      // Use pre-calculated viewport-based heights to avoid offsetHeight reads
+      const sectionHeight = window.innerHeight;
 
-    textRefs.current.forEach((textRef) => {
-      if (!textRef) return;
-      gsap.set(textRef, {
+      textRefs.current.forEach((textRef) => {
+        if (!textRef) return;
+        gsap.set(textRef, {
+          opacity: 0,
+          filter: "blur(8px)",
+          position: "fixed",
+          top: "47%",
+          left: "50%",
+          transform: "translate(-50%, -50%)",
+          zIndex: 10,
+          visibility: "hidden",
+        });
+      });
+
+      gsap.set(buttonRef.current, {
         opacity: 0,
-        filter: "blur(8px)",
-        position: "fixed",
-        top: "47%",
-        left: "50%",
-        transform: "translate(-50%, -50%)",
-        zIndex: 10,
+        y: 30,
+        scale: 0.9,
         visibility: "hidden",
-      });
-    });
-
-    gsap.set(buttonRef.current, {
-      opacity: 0,
-      y: 30,
-      scale: 0.9,
-      visibility: "hidden",
-      pointerEvents: "none",
-    });
-
-    textRefs.current.forEach((textRef, index) => {
-      if (!textRef) return;
-
-      const tl = gsap.timeline({
-        scrollTrigger: {
-          trigger: sectionRef.current,
-          start: `top+=${index * sectionHeight} center`,
-          end: `top+=${(index + 1) * sectionHeight} center`,
-          scrub: 1,
-          markers: false,
-          onEnter: () => {
-            textRefs.current.forEach((ref, i) => {
-              if (ref) {
-                if (i === index) {
-                  gsap.set(ref, { visibility: "visible" });
-                } else {
-                  gsap.set(ref, {
-                    visibility: "hidden",
-                    opacity: 0,
-                    filter: "blur(20px)",
-                  });
-                }
-              }
-            });
-          },
-          onEnterBack: () => {
-            textRefs.current.forEach((ref, i) => {
-              if (ref) {
-                if (i === index) {
-                  gsap.set(ref, { visibility: "visible" });
-                } else {
-                  gsap.set(ref, {
-                    visibility: "hidden",
-                    opacity: 0,
-                    filter: "blur(20px)",
-                  });
-                }
-              }
-            });
-          },
-          onLeave: () => {
-            if (textRef) {
-              gsap.set(textRef, { visibility: "hidden" });
-            }
-          },
-          onLeaveBack: () => {
-            if (textRef) {
-              gsap.set(textRef, { visibility: "hidden" });
-            }
-          },
-        },
+        pointerEvents: "none",
       });
 
-      tl.to(
-        textRef,
-        {
-          opacity: 1,
-          filter: "blur(0px)",
-          duration: 1,
-          ease: "power2.out",
-          immediateRender: false,
-        },
-        0,
-      );
+      textRefs.current.forEach((textRef, index) => {
+        if (!textRef) return;
 
-      if (newSplitTexts[index] && newSplitTexts[index]?.words) {
-        tl.fromTo(
-          newSplitTexts[index]!.words,
-          {
-            opacity: 0,
-            y: 20,
-            filter: "blur(5px)",
+        const tl = gsap.timeline({
+          scrollTrigger: {
+            trigger: sectionRef.current,
+            start: `top+=${index * sectionHeight} center`,
+            end: `top+=${(index + 1) * sectionHeight} center`,
+            scrub: 1,
+            markers: false,
+            onEnter: () => {
+              textRefs.current.forEach((ref, i) => {
+                if (ref) {
+                  if (i === index) {
+                    gsap.set(ref, { visibility: "visible" });
+                  } else {
+                    gsap.set(ref, {
+                      visibility: "hidden",
+                      opacity: 0,
+                      filter: "blur(20px)",
+                    });
+                  }
+                }
+              });
+            },
+            onEnterBack: () => {
+              textRefs.current.forEach((ref, i) => {
+                if (ref) {
+                  if (i === index) {
+                    gsap.set(ref, { visibility: "visible" });
+                  } else {
+                    gsap.set(ref, {
+                      visibility: "hidden",
+                      opacity: 0,
+                      filter: "blur(20px)",
+                    });
+                  }
+                }
+              });
+            },
+            onLeave: () => {
+              if (textRef) {
+                gsap.set(textRef, { visibility: "hidden" });
+              }
+            },
+            onLeaveBack: () => {
+              if (textRef) {
+                gsap.set(textRef, { visibility: "hidden" });
+              }
+            },
           },
+        });
+
+        tl.to(
+          textRef,
           {
             opacity: 1,
-            y: 0,
             filter: "blur(0px)",
-            duration: 0.8,
-            stagger: 0.05,
+            duration: 1,
             ease: "power2.out",
+            immediateRender: false,
           },
-          0.2,
+          0,
         );
-      }
-    });
 
-    // Separate ScrollTrigger for button with proper boundaries
-    ScrollTrigger.create({
-      trigger: sectionRef.current,
-      start: `top+=${(paragraphs.length - 1) * sectionHeight + sectionHeight * 0.5} center`,
-      end: `bottom-=${sectionHeight * 0.2} center`,
-      scrub: 1,
-      onEnter: () => {
-        if (buttonRef.current) {
-          gsap.killTweensOf(buttonRef.current);
-          gsap.set(buttonRef.current, {
-            visibility: "visible",
-            pointerEvents: "auto",
-          });
-          gsap.to(buttonRef.current, {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.6,
-            ease: "back.out(1.7)",
-            overwrite: true,
-          });
+        if (newSplitTexts[index] && newSplitTexts[index]?.words) {
+          tl.fromTo(
+            newSplitTexts[index]!.words,
+            {
+              opacity: 0,
+              y: 20,
+              filter: "blur(5px)",
+            },
+            {
+              opacity: 1,
+              y: 0,
+              filter: "blur(0px)",
+              duration: 0.8,
+              stagger: 0.05,
+              ease: "power2.out",
+            },
+            0.2,
+          );
         }
-      },
-      onLeave: () => {
-        if (buttonRef.current) {
-          gsap.killTweensOf(buttonRef.current);
-          gsap.set(buttonRef.current, {
-            visibility: "hidden",
-            pointerEvents: "none",
-            opacity: 0,
-            y: 30,
-            scale: 0.9,
-          });
-        }
-      },
-      onEnterBack: () => {
-        if (buttonRef.current) {
-          gsap.killTweensOf(buttonRef.current);
-          gsap.set(buttonRef.current, {
-            visibility: "visible",
-            pointerEvents: "auto",
-          });
-          gsap.to(buttonRef.current, {
-            opacity: 1,
-            y: 0,
-            scale: 1,
-            duration: 0.6,
-            ease: "back.out(1.7)",
-            overwrite: true,
-          });
-        }
-      },
-      onLeaveBack: () => {
-        if (buttonRef.current) {
-          gsap.killTweensOf(buttonRef.current);
-          gsap.set(buttonRef.current, {
-            visibility: "hidden",
-            pointerEvents: "none",
-            opacity: 0,
-            y: 30,
-            scale: 0.9,
-          });
-        }
-      },
-    });
+      });
+
+      // Separate ScrollTrigger for button with proper boundaries
+      ScrollTrigger.create({
+        trigger: sectionRef.current,
+        start: `top+=${(paragraphs.length - 1) * sectionHeight + sectionHeight * 0.5} center`,
+        end: `bottom-=${sectionHeight * 0.2} center`,
+        scrub: 1,
+        onEnter: () => {
+          if (buttonRef.current) {
+            gsap.killTweensOf(buttonRef.current);
+            gsap.set(buttonRef.current, {
+              visibility: "visible",
+              pointerEvents: "auto",
+            });
+            gsap.to(buttonRef.current, {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              duration: 0.6,
+              ease: "back.out(1.7)",
+              overwrite: true,
+            });
+          }
+        },
+        onLeave: () => {
+          if (buttonRef.current) {
+            gsap.killTweensOf(buttonRef.current);
+            gsap.set(buttonRef.current, {
+              visibility: "hidden",
+              pointerEvents: "none",
+              opacity: 0,
+              y: 30,
+              scale: 0.9,
+            });
+          }
+        },
+        onEnterBack: () => {
+          if (buttonRef.current) {
+            gsap.killTweensOf(buttonRef.current);
+            gsap.set(buttonRef.current, {
+              visibility: "visible",
+              pointerEvents: "auto",
+            });
+            gsap.to(buttonRef.current, {
+              opacity: 1,
+              y: 0,
+              scale: 1,
+              duration: 0.6,
+              ease: "back.out(1.7)",
+              overwrite: true,
+            });
+          }
+        },
+        onLeaveBack: () => {
+          if (buttonRef.current) {
+            gsap.killTweensOf(buttonRef.current);
+            gsap.set(buttonRef.current, {
+              visibility: "hidden",
+              pointerEvents: "none",
+              opacity: 0,
+              y: 30,
+              scale: 0.9,
+            });
+          }
+        },
+      });
+    };
+
+    // Use requestAnimationFrame to defer animation setup
+    const rafId = requestAnimationFrame(setupAnimation);
 
     return () => {
+      cancelAnimationFrame(rafId);
       ScrollTrigger.getAll().forEach((st) => st.kill());
       splitTextsRef.current.forEach((st) => st?.revert());
       splitTextsRef.current = [];

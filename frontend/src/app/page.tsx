@@ -1,41 +1,48 @@
 "use client";
 
-import { ReactLenis } from "lenis/react";
-import { lazy, Suspense, useEffect } from "react";
-
-import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
-import CommunitySection from "@/features/landing/components/sections/CommunitySection";
-
+import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
+import { ReactLenis } from "lenis/react";
+import { lazy, Suspense, useEffect } from "react";
 import LandingLayout from "./(landing)/layout";
 
-const Personalised = lazy(
-  () => import("@/features/landing/components/sections/Personalised"),
+// Hero video dialog is critical for LCP, so don't lazy load it
+
+const ChaoticWorkspaceSection = lazy(
+  () =>
+    import("@/features/landing/components/sections/ChaoticWorkspaceSection"),
 );
+
+const ToolsShowcaseSection = lazy(
+  () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
+);
+
 const Productivity = lazy(
   () => import("@/features/landing/components/sections/Productivity"),
 );
 const Tired = lazy(
   () => import("@/features/landing/components/sections/TiredBoringAssistants"),
 );
-const ToolsShowcaseSection = lazy(
-  () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
+
+const Personalised = lazy(
+  () => import("@/features/landing/components/sections/Personalised"),
 );
+
 const FAQAccordion = lazy(() =>
   import("@/features/pricing/components/FAQAccordion").then((module) => ({
     default: module.FAQAccordion,
   })),
 );
+
 const OpenSource = lazy(
   () => import("@/features/landing/components/sections/OpenSource"),
 );
+const CommunitySection = lazy(
+  () => import("@/features/landing/components/sections/CommunitySection"),
+);
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
-);
-const ChaoticWorkspaceSection = lazy(
-  () =>
-    import("@/features/landing/components/sections/ChaoticWorkspaceSection"),
 );
 
 export default function LandingPage() {
@@ -63,33 +70,29 @@ export default function LandingPage() {
             />
           </div>
           <div>
+            {/* Load first section immediately for above-the-fold content */}
             <Suspense fallback={<SuspenseLoader />}>
               <ChaoticWorkspaceSection />
             </Suspense>
 
+            {/* Defer all other sections to improve initial load performance */}
             <Suspense fallback={<SuspenseLoader />}>
               <ToolsShowcaseSection />
+              <Productivity />
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
-              <Productivity />
-            </Suspense>
-            <Suspense fallback={<SuspenseLoader />}>
               <Tired />
-            </Suspense>
-            <Suspense fallback={<SuspenseLoader />}>
               <Personalised />
             </Suspense>
+
             <Suspense fallback={<SuspenseLoader />}>
               <FAQAccordion />
-            </Suspense>
-            <Suspense fallback={<SuspenseLoader />}>
               <OpenSource />
             </Suspense>
+
             <Suspense fallback={<SuspenseLoader />}>
               <CommunitySection />
-            </Suspense>
-            <Suspense fallback={<SuspenseLoader />}>
               <FinalSection />
             </Suspense>
           </div>

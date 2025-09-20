@@ -91,7 +91,7 @@ const DummyComposer: React.FC = () => {
         <Button
           className="absolute -top-4 z-[0] flex h-fit w-[92%] rounded-full bg-zinc-800/40 px-4 py-2 pb-8 text-xs text-foreground-300 hover:bg-zinc-800/70 hover:text-zinc-400 sm:w-[46%]"
           onPress={handleIntegrationsClick}
-          aria-label="Tools Button for Dummy Integrations"
+          aria-label="Connect your tools to GAIA"
         >
           <div className="flex w-full items-center justify-between">
             <span className="text-xs">Connect your tools to GAIA</span>

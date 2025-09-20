@@ -3,7 +3,7 @@
 import { Button } from "@heroui/button";
 import { StarFilledIcon } from "@radix-ui/react-icons";
 import AnimatedNumber from "animated-number-react";
-import { motion } from "framer-motion";
+// Removed framer-motion import to reduce bundle size
 import { ChevronDown } from "lucide-react";
 import Image from "next/image";
 import Link from "next/link";
@@ -129,16 +129,7 @@ export default function Navbar() {
                   onMouseEnter={() => handleMouseEnter(menu)}
                 >
                   {hoveredItem === menu && (
-                    <motion.div
-                      layoutId="navbar-pill"
-                      className="absolute inset-0 h-full w-full rounded-lg bg-zinc-800 font-medium!"
-                      initial={false}
-                      transition={{
-                        type: "spring",
-                        stiffness: 300,
-                        damping: 30,
-                      }}
-                    />
+                    <div className="absolute inset-0 h-full w-full rounded-lg bg-zinc-800 font-medium! transition-all duration-300 ease-out" />
                   )}
                   <div className="relative z-10 flex items-center gap-2">
                     <span>{menu.charAt(0).toUpperCase() + menu.slice(1)}</span>
