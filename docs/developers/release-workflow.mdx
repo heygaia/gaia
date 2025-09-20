@@ -1,4 +1,8 @@
-# Release Workflow
+---
+title: "Release Workflow"
+description: "Learn how our automated release process works using Release Please and conventional commits"
+icon: "rocket"
+---
 
 This document explains how our automated release process works using Release Please.
 
@@ -21,13 +25,13 @@ Use these prefixes in your commit messages:
 - `feat!:` or `fix!:` - Breaking change (major version bump)
 - `chore:`, `docs:`, `refactor:` - No version bump
 
-**Example:**
-
-```
+<CodeGroup>
+```bash Example Commits
 feat: add user authentication
 fix: resolve login button issue
 feat!: change API response format
 ```
+</CodeGroup>
 
 ### 2. Push to Master
 
@@ -37,9 +41,17 @@ When commits with releasable changes (`feat`, `fix`, `deps`) are pushed to maste
 
 Release PRs have status labels:
 
-- `autorelease: pending` - PR is ready for review/merge
-- `autorelease: tagged` - PR merged, release tagged
-- `autorelease: published` - GitHub release published
+<CardGroup cols={3}>
+  <Card title="Pending" icon="clock">
+    `autorelease: pending` - PR is ready for review/merge
+  </Card>
+  <Card title="Tagged" icon="tag">
+    `autorelease: tagged` - PR merged, release tagged
+  </Card>
+  <Card title="Published" icon="check">
+    `autorelease: published` - GitHub release published
+  </Card>
+</CardGroup>
 
 ### 4. Merge Release PR
 
@@ -51,9 +63,11 @@ When you merge the Release PR, Release Please:
 
 ## Best Practices
 
+<Tip>
 - **Use squash-merge** for PRs to maintain clean commit history
 - **Write clear commit messages** that explain the change's impact
 - **Review Release PRs** before merging to ensure correct version bumps
+</Tip>
 
 ## Manual Version Override
 
@@ -67,9 +81,17 @@ git commit --allow-empty -m "chore: release 2.0.0" -m "Release-As: 2.0.0"
 
 ### No Release PR Created?
 
-1. **Check for releasable commits** - Ensure you have `feat:`, `fix:`, or `deps:` commits
-2. **Remove stale labels** - Look for old PRs with `autorelease: pending` labels
-3. **Force rerun** - Add `release-please:force-run` label to trigger manually
+<Steps>
+  <Step title="Check Releasable Commits">
+    Ensure you have `feat:`, `fix:`, or `deps:` commits
+  </Step>
+  <Step title="Remove Stale Labels">
+    Look for old PRs with `autorelease: pending` labels
+  </Step>
+  <Step title="Force Rerun">
+    Add `release-please:force-run` label to trigger manually
+  </Step>
+</Steps>
 
 ### Fix Release Notes
 
@@ -81,9 +103,23 @@ feat: corrected commit message for release notes
 END_COMMIT_OVERRIDE
 ```
 
+<Note>
+This allows you to correct commit messages that will appear in the release notes after the fact.
+</Note>
+
 ## Resources
 
-- [Release Please Docs](https://github.com/googleapis/release-please)
-- [Conventional Commits](https://www.conventionalcommits.org/)
-- [Customizing Guide](https://github.com/googleapis/release-please/blob/main/docs/customizing.md)
-- [Troubleshooting Guide](https://github.com/googleapis/release-please/blob/main/docs/troubleshooting.md)
+<CardGroup cols={2}>
+  <Card title="Release Please Docs" icon="book" href="https://github.com/googleapis/release-please">
+    Official Release Please documentation
+  </Card>
+  <Card title="Conventional Commits" icon="git-alt" href="https://www.conventionalcommits.org/">
+    Learn about conventional commit specification
+  </Card>
+  <Card title="Customizing Guide" icon="wrench" href="https://github.com/googleapis/release-please/blob/main/docs/customizing.md">
+    Advanced customization options
+  </Card>
+  <Card title="Troubleshooting Guide" icon="bug" href="https://github.com/googleapis/release-please/blob/main/docs/troubleshooting.md">
+    Common issues and solutions
+  </Card>
+</CardGroup>

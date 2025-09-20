@@ -30,7 +30,8 @@
             "pages": [
               "developers/introduction",
               "developers/development-setup",
-              "developers/contributing"
+              "developers/contributing",
+              "developers/release-workflow"
             ]
           },
           {
