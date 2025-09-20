@@ -1,11 +1,5 @@
 "use client";
 
-import MobileMenu from "@/components/navigation/MobileMenu";
-import { LinkButton } from "@/components/shared/LinkButton";
-import { appConfig } from "@/config/appConfig";
-import { useUser } from "@/features/auth/hooks/useUser";
-import { useGitHubStars } from "@/hooks";
-import useMediaQuery from "@/hooks/ui/useMediaQuery";
 import { Button } from "@heroui/button";
 import { StarFilledIcon } from "@radix-ui/react-icons";
 import AnimatedNumber from "animated-number-react";
@@ -16,6 +10,13 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
+import MobileMenu from "@/components/navigation/MobileMenu";
+import { LinkButton } from "@/components/shared/LinkButton";
+import { appConfig } from "@/config/appConfig";
+import { useUser } from "@/features/auth/hooks/useUser";
+import { useGitHubStars } from "@/hooks";
+import useMediaQuery from "@/hooks/ui/useMediaQuery";
+
 import { Github } from "../shared";
 import { RaisedButton } from "../ui/shadcn/raised-button";
 import { NavbarMenu } from "./NavbarMenu";
@@ -25,8 +26,7 @@ export default function Navbar() {
   const isMobileScreen = useMediaQuery("(max-width: 990px)");
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [hoveredItem, setHoveredItem] = useState<string | null>(null);
-  const { data: repoData, isLoading: isLoadingStars } =
-    useGitHubStars("heygaia/gaia");
+  const { data: repoData } = useGitHubStars("heygaia/gaia");
 
   const user = useUser();
 

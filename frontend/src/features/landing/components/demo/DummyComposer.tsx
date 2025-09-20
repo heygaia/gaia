@@ -77,12 +77,10 @@ const DummyComposer: React.FC = () => {
 
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col items-center">
-      {/* Slash Command Dropdown */}
       <div className="searchbar relative top-2 w-full">
         <DummySlashCommandDropdown
           isVisible={isSlashDropdownOpen}
           onClose={() => setIsSlashDropdownOpen(false)}
-          position={{ top: 0, left: 0, width: 400 }}
           openedViaButton={true}
         />
       </div>

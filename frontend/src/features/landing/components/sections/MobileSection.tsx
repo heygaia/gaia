@@ -1,7 +1,6 @@
 import Image from "next/image";
 
 import { Call02Icon, ChatBotIcon, VoiceIcon } from "@/components/shared/icons";
-import Iphone15Pro from "@/components/ui/magic-ui/iphone-15-pro";
 import { Button } from "@/components/ui/shadcn/button";
 import { SectionHeading } from "@/features/landing/layouts/SectionHeader";
 

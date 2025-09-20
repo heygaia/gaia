@@ -14,7 +14,6 @@ export default function OpenSource() {
     data: contributorsData,
     isLoading,
     isError,
-    error,
   } = useGitHubContributors("heygaia/gaia");
 
   const contributors = contributorsData?.contributors || [];
@@ -62,7 +61,7 @@ export default function OpenSource() {
             <AvatarGroup
               isBordered
               max={contributors.length}
-              renderCount={(count) => (
+              renderCount={() => (
                 <p className="ms-2 text-small font-medium text-foreground">
                   +{totalCount - contributors.length} others
                 </p>

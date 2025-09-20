@@ -1,5 +1,4 @@
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
-import { useRouter } from "next/navigation";
 import { redirect } from "next/navigation";
 import { useEffect, useRef } from "react";
 import { toast } from "sonner";
@@ -23,7 +22,6 @@ export const useChatStream = () => {
   const { updateConvoMessages, convoMessages } = useConversation();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
-  const router = useRouter();
 
   // Unified ref storage
   const refs = useRef({

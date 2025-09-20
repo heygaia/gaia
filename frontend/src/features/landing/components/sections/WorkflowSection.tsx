@@ -1,13 +1,10 @@
 import { Chip } from "@heroui/chip";
-import { DotLottie, DotLottieReact } from "@lottiefiles/dotlottie-react";
+import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import Image from "next/image";
 
 import { BentoItem } from "./TodosBentoContent";
-import { useState } from "react";
 
 export default function WorkflowSection() {
-  const [dotLottie, setDotLottie] = useState<DotLottie | null>(null);
-
   const triggers = [
     {
       icon: "/images/icons/slack.svg",
