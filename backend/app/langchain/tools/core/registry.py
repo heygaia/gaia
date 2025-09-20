@@ -12,6 +12,7 @@ from app.langchain.tools import (
     google_docs_tool,
     image_tool,
     memory_tools,
+    notification_tool,
     reminder_tool,
     search_tool,
     support_tool,
@@ -137,9 +138,10 @@ class ToolRegistry:
 
         add_category(
             "delegation",
-            tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
+            core_tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
         )
 
+        add_category("notifications", tools=[*notification_tool.tools])
         add_category("productivity", tools=[*todo_tool.tools, *reminder_tool.tools])
         add_category("goal_tracking", tools=goal_tool.tools)
         add_category("support", tools=[support_tool.create_support_ticket])

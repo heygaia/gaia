@@ -2,11 +2,8 @@ import uuid
 from datetime import datetime, time, timedelta, timezone
 from typing import Annotated, Any, Dict, List, Optional
 
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langgraph.config import get_stream_writer
-
 from app.config.loggers import chat_logger as logger
+from app.decorators import with_doc, with_rate_limiting
 from app.docstrings.langchain.tools.todo_tool_docs import (
     ADD_SUBTASK,
     BULK_COMPLETE_TODOS,
@@ -30,7 +27,6 @@ from app.docstrings.langchain.tools.todo_tool_docs import (
     UPDATE_SUBTASK,
     UPDATE_TODO,
 )
-from app.decorators import with_doc, with_rate_limiting
 from app.models.todo_models import (
     Priority,
     ProjectCreate,
@@ -39,75 +35,31 @@ from app.models.todo_models import (
     UpdateProjectRequest,
     UpdateTodoRequest,
 )
-from app.services.todo_bulk_service import (
-    bulk_complete_todos as bulk_complete_service,
-)
-from app.services.todo_bulk_service import (
-    bulk_delete_todos as bulk_delete_service,
-)
-from app.services.todo_bulk_service import (
-    bulk_move_todos as bulk_move_service,
-)
-from app.services.todo_service import (
-    create_project as create_project_service,
-)
-from app.services.todo_service import (
-    create_todo as create_todo_service,
-)
-from app.services.todo_service import (
-    delete_project as delete_project_service,
-)
-from app.services.todo_service import (
-    delete_todo as delete_todo_service,
-)
-from app.services.todo_service import (
-    get_all_labels as get_all_labels_service,
-)
-from app.services.todo_service import (
-    get_all_projects as get_all_projects_service,
-)
-from app.services.todo_service import (
-    get_all_todos as get_all_todos_service,
-)
-from app.services.todo_service import (
-    get_todo as get_todo_service,
-)
-from app.services.todo_service import (
-    get_todo_stats as get_todo_stats_service,
-)
-from app.services.todo_service import (
-    get_todos_by_date_range,
-)
-from app.services.todo_service import (
-    get_todos_by_label as get_todos_by_label_service,
-)
-from app.services.todo_service import (
-    search_todos as search_todos_service,
-)
+from app.services.todo_bulk_service import bulk_complete_todos as bulk_complete_service
+from app.services.todo_bulk_service import bulk_delete_todos as bulk_delete_service
+from app.services.todo_bulk_service import bulk_move_todos as bulk_move_service
+from app.services.todo_service import create_project as create_project_service
+from app.services.todo_service import create_todo as create_todo_service
+from app.services.todo_service import delete_project as delete_project_service
+from app.services.todo_service import delete_todo as delete_todo_service
+from app.services.todo_service import get_all_labels as get_all_labels_service
+from app.services.todo_service import get_all_projects as get_all_projects_service
+from app.services.todo_service import get_all_todos as get_all_todos_service
+from app.services.todo_service import get_todo as get_todo_service
+from app.services.todo_service import get_todo_stats as get_todo_stats_service
+from app.services.todo_service import get_todos_by_date_range
+from app.services.todo_service import get_todos_by_label as get_todos_by_label_service
+from app.services.todo_service import search_todos as search_todos_service
 from app.services.todo_service import (
     semantic_search_todos as semantic_search_todos_service,
 )
-from app.services.todo_service import (
-    update_project as update_project_service,
-)
-from app.services.todo_service import (
-    update_todo as update_todo_service,
-)
+from app.services.todo_service import update_project as update_project_service
+from app.services.todo_service import update_todo as update_todo_service
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 
-
-def get_user_id_from_config(config: RunnableConfig) -> str:
-    """Extract user ID from the config."""
-    if not config:
-        logger.error("Todo tool called without config")
-        return ""
-
-    metadata = config.get("metadata", {})
-    user_id = metadata.get("user_id", "")
-
-    if not user_id:
-        logger.error("No user_id found in config metadata")
-
-    return user_id
+from app.utils.chat_utils import get_user_id_from_config
 
 
 @tool

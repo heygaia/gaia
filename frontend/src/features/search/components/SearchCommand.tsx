@@ -185,7 +185,7 @@ export default function SearchCommand({
       />
 
       {searchQuery && (
-        <div className="flex items-center gap-1 bg-zinc-900 p-2 text-sm font-medium text-foreground-500">
+        <div className="flex items-center gap-1 rounded-xl bg-zinc-900 p-2 text-sm font-medium text-foreground-500">
           {(results.messages.length > 0 ||
             results.conversations.length > 0 ||
             results.notes.length > 0) && <span className="mr-2">Filters:</span>}

@@ -139,7 +139,7 @@ export const appConfig = {
         label: "Discord",
         icon: <DiscordIcon width={19} />,
         external: true,
-        description: "Join the Community Discord",
+        description: "Join Discord Community",
       },
       {
         href: "https://x.com/_heygaia",
@@ -160,7 +160,7 @@ export const appConfig = {
         label: "WhatsApp",
         icon: <WhatsappIcon width={19} />,
         external: true,
-        description: "Join our WhatsApp Community",
+        description: "Join WhatsApp Community",
       },
       {
         href: "https://youtube.com/@heygaia_io",

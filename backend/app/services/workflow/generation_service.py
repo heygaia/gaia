@@ -4,6 +4,7 @@ from typing import List
 
 from app.config.loggers import general_logger as logger
 from app.langchain.llm.client import init_llm
+from app.langchain.prompts.trigger_prompts import generate_trigger_context
 from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
 from app.models.workflow_models import WorkflowStep
 from langchain_core.output_parsers import PydanticOutputParser
@@ -20,7 +21,9 @@ class WorkflowGenerationService:
     """Service for generating workflow steps using LLM."""
 
     @staticmethod
-    async def generate_steps_with_llm(description: str, title: str) -> list:
+    async def generate_steps_with_llm(
+        description: str, title: str, trigger_config=None
+    ) -> list:
         """Generate workflow steps using LLM with structured output."""
         try:
             # Create the parser
@@ -48,6 +51,8 @@ class WorkflowGenerationService:
                 tool_name = tool.name if hasattr(tool, "name") else str(tool)
                 tools_with_categories.append(f"Always Available: {tool_name}")
 
+            trigger_context = generate_trigger_context(trigger_config)
+
             # Initialize LLM
             llm = init_llm(streaming=False)
 
@@ -59,6 +64,7 @@ class WorkflowGenerationService:
                 {
                     "description": description,
                     "title": title,
+                    "trigger_context": trigger_context,
                     "tools": "\n".join(tools_with_categories),
                     "categories": ", ".join(category_names),
                     "format_instructions": parser.get_format_instructions(),

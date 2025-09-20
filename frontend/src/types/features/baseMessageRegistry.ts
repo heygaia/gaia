@@ -13,6 +13,7 @@ import {
 } from "./calendarTypes";
 import { IntegrationConnectionData } from "./integrationTypes";
 import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
+import { NotificationRecord } from "./notificationTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { SupportTicketData } from "./supportTypes";
 import { TodoToolData } from "./todoToolTypes";
@@ -52,6 +53,10 @@ export const TOOLS_MESSAGE_SCHEMA = {
   calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
   calendar_list_fetch_data: undefined as
     | CalendarListFetchData[]
+    | null
+    | undefined,
+  notification_data: undefined as
+    | { notifications: NotificationRecord[] }
     | null
     | undefined,
 };

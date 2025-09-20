@@ -1,5 +1,4 @@
 import { Textarea } from "@heroui/input";
-import { Kbd } from "@heroui/react";
 import React, {
   useCallback,
   useEffect,
@@ -342,12 +341,6 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
             onValueChange={handleTextChange}
             onSelect={handleCursorPositionChange}
             onClick={handleCursorPositionChange}
-            endContent={
-              <div className="flex items-center gap-1 text-xs text-nowrap text-foreground-500">
-                <Kbd className="bg-zinc-700">/</Kbd>
-                for tools
-              </div>
-            }
           />
         </form>
 

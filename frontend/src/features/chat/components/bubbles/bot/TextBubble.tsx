@@ -25,6 +25,7 @@ import EmailComposeSection from "./EmailComposeSection";
 import GoalSection from "./goals/GoalSection";
 import { GoalAction } from "./goals/types";
 import GoogleDocsSection from "./GoogleDocsSection";
+import NotificationListSection from "./NotificationListSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
 
@@ -49,6 +50,7 @@ export default function TextBubble({
   deep_research_results,
   document_data,
   google_docs_data,
+  notification_data,
   isConvoSystemGenerated,
   systemPurpose,
 }: ChatBubbleBotProps) {
@@ -265,6 +267,18 @@ export default function TextBubble({
       )}
 
       {!!code_data && <CodeExecutionSection code_data={code_data!} />}
+
+      {!!notification_data && (
+        <NotificationListSection
+          notifications={notification_data.notifications}
+          title="Your Notifications"
+        />
+      )}
+
+      {!!follow_up_actions && follow_up_actions?.length > 0 && (
+        <FollowUpActions actions={follow_up_actions} loading={!!loading} />
+      )}
+      
     </>
   );
 }
