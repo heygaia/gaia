@@ -81,20 +81,20 @@ const integrations = [
   // First row - 4 items
   [
     {
-      image: "/icons/google_docs.webp",
+      image: "/images/icons/google_docs.webp",
       alt: "Google Docs",
       isBlurred: true,
     },
     {
-      image: "/icons/google_sheets.webp",
+      image: "/images/icons/google_sheets.webp",
       alt: "Google Sheets",
     },
     {
-      image: "/icons/google_sides.webp",
+      image: "/images/icons/google_sides.webp",
       alt: "Google Slides",
     },
     {
-      image: "/icons/figma.svg",
+      image: "/images/icons/figma.svg",
       alt: "Figma",
       isBlurred: true,
     },
@@ -102,25 +102,25 @@ const integrations = [
   // Second row - 5 items (Main productivity tools with Notion center)
   [
     {
-      image: "/icons/trello.svg",
+      image: "/images/icons/trello.svg",
       alt: "Trello",
       isBlurred: true,
     },
     {
-      image: "/icons/googlecalendar.webp",
+      image: "/images/icons/googlecalendar.webp",
       alt: "Google Calendar",
     },
     {
-      image: "/icons/notion.webp",
+      image: "/images/icons/notion.webp",
       alt: "Notion",
       isLarge: true,
     },
     {
-      image: "/icons/gmail.svg",
+      image: "/images/icons/gmail.svg",
       alt: "Gmail",
     },
     {
-      image: "/icons/linkedin.svg",
+      image: "/images/icons/linkedin.svg",
       alt: "LinkedIn",
       isBlurred: true,
     },
@@ -128,20 +128,20 @@ const integrations = [
   // Third row - 4 items
   [
     {
-      image: "/icons/github3d.webp",
+      image: "/images/icons/github3d.webp",
       alt: "GitHub",
       isBlurred: true,
     },
     {
-      image: "/icons/whatsapp.webp",
+      image: "/images/icons/whatsapp.webp",
       alt: "WhatsApp",
     },
     {
-      image: "/icons/slack.svg",
+      image: "/images/icons/slack.svg",
       alt: "Slack",
     },
     {
-      image: "/icons/todoist.svg",
+      image: "/images/icons/todoist.svg",
       alt: "Todoist",
       isBlurred: true,
     },

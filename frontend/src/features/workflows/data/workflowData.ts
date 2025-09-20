@@ -16,19 +16,19 @@ export const triggerOptions: TriggerOption[] = [
   {
     id: "slack",
     name: "Slack",
-    icon: "/icons/slack.svg",
+    icon: "/images/icons/slack.svg",
     description: "Trigger when new messages arrive",
   },
   {
     id: "gmail",
     name: "Gmail",
-    icon: "/icons/gmail.svg",
+    icon: "/images/icons/gmail.svg",
     description: "Trigger when new emails arrive",
   },
   {
     id: "calendar",
     name: "Google Calendar",
-    icon: "/icons/googlecalendar.webp",
+    icon: "/images/icons/googlecalendar.webp",
     description: "Trigger when new events are created",
   },
 ];
@@ -37,13 +37,13 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "notion",
     name: "Notion",
-    icon: "/icons/notion.webp",
+    icon: "/images/icons/notion.webp",
     category: "productivity",
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icon: "/icons/google_docs.webp",
+    icon: "/images/icons/google_docs.webp",
     category: "documents",
   },
   {
@@ -55,19 +55,19 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "gmail",
     name: "Gmail",
-    icon: "/icons/gmail.svg",
+    icon: "/images/icons/gmail.svg",
     category: "communication",
   },
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icon: "/icons/googlecalendar.webp",
+    icon: "/images/icons/googlecalendar.webp",
     category: "productivity",
   },
   {
     id: "slack",
     name: "Slack",
-    icon: "/icons/slack.svg",
+    icon: "/images/icons/slack.svg",
     category: "communication",
   },
 ];

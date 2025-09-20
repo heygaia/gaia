@@ -15,7 +15,7 @@ export default function SuspenseLoader({
     >
       <Image
         alt="GAIA Logo"
-        src={"/branding/logo.webp"}
+        src={"/images/logos/logo.webp"}
         width={30}
         height={30}
         className={`animate-spin`}

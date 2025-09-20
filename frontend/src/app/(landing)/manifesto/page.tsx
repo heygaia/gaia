@@ -16,14 +16,14 @@ export const metadata: Metadata = {
     type: "website",
     description:
       "Learn more about GAIA, your personal AI assistant designed to enhance productivity, automate tasks, and assist in daily activities.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   twitter: {
     card: "summary_large_image",
     title: "About",
     description:
       "Learn more about GAIA, your personal AI assistant designed to enhance productivity, automate tasks, and assist in daily activities.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   keywords: [
     "GAIA",
@@ -67,7 +67,7 @@ export default async function About() {
     <div className="flex min-h-screen w-screen justify-center bg-black px-6 py-28">
       <div className="fixed top-0 left-0 z-[0] flex h-screen w-full items-center justify-center opacity-5">
         <Image
-          src="/branding/logo.webp"
+          src="/images/logos/logo.webp"
           alt="GAIA Logo"
           className="scale-110 object-contain grayscale"
           fill
@@ -78,7 +78,7 @@ export default async function About() {
         <Suspense fallback={<div>Loading...</div>}>
           <div className="flex w-full justify-center">
             <Image
-              src="/branding/logo.webp"
+              src="/images/logos/logo.webp"
               alt="GAIA Logo"
               width={80}
               height={80}

@@ -394,7 +394,7 @@ export default function ViewEmail({
                         <div className="mb-2 flex items-start justify-between">
                           <User
                             avatarProps={{
-                              src: "/profile_photo/profile_photo.webp",
+                              src: "/images/avatars/default.webp",
                               size: "sm",
                             }}
                             description={messageSenderEmail}
@@ -443,7 +443,7 @@ export default function ViewEmail({
                   )}
                   <User
                     avatarProps={{
-                      src: "/profile_photo/profile_photo.webp",
+                      src: "/images/avatars/default.webp",
                       size: "sm",
                     }}
                     description={emailFrom}

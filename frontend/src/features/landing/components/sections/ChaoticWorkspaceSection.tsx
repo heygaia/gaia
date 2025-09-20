@@ -102,7 +102,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/googlecalendar.webp"
+            src="/images/icons/googlecalendar.webp"
             alt="Google Calendar"
             width={60}
             height={60}
@@ -121,7 +121,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/slack.svg"
+            src="/images/icons/slack.svg"
             alt="Slack"
             width={55}
             height={55}
@@ -140,7 +140,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/notion.webp"
+            src="/images/icons/notion.webp"
             alt="Notion"
             width={58}
             height={58}
@@ -159,7 +159,7 @@ export default function ChaoticWorkspaceSection() {
         className="absolute top-1/2 left-20 -translate-y-1/2 transform"
       >
         <Image
-          src="/icons/linkedin.svg"
+          src="/images/icons/linkedin.svg"
           alt="LinkedIn"
           width={50}
           height={50}
@@ -174,7 +174,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/gmail.svg"
+            src="/images/icons/gmail.svg"
             alt="Gmail"
             width={65}
             height={65}
@@ -193,7 +193,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/github3d.webp"
+            src="/images/icons/github3d.webp"
             alt="GitHub"
             width={58}
             height={58}
@@ -208,7 +208,7 @@ export default function ChaoticWorkspaceSection() {
         className="absolute top-1/2 right-20 -translate-y-1/2 transform"
       >
         <Image
-          src="/icons/figma.svg"
+          src="/images/icons/figma.svg"
           alt="Figma"
           width={50}
           height={50}
@@ -223,7 +223,7 @@ export default function ChaoticWorkspaceSection() {
         className="absolute bottom-24 left-1/3 -translate-x-1/2 transform"
       >
         <Image
-          src="/icons/google_sheets.webp"
+          src="/images/icons/google_sheets.webp"
           alt="Google Sheets"
           width={50}
           height={50}
@@ -238,7 +238,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/google_docs.webp"
+            src="/images/icons/google_docs.webp"
             alt="Google Docs"
             width={55}
             height={55}
@@ -257,7 +257,7 @@ export default function ChaoticWorkspaceSection() {
       >
         <div className="relative">
           <Image
-            src="/icons/trello.svg"
+            src="/images/icons/trello.svg"
             alt="Trello"
             width={55}
             height={55}
@@ -274,7 +274,7 @@ export default function ChaoticWorkspaceSection() {
       <div ref={addToRefs} className="absolute bottom-32 left-24 transform">
         <div className="relative">
           <Image
-            src="/icons/whatsapp.webp"
+            src="/images/icons/whatsapp.webp"
             alt="WhatsApp"
             width={60}
             height={60}
@@ -289,7 +289,7 @@ export default function ChaoticWorkspaceSection() {
       {/* Todoist - Top Right Corner */}
       <div ref={addToRefs} className="absolute top-32 right-24 transform">
         <Image
-          src="/icons/todoist.svg"
+          src="/images/icons/todoist.svg"
           alt="Todoist"
           width={50}
           height={50}

@@ -23,22 +23,22 @@ const dummyIntegrations = [
   {
     id: "gmail",
     name: "Gmail",
-    icons: ["/icons/gmail.svg"],
+    icons: ["/images/icons/gmail.svg"],
   },
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icons: ["/icons/googlecalendar.webp"],
+    icons: ["/images/icons/googlecalendar.webp"],
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icons: ["/icons/google_docs.webp"],
+    icons: ["/images/icons/google_docs.webp"],
   },
   {
     id: "notion",
     name: "Notion",
-    icons: ["/icons/notion.webp"],
+    icons: ["/images/icons/notion.webp"],
   },
 ];
 

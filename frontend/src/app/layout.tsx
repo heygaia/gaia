@@ -46,14 +46,14 @@ export const metadata: Metadata = {
     type: "website",
     description:
       "GAIA is your personal AI assistant designed to help increase your productivity.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   twitter: {
     card: "summary_large_image",
     title: "GAIA - Your Personal Assistant",
     description:
       "GAIA is your personal AI assistant designed to help increase your productivity.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   other: {
     "msapplication-TileColor": "#00bbff",

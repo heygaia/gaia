@@ -82,10 +82,10 @@ export default function MobileSection() {
             </Button>
           </div>
         </div>
-        <Iphone15Pro
+        {/* <Iphone15Pro
           className="relative z-2 h-fit px-5 sm:max-h-[70vh]"
           src="/landing/mobile_screenshot.webp"
-        />
+        /> */}
       </div>
     </div>
   );

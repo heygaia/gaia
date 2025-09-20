@@ -87,7 +87,7 @@ export default function Navbar() {
             className="h-10 w-10 px-12!"
           >
             <Image
-              src="/branding/logo.webp"
+              src="/images/logos/logo.webp"
               alt="GAIA Logo"
               width={25}
               height={25}

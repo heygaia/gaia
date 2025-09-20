@@ -55,7 +55,7 @@ export default function Tired() {
       </div>
 
       <Image
-        src={"/branding/logo.webp"}
+        src={"/images/logos/logo.webp"}
         alt="GAIA Logo"
         width={120}
         height={120}

@@ -47,7 +47,7 @@ export default function StarterText() {
           <div className="flex items-center gap-5 text-5xl">
             <Image
               alt="GAIA Logo"
-              src="/branding/logo.webp"
+              src="/images/logos/logo.webp"
               width={45}
               height={45}
             />

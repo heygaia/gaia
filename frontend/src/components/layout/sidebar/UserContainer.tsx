@@ -18,7 +18,7 @@ export default function UserContainer() {
             <AvatarImage src={user?.profilePicture} alt="User Avatar" />
             <AvatarFallback>
               <Image
-                src={"/media/default.webp"}
+                src={"/images/avatars/default.webp"}
                 width={30}
                 height={30}
                 alt="Default profile picture"

@@ -301,7 +301,7 @@ export default function MailCompose({ open, onOpenChange }: MailComposeProps) {
                 startContent={
                   <Image
                     alt="GAIA Logo"
-                    src={"/branding/logo.webp"}
+                    src={"/images/logos/logo.webp"}
                     width={25}
                     height={25}
                     className={`ml-2`}

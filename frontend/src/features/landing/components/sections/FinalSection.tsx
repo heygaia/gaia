@@ -7,7 +7,7 @@ export default function FinalSection() {
       <div className="relative flex w-full max-w-7xl flex-col items-center justify-center gap-6 overflow-hidden rounded-4xl bg-gradient-to-b from-zinc-900 to-zinc-950 outline-1 outline-zinc-900 sm:p-28 sm:py-20">
         <div className="absolute inset-0 z-[2] flex h-full w-full scale-150 justify-start overflow-hidden">
           <Image
-            src="/branding/logo.webp"
+            src="/images/logos/logo.webp"
             alt="GAIA Logo"
             className="h-full object-contain opacity-[7%] grayscale"
             fill

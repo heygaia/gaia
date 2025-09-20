@@ -10,18 +10,18 @@ export default function WorkflowSection() {
 
   const triggers = [
     {
-      icon: "/icons/slack.svg",
+      icon: "/images/icons/slack.svg",
       title: "Slack",
       description: "Trigger on Slack mention",
     },
     {
-      icon: "/icons/googlecalendar.webp",
+      icon: "/images/icons/googlecalendar.webp",
       title: "Calendar",
       description: "Trigger on calendar event",
     },
 
     {
-      icon: "/icons/gmail.svg",
+      icon: "/images/icons/gmail.svg",
       title: "Gmail",
       description: "Trigger on new email",
     },
@@ -75,7 +75,7 @@ export default function WorkflowSection() {
           childrenClassName="p-0!"
         >
           <DotLottieReact
-            src="/landing/animations/proactive.lottie"
+            src="/animations/proactive.lottie"
             // loop
             // autoplay
             speed={0.7}

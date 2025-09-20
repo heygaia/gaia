@@ -220,7 +220,7 @@ export default function MemoryManagement({
         <div className="flex h-40 items-center justify-center">
           <Image
             alt="GAIA Logo"
-            src={"/branding/logo.webp"}
+            src={"/images/logos/logo.webp"}
             width={30}
             height={30}
             className={`animate-spin`}

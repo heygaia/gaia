@@ -12,7 +12,7 @@ export const metadata: Metadata = {
     title: "Sign Up",
     description: "Create your GAIA account today and unlock the power of AI.",
     url: "https://heygaia.io/signup",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
     siteName: "GAIA - Your Personal Assistant",
     type: "website",
   },
@@ -20,7 +20,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "Sign Up",
     description: "Create your GAIA account today and unlock the power of AI.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
 };
 

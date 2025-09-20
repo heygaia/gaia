@@ -13,7 +13,7 @@ export const metadata: Metadata = {
     title: "login",
     description: "Access your personal AI assistant account on GAIA.",
     url: "https://heygaia.io/login",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
     siteName: "GAIA - Your Personal Assistant",
     type: "website",
   },
@@ -21,7 +21,7 @@ export const metadata: Metadata = {
     card: "summary_large_image",
     title: "login",
     description: "Access your personal AI assistant account on GAIA.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
 };
 
