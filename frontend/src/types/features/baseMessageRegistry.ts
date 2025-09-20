@@ -28,6 +28,14 @@ import {
 import { WeatherData } from "./weatherTypes";
 import { WorkflowData } from "./workflowTypes";
 
+// Unified tool data entry structure (matches backend TypedDict)
+export interface ToolDataEntry {
+  tool_name: string;
+  tool_category: string;
+  data: unknown;
+  timestamp: string | null;
+}
+
 export const TOOLS_MESSAGE_SCHEMA = {
   calendar_options: undefined as CalendarOptions[] | null | undefined,
   calendar_delete_options: undefined as
@@ -81,6 +89,7 @@ export const BASE_MESSAGE_SCHEMA = {
     | IntegrationConnectionData
     | null
     | undefined,
+  tool_data: undefined as ToolDataEntry[] | null | undefined,
   ...TOOLS_MESSAGE_SCHEMA,
 };
 

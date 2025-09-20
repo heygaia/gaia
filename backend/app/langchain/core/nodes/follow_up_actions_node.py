@@ -76,7 +76,9 @@ async def follow_up_actions_node(
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
 
-        chain = (prompt | llm | parser).with_config({"run_name": "Follow-up actions"})
+        chain = (prompt | llm | parser).with_config(
+            {**config, "run_name": "Follow-up actions"}
+        )
         recent_messages = messages[-4:] if len(messages) > 4 else messages
 
         # THREADING SOLUTION TO PREVENT AUTO-STREAMING:

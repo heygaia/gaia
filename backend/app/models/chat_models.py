@@ -1,5 +1,5 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
 from app.models.calendar_models import EventCreateRequest
 from app.models.mail_models import EmailComposeRequest
@@ -7,6 +7,7 @@ from app.models.message_models import FileData, SelectedWorkflowData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 
 class ImageData(BaseModel):
@@ -96,6 +97,14 @@ class SupportTicketData(BaseModel):
     user_email: Optional[str] = Field(None, description="Email of the user")
 
 
+class ToolDataEntry(TypedDict):
+    """Unified structure for tool execution data."""
+
+    tool_name: str
+    data: Union[dict, List, str, int, float, bool]
+    timestamp: Optional[str]
+
+
 class MessageModel(BaseModel):
     type: str
     response: str
@@ -130,7 +139,8 @@ class MessageModel(BaseModel):
     goal_data: Optional[dict] = None
     code_data: Optional[dict] = None
     google_docs_data: Optional[dict] = None
-    follow_up_actions: Optional[List[str]] = []
+    tool_data: Optional[List[ToolDataEntry]] = None
+    follow_up_actions: Optional[List[str]] = None
     integration_connection_required: Optional[IntegrationConnectionData] = None
 
 

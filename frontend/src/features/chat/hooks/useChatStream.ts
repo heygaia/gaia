@@ -151,7 +151,7 @@ export const useChatStream = () => {
       }
 
       // Parse only the data that's actually present in this stream chunk
-      const streamUpdates = parseStreamData(data);
+      const streamUpdates = parseStreamData(data, refs.current.botMessage);
 
       updateBotMessage({
         ...streamUpdates,

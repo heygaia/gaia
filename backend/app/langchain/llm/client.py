@@ -36,12 +36,16 @@ def init_llm(
             gemini=ChatGoogleGenerativeAI(
                 model=GEMINI_MODEL,
                 temperature=0.1,
+            ).configurable_fields(
+                model=ConfigurableField(id="model_name", name="LLM Model Name")
             ),
             cerebras=ChatCerebras(
                 model=CEREBRAS_MODEL,
                 temperature=0.1,
                 streaming=streaming,
                 reasoning_effort="medium",
+            ).configurable_fields(
+                model_name=ConfigurableField(id="model_name", name="LLM Model Name")
             ),
         )
     )

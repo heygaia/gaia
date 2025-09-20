@@ -4,7 +4,7 @@ from typing import Any, AsyncGenerator, Dict, Optional
 
 from app.config.loggers import chat_logger as logger
 from app.langchain.core.agent import call_agent
-from app.models.chat_models import MessageModel, UpdateMessagesRequest
+from app.models.chat_models import MessageModel, ToolDataEntry, UpdateMessagesRequest
 from app.models.message_models import MessageRequestWithHistory
 from app.services.conversation_service import update_messages
 from app.services.file_service import get_files
@@ -29,7 +29,7 @@ async def chat_stream(
     conversation_id, init_chunk = await initialize_conversation(body, user)
 
     # Dictionary to collect tool outputs during streaming
-    tool_data: Dict[str, Any] = {}
+    tool_data: Dict[str, Any] = {"tool_data": []}
 
     if init_chunk:  # Return the conversation id and metadata if new convo
         yield init_chunk
@@ -65,7 +65,17 @@ async def chat_stream(
                 # Extract tool data from the chunk
                 new_data = extract_tool_data(chunk[6:])
                 if new_data:
-                    tool_data.update(new_data)
+                    current_time = datetime.now(timezone.utc).isoformat()
+
+                    # Add each tool data to both legacy format and unified array
+                    for key, value in new_data.items():
+                        if value is not None:
+                            tool_data_entry: ToolDataEntry = {
+                                "tool_name": key,
+                                "data": value,
+                                "timestamp": current_time,
+                            }
+                            tool_data["tool_data"].append(tool_data_entry)
             except Exception as e:
                 logger.error(f"Error extracting tool data: {e}")
             yield chunk
@@ -122,7 +132,13 @@ def extract_tool_data(json_str: str) -> Dict[str, Any]:
         }
 
         # Extract any matching tool data
-        return {key: data[key] for key in tool_keys if key in data}
+        extracted_data = {key: data[key] for key in tool_keys if key in data}
+
+        # Also check for tool_data field if it exists in the stream
+        if "tool_data" in data:
+            extracted_data["tool_data"] = data["tool_data"]
+
+        return extracted_data
 
     except json.JSONDecodeError:
         return {}
