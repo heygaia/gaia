@@ -42,8 +42,6 @@ async def _core_agent_logic(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
-    access_token: Optional[str] = None,
-    refresh_token: Optional[str] = None,
     trigger_context: Optional[dict] = None,
 ):
     """Core agent initialization logic shared between streaming and silent execution modes.
@@ -70,21 +68,21 @@ async def _core_agent_logic(
     """
     user_id = user.get("user_id")
 
-    # Build langchain messages with context
-    history = await construct_langchain_messages(
-        messages=request.messages,
-        files_data=request.fileData,
-        currently_uploaded_file_ids=request.fileIds,
-        user_id=user_id,
-        query=request.message,
-        user_name=user.get("name"),
-        selected_tool=request.selectedTool,
-        selected_workflow=request.selectedWorkflow,
-        trigger_context=trigger_context,
+    # Build langchain messages and get graph concurrently
+    history, graph = await asyncio.gather(
+        construct_langchain_messages(
+            messages=request.messages,
+            files_data=request.fileData,
+            currently_uploaded_file_ids=request.fileIds,
+            user_id=user_id,
+            query=request.message,
+            user_name=user.get("name"),
+            selected_tool=request.selectedTool,
+            selected_workflow=request.selectedWorkflow,
+            trigger_context=trigger_context,
+        ),
+        GraphManager.get_graph(),
     )
-
-    # Get the graph and setup initial state
-    graph = await GraphManager.get_graph()
     initial_state = build_initial_state(
         request, user_id or "", conversation_id, history, trigger_context
     )
@@ -96,9 +94,7 @@ async def _core_agent_logic(
         )
 
     # Build config with optional tokens
-    config = build_agent_config(
-        conversation_id, user, user_time, user_model_config, access_token, refresh_token
-    )
+    config = build_agent_config(conversation_id, user, user_time, user_model_config)
 
     return graph, initial_state, config
 
@@ -140,8 +136,6 @@ async def call_agent_silent(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
-    access_token: Optional[str] = None,
-    refresh_token: Optional[str] = None,
     trigger_context: Optional[dict] = None,
 ) -> tuple[str, dict]:
     """
@@ -156,8 +150,6 @@ async def call_agent_silent(
             user,
             user_time,
             user_model_config,
-            access_token,
-            refresh_token,
             trigger_context,
         )
 

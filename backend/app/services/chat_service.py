@@ -69,16 +69,25 @@ async def chat_stream(
 
                     # Add each tool data to both legacy format and unified array
                     for key, value in new_data.items():
-                        if value is not None:
-                            tool_data_entry: ToolDataEntry = {
-                                "tool_name": key,
-                                "data": value,
-                                "timestamp": current_time,
-                            }
-                            tool_data["tool_data"].append(tool_data_entry)
+                        if key == "follow_up_actions":
+                            yield chunk
+                            continue  # Skip adding follow-up actions to tool_data
+
+                        tool_data_entry: ToolDataEntry = {
+                            "tool_name": key,
+                            "data": value,
+                            "timestamp": current_time,
+                        }
+                        tool_data["tool_data"].append(tool_data_entry)
+
+                        current_tool_data = {"tool_data": tool_data_entry}
+                        yield f"data: {json.dumps(current_tool_data)}\n\n"
+                else:
+                    yield chunk
+
             except Exception as e:
                 logger.error(f"Error extracting tool data: {e}")
-            yield chunk
+
         # Pass through other chunks
         else:
             yield chunk

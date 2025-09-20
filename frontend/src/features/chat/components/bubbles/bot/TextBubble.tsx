@@ -48,12 +48,12 @@ import {
 } from "@/types/features/calendarTypes";
 import { EmailFetchData } from "@/types/features/mailTypes";
 import { SupportTicketData } from "@/types/features/supportTypes";
+import { ToolsMessageKey } from "@/config/registries/toolRegistry";
 
-// Map of tool_name -> renderer function
+// Map of tool_name -> renderer function using TOOLS_MESSAGE_SCHEMA keys
 // This avoids scattering switch/case or if/else across the component
-const TOOL_RENDERERS: Record<
-  string,
-  (data: unknown, index: number) => React.ReactNode
+const TOOL_RENDERERS: Partial<
+  Record<ToolsMessageKey, (data: unknown, index: number) => React.ReactNode>
 > = {
   // Search
   search_results: (data, index) => (
@@ -70,7 +70,7 @@ const TOOL_RENDERERS: Record<
   ),
 
   // Weather
-  weather: (data, index) => (
+  weather_data: (data, index) => (
     <WeatherCard
       key={`tool-weather-${index}`}
       weatherData={data as WeatherData}
@@ -78,19 +78,19 @@ const TOOL_RENDERERS: Record<
   ),
 
   // Email
-  email_thread: (data, index) => (
+  email_thread_data: (data, index) => (
     <EmailThreadCard
       key={`tool-email-thread-${index}`}
       emailThreadData={data as EmailThreadData}
     />
   ),
-  email_fetch: (data, index) => (
+  email_fetch_data: (data, index) => (
     <EmailListCard
       key={`tool-email-fetch-${index}`}
       emails={(Array.isArray(data) ? data : [data]) as EmailFetchData[]}
     />
   ),
-  email_compose: (data, index) => (
+  email_compose_data: (data, index) => (
     <EmailComposeSection
       key={`tool-email-compose-${index}`}
       email_compose_data={
@@ -100,7 +100,7 @@ const TOOL_RENDERERS: Record<
   ),
 
   // Calendar
-  calendar: (data, index) => {
+  calendar_options: (data, index) => {
     return (
       <CalendarEventSection
         key={`tool-cal-options-${index}`}
@@ -108,7 +108,7 @@ const TOOL_RENDERERS: Record<
       />
     );
   },
-  calendar_delete: (data, index) => {
+  calendar_delete_options: (data, index) => {
     return (
       <CalendarDeleteSection
         key={`tool-cal-del-${index}`}
@@ -116,7 +116,7 @@ const TOOL_RENDERERS: Record<
       />
     );
   },
-  calendar_edit: (data, index) => {
+  calendar_edit_options: (data, index) => {
     return (
       <CalendarEditSection
         key={`tool-cal-edit-${index}`}
@@ -124,13 +124,13 @@ const TOOL_RENDERERS: Record<
       />
     );
   },
-  calendar_fetch: (data, index) => (
+  calendar_fetch_data: (data, index) => (
     <CalendarListCard
       key={`tool-cal-fetch-${index}`}
       events={(Array.isArray(data) ? data : [data]) as CalendarFetchData[]}
     />
   ),
-  calendar_list_fetch: (data, index) => (
+  calendar_list_fetch_data: (data, index) => (
     <CalendarListFetchCard
       key={`tool-cal-list-${index}`}
       calendars={
@@ -140,7 +140,7 @@ const TOOL_RENDERERS: Record<
   ),
 
   // Support ticket
-  support_ticket: (data, index) => (
+  support_ticket_data: (data, index) => (
     <SupportTicketSection
       key={`tool-support-${index}`}
       support_ticket_data={data as SupportTicketData[]}
@@ -148,26 +148,26 @@ const TOOL_RENDERERS: Record<
   ),
 
   // Documents & Code
-  document: (data, index) => (
+  document_data: (data, index) => (
     <DocumentSection
       key={`tool-doc-${index}`}
       document_data={data as DocumentData}
     />
   ),
-  google_docs: (data, index) => (
+  google_docs_data: (data, index) => (
     <GoogleDocsSection
       key={`tool-gdocs-${index}`}
       google_docs_data={data as GoogleDocsData}
     />
   ),
-  code: (data, index) => (
+  code_data: (data, index) => (
     <CodeExecutionSection
       key={`tool-code-${index}`}
       code_data={data as CodeData}
     />
   ),
 
-  todo: (data, index) => {
+  todo_data: (data, index) => {
     const t = data as TodoToolData;
     return (
       <TodoSection
@@ -180,7 +180,7 @@ const TOOL_RENDERERS: Record<
       />
     );
   },
-  goal: (data, index) => {
+  goal_data: (data, index) => {
     const g = data as GoalDataMessageType;
     return (
       <GoalSection
@@ -236,7 +236,7 @@ export default function TextBubble({
       {/* Unified tool_data rendering via registry */}
       {tool_data &&
         tool_data.map((entry, index) => {
-          const render = TOOL_RENDERERS[entry.tool_name];
+          const render = TOOL_RENDERERS[entry.tool_name as ToolsMessageKey];
           if (!render) return null;
           return <>{render(entry.data, index)}</>;
         })}

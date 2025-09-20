@@ -167,8 +167,13 @@ def create_agent(
         )
         model_name = model_configurations.get("model_name", "gpt-4o-mini")
         provider = model_configurations.get("provider", None)
+
         _llm = llm.with_config(
-            configurable={"model_name": model_name, "provider": provider}
+            configurable={
+                "model_name": model_name,
+                "model": model_name,  # Gemini uses "model" instead of "model_name"
+                "provider": provider,
+            }
         )
         selected_tools = [tool_registry[id] for id in state["selected_tool_ids"]]
         llm_with_tools = _llm.bind_tools([retrieve_tools, *selected_tools])  # type: ignore[arg-type]
