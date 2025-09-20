@@ -87,18 +87,22 @@ export default function PreferencesSettings({
   const updateTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const lastSavedPreferences = useRef(preferences);
 
-  // Update preferences when user data changes
-  useEffect(() => {
-    const newPreferences = {
-      profession: user.onboarding?.preferences?.profession || "",
-      response_style: user.onboarding?.preferences?.response_style || "",
-      custom_instructions:
-        user.onboarding?.preferences?.custom_instructions || null,
-      timezone: normalizeTimezone(user.timezone || "") || "UTC", // Normalize legacy timezone names
-    };
-    setPreferences(newPreferences);
-    lastSavedPreferences.current = newPreferences;
-  }, [user.onboarding?.preferences, user.timezone]);
+  // Separate function to update timezone
+  const updateTimezone = useCallback(
+    async (timezone: string) => {
+      try {
+        const response = await authApi.updateUserTimezone(timezone || "");
+        if (response.success) {
+          // Update user state with new timezone
+          updateUser({ timezone: timezone || undefined });
+        }
+      } catch (error) {
+        console.error("Error updating timezone:", error);
+        throw error;
+      }
+    },
+    [updateUser],
+  );
 
   const updatePreferences = useCallback(
     async (updatedPreferences: typeof preferences) => {
@@ -153,24 +157,7 @@ export default function PreferencesSettings({
         setIsUpdating(false);
       }
     },
-    [updateUser],
-  );
-
-  // Separate function to update timezone
-  const updateTimezone = useCallback(
-    async (timezone: string) => {
-      try {
-        const response = await authApi.updateUserTimezone(timezone || "");
-        if (response.success) {
-          // Update user state with new timezone
-          updateUser({ timezone: timezone || undefined });
-        }
-      } catch (error) {
-        console.error("Error updating timezone:", error);
-        throw error;
-      }
-    },
-    [updateUser],
+    [updateTimezone],
   );
 
   // Debounced update function
@@ -188,15 +175,6 @@ export default function PreferencesSettings({
     },
     [updatePreferences],
   );
-
-  // Cleanup on unmount
-  useEffect(() => {
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, []);
 
   const handleProfessionChange = (keys: SharedSelection) => {
     if (keys !== "all" && keys.size > 0) {
@@ -271,6 +249,28 @@ export default function PreferencesSettings({
     debouncedUpdate(updatedPreferences);
     toast.success(`Timezone set to ${browserTimezone.label}`);
   };
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
+
+  // Update preferences when user data changes
+  useEffect(() => {
+    const newPreferences = {
+      profession: user.onboarding?.preferences?.profession || "",
+      response_style: user.onboarding?.preferences?.response_style || "",
+      custom_instructions:
+        user.onboarding?.preferences?.custom_instructions || null,
+      timezone: normalizeTimezone(user.timezone || "") || "UTC", // Normalize legacy timezone names
+    };
+    setPreferences(newPreferences);
+    lastSavedPreferences.current = newPreferences;
+  }, [user.onboarding?.preferences, user.timezone]);
 
   return (
     <div className="w-full space-y-6">

@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -123,17 +124,13 @@ const Composer: React.FC<MainSearchbarProps> = ({
   useImperativeHandle(
     fileUploadRef,
     () => ({
-      openFileUploadModal: () => {
-        setFileUploadModal(true);
-      },
+      openFileUploadModal: () => setFileUploadModal(true),
       handleDroppedFiles: (files: File[]) => {
         setPendingDroppedFiles(files);
       },
     }),
-    [],
-  );
-
-  // Process dropped files when the upload modal opens
+    [setFileUploadModal, setPendingDroppedFiles],
+  ); // Process dropped files when the upload modal opens
   useEffect(() => {
     if (fileUploadModal && pendingDroppedFiles.length > 0) {
       // We'll handle this in the FileUpload component
@@ -143,7 +140,12 @@ const Composer: React.FC<MainSearchbarProps> = ({
         onDroppedFilesProcessed();
       }
     }
-  }, [fileUploadModal, pendingDroppedFiles, onDroppedFilesProcessed]);
+  }, [
+    fileUploadModal,
+    pendingDroppedFiles,
+    onDroppedFilesProcessed,
+    setPendingDroppedFiles,
+  ]);
 
   // Process any droppedFiles passed from parent when they change
   useEffect(() => {
@@ -151,7 +153,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
       setPendingDroppedFiles(droppedFiles);
       setFileUploadModal(true);
     }
-  }, [droppedFiles]);
+  }, [droppedFiles, setPendingDroppedFiles, setFileUploadModal]);
 
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
@@ -247,7 +249,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     }, 100);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [setIsSlashCommandDropdownOpen]);
 
   const handleFilesUploaded = (files: UploadedFilePreview[]) => {
     if (files.length === 0) {
@@ -294,22 +296,25 @@ const Composer: React.FC<MainSearchbarProps> = ({
   };
 
   // Handle paste event for images
-  const handlePaste = (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
-          e.preventDefault();
-          // Open the file upload modal with the pasted image
-          setFileUploadModal(true);
-          setPendingDroppedFiles([file]); // Store the pasted file
-          break;
+  const handlePaste = useCallback(
+    (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            // Open the file upload modal with the pasted image
+            setFileUploadModal(true);
+            setPendingDroppedFiles([file]); // Store the pasted file
+            break;
+          }
         }
       }
-    }
-  };
+    },
+    [setFileUploadModal, setPendingDroppedFiles],
+  );
 
   // Add paste event listener for images
   useEffect(() => {
@@ -317,18 +322,20 @@ const Composer: React.FC<MainSearchbarProps> = ({
     return () => {
       document.removeEventListener("paste", handlePaste);
     };
-  }, []);
+  }, [handlePaste]);
 
   // Function to append text to the input
-  const appendToInput = (text: string) => {
-    const currentText = inputText;
-    const newText = currentText ? `${currentText} ${text}` : text;
-    setInputText(newText);
-    // Focus the input after appending
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
+  const appendToInput = useCallback(
+    (text: string) => {
+      const newText = inputText ? `${inputText} ${text}` : text;
+      setInputText(newText);
+      // Focus the input after appending
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    },
+    [inputText, setInputText, inputRef],
+  );
 
   // Expose appendToInput function to parent via ref
   useImperativeHandle(appendToInputRef, () => appendToInput, [appendToInput]);

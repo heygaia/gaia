@@ -266,23 +266,22 @@ const DayViewCalendar: React.FC<{ addedEvent: Event | null }> = ({
 
   // Effect to scroll to the new event when it's added
   useEffect(() => {
-    if (addedEvent && scrollContainerRef.current) {
-      const container = scrollContainerRef.current;
-      const eventStartMinutes = timeToMinutes(addedEvent.startTime);
+    if (!(addedEvent && scrollContainerRef.current)) return;
 
-      // Calculate the pixel position of the event from the top of the scrollable area
-      const eventTopPx =
-        (eventStartMinutes - DAY_START_MINUTES) * PX_PER_MINUTE;
+    const container = scrollContainerRef.current;
+    const eventStartMinutes = timeToMinutes(addedEvent.startTime);
 
-      // Desired scroll position: try to center the event or at least show its start
-      const desiredScrollTop = eventTopPx - HOUR_HEIGHT_PX * 2; // Position event 2 hours down from top
+    // Calculate the pixel position of the event from the top of the scrollable area
+    const eventTopPx = (eventStartMinutes - DAY_START_MINUTES) * PX_PER_MINUTE;
 
-      container.scrollTo({
-        top: Math.max(0, desiredScrollTop), // Ensure we don't scroll to a negative value
-        behavior: "smooth",
-      });
-    }
-  }, [addedEvent]);
+    // Desired scroll position: try to center the event or at least show its start
+    const desiredScrollTop = eventTopPx - HOUR_HEIGHT_PX * 2; // Position event 2 hours down from top
+
+    container.scrollTo({
+      top: Math.max(0, desiredScrollTop), // Ensure we don't scroll to a negative value
+      behavior: "smooth",
+    });
+  }, [addedEvent, DAY_START_MINUTES, PX_PER_MINUTE]);
 
   return (
     <motion.div

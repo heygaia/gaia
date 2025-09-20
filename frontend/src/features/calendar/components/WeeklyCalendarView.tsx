@@ -1,6 +1,12 @@
 "use client";
 
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import { CalendarGrid } from "@/features/calendar/components/CalendarGrid";
 import { CalendarHeader } from "@/features/calendar/components/CalendarHeader";
@@ -47,14 +53,14 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     return { start, end };
   };
 
-  // Get required chunks for the current extended date range
-  const getRequiredChunks = (dates: Date[]): string[] => {
+  // Get required chunks for the current extended date range - memoized to prevent infinite loops
+  const getRequiredChunks = useCallback((dates: Date[]): string[] => {
     const chunks = new Set<string>();
     dates.forEach((date) => {
       chunks.add(getChunkKey(date));
     });
     return Array.from(chunks);
-  };
+  }, []);
 
   const {
     events,
@@ -137,6 +143,7 @@ const WeeklyCalendarView: React.FC<WeeklyCalendarViewProps> = ({
     extendedDates,
     fetchedChunks,
     loadEvents,
+    getRequiredChunks,
   ]);
 
   // Reset fetched chunks when selected calendars change

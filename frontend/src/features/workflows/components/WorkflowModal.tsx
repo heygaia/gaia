@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import Image from "next/image";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { CheckmarkCircle02Icon } from "@/components/shared/icons";
@@ -221,7 +221,7 @@ export default function WorkflowModal({
     setFormData((prev) => ({ ...prev, ...updates }));
   };
 
-  const resetForm = () => {
+  const resetForm = useCallback(() => {
     setFormData({
       title: "",
       description: "",
@@ -237,7 +237,7 @@ export default function WorkflowModal({
     resetCreation();
     stopPolling();
     clearCreationError();
-  };
+  }, [resetCreation, stopPolling, clearCreationError]);
 
   const handleSave = async () => {
     if (!formData.title.trim() || !formData.description.trim()) return;
@@ -315,7 +315,7 @@ export default function WorkflowModal({
     }
   };
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     // Clear countdown interval if active
     if (countdownInterval) {
       clearInterval(countdownInterval);
@@ -324,7 +324,7 @@ export default function WorkflowModal({
     setCountdown(0);
     resetForm();
     onOpenChange(false);
-  };
+  }, [countdownInterval, resetForm, onOpenChange]);
 
   const handleDelete = async () => {
     if (mode === "edit" && existingWorkflow) {
@@ -490,7 +490,14 @@ export default function WorkflowModal({
       // This prevents showing error for temporary generation issues
       // The polling hook will stop after maxDuration (5 minutes) or maxAttempts (120)
     }
-  }, [currentWorkflow, creationPhase, stopPolling, mode]);
+  }, [
+    currentWorkflow,
+    creationPhase,
+    stopPolling,
+    mode,
+    handleClose,
+    onWorkflowListRefresh,
+  ]);
 
   // Handle polling timeout/completion for error states
   useEffect(() => {
@@ -516,7 +523,14 @@ export default function WorkflowModal({
         }, 3000);
       }
     }
-  }, [isPolling, creationPhase, currentWorkflow, mode]);
+  }, [
+    isPolling,
+    creationPhase,
+    currentWorkflow,
+    mode,
+    onWorkflowListRefresh,
+    handleClose,
+  ]);
 
   // Handle regeneration completion for edit mode
   useEffect(() => {
@@ -538,7 +552,7 @@ export default function WorkflowModal({
         stopPolling();
       }
     }
-  }, [currentWorkflow?.steps?.length, isRegeneratingSteps, stopPolling, mode]);
+  }, [currentWorkflow, isRegeneratingSteps, stopPolling, mode]);
 
   // Timeout mechanism for regeneration
   useEffect(() => {

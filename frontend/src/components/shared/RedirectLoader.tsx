@@ -16,7 +16,7 @@ export function RedirectLoader({ url, replace = false }: RedirectLoaderProps) {
   useEffect(() => {
     const navigator = replace ? router.replace : router.push;
     navigator(url);
-  }, [url, router]);
+  }, [url, router, replace]);
 
   return (
     <div className="inset-0 flex h-full flex-1 flex-col items-center justify-center bg-background">

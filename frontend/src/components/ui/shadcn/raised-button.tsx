@@ -36,10 +36,7 @@ export interface ButtonProps
 }
 
 const RaisedButton = React.forwardRef<HTMLButtonElement, ButtonProps>(
-  (
-    { className, variant, size, asChild = false, color, style = {}, ...props },
-    ref,
-  ) => {
+  ({ className, variant, size, color, style = {}, ...props }, ref) => {
     const Comp = "button";
 
     // Generate dynamic styles based on the color prop

@@ -8,7 +8,7 @@ interface UseScrollBehaviorReturn {
 }
 
 export const useScrollBehavior = (
-  hasMessages: boolean,
+  _hasMessages: boolean,
   messageId: string | null,
 ): UseScrollBehaviorReturn => {
   const scrollContainerRef = useRef<HTMLDivElement>(null);
@@ -28,12 +28,9 @@ export const useScrollBehavior = (
     // Simple scroll handler for new chat - no special logic needed
   }, []);
 
-  const handleScroll = useCallback(
-    (_event: React.UIEvent) => {
-      // Simple scroll handler for chat messages - no special logic needed
-    },
-    [hasMessages],
-  );
+  const handleScroll = useCallback((_event: React.UIEvent) => {
+    // Simple scroll handler for chat messages - no special logic needed
+  }, []);
 
   return {
     scrollContainerRef,

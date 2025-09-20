@@ -89,7 +89,7 @@ export default function TodoModal({
       project_id: initialProjectId,
       subtasks: [],
     };
-  }, [mode, todo?.id, initialProjectId]);
+  }, [mode, todo, initialProjectId]);
 
   const { formData, setFormData, loading, handleSubmit, updateField } =
     useModalForm<TodoCreate>({
@@ -140,7 +140,14 @@ export default function TodoModal({
         updateField("project_id", inboxProject.id);
       }
     }
-  }, [isOpen, mode, projects.length, updateField]); // Only run when modal opens
+  }, [
+    isOpen,
+    mode,
+    projects.length,
+    updateField,
+    formData.project_id,
+    projects,
+  ]); // Only run when modal opens
 
   // Reset form data when modal opens with todo (edit mode)
   useEffect(() => {

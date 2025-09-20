@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { toast } from "sonner";
 
 import { mailApi } from "@/features/mail/api/mailApi";
@@ -15,8 +15,8 @@ export const useFetchEmailById = (messageId: string | null) => {
 
   const { emails } = useInfiniteEmails();
 
-  // Fetch email by ID
-  const fetchEmailById = async () => {
+  // Fetch email by ID - wrapped in useCallback to prevent infinite loops
+  const fetchEmailById = useCallback(async () => {
     if (!messageId) return;
 
     // Check if the email is already loaded
@@ -37,12 +37,12 @@ export const useFetchEmailById = (messageId: string | null) => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [messageId, emails]);
 
   useEffect(() => {
     if (messageId) fetchEmailById();
     else setMail(null); // Clear email if no messageId
-  }, [messageId, emails, fetchEmailById]);
+  }, [messageId, fetchEmailById]);
 
   return {
     mail,

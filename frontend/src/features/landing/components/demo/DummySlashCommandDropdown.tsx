@@ -486,7 +486,7 @@ const DummySlashCommandDropdown: React.FC<DummySlashCommandDropdownProps> = ({
           {/* Tool List */}
           <div className="flex-1 overflow-y-auto">
             <div className="py-2">
-              {filteredTools.map((tool, index) => (
+              {filteredTools.map((tool) => (
                 <div
                   key={tool.name}
                   className="relative mx-2 mb-1 cursor-pointer rounded-xl border border-transparent transition-all duration-150 hover:border-zinc-600 hover:bg-white/5"
