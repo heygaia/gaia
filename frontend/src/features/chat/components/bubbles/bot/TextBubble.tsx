@@ -12,11 +12,6 @@ import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils"
 import EmailListCard from "@/features/mail/components/EmailListCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
-import {
-  renderArrayToolData,
-  renderToolData,
-} from "@/utils/toolDataNormalizer";
-
 import MarkdownRenderer from "../../interface/MarkdownRenderer";
 import { CalendarDeleteSection } from "./CalendarDeleteSection";
 import { CalendarEditSection } from "./CalendarEditSection";
@@ -30,6 +25,175 @@ import { GoalAction } from "./goals/types";
 import GoogleDocsSection from "./GoogleDocsSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
+import {
+  SearchResults,
+  DeepResearchResults,
+  WeatherData,
+  EmailThreadData,
+  DocumentData,
+  GoogleDocsData,
+  CodeData,
+  TodoToolData,
+  GoalDataMessageType,
+  EmailComposeData,
+  CalendarOptions,
+  CalendarDeleteOptions,
+  CalendarEditOptions,
+} from "@/types";
+import {
+  CalendarFetchData,
+  CalendarListFetchData,
+} from "@/types/features/calendarTypes";
+import { EmailFetchData } from "@/types/features/mailTypes";
+import { SupportTicketData } from "@/types/features/supportTypes";
+
+// Map of tool_name -> renderer function
+// This avoids scattering switch/case or if/else across the component
+const TOOL_RENDERERS: Record<
+  string,
+  (data: unknown, index: number) => React.ReactNode
+> = {
+  // Search
+  search_results: (data, index) => (
+    <SearchResultsTabs
+      key={`tool-search-${index}`}
+      search_results={data as SearchResults}
+    />
+  ),
+  deep_research_results: (data, index) => (
+    <DeepResearchResultsTabs
+      key={`tool-deep-search-${index}`}
+      deep_research_results={data as DeepResearchResults}
+    />
+  ),
+
+  // Weather
+  weather: (data, index) => (
+    <WeatherCard
+      key={`tool-weather-${index}`}
+      weatherData={data as WeatherData}
+    />
+  ),
+
+  // Email
+  email_thread: (data, index) => (
+    <EmailThreadCard
+      key={`tool-email-thread-${index}`}
+      emailThreadData={data as EmailThreadData}
+    />
+  ),
+  email_fetch: (data, index) => (
+    <EmailListCard
+      key={`tool-email-fetch-${index}`}
+      emails={(Array.isArray(data) ? data : [data]) as EmailFetchData[]}
+    />
+  ),
+  email_compose: (data, index) => (
+    <EmailComposeSection
+      key={`tool-email-compose-${index}`}
+      email_compose_data={
+        (Array.isArray(data) ? data : [data]) as EmailComposeData[]
+      }
+    />
+  ),
+
+  // Calendar
+  calendar: (data, index) => {
+    return (
+      <CalendarEventSection
+        key={`tool-cal-options-${index}`}
+        calendar_options={data as CalendarOptions[]}
+      />
+    );
+  },
+  calendar_delete: (data, index) => {
+    return (
+      <CalendarDeleteSection
+        key={`tool-cal-del-${index}`}
+        calendar_delete_options={data as CalendarDeleteOptions[]}
+      />
+    );
+  },
+  calendar_edit: (data, index) => {
+    return (
+      <CalendarEditSection
+        key={`tool-cal-edit-${index}`}
+        calendar_edit_options={data as CalendarEditOptions[]}
+      />
+    );
+  },
+  calendar_fetch: (data, index) => (
+    <CalendarListCard
+      key={`tool-cal-fetch-${index}`}
+      events={(Array.isArray(data) ? data : [data]) as CalendarFetchData[]}
+    />
+  ),
+  calendar_list_fetch: (data, index) => (
+    <CalendarListFetchCard
+      key={`tool-cal-list-${index}`}
+      calendars={
+        (Array.isArray(data) ? data : [data]) as CalendarListFetchData[]
+      }
+    />
+  ),
+
+  // Support ticket
+  support_ticket: (data, index) => (
+    <SupportTicketSection
+      key={`tool-support-${index}`}
+      support_ticket_data={data as SupportTicketData[]}
+    />
+  ),
+
+  // Documents & Code
+  document: (data, index) => (
+    <DocumentSection
+      key={`tool-doc-${index}`}
+      document_data={data as DocumentData}
+    />
+  ),
+  google_docs: (data, index) => (
+    <GoogleDocsSection
+      key={`tool-gdocs-${index}`}
+      google_docs_data={data as GoogleDocsData}
+    />
+  ),
+  code: (data, index) => (
+    <CodeExecutionSection
+      key={`tool-code-${index}`}
+      code_data={data as CodeData}
+    />
+  ),
+
+  todo: (data, index) => {
+    const t = data as TodoToolData;
+    return (
+      <TodoSection
+        key={`tool-todo-${index}`}
+        todos={t.todos}
+        projects={t.projects}
+        stats={t.stats}
+        action={t.action}
+        message={t.message}
+      />
+    );
+  },
+  goal: (data, index) => {
+    const g = data as GoalDataMessageType;
+    return (
+      <GoalSection
+        key={`tool-goal-${index}`}
+        goals={g.goals}
+        stats={g.stats}
+        action={g.action as GoalAction}
+        message={g.message}
+        goal_id={g.goal_id}
+        deleted_goal_id={g.deleted_goal_id}
+        error={g.error}
+      />
+    );
+  },
+};
 
 export default function TextBubble({
   text,
@@ -51,6 +215,7 @@ export default function TextBubble({
   deep_research_results,
   document_data,
   google_docs_data,
+  tool_data,
   isConvoSystemGenerated,
   systemPurpose,
   follow_up_actions,
@@ -58,25 +223,29 @@ export default function TextBubble({
 }: ChatBubbleBotProps) {
   return (
     <>
-      {/* Search Results - render all instances */}
-      {renderToolData(search_results, (result, index) => (
-        <SearchResultsTabs key={index} search_results={result} />
-      ))}
+      {!!search_results && (
+        <SearchResultsTabs search_results={search_results!} />
+      )}
 
-      {/* Deep Research Results - render all instances */}
-      {renderToolData(deep_research_results, (result, index) => (
-        <DeepResearchResultsTabs key={index} deep_research_results={result} />
-      ))}
+      {!!deep_research_results && (
+        <DeepResearchResultsTabs
+          deep_research_results={deep_research_results!}
+        />
+      )}
 
-      {/* Weather Data - render all instances */}
-      {renderToolData(weather_data, (data, index) => (
-        <WeatherCard key={index} weatherData={data} />
-      ))}
+      {!!weather_data && <WeatherCard weatherData={weather_data!} />}
 
-      {/* Email Thread Data - render all instances */}
-      {renderToolData(email_thread_data, (thread, index) => (
-        <EmailThreadCard key={index} emailThreadData={thread} />
-      ))}
+      {!!email_thread_data && (
+        <EmailThreadCard emailThreadData={email_thread_data} />
+      )}
+
+      {/* Unified tool_data rendering via registry */}
+      {tool_data &&
+        tool_data.map((entry, index) => {
+          const render = TOOL_RENDERERS[entry.tool_name];
+          if (!render) return null;
+          return <>{render(entry.data, index)}</>;
+        })}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) && (
         <div className="chat_bubble bg-zinc-800">
@@ -124,86 +293,71 @@ export default function TextBubble({
         </div>
       )}
 
-      {/* Calendar Options - handle array tool data */}
-      {renderArrayToolData(calendar_options, (options, index) => (
-        <CalendarEventSection key={index} calendar_options={options} />
-      ))}
+      {!!calendar_options && (
+        <CalendarEventSection calendar_options={calendar_options!} />
+      )}
 
-      {/* Calendar Delete Options - handle array tool data */}
-      {renderArrayToolData(calendar_delete_options, (options, index) => (
-        <CalendarDeleteSection key={index} calendar_delete_options={options} />
-      ))}
-
-      {/* Calendar Edit Options - handle array tool data */}
-      {renderArrayToolData(calendar_edit_options, (options, index) => (
-        <CalendarEditSection key={index} calendar_edit_options={options} />
-      ))}
-
-      {/* Email Compose Data - handle array tool data */}
-      {renderArrayToolData(email_compose_data, (data, index) => (
-        <EmailComposeSection key={index} email_compose_data={data} />
-      ))}
-
-      {/* Support Ticket Data - handle array tool data */}
-      {renderArrayToolData(support_ticket_data, (data, index) => (
-        <SupportTicketSection key={index} support_ticket_data={data} />
-      ))}
-
-      {/* Email Fetch Data - handle array tool data */}
-      {renderArrayToolData(email_fetch_data, (emails, index) => (
-        <EmailListCard key={index} emails={emails} />
-      ))}
-
-      {/* Calendar Fetch Data - handle array tool data */}
-      {renderArrayToolData(calendar_fetch_data, (events, index) => (
-        <CalendarListCard key={index} events={events} />
-      ))}
-
-      {/* Calendar List Fetch Data - handle array tool data */}
-      {renderArrayToolData(calendar_list_fetch_data, (calendars, index) => (
-        <CalendarListFetchCard key={index} calendars={calendars} />
-      ))}
-
-      {/* Todo Data - render all instances */}
-      {renderToolData(todo_data, (data, index) => (
-        <TodoSection
-          key={index}
-          todos={data.todos}
-          projects={data.projects}
-          stats={data.stats}
-          action={data.action}
-          message={data.message}
+      {!!calendar_delete_options && (
+        <CalendarDeleteSection
+          calendar_delete_options={calendar_delete_options!}
         />
-      ))}
+      )}
+
+      {!!calendar_edit_options && (
+        <CalendarEditSection calendar_edit_options={calendar_edit_options!} />
+      )}
+
+      {!!email_compose_data && (
+        <EmailComposeSection email_compose_data={email_compose_data!} />
+      )}
+
+      {!!support_ticket_data && (
+        <SupportTicketSection support_ticket_data={support_ticket_data!} />
+      )}
+
+      {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}
+
+      {!!calendar_fetch_data && (
+        <CalendarListCard events={calendar_fetch_data!} />
+      )}
+
+      {!!calendar_list_fetch_data && (
+        <CalendarListFetchCard calendars={calendar_list_fetch_data} />
+      )}
+
+      {!!todo_data && (
+        <TodoSection
+          todos={todo_data!.todos}
+          projects={todo_data!.projects}
+          stats={todo_data!.stats}
+          action={todo_data!.action}
+          message={todo_data!.message}
+        />
+      )}
 
       {/* Document Data - render all instances */}
-      {renderToolData(document_data, (data, index) => (
-        <DocumentSection key={index} document_data={data} />
-      ))}
+      {!!document_data && <DocumentSection document_data={document_data!} />}
 
       {/* Google Docs Data - render all instances */}
-      {renderToolData(google_docs_data, (data, index) => (
-        <GoogleDocsSection key={index} google_docs_data={data} />
-      ))}
+      {!!google_docs_data && (
+        <GoogleDocsSection google_docs_data={google_docs_data!} />
+      )}
 
       {/* Goal Data - render all instances */}
-      {renderToolData(goal_data, (data, index) => (
+      {!!goal_data && (
         <GoalSection
-          key={index}
-          goals={data.goals}
-          stats={data.stats}
-          action={data.action as GoalAction}
-          message={data.message}
-          goal_id={data.goal_id}
-          deleted_goal_id={data.deleted_goal_id}
-          error={data.error}
+          goals={goal_data!.goals}
+          stats={goal_data!.stats}
+          action={goal_data!.action as GoalAction}
+          message={goal_data!.message}
+          goal_id={goal_data!.goal_id}
+          deleted_goal_id={goal_data!.deleted_goal_id}
+          error={goal_data!.error}
         />
-      ))}
+      )}
 
       {/* Code Data - render all instances */}
-      {renderToolData(code_data, (data, index) => (
-        <CodeExecutionSection key={index} code_data={data} />
-      ))}
+      {!!code_data && <CodeExecutionSection code_data={code_data!} />}
 
       {!!follow_up_actions && follow_up_actions?.length > 0 && (
         <FollowUpActions actions={follow_up_actions} loading={!!loading} />

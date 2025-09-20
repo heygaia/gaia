@@ -1,19 +1,6 @@
 import { TOOLS_MESSAGE_KEYS } from "@/types/features/baseMessageRegistry";
 import { MessageType } from "@/types/features/convoTypes";
 
-/**
- * Parses stream data and accumulates tool data for multiple tool calls.
- *
- * ACCUMULATION STRATEGY:
- * - For tool data keys: Always accumulate as arrays to handle multiple calls
- * - For non-tool data: Direct replacement (response text, metadata, etc.)
- *
- * OPTIMIZATION: Since we always store tool data as arrays from the start,
- * we can safely use push() instead of spread operator for better performance.
- *
- * This ensures multiple tool calls create arrays: [data1, data2, data3]
- * and matches the backend accumulation behavior.
- */
 export function parseStreamData(
   streamChunk: Partial<MessageType>,
   existingBotMessage?: MessageType | null,
@@ -25,8 +12,17 @@ export function parseStreamData(
   // Dynamically copy all defined properties from streamChunk to result
   for (const [key, value] of Object.entries(streamChunk)) {
     if (value !== undefined) {
-      // Check if this is a tool data key that needs accumulation
-      if (
+      // Handle new unified toolData array
+      if (key === "tool_data") {
+        const existingToolData = existingBotMessage?.tool_data || [];
+        const newEntries = Array.isArray(value) ? value : [value];
+        (result as Record<string, unknown>)[key] = [
+          ...existingToolData,
+          ...newEntries,
+        ];
+      }
+      // Check if this is a legacy tool data key that needs accumulation
+      else if (
         TOOLS_MESSAGE_KEYS.includes(key as (typeof TOOLS_MESSAGE_KEYS)[number])
       ) {
         // Get existing data for this tool key

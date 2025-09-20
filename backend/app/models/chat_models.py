@@ -7,6 +7,7 @@ from app.models.message_models import FileData, SelectedWorkflowData
 from app.models.search_models import DeepResearchResults, SearchResults
 from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 
 class ImageData(BaseModel):
@@ -88,6 +89,14 @@ class SupportTicketData(BaseModel):
     user_email: Optional[str] = Field(None, description="Email of the user")
 
 
+class ToolDataEntry(TypedDict):
+    """Unified structure for tool execution data."""
+
+    tool_name: str
+    data: Union[dict, List, str, int, float, bool]
+    timestamp: Optional[str]
+
+
 class MessageModel(BaseModel):
     type: str
     response: str
@@ -104,37 +113,24 @@ class MessageModel(BaseModel):
     selectedTool: Optional[str] = None
     toolCategory: Optional[str] = None
     selectedWorkflow: Optional[SelectedWorkflowData] = None
-    calendar_options: Optional[
-        Union[List[EventCreateRequest], List[List[EventCreateRequest]]]
-    ] = None
-    search_results: Optional[Union[SearchResults, List[SearchResults]]] = None
-    deep_research_results: Optional[
-        Union[DeepResearchResults, List[DeepResearchResults]]
-    ] = None
-    weather_data: Optional[Union[WeatherData, List[WeatherData]]] = None
-    email_compose_data: Optional[
-        Union[List[EmailComposeRequest], List[List[EmailComposeRequest]]]
-    ] = None
-    email_fetch_data: Optional[
-        Union[List[EmailFetchData], List[List[EmailFetchData]]]
-    ] = None
-    email_thread_data: Optional[Union[EmailThreadData, List[EmailThreadData]]] = None
-    support_ticket_data: Optional[
-        Union[List[SupportTicketData], List[List[SupportTicketData]]]
-    ] = None
-    calendar_fetch_data: Optional[
-        Union[List[CalendarFetchData], List[List[CalendarFetchData]]]
-    ] = None
-    calendar_list_fetch_data: Optional[
-        Union[List[CalendarListFetchData], List[List[CalendarListFetchData]]]
-    ] = None
+    calendar_options: Optional[List[EventCreateRequest]] = None
+    search_results: Optional[SearchResults] = None
+    deep_research_results: Optional[DeepResearchResults] = None
+    weather_data: Optional[WeatherData] = None
+    email_compose_data: Optional[List[EmailComposeRequest]] = None
+    email_fetch_data: Optional[List[EmailFetchData]] = None
+    email_thread_data: Optional[EmailThreadData] = None
+    support_ticket_data: Optional[List[SupportTicketData]] = None
+    calendar_fetch_data: Optional[List[CalendarFetchData]] = None
+    calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
     memory_data: Optional[dict] = None
     todo_data: Optional[dict] = None
     document_data: Optional[dict] = None
     goal_data: Optional[dict] = None
     code_data: Optional[dict] = None
     google_docs_data: Optional[dict] = None
-    follow_up_actions: Optional[List[str]] = []
+    tool_data: Optional[List[ToolDataEntry]] = None
+    follow_up_actions: Optional[List[str]] = None
     integration_connection_required: Optional[IntegrationConnectionData] = None
 
 

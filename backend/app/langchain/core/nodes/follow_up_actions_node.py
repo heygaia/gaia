@@ -17,6 +17,7 @@ from app.langchain.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
 from langchain_core.messages import AIMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.prompts import PromptTemplate
+from langchain_core.runnables.config import RunnableConfig
 from langgraph.config import get_stream_writer
 from pydantic import BaseModel, Field
 
@@ -32,7 +33,7 @@ class FollowUpActions(BaseModel):
 llm = init_llm()
 
 
-async def follow_up_actions_node(state: Dict[str, Any]):
+async def follow_up_actions_node(state: Dict[str, Any], config: RunnableConfig):
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
@@ -76,7 +77,9 @@ async def follow_up_actions_node(state: Dict[str, Any]):
             partial_variables={"format_instructions": parser.get_format_instructions()},
         )
 
-        chain = (prompt | llm | parser).with_config({"run_name": "Follow-up actions"})
+        chain = (prompt | llm | parser).with_config(
+            {**config, "run_name": "Follow-up actions"}
+        )
         recent_messages = messages[-4:] if len(messages) > 4 else messages
 
         # THREADING SOLUTION TO PREVENT AUTO-STREAMING:
