@@ -163,7 +163,7 @@ const HighlightedText: React.FC<{
                 ease: "easeOut",
               }}
             />
-            <span className="relative">{part}</span>
+            <span className="relative text-white">{part}</span>
           </span>
         ) : (
           <span key={index}>{part}</span>
@@ -184,15 +184,12 @@ const UserMessage: React.FC<{
     animate={{ opacity: 1, y: 0, scale: 1 }}
     exit={{ opacity: 0, y: -20, scale: 0.95, transition: { duration: 0.3 } }}
     transition={{ type: "spring", stiffness: 400, damping: 40 }}
-    className="mb-4 flex items-start justify-end gap-3"
+    className="mb-4 flex items-start justify-end"
   >
-    <div className="max-w-md flex-1">
-      <div className="rounded-2xl rounded-tr-none bg-zinc-700 p-3 text-sm text-gray-200">
+    <div className="max-w-md">
+      <div className="rounded-3xl rounded-br-none bg-primary p-3 text-sm text-white">
         <HighlightedText text={text} keywords={keywords} stage={stage} />
       </div>
-    </div>
-    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-gray-600">
-      <User className="h-4 w-4 text-white" />
     </div>
   </motion.div>
 );
@@ -207,12 +204,9 @@ const GaiaMessage: React.FC<{
     animate={{ opacity: 1, y: 0, scale: 1 }}
     exit={{ opacity: 0, y: -20, scale: 0.95, transition: { duration: 0.3 } }}
     transition={{ type: "spring", stiffness: 400, damping: 40 }}
-    className="flex items-start gap-3"
+    className="flex items-start justify-start"
   >
-    <div className="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#01BBFF]">
-      <Zap className="h-4 w-4 text-white" />
-    </div>
-    <div className={`flex-1 ${isSuggestion ? "" : "max-w-md"}`}>{children}</div>
+    <div className={`${isSuggestion ? "" : "max-w-md"}`}>{children}</div>
   </motion.div>
 );
 
@@ -225,12 +219,12 @@ const CalendarEventDialog: React.FC<{ event: Event; onAdd: () => void }> = ({
     animate={{ opacity: 1, y: 0, scale: 1 }}
     exit={{ opacity: 0, y: -20, scale: 0.95 }}
     transition={{ duration: 0.5, ease: [0.22, 1, 0.36, 1] }}
-    className="flex w-full max-w-sm flex-col gap-1 rounded-2xl rounded-bl-none bg-zinc-800 p-3"
+    className="flex w-full max-w-sm flex-col gap-1 rounded-3xl rounded-bl-none bg-zinc-800 p-3"
   >
     <div className="mb-2 text-sm text-white">
       Ready to add this to your calendar?
     </div>
-    <div className="flex w-full flex-col gap-3 rounded-xl border border-zinc-700/50 bg-zinc-900/80 p-3">
+    <div className="flex w-full flex-col gap-3 rounded-xl bg-zinc-900/80 p-3">
       <div className="relative flex w-full flex-row gap-3">
         <div
           className="absolute inset-y-0 left-0 w-1 rounded-full"
@@ -272,36 +266,35 @@ const DayViewCalendar: React.FC<{ addedEvent: Event | null }> = ({
 
   // Effect to scroll to the new event when it's added
   useEffect(() => {
-    if (addedEvent && scrollContainerRef.current) {
-      const container = scrollContainerRef.current;
-      const eventStartMinutes = timeToMinutes(addedEvent.startTime);
+    if (!(addedEvent && scrollContainerRef.current)) return;
 
-      // Calculate the pixel position of the event from the top of the scrollable area
-      const eventTopPx =
-        (eventStartMinutes - DAY_START_MINUTES) * PX_PER_MINUTE;
+    const container = scrollContainerRef.current;
+    const eventStartMinutes = timeToMinutes(addedEvent.startTime);
 
-      // Desired scroll position: try to center the event or at least show its start
-      const desiredScrollTop = eventTopPx - HOUR_HEIGHT_PX * 2; // Position event 2 hours down from top
+    // Calculate the pixel position of the event from the top of the scrollable area
+    const eventTopPx = (eventStartMinutes - DAY_START_MINUTES) * PX_PER_MINUTE;
 
-      container.scrollTo({
-        top: Math.max(0, desiredScrollTop), // Ensure we don't scroll to a negative value
-        behavior: "smooth",
-      });
-    }
-  }, [addedEvent]);
+    // Desired scroll position: try to center the event or at least show its start
+    const desiredScrollTop = eventTopPx - HOUR_HEIGHT_PX * 2; // Position event 2 hours down from top
+
+    container.scrollTo({
+      top: Math.max(0, desiredScrollTop), // Ensure we don't scroll to a negative value
+      behavior: "smooth",
+    });
+  }, [addedEvent, DAY_START_MINUTES, PX_PER_MINUTE]);
 
   return (
     <motion.div
-      className="flex h-[550px] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-gray-200/50 bg-white shadow-2xl"
+      className="flex h-[550px] w-full max-w-lg flex-col overflow-hidden rounded-2xl bg-white shadow-2xl"
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
       transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
     >
-      <div className="shrink-0 border-b border-gray-200 bg-white px-4 py-3">
+      <div className="shrink-0 bg-white px-4 py-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-3">
             <Image
-              src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+              src="/images/icons/googlecalendar.webp"
               alt="Google Calendar"
               className="h-7 w-7"
               width={28}
@@ -342,10 +335,7 @@ const DayViewCalendar: React.FC<{ addedEvent: Event | null }> = ({
           </div>
           <div className="relative grid flex-1 grid-cols-1">
             {hours.map((hour) => (
-              <div
-                key={`line-${hour}`}
-                className="h-20 border-t border-gray-200"
-              ></div>
+              <div key={`line-${hour}`} className="h-20"></div>
             ))}
             <div className="absolute inset-0">
               <AnimatePresence>
@@ -548,7 +538,7 @@ function animationReducer(state: State, action: Action): State {
 }
 
 // --- MAIN DEMO COMPONENT ---
-const CalendarDemo: React.FC = () => {
+export const CalendarDemo: React.FC = () => {
   const { ref, inView } = useInView({ triggerOnce: true, threshold: 0.5 });
   const [state, dispatch] = useReducer(animationReducer, initialState);
   const timeoutRef = useRef<NodeJS.Timeout | null>(null);
@@ -614,7 +604,7 @@ const CalendarDemo: React.FC = () => {
       case "gaia_intro":
         return (
           <GaiaMessage key={message.id}>
-            <div className="rounded-2xl rounded-tl-none bg-zinc-800 p-3 text-sm text-white">
+            <div className="rounded-3xl rounded-bl-none bg-zinc-800 p-3 text-sm text-white">
               <p>{message.text}</p>
             </div>
           </GaiaMessage>
@@ -628,7 +618,7 @@ const CalendarDemo: React.FC = () => {
       case "gaia_completion":
         return (
           <GaiaMessage key={message.id}>
-            <div className="rounded-2xl rounded-tl-none border border-green-500/30 bg-green-600/20 p-3">
+            <div className="rounded-3xl rounded-bl-none bg-green-600/20 p-3">
               <p className="text-sm font-medium text-green-300">
                 {message.text}
               </p>
@@ -643,10 +633,8 @@ const CalendarDemo: React.FC = () => {
   return (
     <div
       ref={ref}
-      className="relative flex h-[700px] w-full max-w-7xl items-center justify-center overflow-hidden rounded-3xl border border-white/10 bg-gradient-to-br from-white/[0.02] to-transparent p-4 shadow-2xl shadow-black/40 backdrop-blur-2xl md:p-8"
+      className="relative flex h-[700px] w-full max-w-7xl items-center justify-center overflow-hidden rounded-3xl p-4 md:p-8"
     >
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_30%_40%,rgba(1,187,255,0.1),transparent_50%)]" />
-      <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_70%_60%,rgba(6,182,212,0.1),transparent_50%)]" />
       <StageIndicator stage={state.stage} />
       <div className="mt-12 grid h-full w-full grid-cols-1 items-center gap-8 lg:grid-cols-2">
         <div className="flex h-full flex-col justify-center">
@@ -682,9 +670,7 @@ const CalendarDemo: React.FC = () => {
 
 export default function Calendar() {
   return (
-    <div className="relative min-h-screen w-full overflow-x-hidden bg-[#09090b] bg-cover bg-fixed bg-no-repeat">
-      <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_left,_#0f0f0f,_#09090b)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
+    <div className="relative min-h-screen w-full overflow-x-hidden">
       <div className="relative z-10 container mx-auto flex min-h-screen max-w-7xl flex-col items-center justify-center gap-12 px-4 py-12 sm:py-16 md:gap-16 md:py-24">
         <LargeHeader
           headingText="Intelligent Calendar Management"

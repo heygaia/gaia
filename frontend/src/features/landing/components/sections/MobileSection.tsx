@@ -1,7 +1,6 @@
 import Image from "next/image";
 
 import { Call02Icon, ChatBotIcon, VoiceIcon } from "@/components/shared/icons";
-import Iphone15Pro from "@/components/ui/magic-ui/iphone-15-pro";
 import { Button } from "@/components/ui/shadcn/button";
 import { SectionHeading } from "@/features/landing/layouts/SectionHeader";
 
@@ -42,7 +41,10 @@ export default function MobileSection() {
           </div>
 
           <div className="relative z-1 flex justify-center gap-2 px-5 sm:justify-start sm:px-0">
-            <Button className="flex h-[60px] rounded-xl border-2 border-white/30 bg-black text-white">
+            <Button
+              className="flex h-[60px] rounded-xl border-2 border-white/30 bg-black text-white"
+              aria-label="Download GAIA from App Store - Coming Soon"
+            >
               <div className="flex flex-row items-center gap-4">
                 <Image
                   src="https://upload.wikimedia.org/wikipedia/commons/3/31/Apple_logo_white.svg"
@@ -62,7 +64,10 @@ export default function MobileSection() {
               </div>
             </Button>
 
-            <Button className="flex h-[60px] rounded-xl border-2 border-white/30 bg-black text-white">
+            <Button
+              className="flex h-[60px] rounded-xl border-2 border-white/30 bg-black text-white"
+              aria-label="Download GAIA from Google Play Store - Coming Soon"
+            >
               <div className="flex flex-row items-center gap-4">
                 <Image
                   src="https://upload.wikimedia.org/wikipedia/commons/2/2f/Google_Play_2022_icon.svg"
@@ -82,10 +87,10 @@ export default function MobileSection() {
             </Button>
           </div>
         </div>
-        <Iphone15Pro
+        {/* <Iphone15Pro
           className="relative z-2 h-fit px-5 sm:max-h-[70vh]"
           src="/landing/mobile_screenshot.webp"
-        />
+        /> */}
       </div>
     </div>
   );

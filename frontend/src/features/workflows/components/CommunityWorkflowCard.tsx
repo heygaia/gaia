@@ -62,7 +62,7 @@ export default function CommunityWorkflowCard({
     }
   };
 
-  const handleUpvoteImmediate = async () => {
+  const handleUpvoteImmediate = useCallback(async () => {
     if (isUpvoting) return;
 
     setIsUpvoting(true);
@@ -111,7 +111,12 @@ export default function CommunityWorkflowCard({
     } finally {
       setIsUpvoting(false);
     }
-  };
+  }, [
+    isUpvoting,
+    localWorkflow.is_upvoted,
+    localWorkflow.upvotes,
+    localWorkflow.id,
+  ]);
 
   const handleUpvote = useCallback(() => {
     // Prevent rapid clicks by checking if already processing
@@ -126,7 +131,7 @@ export default function CommunityWorkflowCard({
     debounceTimeoutRef.current = setTimeout(() => {
       handleUpvoteImmediate();
     }, 300); // 300ms debounce
-  }, [isUpvoting]);
+  }, [isUpvoting, handleUpvoteImmediate]);
 
   // Cleanup timeout on unmount
   useEffect(() => {

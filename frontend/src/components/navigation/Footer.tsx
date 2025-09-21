@@ -10,12 +10,12 @@ export default function Footer() {
   const isAuthenticated = user?.email;
 
   return (
-    <div className="relative z-[1] m-0! border-t-1 border-t-zinc-800 bg-gradient-to-t from-black to-zinc-950">
-      <div className="flex h-fit w-screen items-center justify-center p-5 sm:p-20 sm:pb-5">
+    <div className="relative z-[1] m-0! flex flex-col items-center gap-16 bg-gradient-to-b from-zinc-900 to-black p-5 outline-1 outline-zinc-800 sm:p-10 sm:pt-20 sm:pb-5">
+      <div className="flex h-fit w-screen items-center justify-center">
         <div className="grid w-full max-w-(--breakpoint-lg) grid-cols-2 gap-8 sm:grid-cols-5">
           <div className="flex h-full w-fit flex-col gap-1 text-foreground-600">
             <Image
-              src="/branding/logo.webp"
+              src="/images/logos/logo.webp"
               alt="GAIA Logo"
               width={40}
               height={40}
@@ -73,6 +73,7 @@ export default function Footer() {
         <iframe
           src="https://status.heygaia.io/badge?theme=dark"
           width="200"
+          title="GAIA API Status"
           height="40"
           scrolling="no"
           style={{ colorScheme: "normal" }}

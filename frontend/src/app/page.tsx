@@ -1,41 +1,49 @@
 "use client";
 
-import Image from "next/image";
-import { lazy, useEffect } from "react";
-
-import Calendar from "@/features/calendar/components/Calendar";
+import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
-import Integrations from "@/features/landing/components/sections/IntegrationsSection";
-import InternetSection from "@/features/landing/components/sections/InternetSection";
-import AdvancedConversation from "@/features/landing/components/sections/new/AdvancedConversation";
-import Description from "@/features/landing/components/sections/new/Description";
-import Goals from "@/features/landing/components/sections/new/Goals";
-import Mail from "@/features/landing/components/sections/new/Mail";
-import Proactive from "@/features/landing/components/sections/new/Proactive";
-import Todo from "@/features/landing/components/sections/new/Todo";
-
-// import Integrations from "@/features/landing/components/sections/IntegrationsSection";
+import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
+import { ReactLenis } from "lenis/react";
+import { lazy, Suspense, useEffect } from "react";
 import LandingLayout from "./(landing)/layout";
 
-// const DeepSearchSection = lazy(
-//   () => import("@/features/landing/components/sections/DeepSearchSection"),
-// );
-// const FeatureGridSection = lazy(
-//   () => import("@/components/landing/sections/FeatureGridSection"),
-// );
+// Hero video dialog is critical for LCP, so don't lazy load it
+
+const ChaoticWorkspaceSection = lazy(
+  () =>
+    import("@/features/landing/components/sections/ChaoticWorkspaceSection"),
+);
+
+const ToolsShowcaseSection = lazy(
+  () => import("@/features/landing/components/sections/ToolsShowcaseSection"),
+);
+
+const Productivity = lazy(
+  () => import("@/features/landing/components/sections/Productivity"),
+);
+const Tired = lazy(
+  () => import("@/features/landing/components/sections/TiredBoringAssistants"),
+);
+
+const Personalised = lazy(
+  () => import("@/features/landing/components/sections/Personalised"),
+);
+
+const FAQAccordion = lazy(() =>
+  import("@/features/pricing/components/FAQAccordion").then((module) => ({
+    default: module.FAQAccordion,
+  })),
+);
+
+const OpenSource = lazy(
+  () => import("@/features/landing/components/sections/OpenSource"),
+);
+const CommunitySection = lazy(
+  () => import("@/features/landing/components/sections/CommunitySection"),
+);
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
 );
-
-// const Goals = lazy(
-//   () => import("@/features/landing/components/sections/new/Goals"),
-// );
-// const InternetSection = lazy(
-//   () => import("@/features/landing/components/sections/InternetSection"),
-// );
-// const MobileSection = lazy(
-//   () => import("@/features/landing/components/sections/MobileSection"),
-// );
 
 export default function LandingPage() {
   useEffect(() => {
@@ -47,62 +55,53 @@ export default function LandingPage() {
   }, []);
 
   return (
-    <LandingLayout>
-      {/* <ReactLenis> */}
-      <div className="relative overflow-hidden">
-        {/* <div className="fixed inset-0 top-0 z-[-1] h-screen bg-[#000000] bg-linear-to-b" /> */}
+    <ReactLenis root>
+      <LandingLayout>
+        <div className="relative overflow-hidden">
+          <HeroSection />
+          <div className="relative z-10 mx-auto flex w-full items-center justify-center px-4 sm:px-6 lg:px-20">
+            <HeroVideoDialog
+              className="block w-full rounded-3xl"
+              animationStyle="from-center"
+              videoSrc="https://www.youtube.com/embed/K-ZbxMHxReM?si=U9Caazt9Ondagnr8"
+              // thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
+              thumbnailSrc="/images/hero.webp?q=80"
+              thumbnailAlt="Hero Section Video"
+            />
+          </div>
+          <div>
+            {/* Load first section immediately for above-the-fold content */}
+            <Suspense fallback={<SuspenseLoader />}>
+              <ChaoticWorkspaceSection />
+            </Suspense>
 
-        <HeroSection />
-        <div className="relative z-10 flex h-screen w-screen items-center justify-center p-20">
-          <Image
-            width={1920}
-            height={1080}
-            alt="Hero Image"
-            src={"/landing/hero2.webp"}
-            className="rounded-3xl"
-          />
-          {/* <HeroImage /> */}
+            {/* Defer all other sections to improve initial load performance */}
+            <Suspense fallback={<SuspenseLoader />}>
+              <ToolsShowcaseSection />
+              <Productivity />
+            </Suspense>
+
+            <Suspense fallback={<SuspenseLoader />}>
+              <Tired />
+              <Personalised />
+            </Suspense>
+
+            <Suspense fallback={<SuspenseLoader />}>
+              <FAQAccordion />
+              <OpenSource />
+            </Suspense>
+
+            <Suspense fallback={<SuspenseLoader />}>
+              <CommunitySection />
+              <FinalSection />
+            </Suspense>
+          </div>
         </div>
-        <div>
-          <Description />
-          {/* <Personalised /> */}
-          <Integrations />
-          <Proactive />
-          <Mail />
-          {/* <WorkflowAutomation /> */}
-          <Calendar />
-          <Todo />
-          <Goals />
-          <InternetSection />
-          <AdvancedConversation />
-          {/* TODO: Section for crazy automations, MCP, n8n, and reminders feature */}
 
-          {/*
-          <Suspense fallback={<SuspenseLoader />}>
-            <DeepSearchSection />
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
-            <MailSection />
-          </Suspense>
-
-          <Suspense fallback={<SuspenseLoader />}>
-            <FeatureGridSection />
-          </Suspense>
-
-           */}
-          {/* <MobileSection /> */}
-          <FinalSection />
-        </div>
-      </div>
-
-      {/* Product Hunt Badge - Fixed Bottom Right */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <a 
-          href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6" 
+        {/* Product Hunt Badge - Fixed Bottom Right */}
+        {/* <div className="fixed right-6 bottom-6 z-50">
+        <a
+          href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6"
           target="_blank"
           rel="noopener noreferrer"
           className="block transition-transform"
@@ -115,8 +114,8 @@ export default function LandingPage() {
             className="drop-shadow-lg"
           />
         </a>
-      </div>
-      {/* </ReactLenis> */}
-    </LandingLayout>
+      </div> */}
+      </LandingLayout>
+    </ReactLenis>
   );
 }

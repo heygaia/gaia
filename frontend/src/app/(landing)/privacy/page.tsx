@@ -9,7 +9,7 @@ export const metadata: Metadata = {
     description:
       "Review GAIA's Privacy Policy to learn how we collect, use, and protect your personal data while providing our AI assistant api.",
     url: "https://heygaia.io/privacy",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
     siteName: "GAIA - AI Personal Assistant",
     type: "website",
   },
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
     title: "Privacy Policy",
     description:
       "Review GAIA's Privacy Policy to learn how we collect, use, and protect your personal data while providing our AI assistant api.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   keywords: [
     "GAIA",

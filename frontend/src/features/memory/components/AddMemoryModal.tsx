@@ -1,6 +1,7 @@
 "use client";
 
-import { Button, Textarea } from "@heroui/react";
+import { Button } from "@heroui/button";
+import { Textarea } from "@heroui/input";
 import { X } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";

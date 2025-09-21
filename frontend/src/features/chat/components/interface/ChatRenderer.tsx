@@ -150,7 +150,7 @@ export default function ChatRenderer() {
               <div className="sticky bottom-0 min-w-[40px]">
                 <Image
                   alt="GAIA Logo"
-                  src={"/branding/logo.webp"}
+                  src={"/images/logos/logo.webp"}
                   width={30}
                   height={30}
                   className={`${isLoading && index == filteredMessages.length - 1 ? "animate-spin" : ""} relative transition duration-900`}

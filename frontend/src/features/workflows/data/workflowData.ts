@@ -16,19 +16,19 @@ export const triggerOptions: TriggerOption[] = [
   {
     id: "slack",
     name: "Slack",
-    icon: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
+    icon: "/images/icons/slack.svg",
     description: "Trigger when new messages arrive",
   },
   {
     id: "gmail",
     name: "Gmail",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
+    icon: "/images/icons/gmail.svg",
     description: "Trigger when new emails arrive",
   },
   {
     id: "calendar",
     name: "Google Calendar",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
+    icon: "/images/icons/googlecalendar.webp",
     description: "Trigger when new events are created",
   },
 ];
@@ -37,13 +37,13 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "notion",
     name: "Notion",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
+    icon: "/images/icons/notion.webp",
     category: "productivity",
   },
   {
     id: "google-docs",
     name: "Google Docs",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
+    icon: "/images/icons/google_docs.webp",
     category: "documents",
   },
   {
@@ -55,19 +55,19 @@ export const integrationOptions: IntegrationOption[] = [
   {
     id: "gmail",
     name: "Gmail",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
+    icon: "/images/icons/gmail.svg",
     category: "communication",
   },
   {
     id: "google-calendar",
     name: "Google Calendar",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
+    icon: "/images/icons/googlecalendar.webp",
     category: "productivity",
   },
   {
     id: "slack",
     name: "Slack",
-    icon: "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
+    icon: "/images/icons/slack.svg",
     category: "communication",
   },
 ];

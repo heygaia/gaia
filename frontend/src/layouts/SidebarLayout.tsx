@@ -70,7 +70,7 @@ export default function SidebarLayout({ children }: SidebarLayoutProps) {
             <Button className="group flex items-center gap-2 rounded-full bg-transparent px-2 hover:bg-foreground/10">
               <Image
                 alt="GAIA Logo"
-                src="/branding/logo.webp"
+                src="/images/logos/logo.webp"
                 width={23}
                 height={23}
               />

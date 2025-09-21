@@ -1,6 +1,6 @@
 import { Button } from "@heroui/button";
+import { ButtonGroup } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { ButtonGroup } from "@heroui/react";
 import { EditorContent } from "@tiptap/react";
 import { TagInput } from "emblor";
 import { AlertCircle, Check, ChevronDown } from "lucide-react";
@@ -26,8 +26,8 @@ import {
 } from "@/components/ui/shadcn/dropdown-menu";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { useEmailComposition } from "@/features/mail/hooks/useEmailComposition";
-import { MenuBar } from "@/features/notes/components/NotesMenuBar";
 
+// import { MenuBar } from "@/features/notes/components/NotesMenuBar";
 import { Button as ShadcnButton } from "../../../components/ui/shadcn/button";
 import { AiSearchModal } from "./AiSearchModal";
 
@@ -281,7 +281,7 @@ export default function MailCompose({ open, onOpenChange }: MailComposeProps) {
 
               {editor && (
                 <>
-                  <MenuBar editor={editor} textLength={false} isEmail={true} />
+                  {/* <MenuBar editor={editor} textLength={false} isEmail={true} /> */}
                   <EditorContent className="bg-zinc-800 p-2" editor={editor} />
                 </>
               )}
@@ -301,10 +301,10 @@ export default function MailCompose({ open, onOpenChange }: MailComposeProps) {
                 startContent={
                   <Image
                     alt="GAIA Logo"
-                    src={"/branding/logo.webp"}
+                    src={"/images/logos/logo.webp"}
                     width={25}
                     height={25}
-                    className={`bobbing ml-2`}
+                    className={`ml-2`}
                   />
                 }
                 endContent={

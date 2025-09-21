@@ -38,7 +38,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
+          src="/images/icons/gmail.svg"
         />
       );
     case "calendar":
@@ -47,7 +47,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+          src="/images/icons/googlecalendar.webp"
         />
       );
     case "productivity":
@@ -71,7 +71,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png"
+          src="/images/icons/google_docs.webp"
         />
       );
     case "development":
@@ -126,7 +126,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+          src="/images/icons/notion.webp"
         />
       );
     case "webpage":

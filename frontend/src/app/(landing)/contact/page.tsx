@@ -10,7 +10,7 @@ export const metadata: Metadata = {
     description:
       "Need help with GAIA? Contact our support team for assistance and inquiries.",
     url: "https://heygaia.io/contact",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
     siteName: "GAIA - Your Personal Assistant",
     type: "website",
   },
@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     title: "Contact Us",
     description:
       "Need help with GAIA? Contact our support team for assistance and inquiries.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
 };
 

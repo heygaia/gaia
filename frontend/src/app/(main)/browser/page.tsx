@@ -367,12 +367,12 @@ const BrowserAutomationChat = () => {
               <div className="flex h-full flex-1 flex-col items-center justify-center rounded-3xl text-zinc-500">
                 {/* <AiBrowserIcon className="mb-3 h-12 w-12 text-zinc-600" /> */}
 
-                <Image
+                {/* <Image
                   alt="Automate Browser Infographic"
                   src={"/media/automate_browser.webp"}
                   width={450}
                   height={400}
-                />
+                /> */}
 
                 <Button
                   disabled={isConnecting}
@@ -417,7 +417,7 @@ const BrowserAutomationChat = () => {
                       <div className="flex items-end gap-2">
                         <Image
                           alt="GAIA Logo"
-                          src={"/branding/logo.webp"}
+                          src={"/images/logos/logo.webp"}
                           width={30}
                           height={30}
                         />

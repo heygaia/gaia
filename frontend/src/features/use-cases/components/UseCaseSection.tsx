@@ -1,8 +1,8 @@
 import { Chip } from "@heroui/chip";
-import { AnimatePresence,motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useEffect,useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import {
@@ -24,8 +24,8 @@ export default function UseCaseSection({
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { workflows, isLoading: isLoadingWorkflows } = useWorkflows();
 
-  // Find scroll container
-  const getScrollContainer = () => {
+  // Find scroll container - memoized to prevent effect re-runs
+  const getScrollContainer = useCallback(() => {
     let current = dummySectionRef.current?.parentElement;
     while (current) {
       const styles = window.getComputedStyle(current);
@@ -35,7 +35,7 @@ export default function UseCaseSection({
       current = current.parentElement;
     }
     return null;
-  };
+  }, [dummySectionRef]);
 
   // Simple GSAP ScrollTrigger
   useEffect(() => {
@@ -66,7 +66,7 @@ export default function UseCaseSection({
     });
 
     return () => trigger.kill();
-  }, [selectedCategory]);
+  }, [selectedCategory, dummySectionRef, getScrollContainer]);
 
   const allCategories = [
     "all",

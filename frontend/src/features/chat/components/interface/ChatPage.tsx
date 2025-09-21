@@ -81,7 +81,7 @@ const ChatPage = React.memo(function MainChat() {
       appendToInputRef.current(pendingPrompt);
       clearPendingPrompt();
     }
-  }, [pendingPrompt, clearPendingPrompt]);
+  }, [pendingPrompt, clearPendingPrompt, appendToInputRef]);
 
   // Common composer props
   const composerProps = {

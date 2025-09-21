@@ -8,18 +8,18 @@ const LargeHeader = ({
   headingText,
   subHeadingText,
 }: {
-  chipText: string;
+  chipText?: string;
   headingText: string;
   subHeadingText: string;
 }) => (
   <div className="mb-16 text-center">
-    <SectionChip text={chipText} />
+    {chipText && <SectionChip text={chipText} />}
 
     <h2 className="mb-6 bg-gradient-to-r from-white via-white to-gray-400 bg-clip-text text-4xl leading-tight font-medium text-transparent md:text-5xl lg:text-6xl">
       {headingText}
     </h2>
 
-    <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-400 md:text-2xl">
+    <p className="mx-auto max-w-2xl text-xl leading-relaxed text-gray-300 md:text-2xl">
       {subHeadingText}
     </p>
   </div>
@@ -56,15 +56,16 @@ const IntegrationCard = ({
   return (
     <div
       ref={cardRef}
-      className={`group relative flex aspect-square items-center justify-center rounded-2xl border border-white/10 bg-gradient-to-br from-white/5 to-white/[0.02] shadow-lg backdrop-blur-sm transition-all duration-500 ease-out hover:border-[#01BBFF]/20 hover:shadow-xl hover:shadow-[#01BBFF]/5 ${isLarge ? "w-28" : "w-24"} ${isBlurred ? "scale-90 opacity-40" : "scale-100 opacity-100"} ${isVisible ? "translate-y-0" : "translate-y-4"} ${className} `}
+      className={`group relative flex aspect-square items-center justify-center rounded-3xl border border-white/10 bg-zinc-900 shadow-lg backdrop-blur-sm transition-all duration-500 ease-out hover:border-[#01BBFF]/20 hover:shadow-xl hover:shadow-[#01BBFF]/5 ${isLarge ? "w-28" : "w-24"} ${isBlurred ? "scale-90 opacity-40" : "scale-100 opacity-100"} ${isVisible ? "translate-y-0" : "translate-y-4"} ${className} `}
     >
       {image ? (
         <Image
           src={image}
           alt={alt}
-          className={`${isLarge ? "h-16 w-16" : "h-12 w-12"} object-contain transition-all duration-300 group-hover:scale-110`}
           width={isLarge ? 64 : 48}
           height={isLarge ? 64 : 48}
+          className={`object-contain transition-all duration-300 group-hover:scale-110`}
+          sizes={isLarge ? "64px" : "48px"}
         />
       ) : (
         <div className="h-8 w-8 animate-pulse rounded-lg bg-white/10" />
@@ -80,24 +81,20 @@ const integrations = [
   // First row - 4 items
   [
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png",
+      image: "/images/icons/google_docs.webp",
       alt: "Google Docs",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/ae/Google_Sheets_2020_Logo.svg/640px-Google_Sheets_2020_Logo.svg.png",
+      image: "/images/icons/google_sheets.webp",
       alt: "Google Sheets",
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/1/16/Google_Slides_2020_Logo.svg/640px-Google_Slides_2020_Logo.svg.png",
+      image: "/images/icons/google_sides.webp",
       alt: "Google Slides",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/figma/figma-original.svg",
+      image: "/images/icons/figma.svg",
       alt: "Figma",
       isBlurred: true,
     },
@@ -105,30 +102,25 @@ const integrations = [
   // Second row - 5 items (Main productivity tools with Notion center)
   [
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/trello/trello-plain.svg",
+      image: "/images/icons/trello.svg",
       alt: "Trello",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png",
+      image: "/images/icons/googlecalendar.webp",
       alt: "Google Calendar",
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png",
+      image: "/images/icons/notion.webp",
       alt: "Notion",
       isLarge: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg",
+      image: "/images/icons/gmail.svg",
       alt: "Gmail",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon@latest/icons/linkedin/linkedin-original.svg",
+      image: "/images/icons/linkedin.svg",
       alt: "LinkedIn",
       isBlurred: true,
     },
@@ -136,24 +128,20 @@ const integrations = [
   // Third row - 4 items
   [
     {
-      image:
-        "https://cdn.brandfetch.io/idZAyF9rlg/theme/light/symbol.svg?c=1dxbfHSJFAPEGdCLU4o5B",
+      image: "/images/icons/github3d.webp",
       alt: "GitHub",
       isBlurred: true,
     },
     {
-      image:
-        "https://upload.wikimedia.org/wikipedia/commons/thumb/6/6b/WhatsApp.svg/1024px-WhatsApp.svg.png?20220228223904",
+      image: "/images/icons/whatsapp.webp",
       alt: "WhatsApp",
     },
     {
-      image:
-        "https://cdn.jsdelivr.net/gh/devicons/devicon/icons/slack/slack-original.svg",
+      image: "/images/icons/slack.svg",
       alt: "Slack",
     },
     {
-      image:
-        "https://cdn.creazilla.com/icons/3254448/todoist-icon-icon-original.svg",
+      image: "/images/icons/todoist.svg",
       alt: "Todoist",
       isBlurred: true,
     },
@@ -182,17 +170,9 @@ export default function IntegrationsSection() {
   }, []);
 
   return (
-    <section
-      ref={sectionRef}
-      className="relative min-h-screen overflow-hidden bg-[radial-gradient(ellipse_at_top_left,_#0f0f0f,_#09090b)] bg-cover bg-fixed bg-no-repeat"
-    >
-      {/* Background effects */}
-      <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_50%,rgba(1,187,255,0.03),transparent_50%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(to_right,#80808008_1px,transparent_1px),linear-gradient(to_bottom,#80808008_1px,transparent_1px)] bg-[size:32px_32px]" />
-
+    <section ref={sectionRef} className="relative min-h-screen overflow-hidden">
       <div className="relative z-10 container mx-auto max-w-7xl px-4 py-20">
         <LargeHeader
-          chipText="Coming Soon"
           headingText="All Your Tools, One Assistant"
           subHeadingText="GAIA plugs into your digital world — so it can actually do things, not just talk."
         />
@@ -202,7 +182,7 @@ export default function IntegrationsSection() {
           {integrations.map((row, rowIndex) => (
             <div
               key={rowIndex}
-              className="flex items-center justify-center gap-4"
+              className="flex items-center justify-center gap-3"
             >
               {row.map((integration, cardIndex) => (
                 <IntegrationCard
