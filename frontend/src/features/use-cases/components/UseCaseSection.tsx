@@ -1,8 +1,8 @@
 import { Chip } from "@heroui/chip";
-import { AnimatePresence,motion } from "framer-motion";
+import { AnimatePresence, motion } from "framer-motion";
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
-import { useEffect,useState } from "react";
+import { useEffect, useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import {
@@ -18,8 +18,10 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function UseCaseSection({
   dummySectionRef,
+  hideUserWorkflows = false,
 }: {
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
+  hideUserWorkflows?: boolean;
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { workflows, isLoading: isLoadingWorkflows } = useWorkflows();
@@ -80,6 +82,8 @@ export default function UseCaseSection({
     "Business & Ops",
   ];
 
+  if (hideUserWorkflows) allCategories.splice(2, 1);
+
   const filteredUseCases =
     selectedCategory === null
       ? []
@@ -134,7 +138,7 @@ export default function UseCaseSection({
   }, []);
 
   return (
-    <div className="w-full max-w-7xl px-4 pt-10" ref={dummySectionRef}>
+    <div className="w-full max-w-7xl" ref={dummySectionRef}>
       <div className="mb-6 flex flex-wrap justify-center gap-2">
         {allCategories.map((category) => (
           <Chip

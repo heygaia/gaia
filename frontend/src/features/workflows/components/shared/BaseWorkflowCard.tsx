@@ -108,7 +108,7 @@ export default function BaseWorkflowCard({
 
   return (
     <div
-      className={`group relative flex min-h-[120px] w-full flex-col gap-3 rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-4 transition-all select-none ${
+      className={`group relative flex min-h-[200px] w-full flex-col gap-3 rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-4 transition-all select-none ${
         onClick ? "cursor-pointer hover:scale-105 hover:border-zinc-600" : ""
       }`}
       onClick={onClick}
