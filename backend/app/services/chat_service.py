@@ -77,6 +77,7 @@ async def chat_stream(
                             "tool_name": key,
                             "data": value,
                             "timestamp": current_time,
+                            "tool_category": None,  # Added to satisfy TypedDict requirement
                         }
                         tool_data["tool_data"].append(tool_data_entry)
 
