@@ -8,6 +8,7 @@ from aiolimiter import AsyncLimiter
 
 from app.config.loggers import worker_logger as logger
 from app.config.settings import settings
+from app.langchain.llm.client import register_llm_providers
 from app.utils.session_logger.email_session_logger import create_session, end_session
 
 # TODO: Analyze the rate limit and adjust based on actual LLM performance
@@ -106,6 +107,8 @@ async def start_worker():
     channel = await connection.channel()
     await channel.set_qos(prefetch_count=10)
 
+    register_llm_providers()
+
     # Set up Composio email processing queue
     composio_email_queue = await channel.declare_queue(
         "composio-email-events", durable=True
@@ -118,7 +121,7 @@ async def start_worker():
 
     # Build the processing graph
     async with build_mail_processing_graph() as built_graph:
-        await GraphManager.set_graph(built_graph, graph_name="mail_processing")
+        GraphManager.set_graph(built_graph, graph_name="mail_processing")
 
     logger.info("Worker started on queues: composio-email-events, workflow-generation")
 

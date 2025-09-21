@@ -2,13 +2,12 @@
 
 from typing import List
 
-from langchain_core.output_parsers import PydanticOutputParser
-from pydantic import BaseModel, Field
-
 from app.config.loggers import general_logger as logger
 from app.langchain.llm.client import init_llm
 from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
 from app.models.workflow_models import WorkflowStep
+from langchain_core.output_parsers import PydanticOutputParser
+from pydantic import BaseModel, Field
 
 
 class WorkflowPlan(BaseModel):
@@ -47,7 +46,7 @@ class WorkflowGenerationService:
                 tools_with_categories.append(f"Always Available: {tool_name}")
 
             # Initialize LLM
-            llm = init_llm(streaming=False)
+            llm = init_llm()
 
             # Create chain using the template
             chain = WORKFLOW_GENERATION_TEMPLATE | llm | parser

@@ -24,8 +24,6 @@ from langgraph.graph import StateGraph
 from langgraph.types import RetryPolicy
 from typing_extensions import TypedDict
 
-llm = init_llm()
-
 # Create output parsers for structured responses
 email_plan_parser = PydanticOutputParser(pydantic_object=EmailProcessingPlan)
 email_replan_parser = PydanticOutputParser(pydantic_object=EmailProcessingReplanResult)
@@ -57,6 +55,8 @@ async def build_mail_processing_graph():
     - Ability to revise the plan based on intermediate results
     """
     store = get_tools_store()
+
+    llm = init_llm()
 
     # Create agent for tool execution
     agent_executor = create_agent(

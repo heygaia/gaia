@@ -36,7 +36,7 @@ class ChromaClient:
         """
         # Get the client from the lazy provider
         try:
-            client = providers.get("chromadb_client")
+            client = await providers.aget("chromadb_client")
             if client is None:
                 raise RuntimeError("ChromaDB client could not be initialized")
             return client
@@ -68,11 +68,11 @@ class ChromaClient:
         """
         # Ensure we have the embedding function
         if embedding_function is None:
-            embedding_function = providers.get("gemini_embedding_model")
+            embedding_function = await providers.aget("gemini_embedding_model")
 
         # If no collection name provided, return the default client
         if not collection_name:
-            default_client = providers.get("langchain_chroma")
+            default_client = await providers.aget("langchain_chroma")
             if default_client is None:
                 raise RuntimeError("Default Langchain Chroma client not initialized")
             return default_client
@@ -84,7 +84,7 @@ class ChromaClient:
         existing = providers.is_initialized(provider_name)
 
         if existing:
-            instance = providers.get(provider_name)
+            instance = await providers.aget(provider_name)
             if instance is None:
                 raise RuntimeError(
                     f"Failed to retrieve existing Langchain client for collection '{collection_name}'"
@@ -92,11 +92,11 @@ class ChromaClient:
             return instance  # type: ignore
 
         # Dynamically register a provider for this collection and auto-initialize it
-        def _loader() -> Chroma:
+        async def _loader() -> Chroma:
             logger.debug(
                 f"Creating Langchain client for collection '{collection_name}' via provider '{provider_name}'"
             )
-            constructor_client = providers.get("chromadb_constructor")
+            constructor_client = await providers.aget("chromadb_constructor")
             if not constructor_client:
                 raise RuntimeError("ChromaDB constructor client not initialized")
 
@@ -129,13 +129,12 @@ class ChromaClient:
             auto_initialize=True,
         )
 
-        instance = providers.get(provider_name)
+        instance = await providers.aget(provider_name)
         if instance is None:
             raise RuntimeError(
                 f"Failed to create Langchain client for collection '{collection_name}'"
             )
         return instance
-
 
 
 @lazy_provider(
@@ -165,7 +164,7 @@ def langchain_embedding_model():
         settings.CHROMADB_PORT,
     ],
     auto_initialize=False,
-    strategy=MissingKeyStrategy.ERROR,
+    strategy=MissingKeyStrategy.WARN,
 )
 async def init_chromadb_client():
     """
@@ -213,7 +212,7 @@ async def init_chromadb_client():
         settings.CHROMADB_PORT,
     ],
     auto_initialize=False,
-    strategy=MissingKeyStrategy.ERROR,
+    strategy=MissingKeyStrategy.WARN,
 )
 def init_chromadb_constructor():
     """
@@ -247,7 +246,7 @@ def init_chromadb_constructor():
         settings.CHROMADB_PORT,
     ],
     auto_initialize=False,
-    strategy=MissingKeyStrategy.ERROR,
+    strategy=MissingKeyStrategy.WARN,
 )
 def init_langchain_chroma():
     """
@@ -272,7 +271,7 @@ def init_langchain_chroma():
     return langchain_chroma_client
 
 
-async def init_chroma(app=None):
+def init_chroma():
     """
     Backward compatibility function to initialize ChromaDB client and store in app state.
     This is mainly for compatibility with existing code that calls init_chroma explicitly.
