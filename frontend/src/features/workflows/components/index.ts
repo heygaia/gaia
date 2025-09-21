@@ -6,6 +6,7 @@ export { default as WorkflowModal } from "./WorkflowModal";
 export { default as WorkflowPage } from "./WorkflowPage";
 
 // Shared workflow components
+export { default as BaseWorkflowCard } from "./shared/BaseWorkflowCard";
 export { default as WorkflowEmptyState } from "./shared/WorkflowEmptyState";
 export { default as WorkflowHeader } from "./shared/WorkflowHeader";
 export { default as WorkflowLoadingState } from "./shared/WorkflowLoadingState";

@@ -70,7 +70,7 @@ export default function UseCasesPage() {
 
   return (
     <div className="min-h-screen">
-      <div className="container mx-auto px-6 pt-24 pb-8">
+      <div className="container mx-auto px-6 pt-30 pb-8">
         <div className="mb-8 text-center">
           <h1 className="mb-4 text-5xl font-bold">Use Cases</h1>
           <p className="mx-auto max-w-3xl text-xl text-foreground-500">
