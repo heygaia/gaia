@@ -126,6 +126,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
       }
     }, 200); // Small delay to allow message to render
   }, [
+    inputRef,
     selectedWorkflow,
     autoSend,
     clearSelectedWorkflow,
@@ -371,7 +372,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
         hasMessages={hasMessages}
         onToggleSlashCommand={handleToggleSlashCommandDropdown}
       />
-      <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pb-2 pt-1">
+      <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pt-1 pb-2">
         <FilePreview files={uploadedFiles} onRemove={removeUploadedFile} />
         <SelectedToolIndicator
           toolName={selectedTool}

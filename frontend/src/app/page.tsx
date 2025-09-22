@@ -1,10 +1,12 @@
 "use client";
 
-import SuspenseLoader from "@/components/shared/SuspenseLoader";
-import HeroSection from "@/features/landing/components/hero/HeroSection";
-import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
 import { ReactLenis } from "lenis/react";
 import { lazy, Suspense, useEffect } from "react";
+
+import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
+import SuspenseLoader from "@/components/shared/SuspenseLoader";
+import HeroSection from "@/features/landing/components/hero/HeroSection";
+
 import LandingLayout from "./(landing)/layout";
 
 // Hero video dialog is critical for LCP, so don't lazy load it
