@@ -5,8 +5,23 @@ Contains all workflow-related background tasks and execution logic.
 
 from datetime import datetime, timezone
 from typing import Optional, Tuple
+from uuid import uuid4
+from zoneinfo import ZoneInfo
 
 from app.config.loggers import arq_worker_logger as logger
+from app.config.token_repository import token_repository
+from app.langchain.core.agent import call_agent_silent
+from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.models.chat_models import MessageModel
+from app.models.message_models import (
+    MessageRequestWithHistory,
+    SelectedWorkflowData,
+)
+from app.services.model_service import get_user_selected_model
+from app.services.user_service import get_user_by_id
+from app.services.workflow.conversation_service import (
+    get_or_create_workflow_conversation,
+)
 from bson import ObjectId
 
 
@@ -26,8 +41,6 @@ async def get_user_authentication_tokens(
         Tuple of (access_token, refresh_token) or (None, None) if not available
     """
     try:
-        from app.config.token_repository import token_repository
-
         token = await token_repository.get_token(
             str(user_id), "google", renew_if_expired=True
         )
@@ -170,7 +183,7 @@ async def execute_workflow_by_id(
 
             # Execute the workflow and get messages
             execution_messages = await execute_workflow_as_chat(
-                workflow, workflow.user_id, context or {}
+                workflow, {"user_id": workflow.user_id}, context or {}
             )
 
             # Store messages and send notification
@@ -189,25 +202,22 @@ async def execute_workflow_by_id(
         return error_msg
 
 
-async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> list:
+@tiered_rate_limit("email_workflow_executions")
+async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
     """
     Execute workflow as a single chat session, just like normal user chat.
     This creates proper tool calls and messages identical to normal chat flow.
 
     Args:
         workflow: The workflow object to execute
-        user_id: User ID for context
+        user: User dict containing user_id (for rate limiting compatibility)
         context: Optional execution context
 
     Returns:
         List of MessageModel objects from the execution
     """
-    from uuid import uuid4
-
-    from app.models.chat_models import MessageModel
-    from app.services.workflow_conversation_service import (
-        get_or_create_workflow_conversation,
-    )
+    # Extract user_id from user dict for backward compatibility
+    user_id = user["user_id"]
 
     try:
         logger.info(
@@ -226,24 +236,28 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
                 f"Access token available for user {user_id} - tools can authenticate"
             )
 
-        # Get user information for tools that may need it (e.g., email tools)
-        user_obj: dict = {"user_id": user_id}
+        # Get user data and create timezone-aware datetime
         try:
-            from app.services.user_service import get_user_by_id
-
             user_data = await get_user_by_id(user_id)
             if user_data:
-                if user_data.get("email"):
-                    user_obj["email"] = str(user_data.get("email"))
-                if user_data.get("name"):
-                    user_obj["name"] = str(user_data.get("name"))
-                user_obj["user_id"] = user_id
-                logger.info(
-                    f"Enhanced user object for workflow execution: email={bool(user_obj.get('email'))}, name={bool(user_obj.get('name'))}"
-                )
+                user_data["user_id"] = user_id  # Ensure user_id is present
+                user_tz = ZoneInfo(user_data.get("timezone", "UTC"))
+            else:
+                user_data = {"user_id": user_id}
+                user_tz = ZoneInfo("UTC")
+            user_time = datetime.now(user_tz)
         except Exception as e:
             logger.warning(f"Could not get user data for {user_id}: {e}")
-            # Continue with minimal user object
+            user_data = {"user_id": user_id}
+            user_time = datetime.now(timezone.utc)
+
+        user_model_config = None
+        try:
+            user_model_config = await get_user_selected_model(user_id)
+        except Exception as e:
+            logger.warning(
+                f"Could not get user's selected model for workflow, using default: {e}"
+            )
 
         # Get or create the workflow conversation for thread context
         conversation = await get_or_create_workflow_conversation(
@@ -251,13 +265,6 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
             user_id=user_id,
             workflow_title=workflow.title,
         )
-
-        # Convert workflow to SelectedWorkflowData format for proper handling
-        from app.models.message_models import (
-            SelectedWorkflowData,
-            MessageRequestWithHistory,
-        )
-        from app.langchain.core.agent import call_agent_silent
 
         # Convert workflow steps to the format expected by SelectedWorkflowData
         workflow_steps = []
@@ -293,10 +300,12 @@ async def execute_workflow_as_chat(workflow, user_id: str, context: dict) -> lis
         complete_message, tool_data = await call_agent_silent(
             request=request,
             conversation_id=conversation["conversation_id"],
-            user=user_obj,
-            user_time=datetime.now(timezone.utc),
+            user=user_data,
+            user_time=user_time,
             access_token=access_token,
             refresh_token=refresh_token,
+            user_model_config=user_model_config,
+            trigger_context=context,
         )
 
         # Create execution messages with proper tool data
@@ -455,7 +464,7 @@ async def create_workflow_completion_notification(
             RedirectConfig,
         )
         from app.services.notification_service import notification_service
-        from app.services.workflow_conversation_service import (
+        from app.services.workflow.conversation_service import (
             add_workflow_execution_messages,
             get_or_create_workflow_conversation,
         )

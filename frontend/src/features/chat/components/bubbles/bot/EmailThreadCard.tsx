@@ -33,11 +33,19 @@ function formatTime(time: string | null): string {
   }
 }
 
-function EmailBodyRenderer({ body }: { body: string }) {
+function EmailBodyRenderer({
+  body,
+  content,
+}: {
+  body: string;
+  content?: { text: string; html: string };
+}) {
   const [loading, setLoading] = useState(true);
   const shadowHostRef = useRef<HTMLDivElement | null>(null);
 
-  const sanitizedHtml = DOMPurify.sanitize(body, {
+  const htmlContent = content?.html || content?.text || body;
+
+  const sanitizedHtml = DOMPurify.sanitize(htmlContent, {
     ADD_ATTR: ["target"],
     ADD_TAGS: ["iframe"],
   });
@@ -60,7 +68,7 @@ function EmailBodyRenderer({ body }: { body: string }) {
     }
   }, [sanitizedHtml]);
 
-  if (!body) {
+  if (!body && (!content || (!content.text && !content.html))) {
     return (
       <div className="p-4 text-sm text-gray-500">No content available.</div>
     );
@@ -146,7 +154,10 @@ export default function EmailThreadCard({
                     </div>
                     {message.body && (
                       <div className="mt-3">
-                        <EmailBodyRenderer body={message.body} />
+                        <EmailBodyRenderer
+                          body={message.body}
+                          content={message.content}
+                        />
                       </div>
                     )}
                   </div>

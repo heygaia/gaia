@@ -1,76 +1,9 @@
-export interface TriggerOption {
-  id: string;
-  name: string;
-  icon: string;
-  description: string;
-}
-
 export interface IntegrationOption {
   id: string;
   name: string;
   icon: string;
   category: string;
 }
-
-export const triggerOptions: TriggerOption[] = [
-  {
-    id: "slack",
-    name: "Slack",
-    icon: "/images/icons/slack.svg",
-    description: "Trigger when new messages arrive",
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    icon: "/images/icons/gmail.svg",
-    description: "Trigger when new emails arrive",
-  },
-  {
-    id: "calendar",
-    name: "Google Calendar",
-    icon: "/images/icons/googlecalendar.webp",
-    description: "Trigger when new events are created",
-  },
-];
-
-export const integrationOptions: IntegrationOption[] = [
-  {
-    id: "notion",
-    name: "Notion",
-    icon: "/images/icons/notion.webp",
-    category: "productivity",
-  },
-  {
-    id: "google-docs",
-    name: "Google Docs",
-    icon: "/images/icons/google_docs.webp",
-    category: "documents",
-  },
-  {
-    id: "google-drive",
-    name: "Google Drive",
-    icon: "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/640px-Google_Drive_icon_%282020%29.svg.png",
-    category: "storage",
-  },
-  {
-    id: "gmail",
-    name: "Gmail",
-    icon: "/images/icons/gmail.svg",
-    category: "communication",
-  },
-  {
-    id: "google-calendar",
-    name: "Google Calendar",
-    icon: "/images/icons/googlecalendar.webp",
-    category: "productivity",
-  },
-  {
-    id: "slack",
-    name: "Slack",
-    icon: "/images/icons/slack.svg",
-    category: "communication",
-  },
-];
 
 export const scheduleFrequencyOptions = [
   { key: "every", label: "Every" },

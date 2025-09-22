@@ -28,6 +28,7 @@ from app.services.calendar_service import (
     list_calendars,
     search_calendar_events_native,
 )
+from app.utils.oauth_utils import get_tokens_by_user_id
 from langchain_core.runnables.config import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
@@ -56,11 +57,23 @@ async def create_calendar_event(
         # Get user time from config for timezone processing
         configurable = config.get("configurable", {})
         user_time_str: str = configurable.get("user_time", "")
+        user_id = configurable.get("user_id")
+
         if not user_time_str:
             logger.error("User time is required for calendar event processing")
             return json.dumps(
                 {
                     "error": "User time is required to process calendar events",
+                    "calendar_options": [],
+                    "prompt": str(CALENDAR_PROMPT_TEMPLATE.invoke({})),
+                }
+            )
+
+        if not user_id:
+            logger.error("User ID is required for calendar event processing")
+            return json.dumps(
+                {
+                    "error": "User ID is required to process calendar events",
                     "calendar_options": [],
                     "prompt": str(CALENDAR_PROMPT_TEMPLATE.invoke({})),
                 }
@@ -187,10 +200,15 @@ async def fetch_calendar_list(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
+        user_id = config.get("configurable", {}).get("user_id")
+        if not user_id:
+            logger.error("Missing user_id in config")
+            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
-        if not access_token:
-            logger.error("Missing access token in config")
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         calendars = await list_calendars(access_token=access_token, short=True)
@@ -243,14 +261,15 @@ async def fetch_calendar_events(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
         user_id = config.get("configurable", {}).get("user_id")
-
-        if not access_token:
-            logger.error("Missing access token in config")
-            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
         if not user_id:
             logger.error("Missing user_id in config")
+            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
+
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         logger.info(f"Fetching calendar events for user {user_id}")
@@ -317,14 +336,15 @@ async def search_calendar_events(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
         user_id = config.get("configurable", {}).get("user_id")
-
-        if not access_token:
-            logger.error("Missing access token in config")
-            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
         if not user_id:
             logger.error("Missing user_id in config")
+            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
+
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         logger.info(f"Searching calendar events for query: {query}")
@@ -394,10 +414,15 @@ async def view_calendar_event(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
+        user_id = config.get("configurable", {}).get("user_id")
+        if not user_id:
+            logger.error("Missing user_id in config")
+            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
-        if not access_token:
-            logger.error("Missing access token in config")
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         # Fetch specific event using Google Calendar API
@@ -443,15 +468,15 @@ async def delete_calendar_event(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
         user_id = config.get("configurable", {}).get("user_id")
-
-        # Ensure access_token and user_id are available
         if not user_id:
             logger.error("Missing user_id in config")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
-        if not access_token:
-            logger.error("Missing access token in config")
+
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         writer = get_stream_writer()
@@ -521,20 +546,22 @@ async def edit_calendar_event(
             logger.error("Missing configuration data")
             return "Unable to access calendar configuration. Please try again."
 
-        access_token = config.get("configurable", {}).get("access_token")
         user_id = config.get("configurable", {}).get("user_id")
         user_time_str = config.get("configurable", {}).get("user_time", "")
 
-        # Ensure access_token, user_id and user_time are available
+        # Ensure user_id and user_time are available
         if not user_id:
             logger.error("Missing user_id in config")
-            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
-        if not access_token:
-            logger.error("Missing access token in config")
             return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
         if not user_time_str:
             logger.error("Missing user_time in config")
             return "User time is required for calendar event processing."
+
+        # Get tokens from token registry
+        access_token, _, token_success = await get_tokens_by_user_id(user_id)
+        if not token_success or not access_token:
+            logger.error("Failed to get valid tokens from token registry")
+            return "Unable to access your calendar. Please ensure you're logged in with calendar permissions."
 
         # Process timezone for start/end times if provided
         processed_start = start

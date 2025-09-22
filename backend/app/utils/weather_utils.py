@@ -1,13 +1,12 @@
-import datetime
 import asyncio
-from typing import Optional, Any, Dict, List, Tuple
+import datetime
+from collections import defaultdict
+from typing import Any, Dict, List, Optional, Tuple
 
 import httpx
-from collections import defaultdict
-
 from app.config.loggers import chat_logger as logger
 from app.config.settings import settings
-from app.db.redis import get_cache, set_cache, ONE_HOUR_TTL
+from app.db.redis import ONE_HOUR_TTL, get_cache, set_cache
 
 http_async_client = httpx.AsyncClient()
 
@@ -192,7 +191,7 @@ async def user_weather(location_name: Optional[str] = None):
 
             cached_weather = await get_cache(cache_key)
             if cached_weather:
-                logger.info(f"Using cached weather data for location {cached_weather}")
+                logger.debug(f"Using cached weather data for location {cached_weather}")
                 return cached_weather
 
             weather = await prepare_weather_data(

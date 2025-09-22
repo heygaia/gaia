@@ -1,5 +1,6 @@
 "use client";
 
+import { Tooltip } from "@heroui/react";
 import { usePathname } from "next/navigation";
 
 import { Button } from "@/components";
@@ -20,22 +21,30 @@ function getDefaultHeaderForPath(pathname: string) {
 export const SidebarHeaderButton = ({
   children,
   onClick,
+  tooltip,
   "aria-label": ariaLabel,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
+  tooltip?: string;
   "aria-label": string;
-}) => (
-  <Button
-    aria-label={ariaLabel}
-    size="icon"
-    variant="ghost"
-    className={`group rounded-xl p-1! hover:bg-[#00bbff]/20 hover:text-primary`}
-    onClick={onClick}
-  >
-    {children}
-  </Button>
-);
+}) => {
+  const button = (
+    <Button
+      aria-label={ariaLabel}
+      size="icon"
+      variant="ghost"
+      className={`group/btn group rounded-xl p-1! hover:bg-[#00bbff]/20 hover:text-primary`}
+      onClick={onClick}
+    >
+      {children}
+    </Button>
+  );
+
+  if (!tooltip) return button;
+
+  return <Tooltip content={tooltip}>{button}</Tooltip>;
+};
 
 export default function HeaderManager() {
   const pathname = usePathname();

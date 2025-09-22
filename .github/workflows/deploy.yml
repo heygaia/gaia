@@ -18,6 +18,7 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
+    if: github.event.client_payload.ref == 'refs/heads/master'
 
     # Needed for OIDC → WIF
     permissions:

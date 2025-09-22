@@ -12,6 +12,7 @@ import FilePreview, {
 } from "@/features/chat/components/files/FilePreview";
 import FileUpload from "@/features/chat/components/files/FileUpload";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import { useLoadingText } from "@/features/chat/hooks/useLoadingText";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
@@ -80,24 +81,38 @@ const Composer: React.FC<MainSearchbarProps> = ({
   } = useComposerFiles();
   const { isSlashCommandDropdownOpen, setIsSlashCommandDropdownOpen } =
     useComposerUI();
-  const { autoSend, setAutoSend } = useWorkflowSelectionStore();
+  const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
+  const { autoSend } = useWorkflowSelectionStore();
 
   const sendMessage = useSendMessage();
   const { isLoading, setIsLoading } = useLoading();
+  const { setContextualLoading } = useLoadingText();
   const { integrations, isLoading: integrationsLoading } = useIntegrations();
-  const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
   const currentMode = useMemo(
     () => Array.from(selectedMode)[0],
     [selectedMode],
   );
 
+  // Ref to prevent duplicate execution in StrictMode
+  const autoSendExecutedRef = useRef(false);
+
   // When workflow is selected, handle auto-send with a brief delay to allow UI to update
   useEffect(() => {
     if (!(selectedWorkflow && autoSend)) return;
-    setAutoSend(false);
+
+    // Prevent duplicate execution in React StrictMode
+    if (autoSendExecutedRef.current) {
+      console.warn("Auto-send already executed, preventing duplicate");
+      return;
+    }
+    autoSendExecutedRef.current = true;
+
+    // Clear state immediately to prevent any race conditions
+    // Note: clearSelectedWorkflow() already sets autoSend to false
+    clearSelectedWorkflow();
+
     setIsLoading(true);
     sendMessage("Run this workflow", [], null, null, selectedWorkflow);
-    clearSelectedWorkflow();
 
     if (inputRef.current) inputRef.current.focus();
 
@@ -113,12 +128,15 @@ const Composer: React.FC<MainSearchbarProps> = ({
   }, [
     selectedWorkflow,
     autoSend,
-    setAutoSend,
+    clearSelectedWorkflow,
     sendMessage,
     setIsLoading,
-    clearSelectedWorkflow,
-    inputRef,
   ]);
+
+  // Reset the auto-send guard when state changes
+  useEffect(() => {
+    if (!selectedWorkflow || !autoSend) autoSendExecutedRef.current = false;
+  }, [selectedWorkflow, autoSend]);
 
   // Expose file upload functions to parent component via ref
   useImperativeHandle(
@@ -130,10 +148,10 @@ const Composer: React.FC<MainSearchbarProps> = ({
       },
     }),
     [setFileUploadModal, setPendingDroppedFiles],
-  ); // Process dropped files when the upload modal opens
+  );
+
   useEffect(() => {
     if (fileUploadModal && pendingDroppedFiles.length > 0) {
-      // We'll handle this in the FileUpload component
       // Just clear the pending files here after the modal is opened
       setPendingDroppedFiles([]);
       if (onDroppedFilesProcessed) {
@@ -157,6 +175,10 @@ const Composer: React.FC<MainSearchbarProps> = ({
 
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
+
+    // Prevent double execution when workflow is auto-sending
+    if (autoSend) return;
+
     // Only prevent submission if there's no text AND no files AND no selected tool AND no selected workflow
     if (
       !inputText &&
@@ -166,7 +188,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
     ) {
       return;
     }
-    setIsLoading(true);
+    // Use contextual loading with user's message for similarity-based loading text
+    setContextualLoading(true, inputText);
 
     sendMessage(
       inputText,
@@ -348,7 +371,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
         hasMessages={hasMessages}
         onToggleSlashCommand={handleToggleSlashCommandDropdown}
       />
-      <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pt-1 pb-2">
+      <div className="searchbar relative z-[2] rounded-3xl bg-zinc-800 px-1 pb-2 pt-1">
         <FilePreview files={uploadedFiles} onRemove={removeUploadedFile} />
         <SelectedToolIndicator
           toolName={selectedTool}

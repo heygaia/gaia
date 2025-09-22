@@ -23,7 +23,7 @@ export default function FollowUpActions({
     }
   };
 
-  if (!actions || actions.length === 0 || loading) return null;
+  if (!actions || actions.length === 0) return null;
 
   return (
     <motion.div
@@ -36,7 +36,7 @@ export default function FollowUpActions({
           },
         },
       }}
-      className="flex max-w-xl flex-wrap gap-2 px-1 pt-3 pb-1"
+      className="flex max-w-xl flex-wrap gap-2 pt-2 pb-1"
     >
       {actions.map((action, index) => (
         <motion.div

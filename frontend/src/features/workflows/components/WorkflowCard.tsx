@@ -2,47 +2,42 @@
 
 import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Clock, Mail } from "lucide-react";
+import Image from "next/image";
 
-import { CalendarIcon, CursorMagicSelection03Icon } from "@/components";
+import { CursorMagicSelection03Icon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
 import { Workflow } from "../api/workflowApi";
-import { getScheduleDescription } from "../utils/cronUtils";
+import { getTriggerDisplay } from "../utils/triggerDisplay";
 
 interface WorkflowCardProps {
   workflow: Workflow;
   onClick?: () => void;
 }
 
-const getTriggerIcon = (triggerType: string) => {
+const getTriggerIcon = (triggerType: string, integrationIconUrl?: string) => {
+  // Use integration icon if available (Gmail, Calendar, etc.)
+  if (integrationIconUrl) {
+    return (
+      <Image
+        src={integrationIconUrl}
+        alt="Integration icon"
+        width={15}
+        height={15}
+      />
+    );
+  }
+
+  // Fallback to type-specific icons only for non-integration triggers
   switch (triggerType) {
-    case "email":
-      return <Mail width={15} />;
     case "schedule":
       return <Clock width={15} />;
-    case "calendar":
-      return <CalendarIcon width={15} />;
-    default:
-      return <CursorMagicSelection03Icon width={15} />;
-  }
-};
-
-const getTriggerLabel = (workflow: Workflow) => {
-  const { trigger_config } = workflow;
-
-  switch (trigger_config.type) {
-    case "email":
-      return "on new emails";
-    case "schedule":
-      if (trigger_config.cron_expression) {
-        return getScheduleDescription(trigger_config.cron_expression);
-      }
-      return "scheduled";
-    case "calendar":
-      return "calendar events";
     case "manual":
+      return <CursorMagicSelection03Icon width={15} />;
     default:
-      return "manual trigger";
+      // For email/calendar without integration icon, show generic icon
+      return <Mail width={15} />;
   }
 };
 
@@ -81,6 +76,11 @@ const getActivationLabel = (activated: boolean) => {
 };
 
 export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
+  const { integrations } = useIntegrations();
+
+  // Get trigger display info using integration data
+  const triggerDisplay = getTriggerDisplay(workflow, integrations);
+
   return (
     <div
       className="group relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300 hover:scale-105 hover:border-zinc-600"
@@ -137,10 +137,13 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
         <div className="flex flex-wrap items-center gap-2">
           <Chip
             size="sm"
-            startContent={getTriggerIcon(workflow.trigger_config.type)}
+            startContent={getTriggerIcon(
+              workflow.trigger_config.type,
+              triggerDisplay.icon || undefined,
+            )}
             className="flex gap-1 px-2!"
           >
-            {getTriggerLabel(workflow)
+            {triggerDisplay.label
               .split(" ")
               .map(
                 (word) =>

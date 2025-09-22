@@ -6,33 +6,21 @@ import { ReactNode, useEffect, useRef, useState } from "react";
 
 import HeaderManager from "@/components/layout/headers/HeaderManager";
 import Sidebar from "@/components/layout/sidebar/MainSidebar";
-import { SidebarRight01Icon } from "@/components/shared/icons";
-import { Button } from "@/components/ui/shadcn/button";
 import {
   SidebarInset,
   SidebarProvider,
-  useSidebar,
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
 import { useIsMobile } from "@/hooks/ui/useMobile";
-import SidebarLayout from "@/layouts/SidebarLayout";
+import SidebarLayout, { CustomSidebarTrigger } from "@/layouts/SidebarLayout";
 import { useSidebar as useUIStoreSidebar } from "@/stores/uiStore";
 
-// Custom SidebarTrigger for header that matches the consistent styling
 const HeaderSidebarTrigger = () => {
-  const { toggleSidebar } = useSidebar();
-
   return (
-    <Button
-      aria-label="Toggle Sidebar"
-      size="icon"
-      variant="ghost"
-      className="-ml-1 h-8 w-8 rounded-lg text-zinc-400 hover:bg-zinc-800/50 hover:text-zinc-100"
-      onClick={toggleSidebar}
-    >
-      <SidebarRight01Icon className="max-h-5 min-h-5 max-w-5 min-w-5" />
-    </Button>
+    <div className="pt-1">
+      <CustomSidebarTrigger />
+    </div>
   );
 };
 
@@ -116,7 +104,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
           <SidebarInset className="flex h-screen flex-col bg-[#1a1a1a]">
             <header
-              className="flex flex-shrink-0 items-start justify-between px-4 pt-3"
+              className="flex flex-shrink-0 items-center justify-between px-6 py-3 pl-3"
               onClick={closeOnTouch}
             >
               {!currentOpen && <HeaderSidebarTrigger />}

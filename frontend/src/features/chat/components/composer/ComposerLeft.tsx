@@ -1,11 +1,9 @@
+import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
 import { Check, WrenchIcon } from "lucide-react";
 import React from "react";
 
-import {
-  AttachmentIcon,
-  PlusSignIcon,
-} from "@/components/shared/icons";
+import { AttachmentIcon, PlusSignIcon } from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -107,7 +105,7 @@ export default function ComposerLeft({
             size="icon"
             className={cn(
               "group relative h-9 w-9 rounded-full border-none bg-zinc-700 p-0 hover:bg-zinc-600/90",
-              isLoading && "cursor-wait",
+              isLoading ? "cursor-wait!" : "",
             )}
             disabled={isLoading}
           >
@@ -166,16 +164,20 @@ export default function ComposerLeft({
       {/* Tools Button */}
       {onOpenSlashCommandDropdown && (
         <Tooltip
-          content="Browse all tools"
+          content={
+            <div className="flex items-center gap-2">
+              Browse all tools
+              <Kbd className="text-zinc-400">Press /</Kbd>
+            </div>
+          }
           placement="right"
-          color="primary"
           showArrow
         >
           <Button
             size="icon"
             className={cn(
               "group w- relative h-9 rounded-full border-none bg-zinc-700 p-0 text-zinc-400 hover:bg-zinc-600/90",
-              isLoading && "cursor-wait",
+              isLoading ? "cursor-wait!" : "",
               isSlashCommandDropdownOpen &&
                 "border-primary/50 bg-primary/20 text-primary",
             )}

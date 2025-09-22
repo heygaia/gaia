@@ -5,6 +5,9 @@ from app.config.loggers import app_logger as logger
 from app.utils.exceptions import InfisicalConfigError
 
 from infisical_sdk import InfisicalSDKClient
+from dotenv import load_dotenv
+
+load_dotenv()
 
 
 def inject_infisical_secrets():
@@ -37,7 +40,10 @@ def inject_infisical_secrets():
         start_time = time.time()
         logger.info("Connecting to Infisical...")
 
-        client = InfisicalSDKClient(host="https://app.infisical.com")
+        client = InfisicalSDKClient(
+            host="https://app.infisical.com",
+            cache_ttl=3600,
+        )
         client.auth.universal_auth.login(
             client_id=CLIENT_ID,
             client_secret=CLIENT_SECRET,

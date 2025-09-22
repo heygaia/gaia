@@ -1,10 +1,10 @@
-import { SystemPurpose } from "@/features/chat/api/chatApi";
 import {
   BASE_MESSAGE_KEYS,
   BASE_MESSAGE_SCHEMA,
   BaseMessageData,
-  TOOLS_MESSAGE_KEYS,
-} from "@/types/features/baseMessageRegistry";
+} from "@/config/registries/baseMessageRegistry";
+import { TOOLS_MESSAGE_KEYS } from "@/config/registries/toolRegistry";
+import { SystemPurpose } from "@/features/chat/api/chatApi";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { ConversationMessage, MessageType } from "@/types/features/convoTypes";
 
@@ -24,7 +24,8 @@ export const shouldShowTextBubble = (
     return false;
   }
 
-  return !!text.trim();
+  // Check if text has meaningful content (not null, undefined, empty, or just whitespace)
+  return text != null && text.trim().length > 0;
 };
 
 /**
@@ -33,15 +34,24 @@ export const shouldShowTextBubble = (
 export const isBotMessageEmpty = (props: ChatBubbleBotProps): boolean => {
   const { text, loading, isConvoSystemGenerated, systemPurpose } = props;
 
+  // Loading messages are considered not empty
   if (loading) return false;
 
-  // Only check keys that are in TOOLS_MESSAGE_KEYS
-  const hasAnyContent = TOOLS_MESSAGE_KEYS.some((key) => !!props[key]);
+  // Check if any tool-specific content exists
+  const hasToolContent = TOOLS_MESSAGE_KEYS.some((key) => {
+    const value = props[key];
+    return value != null && value !== undefined;
+  });
 
-  return !(
-    hasAnyContent ||
-    shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose)
+  // Check if text content is meaningful
+  const hasTextContent = shouldShowTextBubble(
+    text,
+    isConvoSystemGenerated,
+    systemPurpose,
   );
+
+  // Message is empty only if it has neither tool content nor meaningful text
+  return !hasToolContent && !hasTextContent;
 };
 
 /**

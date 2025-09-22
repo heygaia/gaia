@@ -125,9 +125,6 @@ importers:
       '@internationalized/date':
         specifier: ^3.8.2
         version: 3.9.0
-      '@lottiefiles/dotlottie-react':
-        specifier: ^0.17.1
-        version: 0.17.1(react@19.1.1)
       '@mdx-js/loader':
         specifier: ^3.1.0
         version: 3.1.1(webpack@5.101.0)
@@ -251,6 +248,9 @@ importers:
       '@tanstack/react-query-persist-client':
         specifier: ^5.85.5
         version: 5.85.9(@tanstack/react-query@5.85.9(react@19.1.1))(react@19.1.1)
+      '@tiptap/core':
+        specifier: ^2.26.1
+        version: 2.26.1(@tiptap/pm@2.26.1)
       '@tiptap/extension-character-count':
         specifier: ^2.26.1
         version: 2.26.1(@tiptap/core@3.3.1(@tiptap/pm@2.26.1))(@tiptap/pm@2.26.1)
@@ -311,9 +311,6 @@ importers:
       '@xyflow/react':
         specifier: ^12.8.4
         version: 12.8.4(@types/react@19.1.12)(immer@10.1.3)(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
-      animated-number-react:
-        specifier: ^0.1.2
-        version: 0.1.2(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
       axios:
         specifier: ^1.11.0
         version: 1.11.0
@@ -482,6 +479,9 @@ importers:
       sonner:
         specifier: ^2.0.7
         version: 2.0.7(react-dom@19.1.1(react@19.1.1))(react@19.1.1)
+      string-similarity:
+        specifier: ^4.0.4
+        version: 4.0.4
       tailwind-merge:
         specifier: ^3.3.1
         version: 3.3.1
@@ -519,6 +519,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.1.7
         version: 19.1.9(@types/react@19.1.12)
+      '@types/string-similarity':
+        specifier: ^4.0.2
+        version: 4.0.2
       '@typescript-eslint/eslint-plugin':
         specifier: ^8.40.0
         version: 8.42.0(@typescript-eslint/parser@8.42.0(eslint@9.34.0(jiti@2.5.1))(typescript@5.9.2))(eslint@9.34.0(jiti@2.5.1))(typescript@5.9.2)
@@ -2212,14 +2215,6 @@ packages:
 
   '@jridgewell/trace-mapping@0.3.30':
     resolution: {integrity: sha512-GQ7Nw5G2lTu/BtHTKfXhKHok2WGetd4XYcVKGx00SjAk8GMwgJM3zr6zORiPGuOE+/vkc90KtTosSSvaCjKb2Q==}
-
-  '@lottiefiles/dotlottie-react@0.17.1':
-    resolution: {integrity: sha512-n31+90TrG40/n6tNaF8l3uFvDqsFHtNPqlk+OyKrtOoM7Bb7jooe+KXp62gK5vObH/JqVGYQdWDeE/i49zXQcQ==}
-    peerDependencies:
-      react: ^17 || ^18 || ^19
-
-  '@lottiefiles/dotlottie-web@0.52.2':
-    resolution: {integrity: sha512-aeXCMUB5RdusHrvZ3Py2KaMgQ0w7SdA8NFbPK+SpwqC1UW1CDFZl5vPLueZHju7vLhB1rpPvpQ5fQ0L/KEZt7w==}
 
   '@mdx-js/loader@3.1.1':
     resolution: {integrity: sha512-0TTacJyZ9mDmY+VefuthVshaNIyCGZHJG2fMnGaDttCt8HmjUF7SizlHJpaCDoGnN635nK1wpzfpx/Xx5S4WnQ==}
@@ -5319,6 +5314,9 @@ packages:
   '@types/shimmer@1.2.0':
     resolution: {integrity: sha512-UE7oxhQLLd9gub6JKIAhDq06T0F6FnztwMNRvYgjeQSBeMc1ZG/tA47EwfduvkuQS8apbkM/lpLpWsaCeYsXVg==}
 
+  '@types/string-similarity@4.0.2':
+    resolution: {integrity: sha512-LkJQ/jsXtCVMK+sKYAmX/8zEq+/46f1PTQw7YtmQwb74jemS1SlNLmARM2Zml9DgdDTWKAtc5L13WorpHPDjDA==}
+
   '@types/tedious@4.0.14':
     resolution: {integrity: sha512-KHPsfX/FoVbUGbyYvk1q9MMQHLPeRZhRJZdO45Q4YjvFkv4hMNghCWTvy7rdKessBsmtz4euWCWAB6/tVpI1Iw==}
 
@@ -6340,9 +6338,6 @@ packages:
 
   duplexer@0.1.2:
     resolution: {integrity: sha512-jtD6YG370ZCIi/9GTaJKQxWTZD045+4R4hTk/x1UyoqadyJ9x9CgSi1RlVDQF8U2sxLLSnFkCaMihqljHIWgMg==}
-
-  eastasianwidth@0.2.0:
-    resolution: {integrity: sha512-I88TYZWc9XiYHRQ4/3c5rjjfgkjhLyW2luGIheGERbNQ6OY7yTybanSpDXZa8y7VUP9YmDcYa+eyq4ca7iLqWA==}
 
   electron-to-chromium@1.5.212:
     resolution: {integrity: sha512-gE7ErIzSW+d8jALWMcOIgf+IB6lpfsg6NwOhPVwKzDtN2qcBix47vlin4yzSregYDxTCXOUqAZjVY/Z3naS7ww==}
@@ -8927,6 +8922,10 @@ packages:
   streamsearch@1.1.0:
     resolution: {integrity: sha512-Mcc5wHehp9aXz1ax6bZUyY5afg9u2rv5cqQI3mRrYkGC8rW2hM02jWuwjtL++LS5qinSyhj2QfLyNsuc+VsExg==}
     engines: {node: '>=10.0.0'}
+
+  string-similarity@4.0.4:
+    resolution: {integrity: sha512-/q/8Q4Bl4ZKAPjj8WerIBJWALKkaPRfrvhfF8k/B23i4nzrlRj2/go1m90In7nG/3XDSbOo0+pu6RvCTM9RGMQ==}
+    deprecated: Package no longer supported. Contact Support at https://www.npmjs.com/support for more info.
 
   string-width@4.2.3:
     resolution: {integrity: sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==}
@@ -12214,13 +12213,6 @@ snapshots:
     dependencies:
       '@jridgewell/resolve-uri': 3.1.2
       '@jridgewell/sourcemap-codec': 1.5.5
-
-  '@lottiefiles/dotlottie-react@0.17.1(react@19.1.1)':
-    dependencies:
-      '@lottiefiles/dotlottie-web': 0.52.2
-      react: 19.1.1
-
-  '@lottiefiles/dotlottie-web@0.52.2': {}
 
   '@mdx-js/loader@3.1.1(webpack@5.101.0)':
     dependencies:
@@ -16202,6 +16194,8 @@ snapshots:
 
   '@types/shimmer@1.2.0': {}
 
+  '@types/string-similarity@4.0.2': {}
+
   '@types/tedious@4.0.14':
     dependencies:
       '@types/node': 24.3.0
@@ -17334,8 +17328,6 @@ snapshots:
       gopd: 1.2.0
 
   duplexer@0.1.2: {}
-
-  eastasianwidth@0.2.0: {}
 
   electron-to-chromium@1.5.212: {}
 
@@ -20490,6 +20482,8 @@ snapshots:
       internal-slot: 1.1.0
 
   streamsearch@1.1.0: {}
+
+  string-similarity@4.0.4: {}
 
   string-width@4.2.3:
     dependencies:

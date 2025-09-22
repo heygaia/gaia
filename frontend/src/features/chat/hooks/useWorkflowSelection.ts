@@ -29,9 +29,7 @@ export const useWorkflowSelection = () => {
       storeSelectWorkflow(workflow, options);
 
       // Navigate to chat page if not already there
-      if (pathname !== "/c") {
-        router.push("/c");
-      }
+      if (pathname !== "/c") router.push("/c");
     },
     [storeSelectWorkflow, pathname, router],
   );

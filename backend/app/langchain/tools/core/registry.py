@@ -1,5 +1,7 @@
+from functools import cache
 from typing import Dict, List, Optional
 
+from app.langchain.core.subagents.handoff_tools import get_handoff_tools
 from app.langchain.tools import (
     calendar_tool,
     code_exec_tool,
@@ -10,16 +12,68 @@ from app.langchain.tools import (
     google_docs_tool,
     image_tool,
     memory_tools,
+    notification_tool,
     reminder_tool,
     search_tool,
     support_tool,
     todo_tool,
     weather_tool,
     webpage_tool,
-    workflow_tool,
 )
 from app.services.composio_service import composio_service
 from langchain_core.tools import BaseTool
+
+
+class Tool:
+    """Simplified tool object that holds individual tool metadata."""
+
+    def __init__(
+        self,
+        tool: BaseTool,
+        name: Optional[str] = None,
+        is_core: bool = False,
+    ):
+        self.tool = tool
+        self.name = name or tool.name
+        self.is_core = is_core
+
+
+class ToolCategory:
+    """Category that holds tools and category-level metadata."""
+
+    def __init__(
+        self,
+        name: str,
+        space: str = "general",
+        require_integration: bool = False,
+        integration_name: Optional[str] = None,
+        is_delegated: bool = False,
+    ):
+        self.name = name
+        self.space = space
+        self.require_integration = require_integration
+        self.integration_name = integration_name
+        self.is_delegated = is_delegated
+        self.tools: List[Tool] = []
+
+    def add_tool(
+        self, tool: BaseTool, is_core: bool = False, name: Optional[str] = None
+    ):
+        """Add a tool to this category."""
+        self.tools.append(Tool(tool=tool, name=name, is_core=is_core))
+
+    def add_tools(self, tools: List[BaseTool], is_core: bool = False):
+        """Add multiple tools to this category."""
+        for tool in tools:
+            self.add_tool(tool, is_core=is_core)
+
+    def get_tool_objects(self) -> List[BaseTool]:
+        """Get the actual tool objects for binding."""
+        return [tool.tool for tool in self.tools]
+
+    def get_core_tools(self) -> List[Tool]:
+        """Get only core tools from this category."""
+        return [tool for tool in self.tools if tool.is_core]
 
 
 class ToolInfo:
@@ -34,144 +88,166 @@ class ToolInfo:
 
 
 class ToolRegistry:
-    """Centralized repository for managing and retrieving tool information."""
+    """Modern tool registry with category-based organization."""
 
     def __init__(self):
-        # Define which categories require special integration handling
-        self._categories_requiring_integrations = {
-            "mail",
-            "calendar",
-            "google_docs",
-            "twitter",
-            "notion",
-            "linkedin",
-            "google_sheets",
-        }
+        self._categories: Dict[str, ToolCategory] = {}
+        self._initialize_categories()
 
-        # Define integration requirements for each category
-        self._category_integration_map = {
-            "mail": "gmail",
-            "calendar": "google_calendar",
-            "google_docs": "google_docs",
-            "twitter": "twitter",
-            "notion": "notion",
-            "linkedin": "linkedin",
-            "google_sheets": "google_sheets",
-        }
+    def _initialize_categories(self):
+        """Initialize all tool categories with their metadata and tools."""
 
-        # All tools organized by category
-        self._tools_by_category = {
-            "productivity": [
-                *todo_tool.tools,
-                *reminder_tool.tools,
-            ],
-            "calendar": [
-                *calendar_tool.tools,
-            ],
-            "goal_tracking": [
-                *goal_tool.tools,
-            ],
-            "google_docs": [
-                *google_docs_tool.tools,
-            ],
-            "documents": [
-                document_tool.generate_document,
-                file_tools.query_file,
-            ],
-            "search": [
+        # Helper function to create and register categories
+        def add_category(
+            name: str,
+            tools: Optional[List[BaseTool]] = None,
+            core_tools: Optional[List[BaseTool]] = None,
+            space: str = "general",
+            require_integration: bool = False,
+            integration_name: Optional[str] = None,
+            is_delegated: bool = False,
+        ):
+            category = ToolCategory(
+                name=name,
+                space=space,
+                require_integration=require_integration,
+                integration_name=integration_name,
+                is_delegated=is_delegated,
+            )
+            if core_tools:
+                category.add_tools(core_tools, is_core=True)
+            if tools:
+                category.add_tools(tools)
+            self._categories[name] = category
+
+        # Core categories (no integration required)
+        add_category(
+            "search",
+            core_tools=[
                 search_tool.web_search_tool,
                 search_tool.deep_research_tool,
                 webpage_tool.fetch_webpages,
             ],
-            "support": [
-                support_tool.create_support_ticket,
-            ],
-            "memory": [
-                *memory_tools.tools,
-            ],
-            "development": [
-                code_exec_tool.execute_code,
-                flowchart_tool.create_flowchart,
-            ],
-            "creative": [
-                image_tool.generate_image,
-            ],
-            "weather": [
-                weather_tool.get_weather,
-            ],
-            "workflow": [
-                *workflow_tool.tools,
-            ],
-            # Only handler tools in main categories - sub-agents get their own tools separately
-            "twitter": composio_service.get_tools(tool_kit="TWITTER"),
-            "notion": composio_service.get_tools(tool_kit="NOTION"),
-            "linkedin": composio_service.get_tools(tool_kit="LINKEDIN"),
-            "mail": composio_service.get_tools(
-                tool_kit="GMAIL", exclude_tools=["GMAIL_SEND_EMAIL"]
-            ),
-            "google_sheets": [*composio_service.get_tools(tool_kit="GOOGLE_SHEETS")],
-        }
+        )
 
-        # Core tools that should always be available
-        self._core_tools = [
-            search_tool.web_search_tool,
-            search_tool.deep_research_tool,
-            webpage_tool.fetch_webpages,
-            file_tools.query_file,
+        add_category(
+            "documents",
+            core_tools=[file_tools.query_file],
+            tools=[document_tool.generate_document],
+        )
+
+        add_category(
+            "delegation",
+            core_tools=get_handoff_tools(["gmail", "notion", "twitter", "linkedin"]),
+        )
+
+        add_category("notifications", tools=[*notification_tool.tools])
+        add_category("productivity", tools=[*todo_tool.tools, *reminder_tool.tools])
+        add_category("goal_tracking", tools=goal_tool.tools)
+        add_category("support", tools=[support_tool.create_support_ticket])
+        add_category("memory", tools=memory_tools.tools)
+        add_category(
+            "development",
+            tools=[code_exec_tool.execute_code, flowchart_tool.create_flowchart],
+        )
+        add_category("creative", tools=[image_tool.generate_image])
+        add_category("weather", tools=[weather_tool.get_weather])
+
+        # Integration-required categories
+        add_category(
+            "calendar",
+            tools=calendar_tool.tools,
+            require_integration=True,
+            integration_name="google_calendar",
+        )
+
+        add_category(
+            "google_docs",
+            tools=google_docs_tool.tools,
+            require_integration=True,
+            integration_name="google_docs",
+        )
+
+        # Provider categories (integration required + delegated)
+        provider_configs = [
+            ("twitter", "TWITTER"),
+            ("notion", "NOTION"),
+            ("linkedin", "LINKEDIN"),
+            ("google_sheets", "GOOGLE_SHEETS"),
+            ("gmail", "GMAIL"),
         ]
 
-    def get_tools_by_category(self, category: str):
-        """Get all tools for a specific category."""
-        return self._tools_by_category.get(category.lower(), [])
+        for name, toolkit in provider_configs:
+            add_category(
+                name,
+                tools=composio_service.get_tools(tool_kit=toolkit),
+                require_integration=True,
+                integration_name=name,
+                is_delegated=True,
+                space=name,
+            )
 
-    def get_all_categories(self) -> List[str]:
-        """Get list of all available categories."""
-        return list(self._tools_by_category.keys())
+    def get_category(self, name: str) -> Optional[ToolCategory]:
+        """Get a specific category by name."""
+        return self._categories.get(name)
 
-    def category_requires_integration(self, category: str) -> bool:
-        """Check if a category requires special integration treatment."""
-        return category.lower() in self._categories_requiring_integrations
-
-    def get_category_integration_requirement(self, category: str) -> Optional[str]:
-        """Get the integration requirement for a category."""
-        return self._category_integration_map.get(category.lower())
-
-    def get_core_tools(self):
-        """Get tools that should always be accessible."""
-        return self._core_tools.copy()
-
-    def get_all_tools(self) -> List[BaseTool]:
-        """Get all tools from all categories."""
-        all_tools = []
-        for category_tools in self._tools_by_category.values():
-            all_tools.extend(category_tools)
-        return all_tools
-
-    def get_tool_registry(self) -> Dict[str, BaseTool]:
-        """Get a dictionary mapping tool names to tool instances."""
-        all_tools = self.get_all_tools()
-        return {tool.name: tool for tool in all_tools}
-
-    def get_tool_names(self) -> List[str]:
-        """Get list of all tool names."""
-        tools = self.get_all_tools()
-        return [tool.name for tool in tools]
-
-    def get_tool_dictionary(self) -> Dict[str, ToolInfo]:
-        """Get a dictionary mapping tool names to tool instances."""
-        all_tools = self.get_all_tools()
-        tool_dict = {
-            tool.name: ToolInfo(tool=tool, space="general") for tool in all_tools
+    def get_all_category_objects(
+        self, ignore_categories: List[str] = []
+    ) -> Dict[str, ToolCategory]:
+        """Get all categories as ToolCategory objects."""
+        return {
+            name: category
+            for name, category in self._categories.items()
+            if name not in ignore_categories
         }
 
-        return tool_dict
+    @cache
+    def get_category_of_tool(self, tool_name: str) -> str:
+        """Get the category of a specific tool by name."""
+        for category in self._categories.values():
+            for tool in category.tools:
+                if tool.name == tool_name:
+                    return category.name
+        return "unknown"
 
-    def get_tool_category(self, tool_name: str) -> Optional[str]:
-        """Get the category of a specific tool by its name."""
-        for category, tools in self._tools_by_category.items():
-            if any(tool.name == tool_name for tool in tools):
-                return category
-        return None
+    def get_all_tools_for_search(self, include_delegated: bool = True) -> List[Tool]:
+        """
+        Get all tool objects for semantic search (includes delegated tools).
+
+        Returns:
+            List of Tool objects for semantic search.
+        """
+        tools: List[Tool] = []
+        for category in self._categories.values():
+            if category.is_delegated and not include_delegated:
+                continue
+            tools.extend(category.tools)
+        return tools
+
+    def get_core_tools(self) -> List[Tool]:
+        """
+        Get all core tools across all categories.
+
+        Returns:
+            List of core Tool objects.
+        """
+        core_tools = []
+        for category in self._categories.values():
+            core_tools.extend(category.get_core_tools())
+        return core_tools
+
+    def get_tool_registry(self) -> Dict[str, BaseTool]:
+        """Get a dictionary mapping tool names to tool instances for agent binding.
+
+        This excludes delegated tools that should only be available via sub-agents.
+        """
+        all_tools = self.get_all_tools_for_search()
+        return {tool.name: tool.tool for tool in all_tools}
+
+    def get_tool_names(self) -> List[str]:
+        """Get list of all tool names including delegated ones."""
+        tools = self.get_all_tools_for_search()
+        return [tool.name for tool in tools]
 
 
 tool_registry = ToolRegistry()

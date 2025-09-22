@@ -2,15 +2,15 @@
 
 import React, { Dispatch } from "react";
 
+import { BaseMessageData } from "@/config/registries/baseMessageRegistry";
 import { SystemPurpose } from "@/features/chat/api/chatApi";
 
-import { BaseMessageData } from "./baseMessageRegistry";
 import {
   CalendarDeleteOptions,
   CalendarEditOptions,
   CalendarOptions,
 } from "./calendarTypes";
-import { EmailComposeData, EmailThreadData } from "./mailTypes";
+import { EmailComposeData, EmailSentData, EmailThreadData } from "./mailTypes";
 import { DeepResearchResults, SearchResults } from "./searchTypes";
 import { TodoToolData } from "./todoToolTypes";
 import {
@@ -44,6 +44,7 @@ export interface BotMessageData extends BaseMessageData {
   disclaimer?: string;
   filename?: string;
   systemPurpose?: SystemPurpose;
+  isLastMessage?: boolean;
 
   // UI callback functions
   setOpenImage: React.Dispatch<React.SetStateAction<boolean>>;
@@ -68,6 +69,7 @@ export type {
   DeepResearchResults,
   DocumentData,
   EmailComposeData,
+  EmailSentData,
   EmailThreadData,
   GoalDataMessageType,
   GoogleDocsData,

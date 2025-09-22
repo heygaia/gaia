@@ -1,5 +1,8 @@
+import { Button } from "@heroui/button";
 import Image from "next/image";
+import { toast } from "sonner";
 
+import { Task01Icon } from "@/components/shared/icons";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui";
 import { useUser } from "@/features/auth/hooks/useUser";
 import SelectedToolIndicator from "@/features/chat/components/composer/SelectedToolIndicator";
@@ -22,6 +25,15 @@ export default function ChatBubbleUser({
     !!text || fileData.length > 0 || !!selectedTool || !!selectedWorkflow;
 
   const user = useUser();
+
+  const copyToClipboard = () => {
+    if (text) {
+      navigator.clipboard.writeText(text);
+      toast.info("Copied to clipboard", {
+        description: `${text.slice(0, 30)}...`,
+      });
+    }
+  };
 
   if (!hasContent) return null;
 
@@ -46,7 +58,7 @@ export default function ChatBubbleUser({
         )}
 
         {text?.trim() && (
-          <div className="chat_bubble user">
+          <div className="imessage-bubble imessage-from-me">
             {!!text && (
               <div className="flex max-w-[30vw] text-wrap whitespace-pre-wrap select-text">
                 {text}
@@ -55,16 +67,28 @@ export default function ChatBubbleUser({
           </div>
         )}
 
-        <div className="flex justify-end opacity-0 transition-all group-hover:opacity-100">
+        <div className="flex flex-col items-end justify-end opacity-0 transition-all group-hover:opacity-100">
           {date && (
-            <span className="text-opacity-45 flex flex-col pt-[2px] text-xs text-white select-text">
+            <span className="flex flex-col py-2 text-xs text-zinc-400 select-text">
               {parseDate(date)}
             </span>
           )}
+
+          {text && (
+            <Button
+              isIconOnly
+              className="h-fit w-fit rounded-md p-0"
+              style={{ minWidth: "22px" }}
+              variant="light"
+              onPress={copyToClipboard}
+            >
+              <Task01Icon className="cursor-pointer" height="22" width="22" />
+            </Button>
+          )}
         </div>
       </div>
-      <div className="sticky -bottom-3 min-w-[40px]">
-        <Avatar className="relative bottom-4 rounded-full bg-black">
+      <div className="min-w-[40px]">
+        <Avatar className="relative bottom-13 rounded-full bg-black">
           <AvatarImage src={user?.profilePicture} alt="User Avatar" />
           <AvatarFallback>
             <Image

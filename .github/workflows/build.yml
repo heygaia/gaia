@@ -72,6 +72,11 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: deploy
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }
 
   trigger-frontend:
     runs-on: ubuntu-latest
@@ -83,3 +88,8 @@ jobs:
         with:
           token: ${{ secrets.GITHUB_TOKEN }}
           event-type: deploy-frontend
+          client-payload: |
+            {
+              "ref": "${{ github.ref }}",
+              "sha": "${{ github.sha }}"
+            }

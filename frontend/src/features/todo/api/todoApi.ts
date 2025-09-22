@@ -11,9 +11,9 @@ import {
   TodoFilters,
   TodoListResponse,
   TodoUpdate,
-  Workflow,
   WorkflowStatus,
 } from "@/types/features/todoTypes";
+import type { Workflow } from "@/types/features/workflowTypes";
 
 export const todoApi = {
   // todo CRUD operations

@@ -1,14 +1,10 @@
 import json
 from typing import Annotated, Any, Dict, Optional
 
-from bson import ObjectId
-from langchain_core.runnables import RunnableConfig
-from langchain_core.tools import tool
-from langgraph.config import get_stream_writer
-
 from app.config.loggers import chat_logger as logger
 from app.db.mongodb.collections import goals_collection
 from app.db.redis import delete_cache, get_cache, set_cache
+from app.decorators import with_doc, with_rate_limiting
 from app.docstrings.langchain.tools.goal_tool_docs import (
     CREATE_GOAL,
     DELETE_GOAL,
@@ -19,7 +15,6 @@ from app.docstrings.langchain.tools.goal_tool_docs import (
     SEARCH_GOALS,
     UPDATE_GOAL_NODE,
 )
-from app.decorators import with_doc, with_rate_limiting
 from app.models.goals_models import GoalCreate, UpdateNodeRequest
 from app.services.goals_service import (
     delete_goal_service,
@@ -29,22 +24,11 @@ from app.services.goals_service import (
     update_goal_with_roadmap_service,
     update_node_status_service,
 )
-
-
-def get_user_from_config(config: RunnableConfig) -> dict:
-    """Extract user data from the config."""
-    if not config:
-        logger.error("Goal tool called without config")
-        return {}
-
-    metadata = config.get("metadata", {})
-    user_id = metadata.get("user_id", "")
-
-    if not user_id:
-        logger.error("No user_id found in config metadata")
-        return {}
-
-    return {"user_id": user_id}
+from app.utils.chat_utils import get_user_id_from_config
+from bson import ObjectId
+from langchain_core.runnables import RunnableConfig
+from langchain_core.tools import tool
+from langgraph.config import get_stream_writer
 
 
 async def invalidate_goal_caches(user_id: str, goal_id: Optional[str] = None) -> None:
@@ -95,7 +79,7 @@ async def create_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Creating goal with title '{title}'")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "goal": None}
@@ -149,7 +133,7 @@ async def create_goal(
 async def list_goals(config: RunnableConfig) -> Dict[str, Any]:
     try:
         logger.info("Goal Tool: Listing all goals")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "goals": []}
@@ -194,7 +178,7 @@ async def get_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Getting goal {goal_id}")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "goal": None}
@@ -252,7 +236,7 @@ async def delete_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Deleting goal {goal_id}")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "success": False}
@@ -304,7 +288,7 @@ async def generate_roadmap(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Generating roadmap for goal {goal_id}")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "roadmap": None}
@@ -421,7 +405,7 @@ async def update_goal_node(
         logger.info(
             f"Goal Tool: Updating node {node_id} in goal {goal_id} to complete={is_complete}"
         )
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "goal": None}
@@ -474,7 +458,7 @@ async def search_goals(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Searching goals with query '{query}'")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "goals": []}
@@ -537,7 +521,7 @@ async def search_goals(
 async def get_goal_statistics(config: RunnableConfig) -> Dict[str, Any]:
     try:
         logger.info("Goal Tool: Getting goal statistics")
-        user = get_user_from_config(config)
+        user = get_user_id_from_config(config)
 
         if not user.get("user_id"):
             return {"error": "User authentication required", "stats": None}

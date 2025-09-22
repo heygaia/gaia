@@ -299,10 +299,8 @@ class WorkflowService:
             if not result:
                 raise ValueError(f"Failed to update workflow {workflow_id}")
 
-            # Generate unique execution ID
             execution_id = f"exec_{workflow_id}_{uuid.uuid4().hex[:8]}"
 
-            # Queue workflow execution
             await WorkflowQueueService.queue_workflow_execution(
                 workflow_id, user_id, request.context
             )
@@ -450,17 +448,9 @@ class WorkflowService:
             if not workflow:
                 return None
 
-            # Log the regeneration reason if provided
-            if regeneration_reason:
-                logger.info(
-                    f"Regenerating workflow {workflow_id} steps. Reason: {regeneration_reason}"
-                )
-            else:
-                logger.info(f"Regenerating workflow {workflow_id} steps")
-
             # Generate new steps using the existing title and description
             steps_data = await WorkflowGenerationService.generate_steps_with_llm(
-                workflow.description, workflow.title
+                workflow.description, workflow.title, workflow.trigger_config
             )
 
             # Update workflow with new steps
@@ -481,7 +471,6 @@ class WorkflowService:
             return None
 
         except Exception as e:
-            # Just log the error and re-raise
             logger.error(f"Error regenerating workflow steps {workflow_id}: {str(e)}")
             raise
 
@@ -500,7 +489,7 @@ class WorkflowService:
 
             # Generate steps using structured LLM output
             steps_data = await WorkflowGenerationService.generate_steps_with_llm(
-                workflow.description, workflow.title
+                workflow.description, workflow.title, workflow.trigger_config
             )
 
             if steps_data:
