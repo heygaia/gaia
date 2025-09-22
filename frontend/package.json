@@ -142,7 +142,6 @@
     "emblor": "^1.4.8",
     "eslint-config-next": "^15.5.0",
     "framer-motion": "^12.23.12",
-    "fs": "0.0.1-security",
     "glob": "^11.0.3",
     "gsap": "^3.13.0",
     "he": "^1.2.0",
