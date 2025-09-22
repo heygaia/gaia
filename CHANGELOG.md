@@ -1,5 +1,30 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-22)
+
+
+### Features
+
+* Add color utility functions for color handling ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* added cicd for build and deploy ([0078b30](https://github.com/heygaia/gaia/commit/0078b300b97b4a7341ff8834a62c2ce83fc34c45))
+* Cleaner Landing Page ([#220](https://github.com/heygaia/gaia/issues/220)) ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Create ToolsShowcaseSection for displaying tools ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Enhance TiredBoringAssistants section with new design elements ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* integrate HeroUI into Tailwind CSS setup ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+
+
+### Bug Fixes
+
+* clean up MailCompose component styles ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* fixed deployment script ([4df4edd](https://github.com/heygaia/gaia/commit/4df4edd797762718b7e626f1543ae7be19ca5bc5))
+* fixed discord issue in workflow ([4c28d00](https://github.com/heygaia/gaia/commit/4c28d00b2bf897f6f66fb9a770afac521563bf19))
+* fixed discord unable to send message issue ([d5ab073](https://github.com/heygaia/gaia/commit/d5ab07327fa1707ea09d3530508be937adfba82b))
+* fixed few issue in cicd ([ca15ddf](https://github.com/heygaia/gaia/commit/ca15ddf5fc3df24d0c0abf460027bdcb8a6ee372))
+* fixed permission issues ([8296a79](https://github.com/heygaia/gaia/commit/8296a79fcac168dd737f69f1f8a4843ea38c65a6))
+* fixed permission issues [#171](https://github.com/heygaia/gaia/issues/171) ([8296a79](https://github.com/heygaia/gaia/commit/8296a79fcac168dd737f69f1f8a4843ea38c65a6))
+* improve accessibility by adding aria-labels to buttons and iframes ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Update CalendarContent layout for better responsiveness ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+
 ## [0.4.0-beta](https://github.com/heygaia/gaia/compare/v0.3.0-beta...v0.4.0-beta) (2025-09-04)
 
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-22)
+
+
+### Features
+
+* Add color utility functions for color handling ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Cleaner Landing Page ([#220](https://github.com/heygaia/gaia/issues/220)) ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Create ToolsShowcaseSection for displaying tools ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Enhance TiredBoringAssistants section with new design elements ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* integrate HeroUI into Tailwind CSS setup ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+
+
+### Bug Fixes
+
+* clean up MailCompose component styles ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* improve accessibility by adding aria-labels to buttons and iframes ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Update CalendarContent layout for better responsiveness ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+
 ## [0.4.0-beta](https://github.com/heygaia/gaia/compare/v0.3.0-beta...v0.4.0-beta) (2025-09-04)
 
 
