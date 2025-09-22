@@ -227,7 +227,11 @@ export default function TextBubble({
         tool_data.map((entry, index) => {
           const render = TOOL_RENDERERS[entry.tool_name as ToolName];
           if (!render) return null;
-          return <>{render(entry.data, index)}</>;
+          return (
+            <React.Fragment key={`tool-${entry.tool_name}-${index}`}>
+              {render(entry.data, index)}
+            </React.Fragment>
+          );
         })}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) &&
