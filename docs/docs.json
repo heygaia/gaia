@@ -29,7 +29,8 @@
             "pages": [
               "developers/introduction",
               "developers/development-setup",
-              "developers/contributing"
+              "developers/contributing",
+              "developers/release-workflow"
             ]
           },
           {
@@ -48,8 +49,9 @@
             "group": "Extra Developer Docs",
             "pages": [
               "developers/extra/lazy-loading",
-              "developers/extra/release-workflow"
-              
+              "developers/extra/add-tools",
+              "developers/extra/add-env-vars",
+              "developers/extra/frontend-config"
             ]
           }
         ]

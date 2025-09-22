@@ -6,7 +6,7 @@ icon: "key"
 
 ## Environment Configuration
 
-GAIA uses many integrations, but you don’t need all keys to start. We load env via Pydantic settings and lazily initialize providers only when first used. See: [Lazy loading env & providers](/developers/extra/lazy-loading).
+GAIA uses many integrations, but you don’t need all keys to start. We load env via Pydantic settings and lazily initialize providers only when first used. See: [Lazy Loading Env. Variables](/developers/extra/lazy-loading).
 
 ### What you must set
 - **Backend (always required in all envs)**: `MONGO_DB`, `REDIS_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`
@@ -110,5 +110,5 @@ NEXT_PUBLIC_BLOG_BEARER_TOKEN=your-blog-management-token-here
 ```
 
 ## See also
-- [Lazy loading env & providers](/developers/extra/lazy-loading)
+- [Lazy Loading Env. Variables](/developers/extra/lazy-loading)
 - Production requirements: see `backend/app/config/settings.py` `ProductionSettings`
