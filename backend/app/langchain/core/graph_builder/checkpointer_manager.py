@@ -11,6 +11,8 @@ Add/change config
 - To alter pool size/shallow mode, adjust `CheckpointerManager` init params.
 """
 
+from typing import Optional
+
 from app.config.settings import settings
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from langgraph.checkpoint.postgres.aio import (
@@ -112,29 +114,25 @@ async def init_shallow_checkpointer_manager() -> CheckpointerManager:
     return manager
 
 
-async def get_checkpointer_manager() -> CheckpointerManager:
+async def get_checkpointer_manager() -> Optional[CheckpointerManager]:
     """
     Get the main checkpointer manager instance.
 
     Returns:
-        CheckpointerManager: The main checkpointer manager
+        Optional[CheckpointerManager]: The main checkpointer manager, or None if not available
     """
     manager = await providers.aget("checkpointer_manager")
-    if not manager:
-        raise RuntimeError("Checkpointer manager is not available")
     return manager
 
 
-async def get_shallow_checkpointer_manager() -> CheckpointerManager:
+async def get_shallow_checkpointer_manager() -> Optional[CheckpointerManager]:
     """
     Get the shallow checkpointer manager instance.
 
     Returns:
-        CheckpointerManager: The shallow checkpointer manager
+        Optional[CheckpointerManager]: The shallow checkpointer manager, or None if not available
     """
     manager = await providers.aget("shallow_checkpointer_manager")
-    if not manager:
-        raise RuntimeError("Shallow checkpointer manager is not available")
     return manager
 
 
