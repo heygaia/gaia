@@ -1,22 +1,23 @@
 #!/bin/bash
 set -e
 
-# Detect python
-PYTHON=$(command -v python3 || command -v python)
-
-# --- Environment Setup ---
-echo "🔧 Setting up environment variables..."
-
-[ ! -f "backend/.env" ] && cp backend/.env.example backend/.env && echo "Created backend/.env" || echo "backend/.env already exists, skipping..."
-[ ! -f "frontend/.env" ] && cp frontend/.env.example frontend/.env && echo "Created frontend/.env" || echo "frontend/.env already exists, skipping..."
-
-# --- Docker ---
-echo "🐳 Starting Docker services..."
-if command -v docker compose &> /dev/null; then
-    docker compose up -d
-else
-    docker-compose up -d
+# Check if .env files exist
+if [ ! -f "backend/.env" ] || [ ! -f "frontend/.env" ]; then
+    echo "❌ Environment files not found!"
+    echo ""
+    echo "Please copy the example environment files first:"
+    echo "  cp backend/.env.example backend/.env"
+    echo "  cp frontend/.env.example frontend/.env"
+    echo ""
+    echo "Then configure your environment variables and run this script again."
+    exit 1
 fi
+
+echo "✅ Environment files found. Continuing with setup..."
+
+# --- Docker Compose ---
+echo "Starting Docker services in the background..."
+docker-compose up -d
 
 # --- Backend Setup ---
 echo "⚙️ Setting up backend..."

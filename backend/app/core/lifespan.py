@@ -1,65 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-from app.config.cloudinary import init_cloudinary
 from app.config.loggers import app_logger as logger
-from app.db.chromadb import init_chroma
-from app.db.postgresql import close_postgresql_db, init_postgresql_db
-from app.db.rabbitmq import publisher
-from app.langchain.core.graph_builder.build_graph import build_graph
-from app.langchain.core.graph_manager import GraphManager
+from app.db.postgresql import close_postgresql_db
+from app.db.rabbitmq import get_rabbitmq_publisher
 from app.langchain.tools.core.store import initialize_tools_store
 from app.utils.websocket_consumer import (
     start_websocket_consumer,
     stop_websocket_consumer,
 )
 from fastapi import FastAPI
-
-
-async def init_chroma_async(app):
-    """Initialize Chroma database."""
-    try:
-        await init_chroma(app)
-        logger.info("Chroma initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Chroma: {e}")
-        raise
-
-
-async def init_postgresql_async():
-    """Initialize PostgreSQL database."""
-    try:
-        await init_postgresql_db()
-        logger.info("PostgreSQL initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize PostgreSQL database: {e}")
-        raise RuntimeError("PostgreSQL initialization failed") from e
-
-
-async def setup_checkpointer_manager():
-    """Setup checkpointer manager for LangGraph."""
-    try:
-        from app.langchain.core.graph_builder.checkpointer_manager import (
-            checkpointer_manager,
-            checkpointer_manager_shallow,
-        )
-
-        await checkpointer_manager.setup()
-        await checkpointer_manager_shallow.setup()
-    except Exception as e:
-        logger.error(f"Failed to setup checkpointer manager: {e}")
-        raise RuntimeError("Checkpointer manager setup failed") from e
-
-
-async def init_cloudinary_async():
-    """Initialize Cloudinary service."""
-    try:
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, init_cloudinary)
-        logger.info("Cloudinary initialized successfully")
-    except Exception as e:
-        logger.error(f"Failed to initialize Cloudinary: {e}")
-        raise
 
 
 async def init_reminder_service():
@@ -88,16 +38,6 @@ async def init_workflow_service():
         raise
 
 
-async def init_rabbitmq():
-    """Initialize RabbitMQ connection."""
-    try:
-        await publisher.connect()
-        logger.info("RabbitMQ connection established")
-    except Exception as e:
-        logger.error(f"Failed to connect to RabbitMQ: {e}")
-        raise
-
-
 async def init_websocket_consumer():
     """Initialize WebSocket event consumer."""
     try:
@@ -105,17 +45,6 @@ async def init_websocket_consumer():
         logger.info("WebSocket event consumer started")
     except Exception as e:
         logger.error(f"Failed to start WebSocket consumer: {e}")
-        raise
-
-
-async def init_default_graph():
-    """Initialize default graph and store in GraphManager."""
-    try:
-        async with build_graph() as built_graph:
-            await GraphManager.set_graph(built_graph)
-            logger.info("Default graph initialized")
-    except Exception as e:
-        logger.error(f"Failed to initialize default graph: {e}")
         raise
 
 
@@ -175,7 +104,11 @@ async def close_websocket_async():
 async def close_publisher_async():
     """Close publisher connection."""
     try:
-        await publisher.close()
+        publisher = await get_rabbitmq_publisher()
+
+        if publisher:
+            await publisher.close()
+
         logger.info("Publisher closed")
     except Exception as e:
         logger.error(f"Error closing publisher: {e}")
@@ -197,49 +130,62 @@ def _process_results(results, service_names):
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Application lifespan context manager.
+    Application lifespan context manager with lazy providers.
     Handles startup and shutdown events.
     """
     try:
-        logger.info("Starting up the API...")
+        logger.info("Starting up the API with lazy providers...")
 
-        core_tasks = [
-            init_postgresql_async(),
-            setup_checkpointer_manager(),
-        ]
+        # Register all lazy providers
+        logger.info("Registering lazy providers...")
 
-        results = await asyncio.gather(*core_tasks, return_exceptions=True)
+        # Import and register providers
+        from app.config.cloudinary import init_cloudinary
+        from app.core.lazy_loader import providers
+        from app.db.chromadb import init_chroma
+        from app.db.postgresql import init_postgresql_engine
+        from app.db.rabbitmq import init_rabbitmq_publisher
+        from app.langchain.core.graph_builder.build_graph import build_default_graph
+        from app.langchain.core.graph_builder.checkpointer_manager import (
+            init_checkpointer_managers,
+        )
+        from app.langchain.llm.client import (
+            register_llm_providers,
+        )
 
-        _process_results(results, ["postgresql", "checkpointer_manager"])
+        # Register all providers
+        init_postgresql_engine()
+        init_rabbitmq_publisher()
+        register_llm_providers()
+        build_default_graph()
+        init_chroma()
+        init_cloudinary()
+        init_checkpointer_managers()
 
-        # Initialize all services in parallel
+        logger.info("All lazy providers registered successfully")
+
+        # Initialize services that still require eager initialization
         startup_tasks = [
-            init_chroma_async(app),
             init_mongodb_async(),
-            init_cloudinary_async(),
             init_reminder_service(),
             init_workflow_service(),
-            init_rabbitmq(),
             init_websocket_consumer(),
-            init_default_graph(),
             init_tools_store_async(),
+            providers.initialize_auto_providers(),
         ]
 
-        # Run all initialization tasks in parallel
+        # Run remaining initialization tasks in parallel
         results = await asyncio.gather(*startup_tasks, return_exceptions=True)
 
         _process_results(
             results,
             [
-                "chroma",
-                "cloudinary",
                 "mongodb",
                 "reminder_service",
                 "workflow_service",
-                "rabbitmq",
                 "websocket_consumer",
-                "default_graph",
                 "tools_store",
+                "lazy_providers_auto_initializer",
             ],
         )
 

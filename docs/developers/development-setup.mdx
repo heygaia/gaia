@@ -9,21 +9,13 @@ icon: "laptop-code"
 This development setup guide is designed for:
 
 <CardGroup cols={2}>
-  <Card title="Contributors" icon="git-branch">
+  <Card title="Open Source Contributors" icon="git-alt">
     Developers who want to contribute to the GAIA project by fixing bugs, adding
     features, or improving documentation
   </Card>
   <Card title="Customizers" icon="wrench">
     Developers who want to modify GAIA for their specific use cases or integrate
     it with custom systems
-  </Card>
-  <Card title="Open Source Enthusiasts" icon="heart">
-    Developers who want to learn from the codebase, understand the architecture,
-    or build upon GAIA
-  </Card>
-  <Card title="Enterprise Teams" icon="building">
-    Development teams who need to customize GAIA for enterprise deployment and
-    integration
   </Card>
 </CardGroup>
 
@@ -33,19 +25,18 @@ Before you begin, ensure you have the following installed:
 
 <AccordionGroup>
   <Accordion icon="docker" title="Docker & Docker Compose">
-    - Docker Desktop or Docker Engine (v20.10+)
-    - Docker Compose (v2.0+)
+    - Docker Desktop or Docker Engine
+    - Docker Compose
     - At least 4GB of available RAM
     - 10GB of free disk space
   </Accordion>
-
-{" "}
-
-<Accordion icon="code" title="Development Tools">
-  - Git (for version control) - Python 3.11+ (for backend development) - Node.js
-  18+ (for frontend development) - pnpm (for frontend package management) - uv
-  (for Python package management)
-</Accordion>
+  <Accordion icon="code" title="Development Tools">
+    - Git (for version control)
+    - Python 3.11+ (for backend development)
+    - Node.js 18+ (for frontend development)
+    - pnpm (for frontend package management)
+    - uv (for Python package management)
+  </Accordion>
 
   <Accordion icon="terminal" title="System Requirements">
     - macOS, Linux, or Windows with WSL2
@@ -58,59 +49,44 @@ Before you begin, ensure you have the following installed:
 
 To start developing on GAIA, you need to set up your local environment. You can choose between an automated setup using our script or a manual setup.
 
-<CardGroup cols={2}>
-  <Card title="Automated Setup" icon="rocket" href="#automated-setup">
-    The easiest way to get started. Our script handles everything for you.
-  </Card>
-  <Card title="Manual Setup" icon="wrench" href="#manual-setup">
-    For those who want more control over the setup process.
-  </Card>
-</CardGroup>
+<Tabs>
+  <Tab title="Automated Setup" icon="rocket">
+    We provide a script that automates the entire setup process. This is the recommended method for most users.
 
-## Automated Setup
+    <Steps>
+      <Step title="Setup Environment Variables">
+        First, copy the example environment files and configure them:
 
-We provide a script that automates the entire setup process. This is the recommended method for most users.
+        ```bash
+        cp backend/.env.example backend/.env
+        cp frontend/.env.example frontend/.env
+        ```
 
-<Steps>
-  <Step title="Run the Setup Script">
-    Open your terminal and run the following command from the project root:
+        Then configure your environment variables by following the [Environment Variables Reference](/configuration/environment-variables).
 
-    ```bash
-    ./scripts/setup.sh
-    ```
+      </Step>
+      <Step title="Run the Setup Script">
+        Open your terminal and run the following command from the project root:
 
-    This script will:
-    - Copy environment configuration files from examples (`.env.example` → `.env`).
-    - Start the required services with Docker Compose.
-    - Create a Python virtual environment.
-    - Install backend dependencies with `uv`.
-    - Install frontend dependencies with `pnpm`.
+        ```bash
+        ./scripts/setup.sh
+        ```
 
-  </Step>
-  <Step title="Configure Environment Variables">
-    After the script completes, you'll need to configure your environment variables:
+        This script will:
+        - Start all Docker services
+        - Create a Python virtual environment.
+        - Install backend dependencies with `uv`.
+        - Install frontend dependencies with `pnpm`.
 
-    <Note>
-      The script creates `.env` files from examples, but you need to add your API keys and secrets.
-    </Note>
+      </Step>
+      <Step title="You're Ready!">
+        Your development environment is now ready to go!
+      </Step>
+    </Steps>
 
-    Edit the created configuration files:
-    - `backend/.env` - Add your API keys (OpenAI, Google OAuth, etc.)
-    - `frontend/.env` - Configure API URLs and tokens
-
-    For detailed configuration instructions, see:
-    - [Environment Variables Reference](/configuration/environment-variables)
-    - [Infisical Setup Guide](/configuration/infisical-setup) (recommended for production)
-
-  </Step>
-  <Step title="You're Ready!">
-    Once you've configured your environment variables, your development environment is ready to go!
-  </Step>
-</Steps>
-
-## Manual Setup
-
-If you prefer to set up your environment manually, follow these steps.
+  </Tab>
+  <Tab title="Manual Setup" icon="wrench">
+    If you prefer to set up your environment manually, follow these steps.
 
 ### Environment Variables
 
@@ -213,77 +189,5 @@ Before you start the services, you need to configure your environment variables.
   </Step>
 </Steps>
 
-## Running the Development Environment
-
-After completing the setup, here's how to start your development environment:
-
-### Recommended Development Workflow
-
-<Steps>
-  <Step title="Start Backend Services">
-    Start only the backend services and databases using the backend-only profile:
-
-    ```bash
-    docker compose --profile backend-only up -d
-    ```
-
-    This starts:
-    - **gaia-backend** - FastAPI application (port 8000)
-    - **postgres** - Database (port 5432)
-    - **redis** - Cache & sessions (port 6379)
-    - **mongo** - Document storage (port 27017)
-    - **chromadb** - Vector database (port 8080)
-    - **rabbitmq** - Message queue (port 5672, management UI on 15672)
-    - **arq_worker** - Background task worker
-    - **worker** - Scheduler worker
-
-  </Step>
-
-  <Step title="Start Frontend Development Server">
-    In a separate terminal, navigate to the frontend directory and start the development server:
-
-    ```bash
-    cd frontend
-    pnpm dev
-    ```
-
-    The frontend will be available at `http://localhost:3000` with optimized hot reloading.
-
-  </Step>
-
-  <Step title="Verify Setup">
-    - **Frontend**: http://localhost:3000
-    - **Backend API**: http://localhost:8000
-    - **API Docs**: http://localhost:8000/docs
-    - **RabbitMQ Management**: http://localhost:15672 (admin/admin)
-    - **Mongo Express**: http://localhost:8081 (admin/password)
-  </Step>
-</Steps>
-
-### Alternative: Full Docker Setup
-
-If you prefer to run everything in Docker (including the frontend):
-
-```bash
-docker compose up -d
-```
-
-<Warning>
-  **Performance Note:** This approach may result in slower hot reloading for
-  frontend development compared to running the frontend manually with `pnpm
-  dev`.
-</Warning>
-
-### Stopping Services
-
-To stop all running Docker services:
-
-```bash
-docker compose down
-```
-
-To stop and remove all data (reset everything):
-
-```bash
-docker compose down -v
-```
+  </Tab>
+</Tabs>

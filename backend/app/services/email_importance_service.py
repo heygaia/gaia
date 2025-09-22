@@ -3,12 +3,11 @@
 import logging
 from typing import Any, Dict, List, Optional
 
-from langchain_core.output_parsers import PydanticOutputParser
-
 from app.db.mongodb.collections import mail_collection
-from app.langchain.llm.client import init_gemini_llm
+from app.langchain.llm.client import init_llm
 from app.langchain.prompts.mail_prompts import EMAIL_COMPREHENSIVE_ANALYSIS
 from app.models.mail_models import EmailComprehensiveAnalysis
+from langchain_core.output_parsers import PydanticOutputParser
 
 logger = logging.getLogger(__name__)
 
@@ -113,7 +112,7 @@ async def process_email_comprehensive_analysis(
     """
     try:
         # Initialize Gemini LLM
-        llm = init_gemini_llm()
+        llm = init_llm(preferred_provider="gemini")
 
         # Format prompt with email data and format instructions
         prompt = EMAIL_COMPREHENSIVE_ANALYSIS.format(
@@ -124,21 +123,18 @@ async def process_email_comprehensive_analysis(
             format_instructions=email_comprehensive_parser.get_format_instructions(),
         )
 
-        # Get response from Gemini
+        # Get response from llm
         response = await llm.ainvoke(prompt)
+
+        if isinstance(response, str):
+            response_text = response.strip()
+        else:
+            response_text = response.text()
 
         # Parse response following agent.py pattern
         try:
-            # Handle response content type
-            if isinstance(response.content, str):
-                ai_response = response.content
-            elif isinstance(response.content, list):
-                ai_response = " ".join(str(item) for item in response.content)
-            else:
-                ai_response = str(response.content)
-
             # Parse using the parser directly
-            result = email_comprehensive_parser.parse(ai_response)
+            result = email_comprehensive_parser.parse(response_text)
             logger.info(f"Successfully parsed comprehensive email analysis: {result}")
             return result
 

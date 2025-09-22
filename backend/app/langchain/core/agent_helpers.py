@@ -150,6 +150,10 @@ async def execute_graph_silent(
 
         if stream_mode == "messages":
             chunk, metadata = payload
+
+            if metadata.get("silent"):
+                continue  # Skip silent chunks (e.g. follow-up actions generation)
+
             if chunk and isinstance(chunk, AIMessageChunk):
                 content = str(chunk.content)
                 if content:

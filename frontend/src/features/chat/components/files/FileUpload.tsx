@@ -237,10 +237,6 @@ export default function FileUpload({
         onFilesUploaded(uploadedFiles);
       }
 
-      toast.success(
-        `${validFiles.length} file${validFiles.length > 1 ? "s" : ""} uploaded successfully`,
-      );
-
       clearAllFiles();
     } catch (error) {
       console.error("Error uploading files:", error);

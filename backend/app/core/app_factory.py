@@ -26,9 +26,9 @@ def create_app() -> FastAPI:
         title="GAIA API",
         description="Backend for General-purpose AI assistant (GAIA)",
         contact={
-            "name": "Aryan Randeriya",
-            "url": "http://aryanranderiya.com",
-            "email": "aryan@heygaia.io",
+            "name": "GAIA Labs",
+            "url": "http://heygaia.io",
+            "email": "hi@heygaia.io",
         },
         docs_url=None if settings.ENV == "production" else "/docs",
         redoc_url=None if settings.ENV == "production" else "/redoc",
