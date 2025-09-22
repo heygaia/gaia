@@ -35,7 +35,7 @@ def init_llm(
     ).configurable_fields(
         model=ConfigurableField(id="model_name", name="LLM Model Name")
     )
-    carebras_llm = ChatCerebras(
+    cerebras_llm = ChatCerebras(
         model=CEREBRAS_MODEL,
         temperature=0.1,
         streaming=streaming,
@@ -48,5 +48,5 @@ def init_llm(
         ConfigurableField(id="provider"),
         default_key="openai",
         gemini=gemini_llm,
-        cerebras=carebras_llm,
+        cerebras=cerebras_llm,
     )

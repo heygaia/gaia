@@ -1,9 +1,18 @@
+// Utility type: union of all possible tool_name/data pairs
+type ToolDataUnion = {
+  [K in ToolName]: { tool_name: K; data: ToolDataMap[K] }
+}[ToolName];
+
+function getTypedData<K extends ToolName>(entry: ToolDataUnion, toolName: K): ToolDataMap[K] | undefined {
+  return entry.tool_name === toolName ? (entry.data as ToolDataMap[K]) : undefined;
+}
 // TextBubble.tsx
 import { Chip } from "@heroui/chip";
 import { AlertTriangleIcon } from "lucide-react";
+import React from "react";
 
 import { InternetIcon } from "@/components/shared/icons";
-
+import { ToolDataMap, ToolName } from "@/config/registries/toolRegistry";
 import CalendarListCard from "@/features/calendar/components/CalendarListCard";
 import CalendarListFetchCard from "@/features/calendar/components/CalendarListFetchCard";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
@@ -12,7 +21,6 @@ import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResu
 import { splitMessageByBreaks } from "@/features/chat/utils/messageBreakUtils";
 import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import EmailListCard from "@/features/mail/components/EmailListCard";
-import EmailSentCard from "@/features/mail/components/EmailSentCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
 import {
   CalendarDeleteOptions,
@@ -35,6 +43,7 @@ import {
 } from "@/types/features/calendarTypes";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { EmailFetchData } from "@/types/features/mailTypes";
+import { NotificationRecord } from "@/types/features/notificationTypes";
 import { SupportTicketData } from "@/types/features/supportTypes";
 
 import MarkdownRenderer from "../../interface/MarkdownRenderer";
@@ -50,12 +59,12 @@ import GoogleDocsSection from "./GoogleDocsSection";
 import NotificationListSection from "./NotificationListSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
-import { ToolName } from "@/config/registries/toolRegistry";
 
 // Map of tool_name -> renderer function for unified tool_data rendering
-const TOOL_RENDERERS: Partial<
-  Record<ToolName, (data: any, index: number) => React.ReactNode>
-> = {
+type RendererMap = {
+  [K in ToolName]: (data: ToolDataMap[K], index: number) => React.ReactNode;
+};
+const TOOL_RENDERERS: Partial<RendererMap> = {
   // Search
   search_results: (data, index) => (
     <SearchResultsTabs
@@ -199,11 +208,25 @@ const TOOL_RENDERERS: Partial<
   notification_data: (data, index) => (
     <NotificationListSection
       key={`tool-notifications-${index}`}
-      notifications={(data as { notifications: any[] }).notifications}
+      notifications={
+        (data as { notifications: unknown[] })
+          .notifications as NotificationRecord[]
+      }
       title="Your Notifications"
     />
   ),
 };
+
+function renderTool<K extends ToolName>(
+  name: K,
+  data: ToolDataMap[K],
+  index: number,
+): React.ReactNode {
+  const renderer = TOOL_RENDERERS[name] as
+    | ((data: ToolDataMap[K], index: number) => React.ReactNode)
+    | undefined;
+  return renderer ? renderer(data, index) : null;
+}
 
 export default function TextBubble({
   text,
@@ -223,16 +246,18 @@ export default function TextBubble({
   return (
     <>
       {/* Unified tool_data rendering via registry */}
-      {tool_data &&
-        tool_data.map((entry, index) => {
-          const render = TOOL_RENDERERS[entry.tool_name as ToolName];
-          if (!render) return null;
-          return (
-            <React.Fragment key={`tool-${entry.tool_name}-${index}`}>
-              {render(entry.data, index)}
-            </React.Fragment>
-          );
-        })}
+      {tool_data?.map((entry, index) => {
+        const toolName = entry.tool_name as ToolName;
+        if (!TOOL_RENDERERS[toolName]) return null;
+        // Use type guard to get the correct type for data
+        const typedData = getTypedData(entry as ToolDataUnion, toolName);
+        if (typedData === undefined) return null;
+        return (
+          <React.Fragment key={`tool-${toolName}-${index}`}>
+            {renderTool(toolName, typedData, index)}
+          </React.Fragment>
+        );
+      })}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) &&
         (() => {

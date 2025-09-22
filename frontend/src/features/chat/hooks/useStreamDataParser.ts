@@ -1,4 +1,4 @@
-import { TOOLS_MESSAGE_KEYS } from "@/types/features/baseMessageRegistry";
+import { TOOLS_MESSAGE_KEYS } from "@/config/registries/toolRegistry";
 import { MessageType } from "@/types/features/convoTypes";
 
 export function parseStreamData(
