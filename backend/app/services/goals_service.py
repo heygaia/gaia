@@ -54,7 +54,18 @@ async def generate_roadmap_with_llm_stream(title: str):
 
         async for chunk in llm.astream(messages):
             chunk_count += 1
-            content = chunk if isinstance(chunk, str) else chunk.text()
+            
+            # Handle different chunk types: attribute-style vs method-style
+            if isinstance(chunk, str):
+                content = chunk
+            elif hasattr(chunk, "text") and not callable(getattr(chunk, "text", None)):
+                content = chunk.text
+            elif hasattr(chunk, "content") and not callable(getattr(chunk, "content", None)):
+                content = chunk.content
+            elif callable(getattr(chunk, "text", None)):
+                content = chunk.text()
+            else:
+                content = str(chunk)
 
             if content:
                 complete_response += str(content)
