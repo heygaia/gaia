@@ -1,8 +1,25 @@
 """Agent execution module providing streaming and silent execution modes.
 
-This module handles the core agent execution logic with two distinct patterns:
+This module handles the core agent execution logic with two distinct pa        graph, initial_state, config = await _core_agent_logic(
+            request,
+            conversation_id,
+            user,
+            user_time,
+            user_model_config,
+            trigger_context,
+        )
 
-1. Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
+        # Create token tracking callback
+        from app.langchain.callbacks.token_callback import TokenTrackingCallback
+
+        user_id = user.get("user_id")
+        token_callback = TokenTrackingCallback(
+            user_id=user_id or "unknown",
+            conversation_id=conversation_id,
+            feature_key="chat"
+        ) if user_id else None
+
+        return execute_graph_streaming(graph, initial_state, config, token_callback). Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
    - Required for interactive chat where users need immediate feedback
    - Cannot return awaited results directly due to AsyncGenerator yield semantics
    - Must yield SSE-formatted strings as they're produced
@@ -23,6 +40,7 @@ from datetime import datetime
 from typing import AsyncGenerator, Optional
 
 from app.config.loggers import llm_logger as logger
+from app.langchain.callbacks.token_callback import TokenTrackingCallback
 from app.langchain.core.agent_helpers import (
     build_agent_config,
     build_initial_state,
@@ -94,9 +112,11 @@ async def _core_agent_logic(
         )
 
     # Build config with optional tokens
-    config = build_agent_config(conversation_id, user, user_time, user_model_config)
+    config, token_tracking_callback = build_agent_config(
+        conversation_id, user, user_time, user_model_config
+    )
 
-    return graph, initial_state, config
+    return graph, initial_state, config, token_tracking_callback
 
 
 async def call_agent(
@@ -112,11 +132,13 @@ async def call_agent(
     Returns an AsyncGenerator that yields SSE-formatted streaming data.
     """
     try:
-        graph, initial_state, config = await _core_agent_logic(
+        graph, initial_state, config, token_tracking_callback = await _core_agent_logic(
             request, conversation_id, user, user_time, user_model_config
         )
 
-        return execute_graph_streaming(graph, initial_state, config)
+        return execute_graph_streaming(
+            graph, initial_state, config, token_tracking_callback
+        )
 
     except Exception as exc:
         logger.error(f"Error when calling agent: {exc}")
@@ -135,16 +157,17 @@ async def call_agent_silent(
     conversation_id: str,
     user: dict,
     user_time: datetime,
+    token_tracking_callback: TokenTrackingCallback,
     user_model_config: Optional[ModelConfig] = None,
     trigger_context: Optional[dict] = None,
-) -> tuple[str, dict]:
+) -> tuple[str, dict, dict]:
     """
     Execute agent in silent mode for background processing.
 
-    Returns a tuple of (complete_message, tool_data_dict).
+    Returns a tuple of (complete_message, tool_data_dict, token_metadata).
     """
     try:
-        graph, initial_state, config = await _core_agent_logic(
+        graph, initial_state, config, token_tracking_callback = await _core_agent_logic(
             request,
             conversation_id,
             user,
@@ -153,8 +176,10 @@ async def call_agent_silent(
             trigger_context,
         )
 
-        return await execute_graph_silent(graph, initial_state, config)
+        return await execute_graph_silent(
+            graph, initial_state, config, token_tracking_callback
+        )
 
     except Exception as exc:
         logger.error(f"Error when calling silent agent: {exc}")
-        return f"Error when calling silent agent: {str(exc)}", {}
+        return f"Error when calling silent agent: {str(exc)}", {}, {}

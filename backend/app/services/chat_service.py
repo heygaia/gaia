@@ -31,6 +31,7 @@ async def chat_stream(
         StreamingResponse: A streaming response containing the LLM's generated content
     """
     complete_message = ""
+    metadata = {}
     conversation_id, init_chunk = await initialize_conversation(body, user)
 
     # Dictionary to collect tool outputs during streaming
@@ -64,6 +65,7 @@ async def chat_stream(
             # So that we can return data that doesn't need to be streamed
             chunk_json = json.loads(chunk.replace("nostream: ", ""))
             complete_message = chunk_json.get("complete_message", "")
+            metadata = chunk_json.get("metadata", {})
         # Process data chunk - potentially contains tool outputs
         elif chunk.startswith("data: "):
             try:
@@ -107,7 +109,13 @@ async def chat_stream(
 
     # Save the conversation once streaming is complete
     update_conversation_messages(
-        background_tasks, body, user, conversation_id, complete_message, tool_data
+        background_tasks,
+        body,
+        user,
+        conversation_id,
+        complete_message,
+        tool_data,
+        metadata,
     )
 
 
@@ -217,6 +225,7 @@ def update_conversation_messages(
     conversation_id: str,
     complete_message: str,
     tool_data: Dict[str, Any] = {},
+    metadata: Dict[str, Any] = {},
 ) -> None:
     """
     Schedule conversation update in the background.
@@ -248,6 +257,7 @@ def update_conversation_messages(
         response=complete_message,
         date=datetime.now(timezone.utc).isoformat(),
         fileIds=body.fileIds,
+        metadata=metadata,
     )
 
     # Apply tool data fields to bot message if available

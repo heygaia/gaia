@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
+from app.langchain.callbacks.token_callback import TokenTrackingCallback
 from app.langchain.core.agent_utils import (
     format_sse_data,
     format_sse_response,
@@ -27,7 +28,7 @@ def build_agent_config(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
-) -> dict:
+) -> tuple[dict, TokenTrackingCallback]:
     """Build configuration for graph execution with optional authentication tokens.
 
     Creates a comprehensive configuration object for LangGraph execution that includes
@@ -38,13 +39,17 @@ def build_agent_config(
         user: User information dictionary containing user_id and email
         user_time: Current datetime for the user's timezone
         user_model_config: Optional model configuration with provider and token limits
-        access_token: Optional OAuth access token for authenticated requests
-        refresh_token: Optional OAuth refresh token for token renewal
 
     Returns:
-        Configuration dictionary formatted for LangGraph execution with configurable
-        parameters, metadata, and recursion limits
+        Tuple containing:
+        - Configuration dictionary formatted for LangGraph execution with configurable
+            parameters, metadata, and recursion limits
+        - TokenTrackingCallback instance for tracking token usage during execution
     """
+    user_id = user.get("user_id", "")
+    if not user_id:
+        raise ValueError("User ID is required to build agent config")
+
     model_configuration = {
         "provider": (
             user_model_config.inference_provider.value if user_model_config else None
@@ -54,6 +59,12 @@ def build_agent_config(
             user_model_config.provider_model_name if user_model_config else None
         ),
     }
+
+    token_tracking_callback = TokenTrackingCallback(
+        user_id=user_id,
+        conversation_id=conversation_id,
+        feature_key="chat",
+    )
 
     config = {
         "configurable": {
@@ -65,9 +76,10 @@ def build_agent_config(
         },
         "recursion_limit": 25,
         "metadata": {"user_id": user.get("user_id")},
+        "callbacks": [token_tracking_callback],
     }
 
-    return config
+    return config, token_tracking_callback
 
 
 def build_initial_state(
@@ -112,8 +124,11 @@ def build_initial_state(
 
 @traceable(run_type="llm", name="Call Agent Silent")
 async def execute_graph_silent(
-    graph, initial_state: dict, config: dict
-) -> tuple[str, dict]:
+    graph,
+    initial_state: dict,
+    config: dict,
+    token_tracking_callback: TokenTrackingCallback,
+) -> tuple[str, dict, dict]:
     """Execute LangGraph in silent mode with real-time progress storage.
 
     Runs the agent graph asynchronously and accumulates all results including
@@ -132,6 +147,7 @@ async def execute_graph_silent(
         Tuple containing:
         - complete_message: Full response text accumulated from all chunks
         - tool_data: Dictionary of extracted tool execution data and results
+        - token_metadata: Dictionary containing token usage information
     """
     complete_message = ""
     tool_data = {}
@@ -166,12 +182,18 @@ async def execute_graph_silent(
                         conversation_id, user_id, complete_message, tool_data
                     )
 
-    return complete_message, tool_data
+    # Get token usage metadata from callback
+    token_metadata = token_tracking_callback.get_token_metadata()
+
+    return complete_message, tool_data, token_metadata
 
 
 @traceable(run_type="llm", name="Call Agent")
 async def execute_graph_streaming(
-    graph, initial_state: dict, config: dict
+    graph,
+    initial_state: dict,
+    config: dict,
+    token_tracking_callback: TokenTrackingCallback,
 ) -> AsyncGenerator[str, None]:
     """Execute LangGraph in streaming mode with real-time output.
 
@@ -229,6 +251,11 @@ async def execute_graph_streaming(
             # Forward custom events as-is
             yield f"data: {json.dumps(payload)}\n\n"
 
-    # After streaming, yield complete message for DB storage
-    yield f"nostream: {json.dumps({'complete_message': complete_message})}"
+    # Get token metadata after streaming completes and yield complete message for DB storage
+    message_data = {"complete_message": complete_message}
+
+    token_metadata = token_tracking_callback.get_token_metadata()
+    message_data = {**message_data, "metadata": token_metadata}
+
+    yield f"nostream: {json.dumps(message_data)}"
     yield "data: [DONE]\n\n"
