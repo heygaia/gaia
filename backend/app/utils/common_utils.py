@@ -1,9 +1,10 @@
+import json
 from typing import Any, ClassVar, Dict, Set, TypeVar, cast
 
-from fastapi import WebSocket
-
 from app.config.loggers import common_logger as logger
+from app.db.rabbitmq import get_rabbitmq_publisher
 from app.utils.worker_detection import is_main_app
+from fastapi import WebSocket
 
 T = TypeVar("T", bound="WebSocketManager")
 
@@ -68,9 +69,7 @@ class WebSocketManager:
     async def _publish_to_rabbitmq(self, user_id: str, message: Dict[str, Any]) -> None:
         """Publish WebSocket message to RabbitMQ for main app to broadcast"""
         try:
-            import json
-
-            from app.db.rabbitmq import publisher
+            publisher = await get_rabbitmq_publisher()
 
             # Ensure publisher is connected
             if not publisher.channel:

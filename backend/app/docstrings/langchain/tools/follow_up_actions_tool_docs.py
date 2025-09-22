@@ -73,7 +73,5 @@ Quality over quantity - only suggest actions that would truly be useful to the u
 
 {format_instructions}
 
-Conversation context: {conversation_summary}
-
 Available tools: {tool_names}
 """

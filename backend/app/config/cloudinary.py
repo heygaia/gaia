@@ -1,22 +1,20 @@
 import cloudinary
-from fastapi import HTTPException
-
-from app.config.loggers import cloudinary_logger as logger
 from app.config.settings import settings
-
-cloud_name = settings.CLOUDINARY_CLOUD_NAME
-api_key = settings.CLOUDINARY_API_KEY
-api_secret = settings.CLOUDINARY_API_SECRET
-
-if not all([cloud_name, api_key, api_secret]):
-    logger.error("Missing required Cloudinary configuration values.")
-    raise HTTPException(
-        status_code=500,
-        detail="Missing Cloudinary configuration values. Ensure that CLOUDINARY_CLOUD_NAME, "
-        "CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET are set.",
-    )
+from app.core.lazy_loader import MissingKeyStrategy, lazy_provider
 
 
+@lazy_provider(
+    name="cloudinary",
+    required_keys=[
+        settings.CLOUDINARY_CLOUD_NAME,
+        settings.CLOUDINARY_API_KEY,
+        settings.CLOUDINARY_API_SECRET,
+    ],
+    auto_initialize=True,
+    is_global_context=True,
+    strategy=MissingKeyStrategy.WARN,
+    warning_message="Cloudinary configuration is missing or incomplete. Cloudinary features will be disabled.",
+)
 def init_cloudinary():
     """
     Initialize and configure the Cloudinary service.
@@ -33,22 +31,8 @@ def init_cloudinary():
     Returns:
         dict: Cloudinary configuration.
     """
-
-    if not all([cloud_name, api_key, api_secret]):
-        logger.error("Missing required Cloudinary configuration values.")
-        raise HTTPException(
-            status_code=500,
-            detail="Missing required Cloudinary configuration values. Ensure that CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, and CLOUDINARY_API_SECRET are set.",
-        )
-
     cloudinary.config(
-        cloud_name=cloud_name,
-        api_key=api_key,
-        api_secret=api_secret,
+        cloud_name=settings.CLOUDINARY_CLOUD_NAME,
+        api_key=settings.CLOUDINARY_API_KEY,
+        api_secret=settings.CLOUDINARY_API_SECRET,
     )
-
-    return {
-        "cloud_name": cloud_name,
-        "api_key": api_key,
-        "api_secret": api_secret,
-    }

@@ -154,30 +154,6 @@ services:
     networks:
       - gaia_network
 
-  # Scheduler Worker
-  worker:
-    container_name: worker
-    image: gaia
-    profiles: ["", "backend-only"]
-    working_dir: /app
-    env_file:
-      - ./backend/.env
-    environment:
-      - WORKER_TYPE=mail_worker
-    command: ["python", "-m", "app.worker"]
-    restart: always
-    volumes:
-      - ./backend:/app
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      chromadb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    networks:
-      - gaia_network
-
   # Arq Worker
   arq_worker:
     container_name: arq_worker
