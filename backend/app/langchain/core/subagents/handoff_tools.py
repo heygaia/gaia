@@ -49,17 +49,18 @@ def create_handoff_tool(
             tool_call_id=tool_call_id,
             name="main_agent",
         )
+        
+        # Create base_messages once to avoid duplication
+        base_messages = state["messages"] + [tool_message]
 
         agent_input = {
             **state,
-            "messages": state["messages"]
-            + [tool_message]
-            + [system_prompt_message, task_description_message],
+            "messages": base_messages + [system_prompt_message, task_description_message],
         }
 
         return Command(
             goto=[Send(agent_name, agent_input)],
-            update={"messages": state["messages"] + [tool_message]},
+            update={"messages": base_messages},
         )
 
     return handoff_tool
