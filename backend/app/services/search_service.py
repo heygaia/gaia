@@ -11,6 +11,7 @@ from app.db.mongodb.collections import (
 )
 from app.db.utils import serialize_document
 from app.utils.general_utils import get_context_window
+from app.utils.tool_data_utils import convert_legacy_tool_data
 
 # Constants
 MAX_CONTENT_LENGTH = 8000  # Max characters per webpage
@@ -103,6 +104,10 @@ async def search_messages(query: str, user_id: str) -> dict:
         conversations = results[0]["conversations"] if results else []
 
         for message in messages:
+            # Convert legacy tool data in the message
+            if "message" in message:
+                message["message"] = convert_legacy_tool_data(message["message"])
+            # Add snippet for search highlighting
             message["snippet"] = get_context_window(
                 message["message"]["response"], query, chars_before=30
             )

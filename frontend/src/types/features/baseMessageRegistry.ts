@@ -4,62 +4,9 @@
 
 import { FileData } from "@/types/shared/fileTypes";
 
-import {
-  CalendarDeleteOptions,
-  CalendarEditOptions,
-  CalendarFetchData,
-  CalendarListFetchData,
-  CalendarOptions,
-} from "./calendarTypes";
+import { TOOLS_MESSAGE_SCHEMA } from "@/config/registries/toolRegistry";
 import { IntegrationConnectionData } from "./integrationTypes";
-import { EmailComposeData, EmailFetchData, EmailSentData, EmailThreadData } from "./mailTypes";
-import { NotificationRecord } from "./notificationTypes";
-import { DeepResearchResults, SearchResults } from "./searchTypes";
-import { SupportTicketData } from "./supportTypes";
-import { TodoToolData } from "./todoToolTypes";
-import {
-  CodeData,
-  DocumentData,
-  GoalDataMessageType,
-  GoogleDocsData,
-  ImageData,
-  MemoryData,
-} from "./toolDataTypes";
-import { WeatherData } from "./weatherTypes";
 import { WorkflowData } from "./workflowTypes";
-
-export const TOOLS_MESSAGE_SCHEMA = {
-  calendar_options: undefined as CalendarOptions[] | null | undefined,
-  calendar_delete_options: undefined as
-    | CalendarDeleteOptions[]
-    | null
-    | undefined,
-  calendar_edit_options: undefined as CalendarEditOptions[] | null | undefined,
-  email_compose_data: undefined as EmailComposeData[] | null | undefined,
-  email_fetch_data: undefined as EmailFetchData[] | null | undefined,
-  email_thread_data: undefined as EmailThreadData | null | undefined,
-  email_sent_data: undefined as EmailSentData | null | undefined,
-  support_ticket_data: undefined as SupportTicketData[] | null | undefined,
-  weather_data: undefined as WeatherData | null | undefined,
-  search_results: undefined as SearchResults | null | undefined,
-  deep_research_results: undefined as DeepResearchResults | null | undefined,
-  image_data: undefined as ImageData | null | undefined,
-  todo_data: undefined as TodoToolData | null | undefined,
-  document_data: undefined as DocumentData | null | undefined,
-  code_data: undefined as CodeData | null | undefined,
-  memory_data: undefined as MemoryData | null | undefined,
-  goal_data: undefined as GoalDataMessageType | null | undefined,
-  google_docs_data: undefined as GoogleDocsData | null | undefined,
-  calendar_fetch_data: undefined as CalendarFetchData[] | null | undefined,
-  calendar_list_fetch_data: undefined as
-    | CalendarListFetchData[]
-    | null
-    | undefined,
-  notification_data: undefined as
-    | { notifications: NotificationRecord[] }
-    | null
-    | undefined,
-};
 
 // BASE_MESSAGE_SCHEMA defines all the fields for message data.
 // Each value is set as `undefined as type` (or similar) to:

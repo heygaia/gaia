@@ -1,14 +1,13 @@
 import json
-from typing import Optional
 from datetime import datetime, timezone
+from typing import Optional
 from uuid import uuid4
-
-from langchain_core.messages import ToolCall
 
 from app.config.loggers import llm_logger as logger
 from app.langchain.tools.core.registry import tool_registry
-from app.models.chat_models import MessageModel, UpdateMessagesRequest
+from app.models.chat_models import MessageModel, UpdateMessagesRequest, tool_fields
 from app.services.conversation_service import update_messages
+from langchain_core.messages import ToolCall
 
 
 def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
@@ -111,15 +110,20 @@ async def store_agent_progress(
         conversation_id: Conversation ID for storage
         user_id: User ID for authorization
         current_message: Current accumulated LLM response
-        current_tool_data: Current accumulated tool outputs
+        current_tool_data: Current accumulated tool outputs (can contain both unified tool_data and legacy individual fields)
     """
     try:
-        # Only store if there's meaningful content
-        has_content = (
-            current_message.strip() or any(current_tool_data.values())
-            if current_tool_data
-            else False
-        )
+        # Check if there's meaningful content
+        has_tool_data = False
+        if current_tool_data:
+            # Check for unified tool_data format
+            if "tool_data" in current_tool_data and current_tool_data["tool_data"]:
+                has_tool_data = True
+            # Check for any other tool data keys (legacy individual fields)
+            elif any(current_tool_data.values()):
+                has_tool_data = True
+
+        has_content = current_message.strip() or has_tool_data
 
         if not has_content:
             return  # Skip storing empty messages
@@ -132,10 +136,35 @@ async def store_agent_progress(
             message_id=str(uuid4()),
         )
 
-        # Apply tool data to message (same as chat_service.py)
+        # Handle tool data in unified format
         if current_tool_data:
-            for key, value in current_tool_data.items():
-                setattr(bot_message, key, value)
+            # If we have unified tool_data, use it directly
+            if "tool_data" in current_tool_data:
+                bot_message.tool_data = current_tool_data["tool_data"]
+            else:
+                # Legacy support: convert individual fields to unified format
+                tool_data_entries = []
+                timestamp = datetime.now(timezone.utc).isoformat()
+
+                # Convert individual tool fields to unified ToolDataEntry format using tool_fields list
+                for field_name in tool_fields:
+                    if (
+                        field_name in current_tool_data
+                        and current_tool_data[field_name] is not None
+                    ):
+                        tool_entry = {
+                            "tool_name": field_name,
+                            "data": current_tool_data[field_name],
+                            "timestamp": timestamp,
+                        }
+                        tool_data_entries.append(tool_entry)
+
+                if tool_data_entries:
+                    bot_message.tool_data = tool_data_entries
+
+            # Handle follow_up_actions separately (it's a core field, not tool data)
+            if "follow_up_actions" in current_tool_data:
+                bot_message.follow_up_actions = current_tool_data["follow_up_actions"]
 
         # Store immediately using existing service
         await update_messages(
