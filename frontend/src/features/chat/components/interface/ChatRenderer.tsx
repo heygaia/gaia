@@ -104,10 +104,9 @@ export default function ChatRenderer() {
   return (
     <>
       <title id="chat_title">
-        {`${
-          conversations.find((convo) => convo.conversation_id === convoIdParam)
-            ?.description || "New chat"
-        } | GAIA`}
+        {`${conversations.find((convo) => convo.conversation_id === convoIdParam)
+          ?.description || "New chat"
+          } | GAIA`}
       </title>
 
       <GeneratedImageSheet
@@ -147,16 +146,6 @@ export default function ChatRenderer() {
               key={message.message_id || index}
               className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
             >
-              <div className="sticky bottom-0 min-w-[40px]">
-                <Image
-                  alt="GAIA Logo"
-                  src={"/images/logos/logo.webp"}
-                  width={30}
-                  height={30}
-                  className={`${isLoading && index == filteredMessages.length - 1 ? "animate-spin" : ""} relative transition duration-900`}
-                />
-              </div>
-
               <ChatBubbleBot
                 {...getMessageProps(message, "bot", messagePropsOptions)}
               />

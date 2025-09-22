@@ -12,7 +12,7 @@ export interface MarkdownRendererProps {
 
 const MarkdownRenderer: React.FC<MarkdownRendererProps> = ({ content }) => {
   return (
-    <div className="prose dark:prose-invert fadein-style max-w-none">
+    <div className="prose dark:prose-invert text-white   fadein-style max-w-none">
       <ReactMarkdown
         components={{
           code: ({ className, children, ...props }) => (

@@ -84,14 +84,14 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
               isConvoSystemGenerated,
               systemPurpose,
             ) && (
-              <Image
-                alt="GAIA Logo"
-                src={"/branding/logo.webp"}
-                width={30}
-                height={30}
-                className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
-              />
-            )}
+                <Image
+                  alt="GAIA Logo"
+                  src={"/branding/logo.webp"}
+                  width={30}
+                  height={30}
+                  className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
+                />
+              )}
           </div>
 
           <div className="chatbubblebot_parent flex-1">
