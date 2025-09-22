@@ -25,6 +25,7 @@ def init_llm(
         model=OPENAI_MODEL,
         temperature=0.1,
         streaming=streaming,
+        stream_usage=True,
     ).configurable_fields(
         model_name=ConfigurableField(id="model_name", name="LLM Model Name")
     )

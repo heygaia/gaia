@@ -10,14 +10,10 @@ This module handles the core agent execution logic with two distinct pa        g
         )
 
         # Create token tracking callback
-        from app.langchain.callbacks.token_callback import TokenTrackingCallback
+        from langchain_core.callbacks import UsageMetadataCallbackHandler
 
         user_id = user.get("user_id")
-        token_callback = TokenTrackingCallback(
-            user_id=user_id or "unknown",
-            conversation_id=conversation_id,
-            feature_key="chat"
-        ) if user_id else None
+        token_callback = UsageMetadataCallbackHandler()
 
         return execute_graph_streaming(graph, initial_state, config, token_callback). Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
    - Required for interactive chat where users need immediate feedback
@@ -40,7 +36,6 @@ from datetime import datetime
 from typing import AsyncGenerator, Optional
 
 from app.config.loggers import llm_logger as logger
-from app.langchain.callbacks.token_callback import TokenTrackingCallback
 from app.langchain.core.agent_helpers import (
     build_agent_config,
     build_initial_state,
@@ -52,6 +47,7 @@ from app.langchain.core.messages import construct_langchain_messages
 from app.models.message_models import MessageRequestWithHistory
 from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 async def _core_agent_logic(
@@ -61,6 +57,7 @@ async def _core_agent_logic(
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
     trigger_context: Optional[dict] = None,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
 ):
     """Core agent initialization logic shared between streaming and silent execution modes.
 
@@ -112,11 +109,15 @@ async def _core_agent_logic(
         )
 
     # Build config with optional tokens
-    config, token_tracking_callback = build_agent_config(
-        conversation_id, user, user_time, user_model_config
+    config = build_agent_config(
+        conversation_id,
+        user,
+        user_time,
+        user_model_config,
+        usage_metadata_callback,
     )
 
-    return graph, initial_state, config, token_tracking_callback
+    return graph, initial_state, config
 
 
 async def call_agent(
@@ -125,6 +126,7 @@ async def call_agent(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Execute agent in streaming mode for interactive chat.
@@ -132,13 +134,16 @@ async def call_agent(
     Returns an AsyncGenerator that yields SSE-formatted streaming data.
     """
     try:
-        graph, initial_state, config, token_tracking_callback = await _core_agent_logic(
-            request, conversation_id, user, user_time, user_model_config
+        graph, initial_state, config = await _core_agent_logic(
+            request,
+            conversation_id,
+            user,
+            user_time,
+            user_model_config,
+            usage_metadata_callback=usage_metadata_callback,
         )
 
-        return execute_graph_streaming(
-            graph, initial_state, config, token_tracking_callback
-        )
+        return execute_graph_streaming(graph, initial_state, config)
 
     except Exception as exc:
         logger.error(f"Error when calling agent: {exc}")
@@ -157,7 +162,7 @@ async def call_agent_silent(
     conversation_id: str,
     user: dict,
     user_time: datetime,
-    token_tracking_callback: TokenTrackingCallback,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
     user_model_config: Optional[ModelConfig] = None,
     trigger_context: Optional[dict] = None,
 ) -> tuple[str, dict, dict]:
@@ -167,17 +172,18 @@ async def call_agent_silent(
     Returns a tuple of (complete_message, tool_data_dict, token_metadata).
     """
     try:
-        graph, initial_state, config, token_tracking_callback = await _core_agent_logic(
+        graph, initial_state, config = await _core_agent_logic(
             request,
             conversation_id,
             user,
             user_time,
             user_model_config,
             trigger_context,
+            usage_metadata_callback,
         )
 
         return await execute_graph_silent(
-            graph, initial_state, config, token_tracking_callback
+            graph, initial_state, config, usage_metadata_callback
         )
 
     except Exception as exc:

@@ -16,6 +16,7 @@ from app.services.file_service import get_files
 from app.services.model_service import get_user_selected_model
 from app.utils.chat_utils import create_conversation
 from fastapi import BackgroundTasks
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 async def chat_stream(
@@ -31,7 +32,6 @@ async def chat_stream(
         StreamingResponse: A streaming response containing the LLM's generated content
     """
     complete_message = ""
-    metadata = {}
     conversation_id, init_chunk = await initialize_conversation(body, user)
 
     # Dictionary to collect tool outputs during streaming
@@ -52,6 +52,8 @@ async def chat_stream(
         except Exception as e:
             logger.warning(f"Could not get user's selected model, using default: {e}")
 
+    usage_metadata_callback = UsageMetadataCallbackHandler()
+
     # Stream response from the agent
     async for chunk in await call_agent(
         request=body,
@@ -59,13 +61,13 @@ async def chat_stream(
         conversation_id=conversation_id,
         user_time=user_time,
         user_model_config=user_model_config,
+        usage_metadata_callback=usage_metadata_callback,
     ):
         # Process complete message marker
         if chunk.startswith("nostream: "):
             # So that we can return data that doesn't need to be streamed
             chunk_json = json.loads(chunk.replace("nostream: ", ""))
             complete_message = chunk_json.get("complete_message", "")
-            metadata = chunk_json.get("metadata", {})
         # Process data chunk - potentially contains tool outputs
         elif chunk.startswith("data: "):
             try:
@@ -115,7 +117,7 @@ async def chat_stream(
         conversation_id,
         complete_message,
         tool_data,
-        metadata,
+        metadata=usage_metadata_callback.usage_metadata,
     )
 
 
