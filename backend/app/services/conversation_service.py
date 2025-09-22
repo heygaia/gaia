@@ -7,7 +7,10 @@ from app.models.chat_models import (
     SystemPurpose,
     UpdateMessagesRequest,
 )
-from app.utils.tool_data_utils import convert_conversation_messages, convert_legacy_tool_data
+from app.utils.tool_data_utils import (
+    convert_conversation_messages,
+    convert_legacy_tool_data,
+)
 from bson import ObjectId
 from fastapi import HTTPException, status
 
@@ -141,10 +144,10 @@ async def get_conversation(conversation_id: str, user: dict) -> dict:
         )
 
     conversation["_id"] = str(conversation["_id"])
-    
+
     # Convert legacy tool data to unified format
     conversation = convert_conversation_messages(conversation)
-    
+
     return conversation
 
 
@@ -428,6 +431,7 @@ async def update_conversation_description(
         "conversation_id": conversation_id,
         "description": description,
     }
+
 
 def _convert_ids(conversations):
     for conv in conversations:

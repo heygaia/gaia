@@ -54,6 +54,7 @@ class ToolDataEntry(TypedDict):
     data: Union[dict, List, str, int, float, bool]
     timestamp: Optional[str]
 
+
 tool_fields = [
     "calendar_options",
     "calendar_delete_options",
@@ -76,6 +77,7 @@ tool_fields = [
     "code_data",
     "google_docs_data",
 ]
+
 
 class MessageModel(BaseModel):
     type: str
