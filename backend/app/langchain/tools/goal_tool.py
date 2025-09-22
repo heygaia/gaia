@@ -135,7 +135,7 @@ async def list_goals(config: RunnableConfig) -> Dict[str, Any]:
         logger.info("Goal Tool: Listing all goals")
         user = get_user_id_from_config(config)
 
-        if not user.get("user_id"):
+        if not user:
             return {"error": "User authentication required", "goals": []}
 
         # Stream progress update
@@ -180,7 +180,7 @@ async def get_goal(
         logger.info(f"Goal Tool: Getting goal {goal_id}")
         user = get_user_id_from_config(config)
 
-        if not user.get("user_id"):
+        if not user:
             return {"error": "User authentication required", "goal": None}
 
         # Stream progress update
@@ -238,7 +238,7 @@ async def delete_goal(
         logger.info(f"Goal Tool: Deleting goal {goal_id}")
         user = get_user_id_from_config(config)
 
-        if not user.get("user_id"):
+        if not user:
             return {"error": "User authentication required", "success": False}
 
         # Stream progress update
@@ -256,7 +256,7 @@ async def delete_goal(
         goal_title = result.get("title", "Unknown Goal")
 
         # Invalidate caches since we deleted a goal
-        await invalidate_goal_caches(user["user_id"], goal_id)
+        await invalidate_goal_caches(user, goal_id)
 
         # Stream the deletion confirmation to frontend
         writer(
@@ -290,7 +290,7 @@ async def generate_roadmap(
         logger.info(f"Goal Tool: Generating roadmap for goal {goal_id}")
         user = get_user_id_from_config(config)
 
-        if not user.get("user_id"):
+        if not user:
             return {"error": "User authentication required", "roadmap": None}
 
         # Get the goal to check if it exists and get the title
@@ -367,7 +367,7 @@ async def generate_roadmap(
                     goal_dict = goal_helper(updated_goal)
 
                     # Invalidate caches since we generated a roadmap
-                    await invalidate_goal_caches(user["user_id"], goal_id)
+                    await invalidate_goal_caches(user, goal_id)
 
                     # Stream the completed roadmap
                     writer(
