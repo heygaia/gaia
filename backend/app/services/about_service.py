@@ -82,8 +82,8 @@ Ready to experience the future of personal AI assistance? Get started with GAIA 
             name="GAIA Development Team",
             avatar="https://i.pravatar.cc/150?u=GAIATeam",
             role="Core Contributors",
-            linkedin="https://linkedin.com/company/gaia-ai",
-            twitter="https://twitter.com/gaia_ai",
+            linkedin="https://linkedin.com/company/heygaia",
+            twitter="https://twitter.com/_heygaia",
         ),
     ]
 
