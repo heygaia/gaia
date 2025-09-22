@@ -93,7 +93,11 @@ def require_integration(integration_short_name: str):
                         user_id, "google", renew_if_expired=True
                     )
                     authorized_scopes = str(token.get("scope", "")).split()
-                except HTTPException:
+                except HTTPException as e:
+                    # Re-raise 401 errors to preserve authentication status
+                    if e.status_code == 401:
+                        raise
+                    # For other HTTP errors (like 403), treat as missing scopes
                     authorized_scopes = []
 
                 required_scopes = [scope.scope for scope in integration_config.scopes]
@@ -167,7 +171,11 @@ def require_google_scope(scope: Union[str, List[str]]):
                     user_id, "google", renew_if_expired=True
                 )
                 authorized_scopes = str(token.get("scope", "")).split()
-            except HTTPException:
+            except HTTPException as e:
+                # Re-raise 401 errors to preserve authentication status
+                if e.status_code == 401:
+                    raise
+                # For other HTTP errors (like 403), treat as missing scopes
                 authorized_scopes = []
 
             # Handle both single scope and list of scopes
