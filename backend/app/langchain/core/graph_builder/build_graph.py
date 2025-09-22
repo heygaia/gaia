@@ -60,7 +60,12 @@ async def build_graph(
         ],
     )
 
-    checkpointer_manager = await get_checkpointer_manager()
+    # Try to get checkpointer manager, fall back to None on any exception
+    try:
+        checkpointer_manager = await get_checkpointer_manager()
+    except Exception as e:
+        logger.warning(f"Failed to get checkpointer manager, falling back to in-memory checkpointer: {e}")
+        checkpointer_manager = None
 
     if (
         in_memory_checkpointer or not checkpointer_manager
