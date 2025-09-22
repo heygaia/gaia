@@ -20,7 +20,7 @@ export default function CreatedByGAIABanner({
         <div className="flex flex-col items-center justify-center">
           <Image
             alt="GAIA Logo"
-            src="/branding/logo.webp"
+            src="/images/logos/logo.webp"
             width={150}
             height={150}
             className="mb-4 opacity-10 grayscale"

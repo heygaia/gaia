@@ -3,7 +3,7 @@
 import { Card, CardBody, CardHeader } from "@heroui/card";
 import { Chip } from "@heroui/chip";
 import { Divider } from "@heroui/divider";
-import { Skeleton } from "@heroui/react";
+import { Skeleton } from "@heroui/skeleton";
 
 import { useUserSubscriptionStatus } from "../hooks/usePricing";
 import {

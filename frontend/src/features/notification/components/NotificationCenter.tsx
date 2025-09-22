@@ -1,14 +1,9 @@
 "use client";
 
+import { Badge } from "@heroui/badge";
 import { Button } from "@heroui/button";
-import {
-  Badge,
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-  Tab,
-  Tabs,
-} from "@heroui/react";
+import { Popover, PopoverContent, PopoverTrigger } from "@heroui/popover";
+import { Tab, Tabs } from "@heroui/tabs";
 import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
 
@@ -17,9 +12,7 @@ import { ScrollArea } from "@/components/ui/shadcn/scroll-area";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 
 import { NotificationIcon } from "../../../components/shared";
-import {
-  NotificationStatus,
-} from "../../../types/features/notificationTypes";
+import { NotificationStatus } from "../../../types/features/notificationTypes";
 import { NotificationItem } from "./NotificationItem";
 
 interface NotificationCenterProps {
@@ -75,11 +68,11 @@ export function NotificationCenter({
               aria-label="Notifications"
               tooltip="Notifications"
             >
-              <NotificationIcon className="min-h-[20px] min-w-[20px] text-zinc-400 transition-all group-hover:text-primary" />
+              <NotificationIcon className="group-hover:text-primary min-h-[20px] min-w-[20px] text-zinc-400 transition-all" />
             </SidebarHeaderButton>
             {unreadCount > 0 && (
               <div className="absolute -right-1 bottom-3 flex h-full items-center justify-center">
-                <div className="flex aspect-square h-4 w-4 items-center justify-center rounded-full bg-primary text-xs font-medium text-zinc-950">
+                <div className="bg-primary flex aspect-square h-4 w-4 items-center justify-center rounded-full text-xs font-medium text-zinc-950">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </div>
               </div>
@@ -87,7 +80,7 @@ export function NotificationCenter({
           </div>
         </PopoverTrigger>
 
-        <PopoverContent className="mr-4 w-96 rounded-2xl border-1 border-zinc-700 bg-zinc-800 p-0 shadow-xl">
+        <PopoverContent className="border-1 mr-4 w-96 rounded-2xl border-zinc-700 bg-zinc-800 p-0 shadow-xl">
           <Tabs
             selectedKey={activeTab}
             onSelectionChange={(key) => setActiveTab(key as "unread" | "all")}

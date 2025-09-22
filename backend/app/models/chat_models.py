@@ -1,64 +1,15 @@
 from enum import Enum
-from typing import List, Optional
+from typing import List, Optional, Union
 
-from app.models.calendar_models import EventCreateRequest
-from app.models.mail_models import EmailComposeRequest
 from app.models.message_models import FileData, SelectedWorkflowData
-from app.models.search_models import DeepResearchResults, SearchResults
-from app.models.weather_models import WeatherData
 from pydantic import BaseModel, Field
+from typing_extensions import TypedDict
 
 
 class ImageData(BaseModel):
     url: str
     prompt: str
     improved_prompt: Optional[str] = None
-
-
-class EmailFetchData(BaseModel):
-    from_: str = Field(alias="from")
-    subject: str
-    time: str
-    thread_id: Optional[str] = None
-
-
-class CalendarFetchData(BaseModel):
-    summary: str
-    start_time: str
-    calendar_name: str
-
-
-class CalendarListFetchData(BaseModel):
-    name: str
-    id: str
-    description: str
-    backgroundColor: Optional[str] = None
-
-
-class EmailThreadMessage(BaseModel):
-    id: str
-    from_: str = Field(alias="from")
-    sender_name: str
-    sender_email: str
-    sender_avatar_url: Optional[str] = None
-    subject: Optional[str] = None
-    body: Optional[str] = None
-    time: str
-    snippet: Optional[str] = None
-
-
-class EmailThreadData(BaseModel):
-    thread_id: str
-    messages: List[EmailThreadMessage]
-    messages_count: int
-
-
-class EmailSentData(BaseModel):
-    message_id: Optional[str] = None
-    message: str
-    timestamp: Optional[str] = None
-    recipients: Optional[List[str]] = None
-    subject: Optional[str] = None
 
 
 class IntegrationConnectionData(BaseModel):
@@ -96,6 +47,38 @@ class SupportTicketData(BaseModel):
     user_email: Optional[str] = Field(None, description="Email of the user")
 
 
+class ToolDataEntry(TypedDict):
+    """Unified structure for tool execution data."""
+
+    tool_name: str
+    data: Union[dict, List, str, int, float, bool]
+    timestamp: Optional[str]
+
+
+tool_fields = [
+    "calendar_options",
+    "calendar_delete_options",
+    "calendar_edit_options",
+    "email_compose_data",
+    "email_fetch_data",
+    "email_thread_data",
+    "email_sent_data",
+    "support_ticket_data",
+    "calendar_fetch_data",
+    "calendar_list_fetch_data",
+    "weather_data",
+    "search_results",
+    "deep_research_results",
+    "notification_data",
+    "memory_data",
+    "todo_data",
+    "document_data",
+    "goal_data",
+    "code_data",
+    "google_docs_data",
+]
+
+
 class MessageModel(BaseModel):
     type: str
     response: str
@@ -112,25 +95,8 @@ class MessageModel(BaseModel):
     selectedTool: Optional[str] = None
     toolCategory: Optional[str] = None
     selectedWorkflow: Optional[SelectedWorkflowData] = None
-    calendar_options: Optional[List[EventCreateRequest]] = None
-    search_results: Optional[SearchResults] = None
-    deep_research_results: Optional[DeepResearchResults] = None
-    weather_data: Optional[WeatherData] = None
-    email_compose_data: Optional[List[EmailComposeRequest]] = None
-    email_fetch_data: Optional[List[EmailFetchData]] = None
-    email_thread_data: Optional[EmailThreadData] = None
-    email_sent_data: Optional[EmailSentData] = None
-    support_ticket_data: Optional[List[SupportTicketData]] = None
-    calendar_fetch_data: Optional[List[CalendarFetchData]] = None
-    calendar_list_fetch_data: Optional[List[CalendarListFetchData]] = None
-    notification_data: Optional[dict] = None
-    memory_data: Optional[dict] = None
-    todo_data: Optional[dict] = None
-    document_data: Optional[dict] = None
-    goal_data: Optional[dict] = None
-    code_data: Optional[dict] = None
-    google_docs_data: Optional[dict] = None
-    follow_up_actions: Optional[List[str]] = []
+    tool_data: Optional[List[ToolDataEntry]] = None
+    follow_up_actions: Optional[List[str]] = None
     integration_connection_required: Optional[IntegrationConnectionData] = None
 
 

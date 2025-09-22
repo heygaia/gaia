@@ -92,7 +92,7 @@ export default function ChatBubbleUser({
           <AvatarImage src={user?.profilePicture} alt="User Avatar" />
           <AvatarFallback>
             <Image
-              src={"/media/default.webp"}
+              src={"/images/avatars/default.webp"}
               width={35}
               height={35}
               alt="Default profile picture"

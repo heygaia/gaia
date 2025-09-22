@@ -1,10 +1,10 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { useDisclosure } from "@heroui/modal";
-import { Tooltip } from "@heroui/react";
+import { useDisclosure } from "@heroui/react";
+import { Tooltip } from "@heroui/tooltip";
 
-import { HealtcareIcon } from "@/components/shared/icons";
+import { HeartHandIcon } from "@/components/shared/icons";
 import { ContactSupportModal } from "@/features/support";
 
 export default function ContactSupport() {
@@ -20,7 +20,7 @@ export default function ContactSupport() {
             radius="sm"
             onPress={onOpen}
           >
-            <HealtcareIcon width={23} height={23} color={undefined} />
+            <HeartHandIcon width={23} height={23} color={undefined} />
             <div className="w-full py-2 text-left text-sm font-light text-wrap">
               Need Support?
             </div>

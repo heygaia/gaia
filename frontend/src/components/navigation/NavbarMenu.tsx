@@ -88,7 +88,7 @@ export function NavbarMenu({ activeMenu, onClose }: NavbarMenuProps) {
   const links = getMenuLinks();
 
   return (
-    <div className="absolute top-full left-0 z-40 w-full rounded-b-2xl border-t-0 border-[#ffffff26] bg-[#08090A] shadow-2xl backdrop-blur-xl duration-200 animate-in fade-in-0 slide-in-from-top-1">
+    <div className="animate-in fade-in-0 slide-in-from-top-1 absolute top-full left-0 z-40 w-full rounded-b-2xl border-t-0 border-[#ffffff26] bg-[#08090A] shadow-2xl backdrop-blur-xl duration-200">
       <div className="p-6">
         {activeMenu === "product" && (
           <div className="grid w-full grid-cols-2 grid-rows-2 gap-4">
@@ -100,7 +100,7 @@ export function NavbarMenu({ activeMenu, onClose }: NavbarMenuProps) {
               >
                 <Image
                   fill={true}
-                  src="/branding/logo.webp"
+                  src="/images/logos/logo.webp"
                   alt="website logo"
                   className="relative z-0 scale-90 object-contain pb-10 opacity-5 grayscale-100"
                 />

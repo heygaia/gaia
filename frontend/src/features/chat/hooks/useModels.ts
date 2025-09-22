@@ -3,7 +3,7 @@ import { toast } from "sonner";
 
 import { useUser } from "@/features/auth/hooks/useUser";
 
-import { fetchAvailableModels, ModelInfo,selectModel } from "../api/modelsApi";
+import { fetchAvailableModels, ModelInfo, selectModel } from "../api/modelsApi";
 
 export const useModels = () => {
   return useQuery({
@@ -21,7 +21,7 @@ export const useSelectModel = () => {
 
   return useMutation({
     mutationFn: selectModel,
-    onSuccess: (data) => {
+    onSuccess: (_data) => {
       // Invalidate user data to refresh selected model
       queryClient.invalidateQueries({ queryKey: ["user"] });
     },

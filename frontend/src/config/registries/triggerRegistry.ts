@@ -165,6 +165,6 @@ export const getTriggerConfigSchema = <T extends TriggerType>(
 export const getTriggerMetadata = <T extends TriggerType>(
   type: T,
 ): Omit<TriggerRegistryConfig[T], "configSchema"> => {
-  const { configSchema, ...metadata } = TRIGGER_CONFIG[type];
+  const { ...metadata } = TRIGGER_CONFIG[type];
   return metadata;
 };

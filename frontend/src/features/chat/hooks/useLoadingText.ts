@@ -7,8 +7,13 @@ interface ToolInfo {
 }
 
 export const useLoadingText = () => {
-  const { loadingText, toolInfo, setLoadingText, resetLoadingText } =
-    useLoadingStore();
+  const {
+    loadingText,
+    toolInfo,
+    setLoadingText,
+    resetLoadingText,
+    setLoadingWithContext,
+  } = useLoadingStore();
 
   const updateLoadingText = (text: string, toolInfo?: ToolInfo) => {
     if (toolInfo) {
@@ -18,10 +23,19 @@ export const useLoadingText = () => {
     }
   };
 
+  const setContextualLoading = (
+    isLoading: boolean,
+    userMessage?: string,
+    text?: string,
+  ) => {
+    setLoadingWithContext(isLoading, userMessage, text);
+  };
+
   return {
     loadingText,
     toolInfo,
     setLoadingText: updateLoadingText,
+    setContextualLoading,
     resetLoadingText,
   };
 };

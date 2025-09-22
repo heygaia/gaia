@@ -2,7 +2,16 @@
 import { Skeleton } from "@heroui/skeleton";
 import Image from "next/image";
 
+import type { ImageData } from "@/types";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
+
+interface ImageBubbleProps
+  extends Pick<
+    ChatBubbleBotProps,
+    "text" | "loading" | "setOpenImage" | "setImageData"
+  > {
+  image_data?: ImageData;
+}
 
 export default function ImageBubble({
   text,
@@ -10,7 +19,7 @@ export default function ImageBubble({
   image_data,
   setOpenImage,
   setImageData,
-}: ChatBubbleBotProps) {
+}: ImageBubbleProps) {
   // Only use image_data for image information
   if (!image_data?.url && !loading) return null;
 

@@ -7,6 +7,10 @@ from app.models.chat_models import (
     SystemPurpose,
     UpdateMessagesRequest,
 )
+from app.utils.tool_data_utils import (
+    convert_conversation_messages,
+    convert_legacy_tool_data,
+)
 from bson import ObjectId
 from fastapi import HTTPException, status
 
@@ -104,13 +108,8 @@ async def get_conversations(user: dict, page: int = 1, limit: int = 10) -> dict:
         starred_future, non_starred_count_future, non_starred_future
     )
 
-    def convert_ids(conversations):
-        for conv in conversations:
-            conv["_id"] = str(conv["_id"])
-        return conversations
-
-    starred_conversations = convert_ids(starred_conversations)
-    non_starred_conversations = convert_ids(non_starred_conversations)
+    starred_conversations = _convert_ids(starred_conversations)
+    non_starred_conversations = _convert_ids(non_starred_conversations)
 
     combined_conversations = starred_conversations + non_starred_conversations
     total = len(starred_conversations) + non_starred_count
@@ -145,6 +144,10 @@ async def get_conversation(conversation_id: str, user: dict) -> dict:
         )
 
     conversation["_id"] = str(conversation["_id"])
+
+    # Convert legacy tool data to unified format
+    conversation = convert_conversation_messages(conversation)
+
     return conversation
 
 
@@ -298,7 +301,14 @@ async def get_starred_messages(user: dict) -> dict:
         ]
     ).to_list(None)
 
-    return {"results": results}
+    # Convert legacy tool data for each message
+    converted_results = []
+    for result in results:
+        if "message" in result:
+            result["message"] = convert_legacy_tool_data(result["message"])
+        converted_results.append(result)
+
+    return {"results": converted_results}
 
 
 async def create_system_conversation(
@@ -421,3 +431,9 @@ async def update_conversation_description(
         "conversation_id": conversation_id,
         "description": description,
     }
+
+
+def _convert_ids(conversations):
+    for conv in conversations:
+        conv["_id"] = str(conv["_id"])
+    return conversations

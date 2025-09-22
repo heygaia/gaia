@@ -1,7 +1,10 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
-import { getRandomThinkingMessage } from "@/utils/playfulThinking";
+import {
+  getRandomThinkingMessage,
+  getRelevantThinkingMessage,
+} from "@/utils/playfulThinking";
 
 interface ToolInfo {
   toolName?: string;
@@ -21,6 +24,11 @@ interface LoadingActions {
   ) => void;
   resetLoadingText: () => void;
   setLoading: (loading: boolean, text?: string) => void;
+  setLoadingWithContext: (
+    loading: boolean,
+    userMessage?: string,
+    text?: string,
+  ) => void;
 }
 
 type LoadingStore = LoadingState & LoadingActions;
@@ -86,6 +94,25 @@ export const useLoadingStore = create<LoadingStore>()(
           updates.loadingText = getRandomThinkingMessage();
         }
         set(updates, false, "setLoading");
+      },
+
+      setLoadingWithContext: (isLoading, userMessage, text) => {
+        const updates: Partial<LoadingState> = { isLoading };
+
+        if (text !== undefined) {
+          // Explicit text provided, use it
+          updates.loadingText = text;
+        } else if (isLoading) {
+          // Generate contextually relevant message if user message provided
+          if (userMessage?.trim()) {
+            updates.loadingText = getRelevantThinkingMessage(userMessage);
+          } else {
+            // Fallback to random message
+            updates.loadingText = getRandomThinkingMessage();
+          }
+        }
+
+        set(updates, false, "setLoadingWithContext");
       },
     }),
     { name: "loading-store" },

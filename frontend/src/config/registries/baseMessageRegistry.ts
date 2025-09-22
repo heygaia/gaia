@@ -1,8 +1,7 @@
 /**
- * Base Message Registry - Core Message Data Schema
- *
- * This registry defines the core message data schema that is shared across all message types.
- * It imports and extends the tools message schema to provide a complete message data structure.
+ * Base Message Registry
+ * Defines the core message data schema shared by all messages.
+ * Extends the tools message schema to produce the full message shape.
  */
 
 import { IntegrationConnectionData } from "@/types/features/integrationTypes";
@@ -11,15 +10,19 @@ import { FileData } from "@/types/shared/fileTypes";
 
 import { TOOLS_MESSAGE_SCHEMA } from "./toolRegistry";
 
+type ImageData = import("@/types/features/toolDataTypes").ImageData;
+
+type MemoryData = import("@/types/features/toolDataTypes").MemoryData;
+
 /**
- * BASE_MESSAGE_SCHEMA defines all the fields for message data.
- * Each value is set as `undefined as type` (or similar) to:
- *   1. Allow TypeScript to infer the correct type for BaseMessageData.
- *   2. Represent optional/nullable fields for runtime and type generation.
- *   3. Enable DRY code for both runtime key extraction and type safety.
+ * BASE_MESSAGE_SCHEMA
+ * Each property uses a typed placeholder to:
+ *  - drive TypeScript inference for BaseMessageData
+ *  - represent optional/nullable fields at runtime
+ *  - keep key lists and types in sync from a single definition
  */
 export const BASE_MESSAGE_SCHEMA = {
-  message_id: "" as string, // required string field
+  message_id: "" as string, // required
   date: undefined as string | undefined,
   pinned: undefined as boolean | undefined,
   fileIds: undefined as string[] | undefined,
@@ -33,6 +36,10 @@ export const BASE_MESSAGE_SCHEMA = {
     | IntegrationConnectionData
     | null
     | undefined,
+  // Core non-tool fields
+  image_data: undefined as ImageData | null | undefined,
+  memory_data: undefined as MemoryData | null | undefined,
+  // Tool fields (spread from tool registry)
   ...TOOLS_MESSAGE_SCHEMA,
 };
 

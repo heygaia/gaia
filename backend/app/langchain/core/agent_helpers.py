@@ -27,8 +27,6 @@ def build_agent_config(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
-    access_token: Optional[str] = None,
-    refresh_token: Optional[str] = None,
 ) -> dict:
     """Build configuration for graph execution with optional authentication tokens.
 
@@ -47,32 +45,27 @@ def build_agent_config(
         Configuration dictionary formatted for LangGraph execution with configurable
         parameters, metadata, and recursion limits
     """
+    model_configuration = {
+        "provider": (
+            user_model_config.inference_provider.value if user_model_config else None
+        ),
+        "max_tokens": user_model_config.max_tokens if user_model_config else None,
+        "model_name": (
+            user_model_config.provider_model_name if user_model_config else None
+        ),
+    }
+
     config = {
         "configurable": {
             "thread_id": conversation_id,
             "user_id": user.get("user_id"),
             "email": user.get("email"),
             "user_time": user_time.isoformat(),
-            "model_configurations": {
-                "model_name": (
-                    user_model_config.provider_model_name if user_model_config else None
-                ),
-                "provider": user_model_config.inference_provider.value
-                if user_model_config
-                else None,
-                "max_tokens": (
-                    user_model_config.max_tokens if user_model_config else None
-                ),
-            },
+            "model_configurations": model_configuration,
         },
         "recursion_limit": 25,
         "metadata": {"user_id": user.get("user_id")},
     }
-
-    if access_token:
-        config["configurable"]["access_token"] = access_token
-    if refresh_token:
-        config["configurable"]["refresh_token"] = refresh_token
 
     return config
 
@@ -213,6 +206,10 @@ async def execute_graph_streaming(
         if stream_mode == "messages":
             chunk, metadata = payload
             if chunk and isinstance(chunk, AIMessageChunk):
+                # Skip silent chunks (e.g. follow-up actions generation)
+                if metadata.get("silence"):
+                    continue
+
                 content = str(chunk.content)
                 tool_calls = chunk.tool_calls
 

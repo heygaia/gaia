@@ -392,7 +392,7 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
     return (
       <>
         {slashCommandState.isActive && (
-          <div className="bg-black/05 pointer-events-none fixed top-0 left-0 z-[-1] h-screen w-screen backdrop-blur-xs" />
+          <div className="bg-black/05 backdrop-blur-xs pointer-events-none fixed left-0 top-0 z-[-1] h-screen w-screen" />
         )}
 
         <form onSubmit={handleFormSubmit}>

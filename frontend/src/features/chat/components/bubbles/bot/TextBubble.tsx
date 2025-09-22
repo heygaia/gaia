@@ -1,8 +1,18 @@
+// Utility type: union of all possible tool_name/data pairs
+type ToolDataUnion = {
+  [K in ToolName]: { tool_name: K; data: ToolDataMap[K] }
+}[ToolName];
+
+function getTypedData<K extends ToolName>(entry: ToolDataUnion, toolName: K): ToolDataMap[K] | undefined {
+  return entry.tool_name === toolName ? (entry.data as ToolDataMap[K]) : undefined;
+}
 // TextBubble.tsx
 import { Chip } from "@heroui/chip";
 import { AlertTriangleIcon } from "lucide-react";
+import React from "react";
 
 import { InternetIcon } from "@/components/shared/icons";
+import { ToolDataMap, ToolName } from "@/config/registries/toolRegistry";
 import CalendarListCard from "@/features/calendar/components/CalendarListCard";
 import CalendarListFetchCard from "@/features/calendar/components/CalendarListFetchCard";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
@@ -11,9 +21,30 @@ import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResu
 import { splitMessageByBreaks } from "@/features/chat/utils/messageBreakUtils";
 import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import EmailListCard from "@/features/mail/components/EmailListCard";
-import EmailSentCard from "@/features/mail/components/EmailSentCard";
 import { WeatherCard } from "@/features/weather/components/WeatherCard";
+import {
+  CalendarDeleteOptions,
+  CalendarEditOptions,
+  CalendarOptions,
+  CodeData,
+  DeepResearchResults,
+  DocumentData,
+  EmailComposeData,
+  EmailThreadData,
+  GoalDataMessageType,
+  GoogleDocsData,
+  SearchResults,
+  TodoToolData,
+  WeatherData,
+} from "@/types";
+import {
+  CalendarFetchData,
+  CalendarListFetchData,
+} from "@/types/features/calendarTypes";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
+import { EmailFetchData } from "@/types/features/mailTypes";
+import { NotificationRecord } from "@/types/features/notificationTypes";
+import { SupportTicketData } from "@/types/features/supportTypes";
 
 import MarkdownRenderer from "../../interface/MarkdownRenderer";
 import { CalendarDeleteSection } from "./CalendarDeleteSection";
@@ -29,50 +60,204 @@ import NotificationListSection from "./NotificationListSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
 
+// Map of tool_name -> renderer function for unified tool_data rendering
+type RendererMap = {
+  [K in ToolName]: (data: ToolDataMap[K], index: number) => React.ReactNode;
+};
+const TOOL_RENDERERS: Partial<RendererMap> = {
+  // Search
+  search_results: (data, index) => (
+    <SearchResultsTabs
+      key={`tool-search-${index}`}
+      search_results={data as SearchResults}
+    />
+  ),
+  deep_research_results: (data, index) => (
+    <DeepResearchResultsTabs
+      key={`tool-deep-search-${index}`}
+      deep_research_results={data as DeepResearchResults}
+    />
+  ),
+
+  // Weather
+  weather_data: (data, index) => (
+    <WeatherCard
+      key={`tool-weather-${index}`}
+      weatherData={data as WeatherData}
+    />
+  ),
+
+  // Email
+  email_thread_data: (data, index) => (
+    <EmailThreadCard
+      key={`tool-email-thread-${index}`}
+      emailThreadData={data as EmailThreadData}
+    />
+  ),
+  email_fetch_data: (data, index) => (
+    <EmailListCard
+      key={`tool-email-fetch-${index}`}
+      emails={(Array.isArray(data) ? data : [data]) as EmailFetchData[]}
+    />
+  ),
+  email_compose_data: (data, index) => (
+    <EmailComposeSection
+      key={`tool-email-compose-${index}`}
+      email_compose_data={
+        (Array.isArray(data) ? data : [data]) as EmailComposeData[]
+      }
+    />
+  ),
+
+  // Calendar
+  calendar_options: (data, index) => {
+    return (
+      <CalendarEventSection
+        key={`tool-cal-options-${index}`}
+        calendar_options={data as CalendarOptions[]}
+      />
+    );
+  },
+  calendar_delete_options: (data, index) => {
+    return (
+      <CalendarDeleteSection
+        key={`tool-cal-del-${index}`}
+        calendar_delete_options={data as CalendarDeleteOptions[]}
+      />
+    );
+  },
+  calendar_edit_options: (data, index) => {
+    return (
+      <CalendarEditSection
+        key={`tool-cal-edit-${index}`}
+        calendar_edit_options={data as CalendarEditOptions[]}
+      />
+    );
+  },
+  calendar_fetch_data: (data, index) => (
+    <CalendarListCard
+      key={`tool-cal-fetch-${index}`}
+      events={(Array.isArray(data) ? data : [data]) as CalendarFetchData[]}
+    />
+  ),
+  calendar_list_fetch_data: (data, index) => (
+    <CalendarListFetchCard
+      key={`tool-cal-list-${index}`}
+      calendars={
+        (Array.isArray(data) ? data : [data]) as CalendarListFetchData[]
+      }
+    />
+  ),
+
+  // Support ticket
+  support_ticket_data: (data, index) => (
+    <SupportTicketSection
+      key={`tool-support-${index}`}
+      support_ticket_data={data as SupportTicketData[]}
+    />
+  ),
+
+  // Documents & Code
+  document_data: (data, index) => (
+    <DocumentSection
+      key={`tool-doc-${index}`}
+      document_data={data as DocumentData}
+    />
+  ),
+  google_docs_data: (data, index) => (
+    <GoogleDocsSection
+      key={`tool-gdocs-${index}`}
+      google_docs_data={data as GoogleDocsData}
+    />
+  ),
+  code_data: (data, index) => (
+    <CodeExecutionSection
+      key={`tool-code-${index}`}
+      code_data={data as CodeData}
+    />
+  ),
+
+  todo_data: (data, index) => {
+    const t = data as TodoToolData;
+    return (
+      <TodoSection
+        key={`tool-todo-${index}`}
+        todos={t.todos}
+        projects={t.projects}
+        stats={t.stats}
+        action={t.action}
+        message={t.message}
+      />
+    );
+  },
+  goal_data: (data, index) => {
+    const g = data as GoalDataMessageType;
+    return (
+      <GoalSection
+        key={`tool-goal-${index}`}
+        goals={g.goals}
+        stats={g.stats}
+        action={g.action as GoalAction}
+        message={g.message}
+        goal_id={g.goal_id}
+        deleted_goal_id={g.deleted_goal_id}
+        error={g.error}
+      />
+    );
+  },
+  notification_data: (data, index) => (
+    <NotificationListSection
+      key={`tool-notifications-${index}`}
+      notifications={
+        (data as { notifications: unknown[] })
+          .notifications as NotificationRecord[]
+      }
+      title="Your Notifications"
+    />
+  ),
+};
+
+function renderTool<K extends ToolName>(
+  name: K,
+  data: ToolDataMap[K],
+  index: number,
+): React.ReactNode {
+  const renderer = TOOL_RENDERERS[name] as
+    | ((data: ToolDataMap[K], index: number) => React.ReactNode)
+    | undefined;
+  return renderer ? renderer(data, index) : null;
+}
+
 export default function TextBubble({
   text,
   disclaimer,
-  calendar_options,
-  calendar_delete_options,
-  calendar_edit_options,
-  email_compose_data,
-  email_fetch_data,
-  email_thread_data,
-  email_sent_data,
-  support_ticket_data,
-  calendar_fetch_data,
-  calendar_list_fetch_data,
-  weather_data,
-  todo_data,
-  goal_data,
-  code_data,
-  search_results,
-  deep_research_results,
-  document_data,
-  google_docs_data,
-  notification_data,
+  tool_data,
   isConvoSystemGenerated,
   systemPurpose,
 }: ChatBubbleBotProps) {
+  // Check if we have search results from tool_data for chip display
+  const hasSearchResults = tool_data?.some(
+    (entry) => entry.tool_name === "search_results",
+  );
+  const hasDeepResearchResults = tool_data?.some(
+    (entry) => entry.tool_name === "deep_research_results",
+  );
+
   return (
     <>
-      {!!search_results && (
-        <SearchResultsTabs search_results={search_results!} />
-      )}
-
-      {!!deep_research_results && (
-        <DeepResearchResultsTabs
-          deep_research_results={deep_research_results!}
-        />
-      )}
-
-      {!!weather_data && <WeatherCard weatherData={weather_data!} />}
-
-      {!!email_thread_data && (
-        <EmailThreadCard emailThreadData={email_thread_data} />
-      )}
-
-      {!!email_sent_data && <EmailSentCard emailSentData={email_sent_data} />}
+      {/* Unified tool_data rendering via registry */}
+      {tool_data?.map((entry, index) => {
+        const toolName = entry.tool_name as ToolName;
+        if (!TOOL_RENDERERS[toolName]) return null;
+        // Use type guard to get the correct type for data
+        const typedData = getTypedData(entry as ToolDataUnion, toolName);
+        if (typedData === undefined) return null;
+        return (
+          <React.Fragment key={`tool-${toolName}-${index}`}>
+            {renderTool(toolName, typedData, index)}
+          </React.Fragment>
+        );
+      })}
 
       {shouldShowTextBubble(text, isConvoSystemGenerated, systemPurpose) &&
         (() => {
@@ -101,7 +286,7 @@ export default function TextBubble({
                       className={`imessage-bubble imessage-from-them ${groupedClasses}`}
                     >
                       <div className="flex flex-col gap-3">
-                        {!!search_results && index === 0 && (
+                        {hasSearchResults && index === 0 && (
                           <Chip
                             color="primary"
                             startContent={
@@ -115,7 +300,7 @@ export default function TextBubble({
                           </Chip>
                         )}
 
-                        {!!deep_research_results && index === 0 && (
+                        {hasDeepResearchResults && index === 0 && (
                           <Chip
                             color="primary"
                             startContent={
@@ -159,7 +344,7 @@ export default function TextBubble({
           return (
             <div className="imessage-bubble imessage-from-them">
               <div className="flex flex-col gap-3">
-                {!!search_results && (
+                {hasSearchResults && (
                   <Chip
                     color="primary"
                     startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -171,7 +356,7 @@ export default function TextBubble({
                   </Chip>
                 )}
 
-                {!!deep_research_results && (
+                {hasDeepResearchResults && (
                   <Chip
                     color="primary"
                     startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -205,75 +390,6 @@ export default function TextBubble({
             </div>
           );
         })()}
-
-      {!!calendar_options && (
-        <CalendarEventSection calendar_options={calendar_options!} />
-      )}
-
-      {!!calendar_delete_options && (
-        <CalendarDeleteSection
-          calendar_delete_options={calendar_delete_options!}
-        />
-      )}
-
-      {!!calendar_edit_options && (
-        <CalendarEditSection calendar_edit_options={calendar_edit_options!} />
-      )}
-
-      {!!email_compose_data && (
-        <EmailComposeSection email_compose_data={email_compose_data!} />
-      )}
-
-      {!!support_ticket_data && (
-        <SupportTicketSection support_ticket_data={support_ticket_data!} />
-      )}
-
-      {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}
-
-      {!!calendar_fetch_data && (
-        <CalendarListCard events={calendar_fetch_data!} />
-      )}
-
-      {!!calendar_list_fetch_data && (
-        <CalendarListFetchCard calendars={calendar_list_fetch_data} />
-      )}
-
-      {!!todo_data && (
-        <TodoSection
-          todos={todo_data!.todos}
-          projects={todo_data!.projects}
-          stats={todo_data!.stats}
-          action={todo_data!.action}
-          message={todo_data!.message}
-        />
-      )}
-
-      {!!document_data && <DocumentSection document_data={document_data!} />}
-
-      {!!google_docs_data && (
-        <GoogleDocsSection google_docs_data={google_docs_data!} />
-      )}
-
-      {!!goal_data && (
-        <GoalSection
-          goals={goal_data!.goals}
-          stats={goal_data!.stats}
-          action={goal_data!.action as GoalAction}
-          message={goal_data!.message}
-          goal_id={goal_data!.goal_id}
-          deleted_goal_id={goal_data!.deleted_goal_id}
-          error={goal_data!.error}
-        />
-      )}
-
-      {!!code_data && <CodeExecutionSection code_data={code_data!} />}
-
-      {!!notification_data && (
-        <NotificationListSection
-          notifications={notification_data.notifications}
-          title="Your Notifications"
-        />
-      )}
     </>
   );
 }
