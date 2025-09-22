@@ -435,6 +435,7 @@ class ProviderRegistry:
     def __init__(self):
         self._providers: Dict[str, LazyLoader] = {}
         self._lock = Lock()
+        self._auto_init_providers: Set[str] = set()
 
     def register(
         self,
@@ -463,8 +464,42 @@ class ProviderRegistry:
                 auto_initialize=auto_initialize,
             )
 
+            if auto_initialize:
+                self._auto_init_providers.add(name)
+
             self._providers[name] = provider
             return provider
+
+    async def initialize_auto_providers(self):
+        """Initialize all providers marked for auto-initialization concurrently."""
+        auto_init_providers = getattr(self, "_auto_init_providers", set())
+
+        if not auto_init_providers:
+            return
+
+        async def _init_provider(name: str):
+            """Initialize a single provider with error handling."""
+            try:
+                await self._providers[name].aget()
+                logger.info(f"Auto-initialized provider '{name}'")
+            except Exception as e:
+                provider = self._providers[name]
+                if provider.strategy == MissingKeyStrategy.ERROR:
+                    raise
+                else:
+                    logger.warning(f"Auto-initialization failed for '{name}': {e}")
+
+        # Create tasks for all auto-init providers
+        tasks = [
+            _init_provider(name)
+            for name in auto_init_providers
+            if name in self._providers
+        ]
+
+        if tasks:
+            # Run all initializations concurrently
+            await asyncio.gather(*tasks, return_exceptions=True)
+            logger.info(f"Completed auto-initialization for {len(tasks)} providers")
 
     def get(self, name: str) -> Optional[Any]:
         """Get a provider instance by name synchronously - only works for sync providers."""

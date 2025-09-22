@@ -141,6 +141,7 @@ async def lifespan(app: FastAPI):
 
         # Import and register providers
         from app.config.cloudinary import init_cloudinary
+        from app.core.lazy_loader import providers
         from app.db.chromadb import init_chroma
         from app.db.postgresql import init_postgresql_engine
         from app.db.rabbitmq import init_rabbitmq_publisher
@@ -170,6 +171,7 @@ async def lifespan(app: FastAPI):
             init_workflow_service(),
             init_websocket_consumer(),
             init_tools_store_async(),
+            providers.initialize_auto_providers(),
         ]
 
         # Run remaining initialization tasks in parallel
@@ -178,15 +180,12 @@ async def lifespan(app: FastAPI):
         _process_results(
             results,
             [
-                "chroma",
                 "mongodb",
-                "cloudinary",
                 "reminder_service",
                 "workflow_service",
-                "rabbitmq",
                 "websocket_consumer",
-                "default_graph",
                 "tools_store",
+                "lazy_providers_auto_initializer",
             ],
         )
 

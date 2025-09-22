@@ -12,7 +12,7 @@ from app.docstrings.langchain.tools.follow_up_actions_tool_docs import (
     SUGGEST_FOLLOW_UP_ACTIONS,
 )
 from app.langchain.llm.client import init_llm
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
@@ -78,7 +78,10 @@ async def follow_up_actions_node(
         )
 
         result = await llm.ainvoke(
-            input=[SystemMessage(content=prompt)],
+            input=[
+                SystemMessage(content=prompt),
+                HumanMessage(content=_pretty_print_messages(recent_messages)),
+            ],
             config={**config, "silent": True},  # type: ignore
         )
         actions = parser.parse(result if isinstance(result, str) else result.text())
@@ -91,3 +94,14 @@ async def follow_up_actions_node(
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
         return {}
+
+
+def _pretty_print_messages(
+    messages: List[AnyMessage], ignore_system_messages=True
+) -> str:
+    pretty = ""
+    for message in messages:
+        if ignore_system_messages and isinstance(message, SystemMessage):
+            continue
+        pretty += message.pretty_repr()
+    return pretty
