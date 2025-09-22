@@ -1,4 +1,17 @@
-"""Settings validation for Gaia application."""
+"""Validate presence of env-backed settings, grouped by feature.
+
+Why
+- Make missing config obvious with actionable logs.
+
+Flow
+- Define fields in `app.config.settings` (Pydantic classes).
+- Register related keys here as `SettingsGroup`s.
+- `validate_settings()` scans the instantiated settings object and logs what’s missing.
+
+Add env vars
+1) Add fields to `CommonSettings`/`ProductionSettings`/`DevelopmentSettings`.
+2) Add a `SettingsGroup` in `_register_predefined_groups()` with matching key names.
+"""
 
 from typing import Any, List, Tuple
 

@@ -1,3 +1,18 @@
+"""Application settings: load from env, validate, and expose typed access.
+
+Flow
+- `.env` loaded first, then external secrets via `inject_infisical_secrets()`.
+- Pick settings class by `ENV` (production/development).
+- Pydantic builds the object; `settings_validator` logs missing groups.
+- `get_settings()` memoizes the instance for fast imports.
+
+Add env vars
+1) Add fields to `CommonSettings`/`ProductionSettings`/`DevelopmentSettings`.
+2) Use Optional[...] in dev if it’s not required there.
+3) If you want warnings, register a group in `config/settings_validator.py`.
+4) Read values via `from app.config.settings import settings`.
+"""
+
 import os
 import time
 from functools import lru_cache

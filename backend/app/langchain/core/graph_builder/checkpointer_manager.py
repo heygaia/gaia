@@ -1,3 +1,16 @@
+"""LangGraph checkpointing backed by Postgres, lazily provided.
+
+Flow
+- Requires `POSTGRES_URL` from `app.config.settings`.
+- `@lazy_provider` registers two providers: full and shallow checkpointers.
+- First `providers.aget(...)` creates an async pool and checkpointer, then reuses it.
+- Use helpers `get_checkpointer_manager()` / `get_shallow_checkpointer_manager()`.
+
+Add/change config
+- Set `POSTGRES_URL` in settings; in dev it can be Optional.
+- To alter pool size/shallow mode, adjust `CheckpointerManager` init params.
+"""
+
 from app.config.settings import settings
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from langgraph.checkpoint.postgres.aio import (

@@ -1,3 +1,20 @@
+"""Lazy, safe initialization for external providers (clients, globals).
+
+Why
+- Avoid importing/connecting providers at startup; defer until first use.
+
+Flow
+- Register providers via `providers.register(...)` or `@lazy_provider(...)`.
+- Provide `required_keys` (usually env-backed fields from `settings`).
+- On first `get()/aget()`, initialize the provider; warn or error if keys are missing.
+- Supports async, sync, and global side-effect configuration (e.g., Cloudinary).
+
+Add a new provider
+1) Ensure env fields exist in `app.config.settings` (and optionally groups in `config/settings_validator.py`).
+2) Create a factory function and decorate with `@lazy_provider(name=..., required_keys=[...])`.
+3) Resolve the provider via `providers.get(...)` or `await providers.aget(...)`.
+"""
+
 import asyncio
 import inspect
 from enum import Enum
