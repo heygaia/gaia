@@ -29,9 +29,9 @@ export default function HeroSection() {
 
         <SplitTextBlur
           text="Meet the personal assistant you’ve always wanted"
-          className="max-w-(--breakpoint-lg) text-center text-[2.8rem] font-medium text-white sm:text-7xl"
+          className="max-w-(--breakpoint-lg) text-center text-[2.8rem] font-medium sm:text-[5rem] z-[10] tracking-tighter leading-none"
         />
-        <div className="mb-6 max-w-(--breakpoint-sm) px-4 py-0 text-center text-lg leading-7 font-light text-foreground sm:px-0 sm:text-lg">
+        <div className="mb-6 max-w-(--breakpoint-sm) px-4 py-0 text-center text-lg leading-7 font-light text-foreground-700 sm:px-0 sm:text-xl tracking-tighter">
           Tired of Siri, Google Assistant, and ChatGPT doing nothing useful?
         </div>
         <GetStartedButton />
