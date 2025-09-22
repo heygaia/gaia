@@ -1,8 +1,9 @@
-// Import the Inter variable font from Fontsource
-import "@fontsource-variable/inter";
+import { Inter } from "next/font/google";
 
-// Export a font configuration object that follows the same pattern as other fonts
-export const inter = {
-  className: "font-inter",
+export const inter = Inter({
+  subsets: ["latin"],
+  // weight: ["300", "400", "500", "600", "700"],
   variable: "--font-inter",
-};
+  display: "swap",
+  preload: true,
+});

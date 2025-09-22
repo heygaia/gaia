@@ -52,7 +52,7 @@ export default function BlogList() {
     title: blog.title,
     category: blog.category || "Uncategorized",
     date: blog.date,
-    image: blog.image || "/media/glass.png",
+    image: blog.image || "/images/logos/logo_glass.webp",
     authors:
       blog.author_details?.map((author) => ({
         name: author.name,

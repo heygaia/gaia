@@ -41,7 +41,7 @@ main.tf
 chroma-data/
 
 
-
+sticky-notes.snotes
 
 # dependencies
 node_modules/

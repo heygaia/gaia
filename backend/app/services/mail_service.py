@@ -1,253 +1,209 @@
-import base64
-import os
+import json
 import time
-from email.mime.application import MIMEApplication
-from email.mime.multipart import MIMEMultipart
-from email.mime.text import MIMEText
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
-from app.config.oauth_config import get_integration_scopes
-from app.config.settings import settings
+from app.services.composio_service import composio_service
 from app.utils.general_utils import transform_gmail_message
 from fastapi import UploadFile
-from google.oauth2.credentials import Credentials
-from googleapiclient.discovery import build
-from googleapiclient.errors import HttpError
-from googleapiclient.http import BatchHttpRequest
 
 
-def get_gmail_service(
-    refresh_token: Optional[str] = None,
-    access_token: Optional[str] = None,
-    user_id: Optional[str] = None,
-):
+def get_gmail_tool(tool_name: str, user_id: str):
     """
-    Create a Gmail API service using OAuth credentials.
-
-    Can be created either with tokens directly or by retrieving them from the token repository
-    using the user_id.
+    Get a specific Gmail tool by name with caching using ComposioService.
 
     Args:
-        refresh_token: OAuth refresh token
-        access_token: OAuth access token
-        user_id: User ID to fetch tokens from repository
+        tool_name: Name of the Gmail tool to retrieve
 
     Returns:
-        Google API service object for Gmail
+        The specific Gmail tool or None if not found
     """
-    # If user_id is provided, get tokens from repository
-    if user_id and not (access_token and refresh_token):
-        import asyncio
-
-        from app.config.token_repository import token_repository
-
-        # Get token from repository
-        token = asyncio.run(token_repository.get_token(user_id, "google"))
-        if token:
-            # OAuth2Token behaves like a dict
-            access_token = str(token.get("access_token", ""))
-            refresh_token = str(token.get("refresh_token", ""))
-
-    if not access_token:
-        logger.error("No access token available to create Gmail service")
+    try:
+        return composio_service.get_tool(
+            tool_name, use_before_hook=False, use_after_hook=False, user_id=user_id
+        )
+    except Exception as e:
+        logger.error(f"Error getting Gmail tool {tool_name}: {e}")
         return None
 
-    creds = Credentials(
-        token=access_token,
-        refresh_token=refresh_token,
-        token_uri=settings.GOOGLE_TOKEN_URL,
-        client_id=settings.GOOGLE_CLIENT_ID,
-        client_secret=settings.GOOGLE_CLIENT_SECRET,
-        scopes=get_integration_scopes("gmail"),
-    )
-    return build("gmail", "v1", credentials=creds)
 
-
-def create_message(
-    sender: str,
-    to: List[str],
-    subject: str,
-    body: str,
-    is_html: bool = False,
-    cc: Optional[List[str]] = None,
-    bcc: Optional[List[str]] = None,
-    attachments: Optional[List[UploadFile]] = None,
-):
-    """Create a message for an email with optional attachments.
+async def invoke_gmail_tool(
+    user_id: str, tool_name: str, parameters: Dict[str, Any]
+) -> Dict[str, Any]:
+    """
+    Invoke a specific Gmail tool with the given parameters asynchronously.
 
     Args:
-        sender: Email address of the sender.
-        to: Email addresses of the recipients.
-        subject: The subject of the email message.
-        body: The body of the email message.
-        is_html: Whether the body is HTML content.
-        cc: Optional. Email addresses for cc recipients.
-        bcc: Optional. Email addresses for bcc recipients.
-        attachments: Optional. List of files to attach.
+        user_id: User ID for Composio authentication
+        tool_name: Name of the Gmail tool to invoke
+        parameters: Parameters to pass to the tool
 
     Returns:
-        An object containing a base64url encoded email message.
+        Response from the tool execution
     """
-    # Always create a MIME message regardless of attachments
-    message = MIMEMultipart("alternative" if is_html else "mixed")
-    message["from"] = sender
-    message["to"] = ", ".join(to)
-    message["subject"] = subject
+    try:
+        tool = get_gmail_tool(tool_name, user_id)
 
-    if cc:
-        message["cc"] = ", ".join(cc)
-    if bcc:
-        message["bcc"] = ", ".join(bcc)
+        if not tool:
+            return {"error": f"Tool {tool_name} not found", "successful": False}
 
-    # Add body with correct content type
-    mime_type = "html" if is_html else "plain"
-    message.attach(MIMEText(body, mime_type))
-
-    # Add attachments if any
-    if attachments and len(attachments) > 0:
-        # If we have HTML content and attachments, convert to mixed if not already
-        if is_html and message.get_content_subtype() != "mixed":
-            mixed_message = MIMEMultipart("mixed")
-            # Copy all headers
-            for header, value in message.items():
-                mixed_message[header] = value
-            # Attach the original HTML part
-            mixed_message.attach(message)
-            message = mixed_message
-
-        # Add each attachment
-        for attachment in attachments:
-            # content_type = (
-            #     attachment.content_type
-            #     or mimetypes.guess_type(attachment.filename)[0]
-            #     or "application/octet-stream"
-            # )
-
-            file_name = attachment.filename
-            if not file_name:
-                file_name = "attachment"
-
-            attachment_part = MIMEApplication(
-                attachment.file.read(), Name=os.path.basename(file_name)
-            )
-
-            # Add header to attachment
-            attachment_part["Content-Disposition"] = (
-                f'attachment; filename="{os.path.basename(file_name)}"'
-            )
-            message.attach(attachment_part)
-
-            # Reset file pointer
-            attachment.file.seek(0)
-
-    # Encode the message properly as base64url
-    encoded_message = base64.urlsafe_b64encode(message.as_bytes()).decode()
-    return {"raw": encoded_message}
+        result = await tool.ainvoke(parameters)
+        return result
+    except Exception as e:
+        logger.error(f"Error invoking Gmail tool {tool_name} for user {user_id}: {e}")
+        return {"error": str(e), "successful": False}
 
 
-def send_email(
-    service: Any,
-    sender: str,
-    to_list: List[str],
+def _process_attachments(attachments: List[UploadFile]) -> List[Dict[str, Any]]:
+    """Process UploadFile objects into format expected by Composio."""
+    processed = [
+        {
+            "filename": att.filename,
+            "content": att.file.read(),
+            "content_type": att.content_type,
+        }
+        for att in attachments
+    ]
+    # Reset file pointers
+    for att in attachments:
+        att.file.seek(0)
+    return processed
+
+
+async def send_email(
+    user_id: str,
+    to: str,
     subject: str,
     body: str,
+    thread_id: Optional[str] = None,
     is_html: bool = False,
+    extra_recipients: List[str] = [],
     cc_list: Optional[List[str]] = None,
     bcc_list: Optional[List[str]] = None,
     attachments: Optional[List[UploadFile]] = None,
 ) -> Dict[str, Any]:
     """
-    Send an email using Gmail.
+    Send an email using Composio Gmail tools.
+
+    Automatically chooses between GMAIL_SEND_EMAIL (for new emails) and
+    GMAIL_REPLY_TO_THREAD (when thread_id is provided) to handle both
+    new emails and thread replies appropriately.
 
     Args:
-        service: Authenticated Gmail API service instance
-        sender: Email address of the sender
-        to_list: Email addresses of recipients
+        user_id: User ID for Composio authentication
+        to: Primary recipient email address
         subject: Email subject
         body: Email body content
+        thread_id: Optional thread ID - if provided, uses GMAIL_REPLY_TO_THREAD
         is_html: Whether the body is HTML content
+        extra_recipients: Additional recipient email addresses
         cc_list: Optional list of CC recipients
         bcc_list: Optional list of BCC recipients
         attachments: Optional list of files to attach
 
     Returns:
-        Sent message data from the Gmail API
+        Sent message data from the appropriate Composio Gmail tool
     """
-    message = create_message(
-        sender=sender,
-        to=to_list,
-        subject=subject,
-        body=body,
-        is_html=is_html,
-        cc=cc_list,
-        bcc=bcc_list,
-        attachments=attachments,
-    )
-    sent_message = service.users().messages().send(userId="me", body=message).execute()
-    return sent_message
+    try:
+        # Determine tool and body parameter name
+        is_reply = bool(thread_id)
+        tool_name = "GMAIL_REPLY_TO_THREAD" if is_reply else "GMAIL_SEND_EMAIL"
+        body_param = "message_body" if is_reply else "body"
 
+        # Build parameters
+        parameters: Dict[str, Any] = {
+            "recipient_email": to,
+            "extra_recipients": extra_recipients,
+            body_param: body,
+            "subject": subject,
+            "is_html": is_html,
+        }
 
-def fetch_detailed_messages(service, messages, batch_size=20, delay=2):
-    """
-    Fetch detailed Gmail messages using batch requests while handling rate limits.
+        # Add thread_id for replies
+        if is_reply:
+            parameters["thread_id"] = thread_id
 
-    :param service: Authenticated Gmail API service instance
-    :param messages: List of message metadata (each containing 'id')
-    :param batch_size: Number of messages per batch (default: 20)
-    :param delay: Time in seconds to wait between batch executions
-    :return: List of detailed message objects
-    """
-    detailed_messages = []
+        # Add optional parameters
+        if cc_list:
+            parameters["cc"] = cc_list
+        if bcc_list:
+            parameters["bcc"] = bcc_list
+        if attachments:
+            parameters["attachments"] = _process_attachments(attachments)
 
-    def callback(request_id, response, exception):
-        if exception:
-            print(f"Error in request {request_id}: {exception}")
-        else:
-            detailed_messages.append(response)
-
-    total_messages = len(messages)
-    for i in range(0, total_messages, batch_size):
-        batch = BatchHttpRequest(
-            callback=callback, batch_uri="https://www.googleapis.com/batch/gmail/v1"
+        logger.info(
+            f"Using {tool_name} to {'reply to thread ' + (thread_id or '') if is_reply else 'send new email to ' + to}"
         )
 
-        for msg in messages[i : i + batch_size]:
-            req = (
-                service.users().messages().get(userId="me", id=msg["id"], format="full")
-            )
-            batch.add(req)
+        return await invoke_gmail_tool(user_id, tool_name, parameters)
 
-        retries = 3
-        for attempt in range(retries):
+    except Exception as e:
+        logger.error(f"Error sending email for user {user_id}: {e}")
+        return {"error": str(e), "successful": False}
+
+
+async def fetch_detailed_messages(
+    user_id: str, messages: List[Dict[str, Any]], batch_size: int = 20, delay: float = 2
+) -> List[Dict[str, Any]]:
+    """
+    Fetch detailed Gmail messages using Composio tools while handling rate limits.
+
+    Args:
+        user_id: User ID for Composio authentication
+        messages: List of message metadata (each containing 'id')
+        batch_size: Number of messages per batch (default: 20)
+        delay: Time in seconds to wait between batch executions
+
+    Returns:
+        List of detailed message objects
+    """
+
+    detailed_messages = []
+    total_messages = len(messages)
+
+    for i in range(0, total_messages, batch_size):
+        batch_messages = messages[i : i + batch_size]
+
+        # Process each message in the current batch
+        for message in batch_messages:
+            message_id = message.get("id")
+            if not message_id:
+                continue
+
             try:
-                batch.execute()
-                break
-            except HttpError as e:
-                if e.resp.status == 429:
-                    wait_time = (2**attempt) * delay
-                    print(f"Rate limit hit. Retrying in {wait_time} seconds...")
-                    time.sleep(wait_time)
-                else:
-                    print(f"Unexpected error: {e}")
-                    break
+                parameters = {"message_id": message_id}
+                result = await invoke_gmail_tool(
+                    user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", parameters
+                )
 
-        time.sleep(delay)
+                if result.get("successful", True):
+                    detailed_messages.append(result)
+                else:
+                    logger.error(
+                        f"Error fetching message {message_id}: {result.get('error')}"
+                    )
+
+            except Exception as e:
+                logger.error(f"Error fetching message {message_id}: {e}")
+
+        # Rate limiting: wait between batches
+        if i + batch_size < total_messages and delay > 0:
+            time.sleep(delay)
 
     return detailed_messages
 
 
-def modify_message_labels(
-    service,
+async def modify_message_labels(
+    user_id: str,
     message_ids: List[str],
     add_labels: Optional[List[str]] = None,
     remove_labels: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     """
-    Modify the labels of Gmail messages.
+    Modify the labels of Gmail messages using Composio Gmail tools.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to modify
         add_labels: Labels to add to the messages
         remove_labels: Labels to remove from the messages
@@ -260,200 +216,207 @@ def modify_message_labels(
 
     add_labels = add_labels or []
     remove_labels = remove_labels or []
-
-    batch = service.new_batch_http_request()
-
-    def callback(request_id, response, exception):
-        if exception:
-            print(f"Error modifying message {request_id}: {exception}")
-
-    for message_id in message_ids:
-        batch.add(
-            service.users()
-            .messages()
-            .modify(
-                userId="me",
-                id=message_id,
-                body={"addLabelIds": add_labels, "removeLabelIds": remove_labels},
-            ),
-            callback=callback,
-            request_id=message_id,
-        )
-
-    batch.execute()
-
-    # Return the updated messages
     results = []
-    for message_id in message_ids:
+
+    # Add labels if specified
+    if add_labels:
         try:
-            message = (
-                service.users().messages().get(userId="me", id=message_id).execute()
+            add_params = {
+                "message_ids": message_ids,
+                "label_ids": add_labels,
+            }
+            add_result = await invoke_gmail_tool(
+                user_id, "GMAIL_ADD_LABEL_TO_EMAIL", add_params
             )
-            results.append(message)
-        except HttpError as error:
-            print(f"Error getting message {message_id}: {error}")
+            if add_result.get("successful", True):
+                results.extend(add_result.get("messages", []))
+        except Exception as e:
+            logger.error(f"Error adding labels {add_labels} to messages: {e}")
+
+    # Remove labels if specified
+    if remove_labels:
+        try:
+            remove_params = {
+                "message_ids": message_ids,
+                "label_ids": remove_labels,
+            }
+            remove_result = await invoke_gmail_tool(
+                user_id, "GMAIL_REMOVE_LABEL", remove_params
+            )
+            if remove_result.get("successful", True):
+                # Only extend if we didn't already get results from adding labels
+                if not add_labels:
+                    results.extend(remove_result.get("messages", []))
+        except Exception as e:
+            logger.error(f"Error removing labels {remove_labels} from messages: {e}")
 
     return results
 
 
-def mark_messages_as_read(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def mark_messages_as_read(
+    user_id: str, message_ids: List[str]
+) -> List[Dict[str, Any]]:
     """
-    Mark Gmail messages as read by removing the UNREAD label.
+    Mark Gmail messages as read by removing the UNREAD label using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to mark as read
 
     Returns:
         List of modified messages
     """
-    return modify_message_labels(service, message_ids, remove_labels=["UNREAD"])
+    return await modify_message_labels(user_id, message_ids, remove_labels=["UNREAD"])
 
 
-def mark_messages_as_unread(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def mark_messages_as_unread(
+    user_id: str, message_ids: List[str]
+) -> List[Dict[str, Any]]:
     """
-    Mark Gmail messages as unread by adding the UNREAD label.
+    Mark Gmail messages as unread by adding the UNREAD label using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to mark as unread
 
     Returns:
         List of modified messages
     """
-    return modify_message_labels(service, message_ids, add_labels=["UNREAD"])
+    return await modify_message_labels(user_id, message_ids, add_labels=["UNREAD"])
 
 
-def star_messages(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def star_messages(user_id: str, message_ids: List[str]) -> List[Dict[str, Any]]:
     """
     Star Gmail messages by adding the STARRED label.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to star
 
     Returns:
         List of modified messages
     """
     logger.info(f"Starring {len(message_ids)} messages")
-    return modify_message_labels(service, message_ids, add_labels=["STARRED"])
+    return await modify_message_labels(user_id, message_ids, add_labels=["STARRED"])
 
 
-def unstar_messages(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def unstar_messages(user_id: str, message_ids: List[str]) -> List[Dict[str, Any]]:
     """
     Unstar Gmail messages by removing the STARRED label.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to unstar
 
     Returns:
         List of modified messages
     """
     logger.info(f"Unstarring {len(message_ids)} messages")
-    return modify_message_labels(service, message_ids, remove_labels=["STARRED"])
+    return await modify_message_labels(user_id, message_ids, remove_labels=["STARRED"])
 
 
-def trash_messages(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def trash_messages(user_id: str, message_ids: List[str]) -> List[Dict[str, Any]]:
     """
     Move Gmail messages to trash.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to trash
 
     Returns:
         List of modified messages
     """
     logger.info(f"Moving {len(message_ids)} messages to trash")
-    batch = service.new_batch_http_request()
     results = []
 
-    def callback(request_id, response, exception):
-        if exception:
-            logger.error(f"Error trashing message {request_id}: {exception}")
-        elif response:
-            results.append(response)
-
     for message_id in message_ids:
-        batch.add(
-            service.users().messages().trash(userId="me", id=message_id),
-            callback=callback,
-            request_id=message_id,
-        )
+        try:
+            parameters = {"message_id": message_id}
+            result = await invoke_gmail_tool(user_id, "GMAIL_TRASH_MESSAGE", parameters)
+            if result.get("successful", True):
+                results.append(result)
+            else:
+                logger.error(
+                    f"Error trashing message {message_id}: {result.get('error')}"
+                )
+        except Exception as e:
+            logger.error(f"Error trashing message {message_id}: {e}")
 
-    batch.execute()
     return results
 
 
-def untrash_messages(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def untrash_messages(
+    user_id: str, message_ids: List[str]
+) -> List[Dict[str, Any]]:
     """
     Restore Gmail messages from trash.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to restore from trash
 
     Returns:
         List of modified messages
     """
     logger.info(f"Restoring {len(message_ids)} messages from trash")
-    batch = service.new_batch_http_request()
     results = []
 
-    def callback(request_id, response, exception):
-        if exception:
-            logger.error(f"Error untrashing message {request_id}: {exception}")
-        elif response:
-            results.append(response)
-
     for message_id in message_ids:
-        batch.add(
-            service.users().messages().untrash(userId="me", id=message_id),
-            callback=callback,
-            request_id=message_id,
-        )
+        try:
+            parameters = {"message_id": message_id}
+            result = await invoke_gmail_tool(
+                user_id, "GMAIL_UNTRASH_MESSAGE", parameters
+            )
+            if result.get("successful", True):
+                results.append(result)
+            else:
+                logger.error(
+                    f"Error untrashing message {message_id}: {result.get('error')}"
+                )
+        except Exception as e:
+            logger.error(f"Error untrashing message {message_id}: {e}")
 
-    batch.execute()
     return results
 
 
-def archive_messages(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def archive_messages(
+    user_id: str, message_ids: List[str]
+) -> List[Dict[str, Any]]:
     """
     Archive Gmail messages by removing the INBOX label.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to archive
 
     Returns:
         List of modified messages
     """
     logger.info(f"Archiving {len(message_ids)} messages")
-    return modify_message_labels(service, message_ids, remove_labels=["INBOX"])
+    return await modify_message_labels(user_id, message_ids, remove_labels=["INBOX"])
 
 
-def move_to_inbox(service, message_ids: List[str]) -> List[Dict[str, Any]]:
+async def move_to_inbox(user_id: str, message_ids: List[str]) -> List[Dict[str, Any]]:
     """
     Move Gmail messages to inbox by adding the INBOX label.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs to move to inbox
 
     Returns:
         List of modified messages
     """
     logger.info(f"Moving {len(message_ids)} messages to inbox")
-    return modify_message_labels(service, message_ids, add_labels=["INBOX"])
+    return await modify_message_labels(user_id, message_ids, add_labels=["INBOX"])
 
 
-def fetch_thread(service, thread_id: str) -> Dict[str, Any]:
+async def fetch_thread(user_id: str, thread_id: str) -> Dict[str, Any]:
     """
-    Fetch a complete email thread with all messages.
+    Fetch a complete email thread with all messages using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         thread_id: ID of the thread to fetch
 
     Returns:
@@ -461,40 +424,49 @@ def fetch_thread(service, thread_id: str) -> Dict[str, Any]:
     """
     logger.info(f"Fetching thread with ID: {thread_id}")
     try:
-        # Get thread with all its messages in a single API call
-        thread = (
-            service.users()
-            .threads()
-            .get(userId="me", id=thread_id, format="full")
-            .execute()
+        parameters = {
+            "thread_id": thread_id,
+        }
+
+        result = await invoke_gmail_tool(
+            user_id, "GMAIL_FETCH_MESSAGE_BY_THREAD_ID", parameters
         )
 
-        # Transform messages in the thread for easier frontend processing
-        if "messages" in thread:
-            thread["messages"] = [
-                transform_gmail_message(msg) for msg in thread["messages"]
-            ]
+        if result.get("successful", True):
+            thread = result
 
-            # Sort messages by date (oldest first)
-            thread["messages"].sort(key=lambda msg: int(msg.get("internalDate", 0)))
+            # Transform messages in the thread for easier frontend processing
+            if "messages" in thread:
+                thread["messages"] = [
+                    transform_gmail_message(msg) for msg in thread["messages"]
+                ]
 
-        return thread
-    except HttpError as error:
+                # Sort messages by date (oldest first)
+                thread["messages"].sort(key=lambda msg: int(msg.get("internalDate", 0)))
+
+            return thread
+        else:
+            logger.error(
+                f"Error from GMAIL_FETCH_MESSAGE_BY_THREAD_ID: {result.get('error')}"
+            )
+            return {"messages": []}
+
+    except Exception as error:
         logger.error(f"Error fetching thread {thread_id}: {error}")
-        raise
+        return {"messages": []}
 
 
-def search_messages(
-    service,
+async def search_messages(
+    user_id: str,
     query: Optional[str] = None,
     max_results: int = 20,
     page_token: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Search Gmail messages using the Gmail API's advanced search syntax.
+    Search Gmail messages using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         query: Search query in Gmail's search syntax
         max_results: Maximum number of results to return
         page_token: Token for pagination
@@ -504,32 +476,33 @@ def search_messages(
     """
     logger.info(f"Searching messages with query: {query}")
     try:
-        params = {
-            "userId": "me",
-            "q": query or "",
-            "maxResults": max_results,
+        parameters = {
+            "query": query or "",
+            "max_results": max_results,
         }
         if page_token:
-            params["pageToken"] = page_token
+            parameters["page_token"] = page_token
 
-        # Fetch message list
-        results = service.users().messages().list(**params).execute()
-        messages = results.get("messages", [])
+        result = await invoke_gmail_tool(user_id, "GMAIL_FETCH_EMAILS", parameters)
 
-        # Use batching to fetch full details for each message
-        detailed_messages = fetch_detailed_messages(service, messages)
+        if result.get("successful", True):
+            # Transform messages if needed
+            messages = result.get("messages", [])
+            return {
+                "messages": [transform_gmail_message(msg) for msg in messages],
+                "nextPageToken": result.get("nextPageToken"),
+            }
+        else:
+            logger.error(f"Error from GMAIL_FETCH_EMAILS: {result.get('error')}")
+            return {"messages": [], "nextPageToken": None}
 
-        return {
-            "messages": [transform_gmail_message(msg) for msg in detailed_messages],
-            "nextPageToken": results.get("nextPageToken"),
-        }
-    except HttpError as error:
+    except Exception as error:
         logger.error(f"Error searching messages: {error}")
-        raise
+        return {"messages": [], "nextPageToken": None}
 
 
-def create_label(
-    service,
+async def create_label(
+    user_id: str,
     name: str,
     label_list_visibility: str = "labelShow",
     message_list_visibility: str = "show",
@@ -537,10 +510,10 @@ def create_label(
     text_color: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Create a new Gmail label.
+    Create a new Gmail label using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         name: Name of the label
         label_list_visibility: Whether the label appears in the label list
         message_list_visibility: Whether the label appears in the message list
@@ -552,24 +525,30 @@ def create_label(
     """
     logger.info(f"Creating new label: {name}")
     try:
-        label_data = {
+        parameters = {
             "name": name,
-            "labelListVisibility": label_list_visibility,
-            "messageListVisibility": message_list_visibility,
-            "color": {
-                "backgroundColor": background_color,
-                "textColor": text_color,
-            },
+            "label_list_visibility": label_list_visibility,
+            "message_list_visibility": message_list_visibility,
         }
 
-        return service.users().labels().create(userId="me", body=label_data).execute()
-    except HttpError as error:
+        # Add color parameters if provided
+        if background_color or text_color:
+            color_data = {}
+            if background_color:
+                color_data["background_color"] = background_color
+            if text_color:
+                color_data["text_color"] = text_color
+            parameters["color"] = json.dumps(color_data)
+
+        result = await invoke_gmail_tool(user_id, "GMAIL_CREATE_LABEL", parameters)
+        return result
+    except Exception as error:
         logger.error(f"Error creating label {name}: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def update_label(
-    service,
+async def update_label(
+    user_id: str,
     label_id: str,
     name: Optional[str] = None,
     label_list_visibility: Optional[str] = None,
@@ -578,10 +557,10 @@ def update_label(
     text_color: Optional[str] = None,
 ) -> Dict[str, Any]:
     """
-    Update an existing Gmail label.
+    Update an existing Gmail label using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         label_id: ID of the label to update
         name: New name for the label
         label_list_visibility: Whether the label appears in the label list
@@ -594,45 +573,40 @@ def update_label(
     """
     logger.info(f"Updating label {label_id}")
     try:
-        # First get the current label data
-        current_label = service.users().labels().get(userId="me", id=label_id).execute()
+        parameters = {
+            "label_id": label_id,
+        }
 
-        # Update with new values if provided
+        # Add parameters if provided
         if name:
-            current_label["name"] = name
+            parameters["name"] = name
         if label_list_visibility:
-            current_label["labelListVisibility"] = label_list_visibility
+            parameters["label_list_visibility"] = label_list_visibility
         if message_list_visibility:
-            current_label["messageListVisibility"] = message_list_visibility
+            parameters["message_list_visibility"] = message_list_visibility
 
-        # Update color information if provided
+        # Add color parameters if provided
         if background_color or text_color:
             color_data = {}
-            if "color" in current_label:
-                color_data = current_label["color"]
             if background_color:
-                color_data["backgroundColor"] = background_color
+                color_data["background_color"] = background_color
             if text_color:
-                color_data["textColor"] = text_color
-            current_label["color"] = color_data
+                color_data["text_color"] = text_color
+            parameters["color"] = json.dumps(color_data)
 
-        return (
-            service.users()
-            .labels()
-            .update(userId="me", id=label_id, body=current_label)
-            .execute()
-        )
-    except HttpError as error:
+        result = await invoke_gmail_tool(user_id, "GMAIL_PATCH_LABEL", parameters)
+        return result
+    except Exception as error:
         logger.error(f"Error updating label {label_id}: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def delete_label(service, label_id: str) -> bool:
+async def delete_label(user_id: str, label_id: str) -> bool:
     """
     Delete a Gmail label.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         label_id: ID of the label to delete
 
     Returns:
@@ -640,21 +614,22 @@ def delete_label(service, label_id: str) -> bool:
     """
     logger.info(f"Deleting label {label_id}")
     try:
-        service.users().labels().delete(userId="me", id=label_id).execute()
-        return True
-    except HttpError as error:
+        parameters = {"label_id": label_id}
+        result = await invoke_gmail_tool(user_id, "GMAIL_DELETE_LABEL", parameters)
+        return result.get("successful", True)
+    except Exception as error:
         logger.error(f"Error deleting label {label_id}: {error}")
-        raise
+        return False
 
 
-def apply_labels(
-    service, message_ids: List[str], label_ids: List[str]
+async def apply_labels(
+    user_id: str, message_ids: List[str], label_ids: List[str]
 ) -> List[Dict[str, Any]]:
     """
     Apply one or more labels to specified messages.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs
         label_ids: List of label IDs to apply
 
@@ -662,17 +637,17 @@ def apply_labels(
         List of modified messages
     """
     logger.info(f"Applying labels {label_ids} to {len(message_ids)} messages")
-    return modify_message_labels(service, message_ids, add_labels=label_ids)
+    return await modify_message_labels(user_id, message_ids, add_labels=label_ids)
 
 
-def remove_labels(
-    service, message_ids: List[str], label_ids: List[str]
+async def remove_labels(
+    user_id: str, message_ids: List[str], label_ids: List[str]
 ) -> List[Dict[str, Any]]:
     """
     Remove one or more labels from specified messages.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         message_ids: List of message IDs
         label_ids: List of label IDs to remove
 
@@ -680,11 +655,11 @@ def remove_labels(
         List of modified messages
     """
     logger.info(f"Removing labels {label_ids} from {len(message_ids)} messages")
-    return modify_message_labels(service, message_ids, remove_labels=label_ids)
+    return await modify_message_labels(user_id, message_ids, remove_labels=label_ids)
 
 
-def create_draft(
-    service,
+async def create_draft(
+    user_id: str,
     sender: str,
     to_list: List[str],
     subject: str,
@@ -694,10 +669,10 @@ def create_draft(
     bcc_list: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
-    Create a new Gmail draft.
+    Create a new Gmail draft using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         sender: Email address of the sender
         to_list: Email addresses of recipients
         subject: Email subject
@@ -711,32 +686,37 @@ def create_draft(
     """
     logger.info(f"Creating draft email to {to_list} with subject: {subject}")
     try:
-        message = create_message(
-            sender=sender,
-            to=to_list,
-            subject=subject,
-            body=body,
-            is_html=is_html,
-            cc=cc_list,
-            bcc=bcc_list,
-            attachments=None,
+        parameters: Dict[str, Any] = {
+            "to": to_list,
+            "subject": subject,
+            "body": body,
+        }
+
+        # Add optional parameters if provided
+        if cc_list:
+            parameters["cc"] = cc_list
+        if bcc_list:
+            parameters["bcc"] = bcc_list
+        if is_html:
+            parameters["html"] = True
+
+        result = await invoke_gmail_tool(
+            user_id, "GMAIL_CREATE_EMAIL_DRAFT", parameters
         )
-
-        draft = {"message": message}
-        return service.users().drafts().create(userId="me", body=draft).execute()
-    except HttpError as error:
+        return result
+    except Exception as error:
         logger.error(f"Error creating draft: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def list_drafts(
-    service, max_results: int = 20, page_token: Optional[str] = None
+async def list_drafts(
+    user_id: str, max_results: int = 20, page_token: Optional[str] = None
 ) -> Dict[str, Any]:
     """
-    List Gmail draft messages.
+    List Gmail draft messages using Composio Gmail tool.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         max_results: Maximum number of drafts to return
         page_token: Token for pagination
 
@@ -745,49 +725,43 @@ def list_drafts(
     """
     logger.info(f"Listing drafts, max_results={max_results}")
     try:
-        params = {"userId": "me", "maxResults": max_results}
-        if page_token:
-            params["pageToken"] = page_token
-
-        results = service.users().drafts().list(**params).execute()
-        drafts = results.get("drafts", [])
-
-        # If we have drafts, get full details for each one
-        detailed_drafts = []
-        for draft in drafts:
-            try:
-                draft_data = (
-                    service.users()
-                    .drafts()
-                    .get(userId="me", id=draft["id"], format="full")
-                    .execute()
-                )
-
-                # Transform the message data
-                if "message" in draft_data:
-                    draft_data["message"] = transform_gmail_message(
-                        draft_data["message"]
-                    )
-
-                detailed_drafts.append(draft_data)
-            except HttpError as error:
-                logger.error(f"Error fetching draft {draft['id']}: {error}")
-
-        return {
-            "drafts": detailed_drafts,
-            "nextPageToken": results.get("nextPageToken"),
+        parameters: Dict[str, Any] = {
+            "max_results": max_results,
         }
-    except HttpError as error:
+        if page_token:
+            parameters["page_token"] = page_token
+
+        result = await invoke_gmail_tool(user_id, "GMAIL_LIST_DRAFTS", parameters)
+
+        if result.get("successful", True):
+            drafts = result.get("drafts", [])
+
+            # Transform draft messages if needed
+            detailed_drafts = []
+            for draft in drafts:
+                if "message" in draft:
+                    draft["message"] = transform_gmail_message(draft["message"])
+                detailed_drafts.append(draft)
+
+            return {
+                "drafts": detailed_drafts,
+                "nextPageToken": result.get("nextPageToken"),
+            }
+        else:
+            logger.error(f"Error from GMAIL_LIST_DRAFTS: {result.get('error')}")
+            return {"drafts": [], "nextPageToken": None}
+
+    except Exception as error:
         logger.error(f"Error listing drafts: {error}")
-        raise
+        return {"drafts": [], "nextPageToken": None}
 
 
-def get_draft(service, draft_id: str) -> Dict[str, Any]:
+async def get_draft(user_id: str, draft_id: str) -> Dict[str, Any]:
     """
     Get a specific Gmail draft.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         draft_id: ID of the draft to retrieve
 
     Returns:
@@ -795,25 +769,25 @@ def get_draft(service, draft_id: str) -> Dict[str, Any]:
     """
     logger.info(f"Fetching draft {draft_id}")
     try:
-        draft = (
-            service.users()
-            .drafts()
-            .get(userId="me", id=draft_id, format="full")
-            .execute()
-        )
+        parameters = {"draft_id": draft_id}
+        result = await invoke_gmail_tool(user_id, "GMAIL_GET_DRAFT", parameters)
 
-        # Transform the message data
-        if "message" in draft:
-            draft["message"] = transform_gmail_message(draft["message"])
+        if result.get("successful", True):
+            # Transform the message data if present
+            if "message" in result:
+                result["message"] = transform_gmail_message(result["message"])
+            return result
+        else:
+            logger.error(f"Error from GMAIL_GET_DRAFT: {result.get('error')}")
+            return {"error": result.get("error"), "successful": False}
 
-        return draft
-    except HttpError as error:
+    except Exception as error:
         logger.error(f"Error fetching draft {draft_id}: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def update_draft(
-    service,
+async def update_draft(
+    user_id: str,
     draft_id: str,
     sender: str,
     to_list: List[str],
@@ -827,7 +801,7 @@ def update_draft(
     Update an existing Gmail draft.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         draft_id: ID of the draft to update
         sender: Email address of the sender
         to_list: Email addresses of recipients
@@ -842,35 +816,38 @@ def update_draft(
     """
     logger.info(f"Updating draft {draft_id}")
     try:
-        message = create_message(
-            sender=sender,
-            to=to_list,
-            subject=subject,
-            body=body,
-            is_html=is_html,
-            cc=cc_list,
-            bcc=bcc_list,
-            attachments=None,
-        )
+        parameters = {
+            "draft_id": draft_id,
+            "to": to_list,
+            "subject": subject,
+            "body": body,
+        }
 
-        draft = {"id": draft_id, "message": message}
-        return (
-            service.users()
-            .drafts()
-            .update(userId="me", id=draft_id, body=draft)
-            .execute()
-        )
-    except HttpError as error:
+        # Add optional parameters if provided
+        if cc_list:
+            parameters["cc"] = cc_list
+        if bcc_list:
+            parameters["bcc"] = bcc_list
+
+        result = await invoke_gmail_tool(user_id, "GMAIL_UPDATE_DRAFT", parameters)
+
+        if result.get("successful", True):
+            return result
+        else:
+            logger.error(f"Error from GMAIL_UPDATE_DRAFT: {result.get('error')}")
+            return {"error": result.get("error"), "successful": False}
+
+    except Exception as error:
         logger.error(f"Error updating draft {draft_id}: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def delete_draft(service, draft_id: str) -> bool:
+async def delete_draft(user_id: str, draft_id: str) -> bool:
     """
     Delete a Gmail draft.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         draft_id: ID of the draft to delete
 
     Returns:
@@ -878,19 +855,20 @@ def delete_draft(service, draft_id: str) -> bool:
     """
     logger.info(f"Deleting draft {draft_id}")
     try:
-        service.users().drafts().delete(userId="me", id=draft_id).execute()
-        return True
-    except HttpError as error:
+        parameters = {"draft_id": draft_id}
+        result = await invoke_gmail_tool(user_id, "GMAIL_DELETE_DRAFT", parameters)
+        return result.get("successful", True)
+    except Exception as error:
         logger.error(f"Error deleting draft {draft_id}: {error}")
-        raise
+        return False
 
 
-def send_draft(service, draft_id: str) -> Dict[str, Any]:
+async def send_draft(user_id: str, draft_id: str) -> Dict[str, Any]:
     """
     Send an existing Gmail draft.
 
     Args:
-        service: Gmail API service instance
+        user_id: User ID for Composio authentication
         draft_id: ID of the draft to send
 
     Returns:
@@ -898,20 +876,109 @@ def send_draft(service, draft_id: str) -> Dict[str, Any]:
     """
     logger.info(f"Sending draft {draft_id}")
     try:
-        return (
-            service.users().drafts().send(userId="me", body={"id": draft_id}).execute()
-        )
-    except HttpError as error:
+        parameters = {"draft_id": draft_id}
+        result = await invoke_gmail_tool(user_id, "GMAIL_SEND_DRAFT", parameters)
+
+        if result.get("successful", True):
+            return result
+        else:
+            logger.error(f"Error from GMAIL_SEND_DRAFT: {result.get('error')}")
+            return {"error": result.get("error"), "successful": False}
+
+    except Exception as error:
         logger.error(f"Error sending draft {draft_id}: {error}")
-        raise
+        return {"error": str(error), "successful": False}
 
 
-def get_contact_list(service, max_results=100):
+async def list_labels(user_id: str) -> Dict[str, Any]:
+    """
+    List all Gmail labels using Composio Gmail tool.
+
+    Args:
+        user_id: User ID for Composio authentication
+
+    Returns:
+        Dict containing labels list
+    """
+    logger.info(f"Listing Gmail labels for user {user_id}")
+    try:
+        parameters: Dict[str, Any] = {}  # No parameters needed for listing labels
+        result = await invoke_gmail_tool(user_id, "GMAIL_LIST_LABELS", parameters)
+
+        if result.get("successful", True):
+            labels = result.get("labels", [])
+            return {
+                "success": True,
+                "labels": labels,
+                "count": len(labels),
+            }
+        else:
+            logger.error(f"Error from GMAIL_LIST_LABELS: {result.get('error')}")
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "labels": [],
+            }
+
+    except Exception as error:
+        logger.error(f"Error listing Gmail labels: {error}")
+        return {
+            "success": False,
+            "error": str(error),
+            "labels": [],
+        }
+
+
+async def get_email_by_id(user_id: str, message_id: str) -> Dict[str, Any]:
+    """
+    Get a Gmail message by its ID using Composio Gmail tool.
+
+    Args:
+        user_id: User ID for Composio authentication
+        message_id: Gmail message ID to retrieve
+
+    Returns:
+        Gmail message data
+    """
+    logger.info(f"Fetching email with ID: {message_id}")
+    try:
+        parameters = {"message_id": message_id}
+        result = await invoke_gmail_tool(
+            user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", parameters
+        )
+
+        if result.get("successful", True):
+            # Transform the message data for easier frontend processing
+            transformed_message = transform_gmail_message(result)
+            return {
+                "success": True,
+                "message": transformed_message,
+            }
+        else:
+            logger.error(
+                f"Error from GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID: {result.get('error')}"
+            )
+            return {
+                "success": False,
+                "error": result.get("error"),
+                "message": None,
+            }
+
+    except Exception as error:
+        logger.error(f"Error fetching email {message_id}: {error}")
+        return {
+            "success": False,
+            "error": str(error),
+            "message": None,
+        }
+
+
+async def get_contact_list(user_id: str, max_results=100):
     """
     Extract a list of unique contacts (email addresses and names) from the user's Gmail history.
 
     Args:
-        service: Authenticated Gmail API service instance
+        user_id: User ID for Composio authentication
         max_results: Maximum number of messages to analyze (default: 100)
 
     Returns:
@@ -921,15 +988,18 @@ def get_contact_list(service, max_results=100):
         # Get messages from inbox, sent, and all mail to maximize contact discovery
         query = "in:inbox OR in:sent OR in:all"
 
-        # First, get message IDs
-        results = (
-            service.users()
-            .messages()
-            .list(userId="me", q=query, maxResults=max_results)
-            .execute()
+        # First, get message IDs using search
+        search_params = {"query": query, "max_results": max_results}
+
+        search_result = await invoke_gmail_tool(
+            user_id, "GMAIL_FETCH_EMAILS", search_params
         )
 
-        messages = results.get("messages", [])
+        if not search_result.get("successful", True):
+            logger.error(f"Error searching for messages: {search_result.get('error')}")
+            return []
+
+        messages = search_result.get("messages", [])
 
         # Use a dictionary to track unique contacts
         contacts = {}
@@ -937,17 +1007,24 @@ def get_contact_list(service, max_results=100):
         # Process each message to extract contacts
         for msg_data in messages:
             msg_id = msg_data.get("id")
-            msg = (
-                service.users()
-                .messages()
-                .get(userId="me", id=msg_id, format="full")
-                .execute()
+            if not msg_id:
+                continue
+
+            # Fetch full message details
+            msg_params = {"message_id": msg_id}
+            msg_result = await invoke_gmail_tool(
+                user_id, "GMAIL_FETCH_MESSAGE_BY_MESSAGE_ID", msg_params
             )
 
+            if not msg_result.get("successful", True):
+                continue
+
+            msg = msg_result
+
             # Extract headers
-            headers = {
-                h["name"]: h["value"] for h in msg.get("payload", {}).get("headers", [])
-            }
+            headers = {}
+            if "payload" in msg and "headers" in msg["payload"]:
+                headers = {h["name"]: h["value"] for h in msg["payload"]["headers"]}
 
             # Extract email addresses from From, To, Cc, and Reply-To fields
             for field in ["From", "To", "Cc", "Reply-To"]:
@@ -983,5 +1060,5 @@ def get_contact_list(service, max_results=100):
         return contact_list
 
     except Exception as e:
-        print(f"Error getting contact list: {str(e)}")
+        logger.error(f"Error getting contact list: {str(e)}")
         return []

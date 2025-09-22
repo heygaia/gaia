@@ -1,10 +1,10 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { useDisclosure } from "@heroui/modal";
-import { Tooltip } from "@heroui/react";
+import { useDisclosure } from "@heroui/react";
+import { Tooltip } from "@heroui/tooltip";
 
-import { HelpCircleIcon } from "@/components/shared/icons";
+import { HeartHandIcon } from "@/components/shared/icons";
 import { ContactSupportModal } from "@/features/support";
 
 export default function ContactSupport() {
@@ -13,15 +13,16 @@ export default function ContactSupport() {
   return (
     <>
       <div className="flex w-full justify-center">
-        <Tooltip content="Contact Support or Request a Feature">
+        <Tooltip content="Need support or want a new feature? Talk to us!">
           <Button
             variant="flat"
-            className="mx-0.5 flex h-fit w-full gap-2 pl-3"
+            className="flex h-fit w-full justify-center gap-2 pl-3"
+            radius="sm"
             onPress={onOpen}
           >
-            <HelpCircleIcon width={23} height={23} color={undefined} />
+            <HeartHandIcon width={23} height={23} color={undefined} />
             <div className="w-full py-2 text-left text-sm font-light text-wrap">
-              Need help or want a feature?
+              Need Support?
             </div>
           </Button>
         </Tooltip>

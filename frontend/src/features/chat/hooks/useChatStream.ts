@@ -1,8 +1,6 @@
 import { EventSourceMessage } from "@microsoft/fetch-event-source";
-import { useRouter } from "next/navigation";
 import { redirect } from "next/navigation";
 import { useEffect, useRef } from "react";
-import { toast } from "sonner";
 
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useConversation } from "@/features/chat/hooks/useConversation";
@@ -23,7 +21,9 @@ export const useChatStream = () => {
   const { updateConvoMessages, convoMessages } = useConversation();
   const fetchConversations = useFetchConversations();
   const { setLoadingText, resetLoadingText } = useLoadingText();
-  const router = useRouter();
+
+  // Add ref to track if a stream is already in progress
+  const streamInProgressRef = useRef(false);
 
   // Unified ref storage
   const refs = useRef({
@@ -42,10 +42,22 @@ export const useChatStream = () => {
     refs.current.convoMessages = convoMessages;
   }, [convoMessages]);
 
+  // Reset all stream-related state
+  const resetStreamState = () => {
+    streamInProgressRef.current = false;
+    refs.current.botMessage = null;
+    refs.current.accumulatedResponse = "";
+    refs.current.userPrompt = "";
+    refs.current.currentStreamingMessages = [];
+    refs.current.newConversation = { id: null, description: null };
+    setIsLoading(false);
+    resetLoadingText();
+    streamController.clear();
+    setAbortController(null);
+  };
+
   const saveIncompleteConversation = async () => {
-    if (!refs.current.botMessage || !refs.current.accumulatedResponse) {
-      return;
-    }
+    if (!refs.current.botMessage || !refs.current.accumulatedResponse) return;
 
     try {
       const response = await chatApi.saveIncompleteConversation(
@@ -68,35 +80,39 @@ export const useChatStream = () => {
   };
 
   const updateBotMessage = (overrides: Partial<MessageType>) => {
-    const baseMessage: MessageType = {
-      type: "bot",
-      message_id: refs.current.botMessage?.message_id || "",
-      response: refs.current.accumulatedResponse,
-      date: fetchDate(),
-      isConvoSystemGenerated: false,
-      loading: true,
-    };
+    try {
+      const baseMessage: MessageType = {
+        type: "bot",
+        message_id: refs.current.botMessage?.message_id || "",
+        response: refs.current.accumulatedResponse,
+        date: fetchDate(),
+        isConvoSystemGenerated: false,
+        loading: true,
+      };
 
-    // Preserve existing data and merge with new overrides
-    refs.current.botMessage = {
-      ...baseMessage,
-      ...refs.current.botMessage, // Keep existing data
-      ...overrides, // Apply new updates
-    };
+      // Preserve existing data and merge with new overrides
+      refs.current.botMessage = {
+        ...baseMessage,
+        ...refs.current.botMessage, // Keep existing data
+        ...overrides, // Apply new updates
+      };
 
-    // Use the streaming messages if available, otherwise fall back to refs
-    const currentConvo = [...refs.current.currentStreamingMessages];
+      // Use the streaming messages if available, otherwise fall back to refs
+      const currentConvo = [...refs.current.currentStreamingMessages];
 
-    if (
-      currentConvo.length > 0 &&
-      currentConvo[currentConvo.length - 1].type === "bot"
-    ) {
-      currentConvo[currentConvo.length - 1] = refs.current.botMessage;
-    } else {
-      currentConvo.push(refs.current.botMessage);
+      if (
+        currentConvo.length > 0 &&
+        currentConvo[currentConvo.length - 1].type === "bot"
+      ) {
+        currentConvo[currentConvo.length - 1] = refs.current.botMessage;
+      } else {
+        currentConvo.push(refs.current.botMessage);
+      }
+
+      updateConvoMessages(currentConvo);
+    } catch (error) {
+      console.error("Error updating bot message:", error);
     }
-
-    updateConvoMessages(currentConvo);
   };
 
   /**
@@ -109,7 +125,11 @@ export const useChatStream = () => {
       if (event.data === "[DONE]") return;
 
       const data = JSON.parse(event.data);
-      if (data.error) return data.error;
+      if (data.error) {
+        // Immediately terminate the stream on error
+        console.error("Stream error received:", data.error);
+        return data.error;
+      }
 
       if (data.progress) {
         // Handle both old format (string) and new format (object with tool info)
@@ -152,7 +172,7 @@ export const useChatStream = () => {
       }
 
       // Parse only the data that's actually present in this stream chunk
-      const streamUpdates = parseStreamData(data);
+      const streamUpdates = parseStreamData(data, refs.current.botMessage);
 
       updateBotMessage({
         ...streamUpdates,
@@ -167,40 +187,60 @@ export const useChatStream = () => {
   };
 
   const handleStreamClose = async () => {
-    if (!refs.current.botMessage) return;
+    try {
+      if (!refs.current.botMessage) return;
 
-    // Create a shallow copy of the current bot message to preserve all existing data
-    const preservedBotMessage = { ...refs.current.botMessage };
+      // Create a shallow copy of the current bot message to preserve all existing data
+      const preservedBotMessage = { ...refs.current.botMessage };
 
-    // Update only the loading state while preserving everything else
-    updateBotMessage({
-      ...preservedBotMessage,
-      loading: false,
-    });
+      // Update only the loading state while preserving everything else
+      updateBotMessage({
+        ...preservedBotMessage,
+        loading: false,
+      });
 
-    setIsLoading(false);
-    resetLoadingText();
-    streamController.clear();
+      setIsLoading(false);
+      resetLoadingText();
+      streamController.clear();
 
-    // Only navigate for successful completions (manual aborts are handled in the save callback)
-    if (refs.current.newConversation.id) {
-      // If a new conversation was created, update the URL and fetch conversations
-      // Using replaceState to avoid reloading the page that would happen with pushState
-      // Reloading results in fetching conversations again hence the flickering
-      window.history.replaceState(
-        {},
-        "",
-        `/c/${refs.current.newConversation.id}`,
-      );
-      fetchConversations();
+      // Only navigate for successful completions (manual aborts are handled in the save callback)
+      if (refs.current.newConversation.id) {
+        // If a new conversation was created, update the URL and fetch conversations
+        // Using replaceState to avoid reloading the page that would happen with pushState
+        // Reloading results in fetching conversations again hence the flickering
+        window.history.replaceState(
+          {},
+          "",
+          `/c/${refs.current.newConversation.id}`,
+        );
+        fetchConversations();
+      }
+
+      // Reset stream state after successful completion
+      streamInProgressRef.current = false;
+      refs.current.botMessage = null;
+      refs.current.currentStreamingMessages = [];
+      refs.current.newConversation = { id: null, description: null };
+    } catch (error) {
+      console.error("Error handling stream close:", error);
+      resetStreamState(); // Ensure state is reset even on error
     }
-
-    refs.current.botMessage = null;
-    refs.current.currentStreamingMessages = []; // Reset streaming messages
-    refs.current.newConversation = { id: null, description: null };
   };
 
-  return async (
+  const handleStreamError = (error: Error) => {
+    // Reset stream state immediately
+    resetStreamState();
+
+    // Handle non-abort errors
+    if (error.name !== "AbortError") {
+      // Save the user's input text for restoration on error
+      if (refs.current.userPrompt) {
+        useComposerStore.getState().setInputText(refs.current.userPrompt);
+      }
+    }
+  };
+
+  const streamFunction = async (
     inputText: string,
     currentMessages: MessageType[],
     botMessageId: string,
@@ -209,71 +249,65 @@ export const useChatStream = () => {
     toolCategory: string | null = null,
     selectedWorkflow: WorkflowData | null = null,
   ) => {
-    refs.current.accumulatedResponse = "";
-    refs.current.userPrompt = inputText;
+    try {
+      refs.current.accumulatedResponse = "";
+      refs.current.userPrompt = inputText;
 
-    // Set up the complete message array for this streaming session
-    refs.current.currentStreamingMessages = [
-      ...refs.current.convoMessages,
-      ...currentMessages,
-    ];
+      // Set up the complete message array for this streaming session
+      refs.current.currentStreamingMessages = [
+        ...refs.current.convoMessages,
+        ...currentMessages,
+      ];
 
-    refs.current.botMessage = {
-      type: "bot",
-      message_id: botMessageId,
-      response: "",
-      date: fetchDate(),
-      loading: true,
-      fileIds: fileData.map((f) => f.fileId),
-      fileData,
-      selectedTool,
-      toolCategory,
-      selectedWorkflow,
-    };
+      refs.current.botMessage = {
+        type: "bot",
+        message_id: botMessageId,
+        response: "",
+        date: fetchDate(),
+        loading: true,
+        fileIds: fileData.map((f) => f.fileId),
+        fileData,
+        selectedTool,
+        toolCategory,
+        selectedWorkflow,
+      };
 
-    // Create abort controller for this stream
-    const controller = new AbortController();
-    setAbortController(controller);
+      // Create abort controller for this stream
+      const controller = new AbortController();
+      setAbortController(controller);
 
-    // Register the save callback for when user clicks stop
-    streamController.setSaveCallback(() => {
-      // Update the UI immediately when stop is clicked
-      if (refs.current.botMessage) {
-        updateBotMessage({
-          response: refs.current.accumulatedResponse,
-          loading: false,
-        });
-      }
-
-      // Save the incomplete conversation
-      saveIncompleteConversation();
-    });
-
-    await chatApi.fetchChatStream(
-      inputText,
-      [...refs.current.convoMessages, ...currentMessages],
-      undefined, // conversationId is will be fetched from the URL
-      handleStreamEvent,
-      handleStreamClose,
-      (err) => {
-        setIsLoading(false);
-        resetLoadingText();
-        streamController.clear();
-
-        // Handle non-abort errors
-        if (err.name !== "AbortError") {
-          toast.error(`Error while streaming: ${err}`);
-          console.error("Stream error:", err);
-          // Save the user's input text for restoration on error
-          useComposerStore.getState().setInputText(inputText);
+      // Register the save callback for when user clicks stop
+      streamController.setSaveCallback(() => {
+        // Update the UI immediately when stop is clicked
+        if (refs.current.botMessage) {
+          updateBotMessage({
+            response: refs.current.accumulatedResponse,
+            loading: false,
+          });
         }
-        // Abort errors are now handled in handleStreamClose
-      },
-      fileData,
-      selectedTool,
-      toolCategory,
-      controller,
-      selectedWorkflow,
-    );
+
+        // Save the incomplete conversation
+        saveIncompleteConversation();
+      });
+
+      await chatApi.fetchChatStream(
+        inputText,
+        [...refs.current.convoMessages, ...currentMessages],
+        undefined, // conversationId is will be fetched from the URL
+        handleStreamEvent,
+        handleStreamClose,
+        handleStreamError, // Use the new error handler
+        fileData,
+        selectedTool,
+        toolCategory,
+        controller,
+        selectedWorkflow,
+      );
+    } catch (error) {
+      console.error("Error initiating chat stream:", error);
+      resetStreamState(); // Reset state on any error
+    }
   };
+
+  return streamFunction;
 };

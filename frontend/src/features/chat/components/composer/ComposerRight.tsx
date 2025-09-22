@@ -1,4 +1,5 @@
 import { Button } from "@heroui/button";
+import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
 import { ArrowUp, Square } from "lucide-react";
 
@@ -19,9 +20,8 @@ export default function RightSide({
   const { isLoading, stopStream } = useLoading();
   const { selectedWorkflow } = useWorkflowSelection();
   const hasText = searchbarText.trim().length > 0;
-  const hasSelectedTool = selectedTool !== null && selectedTool !== undefined;
-  const hasSelectedWorkflow =
-    selectedWorkflow !== null && selectedWorkflow !== undefined;
+  const hasSelectedTool = selectedTool != null;
+  const hasSelectedWorkflow = selectedWorkflow != null;
   const isDisabled =
     isLoading || (!hasText && !hasSelectedTool && !hasSelectedWorkflow);
 
@@ -40,7 +40,17 @@ export default function RightSide({
         .join(" ");
       return `Send with ${formattedToolName}`;
     }
-    return "Send message";
+
+    if (!hasText && !hasSelectedTool && !hasSelectedWorkflow) {
+      return "Message requires text";
+    }
+
+    return (
+      <div className="flex items-center gap-2">
+        Send Message
+        <Kbd className="text-zinc-400" keys={["enter"]}></Kbd>
+      </div>
+    );
   };
 
   const handleButtonPress = () => {
@@ -53,19 +63,14 @@ export default function RightSide({
 
   return (
     <div className="ml-2 flex items-center gap-1">
-      <Tooltip
-        content={getTooltipContent()}
-        placement="right"
-        color={isLoading ? "danger" : "primary"}
-        showArrow
-      >
+      <Tooltip content={getTooltipContent()} placement="right" showArrow>
         <Button
           isIconOnly
           aria-label={isLoading ? "Stop generation" : "Send message"}
           className={`h-9 min-h-9 w-9 max-w-9 min-w-9 ${isLoading ? "cursor-pointer" : ""}`}
           color={
             isLoading
-              ? "primary"
+              ? "default"
               : hasText || hasSelectedTool || hasSelectedWorkflow
                 ? "primary"
                 : "default"
@@ -76,7 +81,7 @@ export default function RightSide({
           onPress={handleButtonPress}
         >
           {isLoading ? (
-            <Square color="black" width={17} height={17} fill="black" />
+            <Square color="lightgray" width={17} height={17} fill="lightgray" />
           ) : (
             <ArrowUp
               color={

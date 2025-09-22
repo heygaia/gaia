@@ -1,5 +1,5 @@
-import { Tooltip } from "@heroui/react";
 import { ScrollShadow } from "@heroui/scroll-shadow";
+import { Tooltip } from "@heroui/tooltip";
 
 import { Gmail } from "@/components";
 import { useAppendToInput } from "@/stores/composerStore";
@@ -77,7 +77,7 @@ export default function EmailListCard({
   if (emails)
     return (
       <div
-        className={`mx-auto mt-3 w-full max-w-2xl rounded-3xl ${backgroundColor} p-3 text-white`}
+        className={`mt-3 w-full max-w-2xl rounded-3xl ${backgroundColor} p-3 text-white`}
       >
         {/* Header */}
         {showTitle && (
@@ -98,7 +98,7 @@ export default function EmailListCard({
             emails.map((email) => (
               <Tooltip
                 key={email.thread_id}
-                content={`Ask about this email from ${extractSenderName(email.from)}`}
+                content={`Ask about this email from ${extractSenderName(email.from || "Unknown Sender")}`}
                 showArrow
                 color="foreground"
               >
@@ -108,20 +108,20 @@ export default function EmailListCard({
                 >
                   <div className="w-40 flex-shrink-0">
                     <span className="block truncate text-sm font-medium text-gray-300">
-                      {extractSenderName(email.from)}
+                      {extractSenderName(email.from || "Unknown Sender")}
                     </span>
                   </div>
 
                   <div className="min-w-0 flex-1">
                     <span className="block truncate text-sm text-white group-hover:text-gray-100">
-                      {email.subject}
+                      {email.subject || "Unknown Subject"}
                     </span>
                   </div>
 
                   {/* Time */}
                   <div className="w-20 flex-shrink-0 text-right">
                     <span className="text-xs text-gray-400">
-                      {formatTime(email.time)}
+                      {formatTime(email.time || null)}
                     </span>
                   </div>
                 </div>

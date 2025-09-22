@@ -1,6 +1,11 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
+import {
+  getRandomThinkingMessage,
+  getRelevantThinkingMessage,
+} from "@/utils/playfulThinking";
+
 interface ToolInfo {
   toolName?: string;
   toolCategory?: string;
@@ -19,13 +24,20 @@ interface LoadingActions {
   ) => void;
   resetLoadingText: () => void;
   setLoading: (loading: boolean, text?: string) => void;
+  setLoadingWithContext: (
+    loading: boolean,
+    userMessage?: string,
+    text?: string,
+  ) => void;
 }
 
 type LoadingStore = LoadingState & LoadingActions;
 
+const getInitialLoadingText = () => getRandomThinkingMessage();
+
 const initialState: LoadingState = {
   isLoading: false,
-  loadingText: "GAIA is thinking",
+  loadingText: getInitialLoadingText(),
   toolInfo: undefined,
 };
 
@@ -34,7 +46,18 @@ export const useLoadingStore = create<LoadingStore>()(
     (set) => ({
       ...initialState,
 
-      setIsLoading: (isLoading) => set({ isLoading }, false, "setIsLoading"),
+      setIsLoading: (isLoading) => {
+        if (isLoading) {
+          // Generate a new random message when starting to load
+          set(
+            { isLoading, loadingText: getRandomThinkingMessage() },
+            false,
+            "setIsLoading",
+          );
+        } else {
+          set({ isLoading }, false, "setIsLoading");
+        }
+      },
 
       setLoadingText: (payload) => {
         if (typeof payload === "string") {
@@ -55,7 +78,7 @@ export const useLoadingStore = create<LoadingStore>()(
       resetLoadingText: () =>
         set(
           {
-            loadingText: initialState.loadingText,
+            loadingText: getRandomThinkingMessage(),
             toolInfo: undefined,
           },
           false,
@@ -66,8 +89,30 @@ export const useLoadingStore = create<LoadingStore>()(
         const updates: Partial<LoadingState> = { isLoading };
         if (text !== undefined) {
           updates.loadingText = text;
+        } else if (isLoading) {
+          // Generate a new random message when starting to load if no specific text provided
+          updates.loadingText = getRandomThinkingMessage();
         }
         set(updates, false, "setLoading");
+      },
+
+      setLoadingWithContext: (isLoading, userMessage, text) => {
+        const updates: Partial<LoadingState> = { isLoading };
+
+        if (text !== undefined) {
+          // Explicit text provided, use it
+          updates.loadingText = text;
+        } else if (isLoading) {
+          // Generate contextually relevant message if user message provided
+          if (userMessage?.trim()) {
+            updates.loadingText = getRelevantThinkingMessage(userMessage);
+          } else {
+            // Fallback to random message
+            updates.loadingText = getRandomThinkingMessage();
+          }
+        }
+
+        set(updates, false, "setLoadingWithContext");
       },
     }),
     { name: "loading-store" },

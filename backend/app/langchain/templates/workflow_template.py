@@ -5,6 +5,7 @@ WORKFLOW_GENERATION_TEMPLATE = PromptTemplate(
     input_variables=[
         "description",
         "title",
+        "trigger_context",
         "tools",
         "categories",
         "format_instructions",

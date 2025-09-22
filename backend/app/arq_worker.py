@@ -11,6 +11,7 @@ from app.workers.tasks import (
     cleanup_expired_reminders,
     execute_workflow_by_id,
     generate_workflow_steps,
+    process_email_task,
     process_reminder,
     process_workflow_generation_task,
 )
@@ -20,6 +21,7 @@ WorkerSettings.functions = [
     process_reminder,
     cleanup_expired_reminders,
     check_inactive_users,
+    process_email_task,
     process_workflow_generation_task,
     execute_workflow_by_id,
     generate_workflow_steps,

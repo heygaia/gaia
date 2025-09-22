@@ -1,5 +1,5 @@
+import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
-import { Button } from "@heroui/react";
 import React, { useState } from "react";
 
 import { AiSearch02Icon } from "@/components/shared/icons";

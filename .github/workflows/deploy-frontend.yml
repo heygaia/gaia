@@ -12,7 +12,7 @@ jobs:
   sync_and_deploy:
     runs-on: ubuntu-latest
     environment: production
-    if: github.ref_name == 'master'
+    if: github.event.client_payload.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout repository

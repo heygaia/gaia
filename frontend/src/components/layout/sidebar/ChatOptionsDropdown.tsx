@@ -18,7 +18,13 @@ import {
 import { DotsVerticalIcon } from "@radix-ui/react-icons";
 import { ChevronDown, Star, Trash } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { ReactNode, SetStateAction, useEffect,useState } from "react";
+import {
+  ReactNode,
+  SetStateAction,
+  useCallback,
+  useEffect,
+  useState,
+} from "react";
 
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";
@@ -48,6 +54,54 @@ export default function ChatOptionsDropdown({
     null,
   );
 
+  const handleStarToggle = async () => {
+    try {
+      await chatApi.toggleStarConversation(
+        chatId,
+        starred === undefined ? true : !starred,
+      );
+      setIsOpen(false);
+      await fetchConversations();
+    } catch (error) {
+      console.error("Failed to update star", error);
+    }
+  };
+
+  const closeModal = useCallback(() => {
+    setIsOpen(false);
+    setModalAction(null);
+    setNewName(""); // Clear the input field
+  }, []);
+
+  const handleEdit = async () => {
+    if (!newName) return;
+    try {
+      await chatApi.renameConversation(chatId, newName);
+      closeModal();
+      await fetchConversations(1, 20, false);
+    } catch (error) {
+      console.error("Failed to update chat name", error);
+    }
+  };
+
+  const handleDelete = useCallback(async () => {
+    try {
+      router.push("/c");
+      await chatApi.deleteConversation(chatId);
+      closeModal();
+      await fetchConversations(1, 20, false);
+    } catch (error) {
+      console.error("Failed to delete chat", error);
+    }
+  }, [router, chatId, fetchConversations, closeModal]);
+
+  const openModal = (action: "edit" | "delete") => {
+    setModalAction(action);
+    if (action === "edit") setNewName(chatName); // Reset to current chat name when opening edit modal
+
+    setIsOpen(true);
+  };
+
   // Handle Enter key for delete modal
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -63,55 +117,7 @@ export default function ChatOptionsDropdown({
     return () => {
       document.removeEventListener("keydown", handleKeyDown);
     };
-  }, [isOpen, modalAction]);
-
-  const handleStarToggle = async () => {
-    try {
-      await chatApi.toggleStarConversation(
-        chatId,
-        starred === undefined ? true : !starred,
-      );
-      setIsOpen(false);
-      await fetchConversations();
-    } catch (error) {
-      console.error("Failed to update star", error);
-    }
-  };
-
-  const handleEdit = async () => {
-    if (!newName) return;
-    try {
-      await chatApi.renameConversation(chatId, newName);
-      closeModal();
-      await fetchConversations(1, 20, false);
-    } catch (error) {
-      console.error("Failed to update chat name", error);
-    }
-  };
-
-  const handleDelete = async () => {
-    try {
-      router.push("/c");
-      await chatApi.deleteConversation(chatId);
-      closeModal();
-      await fetchConversations(1, 20, false);
-    } catch (error) {
-      console.error("Failed to delete chat", error);
-    }
-  };
-
-  const openModal = (action: "edit" | "delete") => {
-    setModalAction(action);
-    if (action === "edit") setNewName(chatName); // Reset to current chat name when opening edit modal
-
-    setIsOpen(true);
-  };
-
-  const closeModal = () => {
-    setIsOpen(false);
-    setModalAction(null);
-    setNewName(""); // Clear the input field
-  };
+  }, [isOpen, modalAction, handleDelete]);
 
   return (
     <>

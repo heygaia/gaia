@@ -1,4 +1,5 @@
 // ChatBubbleBot.tsx
+import Image from "next/image";
 import { useCallback, useMemo, useRef } from "react";
 
 import { SystemPurpose } from "@/features/chat/api/chatApi";
@@ -7,9 +8,13 @@ import ChatBubble_Actions_Image from "@/features/chat/components/bubbles/actions
 import { IntegrationConnectionPrompt } from "@/features/chat/components/integration/IntegrationConnectionPrompt";
 import MemoryIndicator from "@/features/chat/components/memory/MemoryIndicator";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import {
+  shouldShowTextBubble,
+} from "@/features/chat/utils/messageContentUtils";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { parseDate } from "@/utils/date/dateUtils";
 
+import FollowUpActions from "./FollowUpActions";
 import ImageBubble from "./ImageBubble";
 import TextBubble from "./TextBubble";
 
@@ -26,6 +31,8 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
     isConvoSystemGenerated,
     systemPurpose,
     integration_connection_required,
+    follow_up_actions,
+    isLastMessage,
   } = props;
   const { isLoading } = useLoading();
 
@@ -52,10 +59,10 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         <IntegrationConnectionPrompt data={integration_connection_required} />
       );
 
-    if (image_data) return <ImageBubble {...props} />;
+    if (image_data) return <ImageBubble {...props} image_data={image_data} />;
 
     return <TextBubble {...props} />;
-  }, [image_data, props]);
+  }, [image_data, props, integration_connection_required]);
 
   return (
     (loading ||
@@ -68,27 +75,50 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
         id={message_id}
         onMouseOver={handleMouseOver}
         onMouseOut={handleMouseOut}
+        className="relative flex flex-col pb-9"
       >
-        <div className="chatbubblebot_parent">
-          <div className="flex w-full flex-col gap-2">
-            {memory_data && onOpenMemoryModal && (
-              <MemoryIndicator
-                memoryData={memory_data}
-                onOpenModal={onOpenMemoryModal}
+        <div className="flex items-end gap-1">
+          <div className="relative bottom-0 min-w-[40px] flex-shrink-0">
+            {shouldShowTextBubble(
+              text,
+              isConvoSystemGenerated,
+              systemPurpose,
+            ) && (
+              <Image
+                alt="GAIA Logo"
+                src={"/branding/logo.webp"}
+                width={30}
+                height={30}
+                className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}
               />
             )}
-            <div className="chat_bubble_container">{renderedComponent}</div>
+          </div>
+
+          <div className="chatbubblebot_parent flex-1">
+            <div className="flex w-full flex-col gap-2">
+              {memory_data && onOpenMemoryModal && (
+                <MemoryIndicator
+                  memoryData={memory_data}
+                  onOpenModal={onOpenMemoryModal}
+                />
+              )}
+              <div className="chat_bubble_container">{renderedComponent}</div>
+            </div>
           </div>
         </div>
 
-        {!loading && !isLoading && (
+        <div className="ml-[43px] flex flex-col">
+          {!!follow_up_actions && follow_up_actions?.length > 0 && (
+            <FollowUpActions actions={follow_up_actions} loading={!!loading} />
+          )}
+
           <div
             ref={actionsRef}
-            className="absolute flex flex-col transition-all"
+            className={`absolute -bottom-5 flex flex-col transition-all ${loading ? "opacity-0!" : "opacity-100"}`}
             style={{ opacity: 0, visibility: "hidden" }}
           >
             {date && (
-              <span className="text-opacity-40 flex flex-col p-1 text-xs text-white select-text">
+              <span className="text-opacity-40 flex flex-col p-1 py-2 text-xs text-zinc-400 select-text">
                 {parseDate(date)}
               </span>
             )}
@@ -104,7 +134,7 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
               />
             )}
           </div>
-        )}
+        </div>
       </div>
     )
   );

@@ -2,6 +2,7 @@
 Task modules for ARQ worker.
 """
 
+from .email_tasks import process_email_task
 from .reminder_tasks import cleanup_expired_reminders, process_reminder
 from .user_tasks import check_inactive_users
 from .workflow_tasks import (
@@ -16,6 +17,7 @@ __all__ = [
     "process_reminder",
     "cleanup_expired_reminders",
     "check_inactive_users",
+    "process_email_task",
     "process_workflow_generation_task",
     "execute_workflow_by_id",
     "generate_workflow_steps",

@@ -2,77 +2,77 @@
 
 import { Accordion, AccordionItem } from "@heroui/accordion";
 
-import { ArrowLeft01Icon } from "@/components/shared/icons";
-
 export function FAQAccordion() {
   const faqItems = [
     {
-      question: "What is Gaia and how does it work?",
+      question: "Is this just another chatbot like ChatGPT?",
       content:
-        "Gaia is a general-purpose AI assistant designed to help with time management, event scheduling, email integration, and more.",
+        "No. ChatGPT and other assistants are reactive - they wait for you to ask questions. GAIA is proactive - it watches your emails, calendar, and notifications to automatically draft replies, schedule meetings, create documents, set reminders, and handle tasks before you even think about them. It's like having a human assistant who actually does the work.",
     },
     {
-      question: "How do I create an account?",
+      question: "Who is GAIA for?",
       content:
-        "To create an account, click on the 'Sign Up' button and fill out the registration form.",
+        "GAIA is designed for anyone drowning in digital overwhelm. Students love it for automatically turning assignment emails into complete project setups with docs, deadlines, and research. Professionals use it to escape the endless cycle of email management and meeting coordination. Entrepreneurs rely on it to juggle multiple projects without losing focus on strategy. Whether you're a busy knowledge worker or someone managing complex workflows, GAIA is perfect if you want an AI that actually does the work instead of just chatting about it.",
     },
     {
-      question: "What features does Gaia offer?",
+      question: "What can GAIA actually do for me day-to-day?",
       content:
-        "Gaia offers features such as task management, event scheduling, email integration, and goal tracking.",
+        "GAIA automates your entire digital workflow: manages your Gmail and calendar, creates Google Docs and Sheets, handles goal tracking and to-dos, controls your browser for research tasks, processes assignment emails into complete project setups, and integrates with tools like Linear, GitHub, Todoist, and WhatsApp. When you get a college assignment email, GAIA automatically creates docs, sets deadlines, does research, and organizes everything - turning hours of setup into minutes.",
     },
     {
-      question: "How can I schedule events with Gaia?",
+      question: "Is my personal data safe with GAIA?",
       content:
-        "Use the scheduling feature in Gaia's interface to set up and manage your events easily.",
+        "Absolutely. We never train on your data or sell it to third parties - period. You can self-host GAIA completely (you control everything) or use our cloud version where your data stays encrypted and isolated. We're also open-source, so you can inspect every line of code. Your information stays yours, always.",
     },
     {
-      question: "Is my data secure with Gaia?",
+      question:
+        "How is this different from Siri, Google Assistant, or existing AI tools?",
       content:
-        "Yes, we prioritize user data security with advanced encryption and privacy measures.",
+        "Traditional assistants are glorified voice search that forget you exist between conversations. GAIA remembers everything about you - your work style, preferences, relationships, and goals - and gets smarter over time. It creates custom workflows, connects all your apps, and handles multi-step automation. Think less 'smart speaker' and more 'digital teammate who knows you personally.'",
     },
     {
-      question: "How do I integrate Gaia with my email?",
+      question: "Do I need to be technical to use this?",
       content:
-        "Connect your email through the settings page to enable email management features.",
+        "Not at all. GAIA works through natural conversation - just text it like you would a friend. You can start immediately with our web version or self-host with our guided installer. No coding required. Just say 'Help me plan mom's visit next month' and GAIA handles research, scheduling, document creation, and reminders automatically.",
+    },
+
+    {
+      question: "Is GAIA free?",
+      content:
+        "GAIA starts completely free with core features that handle email automation, calendar management, and task organization. Pro plans begin at $20/month and unlock higher usage limits, and priority support. For maximum privacy and control, you can self-host GAIA entirely free on your own infrastructure - no ongoing costs, complete data ownership.",
     },
     {
-      question: "Can I customize Gaia's settings?",
+      question: "Can I talk to customer support?",
       content:
-        "Yes, you can adjust Gaia's settings from the preferences section in your account.",
-    },
-    {
-      question: "How do I reset my password?",
-      content:
-        "Go to the login page and click 'Forgot Password' to initiate the reset process.",
-    },
-    {
-      question: "What platforms is Gaia compatible with?",
-      content: "Gaia is compatible with web, iOS, and Android platforms.",
-    },
-    {
-      question: "How do I contact support if I have an issue?",
-      content:
-        "Reach out to our support team via the 'Contact Us' page or email us directly.",
+        "Yes! We pride ourselves on genuine human support. Email support@heygaia.io for technical issues or reach our founder Aryan directly at aryan@heygaia.io - he personally reads every email. We also have active Discord and WhatsApp communities where you can get help from both our team and other users. Response time is typically 24-48 hours, often much faster.",
     },
   ];
 
   return (
-    <div className="flex w-full items-center justify-center px-[5%] py-[1em] sm:py-[1em]">
-      <div className="faq_container mt-[20px] mb-[10vh] rounded-3xl bg-foreground-50 p-10">
-        <div className="mb-5 flex w-full flex-col items-center justify-center gap-3">
+    <div className="flex h-fit w-full items-center justify-center py-20">
+      <div className="w-screen max-w-7xl p-8">
+        <div className="mb-10 flex w-full flex-col items-start justify-center gap-3">
           <span className="text-4xl font-medium">
             Frequently asked questions
           </span>
         </div>
 
-        <Accordion variant="light">
+        <Accordion
+          variant="light"
+          className="cursor-pointer p-0!"
+          itemClasses={{ titleWrapper: "cursor-pointer" }}
+        >
           {faqItems.map((item, index) => (
             <AccordionItem
               key={index}
               aria-label={item.question}
-              indicator={<ArrowLeft01Icon color="white" width="18" />}
               title={item.question}
+              classNames={{
+                heading: "font-normal",
+                title: "text-2xl",
+                content:
+                  "text-xl max-w-[60%] text-foreground-500 font-light mb-6",
+              }}
             >
               <span className="select-text">{item.content}</span>
             </AccordionItem>

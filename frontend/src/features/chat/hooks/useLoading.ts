@@ -1,19 +1,27 @@
 "use client";
+import { useCallback } from "react";
+
 import { streamController } from "@/features/chat/utils/streamController";
 import { useLoadingStore } from "@/stores/loadingStore";
 
 export const useLoading = () => {
   const { isLoading, setIsLoading } = useLoadingStore();
 
-  const setLoadingState = (loading: boolean) => {
-    setIsLoading(loading);
-  };
+  const setLoadingState = useCallback(
+    (loading: boolean) => {
+      setIsLoading(loading);
+    },
+    [setIsLoading],
+  );
 
-  const setAbortController = (controller: AbortController | null) => {
-    streamController.set(controller);
-  };
+  const setAbortController = useCallback(
+    (controller: AbortController | null) => {
+      streamController.set(controller);
+    },
+    [],
+  );
 
-  const stopStream = () => {
+  const stopStream = useCallback(() => {
     // Trigger the save before aborting the stream
     streamController.triggerSave();
 
@@ -21,7 +29,7 @@ export const useLoading = () => {
     if (aborted) {
       setLoadingState(false);
     }
-  };
+  }, [setLoadingState]);
 
   return {
     isLoading,

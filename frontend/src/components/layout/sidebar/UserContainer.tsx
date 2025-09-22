@@ -1,3 +1,5 @@
+import { Button } from "@heroui/button";
+import { ChevronsUpDownIcon } from "lucide-react";
 import Image from "next/image";
 
 import { useUser } from "@/features/auth/hooks/useUser";
@@ -11,32 +13,37 @@ export default function UserContainer() {
   const { data: subscriptionStatus } = useUserSubscriptionStatus();
 
   return (
-    <div className="pointer-events-auto relative flex w-full flex-col justify-center gap-3 bg-transparent">
-      <div className="user_container_inner rounded-xl bg-transparent px-2">
+    <SettingsMenu>
+      <Button
+        className="group/triggerbtn pointer-events-auto relative flex w-full flex-row justify-between gap-3 bg-transparent px-2 py-6! hover:bg-zinc-800"
+        endContent={
+          <ChevronsUpDownIcon
+            className="text-zinc-500 transition"
+            width={20}
+            height={20}
+          />
+        }
+      >
         <div className="flex items-center gap-3">
           <Avatar className="size-7 rounded-full bg-black">
             <AvatarImage src={user?.profilePicture} alt="User Avatar" />
             <AvatarFallback>
               <Image
-                src={"/media/default.webp"}
+                src={"/images/avatars/default.webp"}
                 width={30}
                 height={30}
                 alt="Default profile picture"
               />
             </AvatarFallback>
           </Avatar>
-          <div className="flex flex-col -space-y-0.5">
+          <div className="flex flex-col items-start -space-y-0.5">
             <span className="text-sm">{user?.name}</span>
             <span className="text-[11px] text-foreground-400">
-              {subscriptionStatus?.is_subscribed
-                ? "GAIA Pro"
-                : "GAIA Free Tier"}
+              {subscriptionStatus?.is_subscribed ? "GAIA Pro" : "GAIA Free"}
             </span>
           </div>
         </div>
-
-        <SettingsMenu />
-      </div>
-    </div>
+      </Button>
+    </SettingsMenu>
   );
 }

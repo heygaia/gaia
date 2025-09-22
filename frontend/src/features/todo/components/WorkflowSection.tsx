@@ -10,10 +10,8 @@ import {
   WorkflowLoadingState,
   WorkflowSteps,
 } from "@/features/workflows/components";
-import {
-  Workflow as WorkflowType,
-  WorkflowStatus,
-} from "@/types/features/todoTypes";
+import { WorkflowStatus } from "@/types/features/todoTypes";
+import type { Workflow as WorkflowType } from "@/types/features/workflowTypes";
 
 interface WorkflowSectionProps {
   workflow?: WorkflowType;
@@ -129,13 +127,21 @@ export default function WorkflowSection({
         id: workflow.id,
         title: workflow.title,
         description: workflow.description,
-        steps: workflow.steps.map((step) => ({
-          id: step.id,
-          title: step.title,
-          description: step.description,
-          tool_name: step.tool_name,
-          tool_category: step.tool_category,
-        })),
+        steps: workflow.steps.map(
+          (step: {
+            id: string;
+            title: string;
+            description: string;
+            tool_name: string;
+            tool_category: string;
+          }) => ({
+            id: step.id,
+            title: step.title,
+            description: step.description,
+            tool_name: step.tool_name,
+            tool_category: step.tool_category,
+          }),
+        ),
       };
 
       selectWorkflow(workflowData, { autoSend: true });

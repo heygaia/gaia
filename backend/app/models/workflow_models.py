@@ -75,11 +75,6 @@ class TriggerConfig(BaseModel):
         default=None, description="Next scheduled execution time"
     )
 
-    # Email trigger configuration
-    email_patterns: Optional[List[str]] = Field(
-        default=None, description="Email patterns to match"
-    )
-
     # Calendar trigger configuration
     calendar_patterns: Optional[List[str]] = Field(
         default=None, description="Calendar event patterns"

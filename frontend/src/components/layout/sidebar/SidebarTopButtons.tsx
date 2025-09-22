@@ -39,6 +39,13 @@ export default function SidebarTopButtons() {
     );
   }, [notifications]);
 
+  const isRouteActive = (route: string) => {
+    if (route === "/c") {
+      return pathname === "/c" || pathname.startsWith("/c/");
+    }
+    return pathname === route;
+  };
+
   const buttonData = [
     {
       route: "/notifications",
@@ -108,41 +115,32 @@ export default function SidebarTopButtons() {
       )}
 
       <div className="mb-3 flex flex-col gap-0.5">
-        {/* <div className="w-full px-2 pt-0 pb-1 text-xs font-medium text-foreground-400">
-          Menu
-        </div> */}
         {buttonData.map(({ route, icon, label }, index) => (
           <div key={index} className="relative">
             <Button
-              className="w-full justify-start text-sm"
               size="sm"
+              variant="light"
+              color={isRouteActive(route) ? "primary" : "default"}
+              className={`w-full justify-start text-sm ${
+                isRouteActive(route) ? "text-primary" : "text-zinc-400"
+              }`}
               as={Link}
               href={route}
-              variant="light"
-              color={
-                route === "/c"
-                  ? pathname === "/c" || pathname.startsWith("/c/")
-                    ? "primary"
-                    : "default"
-                  : pathname === route
-                    ? "primary"
-                    : "default"
-              }
-              // onPress={() => handleButtonPress(route)}
-              startContent={React.cloneElement(icon, {
-                color:
-                  route === "/c"
-                    ? pathname === "/c" || pathname.startsWith("/c/")
-                      ? "#00bbff"
-                      : "#9b9b9b"
-                    : pathname === route
-                      ? "#00bbff"
-                      : "#9b9b9b",
-                width: 18,
-                height: 18,
-              })}
             >
-              {label}
+              <div className="flex w-full items-center gap-2">
+                <div className="flex w-[17px] min-w-[17px] items-center justify-center">
+                  <span className="text-xs">
+                    {React.cloneElement(icon, {
+                      color: isRouteActive(route) ? "#00bbff" : "#9b9b9b",
+                      width: 18,
+                      height: 18,
+                    })}
+                  </span>
+                </div>
+                <span className="w-[calc(100%-45px)] max-w-[200px] truncate text-left">
+                  {label}
+                </span>
+              </div>
             </Button>
             {/* Show unread badge for notifications */}
             {route === "/notifications" && unreadCount > 0 && (
@@ -156,31 +154,8 @@ export default function SidebarTopButtons() {
         ))}
       </div>
 
-      {/* <Button
-        className="flex w-full justify-start text-sm"
-        size="sm"
-        variant="light"
-        color={
-          pathname == "/c" || pathname.startsWith("/c/") ? "primary" : "default"
-        }
-        onPress={createNewChat}
-        startContent={
-          <ChatBubbleAddIcon
-            color={
-              pathname == "/c" || pathname.startsWith("/c/")
-                ? "#00bbff"
-                : "#9b9b9b"
-            }
-            width={19}
-            height={19}
-          />
-        }
-      >
-        New Chat
-      </Button> */}
-
       {/*
-      <div className="my-3 mt-1 px-1">
+      <div className="mb-3 px-1">
         <Separator className="bg-zinc-800" />
       </div> */}
     </div>

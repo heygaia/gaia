@@ -1,11 +1,11 @@
-import "./styles/globals.css";
 import "./styles/tailwind.css";
 
 import { Databuddy } from "@databuddy/sdk/react";
-import { GoogleAnalytics } from "@next/third-parties/google";
 import type { Metadata, Viewport } from "next";
 import Script from "next/script";
+import { Suspense } from "react";
 
+import AnalyticsLayout from "@/layouts/AnalyticsLayout";
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 
 import { defaultFont, getAllFontVariables } from "./fonts";
@@ -46,14 +46,14 @@ export const metadata: Metadata = {
     type: "website",
     description:
       "GAIA is your personal AI assistant designed to help increase your productivity.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   twitter: {
     card: "summary_large_image",
     title: "GAIA - Your Personal Assistant",
     description:
       "GAIA is your personal AI assistant designed to help increase your productivity.",
-    images: ["/landing/screenshot.webp"],
+    images: ["/images/screenshot.webp"],
   },
   other: {
     "msapplication-TileColor": "#00bbff",
@@ -70,12 +70,40 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" className={`${getAllFontVariables()} dark`}>
+      <head>
+        <link
+          rel="preconnect"
+          href="https://status.heygaia.io"
+          crossOrigin="anonymous"
+        />
+        <link rel="dns-prefetch" href="https://uptime.betterstack.com" />
+        <link rel="dns-prefetch" href="https://us.i.posthog.com" />
+        {/* Preconnect to Databuddy origins for 130ms savings */}
+        <link
+          rel="preconnect"
+          href="https://databuddy.cc"
+          crossOrigin="anonymous"
+        />
+        <link
+          rel="preconnect"
+          href="https://cdn.databuddy.cc"
+          crossOrigin="anonymous"
+        />
+        {/* Preload critical hero image to improve LCP - reduce 1,160ms load delay */}
+        <link
+          rel="preload"
+          as="image"
+          href="/images/hero.webp?q=80"
+          fetchPriority="high"
+        />
+
+        <link rel="preconnect" href="https://i.ytimg.com" />
+      </head>
       <body className={`dark ${defaultFont.className}`}>
         <main>
           <ProvidersLayout>{children}</ProvidersLayout>
         </main>
-        {/* Google OAuth */}
-        <Script async src="https://accounts.google.com/gsi/client" />
+
         {/* JSON-LD Schema */}
         <Script id="json-ld" type="application/ld+json">
           {JSON.stringify({
@@ -86,41 +114,43 @@ export default function RootLayout({
             url: "https://heygaia.io",
           })}
         </Script>
-        {/* Better Stack widget for API Uptime */}
+        {/* Defer all analytics to improve LCP and reduce unused JS */}
         <Script
           src="https://uptime.betterstack.com/widgets/announcement.js"
           data-id="212836"
-          async
-          type="text/javascript"
+          strategy="afterInteractive"
         />
-        {/* Rybbit Analytics */}
         <Script
           src="https://analytics.heygaia.io/api/script.js"
           data-site-id="1"
-          defer
+          strategy="afterInteractive"
           data-session-replay="true"
         />
-        {/* Google Analytics */}
-        <GoogleAnalytics gaId="G-R6EGV9FG2Q" />
+
+        <Suspense fallback={<></>}>
+          <AnalyticsLayout />
+        </Suspense>
 
         {process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID && (
-          <Databuddy
-            clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
-            trackHashChanges
-            trackAttributes
-            trackOutgoingLinks
-            trackInteractions
-            trackEngagement
-            trackScrollDepth
-            trackExitIntent
-            trackBounceRate
-            trackWebVitals
-            trackErrors
-            enableBatching
-            batchSize={20}
-            batchTimeout={5000}
-            disabled={process.env.NODE_ENV === "development"}
-          />
+          <Suspense fallback={<></>}>
+            <Databuddy
+              clientId={process.env.NEXT_PUBLIC_DATABUDDY_CLIENT_ID}
+              trackHashChanges
+              trackAttributes
+              trackOutgoingLinks
+              trackInteractions
+              trackEngagement
+              trackScrollDepth
+              trackExitIntent
+              trackBounceRate
+              trackWebVitals
+              trackErrors
+              enableBatching
+              batchSize={20}
+              batchTimeout={5000}
+              disabled={process.env.NODE_ENV === "development"}
+            />
+          </Suspense>
         )}
       </body>
     </html>

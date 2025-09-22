@@ -1,4 +1,5 @@
 import React, {
+  useCallback,
   useEffect,
   useImperativeHandle,
   useMemo,
@@ -11,6 +12,7 @@ import FilePreview, {
 } from "@/features/chat/components/files/FilePreview";
 import FileUpload from "@/features/chat/components/files/FileUpload";
 import { useLoading } from "@/features/chat/hooks/useLoading";
+import { useLoadingText } from "@/features/chat/hooks/useLoadingText";
 import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
@@ -79,24 +81,38 @@ const Composer: React.FC<MainSearchbarProps> = ({
   } = useComposerFiles();
   const { isSlashCommandDropdownOpen, setIsSlashCommandDropdownOpen } =
     useComposerUI();
-  const { autoSend, setAutoSend } = useWorkflowSelectionStore();
+  const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
+  const { autoSend } = useWorkflowSelectionStore();
 
   const sendMessage = useSendMessage();
   const { isLoading, setIsLoading } = useLoading();
+  const { setContextualLoading } = useLoadingText();
   const { integrations, isLoading: integrationsLoading } = useIntegrations();
-  const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
   const currentMode = useMemo(
     () => Array.from(selectedMode)[0],
     [selectedMode],
   );
 
+  // Ref to prevent duplicate execution in StrictMode
+  const autoSendExecutedRef = useRef(false);
+
   // When workflow is selected, handle auto-send with a brief delay to allow UI to update
   useEffect(() => {
     if (!(selectedWorkflow && autoSend)) return;
-    setAutoSend(false);
+
+    // Prevent duplicate execution in React StrictMode
+    if (autoSendExecutedRef.current) {
+      console.warn("Auto-send already executed, preventing duplicate");
+      return;
+    }
+    autoSendExecutedRef.current = true;
+
+    // Clear state immediately to prevent any race conditions
+    // Note: clearSelectedWorkflow() already sets autoSend to false
+    clearSelectedWorkflow();
+
     setIsLoading(true);
     sendMessage("Run this workflow", [], null, null, selectedWorkflow);
-    clearSelectedWorkflow();
 
     if (inputRef.current) inputRef.current.focus();
 
@@ -110,40 +126,45 @@ const Composer: React.FC<MainSearchbarProps> = ({
       }
     }, 200); // Small delay to allow message to render
   }, [
+    inputRef,
     selectedWorkflow,
     autoSend,
-    setAutoSend,
+    clearSelectedWorkflow,
     sendMessage,
     setIsLoading,
-    clearSelectedWorkflow,
-    inputRef,
   ]);
+
+  // Reset the auto-send guard when state changes
+  useEffect(() => {
+    if (!selectedWorkflow || !autoSend) autoSendExecutedRef.current = false;
+  }, [selectedWorkflow, autoSend]);
 
   // Expose file upload functions to parent component via ref
   useImperativeHandle(
     fileUploadRef,
     () => ({
-      openFileUploadModal: () => {
-        setFileUploadModal(true);
-      },
+      openFileUploadModal: () => setFileUploadModal(true),
       handleDroppedFiles: (files: File[]) => {
         setPendingDroppedFiles(files);
       },
     }),
-    [],
+    [setFileUploadModal, setPendingDroppedFiles],
   );
 
-  // Process dropped files when the upload modal opens
   useEffect(() => {
     if (fileUploadModal && pendingDroppedFiles.length > 0) {
-      // We'll handle this in the FileUpload component
       // Just clear the pending files here after the modal is opened
       setPendingDroppedFiles([]);
       if (onDroppedFilesProcessed) {
         onDroppedFilesProcessed();
       }
     }
-  }, [fileUploadModal, pendingDroppedFiles, onDroppedFilesProcessed]);
+  }, [
+    fileUploadModal,
+    pendingDroppedFiles,
+    onDroppedFilesProcessed,
+    setPendingDroppedFiles,
+  ]);
 
   // Process any droppedFiles passed from parent when they change
   useEffect(() => {
@@ -151,10 +172,14 @@ const Composer: React.FC<MainSearchbarProps> = ({
       setPendingDroppedFiles(droppedFiles);
       setFileUploadModal(true);
     }
-  }, [droppedFiles]);
+  }, [droppedFiles, setPendingDroppedFiles, setFileUploadModal]);
 
   const handleFormSubmit = (e?: React.FormEvent<HTMLFormElement>) => {
     if (e) e.preventDefault();
+
+    // Prevent double execution when workflow is auto-sending
+    if (autoSend) return;
+
     // Only prevent submission if there's no text AND no files AND no selected tool AND no selected workflow
     if (
       !inputText &&
@@ -164,7 +189,8 @@ const Composer: React.FC<MainSearchbarProps> = ({
     ) {
       return;
     }
-    setIsLoading(true);
+    // Use contextual loading with user's message for similarity-based loading text
+    setContextualLoading(true, inputText);
 
     sendMessage(
       inputText,
@@ -247,7 +273,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     }, 100);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [setIsSlashCommandDropdownOpen]);
 
   const handleFilesUploaded = (files: UploadedFilePreview[]) => {
     if (files.length === 0) {
@@ -294,22 +320,25 @@ const Composer: React.FC<MainSearchbarProps> = ({
   };
 
   // Handle paste event for images
-  const handlePaste = (e: ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-    for (let i = 0; i < items.length; i++) {
-      if (items[i].type.indexOf("image") !== -1) {
-        const file = items[i].getAsFile();
-        if (file) {
-          e.preventDefault();
-          // Open the file upload modal with the pasted image
-          setFileUploadModal(true);
-          setPendingDroppedFiles([file]); // Store the pasted file
-          break;
+  const handlePaste = useCallback(
+    (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (let i = 0; i < items.length; i++) {
+        if (items[i].type.indexOf("image") !== -1) {
+          const file = items[i].getAsFile();
+          if (file) {
+            e.preventDefault();
+            // Open the file upload modal with the pasted image
+            setFileUploadModal(true);
+            setPendingDroppedFiles([file]); // Store the pasted file
+            break;
+          }
         }
       }
-    }
-  };
+    },
+    [setFileUploadModal, setPendingDroppedFiles],
+  );
 
   // Add paste event listener for images
   useEffect(() => {
@@ -317,18 +346,20 @@ const Composer: React.FC<MainSearchbarProps> = ({
     return () => {
       document.removeEventListener("paste", handlePaste);
     };
-  }, []);
+  }, [handlePaste]);
 
   // Function to append text to the input
-  const appendToInput = (text: string) => {
-    const currentText = inputText;
-    const newText = currentText ? `${currentText} ${text}` : text;
-    setInputText(newText);
-    // Focus the input after appending
-    if (inputRef.current) {
-      inputRef.current.focus();
-    }
-  };
+  const appendToInput = useCallback(
+    (text: string) => {
+      const newText = inputText ? `${inputText} ${text}` : text;
+      setInputText(newText);
+      // Focus the input after appending
+      if (inputRef.current) {
+        inputRef.current.focus();
+      }
+    },
+    [inputText, setInputText, inputRef],
+  );
 
   // Expose appendToInput function to parent via ref
   useImperativeHandle(appendToInputRef, () => appendToInput, [appendToInput]);

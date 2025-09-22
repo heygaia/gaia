@@ -9,7 +9,6 @@ import Placeholder from "@tiptap/extension-placeholder";
 import Typography from "@tiptap/extension-typography";
 import Underline from "@tiptap/extension-underline";
 import { EditorContent, useEditor } from "@tiptap/react";
-import StarterKit from "@tiptap/starter-kit";
 import he from "he";
 import { Reply, ReplyAll, Send, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -21,7 +20,7 @@ import Spinner from "@/components/ui/shadcn/spinner";
 import GmailBody from "@/features/mail/components/GmailBody";
 import { useEmailSummary } from "@/features/mail/hooks/useEmailAnalysis";
 import { parseEmail } from "@/features/mail/utils/mailUtils";
-import { MenuBar } from "@/features/notes/components/NotesMenuBar";
+// import { MenuBar } from "@/features/notes/components/NotesMenuBar";
 import { EmailData, EmailImportanceSummary } from "@/types/features/mailTypes";
 
 import { useFetchEmailById } from "../hooks/useFetchEmailById";
@@ -203,7 +202,7 @@ export default function ViewEmail({
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
+      // TODO: StarterKit,
       Underline,
       Link,
       Typography,
@@ -395,7 +394,7 @@ export default function ViewEmail({
                         <div className="mb-2 flex items-start justify-between">
                           <User
                             avatarProps={{
-                              src: "/profile_photo/profile_photo.webp",
+                              src: "/images/avatars/default.webp",
                               size: "sm",
                             }}
                             description={messageSenderEmail}
@@ -444,7 +443,7 @@ export default function ViewEmail({
                   )}
                   <User
                     avatarProps={{
-                      src: "/profile_photo/profile_photo.webp",
+                      src: "/images/avatars/default.webp",
                       size: "sm",
                     }}
                     description={emailFrom}
@@ -484,7 +483,7 @@ export default function ViewEmail({
                   </div>
 
                   <div className="rounded-lg border border-zinc-700 bg-zinc-800">
-                    <MenuBar editor={editor} />
+                    {/* <MenuBar editor={editor} /> */}
                     <div className="max-h-[250px] min-h-[150px] overflow-y-auto px-4 py-2">
                       <EditorContent editor={editor} />
                     </div>

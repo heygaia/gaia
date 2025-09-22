@@ -1,6 +1,4 @@
 #!/bin/bash
-
-# Exit immediately if a command exits with a non-zero status.
 set -e
 
 # Check if .env files exist
@@ -22,28 +20,61 @@ echo "Starting Docker services in the background..."
 docker-compose up -d
 
 # --- Backend Setup ---
-echo "Setting up backend..."
+echo "⚙️ Setting up backend..."
+cd backend
 if [ ! -d ".venv" ]; then
     echo "Creating Python virtual environment..."
-    python3 -m venv .venv
+    $PYTHON -m venv .venv --upgrade-deps
 fi
 
-echo "Activating virtual environment..."
-source .venv/bin/activate
+# Activate venv
+if [ -f ".venv/bin/activate" ]; then
+    . .venv/bin/activate
+elif [ -f ".venv/Scripts/activate" ]; then
+    . .venv/Scripts/activate
+else
+    echo "Could not find virtual environment activation script."
+    exit 1
+fi
 
-echo "Installing backend dependencies with uv..."
-cd ../backend
+# Verify Python and pip are working in venv
+if ! python -c "import sys; print('Python:', sys.version)" 2>/dev/null; then
+    echo "Virtual environment seems corrupted, recreating..."
+    cd ..
+    rm -rf backend/.venv
+    cd backend
+    $PYTHON -m venv .venv --upgrade-deps
+    if [ -f ".venv/bin/activate" ]; then
+        . .venv/bin/activate
+    elif [ -f ".venv/Scripts/activate" ]; then
+        . .venv/Scripts/activate
+    fi
+fi
+
+# Ensure uv is installed
+if ! command -v uv &> /dev/null; then
+    echo "Installing uv..."
+    # First ensure we have pip
+    python -m ensurepip --upgrade 2>/dev/null || echo "ensurepip not available, trying alternative..."
+    python -m pip install --upgrade pip || {
+        echo "pip installation failed, downloading get-pip.py..."
+        curl -sS https://bootstrap.pypa.io/get-pip.py | python
+    }
+    python -m pip install uv
+fi
+
+echo "Installing backend dependencies..."
 uv sync
-
-# --- Frontend Setup ---
-echo "Setting up frontend..."
-cd ../frontend
-
-echo "Installing frontend dependencies with pnpm..."
-pnpm install
-
 cd ..
 
+# --- Frontend Setup ---
+echo "⚙️ Setting up frontend..."
+cd frontend
+pnpm install
+cd ..
+
+# --- Done ---
+echo ""
 echo "Setup complete!"
 echo ""
 echo "🔑 IMPORTANT: Configure your environment variables"

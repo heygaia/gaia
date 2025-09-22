@@ -92,7 +92,7 @@ export const useComposerStore = create<ComposerStore>()(
           // Navigate to chat page if not already there
           if (
             typeof window !== "undefined" &&
-            window.location.pathname !== "/c"
+            window.location.pathname.startsWith("/c") === false
           ) {
             // Use Next.js programmatic navigation
             window.location.assign("/c");

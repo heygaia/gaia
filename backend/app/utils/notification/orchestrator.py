@@ -2,8 +2,6 @@ import asyncio
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from fastapi import Request
-
 from app.config.loggers import app_logger as logger
 from app.models.notification.notification_models import (
     ActionResult,
@@ -11,7 +9,9 @@ from app.models.notification.notification_models import (
     ChannelDeliveryStatus,
     NotificationRecord,
     NotificationRequest,
+    NotificationSourceEnum,
     NotificationStatus,
+    NotificationType,
 )
 from app.utils.common_utils import websocket_manager
 from app.utils.notification.actions import (
@@ -28,6 +28,7 @@ from app.utils.notification.channels import (
 from app.utils.notification.storage import (
     MongoDBNotificationStorage,
 )
+from fastapi import Request
 
 
 class NotificationOrchestrator:
@@ -378,6 +379,8 @@ class NotificationOrchestrator:
         limit: int = 50,
         offset: int = 0,
         channel_type: Optional[str] = None,
+        notification_type: Optional[NotificationType] = None,
+        source: Optional[NotificationSourceEnum] = None,
     ) -> List[Dict[str, Any]]:
         """
         Get notifications for a user with optional filtering.
@@ -388,12 +391,14 @@ class NotificationOrchestrator:
             limit: Maximum number of notifications to return
             offset: Number of notifications to skip (for pagination)
             channel_type: Optional channel type filter
+            notification_type: Optional notification type filter
+            source: Optional source filter
 
         Returns:
             List of serialized notifications
         """
         notifications = await self.storage.get_user_notifications(
-            user_id, status, limit, offset, channel_type
+            user_id, status, limit, offset, channel_type, notification_type, source
         )
         return [await self._serialize_notification(n) for n in notifications]
 

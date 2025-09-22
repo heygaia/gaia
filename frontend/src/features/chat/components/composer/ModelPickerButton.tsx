@@ -1,12 +1,13 @@
 import {
-  Avatar,
   Chip,
   Select,
   SelectItem,
+  SelectSection,
   SharedSelection,
 } from "@heroui/react";
-import { Cpu } from "lucide-react";
-import React from "react";
+import { Icon } from "@iconify/react";
+import Image from "next/image";
+import React, { useMemo } from "react";
 
 import { useUser, useUserActions } from "@/features/auth/hooks/useUser";
 
@@ -47,6 +48,52 @@ const ModelPickerButton: React.FC = () => {
     }
   };
 
+  // Find the default model from the models list
+  const defaultModel = useMemo(() => {
+    return models?.find((model) => model.is_default);
+  }, [models]);
+
+  // Group models by provider and sort
+  const groupedModels = useMemo(() => {
+    if (!models) return {};
+
+    const grouped = models.reduce(
+      (acc, model) => {
+        const provider = model.model_provider || "Unknown";
+        if (!acc[provider]) {
+          acc[provider] = [];
+        }
+        acc[provider].push(model);
+        return acc;
+      },
+      {} as Record<string, typeof models>,
+    );
+
+    // Sort providers alphabetically and models within each provider
+    const sortedGrouped: Record<string, typeof models> = {};
+    Object.keys(grouped)
+      .sort()
+      .forEach((provider) => {
+        sortedGrouped[provider] = grouped[provider].sort((a, b) => {
+          // First, prioritize selected model
+          if (currentModel?.model_id === a.model_id) return -1;
+          if (currentModel?.model_id === b.model_id) return 1;
+
+          // Then, prioritize default model
+          if (a.is_default && !b.is_default) return -1;
+          if (b.is_default && !a.is_default) return 1;
+
+          // Finally, sort alphabetically by name
+          return a.name.localeCompare(b.name);
+        });
+      });
+
+    return sortedGrouped;
+  }, [models, currentModel]);
+
+  const headingClasses =
+    "flex w-full sticky top-1 z-20 py-1.5 px-2 bg-zinc-800  text-zinc-200 text-xs font-medium capitalize";
+
   // Don't render the button if models are still loading or not available
   if (isLoading || !models || models.length === 0) {
     return null;
@@ -56,97 +103,110 @@ const ModelPickerButton: React.FC = () => {
     <Select
       placeholder="Model"
       selectedKeys={
-        currentModel?.model_id ? new Set([currentModel.model_id]) : new Set()
+        currentModel?.model_id
+          ? new Set([currentModel.model_id])
+          : defaultModel?.model_id
+            ? new Set([defaultModel.model_id])
+            : new Set()
       }
       onSelectionChange={handleSelectionChange}
       isDisabled={selectModelMutation.isPending}
       size="sm"
-      radius="sm"
-      variant="flat"
+      variant={"flat"}
       aria-label="Select AI Model"
-      className="w-auto max-w-[280px] min-w-[160px]"
+      className="!w-fit !max-w-none"
+      popoverProps={{
+        classNames: {
+          content: "min-w-[300px] max-w-none bg-zinc-800",
+        },
+      }}
       classNames={{
-        popoverContent:
-          "bg-zinc-800 border-zinc-600 min-w-[320px] max-h-[300px] overflow-auto",
-        value: "text-zinc-300 text-xs font-medium",
-        selectorIcon: "text-zinc-400 w-3 h-3",
+        trigger:
+          "cursor-pointer bg-transparent transition hover:bg-zinc-800 !min-w-fit !w-auto !max-w-none whitespace-nowrap pl-3 pr-8",
+        value: "text-zinc-400! text-xs font-medium whitespace-nowrap !w-auto ",
+        base: "!max-w-none !w-auto",
+        innerWrapper: "!w-auto !max-w-none",
+        mainWrapper: "!w-auto !max-w-none",
+      }}
+      scrollShadowProps={{
+        isEnabled: false,
       }}
       startContent={
         currentModel?.logo_url ? (
-          <Avatar
+          <Image
             src={currentModel.logo_url}
             alt={currentModel.name}
-            className="h-3 w-3 shrink-0"
-            classNames={{
-              img: `object-contain ${currentModel.name.toLowerCase().includes("gpt") ? "invert" : ""}`,
-            }}
+            height={40}
+            width={40}
+            className={`h-4 w-4 object-contain ${currentModel.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
           />
         ) : (
-          <Cpu className="h-3 w-3 shrink-0 text-zinc-400" />
+          <Icon icon="lucide:cpu" className="h-3 w-3 shrink-0 text-zinc-400" />
         )
       }
       renderValue={(items) => {
         if (!items.length) return "Model";
         const item = items[0];
         const model = models?.find((m) => m.model_id === item.key);
-        return <span className="truncate">{model?.name || "Model"}</span>;
+        // Remove text-nowrap to prevent truncation
+        return <span>{model?.name || "Model"}</span>;
       }}
     >
-      {models
-        ?.slice()
-        ?.sort((a) => (currentModel?.model_id === a.model_id ? -1 : 1))
-        ?.map((model) => (
-          <SelectItem
-            key={model.model_id}
-            classNames={{
-              base: "data-[hover=true]:bg-zinc-700 data-[selectable=true]:focus:bg-zinc-700 py-2 px-3 my-1 rounded-md",
-              title: "text-zinc-200",
-              description: "text-zinc-400 mt-1",
-            }}
-            startContent={
-              model.logo_url ? (
-                <Avatar
-                  src={model.logo_url}
-                  alt={model.name}
-                  className="h-4 w-4 shrink-0"
-                  classNames={{
-                    img: `object-contain ${model.name.toLowerCase().includes("gpt") ? "invert" : ""}`,
-                  }}
-                />
-              ) : (
-                <Cpu className="h-4 w-4 shrink-0 text-zinc-400" />
-              )
-            }
-            description={
-              <div className="flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2">
-                  {model.lowest_tier.toLowerCase() !== "free" && (
-                    <span className={getTierColor(model.lowest_tier)}>
-                      {getTierDisplayName(model.lowest_tier)}+ Plan
-                    </span>
-                  )}
+      {Object.entries(groupedModels).map(([provider, providerModels]) => (
+        <SelectSection
+          key={provider}
+          classNames={{
+            heading: headingClasses,
+          }}
+          title={provider}
+        >
+          {providerModels?.map((model) => (
+            <SelectItem
+              key={model.model_id}
+              classNames={{
+                title: "text-zinc-200",
+                description: "text-zinc-400 mt-1",
+              }}
+              startContent={
+                model.logo_url ? (
+                  <Image
+                    src={model.logo_url}
+                    alt={model.name}
+                    height={40}
+                    width={40}
+                    className={`h-4 w-4 object-contain ${model.name.toLowerCase().includes("gpt") ? "invert" : ""}`}
+                  />
+                ) : (
+                  <Icon
+                    icon="lucide:cpu"
+                    className="h-4 w-4 shrink-0 text-zinc-400"
+                  />
+                )
+              }
+              description={
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center gap-2">
+                    {model.lowest_tier.toLowerCase() !== "free" && (
+                      <span className={getTierColor(model.lowest_tier)}>
+                        {getTierDisplayName(model.lowest_tier)}+ Plan
+                      </span>
+                    )}
+                  </div>
                 </div>
+              }
+            >
+              <div className="flex items-center justify-between gap-2">
+                <span>{model.name}</span>
+                {model.is_default && (
+                  <Chip size="sm" color="success" variant="flat">
+                    Default
+                  </Chip>
+                )}
               </div>
-            }
-          >
-            <div className="flex items-center justify-between gap-2">
-              <span>{model.name}</span>
-              <span className="text-xs text-zinc-500 capitalize">
-                {model.model_provider}
-              </span>
-              {model.is_default && (
-                <Chip
-                  size="sm"
-                  color="warning"
-                  variant="flat"
-                  className="text-xs"
-                >
-                  Default
-                </Chip>
-              )}
-            </div>
-          </SelectItem>
-        )) || []}
+            </SelectItem>
+          )) || []}
+        </SelectSection>
+      ))}
     </Select>
   );
 };

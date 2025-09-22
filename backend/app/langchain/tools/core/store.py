@@ -26,8 +26,8 @@ async def initialize_tools_store():
     from app.langchain.tools.core.registry import tool_registry
 
     # Register both regular and always available tools
-    tool_dict = tool_registry.get_tool_dictionary()
-    all_tools = [tool_data.tool for tool_data in tool_dict.values()]
+    tool_dict = tool_registry.get_tool_registry()
+    all_tools = [tool_data for tool_data in tool_dict.values()]
 
     # Store all tools for vector search with cached embeddings
     embeddings_list, tool_descriptions = await get_or_compute_embeddings(
@@ -36,14 +36,18 @@ async def initialize_tools_store():
 
     # Build tasks for batch storage with pre-computed embeddings
     tasks = []
-    for i, tool_data in enumerate(tool_dict.values()):
-        tool = tool_data.tool
-        tool_space = tool_data.space
+    for i, tool in enumerate(tool_dict.values()):
+        tool_category = tool_registry.get_category(
+            name=tool_registry.get_category_of_tool(tool.name)
+        )
+
+        if not tool_category:
+            continue
 
         # Use aput with pre-computed embeddings for proper space handling
         tasks.append(
             _store.aput(
-                (tool_space,),
+                (tool_category.space,),
                 tool.name,
                 {
                     "description": tool_descriptions[i],

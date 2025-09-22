@@ -38,7 +38,7 @@ function formatTime(time: string | null): string {
 export default function CalendarListCard({ events }: CalendarListProps) {
   if (!!events && events.length > 0)
     return (
-      <div className="mx-auto mt-3 w-full max-w-2xl rounded-3xl bg-zinc-800 p-3 text-white">
+      <div className="mt-3 w-full max-w-2xl rounded-3xl bg-zinc-800 p-3 text-white">
         <div className="flex items-center justify-between px-3 py-1">
           <div className="flex items-center gap-2">
             <GoogleCalendarIcon width={20} height={20} />

@@ -88,13 +88,21 @@ export default function TodoSection({
         id: todo.workflow.id,
         title: `${todo.title} Workflow`,
         description: `Execute workflow for todo: ${todo.title}`,
-        steps: todo.workflow.steps.map((step) => ({
-          id: step.id,
-          title: step.title,
-          description: step.description,
-          tool_name: step.tool_name,
-          tool_category: step.tool_category,
-        })),
+        steps: todo.workflow.steps.map(
+          (step: {
+            id: string;
+            title: string;
+            description: string;
+            tool_name: string;
+            tool_category: string;
+          }) => ({
+            id: step.id,
+            title: step.title,
+            description: step.description,
+            tool_name: step.tool_name,
+            tool_category: step.tool_category,
+          }),
+        ),
       };
 
       // Use selectWorkflow to store and navigate to chat with auto-send
