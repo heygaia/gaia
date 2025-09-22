@@ -163,18 +163,6 @@ class GmailMessageParser:
             except Exception:
                 msg.set_content(body_data)
 
-    def _handle_composio_message(self):
-        """Handle Composio message format."""
-        content = self.gmail_message.get("message_text", "")
-        # Create a simple email message for Composio data
-        self.email_message = email.message.EmailMessage()
-        if "<" in content and ">" in content:
-            self.email_message.set_content("", subtype="html")
-            self.email_message.set_payload(content)
-        else:
-            self.email_message.set_content(content)
-        self._parsed = True
-
     # ========================================================================
     # Public getter methods
     # ========================================================================
