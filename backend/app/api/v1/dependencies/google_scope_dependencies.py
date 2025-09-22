@@ -19,7 +19,6 @@ Usage:
 
 from typing import List, Union
 
-import httpx
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.loggers import auth_logger as logger
 from app.config.oauth_config import get_integration_by_id, get_short_name_mapping
@@ -27,7 +26,6 @@ from app.config.token_repository import token_repository
 from app.services.composio_service import composio_service
 from fastapi import Depends, HTTPException, status
 
-http_async_client = httpx.AsyncClient(timeout=10.0)
 
 
 def require_integration(integration_short_name: str):
