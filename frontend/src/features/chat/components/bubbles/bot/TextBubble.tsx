@@ -3,7 +3,7 @@ import { Chip } from "@heroui/chip";
 import { AlertTriangleIcon } from "lucide-react";
 
 import { InternetIcon } from "@/components/shared/icons";
-import { ToolsMessageKey } from "@/config/registries/toolRegistry";
+
 import CalendarListCard from "@/features/calendar/components/CalendarListCard";
 import CalendarListFetchCard from "@/features/calendar/components/CalendarListFetchCard";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
@@ -50,11 +50,11 @@ import GoogleDocsSection from "./GoogleDocsSection";
 import NotificationListSection from "./NotificationListSection";
 import SupportTicketSection from "./SupportTicketSection";
 import TodoSection from "./TodoSection";
+import { ToolName } from "@/config/registries/toolRegistry";
 
-// Map of tool_name -> renderer function using TOOLS_MESSAGE_SCHEMA keys
-// This avoids scattering switch/case or if/else across the component
+// Map of tool_name -> renderer function for unified tool_data rendering
 const TOOL_RENDERERS: Partial<
-  Record<ToolsMessageKey, (data: unknown, index: number) => React.ReactNode>
+  Record<ToolName, (data: any, index: number) => React.ReactNode>
 > = {
   // Search
   search_results: (data, index) => (
@@ -196,48 +196,36 @@ const TOOL_RENDERERS: Partial<
       />
     );
   },
+  notification_data: (data, index) => (
+    <NotificationListSection
+      key={`tool-notifications-${index}`}
+      notifications={(data as { notifications: any[] }).notifications}
+      title="Your Notifications"
+    />
+  ),
 };
 
 export default function TextBubble({
   text,
   disclaimer,
-  calendar_options,
-  calendar_delete_options,
-  calendar_edit_options,
-  email_compose_data,
-  email_fetch_data,
-  email_thread_data,
-  email_sent_data,
-  support_ticket_data,
-  calendar_fetch_data,
-  calendar_list_fetch_data,
-  weather_data,
-  todo_data,
-  goal_data,
-  code_data,
-  search_results,
-  deep_research_results,
-  document_data,
-  google_docs_data,
-  notification_data,
   tool_data,
   isConvoSystemGenerated,
   systemPurpose,
 }: ChatBubbleBotProps) {
+  // Check if we have search results from tool_data for chip display
+  const hasSearchResults = tool_data?.some(
+    (entry) => entry.tool_name === "search_results",
+  );
+  const hasDeepResearchResults = tool_data?.some(
+    (entry) => entry.tool_name === "deep_research_results",
+  );
+
   return (
     <>
-      {!!weather_data && <WeatherCard weatherData={weather_data!} />}
-
-      {!!email_thread_data && (
-        <EmailThreadCard emailThreadData={email_thread_data} />
-      )}
-
-      {!!email_sent_data && <EmailSentCard emailSentData={email_sent_data} />}
-
       {/* Unified tool_data rendering via registry */}
       {tool_data &&
         tool_data.map((entry, index) => {
-          const render = TOOL_RENDERERS[entry.tool_name as ToolsMessageKey];
+          const render = TOOL_RENDERERS[entry.tool_name as ToolName];
           if (!render) return null;
           return <>{render(entry.data, index)}</>;
         })}
@@ -269,7 +257,7 @@ export default function TextBubble({
                       className={`imessage-bubble imessage-from-them ${groupedClasses}`}
                     >
                       <div className="flex flex-col gap-3">
-                        {!!search_results && index === 0 && (
+                        {hasSearchResults && index === 0 && (
                           <Chip
                             color="primary"
                             startContent={
@@ -283,7 +271,7 @@ export default function TextBubble({
                           </Chip>
                         )}
 
-                        {!!deep_research_results && index === 0 && (
+                        {hasDeepResearchResults && index === 0 && (
                           <Chip
                             color="primary"
                             startContent={
@@ -327,7 +315,7 @@ export default function TextBubble({
           return (
             <div className="imessage-bubble imessage-from-them">
               <div className="flex flex-col gap-3">
-                {!!search_results && (
+                {hasSearchResults && (
                   <Chip
                     color="primary"
                     startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -339,7 +327,7 @@ export default function TextBubble({
                   </Chip>
                 )}
 
-                {!!deep_research_results && (
+                {hasDeepResearchResults && (
                   <Chip
                     color="primary"
                     startContent={<InternetIcon color="#00bbff" height={20} />}
@@ -373,79 +361,6 @@ export default function TextBubble({
             </div>
           );
         })()}
-
-      {!!calendar_options && (
-        <CalendarEventSection calendar_options={calendar_options!} />
-      )}
-
-      {!!calendar_delete_options && (
-        <CalendarDeleteSection
-          calendar_delete_options={calendar_delete_options!}
-        />
-      )}
-
-      {!!calendar_edit_options && (
-        <CalendarEditSection calendar_edit_options={calendar_edit_options!} />
-      )}
-
-      {!!email_compose_data && (
-        <EmailComposeSection email_compose_data={email_compose_data!} />
-      )}
-
-      {!!support_ticket_data && (
-        <SupportTicketSection support_ticket_data={support_ticket_data!} />
-      )}
-
-      {!!email_fetch_data && <EmailListCard emails={email_fetch_data} />}
-
-      {!!calendar_fetch_data && (
-        <CalendarListCard events={calendar_fetch_data!} />
-      )}
-
-      {!!calendar_list_fetch_data && (
-        <CalendarListFetchCard calendars={calendar_list_fetch_data} />
-      )}
-
-      {!!todo_data && (
-        <TodoSection
-          todos={todo_data!.todos}
-          projects={todo_data!.projects}
-          stats={todo_data!.stats}
-          action={todo_data!.action}
-          message={todo_data!.message}
-        />
-      )}
-
-      {/* Document Data - render all instances */}
-      {!!document_data && <DocumentSection document_data={document_data!} />}
-
-      {/* Google Docs Data - render all instances */}
-      {!!google_docs_data && (
-        <GoogleDocsSection google_docs_data={google_docs_data!} />
-      )}
-
-      {/* Goal Data - render all instances */}
-      {!!goal_data && (
-        <GoalSection
-          goals={goal_data!.goals}
-          stats={goal_data!.stats}
-          action={goal_data!.action as GoalAction}
-          message={goal_data!.message}
-          goal_id={goal_data!.goal_id}
-          deleted_goal_id={goal_data!.deleted_goal_id}
-          error={goal_data!.error}
-        />
-      )}
-
-      {/* Code Data - render all instances */}
-      {!!code_data && <CodeExecutionSection code_data={code_data!} />}
-
-      {!!notification_data && (
-        <NotificationListSection
-          notifications={notification_data.notifications}
-          title="Your Notifications"
-        />
-      )}
     </>
   );
 }

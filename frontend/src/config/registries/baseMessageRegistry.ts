@@ -33,6 +33,9 @@ export const BASE_MESSAGE_SCHEMA = {
     | IntegrationConnectionData
     | null
     | undefined,
+  // Core fields that are not tool-specific
+  image_data: undefined as import("@/types/features/toolDataTypes").ImageData | null | undefined,
+  memory_data: undefined as import("@/types/features/toolDataTypes").MemoryData | null | undefined,
   ...TOOLS_MESSAGE_SCHEMA,
 };
 
