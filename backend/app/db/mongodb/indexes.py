@@ -15,6 +15,7 @@ from typing import Dict, List
 
 from app.config.loggers import app_logger as logger
 from app.db.mongodb.collections import (
+    ai_models_collection,
     blog_collection,
     calendars_collection,
     conversations_collection,
@@ -66,6 +67,7 @@ async def create_all_indexes():
             create_workflow_indexes(),
             create_payment_indexes(),
             create_usage_indexes(),
+            create_ai_models_indexes(),
         ]
 
         # Execute all index creation tasks concurrently
@@ -87,6 +89,7 @@ async def create_all_indexes():
             "workflows",
             "payments",
             "usage",
+            "ai_models",
         ]
 
         index_results = {}
@@ -556,6 +559,10 @@ async def create_usage_indexes():
             usage_snapshots_collection.create_index(
                 [("user_id", 1), ("created_at", 1)], name="user_usage_history"
             ),
+            # Hourly aggregation queries (for the new upsert strategy)
+            usage_snapshots_collection.create_index(
+                [("user_id", 1), ("snapshot_date", 1)], name="user_snapshot_hour"
+            ),
             # TTL index for automatic cleanup after 90 days (7,776,000 seconds)
             usage_snapshots_collection.create_index(
                 "created_at",
@@ -572,6 +579,46 @@ async def create_usage_indexes():
 
     except Exception as e:
         logger.error(f"Error creating usage indexes: {str(e)}")
+        raise
+
+
+async def create_ai_models_indexes():
+    """
+    Create indexes for ai_models collection for optimal query performance.
+
+    Query patterns:
+    - Find models by ID (primary lookup)
+    - Find active models by plan availability
+    - Find default models
+    - Pricing lookups
+    """
+    try:
+        await asyncio.gather(
+            # Primary model lookup
+            ai_models_collection.create_index("model_id", unique=True),
+            # Active models filtering
+            ai_models_collection.create_index("is_active"),
+            # Default model lookup
+            ai_models_collection.create_index([("is_default", 1), ("is_active", 1)]),
+            # Plan availability queries
+            ai_models_collection.create_index("available_in_plans"),
+            # Combined active + plan queries (most common)
+            ai_models_collection.create_index(
+                [("is_active", 1), ("available_in_plans", 1)]
+            ),
+            # Pricing queries (for cost calculation)
+            ai_models_collection.create_index(
+                [("model_id", 1), ("is_active", 1)], name="model_pricing_lookup"
+            ),
+            # Provider filtering
+            ai_models_collection.create_index("model_provider"),
+            ai_models_collection.create_index("inference_provider"),
+        )
+
+        logger.info("Created AI models indexes")
+
+    except Exception as e:
+        logger.error(f"Error creating AI models indexes: {str(e)}")
         raise
 
 

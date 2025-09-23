@@ -18,9 +18,42 @@ class UsageService:
 
     @staticmethod
     async def save_usage_snapshot(snapshot: UserUsageSnapshot) -> str:
+        """Save usage snapshot with smart aggregation to prevent document explosion."""
         snapshot_dict = snapshot.model_dump()
-        result = await usage_snapshots_collection.insert_one(snapshot_dict)
-        return str(result.inserted_id)
+
+        # Use hourly aggregation to prevent too many documents
+        current_hour = datetime.now(timezone.utc).replace(
+            minute=0, second=0, microsecond=0
+        )
+
+        # Try to update existing document for this hour, or insert new one
+        filter_query = {
+            "user_id": snapshot.user_id,
+            "snapshot_date": {
+                "$gte": current_hour,
+                "$lt": current_hour + timedelta(hours=1),
+            },
+        }
+
+        existing_doc = await usage_snapshots_collection.find_one(filter_query)
+
+        if existing_doc:
+            # Update existing document by merging usage data
+            update_query = {
+                "$set": {
+                    "plan_type": snapshot.plan_type,
+                    "features": [f.model_dump() for f in snapshot.features],
+                    "credits": [c.model_dump() for c in snapshot.credits],
+                    "updated_at": datetime.now(timezone.utc),
+                }
+            }
+            await usage_snapshots_collection.update_one(filter_query, update_query)
+            return str(existing_doc["_id"])
+        else:
+            # Insert new document
+            snapshot_dict["snapshot_date"] = current_hour
+            result = await usage_snapshots_collection.insert_one(snapshot_dict)
+            return str(result.inserted_id)
 
     @staticmethod
     async def get_latest_usage_snapshot(user_id: str) -> Optional[UserUsageSnapshot]:
