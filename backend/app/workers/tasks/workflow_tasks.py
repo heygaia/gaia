@@ -23,6 +23,7 @@ from app.services.workflow.conversation_service import (
     get_or_create_workflow_conversation,
 )
 from bson import ObjectId
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 async def get_user_authentication_tokens(
@@ -296,14 +297,17 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
             selectedWorkflow=selected_workflow_data,
         )
 
+        usage_metadata_callback = UsageMetadataCallbackHandler()
+
         # Execute using the same logic as normal chat
-        complete_message, tool_data, _ = await call_agent_silent(
+        complete_message, tool_data, token_metadata = await call_agent_silent(
             request=request,
             conversation_id=conversation["conversation_id"],
             user=user_data,
             user_time=user_time,
             user_model_config=user_model_config,
             trigger_context=context,
+            usage_metadata_callback=usage_metadata_callback,
         )
 
         # Create execution messages with proper tool data
@@ -325,6 +329,7 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
             response=complete_message,
             date=datetime.now(timezone.utc).isoformat(),
             message_id=str(uuid4()),
+            metadata=token_metadata,  # Include token usage metadata
             **tool_data,  # Include all captured tool data
         )
         execution_messages.append(bot_message)

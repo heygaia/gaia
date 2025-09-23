@@ -27,7 +27,12 @@ async def build_graph(
     chat_llm: Optional[LanguageModelLike] = None,
     in_memory_checkpointer: bool = False,
 ):
-    """Construct and compile the state graph with integrated sub-agent graphs."""
+    """Construct and compile the state graph with integrated sub-agent graphs.
+    
+    Args:
+        chat_llm: Optional language model to use
+        in_memory_checkpointer: Whether to use in-memory checkpointing for testing
+    """
     # Lazy import to avoid circular dependency
     from app.langchain.tools.core.registry import tool_registry
 
