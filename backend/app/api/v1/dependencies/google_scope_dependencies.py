@@ -19,7 +19,6 @@ Usage:
 
 from typing import List, Union
 
-import httpx
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.loggers import auth_logger as logger
 from app.config.oauth_config import get_integration_by_id, get_short_name_mapping
@@ -27,7 +26,6 @@ from app.config.token_repository import token_repository
 from app.services.composio_service import composio_service
 from fastapi import Depends, HTTPException, status
 
-http_async_client = httpx.AsyncClient(timeout=10.0)
 
 
 def require_integration(integration_short_name: str):
@@ -95,7 +93,11 @@ def require_integration(integration_short_name: str):
                         user_id, "google", renew_if_expired=True
                     )
                     authorized_scopes = str(token.get("scope", "")).split()
-                except HTTPException:
+                except HTTPException as e:
+                    # Re-raise 401 errors to preserve authentication status
+                    if e.status_code == 401:
+                        raise
+                    # For other HTTP errors (like 403), treat as missing scopes
                     authorized_scopes = []
 
                 required_scopes = [scope.scope for scope in integration_config.scopes]
@@ -169,7 +171,11 @@ def require_google_scope(scope: Union[str, List[str]]):
                     user_id, "google", renew_if_expired=True
                 )
                 authorized_scopes = str(token.get("scope", "")).split()
-            except HTTPException:
+            except HTTPException as e:
+                # Re-raise 401 errors to preserve authentication status
+                if e.status_code == 401:
+                    raise
+                # For other HTTP errors (like 403), treat as missing scopes
                 authorized_scopes = []
 
             # Handle both single scope and list of scopes

@@ -1,5 +1,5 @@
+import asyncio
 import json
-import time
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import general_logger as logger
@@ -188,7 +188,7 @@ async def fetch_detailed_messages(
 
         # Rate limiting: wait between batches
         if i + batch_size < total_messages and delay > 0:
-            time.sleep(delay)
+            await asyncio.sleep(delay)
 
     return detailed_messages
 

@@ -24,7 +24,11 @@ def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
         Dictionary with progress information including formatted message,
         tool name, and category, or None if tool name is missing
     """
+    # Try dict-like access first, then fall back to object attribute access
     tool_name_raw = tool_call.get("name")
+    if tool_name_raw is None:
+        tool_name_raw = getattr(tool_call, "name", None)
+    
     if not tool_name_raw:
         return None
 
