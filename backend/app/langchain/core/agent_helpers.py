@@ -18,6 +18,7 @@ from app.langchain.core.agent_utils import (
     store_agent_progress,
 )
 from app.models.models_models import ModelConfig
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessageChunk
 from langsmith import traceable
 
@@ -27,6 +28,7 @@ def build_agent_config(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
 ) -> dict:
     """Build configuration for graph execution with optional authentication tokens.
 
@@ -38,12 +40,12 @@ def build_agent_config(
         user: User information dictionary containing user_id and email
         user_time: Current datetime for the user's timezone
         user_model_config: Optional model configuration with provider and token limits
-        access_token: Optional OAuth access token for authenticated requests
-        refresh_token: Optional OAuth refresh token for token renewal
 
     Returns:
-        Configuration dictionary formatted for LangGraph execution with configurable
-        parameters, metadata, and recursion limits
+        Tuple containing:
+        - Configuration dictionary formatted for LangGraph execution with configurable
+            parameters, metadata, and recursion limits
+        - UsageMetadataCallbackHandler instance for tracking token usage during execution
     """
     model_configuration = {
         "provider": (
@@ -65,6 +67,7 @@ def build_agent_config(
         },
         "recursion_limit": 25,
         "metadata": {"user_id": user.get("user_id")},
+        "callbacks": [usage_metadata_callback],
     }
 
     return config
@@ -112,8 +115,11 @@ def build_initial_state(
 
 @traceable(run_type="llm", name="Call Agent Silent")
 async def execute_graph_silent(
-    graph, initial_state: dict, config: dict
-) -> tuple[str, dict]:
+    graph,
+    initial_state: dict,
+    config: dict,
+    usage_metadata_callback: UsageMetadataCallbackHandler,
+) -> tuple[str, dict, dict]:
     """Execute LangGraph in silent mode with real-time progress storage.
 
     Runs the agent graph asynchronously and accumulates all results including
@@ -132,6 +138,7 @@ async def execute_graph_silent(
         Tuple containing:
         - complete_message: Full response text accumulated from all chunks
         - tool_data: Dictionary of extracted tool execution data and results
+        - token_metadata: Dictionary containing token usage information
     """
     complete_message = ""
     tool_data = {}
@@ -170,12 +177,17 @@ async def execute_graph_silent(
                         conversation_id, user_id, complete_message, tool_data
                     )
 
-    return complete_message, tool_data
+    # Get token usage metadata from callback
+    token_metadata = usage_metadata_callback.usage_metadata
+
+    return complete_message, tool_data, token_metadata
 
 
 @traceable(run_type="llm", name="Call Agent")
 async def execute_graph_streaming(
-    graph, initial_state: dict, config: dict
+    graph,
+    initial_state: dict,
+    config: dict,
 ) -> AsyncGenerator[str, None]:
     """Execute LangGraph in streaming mode with real-time output.
 
@@ -233,6 +245,10 @@ async def execute_graph_streaming(
             # Forward custom events as-is
             yield f"data: {json.dumps(payload)}\n\n"
 
-    # After streaming, yield complete message for DB storage
-    yield f"nostream: {json.dumps({'complete_message': complete_message})}"
+    # Get token metadata after streaming completes and yield complete message for DB storage
+    message_data = {"complete_message": complete_message}
+
+    message_data = {**message_data}
+
+    yield f"nostream: {json.dumps(message_data)}"
     yield "data: [DONE]\n\n"

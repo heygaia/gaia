@@ -3,7 +3,9 @@ from datetime import datetime, timezone
 from typing import Any, AsyncGenerator, Dict, Optional
 
 from app.config.loggers import chat_logger as logger
+from app.config.model_pricing import calculate_token_cost
 from app.langchain.core.agent import call_agent
+from app.middleware.tiered_rate_limiter import tiered_limiter
 from app.models.chat_models import (
     MessageModel,
     ToolDataEntry,
@@ -11,11 +13,14 @@ from app.models.chat_models import (
     tool_fields,
 )
 from app.models.message_models import MessageRequestWithHistory
+from app.models.payment_models import PlanType
 from app.services.conversation_service import update_messages
 from app.services.file_service import get_files
 from app.services.model_service import get_user_selected_model
+from app.services.payment_service import payment_service
 from app.utils.chat_utils import create_conversation
 from fastapi import BackgroundTasks
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 async def chat_stream(
@@ -51,6 +56,8 @@ async def chat_stream(
         except Exception as e:
             logger.warning(f"Could not get user's selected model, using default: {e}")
 
+    usage_metadata_callback = UsageMetadataCallbackHandler()
+
     # Stream response from the agent
     async for chunk in await call_agent(
         request=body,
@@ -58,6 +65,7 @@ async def chat_stream(
         conversation_id=conversation_id,
         user_time=user_time,
         user_model_config=user_model_config,
+        usage_metadata_callback=usage_metadata_callback,
     ):
         # Process complete message marker
         if chunk.startswith("nostream: "):
@@ -107,7 +115,13 @@ async def chat_stream(
 
     # Save the conversation once streaming is complete
     update_conversation_messages(
-        background_tasks, body, user, conversation_id, complete_message, tool_data
+        background_tasks,
+        body,
+        user,
+        conversation_id,
+        complete_message,
+        tool_data,
+        metadata=usage_metadata_callback.usage_metadata,
     )
 
 
@@ -217,6 +231,7 @@ def update_conversation_messages(
     conversation_id: str,
     complete_message: str,
     tool_data: Dict[str, Any] = {},
+    metadata: Dict[str, Any] = {},
 ) -> None:
     """
     Schedule conversation update in the background.
@@ -228,7 +243,14 @@ def update_conversation_messages(
         conversation_id: ID of the conversation to update
         complete_message: Complete LLM-generated message
         tool_data: Structured tool output data to store with the message
+        metadata: Token usage metadata from LLM calls by model
     """
+    # Process token usage and calculate total cost in background
+    if metadata and user.get("user_id"):
+        background_tasks.add_task(
+            _process_token_usage_and_cost, user_id=user["user_id"], metadata=metadata
+        )
+
     # Create user message - handle case where messages array might be empty due to tool selection
     user_content = body.messages[-1]["content"] if body.messages else body.message
     user_message = MessageModel(
@@ -248,6 +270,7 @@ def update_conversation_messages(
         response=complete_message,
         date=datetime.now(timezone.utc).isoformat(),
         fileIds=body.fileIds,
+        metadata=metadata,
     )
 
     # Apply tool data fields to bot message if available
@@ -265,3 +288,46 @@ def update_conversation_messages(
         ),
         user=user,
     )
+
+
+async def _process_token_usage_and_cost(user_id: str, metadata: Dict[str, Any]) -> None:
+    """
+    Background task to process token usage, calculate total cost, and store in DB.
+    This is the main flow: get model + tokens from metadata → calculate total cost → store in DB
+    We now track credits (costs) rather than raw token counts for billing purposes.
+    """
+    try:
+        # Get user subscription
+        subscription = await payment_service.get_user_subscription_status(user_id)
+        user_plan = subscription.plan_type or PlanType.FREE
+
+        total_credits = 0.0
+
+        # Calculate costs for each model and collect totals
+        for model_name, usage_data in metadata.items():
+            if isinstance(usage_data, dict):
+                input_tokens = usage_data.get("input_tokens", 0)
+                output_tokens = usage_data.get("output_tokens", 0)
+
+                if input_tokens > 0 or output_tokens > 0:
+                    # Calculate cost for this specific model
+                    # Note: get_model_pricing handles model name variants
+                    cost_info = await calculate_token_cost(
+                        model_name, input_tokens, output_tokens
+                    )
+                    model_cost = cost_info["total_cost"]
+                    total_credits += model_cost
+
+        # If credits were used, track them
+        if total_credits > 0:
+            # Single entry for all usage with credits
+            await tiered_limiter.check_and_increment(
+                user_id=user_id,
+                feature_key="chat_messages",
+                user_plan=user_plan,
+                credits_used=total_credits,
+            )
+
+    except Exception:
+        # Silent failure - this is a background task
+        pass

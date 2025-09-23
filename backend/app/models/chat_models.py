@@ -98,6 +98,7 @@ class MessageModel(BaseModel):
     tool_data: Optional[List[ToolDataEntry]] = None
     follow_up_actions: Optional[List[str]] = None
     integration_connection_required: Optional[IntegrationConnectionData] = None
+    metadata: Optional[dict] = None
 
 
 class SystemPurpose(str, Enum):

@@ -37,6 +37,7 @@ def init_openai_llm():
         model=PROVIDER_MODELS["openai"],
         temperature=0.1,
         streaming=True,
+        stream_usage=True,
     ).configurable_fields(
         model_name=ConfigurableField(id="model_name", name="LLM Model Name")
     )

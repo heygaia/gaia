@@ -69,8 +69,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.PRO.value,
             "is_active": True,
             "is_default": False,
-            "pricing_per_1k_input_tokens": 0.0025,
-            "pricing_per_1k_output_tokens": 0.01,
+            "pricing_per_1k_input_tokens": 0.0025,  # $2.50 per million tokens
+            "pricing_per_1k_output_tokens": 0.0075,  # $7.50 per million tokens
         },
         {
             "model_id": "gpt-4o-mini",
@@ -87,8 +87,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.FREE.value,
             "is_active": True,
             "is_default": True,  # Set as default for free users
-            "pricing_per_1k_input_tokens": 0.00015,
-            "pricing_per_1k_output_tokens": 0.0006,
+            "pricing_per_1k_input_tokens": 0.00015,  # $0.15 per million tokens
+            "pricing_per_1k_output_tokens": 0.0006,  # $0.60 per million tokens
         },
         # Google Gemini Models
         {
@@ -106,8 +106,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.FREE.value,
             "is_active": True,
             "is_default": False,
-            "pricing_per_1k_input_tokens": 0.10,
-            "pricing_per_1k_output_tokens": 0.40,
+            "pricing_per_1k_input_tokens": 0.0001,  # $0.10 per million tokens
+            "pricing_per_1k_output_tokens": 0.0004,  # $0.40 per million tokens
         },
         {
             "model_id": "gemini-2.5-flash",
@@ -124,8 +124,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.FREE.value,
             "is_active": True,
             "is_default": False,
-            "pricing_per_1k_input_tokens": 0.30,
-            "pricing_per_1k_output_tokens": 1.00,
+            "pricing_per_1k_input_tokens": 0.0003,  # $0.30 per million tokens
+            "pricing_per_1k_output_tokens": 0.0025,  # $2.50 per million tokens
         },
         {
             "model_id": "gemini-2.5-pro",
@@ -142,8 +142,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.PRO.value,
             "is_active": True,
             "is_default": False,
-            "pricing_per_1k_input_tokens": 1.25,
-            "pricing_per_1k_output_tokens": 10.00,
+            "pricing_per_1k_input_tokens": 0.00125,  # $1.25 per million tokens
+            "pricing_per_1k_output_tokens": 0.01,  # $10.00 per million tokens
         },
         # Cerebras Models
         {
@@ -161,8 +161,8 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "lowest_tier": PlanType.FREE.value,
             "is_active": True,
             "is_default": False,
-            "pricing_per_1k_input_tokens": 0.0001,
-            "pricing_per_1k_output_tokens": 0.0001,
+            "pricing_per_1k_input_tokens": 0.00035,  # $0.35 per million tokens
+            "pricing_per_1k_output_tokens": 0.00075,  # $0.75 per million tokens
         },
     ]
 

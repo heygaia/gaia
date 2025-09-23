@@ -1,8 +1,21 @@
 """Agent execution module providing streaming and silent execution modes.
 
-This module handles the core agent execution logic with two distinct patterns:
+This module handles the core agent execution logic with two distinct pa        graph, initial_state, config = await _core_agent_logic(
+            request,
+            conversation_id,
+            user,
+            user_time,
+            user_model_config,
+            trigger_context,
+        )
 
-1. Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
+        # Create token tracking callback
+        from langchain_core.callbacks import UsageMetadataCallbackHandler
+
+        user_id = user.get("user_id")
+        token_callback = UsageMetadataCallbackHandler()
+
+        return execute_graph_streaming(graph, initial_state, config, token_callback). Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
    - Required for interactive chat where users need immediate feedback
    - Cannot return awaited results directly due to AsyncGenerator yield semantics
    - Must yield SSE-formatted strings as they're produced
@@ -34,6 +47,7 @@ from app.langchain.core.messages import construct_langchain_messages
 from app.models.message_models import MessageRequestWithHistory
 from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory
+from langchain_core.callbacks import UsageMetadataCallbackHandler
 
 
 async def _core_agent_logic(
@@ -43,6 +57,7 @@ async def _core_agent_logic(
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
     trigger_context: Optional[dict] = None,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
 ):
     """Core agent initialization logic shared between streaming and silent execution modes.
 
@@ -94,7 +109,13 @@ async def _core_agent_logic(
         )
 
     # Build config with optional tokens
-    config = build_agent_config(conversation_id, user, user_time, user_model_config)
+    config = build_agent_config(
+        conversation_id,
+        user,
+        user_time,
+        user_model_config,
+        usage_metadata_callback,
+    )
 
     return graph, initial_state, config
 
@@ -105,6 +126,7 @@ async def call_agent(
     user: dict,
     user_time: datetime,
     user_model_config: Optional[ModelConfig] = None,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
 ) -> AsyncGenerator[str, None]:
     """
     Execute agent in streaming mode for interactive chat.
@@ -113,7 +135,12 @@ async def call_agent(
     """
     try:
         graph, initial_state, config = await _core_agent_logic(
-            request, conversation_id, user, user_time, user_model_config
+            request,
+            conversation_id,
+            user,
+            user_time,
+            user_model_config,
+            usage_metadata_callback=usage_metadata_callback,
         )
 
         return execute_graph_streaming(graph, initial_state, config)
@@ -135,13 +162,14 @@ async def call_agent_silent(
     conversation_id: str,
     user: dict,
     user_time: datetime,
+    usage_metadata_callback: Optional[UsageMetadataCallbackHandler] = None,
     user_model_config: Optional[ModelConfig] = None,
     trigger_context: Optional[dict] = None,
-) -> tuple[str, dict]:
+) -> tuple[str, dict, dict]:
     """
     Execute agent in silent mode for background processing.
 
-    Returns a tuple of (complete_message, tool_data_dict).
+    Returns a tuple of (complete_message, tool_data_dict, token_metadata).
     """
     try:
         graph, initial_state, config = await _core_agent_logic(
@@ -151,10 +179,13 @@ async def call_agent_silent(
             user_time,
             user_model_config,
             trigger_context,
+            usage_metadata_callback,
         )
 
-        return await execute_graph_silent(graph, initial_state, config)
+        return await execute_graph_silent(
+            graph, initial_state, config, usage_metadata_callback
+        )
 
     except Exception as exc:
         logger.error(f"Error when calling silent agent: {exc}")
-        return f"Error when calling silent agent: {str(exc)}", {}
+        return f"Error when calling silent agent: {str(exc)}", {}, {}

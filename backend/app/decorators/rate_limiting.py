@@ -4,23 +4,23 @@ Rate limiting decorators for API endpoints and LangChain tools.
 This module provides decorators for rate limiting based on user subscription plans.
 """
 
-import json
 import inspect
+import json
 from contextvars import ContextVar
 from functools import wraps
-from typing import Optional, Dict, Any, Callable
+from typing import Any, Callable, Dict, Optional
 
 from fastapi import HTTPException
 
-from app.middleware.tiered_rate_limiter import (
-    tiered_limiter,
-    RateLimitExceededException,
-)
-from app.services.payment_service import payment_service
-from app.models.payment_models import PlanType
 from app.config.loggers import app_logger
-from app.db.redis import redis_cache
 from app.config.rate_limits import get_limits_for_plan
+from app.db.redis import redis_cache
+from app.middleware.tiered_rate_limiter import (
+    RateLimitExceededException,
+    tiered_limiter,
+)
+from app.models.payment_models import PlanType
+from app.services.payment_service import payment_service
 
 # Context variables to avoid parameter pollution
 user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar(
@@ -100,7 +100,6 @@ def with_rate_limiting(
                             user_id=user_id,
                             feature_key=actual_feature_key,
                             user_plan=user_plan,
-                            tokens_used=0,
                         )
 
                         # Store rate limit context for response metadata
@@ -213,7 +212,6 @@ def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
                 user_id=user_id,
                 feature_key=feature_key,
                 user_plan=user_plan,
-                tokens_used=0,  # Will be handled post-execution if count_tokens=True
             )
 
             # Execute the original function

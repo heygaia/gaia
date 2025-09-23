@@ -33,7 +33,6 @@ class RateLimitPeriod(str, Enum):
 class RateLimitConfig(BaseModel):
     day: int = 0
     month: int = 0
-    tokens_per_request: int = 0
 
 
 class FeatureInfo(BaseModel):
