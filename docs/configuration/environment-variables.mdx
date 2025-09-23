@@ -6,255 +6,109 @@ icon: "key"
 
 ## Environment Configuration
 
-GAIA requires various environment variables to function properly. These variables configure API keys, database connections, and feature flags.
+GAIA uses many integrations, but you don’t need all keys to start. We load env via Pydantic settings and lazily initialize providers only when first used. See: [Lazy Loading Env. Variables](/developers/extra/lazy-loading).
 
-<Info>
-**Infisical Integration**: GAIA supports [Infisical](https://infisical.com) for secure secret management. When configured, Infisical secrets will override local environment variables. See our [Infisical Setup Guide](/configuration/infisical-setup) for more details.
-</Info>
+### What you must set
+- **Backend (always required in all envs)**: `MONGO_DB`, `REDIS_URL`, `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_COOKIE_PASSWORD`
+- **Production adds**: databases/queues + integration keys are required (see `ProductionSettings`)
+- **Development**: most integrations are optional; missing keys only disable that feature
 
-<CardGroup cols={2}>
-  <Card title="Backend Environment Variables">
-    Configure API keys, database connections, and backend services for the GAIA backend application
-  </Card>
-  <Card title="Frontend Environment Variables">
-    Set up API URLs, authentication secrets, and frontend configuration for the GAIA web interface
-  </Card>
-</CardGroup>
-
-
-## Backend Environment Variables
-
-Create a `backend/.env` file with the following variables:
-
-<Note>
-**Infisical Integration**: If you're using [Infisical](/configuration/infisical-setup) for secret management, you can add these environment variables to your Infisical project instead of the `.env` file. Infisical secrets will automatically override any local environment variables with the same names.
-</Note>
-
-### Core Application Settings
+### Minimal .env to boot locally
+Create `backend/.env` with just the essentials. If you use Docker, defaults are provided by Compose.
 
 ```bash
-# Application Environment
+# Core
+ENV=development
+HOST=http://localhost:8000
+FRONTEND_URL=http://localhost:3000
+
+# Datastores (use docker defaults or set your own)
+MONGO_DB=mongodb://mongo:27017/gaia
+REDIS_URL=redis://redis:6379
+
+# Auth (WorkOS for sessions)
+WORKOS_API_KEY=your-workos-api-key
+WORKOS_CLIENT_ID=your-workos-client-id
+WORKOS_COOKIE_PASSWORD=your-random-cookie-secret
+```
+
+### Optional keys by feature (add when needed)
+- **LLMs**: `OPENAI_API_KEY` or `GOOGLE_API_KEY` (Gemini) or `HUGGINGFACE_API_KEY`
+- **Speech**: `ASSEMBLYAI_API_KEY`, `DEEPGRAM_API_KEY`
+- **Search & weather**: `BING_API_KEY`, `OPENWEATHER_API_KEY`
+- **Cloud media (uploads/images)**: `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET`
+- **Auth (Google OAuth)**: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+- **Code exec sandbox**: `E2B_API_KEY`
+- **Memory (Mem0)**: `MEM0_API_KEY`, `MEM0_ORG_ID`, `MEM0_PROJECT_ID`
+- **Email**: `RESEND_API_KEY`, `RESEND_AUDIENCE_ID`
+- **Blog admin**: `BLOG_BEARER_TOKEN`
+- **Queues/DB (prod)**: `POSTGRES_URL`, `RABBITMQ_URL`, `CHROMADB_HOST`, `CHROMADB_PORT`
+- **Composio**: `COMPOSIO_KEY`, `COMPOSIO_WEBHOOK_SECRET`
+- **Telemetry**: `SENTRY_DSN`
+
+Add only what you need; dev will warn and the feature stays inactive until keys are added.
+
+## Backend Environment Variables (reference)
+
+```bash
+# Core application
 ENV=development
 HOST=localhost
 FRONTEND_URL=http://localhost:3000
 DISABLE_PROFILING=true
-```
 
-### Database Configuration
-
-```bash
-# PostgreSQL (automatically configured in Docker)
+# Databases & queues (Docker defaults)
 POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/langgraph
-
-# MongoDB (automatically configured in Docker)
 MONGO_DB=mongodb://mongo:27017/gaia
-
-# Redis (automatically configured in Docker)
 REDIS_URL=redis://redis:6379
-
-# ChromaDB (automatically configured in Docker)
 CHROMADB_HOST=chromadb
 CHROMADB_PORT=8000
-
-# RabbitMQ (automatically configured in Docker)
 RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-```
 
-### AI Model APIs
+# Auth (WorkOS mandatory), Google OAuth optional in dev
+WORKOS_API_KEY=your-workos-api-key
+WORKOS_CLIENT_ID=your-workos-client-id
+WORKOS_COOKIE_PASSWORD=your-random-cookie-secret
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
 
-<AccordionGroup>
-  <Accordion icon="brain" title="OpenAI & Language Models">
-    ```bash
-    # OpenAI API (recommended)
-    OPENAI_API_KEY=sk-your-openai-api-key
-
-    # Google AI/Gemini
-    GEMINI_API_KEY=your-gemini-api-key
-
-    # Hugging Face
-    HUGGINGFACE_API_KEY=hf_your-huggingface-token
-
-    # LlamaIndex
-    LLAMA_INDEX_KEY=llx-your-llamaindex-key
-    ```
-
-  </Accordion>
-
-  <Accordion icon="microphone" title="Speech & Audio APIs">
-    ```bash
-    # AssemblyAI (speech-to-text)
-    ASSEMBLYAI_API_KEY=your-assemblyai-api-key
-
-    # Deepgram (speech processing)
-    DEEPGRAM_API_KEY=your-deepgram-api-key
-    ```
-
-  </Accordion>
-
-  <Accordion icon="code" title="Code Execution">
-    ```bash
-    # E2B (code execution)
-    E2B_API_KEY=your-e2b-api-key
-    ```
-  </Accordion>
-</AccordionGroup>
-
-### Integration APIs
-
-<AccordionGroup>
-  <Accordion icon="google" title="Google Services">
-    ```bash
-    # Google OAuth
-    GOOGLE_CLIENT_ID=your-google-client-id
-    GOOGLE_CLIENT_SECRET=your-google-client-secret
-
-    # Google Cloud Pub/Sub
-    GCP_TOPIC_NAME=your-pubsub-topic
-    ```
-
-  </Accordion>
-
-{" "}
-<Accordion icon="cloud" title="Cloud Services">
-  ```bash # Cloudinary (image/video management)
-  CLOUDINARY_CLOUD_NAME=your-cloud-name
-  CLOUDINARY_API_KEY=your-cloudinary-api-key
-  CLOUDINARY_API_SECRET=your-cloudinary-api-secret ```
-</Accordion>
-
-{" "}
-<Accordion icon="brain" title="Memory & Knowledge">
-  ```bash # Mem0 (AI memory platform) MEM0_API_KEY=your-mem0-api-key
-  MEM0_ORG_ID=your-mem0-org-id MEM0_PROJECT_ID=your-mem0-project-id ```
-</Accordion>
-
-  <Accordion icon="file-text" title="Document & Productivity">
-    ```bash
-    # Notion Integration
-    NOTION_CLIENT_ID=your-notion-client-id
-    NOTION_CLIENT_SECRET=your-notion-client-secret
-    ```
-  </Accordion>
-</AccordionGroup>
-
-### Search & Weather APIs
-
-```bash
-# Bing Search API
+# Selected integrations (add when used)
+OPENAI_API_KEY=sk-your-openai-api-key
+GOOGLE_API_KEY=your-google-ai-api-key
+HUGGINGFACE_API_KEY=hf_your-huggingface-token
+ASSEMBLYAI_API_KEY=your-assemblyai-api-key
+DEEPGRAM_API_KEY=your-deepgram-api-key
 BING_API_KEY=your-bing-search-api-key
-
-# OpenWeather API
 OPENWEATHER_API_KEY=your-openweather-api-key
-OPENWEATHERMAP_API_KEY=your-openweathermap-api-key
-```
-
-### Communication & Payments
-
-```bash
-# Email (Resend)
+E2B_API_KEY=your-e2b-api-key
+CLOUDINARY_CLOUD_NAME=your-cloud-name
+CLOUDINARY_API_KEY=your-cloudinary-api-key
+CLOUDINARY_API_SECRET=your-cloudinary-api-secret
+MEM0_API_KEY=your-mem0-api-key
+MEM0_ORG_ID=your-mem0-org-id
+MEM0_PROJECT_ID=your-mem0-project-id
 RESEND_API_KEY=your-resend-api-key
-
-# Blog/Content
+RESEND_AUDIENCE_ID=your-resend-audience-id
 BLOG_BEARER_TOKEN=your-blog-bearer-token
-```
-
-### Docker Specific
-
-```bash
-# Docker Compose
-COMPOSE_BAKE=true
+COMPOSIO_KEY=your-composio-key
+COMPOSIO_WEBHOOK_SECRET=your-composio-webhook-secret
+SENTRY_DSN=your-sentry-dsn
 ```
 
 ## Frontend Environment Variables
 
-Create a `frontend/.env` file with the following variables:
-
 <Note>
-**Local Configuration**: Frontend environment variables are typically configured locally as they're needed during the build process. However, you can also manage sensitive frontend secrets through Infisical if needed.
+  Frontend envs are typically local and added as needed during build.
 </Note>
 
 ```bash
-# Base url of the backend api (this url will be the same)
+# Base url of the backend api
 NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1/
 
-# Blog management bearer token (for creating/editing/deleting blog posts)
+# Optional blog token for admin blog actions
 NEXT_PUBLIC_BLOG_BEARER_TOKEN=your-blog-management-token-here
 ```
 
-## Environment File Templates
-
-### Backend .env Template
-
-<Note>
-**Important**: If you're using Infisical, add your environment variables to your Infisical project instead. The variables below will be overridden by Infisical secrets if they have the same names. Read more about [Infisical setup](/configuration/infisical-setup).
-</Note>
-
-<CodeGroup>
-```bash backend/.env
-# Core Settings
-ENV=development
-DEBUG=true
-HOST=localhost
-FRONTEND_URL=http://localhost:3000
-
-# Databases (Docker defaults)
-
-POSTGRES_URL=postgresql://postgres:postgres@postgres:5432/langgraph
-MONGO_DB=mongodb://mongo:27017/gaia
-REDIS_URL=redis://redis:6379
-CHROMADB_HOST=chromadb
-CHROMADB_PORT=8000
-RABBITMQ_URL=amqp://guest:guest@rabbitmq:5672/
-
-# AI APIs (replace with your keys)
-
-OPENAI_API_KEY=sk-your-openai-api-key
-GOOGLE_API_KEY=your-google-ai-api-key
-HUGGINGFACE_API_KEY=hf_your-huggingface-token
-
-# Google OAuth
-
-GOOGLE_CLIENT_ID=your-google-client-id
-GOOGLE_CLIENT_SECRET=your-google-client-secret
-
-# Optional APIs
-
-BING_API_KEY=your-bing-search-api-key
-OPENWEATHER_API_KEY=your-openweather-api-key
-RESEND_API_KEY=your-resend-api-key
-CLOUDINARY_CLOUD_NAME=your-cloud-name
-CLOUDINARY_API_KEY=your-cloudinary-api-key
-CLOUDINARY_API_SECRET=your-cloudinary-api-secret
-
-# Add other APIs as needed
-
-````
-</CodeGroup>
-
-### Frontend .env Template
-
-<CodeGroup>
-```bash frontend/.env
-NEXT_PUBLIC_API_BASE_URL=http://localhost:8000/api/v1/
-
-# Blog management bearer token (for creating/editing/deleting blog posts)
-NEXT_PUBLIC_BLOG_BEARER_TOKEN=your-blog-management-token-here
-````
-
-</CodeGroup>
-
-
-## Next Steps
-
-<CardGroup cols={2}>
-  <Card title="Docker Setup" icon="docker" href="/self-hosting/docker-setup">
-    Configure and deploy with Docker Compose
-  </Card>
-  <Card
-    title="Infisical Setup"
-    icon="shield-check"
-    href="/configuration/infisical-setup"
-  >
-    Secure secret management
-  </Card>
-</CardGroup>
+## See also
+- [Lazy Loading Env. Variables](/developers/extra/lazy-loading)
+- Production requirements: see `backend/app/config/settings.py` `ProductionSettings`

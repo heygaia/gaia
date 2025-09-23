@@ -12,7 +12,7 @@ from app.docstrings.langchain.tools.follow_up_actions_tool_docs import (
     SUGGEST_FOLLOW_UP_ACTIONS,
 )
 from app.langchain.llm.client import init_llm
-from langchain_core.messages import SystemMessage
+from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
 from langgraph.config import get_stream_writer
@@ -29,12 +29,9 @@ class FollowUpActions(BaseModel):
     )
 
 
-llm = init_llm()
-
-
 async def follow_up_actions_node(
     state: State, config: RunnableConfig, store: BaseStore
-) -> State:
+):
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
@@ -59,8 +56,9 @@ async def follow_up_actions_node(
     Returns:
         Empty dict indicating successful completion (follow-up actions are streamed, not stored in state)
     """
-    # Lazy import to avoid circular dependency
     from app.langchain.tools.core.registry import tool_registry
+
+    llm = init_llm()
 
     try:
         messages = state.get("messages", [])
@@ -80,10 +78,13 @@ async def follow_up_actions_node(
         )
 
         result = await llm.ainvoke(
-            input=[SystemMessage(content=prompt)],
-            config={**config, "silence": True},  # type: ignore
+            input=[
+                SystemMessage(content=prompt),
+                HumanMessage(content=_pretty_print_messages(recent_messages)),
+            ],
+            config={**config, "silent": True},  # type: ignore
         )
-        actions = parser.parse(result.text())
+        actions = parser.parse(result if isinstance(result, str) else result.text())
 
         writer = get_stream_writer()
         writer({"follow_up_actions": actions.actions})
@@ -92,4 +93,15 @@ async def follow_up_actions_node(
 
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
-        return state
+        return {}
+
+
+def _pretty_print_messages(
+    messages: List[AnyMessage], ignore_system_messages=True
+) -> str:
+    pretty = ""
+    for message in messages:
+        if ignore_system_messages and isinstance(message, SystemMessage):
+            continue
+        pretty += message.pretty_repr()
+    return pretty

@@ -16,31 +16,18 @@ Welcome to the GAIA development documentation. Whether you want to contribute to
     icon="laptop-code"
     href="/developers/development-setup"
   >
-    Set up your local development environment with our automated or manual setup guides
+    Set up your local development environment with our automated or manual setup
+    guides
   </Card>
   <Card
     title="Contributing Guidelines"
-    icon="git-branch"
+    icon="git-alt"
     href="/developers/contributing"
   >
-    Learn how to contribute to GAIA with our comprehensive guidelines and best practices
+    Learn how to contribute to GAIA with our comprehensive guidelines and best
+    practices
   </Card>
 </CardGroup>
-
-## Development Workflow
-
-<Steps>
-  <Step title="Environment Setup">
-    Run our setup script or follow the manual setup guide to get your development environment ready.
-  </Step>
-  <Step title="Code & Test">
-    Make your changes and run the test suite to ensure everything works correctly.
-  </Step>
-  <Step title="Submit Changes">
-    Follow our contribution guidelines to submit your changes via pull request.
-  </Step>
-</Steps>
-
 ## Key Technologies
 
 GAIA is built with modern technologies that make development efficient and scalable:
@@ -53,25 +40,6 @@ GAIA is built with modern technologies that make development efficient and scala
 - **Message Queue**: RabbitMQ for asynchronous task processing
 - **Containerization**: Docker for consistent development and deployment
 
-## Quick Commands
-
-Once your environment is set up, these commands will help you develop efficiently:
-
-```bash
-# Start all services
-docker compose up
-
-# Run backend in development mode
-cd backend && uv run uvicorn app.main:app --reload
-
-# Run frontend in development mode
-cd frontend && pnpm dev
-
-# Run tests
-cd backend && uv run pytest
-cd frontend && pnpm test
-```
-
 ## Community & Support
 
 - **GitHub**: [github.com/heygaia/gaia](https://github.com/heygaia/gaia) - main repository
@@ -80,5 +48,6 @@ cd frontend && pnpm test
 - **Discord**: Join our developer community
 
 <Tip>
-  New to the codebase? Start with the [development setup guide](/developers/development-setup) and then explore the backend and frontend architecture docs to understand how everything fits together.
+  New to the codebase? Start with the [development setup
+  guide](/developers/development-setup)
 </Tip>

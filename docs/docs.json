@@ -7,6 +7,13 @@
     "light": "#00bbff",
     "dark": "#00bbff"
   },
+  "seo": {
+    "indexing": "all",
+    "metatags": {
+      "og:type": "website",
+      "og:site_name": "GAIA Documentation"
+    }
+  },
   "favicon": "/logo/logo.png",
   "navigation": {
     "tabs": [
@@ -15,9 +22,15 @@
         "groups": [
           {
             "group": "Get Started",
+            "pages": ["introduction", "quick-start", "resources"]
+          },
+          {
+            "group": "For Developers",
             "pages": [
-              "introduction",
-              "quick-start"
+              "developers/introduction",
+              "developers/development-setup",
+              "developers/contributing",
+              "developers/release-workflow"
             ]
           },
           {
@@ -25,47 +38,25 @@
             "pages": ["self-hosting/overview", "self-hosting/docker-setup"]
           },
           {
-            "group": "For Developers",
-            "pages": [
-              "developers/introduction",
-              "developers/development-setup",
-              "developers/contributing"
-            ]
-          },
-          {
             "group": "Configuration",
             "pages": [
               "configuration/environment-variables",
-              "configuration/infisical-setup"
+              "configuration/conventional-commits",
+              "configuration/docker"
+            ]
+          },
+          {
+            "group": "Extra Developer Docs",
+            "pages": [
+              "developers/extra/lazy-loading",
+              "developers/extra/add-tools",
+              "developers/extra/add-env-vars",
+              "developers/extra/frontend-config"
             ]
           }
         ]
       }
-    ],
-    "global": {
-      "anchors": [
-        {
-          "anchor": "Discord",
-          "href": "https://discord.heygaia.io",
-          "icon": "discord"
-        },
-        {
-          "anchor": "Twitter",
-          "href": "https://twitter.com/_heygaia",
-          "icon": "twitter"
-        },
-        {
-          "anchor": "WhatsApp",
-          "href": "https://whatsapp.heygaia.io",
-          "icon": "whatsapp"
-        },
-        {
-          "anchor": "Blog",
-          "href": "https://heygaia.io/blog",
-          "icon": "newspaper"
-        }
-      ]
-    }
+    ]
   },
   "logo": {
     "light": "/logo/logo.png",
@@ -74,25 +65,40 @@
   "navbar": {
     "links": [
       {
-        "label": "Contact",
-        "href": "https://heygaia.io/contact"
+        "label": "Discord",
+        "href": "https://discord.heygaia.io",
+        "icon": "discord"
+      },
+      {
+        "label": "Website",
+        "href": "https://heygaia.io",
+        "icon": "globe"
       }
     ],
     "primary": {
-      "type": "button",
-      "label": "Get Started",
-
-
-      "href": "https://heygaia.io"
+      "type": "github",
+      "href": "https://github.com/heygaia/gaia"
     }
   },
   "footer": {
     "socials": {
       "website": "https://heygaia.io",
-      "x": "https://x.com/_heygaia",
+      "twitter": "https://x.com/_heygaia",
       "github": "https://github.com/heygaia",
       "discord": "https://discord.heygaia.io",
       "linkedin": "https://linkedin.com/company/heygaia"
     }
+  },
+  "contextual": {
+    "options": [
+      "copy",
+      "view",
+      "chatgpt",
+      "claude",
+      "perplexity",
+      "mcp",
+      "cursor",
+      "vscode"
+    ]
   }
 }

@@ -1,6 +1,7 @@
 "use client";
 
 import { ReactLenis } from "lenis/react";
+import Image from "next/image"
 import { lazy, Suspense, useEffect } from "react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
@@ -8,7 +9,6 @@ import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
 
 import LandingLayout from "./(landing)/layout";
-
 // Hero video dialog is critical for LCP, so don't lazy load it
 
 const ChaoticWorkspaceSection = lazy(
@@ -60,24 +60,32 @@ export default function LandingPage() {
     <ReactLenis root>
       <LandingLayout>
         <div className="relative overflow-hidden">
-          <HeroSection />
-          <div className="relative z-10 mx-auto flex w-full items-center justify-center px-4 sm:px-6 lg:px-20">
-            <HeroVideoDialog
-              className="block w-full rounded-3xl"
-              animationStyle="from-center"
-              videoSrc="https://www.youtube.com/embed/K-ZbxMHxReM?si=U9Caazt9Ondagnr8"
-              // thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
-              thumbnailSrc="/images/hero.webp?q=80"
-              thumbnailAlt="Hero Section Video"
-            />
+
+          <div className="absolute inset-0 w-full h-screen">
+            `<Image src={"/images/wallpapers/sf_night_high_res.png"} alt="Wallpaper" width={4096} height={2160} className="object-cover aspect-video opacity-90" />
+            <div className="pointer-events-none absolute inset-x-0 top-0 h-[30vh] bg-gradient-to-b from-background to-transparent z-10" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[20vh] bg-gradient-to-t from-background via-background to-transparent z-10" />
           </div>
+
+          <section className="relative z-20 min-h-screen w-full flex flex-col items-center justify-center">
+            <HeroSection />
+            <div className="mt-8 mx-auto flex w-full items-center justify-center px-4 sm:px-6 max-w-screen-xl">
+              <HeroVideoDialog
+                className="block w-full rounded-3xl"
+                animationStyle="from-center"
+                videoSrc="https://www.youtube.com/embed/K-ZbxMHxReM?si=U9Caazt9Ondagnr8"
+                thumbnailSrc="https://img.youtube.com/vi/K-ZbxMHxReM/maxresdefault.jpg"
+                // thumbnailSrc="/images/hero.webp?q=80"
+                thumbnailAlt="Hero Section Video"
+              />
+            </div>
+          </section>
           <div>
-            {/* Load first section immediately for above-the-fold content */}
+
             <Suspense fallback={<SuspenseLoader />}>
               <ChaoticWorkspaceSection />
             </Suspense>
 
-            {/* Defer all other sections to improve initial load performance */}
             <Suspense fallback={<SuspenseLoader />}>
               <ToolsShowcaseSection />
               <Productivity />
