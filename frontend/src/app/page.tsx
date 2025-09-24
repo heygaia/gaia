@@ -62,7 +62,7 @@ export default function LandingPage() {
         <div className="relative overflow-hidden">
 
           <div className="absolute inset-0 w-full h-screen">
-            `<Image src={"/images/wallpapers/sf_night_high_res.png"} alt="Wallpaper" width={4096} height={2160} className="object-cover aspect-video opacity-90" />
+            `<Image src={"/images/wallpapers/sf_night_high_res.webp"} alt="Wallpaper" width={4096} height={2160} className="object-cover aspect-video opacity-90" />
             <div className="pointer-events-none absolute inset-x-0 top-0 h-[30vh] bg-gradient-to-b from-background to-transparent z-10" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[20vh] bg-gradient-to-t from-background via-background to-transparent z-10" />
           </div>
