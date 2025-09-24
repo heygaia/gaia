@@ -108,7 +108,7 @@ export default function UseCaseSection({
         ease: "power2.out",
       });
     } else {
-      // Selecting: scroll to show cards
+      // Selecting: only scroll if we need to bring the section into view
       setSelectedCategory(category);
 
       // Small delay to let state update
@@ -118,14 +118,28 @@ export default function UseCaseSection({
         const sectionRect = dummySectionRef.current.getBoundingClientRect();
         const containerRect = scrollContainer.getBoundingClientRect();
         const currentScrollTop = scrollContainer.scrollTop;
-        const targetScrollTop =
-          currentScrollTop + (sectionRect.bottom - containerRect.bottom) + 100;
 
-        gsap.to(scrollContainer, {
-          scrollTop: Math.max(0, targetScrollTop),
-          duration: 0.5,
-          ease: "power2.out",
-        });
+        // Only scroll if the section is not fully visible or if we need to scroll down
+        const isSectionFullyVisible =
+          sectionRect.top >= containerRect.top &&
+          sectionRect.bottom <= containerRect.bottom;
+
+        // For workflows category, don't scroll at all to prevent the scroll-up issue
+        if (category === "workflows") {
+          return;
+        }
+
+        // For other categories, only scroll if section is not fully visible
+        if (!isSectionFullyVisible) {
+          const targetScrollTop =
+            currentScrollTop + (sectionRect.bottom - containerRect.bottom) + 100;
+
+          gsap.to(scrollContainer, {
+            scrollTop: Math.max(0, targetScrollTop),
+            duration: 0.5,
+            ease: "power2.out",
+          });
+        }
       }, 50);
     }
   };
