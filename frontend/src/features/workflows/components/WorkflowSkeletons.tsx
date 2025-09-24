@@ -1,4 +1,5 @@
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
+
 import BaseWorkflowCard from "./shared/BaseWorkflowCard";
 
 export const WorkflowCardSkeleton = () => {
