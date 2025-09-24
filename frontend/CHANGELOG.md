@@ -1,5 +1,45 @@
 # Changelog
 
+## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-24)
+
+
+### release
+
+* 0.5.0-beta ([9b82ad8](https://github.com/heygaia/gaia/commit/9b82ad8d93da37ced925b8f3faf8e304ba0439b6))
+
+
+### Features
+
+* Add color utility functions for color handling ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* Add color utility functions for color handling ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* added support for multiple tool calls & streamlined tool output structure in db ([#222](https://github.com/heygaia/gaia/issues/222)) ([c509351](https://github.com/heygaia/gaia/commit/c509351dbdd1cab5e5d30d6e9422fb9f8ef6262f))
+* **chat:** enhance loading messages with contextual relevance ([03651ad](https://github.com/heygaia/gaia/commit/03651ad3aa78fcebcb59184e749dc0e0a7e64815))
+* Cleaner Landing Page ([#220](https://github.com/heygaia/gaia/issues/220)) ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Cleaner Landing Page ([#224](https://github.com/heygaia/gaia/issues/224)) ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* Conversation history with IndexedDB ([84aad1c](https://github.com/heygaia/gaia/commit/84aad1cae5bfea66d797112448c0af366241c1ac))
+* Create ToolsShowcaseSection for displaying tools ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* Create ToolsShowcaseSection for displaying tools ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Enhance TiredBoringAssistants section with new design elements ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* Enhance TiredBoringAssistants section with new design elements ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* implemented sub agent architecture ([#213](https://github.com/heygaia/gaia/issues/213)) ([cb579ee](https://github.com/heygaia/gaia/commit/cb579ee19ef348822d9324529fdb16a7dcf46a60))
+* integrate HeroUI into Tailwind CSS setup ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* integrate HeroUI into Tailwind CSS setup ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Notification Tools ([#212](https://github.com/heygaia/gaia/issues/212)) ([5173693](https://github.com/heygaia/gaia/commit/5173693ac53f2e457ed66674715ece30f11f9b0e))
+* Personalisation Changes 1 ([#218](https://github.com/heygaia/gaia/issues/218)) ([73c1871](https://github.com/heygaia/gaia/commit/73c187199f7191caa42c73e4a1e9c3194e0d78fa))
+* Workflow Triggers ([#217](https://github.com/heygaia/gaia/issues/217)) ([e17c3cf](https://github.com/heygaia/gaia/commit/e17c3cf375929c56b9038ba86a8bb0c0575e3422))
+
+
+### Bug Fixes
+
+* add notification data structure to tools message schema and clean up TextBubble component ([d0f0c5b](https://github.com/heygaia/gaia/commit/d0f0c5b1be274ef53fe8cef23ee68e0d7314eb8f))
+* clean up MailCompose component styles ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* clean up MailCompose component styles ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* fixed few issues related to mail tools ([#216](https://github.com/heygaia/gaia/issues/216)) ([89f0459](https://github.com/heygaia/gaia/commit/89f045938b2358c7734ca4059435b033bfdb2a57))
+* improve accessibility by adding aria-labels to buttons and iframes ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* improve accessibility by adding aria-labels to buttons and iframes ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+* Update CalendarContent layout for better responsiveness ([b61fcac](https://github.com/heygaia/gaia/commit/b61fcac83d6f0e2173f06b2618b7a3b562dbf7f5))
+* Update CalendarContent layout for better responsiveness ([aa80e99](https://github.com/heygaia/gaia/commit/aa80e99bbd6bbf4d89e19d658f4d17890c06ea4f))
+
 ## [0.4.0-beta](https://github.com/heygaia/gaia/compare/v0.3.0-beta...v0.4.0-beta) (2025-09-04)
 
 
