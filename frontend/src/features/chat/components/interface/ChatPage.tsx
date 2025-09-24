@@ -18,14 +18,12 @@ import ScrollToBottomButton from "./ScrollToBottomButton";
 
 const ChatPage = React.memo(function MainChat() {
   const searchParams = useSearchParams();
-  const messageId = searchParams.get("messageId");
 
   const { updateConvoMessages, clearMessages, convoMessages } =
     useConversation();
   const pendingPrompt = usePendingPrompt();
   const { clearPendingPrompt } = useComposerTextActions();
 
-  // Use our custom hooks
   const {
     hasMessages,
     chatRef,
