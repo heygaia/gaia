@@ -1,10 +1,6 @@
 import json
 from datetime import datetime
 
-from bson import ObjectId
-from fastapi import HTTPException
-from langchain_core.messages import HumanMessage
-
 from app.config.loggers import goals_logger as logger
 from app.db.mongodb.collections import goals_collection
 from app.db.redis import ONE_YEAR_TTL, get_cache, set_cache
@@ -16,11 +12,14 @@ from app.langchain.prompts.goal_prompts import (
 )
 from app.models.goals_models import GoalCreate, GoalResponse, UpdateNodeRequest
 from app.services.sync_service import (
-    sync_goal_node_completion,
-    create_goal_project_and_todo,
     _invalidate_goal_caches,
+    create_goal_project_and_todo,
+    sync_goal_node_completion,
 )
 from app.utils.goals_utils import goal_helper
+from bson import ObjectId
+from fastapi import HTTPException
+from langchain_core.messages import HumanMessage
 
 
 async def generate_roadmap_with_llm_stream(title: str):
@@ -55,7 +54,7 @@ async def generate_roadmap_with_llm_stream(title: str):
 
         async for chunk in llm.astream(messages):
             chunk_count += 1
-            content = chunk.content
+            content = chunk if isinstance(chunk, str) else chunk.text()
 
             if content:
                 complete_response += str(content)

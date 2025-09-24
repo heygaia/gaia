@@ -297,13 +297,11 @@ async def execute_workflow_as_chat(workflow, user: dict, context: dict) -> list:
         )
 
         # Execute using the same logic as normal chat
-        complete_message, tool_data = await call_agent_silent(
+        complete_message, tool_data, _ = await call_agent_silent(
             request=request,
             conversation_id=conversation["conversation_id"],
             user=user_data,
             user_time=user_time,
-            access_token=access_token,
-            refresh_token=refresh_token,
             user_model_config=user_model_config,
             trigger_context=context,
         )

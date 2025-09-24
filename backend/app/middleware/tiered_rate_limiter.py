@@ -13,26 +13,31 @@ Usage:
 
 import asyncio
 from datetime import datetime, timezone
-from typing import Dict, Callable, Optional
 from functools import wraps
+from typing import Callable, Dict, List, Optional
 
 import redis.asyncio as redis
-from fastapi import HTTPException
-from pydantic import BaseModel
-
-from app.db.redis import redis_cache
-from app.models.payment_models import PlanType
-from app.services.payment_service import payment_service
+from app.config.loggers import app_logger as logger
 from app.config.rate_limits import (
+    FEATURE_LIMITS,
     RateLimitPeriod,
+    get_feature_info,
     get_limits_for_plan,
     get_reset_time,
     get_time_window_key,
-    get_feature_info,
-    FEATURE_LIMITS,
 )
-from app.models.usage_models import UserUsageSnapshot, FeatureUsage, UsagePeriod
-from app.db.mongodb.collections import usage_snapshots_collection
+from app.db.redis import redis_cache
+from app.models.payment_models import PlanType
+from app.models.usage_models import (
+    CreditUsage,
+    FeatureUsage,
+    UsagePeriod,
+    UserUsageSnapshot,
+)
+from app.services.payment_service import payment_service
+from app.services.usage_service import UsageService
+from fastapi import HTTPException
+from pydantic import BaseModel
 
 
 class UsageInfo(BaseModel):
@@ -79,7 +84,11 @@ class TieredRateLimiter:
         return int((reset_time - datetime.now(timezone.utc)).total_seconds())
 
     async def check_and_increment(
-        self, user_id: str, feature_key: str, user_plan: PlanType, tokens_used: int = 0
+        self,
+        user_id: str,
+        feature_key: str,
+        user_plan: PlanType,
+        credits_used: float = 0.0,
     ) -> Dict[str, UsageInfo]:
         current_limits = get_limits_for_plan(feature_key, user_plan)
         usage_info = {}
@@ -102,15 +111,6 @@ class TieredRateLimiter:
                 plan_required = "pro" if user_plan == PlanType.FREE else None
                 raise RateLimitExceededException(feature_key, plan_required, reset_time)
 
-        # Token usage check
-        if tokens_used > 0:
-            token_limit = current_limits.tokens_per_request
-            if token_limit > 0 and tokens_used > token_limit:
-                plan_required = "pro" if user_plan == PlanType.FREE else None
-                raise RateLimitExceededException(
-                    f"{feature_key} (token limit)", plan_required, None
-                )
-
         # Increment usage atomically
         for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
             limit = getattr(current_limits, period.value)
@@ -121,6 +121,8 @@ class TieredRateLimiter:
             ttl = self._get_ttl(period)
 
             # Use Redis pipeline with WATCH for atomic check-and-increment
+            if not self.redis.redis:
+                raise Exception("Redis connection not available")
             async with self.redis.redis.pipeline() as pipe:
                 while True:
                     try:
@@ -153,7 +155,14 @@ class TieredRateLimiter:
                         continue
 
         # Real-time usage sync after rate limit usage
-        asyncio.create_task(self._sync_usage_real_time(user_id, feature_key, user_plan))
+        asyncio.create_task(
+            self._sync_usage_real_time(
+                user_id=user_id,
+                feature_key=feature_key,
+                user_plan=user_plan,
+                credits_used=credits_used,
+            )
+        )
 
         return usage_info
 
@@ -180,54 +189,35 @@ class TieredRateLimiter:
         return usage_info
 
     async def _sync_usage_real_time(
-        self, user_id: str, feature_key: str, user_plan: PlanType
+        self,
+        user_id: str,
+        feature_key: str,
+        user_plan: PlanType,
+        credits_used: float = 0.0,
     ) -> None:
         """
         Sync usage data to database in real-time after rate limit usage.
         Runs asynchronously to avoid blocking the main request.
         Creates comprehensive snapshot with ALL features that have usage data.
+        Tracks credits used for billing purposes.
         """
         try:
-            # Get current usage for ALL features that have been used
-            all_feature_usage = []
+            # Get feature usage
+            all_feature_usage = await self._collect_feature_usage(user_id, user_plan)
 
-            # Iterate through all possible features to build comprehensive snapshot
-            for check_feature_key in FEATURE_LIMITS:
-                current_limits = get_limits_for_plan(check_feature_key, user_plan)
-                feature_has_usage = False
-                feature_usage_list = []
+            # Create credit usage object if credits were used
+            credit_usage_list = []
+            if credits_used > 0:
+                credit_usage = CreditUsage(
+                    credits_used=credits_used,
+                    period=UsagePeriod.MONTH,
+                    reset_time=get_reset_time(RateLimitPeriod.MONTH),
+                )
+                credit_usage_list.append(credit_usage)
 
-                for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
-                    limit = getattr(current_limits, period.value)
-                    if limit <= 0:
-                        continue
-
-                    redis_key = self._get_redis_key(user_id, check_feature_key, period)
-                    current_usage = await self.redis.get(redis_key)
-                    current_usage = int(current_usage) if current_usage else 0
-
-                    # Only include features that have been used (current_usage > 0)
-                    if current_usage > 0:
-                        feature_has_usage = True
-                        reset_time = get_reset_time(period)
-
-                        feature_info = get_feature_info(check_feature_key)
-                        feature_usage = FeatureUsage(
-                            feature_key=check_feature_key,
-                            feature_title=feature_info["title"],
-                            period=UsagePeriod(period.value),
-                            used=current_usage,
-                            limit=limit,
-                            reset_time=reset_time,
-                        )
-                        feature_usage_list.append(feature_usage)
-
-                # Add this feature's usage if it has any
-                if feature_has_usage:
-                    all_feature_usage.extend(feature_usage_list)
-
-            if all_feature_usage:
+            if all_feature_usage or credit_usage_list:
                 # Create and save comprehensive usage snapshot
+
                 snapshot = UserUsageSnapshot(
                     user_id=user_id,
                     plan_type=(
@@ -236,25 +226,78 @@ class TieredRateLimiter:
                         else str(user_plan)
                     ),
                     features=all_feature_usage,
+                    credits=credit_usage_list,  # Add credits to snapshot
                 )
 
-                snapshot_dict = snapshot.model_dump()
-                await usage_snapshots_collection.insert_one(snapshot_dict)
+                await UsageService.save_usage_snapshot(snapshot)
 
         except Exception as e:
             # Log error but don't raise - this shouldn't break the main request
-            from app.config.loggers import app_logger
-
-            app_logger.error(
+            logger.error(
                 f"Real-time usage sync failed for user {user_id}, feature {feature_key}: {str(e)}"
             )
+
+    async def _collect_feature_usage(
+        self, user_id: str, user_plan: PlanType
+    ) -> List[FeatureUsage]:
+        """Collect feature usage data in parallel."""
+        all_feature_usage = []
+
+        # Collect all Redis keys to fetch in parallel
+        redis_tasks = []
+        feature_configs = []
+
+        for check_feature_key in FEATURE_LIMITS:
+            current_limits = get_limits_for_plan(check_feature_key, user_plan)
+
+            for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
+                limit = getattr(current_limits, period.value)
+                if limit <= 0:
+                    continue
+
+                redis_key = self._get_redis_key(user_id, check_feature_key, period)
+                redis_tasks.append(self.redis.get(redis_key))
+                feature_configs.append((check_feature_key, period, limit))
+
+        # Fetch all Redis values in parallel
+        if redis_tasks:
+            usage_values = await asyncio.gather(*redis_tasks, return_exceptions=True)
+
+            # Process results
+            for i, (check_feature_key, period, limit) in enumerate(feature_configs):
+                raw_usage = usage_values[i]
+                if isinstance(raw_usage, Exception):
+                    continue
+
+                # Safe type conversion
+                current_usage = 0
+                if raw_usage is not None and not isinstance(raw_usage, Exception):
+                    try:
+                        current_usage = int(str(raw_usage)) if raw_usage else 0
+                    except (ValueError, TypeError):
+                        current_usage = 0
+
+                if current_usage > 0:
+                    reset_time = get_reset_time(period)
+                    feature_info = get_feature_info(check_feature_key)
+                    feature_usage = FeatureUsage(
+                        feature_key=check_feature_key,
+                        feature_title=feature_info["title"],
+                        period=UsagePeriod(period.value),
+                        used=current_usage,
+                        limit=limit,
+                        reset_time=reset_time,
+                    )
+                    all_feature_usage.append(feature_usage)
+
+        return all_feature_usage
 
 
 # Global rate limiter instance
 tiered_limiter = TieredRateLimiter()
 
 
-def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
+def tiered_rate_limit(feature_key: str):
     """Rate limiting decorator for API endpoints."""
 
     def decorator(func: Callable) -> Callable:
@@ -286,27 +329,10 @@ def tiered_rate_limit(feature_key: str, count_tokens: bool = False):
                 user_id=user_id,
                 feature_key=feature_key,
                 user_plan=user_plan,
-                tokens_used=0,  # Will be handled post-execution if count_tokens=True
             )
 
             # Execute the original function
             result = await func(*args, **kwargs)
-
-            # Handle token counting post-execution
-            if count_tokens and isinstance(result, dict):
-                tokens_used = result.get("tokens_used", 0)
-                if tokens_used > 0:
-                    # Validate token limits
-                    current_limits = get_limits_for_plan(feature_key, user_plan)
-                    if (
-                        current_limits.tokens_per_request > 0
-                        and tokens_used > current_limits.tokens_per_request
-                    ):
-                        plan_required = "pro" if user_plan == PlanType.FREE else None
-                        raise RateLimitExceededException(
-                            f"{feature_key} (token limit)", plan_required
-                        )
-
             return result
 
         # Store metadata for usage tracking

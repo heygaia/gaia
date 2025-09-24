@@ -38,7 +38,7 @@ const ListItem = React.forwardRef<
       <Component
         ref={ref}
         className={cn(
-          "flex h-full min-h-20 w-full flex-col justify-start rounded-xl bg-[#101112] p-4 leading-none no-underline transition-all duration-150 select-none hover:bg-[#191a1b] hover:text-zinc-100 focus:bg-zinc-800 focus:text-zinc-100",
+          "flex h-full min-h-20 w-full flex-col justify-start rounded-xl bg-gradient-to-b outline-zinc-800/50 outline-1 from-zinc-900 to-[#101112] p-4 leading-none no-underline transition-all duration-150 select-none hover:bg-[#191a1b] hover:text-zinc-100 focus:bg-zinc-800 focus:text-zinc-100",
           className,
         )}
         {...linkProps}
@@ -88,7 +88,7 @@ export function NavbarMenu({ activeMenu, onClose }: NavbarMenuProps) {
   const links = getMenuLinks();
 
   return (
-    <div className="animate-in fade-in-0 slide-in-from-top-1 absolute top-full left-0 z-40 w-full rounded-b-2xl border-t-0 border-[#ffffff26] bg-[#08090A] shadow-2xl backdrop-blur-xl duration-200">
+    <div className="animate-in fade-in-0 slide-in-from-top-1 absolute top-full left-0 z-40 w-full rounded-b-2xl border-t-0 border-[#ffffff26] from-[#08090A] to-zinc-900 bg-gradient-to-b shadow-2xl backdrop-blur-xl duration-200">
       <div className="p-6">
         {activeMenu === "product" && (
           <div className="grid w-full grid-cols-2 grid-rows-2 gap-4">

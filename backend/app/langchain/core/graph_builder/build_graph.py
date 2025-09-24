@@ -1,8 +1,10 @@
 from contextlib import asynccontextmanager
 from typing import Optional
 
+from app.config.loggers import app_logger as logger
+from app.core.lazy_loader import MissingKeyStrategy, lazy_provider
 from app.langchain.core.graph_builder.checkpointer_manager import (
-    checkpointer_manager,
+    get_checkpointer_manager,
 )
 from app.langchain.core.nodes import (
     create_delete_system_messages_node,
@@ -19,8 +21,6 @@ from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.language_models import LanguageModelLike
 from langgraph.checkpoint.memory import InMemorySaver
 
-llm = init_llm()
-
 
 @asynccontextmanager
 async def build_graph(
@@ -31,14 +31,17 @@ async def build_graph(
     # Lazy import to avoid circular dependency
     from app.langchain.tools.core.registry import tool_registry
 
-    store = get_tools_store()
-    effective_llm = chat_llm if chat_llm else llm
+    # Get default LLM if none provided
+    if chat_llm is None:
+        chat_llm = init_llm()
 
-    sub_agents = ProviderSubAgents.get_all_subagents(effective_llm)
+    store = get_tools_store()
+
+    sub_agents = ProviderSubAgents.get_all_subagents(chat_llm)
 
     # Create main agent with custom tool retrieval logic
     builder = create_agent(
-        llm=effective_llm,
+        llm=chat_llm,
         agent_name="main_agent",
         tool_registry=tool_registry.get_tool_registry(),
         retrieve_tools_function=get_retrieve_tools_function(tool_space="general"),
@@ -57,8 +60,11 @@ async def build_graph(
         ],
     )
 
-    if in_memory_checkpointer:
-        # Use in-memory checkpointer for testing or simple use cases
+    checkpointer_manager = await get_checkpointer_manager()
+
+    if (
+        in_memory_checkpointer or not checkpointer_manager
+    ):  # Use in-memory checkpointer for testing or simple use cases
         in_memory_checkpointer_instance = InMemorySaver()
         # Setup the checkpointer
         graph = builder.compile(
@@ -66,10 +72,26 @@ async def build_graph(
             checkpointer=in_memory_checkpointer_instance,
             store=store,
         )
-        print(graph.get_graph().draw_mermaid())
+        logger.debug("Graph compiled with in-memory checkpointer")
         yield graph
     else:
         postgres_checkpointer = checkpointer_manager.get_checkpointer()
         graph = builder.compile(checkpointer=postgres_checkpointer, store=store)
-        print(graph.get_graph().draw_mermaid())
+        logger.debug("Graph compiled with PostgreSQL checkpointer")
         yield graph
+
+
+@lazy_provider(
+    name="default_graph",
+    required_keys=[],  # No specific keys required since dependencies are handled by sub-providers
+    strategy=MissingKeyStrategy.WARN,
+    auto_initialize=False,
+)
+async def build_default_graph():
+    """Build and return the default graph using lazy providers."""
+    logger.debug("Building default graph with lazy providers")
+
+    # Build the graph using the existing function
+    async with build_graph() as graph:
+        logger.info("Default graph built successfully")
+        return graph

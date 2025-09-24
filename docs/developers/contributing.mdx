@@ -13,8 +13,8 @@ Thank you for your interest in contributing to GAIA! We're excited to have you j
 Before making your first contribution, please:
 
 1. **Read our [Code of Conduct](https://github.com/heygaia/gaia/blob/master/CODE_OF_CONDUCT.md)**
-2. **Set up your development environment** using our [Development Setup Guide](/developers/development-setup)
-3. **Explore the codebase** to understand the architecture and patterns we use
+2. [Set up your development environment](/developers/development-setup)
+3. Explore the codebase
 
 ## Ways to Contribute
 
@@ -41,8 +41,6 @@ Before making your first contribution, please:
 
     ```bash
     git clone https://github.com/YOUR_USERNAME/gaia.git
-    cd gaia
-    git remote add upstream https://github.com/heygaia/gaia.git
     ```
   </Step>
 
@@ -51,8 +49,6 @@ Before making your first contribution, please:
 
     ```bash
     git checkout -b feature/your-feature-name
-    # or
-    git checkout -b fix/bug-description
     ```
   </Step>
 
@@ -60,172 +56,20 @@ Before making your first contribution, please:
     Make your changes following our coding standards and best practices.
   </Step>
 
-  <Step title="Test Your Changes">
-    Run the test suite to ensure your changes don't break anything:
-
-    ```bash
-    # Backend tests
-    cd backend && uv run pytest
-
-    # Frontend tests
-    cd frontend && pnpm test
-
-    # Linting
-    cd backend && uvx ruff check
-    cd frontend && pnpm lint
-    ```
-  </Step>
-
   <Step title="Commit & Push">
-    Commit your changes with a descriptive message:
+    Commit your changes with a descriptive message following our [conventional commits](/configuration/conventional-commits) format:
 
     ```bash
     git add .
-    git commit -m "feat: add new AI capability for task management"
-    git push origin feature/your-feature-name
+    git commit -m "feat: your commit message"
+    git push origin your-branch-name
     ```
   </Step>
 
   <Step title="Create Pull Request">
-    Open a pull request on GitHub with a clear description of your changes.
+    Open a [pull request on GitHub](https://github.com/heygaia/gaia/pulls) with a clear description of your changes.
   </Step>
 </Steps>
-
-## Coding Standards
-
-### Python Backend
-
-<AccordionGroup>
-  <Accordion icon="python" title="Code Style">
-    - Follow [PEP 8](https://peps.python.org/pep-0008/) for Python code style
-    - Use type hints for all function parameters and return values
-    - Include comprehensive docstrings for all modules, classes, and functions
-    - Run `uvx ruff check` before committing to ensure code quality
-  </Accordion>
-
-  <Accordion icon="code" title="Architecture Patterns">
-    **Route Handlers** should be thin wrappers:
-    ```python
-    @router.post("/resource", response_model=ResourceResponse)
-    async def create_resource_endpoint(
-        resource: ResourceModel,
-        user: dict = Depends(get_current_user)
-    ):
-        """Create a new resource."""
-        return await create_resource(resource, user["user_id"])
-    ```
-
-    **Service Functions** contain business logic:
-    ```python
-    async def create_resource(resource: ResourceModel, user_id: str) -> ResourceResponse:
-        """Create a new resource in the database."""
-        # Implementation here
-    ```
-  </Accordion>
-</AccordionGroup>
-
-### Frontend (Next.js/React)
-
-<AccordionGroup>
-  <Accordion icon="react" title="Component Standards">
-    - Use TypeScript for all components
-    - Follow React best practices and hooks patterns
-    - Use Tailwind CSS for styling
-    - Implement proper error boundaries
-  </Accordion>
-
-  <Accordion icon="folder" title="File Organization">
-    ```
-    src/
-    ├── components/       # Reusable UI components
-    ├── features/        # Feature-specific components
-    ├── hooks/           # Custom React hooks
-    ├── lib/             # Utility functions
-    ├── services/        # API service functions
-    └── types/           # TypeScript type definitions
-    ```
-  </Accordion>
-</AccordionGroup>
-
-## Commit Message Guidelines
-
-We follow the [Conventional Commits](https://conventionalcommits.org/) specification:
-
-```
-<type>[optional scope]: <description>
-
-[optional body]
-
-[optional footer(s)]
-```
-
-### Types:
-- **feat**: A new feature
-- **fix**: A bug fix
-- **docs**: Documentation only changes
-- **style**: Changes that do not affect the meaning of the code
-- **refactor**: A code change that neither fixes a bug nor adds a feature
-- **test**: Adding missing tests or correcting existing tests
-- **chore**: Changes to the build process or auxiliary tools
-
-### Examples:
-```bash
-feat(ai): add new conversation memory system
-fix(auth): resolve token expiration issue
-docs(setup): update development environment guide
-test(api): add unit tests for user service
-```
-
-## Pull Request Guidelines
-
-### Before Submitting
-
-- [ ] Code follows our style guidelines
-- [ ] Tests pass locally
-- [ ] Documentation is updated if needed
-- [ ] Commit messages follow our convention
-- [ ] No merge conflicts with main branch
-
-### PR Description Template
-
-```markdown
-## Description
-Brief description of what this PR does.
-
-## Type of Change
-- [ ] Bug fix (non-breaking change which fixes an issue)
-- [ ] New feature (non-breaking change which adds functionality)
-- [ ] Breaking change (fix or feature that would cause existing functionality to not work as expected)
-- [ ] Documentation update
-
-## Testing
-- [ ] I have added tests that prove my fix is effective or that my feature works
-- [ ] New and existing unit tests pass locally with my changes
-
-## Screenshots (if applicable)
-Include screenshots or GIFs showing the changes.
-```
-
-## Code Review Process
-
-1. **Automated Checks**: CI/CD pipeline runs tests and linting
-2. **Maintainer Review**: Core team members review code quality and design
-3. **Community Feedback**: Other contributors may provide input
-4. **Approval & Merge**: Once approved, changes are merged to main
-
-## Development Tips
-
-<Tip>
-  **Start Small**: Begin with small contributions like documentation improvements or bug fixes to get familiar with our workflow.
-</Tip>
-
-<Tip>
-  **Ask Questions**: Join our [Discord](https://discord.heygaia.io) if you need help or have questions about contributing.
-</Tip>
-
-<Tip>
-  **Stay Updated**: Regularly sync your fork with the upstream repository to avoid conflicts.
-</Tip>
 
 ## Recognition
 

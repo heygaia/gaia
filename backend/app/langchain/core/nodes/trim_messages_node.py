@@ -50,7 +50,6 @@ def trim_messages_node(state: State, config: RunnableConfig, store: BaseStore) -
         model_configurations = config.get("configurable", {}).get(
             "model_configurations", {}
         )
-        model_name = model_configurations.get("model_name", "gpt-4o-mini")
         provider = model_configurations.get("provider", None)
         max_tokens = model_configurations.get("max_tokens", None)
 
@@ -61,7 +60,7 @@ def trim_messages_node(state: State, config: RunnableConfig, store: BaseStore) -
             include_system=False,  # Preserve system messages
             max_tokens=max_tokens,
             allow_partial=True,  # Allow partial message trimming
-            token_counter=get_token_counter(provider, model_name),
+            token_counter=get_token_counter(provider),
         )
 
         return {**state, "messages": trimmed_messages}

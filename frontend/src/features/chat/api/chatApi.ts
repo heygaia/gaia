@@ -75,7 +75,6 @@ export const chatApi = {
     formData.append("file", file);
 
     return apiService.post<FileUploadResponse>("/upload", formData, {
-      successMessage: "File uploaded successfully",
       errorMessage: "Failed to upload file",
     });
   },

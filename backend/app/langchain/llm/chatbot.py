@@ -1,10 +1,7 @@
-from langchain_core.messages import AIMessage
-
 from app.config.loggers import chat_logger as logger
 from app.langchain.core.state import State
 from app.langchain.llm.client import init_llm
-
-llm = init_llm()
+from langchain_core.messages import AIMessage
 
 
 async def chatbot(
@@ -12,6 +9,8 @@ async def chatbot(
 ):
     """Chatbot function that uses the state graph and model."""
     try:
+        llm = init_llm()
+
         response = await llm.ainvoke(state.messages)
 
         return {"messages": [response]}

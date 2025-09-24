@@ -54,7 +54,7 @@ class WorkflowGenerationService:
             trigger_context = generate_trigger_context(trigger_config)
 
             # Initialize LLM
-            llm = init_llm(streaming=False)
+            llm = init_llm()
 
             # Create chain using the template
             chain = WORKFLOW_GENERATION_TEMPLATE | llm | parser

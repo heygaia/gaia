@@ -72,7 +72,13 @@ const SplitTextBlur = ({
       animate={isVisible ? "visible" : "hidden"}
       variants={containerVariants}
       className={cn(className)}
-      style={{ willChange: "transform, opacity, filter" }}
+      style={{
+        willChange: "transform, opacity, filter",
+        background: "linear-gradient(to bottom, #a3a3a3, #ffffff)",
+        WebkitBackgroundClip: "text",
+        WebkitTextFillColor: "transparent",
+        backgroundClip: "text"
+      }}
     >
       {words.map((word, index) => (
         <motion.span
@@ -82,6 +88,11 @@ const SplitTextBlur = ({
             willChange: "transform, opacity, filter",
             display: "inline-block",
             marginRight: index < words.length - 1 ? "0.25em" : "0",
+            background: "inherit",
+            WebkitBackgroundClip: "inherit",
+            WebkitTextFillColor: "inherit",
+            backgroundClip: "inherit",
+            paddingBottom: "7px"
           }}
         >
           {word}
@@ -96,7 +107,7 @@ const HeroText = () => {
   return (
     <SplitTextBlur
       text="Meet the AI assistant that actually works"
-      className="max-w-(--breakpoint-md) py-3 text-center font-inter text-[5.13rem] font-medium text-white sm:text-7xl"
+      className="max-w-(--breakpoint-md) py-3 text-center font-inter text-[5.13rem] font-medium sm:text-7xl"
       delay={1}
       staggerDelay={0.1}
       springConfig={{

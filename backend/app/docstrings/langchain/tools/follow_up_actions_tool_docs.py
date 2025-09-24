@@ -84,5 +84,7 @@ Ask yourself: "Would I genuinely click on these actions if I were the user right
 
 {format_instructions}
 
+Available tools: {tool_names}
+
 Context: {conversation_summary}
 """
