@@ -1,5 +1,4 @@
 import { Spinner } from "@heroui/spinner";
-import Image from "next/image";
 import { useParams, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -104,9 +103,10 @@ export default function ChatRenderer() {
   return (
     <>
       <title id="chat_title">
-        {`${conversations.find((convo) => convo.conversation_id === convoIdParam)
-          ?.description || "New chat"
-          } | GAIA`}
+        {`${
+          conversations.find((convo) => convo.conversation_id === convoIdParam)
+            ?.description || "New chat"
+        } | GAIA`}
       </title>
 
       <GeneratedImageSheet
@@ -121,37 +121,32 @@ export default function ChatRenderer() {
       />
 
       <SearchedImageDialog />
-
       <CreatedByGAIABanner show={conversation?.is_system_generated === true} />
 
       {filteredMessages?.map((message: MessageType, index: number) => {
         let messageProps = null;
 
-        if (message.type === "bot") {
+        if (message.type === "bot")
           messageProps = getMessageProps(message, "bot", messagePropsOptions);
-        } else if (message.type === "user") {
+        else if (message.type === "user")
           messageProps = getMessageProps(message, "user", messagePropsOptions);
-        }
 
-        if (!messageProps) {
-          return null; // Skip rendering if messageProps is null
-        }
+        if (!messageProps) return null; // Skip rendering if messageProps is null
 
         if (
           message.type === "bot" &&
           !isBotMessageEmpty(messageProps as ChatBubbleBotProps)
-        ) {
+        )
           return (
             <div
               key={message.message_id || index}
-              className="relative flex items-end gap-1 pt-1 pb-5 pl-1"
+              className="relative flex items-end gap-1 pt-1 pl-1"
             >
               <ChatBubbleBot
                 {...getMessageProps(message, "bot", messagePropsOptions)}
               />
             </div>
           );
-        }
 
         return (
           <ChatBubbleUser key={message.message_id || index} {...messageProps} />
