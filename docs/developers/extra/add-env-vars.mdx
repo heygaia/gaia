@@ -1,5 +1,5 @@
 ---
-title: "Add a new environment variable"
+title: "Add a new Env. Variable"
 description: "Backend settings, validation, and frontend env usage"
 icon: "key"
 ---
@@ -44,19 +44,6 @@ from app.config.settings import settings
 )
 def create_my_api_client():
   ...
-```
-
-### Frontend: add only if necessary
-- Prefer using existing `NEXT_PUBLIC_API_BASE_URL`.
-- If you must add one: define `NEXT_PUBLIC_MY_SETTING` and read via `process.env.NEXT_PUBLIC_MY_SETTING`.
-- Keep validation centralized in modules that use it; avoid scattering checks.
-
-Validated base URL example:
-```ts
-// frontend/src/lib/api/client.ts
-if (!process.env.NEXT_PUBLIC_API_BASE_URL) {
-  throw new Error("Missing required environment variable: NEXT_PUBLIC_API_BASE_URL");
-}
 ```
 
 Keep it minimal for local dev—add keys as you enable features.
