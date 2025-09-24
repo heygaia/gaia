@@ -34,19 +34,21 @@ export const ChatWithMessages: React.FC<ChatWithMessagesProps> = ({
   dragHandlers,
   composerProps,
 }) => {
+
   return (
-    <div
-      ref={scrollContainerRef}
-      className="h-full overflow-y-auto"
-      onScroll={handleScroll}
-      {...dragHandlers}
-    >
-      {/* Chat interface - no snap scrolling when there are messages */}
-      <div className="relative flex h-full flex-col">
+    <div className="flex h-full flex-col">
+      {/* Scrollable chat content */}
+      <div
+        ref={scrollContainerRef}
+        className="flex-1 overflow-y-auto"
+        onScroll={handleScroll}
+        {...dragHandlers}
+      >
         <ChatSection chatRef={chatRef} />
-        <div className="flex-shrink-0 pb-2">
-          <Composer {...composerProps} />
-        </div>
+      </div>
+      {/* Fixed composer at bottom */}
+      <div className="flex-shrink-0 pb-2">
+        <Composer {...composerProps} />
       </div>
     </div>
   );

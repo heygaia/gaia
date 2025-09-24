@@ -1,16 +1,15 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { ChevronUp, Plus, User } from "lucide-react";
-import Image from "next/image";
+import { ChevronUp, Plus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
 
 import { CommunityWorkflow, workflowApi } from "../api/workflowApi";
+import BaseWorkflowCard from "./shared/BaseWorkflowCard";
 
 interface CommunityWorkflowCardProps {
   workflow: CommunityWorkflow;
@@ -142,117 +141,48 @@ export default function CommunityWorkflowCard({
     };
   }, []);
 
-  return (
-    <div className="group relative flex min-h-[300px] w-full flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300">
-      {/* Header with tool icons and creator info */}
-      <div className="mb-3 flex items-start justify-between">
-        <div className="flex items-center gap-2">
-          {(() => {
-            const categories = [
-              ...new Set(
-                localWorkflow.steps.map(
-                  (step: { tool_category: string }) => step.tool_category,
-                ),
-              ),
-            ];
-            const validIcons = categories
-              .slice(0, 3)
-              .map((category) => {
-                const IconComponent = getToolCategoryIcon(category as string, {
-                  width: 25,
-                  height: 25,
-                });
-                return IconComponent ? (
-                  <div
-                    key={category as string}
-                    className="flex items-center justify-center"
-                  >
-                    {IconComponent}
-                  </div>
-                ) : null;
-              })
-              .filter(Boolean);
+  const footerContent = (
+    <div className="flex w-full items-center gap-3">
+      <Button
+        color="default"
+        size="sm"
+        startContent={<Plus width={16} height={16} />}
+        className="flex-1"
+        isLoading={isCreatingWorkflow}
+        onPress={handleCreateWorkflow}
+      >
+        Create Workflow
+      </Button>
 
-            return validIcons.length > 0 ? validIcons : null;
-          })()}
-          {[
-            ...new Set(
-              localWorkflow.steps.map(
-                (step: { tool_category: string }) => step.tool_category,
-              ),
-            ),
-          ].length > 3 && (
-            <div className="flex h-[25px] w-[25px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
-              +
-              {[
-                ...new Set(
-                  localWorkflow.steps.map(
-                    (step: { tool_category: string }) => step.tool_category,
-                  ),
-                ),
-              ].length - 3}
-            </div>
-          )}
-        </div>
-      </div>
-
-      <h3 className="text-xl font-medium">{localWorkflow.title}</h3>
-      <div className="mb-4 line-clamp-3 flex-1 text-sm text-foreground-500">
-        {localWorkflow.description}
-      </div>
-
-      {/* Creator info */}
-      <div className="mb-4 flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full">
-          {localWorkflow.creator.avatar ? (
-            <Image
-              src={localWorkflow.creator.avatar}
-              alt={localWorkflow.creator.name}
-              width={27}
-              height={27}
-              className="rounded-full"
-            />
-          ) : (
-            <User className="h-4 w-4 text-zinc-400" />
-          )}
-        </div>
-        <div className="flex min-w-0 flex-1 flex-col">
-          <p className="truncate text-xs font-medium text-zinc-400">
-            {localWorkflow.creator.name}
-          </p>
-        </div>
-      </div>
-
-      {/* Actions */}
-      <div className="flex w-full items-center gap-3">
-        <Button
-          color="default"
-          size="sm"
-          startContent={<Plus width={16} height={16} />}
-          className="flex-1"
-          isLoading={isCreatingWorkflow}
-          onPress={handleCreateWorkflow}
+      <Button
+        variant={localWorkflow.is_upvoted ? "solid" : "flat"}
+        color={localWorkflow.is_upvoted ? "primary" : "default"}
+        size="sm"
+        isIconOnly
+        isLoading={isUpvoting}
+        onPress={handleUpvote}
+        className={`flex flex-shrink-0 flex-col`}
+      >
+        <ChevronUp width={50} height={50} />
+        <span
+          className={`min-w-0 text-xs font-bold ${localWorkflow.is_upvoted ? "text-black" : "text-zinc-500"}`}
         >
-          Create Workflow
-        </Button>
-
-        <Button
-          variant={localWorkflow.is_upvoted ? "solid" : "flat"}
-          color={localWorkflow.is_upvoted ? "primary" : "default"}
-          size="sm"
-          isIconOnly
-          isLoading={isUpvoting}
-          onPress={handleUpvote}
-          className={`flex flex-shrink-0 flex-col`}
-        >
-          <ChevronUp width={50} height={50} />
-          <span
-            className={`min-w-0 text-xs font-bold ${localWorkflow.is_upvoted ? "text-black" : "text-zinc-500"}`}
-          >
-            {localWorkflow.upvotes}
-          </span>
-        </Button>
-      </div>
+          {localWorkflow.upvotes}
+        </span>
+      </Button>
     </div>
+  );
+
+  return (
+    <BaseWorkflowCard
+      title={localWorkflow.title}
+      description={localWorkflow.description}
+      steps={localWorkflow.steps}
+      creator={{
+        name: localWorkflow.creator.name,
+        avatar: localWorkflow.creator.avatar,
+      }}
+      footerContent={footerContent}
+    />
   );
 }

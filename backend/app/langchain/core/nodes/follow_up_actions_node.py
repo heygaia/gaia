@@ -35,21 +35,6 @@ async def follow_up_actions_node(
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
-    PROBLEM SOLVED:
-    ==============
-    LangGraph was automatically streaming our follow-up actions LLM call along with
-    the main agent response, causing unwanted mixed output. We needed the follow-up
-    actions to be generated silently and streamed separately with controlled timing.
-
-    THREADING SOLUTION:
-    ==================
-    Using run_in_executor() executes the LLM call in an isolated thread where
-    LangGraph cannot detect it. This prevents automatic streaming while allowing
-    us to manually stream the results when we want using get_stream_writer().
-
-    The key insight: LangGraph only monitors LLM calls in the main async thread context.
-    Thread pool workers are invisible to this monitoring system.
-
     Args:
         state: The current state of the conversation
 
@@ -86,8 +71,10 @@ async def follow_up_actions_node(
         )
         actions = parser.parse(result if isinstance(result, str) else result.text())
 
-        writer = get_stream_writer()
-        writer({"follow_up_actions": actions.actions})
+        # Only stream follow-up actions if there are any to show
+        if actions.actions and len(actions.actions) > 0:
+            writer = get_stream_writer()
+            writer({"follow_up_actions": actions.actions})
 
         return state
 

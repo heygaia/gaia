@@ -41,14 +41,14 @@ When commits with releasable changes (`feat`, `fix`, `deps`) are pushed to maste
 
 Release PRs have status labels:
 
-<CardGroup cols={3}>
-  <Card title="Pending" icon="clock">
+<CardGroup cols={1}>
+  <Card title="Pending" icon="clock" horizontal>
     `autorelease: pending` - PR is ready for review/merge
   </Card>
-  <Card title="Tagged" icon="tag">
+  <Card title="Tagged" icon="tag" horizontal>
     `autorelease: tagged` - PR merged, release tagged
   </Card>
-  <Card title="Published" icon="check">
+  <Card title="Published" icon="check" horizontal>
     `autorelease: published` - GitHub release published
   </Card>
 </CardGroup>

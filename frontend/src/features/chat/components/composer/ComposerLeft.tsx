@@ -1,9 +1,13 @@
 import { Kbd } from "@heroui/react";
 import { Tooltip } from "@heroui/tooltip";
-import { Check, WrenchIcon } from "lucide-react";
+import { Check } from "lucide-react";
 import React from "react";
 
-import { AttachmentIcon, PlusSignIcon } from "@/components/shared/icons";
+import {
+  AttachmentIcon,
+  PlusSignIcon,
+  ToolIcon,
+} from "@/components/shared/icons";
 import { Button } from "@/components/ui/shadcn/button";
 import {
   DropdownMenu,
@@ -184,10 +188,7 @@ export default function ComposerLeft({
             disabled={isLoading}
             onClick={onOpenSlashCommandDropdown}
           >
-            <WrenchIcon
-              className="min-h-[20px] min-w-[20px]"
-              color={undefined}
-            />
+            <ToolIcon className="min-h-[20px] min-w-[20px]" color={undefined} />
             {isSlashCommandDropdownOpen && (
               <span
                 className="absolute top-0 right-0 h-2 w-2 rounded-full bg-primary transition"

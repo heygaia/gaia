@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Bell, Info } from "lucide-react";
 import Image from "next/image";
 
 import {
@@ -127,6 +127,31 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="/images/icons/notion.webp"
+        />
+      );
+    case "twitter":
+      return (
+        <Image
+          alt={`${category} Icon`}
+          {...defaultProps}
+          className={`${iconProps.className} aspect-square object-contain`}
+          src="https://upload.wikimedia.org/wikipedia/commons/c/ce/X_logo_2023.svg"
+        />
+      );
+    case "linkedin":
+      return (
+        <Image
+          alt={`${category} Icon`}
+          {...defaultProps}
+          className={`${iconProps.className} aspect-square object-contain`}
+          src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+        />
+      );
+    case "notifications":
+      return (
+        <Bell
+          {...defaultProps}
+          className={iconProps.className || "text-yellow-400"}
         />
       );
     case "webpage":

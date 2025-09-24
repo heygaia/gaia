@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import {
-  type UseCase,
   useCasesData,
+  type UseCase,
 } from "@/features/use-cases/constants/dummy-data";
 import { Workflow } from "@/features/workflows/api/workflowApi";
 import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";
@@ -18,8 +18,10 @@ gsap.registerPlugin(ScrollTrigger);
 
 export default function UseCaseSection({
   dummySectionRef,
+  hideUserWorkflows = false,
 }: {
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
+  hideUserWorkflows?: boolean;
 }) {
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
   const { workflows, isLoading: isLoadingWorkflows } = useWorkflows();
@@ -80,14 +82,16 @@ export default function UseCaseSection({
     "Business & Ops",
   ];
 
+  if (hideUserWorkflows) allCategories.splice(2, 1);
+
   const filteredUseCases =
     selectedCategory === null
       ? []
       : selectedCategory === "all"
         ? useCasesData
         : useCasesData.filter((useCase: UseCase) =>
-            useCase.categories?.includes(selectedCategory),
-          );
+          useCase.categories?.includes(selectedCategory),
+        );
 
   const handleCategoryClick = (category: string) => {
     const wasSelected = selectedCategory === category;
@@ -134,7 +138,7 @@ export default function UseCaseSection({
   }, []);
 
   return (
-    <div className="w-full max-w-7xl px-4 pt-10" ref={dummySectionRef}>
+    <div className="w-full max-w-7xl" ref={dummySectionRef}>
       <div className="mb-6 flex flex-wrap justify-center gap-2">
         {allCategories.map((category) => (
           <Chip

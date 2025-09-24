@@ -1,77 +1,90 @@
 SUGGEST_FOLLOW_UP_ACTIONS = """
-Based on the conversation so far, suggest 2-4 relevant follow-up actions that the user might want to do next.
+Based on the conversation, suggest 2-4 highly relevant follow-up actions the user might want to do next. If no genuinely useful actions exist, return an empty array.
 
-This tool provides contextual suggestions for what the user might want to do next,
-making the conversation flow more natural and productive.
+CORE PRINCIPLES:
+- Quality over quantity - only suggest truly useful actions
+- Actions must be concise, actionable commands (under 30 characters)
+- Actions should INITIATE processes, not request user input
+- Better to show nothing than irrelevant suggestions
+- Frequently choose NOT to stream actions - empty arrays are often the best user experience
 
-HOW FOLLOW-UP ACTIONS WORK:
-- Follow-up actions appear as clickable buttons/chips in the user interface
-- When a user clicks on a follow-up action, the EXACT text of that action is sent as their next message
-- The action text becomes the user's input, so it must be a complete, actionable request
-- These are NOT just descriptions or suggestions - they are actual commands the user will send
+HOW ACTIONS WORK:
+When clicked, the action text becomes the user's next message. Design actions to start a process:
+✓ User clicks "Create reminder" → You ask for details → User provides them
+✗ User clicks "Provide details" → Awkward, puts burden on user immediately
 
-CRITICAL INTERACTION FLOW:
-- User clicks action → Action text sent as user message → You respond → User can then provide more details
-- Actions should be INITIATING commands that start a process, not requests for the user to provide info
-- After you respond to an action, the user can naturally continue the conversation with additional details
+ACTION TYPES & EXAMPLES:
+- Process starters: "Create reminder", "Set timer", "Schedule meeting"
+- Data requests: "Show weather", "Get directions", "Check calendar"
+- Content generation: "Write email", "Create list", "Draft response"
+- Task continuation: "Add another", "Modify settings", "Export data"
+- Analysis actions: "Compare options", "Find patterns", "Generate report"
+- Creative extensions: "Try different style", "Create variation", "Expand idea"
 
-GOOD FLOW EXAMPLES:
-✓ User clicks "Create calendar event" → You ask for details → User provides details
-✓ User clicks "Set reminder" → You ask when/what for → User specifies
-✓ User clicks "Add to shopping list" → You ask what items → User lists items
+USER INTENT RECOGNITION:
+- Exploratory (browsing/learning) → suggest related discoveries
+- Goal-oriented (specific objective) → suggest task completion steps
+- Creative (generating content) → suggest variations/refinements
+- Problem-solving (needs solution) → suggest alternative approaches
+- Maintenance (managing items) → suggest organization/updates
 
-BAD FLOW EXAMPLES:
-✗ "Provide event details" (puts burden on user immediately, breaks flow)
-✗ "Tell me more" (too vague, user already expects you to act)
-✗ "Enter reminder text" (asking user to provide info rather than starting action)
+CONVERSATION FLOW ANALYSIS:
+- Rising engagement (questions getting specific) → suggest deeper tools
+- Plateau reached (user got what they needed) → lean toward empty array
+- Pivot signals ("Actually...", topic shifts) → suggest new directions
+- Completion signals ("Perfect", "Thanks", "Got it") → likely empty array
+- Continuation signals ("What about...", "Can we also...") → suggest extensions
 
-When to use:
-- After completing a task or providing information
-- When the response might lead to natural next steps
-- To guide users toward related functionality
-- To enhance user engagement and discoverability
+ACTION FREQUENCY & TIMING:
+- Don't suggest actions in consecutive responses unless highly relevant
+- After 3+ back-and-forth exchanges, be more selective
+- Early conversation: broader exploratory actions
+- Mid conversation: specific task-focused actions
+- Late conversation: completion/summary actions
 
-Input:
-- actions: Array of follow-up action suggestions (2-4 recommended)
+WHEN NOT TO SUGGEST (RETURN EMPTY ARRAY):
+- Conversation feels naturally concluded
+- User asked simple question that's been fully answered
+- Recent exchange was purely informational with no clear next steps
+- User seems satisfied/done with current topic
+- Actions would feel forced or interrupting
+- Conversation is winding down or transitional
+- User just said goodbye/thanks in a concluding way
+- Responses are getting shorter (declining engagement)
+- After 3+ consecutive action suggestions
 
-Each action should be:
-- A concise command that initiates an action (3-4 words preferred)
-- Something that starts a process rather than asks user for immediate input
-- Contextually relevant to what just happened
-- Clear about what the user wants you to do
-- Under 30 characters for optimal UI display
+ENGAGEMENT ASSESSMENT:
+- High engagement (multiple questions, building responses) → suggest rich actions
+- Medium engagement (following along, some interaction) → suggest moderate actions
+- Low engagement (short responses, basic questions) → lean toward empty array
+- Declining engagement (responses getting shorter) → likely empty array
 
-GOOD EXAMPLES:
-- "Create reminder"
-- "Set calendar event"
-- "Add to list"
-- "Show weather forecast"
-- "Schedule meeting"
-- "Send email"
+CONTEXT SENSITIVITY:
+- Consider conversation stage and natural endpoints
+- Match user expertise and engagement level
+- Factor in recently used tools: {tool_names}
+- Respect when conversations feel complete
+- Assess user's momentum and interest level
+- Consider if conversation has reached natural pause
+- Adapt to user style (technical vs casual)
+- Check for action interdependencies and prerequisites
 
-BAD EXAMPLES:
-- "Provide more details" (asks user for input immediately)
-- "Tell me about this" (too vague)
-- "Enter event information" (puts burden on user)
-- "What else do you need?" (not actionable)
+AVOID:
+- Asking for more details/clarification
+- Vague requests like "Tell me more"
+- Generic actions that don't fit the context
+- Actions when conversation naturally concludes
+- Forcing suggestions when none feel organic
+- Repetitive or similar actions to what was just discussed
+- Actions that conflict with what was just done
+- Suggesting actions in every single response
 
-Consider:
-- What tools or features were just used
-- What specific data was generated or retrieved
-- Natural next actions that can be initiated from current context
-- Related functionality that logically follows
-- Actions that START processes rather than ask for user input
-
-DESIGN PRINCIPLE: Actions should be INITIATORS, not REQUESTERS
-- Focus on what the user wants to DO next, not what they need to PROVIDE
-- The action starts the process, then you can ask for details in your response
-- Keep actions short and punchy (3-4 words ideal)
-
-Important: If there are no genuinely relevant or helpful follow-up actions based on the current context,
-return an empty array. Do not force suggestions or create generic actions just to fill the array.
-Quality over quantity - only suggest actions that would truly be useful to the user at this moment.
+DECISION FRAMEWORK:
+Ask yourself: "Would I genuinely click on these actions if I were the user right now? Does this conversation need actions or is it complete?" If uncertain, return empty array.
 
 {format_instructions}
 
 Available tools: {tool_names}
+
+Context: {conversation_summary}
 """
