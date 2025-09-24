@@ -6,8 +6,8 @@ import { useCallback, useEffect, useState } from "react";
 
 import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
 import {
-  useCasesData,
   type UseCase,
+  useCasesData,
 } from "@/features/use-cases/constants/dummy-data";
 import { Workflow } from "@/features/workflows/api/workflowApi";
 import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";

@@ -1,14 +1,13 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Chip } from "@heroui/chip";
 import { ArrowUpRight, Plus } from "lucide-react";
 import { useState } from "react";
 import { toast } from "sonner";
 
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
 import BaseWorkflowCard from "@/features/workflows/components/shared/BaseWorkflowCard";
+import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
 import { useAppendToInput } from "@/stores/composerStore";
 
 interface UseCaseCardProps {

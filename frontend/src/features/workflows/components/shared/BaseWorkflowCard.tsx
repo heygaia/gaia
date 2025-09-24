@@ -1,12 +1,12 @@
 "use client";
 
+import { Tooltip } from "@heroui/react";
 import { ArrowUpRight, User } from "lucide-react";
 import Image from "next/image";
 import { ReactNode } from "react";
 
 import { ToolsIcon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { Tooltip } from "@heroui/react";
 
 interface BaseWorkflowCardProps {
   title: string;
