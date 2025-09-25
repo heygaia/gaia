@@ -4,14 +4,14 @@ Application factory for the GAIA FastAPI application.
 This module provides functions to create and configure the FastAPI application.
 """
 
-from fastapi import FastAPI
-from fastapi.staticfiles import StaticFiles
-
 from app.api.v1.router.health import router as health_router
 from app.api.v1.routes import router as api_router
 from app.config.settings import settings
 from app.core.lifespan import lifespan
 from app.core.middleware import configure_middleware
+from fastapi import FastAPI
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import UJSONResponse
 
 
 def create_app() -> FastAPI:
@@ -32,6 +32,7 @@ def create_app() -> FastAPI:
         },
         docs_url=None if settings.ENV == "production" else "/docs",
         redoc_url=None if settings.ENV == "production" else "/redoc",
+        default_response_class=UJSONResponse,
     )
 
     configure_middleware(app)

@@ -26,7 +26,7 @@ async def startup(ctx: dict):
             in_memory_checkpointer=True,  # Use in-memory for ARQ worker to avoid DB connection issues
         ) as normal_graph
     ):
-        await GraphManager.set_graph(normal_graph)  # Set as default graph
+        GraphManager.set_graph(normal_graph)  # Set as default graph
 
     logger.info(
         "ARQ worker startup complete with workflow processing graph initialized"

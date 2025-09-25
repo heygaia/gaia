@@ -4,10 +4,6 @@ version = "0.5.0-beta"
 description = "Backend of GAIA - The personal AI assistant"
 readme = "../README.md"
 requires-python = ">=3.11"
-authors = [
-    {name = "Aryan Randeriya", email = "aryan@heygaia.io"},
-    {name = "Dhruv Maradiya", email = "dhruv@heygaia.io"}
-]
 
 dependencies = [
   "langgraph-checkpoint-postgres>=2.0.21",
@@ -108,7 +104,29 @@ dependencies = [
   "langchain-core>=0.3.74",
   "langgraph>=0.6.5",
   "langchain>=0.3.27",
+  "beartype>=0.21.0",
+  "pyinstrument>=5.1.1",
+  "stackprinter>=0.2.12",
+  "loguru>=0.7.3",
+  "fastapi-cache2[redis]>=0.1.8",
+  "ujson>=5.11.0",
 ]
+
+## To run the tasks use commands like:
+#   task dev
+#   task start
+[tool.taskipy.tasks]
+dev = "uv run uvicorn app.main:app --port 8000 --reload --log-level warning"
+start = "uv run fastapi run"
+lint = "uvx ruff check ."
+"lint.fix" = "uvx ruff check . --fix"
+format = "uvx ruff format ."
+mypy = "uvx mypy app --ignore-missing-imports"
+schema = "uvx schemathesis run http://localhost:8000/openapi.json"
+"schema.write" = "uvx schemathesis run http://localhost:8000/openapi.json --report-junit-path report.xml"
+bandit = "uvx bandit -r app"
+pip_audit = "uvx pip-audit"
+detect_secrets = "uvx detect-secrets scan --all-files > .secrets.baseline"
 
 [dependency-groups]
 dev = [
@@ -141,7 +159,8 @@ dev = [
   "types-simplejson>=3.20.0.20250326",
   "types-tensorflow>=2.18.0.20250516",
   "types-tqdm>=4.67.0.20250516",
-  "types-ujson>=5.10.0.20250326"
+  "types-ujson>=5.10.0.20250326",
+  "taskipy>=1.14.1",
 ]
 
 heavy = [

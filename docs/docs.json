@@ -40,8 +40,10 @@
             "group": "Configuration",
             "pages": [
               "configuration/environment-variables",
-              "configuration/conventional-commits",
-              "configuration/docker"
+              "configuration/docker",
+              "configuration/profiling",
+              "configuration/logging",
+              "configuration/conventional-commits"
             ]
           },
           {
@@ -51,7 +53,6 @@
               "developers/extra/release-workflow",
               "developers/extra/add-env-vars",
               "developers/extra/lazy-loading"
-
             ]
           }
         ]

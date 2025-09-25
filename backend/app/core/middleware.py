@@ -45,7 +45,7 @@ def configure_middleware(app: FastAPI) -> None:
     # Add rate limiting middleware
     app.add_middleware(SlowAPIMiddleware)
 
-    # Add profiling middleware for logging request/response times
+    # Add pyinstrument profiling middleware for detailed call stack analysis
     app.add_middleware(ProfilingMiddleware)
 
     # Add logging middleware
