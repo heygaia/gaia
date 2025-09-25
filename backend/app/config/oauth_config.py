@@ -55,7 +55,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Google Calendar",
         description="Schedule and manage your calendar events seamlessly",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a5/Google_Calendar_icon_%282020%29.svg/640px-Google_Calendar_icon_%282020%29.svg.png"
+            "/images/icons/googlecalendar.webp"
         ],
         category="productivity",
         provider="google",
@@ -77,7 +77,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Google Docs",
         description="Create and edit documents with AI assistance",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/6/66/Google_Docs_2020_Logo.svg/640px-Google_Docs_2020_Logo.svg.png"
+            "/images/icons/google_docs.webp"
         ],
         category="productivity",
         provider="google",
@@ -95,7 +95,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Gmail",
         description="Manage emails, compose messages, and organize your inbox",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/7/7e/Gmail_icon_%282020%29.svg"
+            "/images/icons/gmail.svg"
         ],
         category="communication",
         provider="gmail",
@@ -124,7 +124,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Google Drive",
         description="Access and manage your files in the cloud",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Google_Drive_icon_%282020%29.svg/640px-Google_Drive_icon_%282020%29.svg.png"
+            "/images/icons/drive.webp"
         ],
         category="storage",
         provider="google",
@@ -143,7 +143,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Notion",
         description="Manage pages, databases, and workspace content with AI",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/4/45/Notion_app_logo.png"
+            "/images/icons/notion.webp"
         ],
         category="productivity",
         provider="notion",
@@ -160,7 +160,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Twitter",
         description="Post tweets, read timelines, and manage your account with AI-powered tools",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/c/ce/X_logo_2023.svg/600px-X_logo_2023.svg.png?20250120013756"
+            "/images/icons/twitter.webp"
         ],
         category="social",
         provider="twitter",
@@ -177,7 +177,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="Google Sheets",
         description="Create, read, and update Google Sheets with AI-powered tools for automation and data management",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/a/ae/Google_Sheets_2020_Logo.svg"
+            "/images/icons/google_sheets.webp"
         ],
         category="productivity",
         provider="google_sheets",
@@ -194,7 +194,7 @@ OAUTH_INTEGRATIONS: List[OAuthIntegration] = [
         name="LinkedIn",
         description="Share posts, engage with your network, and manage your professional presence using AI-powered tools",
         icons=[
-            "https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+            "/images/icons/linkedin.svg"
         ],
         category="social",
         provider="linkedin",

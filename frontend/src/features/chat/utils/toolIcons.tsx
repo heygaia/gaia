@@ -87,7 +87,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg"
+          src="/images/icons/google.svg"
         />
       );
     case "memory":
@@ -110,7 +110,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/1/1e/Weather_%28iOS%29.png"
+          src="/images/icons/weather.webp"
         />
       );
     case "goal_tracking":
@@ -135,7 +135,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/c/ce/X_logo_2023.svg"
+          src="/images/icons/twitter.webp"
         />
       );
     case "linkedin":
@@ -144,7 +144,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/c/ca/LinkedIn_logo_initials.png"
+          src="/images/icons/linkedin.svg"
         />
       );
     case "notifications":
