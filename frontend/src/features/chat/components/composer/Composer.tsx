@@ -13,8 +13,8 @@ import FilePreview, {
 import FileUpload from "@/features/chat/components/files/FileUpload";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useLoadingText } from "@/features/chat/hooks/useLoadingText";
-import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { useSendMessage } from "@/hooks/useSendMessage";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import {
   useComposerFiles,
@@ -43,6 +43,7 @@ interface MainSearchbarProps {
   droppedFiles?: File[];
   onDroppedFilesProcessed?: () => void;
   hasMessages: boolean;
+  conversationId?: string;
 }
 
 const Composer: React.FC<MainSearchbarProps> = ({
@@ -53,6 +54,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
   droppedFiles,
   onDroppedFilesProcessed,
   hasMessages,
+  conversationId,
 }) => {
   const [currentHeight, setCurrentHeight] = useState<number>(24);
   const composerInputRef = useRef<ComposerInputRef>(null);
@@ -112,7 +114,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     clearSelectedWorkflow();
 
     setIsLoading(true);
-    sendMessage("Run this workflow", [], null, null, selectedWorkflow);
+  sendMessage("Run this workflow", conversationId ?? "");
 
     if (inputRef.current) inputRef.current.focus();
 
@@ -192,13 +194,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     // Use contextual loading with user's message for similarity-based loading text
     setContextualLoading(true, inputText);
 
-    sendMessage(
-      inputText,
-      uploadedFileData,
-      selectedTool,
-      selectedToolCategory,
-      selectedWorkflow,
-    );
+    sendMessage(inputText, conversationId ?? "");
 
     clearInputText();
     clearAllFiles();

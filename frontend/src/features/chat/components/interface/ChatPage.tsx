@@ -1,11 +1,10 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
 import React, { useEffect } from "react";
 
-import { chatApi } from "@/features/chat/api/chatApi";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
+import { useMessages } from "@/hooks/useMessages";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
 import {
   useComposerTextActions,
@@ -17,10 +16,7 @@ import { ChatWithMessages, NewChatLayout } from "./layouts";
 import ScrollToBottomButton from "./ScrollToBottomButton";
 
 const ChatPage = React.memo(function MainChat() {
-  const searchParams = useSearchParams();
-
-  const { updateConvoMessages, clearMessages, convoMessages } =
-    useConversation();
+  const { convoMessages } = useConversation();
   const pendingPrompt = usePendingPrompt();
   const { clearPendingPrompt } = useComposerTextActions();
 
@@ -35,6 +31,8 @@ const ChatPage = React.memo(function MainChat() {
     appendToInputRef,
     convoIdParam,
   } = useChatLayout();
+
+  useMessages(convoIdParam);
 
   const {
     scrollContainerRef,
@@ -55,25 +53,6 @@ const ChatPage = React.memo(function MainChat() {
     multiple: true,
   });
 
-  // Message fetching effect
-  useEffect(() => {
-    const loadMessages = async () => {
-      if (convoIdParam) {
-        try {
-          const messages = await chatApi.fetchMessages(convoIdParam);
-          updateConvoMessages(messages);
-        } catch (error) {
-          console.error("Failed to fetch messages:", error);
-        }
-      } else {
-        clearMessages();
-      }
-    };
-
-    loadMessages();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [convoIdParam]);
-
   // Handle pending prompt from global composer
   useEffect(() => {
     if (pendingPrompt && appendToInputRef.current) {
@@ -91,6 +70,7 @@ const ChatPage = React.memo(function MainChat() {
     droppedFiles,
     onDroppedFilesProcessed: () => setDroppedFiles([]),
     hasMessages,
+    conversationId: convoIdParam,
   };
 
   return (
