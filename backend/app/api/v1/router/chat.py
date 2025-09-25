@@ -7,7 +7,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
     get_current_user,
     get_user_timezone,
 )
-from app.decorators import profile_time, tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.message_models import (
     MessageRequestWithHistory,
     SaveIncompleteConversationRequest,
@@ -23,7 +23,6 @@ from app.utils.chat_utils import create_conversation
 router = APIRouter()
 
 
-@profile_time()
 @router.post("/chat-stream")
 @tiered_rate_limit("chat_messages")
 async def chat_stream_endpoint(

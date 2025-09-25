@@ -81,17 +81,19 @@ class CommonSettings(BaseAppSettings):
     HOST: str = "https://api.heygaia.io"
     FRONTEND_URL: str = "https://heygaia.io"
     DUMMY_IP: str = "8.8.8.8"
-    DISABLE_PROFILING: bool = False
     WORKER_TYPE: str = "unknown"
+
+    # ----------------------------------------------
+    # Profiling & Performance Monitoring
+    # ----------------------------------------------
+    ENABLE_PROFILING: bool = False  # Must be explicitly enabled via .env
+    PROFILING_SAMPLE_RATE: float = 1  # 100% of requests by default
+    PROFILING_MAX_DEPTH: int = 20  # Maximum call stack depth
+    PROFILING_ASYNC_MODE: str = "enabled"  # enabled, disabled, strict
 
     # ----------------------------------------------
     # Computed Properties
     # ----------------------------------------------
-    @computed_field  # type: ignore
-    @property
-    def ENABLE_PROFILING(self) -> bool:
-        """Enable profiling only if explicitly enabled in production."""
-        return self.ENV == "production" and not self.DISABLE_PROFILING
 
     # OAuth Callback URLs
     @computed_field  # type: ignore
