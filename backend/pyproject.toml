@@ -108,6 +108,7 @@ dependencies = [
   "langchain-core>=0.3.74",
   "langgraph>=0.6.5",
   "langchain>=0.3.27",
+  "beartype>=0.21.0",
 ]
 
 [dependency-groups]
