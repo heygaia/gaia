@@ -98,7 +98,7 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "inference_provider": ModelProvider.GEMINI.value,
             "provider_model_name": "gemini-2.0-flash",
             "description": "Google's latest fast model with improved performance",
-            "logo_url": "/public/images/gemini.webp",
+            "logo_url": "/images/icons/gemini.webp",
             "max_tokens": 120_000,
             "supports_streaming": True,
             "supports_function_calling": True,
@@ -116,7 +116,7 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "inference_provider": ModelProvider.GEMINI.value,
             "provider_model_name": "gemini-2.5-flash",
             "description": "Google's advanced fast model with enhanced capabilities",
-            "logo_url": "/public/images/gemini.webp",  # file:gemini.webp
+            "logo_url": "/images/icons/gemini.webp",
             "max_tokens": 120_000,
             "supports_streaming": True,
             "supports_function_calling": True,
@@ -134,7 +134,7 @@ def get_models_configuration() -> List[Dict[str, Any]]:
             "inference_provider": ModelProvider.GEMINI.value,
             "provider_model_name": "gemini-2.5-pro",
             "description": "Google's most advanced model with superior reasoning and creativity",
-            "logo_url": "/public/images/gemini.webp",  # file:gemini.webp
+            "logo_url": "/images/icons/gemini.webp",
             "max_tokens": 120_000,
             "supports_streaming": True,
             "supports_function_calling": True,

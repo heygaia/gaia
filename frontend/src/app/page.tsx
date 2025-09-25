@@ -62,11 +62,12 @@ export default function LandingPage() {
         <div className="relative overflow-hidden">
           <div className="absolute inset-0 h-screen w-full">
             <Image
-              src={"/images/wallpapers/sf_night.webp"}
+              src="/images/wallpapers/sf_night.webp"
               alt="Wallpaper"
-              width={4096}
-              height={2160}
-              className="aspect-video object-cover opacity-90"
+              fill
+              sizes="100vw"
+              className="object-cover opacity-90 object-left"
+              priority
             />
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[30vh] bg-gradient-to-b from-background to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[20vh] bg-gradient-to-t from-background via-background to-transparent" />
