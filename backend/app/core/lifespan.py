@@ -190,6 +190,7 @@ async def lifespan(app: FastAPI):
         )
 
         logger.info("All services initialized successfully")
+        logger.info("Application startup complete")
         yield
 
     except Exception as e:

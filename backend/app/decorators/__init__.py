@@ -13,7 +13,7 @@ from .caching import Cacheable, CacheInvalidator
 from .documentation import with_doc
 from .integration import require_integration
 from .profiling import ProfilingMiddleware
-from .logging import LoggingMiddleware
+from .logging import LoggingMiddleware, log_function_call
 from .rate_limiting import (
     with_rate_limiting,
     tiered_rate_limit,
@@ -42,4 +42,5 @@ __all__ = [
     "ProfilingMiddleware",
     # Logging
     "LoggingMiddleware",
+    "log_function_call",
 ]

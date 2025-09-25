@@ -42,6 +42,7 @@
               "configuration/environment-variables",
               "configuration/docker",
               "configuration/profiling",
+              "configuration/logging",
               "configuration/conventional-commits"
             ]
           },

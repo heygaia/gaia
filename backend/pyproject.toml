@@ -107,13 +107,14 @@ dependencies = [
   "beartype>=0.21.0",
   "pyinstrument>=5.1.1",
   "stackprinter>=0.2.12",
+  "loguru>=0.7.3",
 ]
 
 ## To run the tasks use commands like:
 #   task dev
 #   task start
 [tool.taskipy.tasks]
-dev = "uv run uvicorn app.main:app --port 8000 --reload"
+dev = "uv run uvicorn app.main:app --port 8000 --reload --log-level warning"
 start = "uv run fastapi run"
 lint = "uvx ruff check ."
 lint_fix = "uvx ruff check . --fix"
