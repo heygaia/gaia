@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0-beta](https://github.com/heygaia/gaia/compare/v0.5.0-beta...v0.6.0-beta) (2025-09-25)
+
+
+### Features
+
+* Improve logging, profiling and more ([#235](https://github.com/heygaia/gaia/issues/235)) ([a5e4f11](https://github.com/heygaia/gaia/commit/a5e4f1142280021e2d0e83db7e0196f583e763cc))
+
 ## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-24)
 
 
