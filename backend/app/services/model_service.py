@@ -12,8 +12,7 @@ from fastapi import HTTPException
 @Cacheable(
     key_pattern="chat_models:available_models:{user_plan}",
     ttl=3600,  # Cache for 1 hour
-    serializer=lambda models: [model.model_dump() for model in models],
-    deserializer=lambda data: [ModelResponse(**item) for item in data] if data else [],
+    model=List[ModelResponse],
 )
 async def get_available_models(user_plan: Optional[str] = None) -> List[ModelResponse]:
     """
@@ -69,8 +68,7 @@ async def get_available_models(user_plan: Optional[str] = None) -> List[ModelRes
 @Cacheable(
     key_pattern="chat_models:model_by_id:{model_id}",
     ttl=3600,  # Cache for 1 hour
-    deserializer=lambda data: ModelConfig(**data) if data else None,
-    serializer=lambda model: model.model_dump() if model else None,
+    model=ModelConfig,
 )
 async def get_model_by_id(model_id: str) -> Optional[ModelConfig]:
     """
@@ -170,8 +168,7 @@ async def update_user_selected_model(
 @Cacheable(
     key_pattern="chat_models:selected_model:{user_id}",
     ttl=3600,  # Cache for 1 hour
-    deserializer=lambda data: ModelConfig(**data) if data else None,
-    serializer=lambda model: model.model_dump() if model else None,
+    model=ModelConfig,
 )
 async def get_user_selected_model(user_id: str) -> Optional[ModelConfig]:
     """
@@ -204,8 +201,7 @@ async def get_user_selected_model(user_id: str) -> Optional[ModelConfig]:
 @Cacheable(
     key_pattern="chat_models:default_model",
     ttl=3600,  # Cache for 1 hour
-    deserializer=lambda data: ModelConfig(**data) if data else None,
-    serializer=lambda model: model.model_dump() if model else None,
+    model=ModelConfig,
 )
 async def get_default_model() -> Optional[ModelConfig]:
     """

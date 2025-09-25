@@ -1,6 +1,7 @@
 from typing import List
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.decorators.caching import Cacheable
 from app.models.models_models import (
     ModelResponse,
     ModelSelectionRequest,
@@ -18,6 +19,7 @@ router = APIRouter(prefix="/chat-models", tags=["models"])
 
 
 @router.get("", response_model=List[ModelResponse])
+@Cacheable(smart_hash=True, ttl=1800, model=List[ModelResponse])  # 30 minutes
 async def list_available_models(
     current_user: dict = Depends(get_current_user),
 ):

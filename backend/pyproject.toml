@@ -108,6 +108,12 @@ dependencies = [
   "langchain-core>=0.3.74",
   "langgraph>=0.6.5",
   "langchain>=0.3.27",
+  "beartype>=0.21.0",
+  "pyinstrument>=5.1.1",
+  "stackprinter>=0.2.12",
+  "loguru>=0.7.3",
+  "fastapi-cache2[redis]>=0.1.8",
+  "orjson>=3.11.3",
 ]
 
 [dependency-groups]

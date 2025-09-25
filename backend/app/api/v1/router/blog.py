@@ -16,6 +16,7 @@ from fastapi import (
 )
 
 from app.api.v1.dependencies.blog_auth import verify_blog_token
+from app.decorators.caching import Cacheable
 from app.models.blog_models import BlogPost, BlogPostCreate, BlogPostUpdate
 from app.services.blog_service import BlogService
 
@@ -23,6 +24,7 @@ router = APIRouter()
 
 
 @router.get("/blogs", response_model=List[BlogPost])
+@Cacheable(smart_hash=True, ttl=21600, model=List[BlogPost])  # 6 hours
 async def get_blogs(
     page: int = Query(1, ge=1, description="Page number (starting from 1)"),
     limit: int = Query(
@@ -47,6 +49,7 @@ async def get_blogs(
 
 
 @router.get("/blogs/{slug}", response_model=BlogPost)
+@Cacheable(key_pattern="blog:{slug}", ttl=21600, model=BlogPost)  # 6 hours
 async def get_blog(slug: str):
     """Get a specific blog post with populated author details."""
     return await BlogService.get_blog_by_slug(slug)
@@ -145,6 +148,7 @@ async def delete_blog(slug: str, _token: str = Depends(verify_blog_token)):
 
 
 @router.get("/blogs/count", response_model=dict)
+@Cacheable(smart_hash=True, ttl=21600)  # 6 hours
 async def get_blog_count():
     """Get total count of blog posts."""
     count = await BlogService.get_blog_count()

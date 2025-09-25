@@ -7,6 +7,8 @@ This module provides routes for checking the health and status of the API.
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
+from app.decorators.caching import Cacheable
+
 router = APIRouter()
 
 
@@ -15,6 +17,7 @@ router = APIRouter()
 @router.get("/health")
 @router.get("/api/v1/")
 @router.get("/api/v1/ping")
+@Cacheable(smart_hash=True, ttl=21600)  # 6 hours
 def health_check():
     """
     Health check endpoint for the API.
