@@ -91,10 +91,18 @@ export class ChatDexie extends Dexie {
   public async deleteConversationAndMessages(
     conversationId: string,
   ): Promise<void> {
-    await this.transaction("rw", this.conversations, this.messages, async () => {
-      await this.messages.where("conversationId").equals(conversationId).delete();
-      await this.conversations.delete(conversationId);
-    });
+    await this.transaction(
+      "rw",
+      this.conversations,
+      this.messages,
+      async () => {
+        await this.messages
+          .where("conversationId")
+          .equals(conversationId)
+          .delete();
+        await this.conversations.delete(conversationId);
+      },
+    );
   }
 }
 
