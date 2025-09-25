@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.1](https://github.com/heygaia/gaia/compare/v0.5.0-beta...v0.5.1) (2025-09-25)
+
+
+### Miscellaneous Chores
+
+* release 0.5.1 ([a011469](https://github.com/heygaia/gaia/commit/a011469403974c3e0dc3e19fb39a6c6e8e6e9647))
+
 ## [0.5.0-beta](https://github.com/heygaia/gaia/compare/v0.4.0-beta...v0.5.0-beta) (2025-09-24)
 
 
