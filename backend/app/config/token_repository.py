@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import httpx
 from app.config.loggers import token_repository_logger as logger
 from app.config.settings import settings
 from app.db.postgresql import get_db_session
@@ -20,8 +21,6 @@ from authlib.integrations.starlette_client import OAuth
 from authlib.oauth2.rfc6749 import OAuth2Token
 from fastapi import HTTPException
 from sqlalchemy import select, update
-
-from app.config.loggers import token_repository_logger as logger
 
 
 class TokenRepository:
@@ -251,7 +250,6 @@ class TokenRepository:
         Returns:
             A new OAuth2Token or None if refreshing failed
         """
-        import httpx
 
         if not self.oauth.google:
             logger.error("Google OAuth client not properly initialized")

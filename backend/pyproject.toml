@@ -109,6 +109,7 @@ dependencies = [
   "stackprinter>=0.2.12",
   "loguru>=0.7.3",
   "fastapi-cache2[redis]>=0.1.8",
+  "ujson>=5.11.0",
 ]
 
 ## To run the tasks use commands like:
@@ -118,9 +119,11 @@ dependencies = [
 dev = "uv run uvicorn app.main:app --port 8000 --reload --log-level warning"
 start = "uv run fastapi run"
 lint = "uvx ruff check ."
-lint_fix = "uvx ruff check . --fix"
+"lint.fix" = "uvx ruff check . --fix"
 format = "uvx ruff format ."
 mypy = "uvx mypy app --ignore-missing-imports"
+schema = "uvx schemathesis run http://localhost:8000/openapi.json"
+"schema.write" = "uvx schemathesis run http://localhost:8000/openapi.json --report-junit-path report.xml"
 bandit = "uvx bandit -r app"
 pip_audit = "uvx pip-audit"
 detect_secrets = "uvx detect-secrets scan --all-files > .secrets.baseline"
