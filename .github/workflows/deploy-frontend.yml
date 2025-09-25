@@ -1,8 +1,9 @@
 name: Deploy Frontend
 
 on:
-  repository_dispatch:
-    types: [deploy-frontend]
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
@@ -12,7 +13,6 @@ jobs:
   sync_and_deploy:
     runs-on: ubuntu-latest
     environment: production
-    if: github.event.client_payload.ref == 'refs/heads/master'
 
     steps:
       - name: Checkout repository

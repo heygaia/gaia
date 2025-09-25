@@ -1,8 +1,9 @@
 name: Deploy to GCP
 
 on:
-  repository_dispatch:
-    types: [deploy]
+  push:
+    branches:
+      - master
   workflow_dispatch:
 
 permissions:
@@ -18,7 +19,6 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: production
-    if: github.event.client_payload.ref == 'refs/heads/master'
 
     # Needed for OIDC → WIF
     permissions:
@@ -60,7 +60,7 @@ jobs:
               git pull origin master
 
               docker compose -f docker-compose.prod.yml pull
-              
+
               # Recreate only services with updated images
               docker compose -f docker-compose.prod.yml up -d --remove-orphans --no-deps
               docker image prune -f
@@ -81,13 +81,13 @@ jobs:
             --zone=${{ secrets.GCP_ZONE }} \
             --command="
               echo 'Starting Docker cleanup...'
-              
+
               # Remove dangling images
               docker image prune -f
 
               # Remove stopped containers
               docker container prune -f
-              
+
               # Remove unused networks
               docker network prune -f
 
@@ -100,15 +100,23 @@ jobs:
         with:
           webhook_url: ${{ secrets.DISCORD_WEBHOOK }}
           username: "Gaia Deploy Bot"
-          color: "#48f442"
+          color: ${{ job.status == 'success' && '#48f442' || '#ff6b6b' }}
           message: |
-            🚀 **Deployment to GCP**
+            🚀 **Deployment to GCP ${{ job.status == 'success' && 'Completed' || 'Failed' }}**
 
             **Repository:** ${{ github.repository }}
             **Branch:** ${{ github.ref_name }}
             **Commit:** ${{ github.sha }}
             **Status:** ${{ job.status }}
             **Deployed by:** ${{ github.actor }}
-            **Timestamp:** ${{ github.run_id }}
+            **Run ID:** ${{ github.run_id }}
 
-
+      - name: Update deployment status
+        if: always()
+        run: |
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "✅ Deployment completed successfully"
+          else
+            echo "❌ Deployment failed"
+            exit 1
+          fi
