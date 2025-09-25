@@ -106,6 +106,7 @@ dependencies = [
   "langchain>=0.3.27",
   "beartype>=0.21.0",
   "pyinstrument>=5.1.1",
+  "stackprinter>=0.2.12",
 ]
 
 ## To run the tasks use commands like:
