@@ -108,6 +108,7 @@ dependencies = [
   "pyinstrument>=5.1.1",
   "stackprinter>=0.2.12",
   "loguru>=0.7.3",
+  "fastapi-cache2[redis]>=0.1.8",
 ]
 
 ## To run the tasks use commands like:

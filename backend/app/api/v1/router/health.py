@@ -4,6 +4,7 @@ Health check routes for the GAIA FastAPI application.
 This module provides routes for checking the health and status of the API.
 """
 
+from app.utils.general_utils import get_project_info
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
@@ -25,18 +26,15 @@ def health_check():
     # Lazy import to avoid loading settings during module import
     from app.config.settings import settings
 
+    project_info = get_project_info()
+
     return {
         "status": "online",
         "message": "Welcome to the GAIA API!",
-        "name": "GAIA API",
-        "version": "1.0.0",
-        "description": "Backend for General-purpose AI assistant (GAIA)",
+        "name": project_info["name"],
+        "version": project_info["version"],
+        "description": project_info["description"],
         "environment": settings.ENV,
-        "developer": {
-            "name": "Aryan Randeriya",
-            "email": "aryan@heygaia.io",
-            "url": "https://aryanranderiya.com",
-        },
     }
 
 
