@@ -18,14 +18,23 @@ export default function HeroSection() {
         <div className="vignette absolute h-[351%] w-full bg-[radial-gradient(circle,_rgba(0,0,0,0)_0%,_rgba(0,0,0,0)_47%,_#000_80%)]" />
       </div> */}
 
-      <MotionContainer className="relative z-2 flex h-full flex-col items-center justify-start gap-4">
-        <Link href="/blog/public-beta">
-          <ShinyText
-            text={`Public Beta ${isReleaseLoading ? "" : release?.name.replace("-beta", "")}`}
-            speed={10}
-            className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-1 px-4 text-sm font-light outline-1 outline-zinc-800 transition-colors hover:bg-zinc-800"
-          />
-        </Link>
+      <MotionContainer className="relative z-2 flex h-full flex-col items-center justify-start gap-4 bg-transparent">
+        <div className="mx-auto flex w-full justify-center gap-2">
+          {/* <div className="relative z-10 w-fit cursor-pointer rounded-full bg-white/5 p-1 px-4 text-sm font-light outline-1 outline-white/30 backdrop-blur-xl transition-colors">
+          <Link href="/blog/public-beta">
+            <ShinyText text={`New: Here is this feature!`} speed={10} />
+          </Link>
+        </div> */}
+
+          <Link href="/blog/public-beta">
+            <ShinyText
+              // text={`Public Beta ${isReleaseLoading ? "" : release?.name.replace("-beta", "")}`}
+              text={`New: Here is this feature!`}
+              speed={10}
+              className="relative z-10 cursor-pointer rounded-full bg-zinc-900 p-1 px-4 text-sm font-light outline-1 outline-zinc-800 transition-colors hover:bg-zinc-800"
+            />
+          </Link>
+        </div>
 
         <SplitTextBlur
           text="Meet the personal assistant you’ve always wanted"
