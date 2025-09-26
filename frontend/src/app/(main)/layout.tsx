@@ -12,8 +12,8 @@ import {
 } from "@/components/ui/shadcn/sidebar";
 import { TooltipProvider } from "@/components/ui/shadcn/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
-import { useBackgroundSync } from "@/hooks/useBackgroundSync";
 import { useIsMobile } from "@/hooks/ui/useMobile";
+import { useBackgroundSync } from "@/hooks/useBackgroundSync";
 import SidebarLayout, { CustomSidebarTrigger } from "@/layouts/SidebarLayout";
 import { useSidebar as useUIStoreSidebar } from "@/stores/uiStore";
 

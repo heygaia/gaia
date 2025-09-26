@@ -14,8 +14,8 @@ import FileUpload from "@/features/chat/components/files/FileUpload";
 import { useLoading } from "@/features/chat/hooks/useLoading";
 import { useLoadingText } from "@/features/chat/hooks/useLoadingText";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
-import { useSendMessage } from "@/hooks/useSendMessage";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
+import { useSendMessage } from "@/hooks/useSendMessage";
 import {
   useComposerFiles,
   useComposerModeSelection,

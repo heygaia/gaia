@@ -4,8 +4,8 @@ import React, { useEffect } from "react";
 
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
-import { useMessages } from "@/hooks/useMessages";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
+import { useMessages } from "@/hooks/useMessages";
 import {
   useComposerTextActions,
   usePendingPrompt,
