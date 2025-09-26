@@ -14,7 +14,7 @@ from fastapi import (
 )
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
-from app.middleware.rate_limiter import limiter
+from app.api.v1.middleware.rate_limiter import limiter
 from app.models.support_models import (
     SupportRequestCreate,
     SupportRequestStatus,

@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from app.config.loggers import app_logger
 from app.config.rate_limits import get_limits_for_plan
 from app.db.redis import redis_cache
-from app.middleware.tiered_rate_limiter import (
+from app.api.v1.middleware.tiered_rate_limiter import (
     RateLimitExceededException,
     tiered_limiter,
 )

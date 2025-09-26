@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Header
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.loggers import general_logger as logger
-from app.middleware.rate_limiter import limiter
+from app.api.v1.middleware.rate_limiter import limiter
 from app.models.payment_models import (
     CreateSubscriptionRequest,
     PaymentVerificationResponse,

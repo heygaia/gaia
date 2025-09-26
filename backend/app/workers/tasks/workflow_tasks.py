@@ -11,7 +11,7 @@ from zoneinfo import ZoneInfo
 from app.config.loggers import arq_worker_logger as logger
 from app.config.token_repository import token_repository
 from app.langchain.core.agent import call_agent_silent
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.api.v1.middleware.tiered_rate_limiter import tiered_rate_limit
 from app.models.chat_models import MessageModel
 from app.models.message_models import (
     MessageRequestWithHistory,

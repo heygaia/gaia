@@ -4,7 +4,7 @@ GAIA API v1 package.
 This package contains the API routes and dependencies for version 1 of the GAIA API.
 """
 
-from app.api.v1.router import (
+from app.api.v1.endpoints import (
     blog,
     calendar,
     chat,
