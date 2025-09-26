@@ -19,7 +19,6 @@ import {
   WhatsappIcon,
   YoutubeIcon,
 } from "@/components/shared/icons";
-import { BookAIcon, BookTemplateIcon } from "lucide-react";
 
 export interface AppLink {
   label: string;

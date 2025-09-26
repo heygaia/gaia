@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 
-import ContactSidebar from "@/features/contact/components/ContactSidebar";
 import ContactForm from "@/features/contact/components/ContactForm";
+import ContactSidebar from "@/features/contact/components/ContactSidebar";
 
 export const metadata: Metadata = {
   title: "Contact Us",

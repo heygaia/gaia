@@ -1,10 +1,8 @@
-import { ArrowUpRight } from "lucide-react";
 import Image from "next/image";
-
-import { LinkButton } from "@/components/shared/LinkButton";
-import { appConfig, footerSections, connect } from "@/config/appConfig";
-import { useUser } from "@/features/auth/hooks/useUser";
 import Link from "next/link";
+
+import { appConfig, connect,footerSections } from "@/config/appConfig";
+import { useUser } from "@/features/auth/hooks/useUser";
 
 export default function Footer() {
   const user = useUser();

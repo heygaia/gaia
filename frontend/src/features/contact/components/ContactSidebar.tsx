@@ -1,3 +1,5 @@
+import { HandMetal, LockIcon } from "lucide-react";
+
 import {
   DiscordIcon,
   Github,
@@ -7,7 +9,6 @@ import {
   WhatsappIcon,
   YoutubeIcon,
 } from "@/components/shared/icons";
-import { HandMetal, LockIcon } from "lucide-react";
 
 export default function ContactSidebar() {
   return (

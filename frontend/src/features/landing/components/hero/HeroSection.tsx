@@ -35,7 +35,7 @@ export default function HeroSection() {
         <div className="mb-6 max-w-(--breakpoint-sm) px-4 py-0 text-center text-lg leading-7 font-light tracking-tighter text-foreground-700 sm:px-0 sm:text-xl">
           Tired of Siri, Google Assistant, and ChatGPT doing nothing useful?
         </div>
-        <GetStartedButton small_text />
+        <GetStartedButton />
       </MotionContainer>
     </div>
   );

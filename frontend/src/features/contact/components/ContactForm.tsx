@@ -1,18 +1,15 @@
 "use client";
 
-import type React from "react";
-import { useState } from "react";
-import { toast } from "sonner";
-
 import { Button } from "@heroui/button";
 import { Input, Textarea } from "@heroui/input";
 import { Select, SelectItem } from "@heroui/select";
+import type React from "react";
 
-import { useContactSupport } from "@/features/support/hooks/useContactSupport";
 import {
-  SUPPORT_REQUEST_TYPES,
   SUPPORT_REQUEST_TYPE_LABELS,
+  SUPPORT_REQUEST_TYPES,
 } from "@/features/support/constants/supportConstants";
+import { useContactSupport } from "@/features/support/hooks/useContactSupport";
 
 type Props = React.ComponentProps<"form">;
 

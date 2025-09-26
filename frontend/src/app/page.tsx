@@ -35,12 +35,8 @@ const FAQAccordion = lazy(() =>
     default: module.FAQAccordion,
   })),
 );
-
 const OpenSource = lazy(
   () => import("@/features/landing/components/sections/OpenSource"),
-);
-const CommunitySection = lazy(
-  () => import("@/features/landing/components/sections/CommunitySection"),
 );
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
@@ -99,12 +95,11 @@ export default function LandingPage() {
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
-              <FAQAccordion />
               <OpenSource />
+              <FAQAccordion />
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
-              <CommunitySection />
               <FinalSection />
             </Suspense>
           </div>
