@@ -75,8 +75,10 @@ export default function Navbar() {
         onMouseLeave={handleNavbarMouseLeave}
       >
         <div
-          className={`navbar_content flex h-14 w-full items-center justify-between bg-[#ffffff10] px-3 backdrop-blur-xl transition-all duration-300 ${
-            activeDropdown ? "rounded-t-2xl bg-[#08090A]" : "rounded-2xl"
+          className={`navbar_content flex h-14 w-full items-center justify-between border-t border-white/10 px-3 backdrop-blur-xl transition-all duration-300 ${
+            activeDropdown
+              ? "rounded-t-2xl bg-[#08090A]"
+              : "rounded-2xl bg-zinc-900/60"
           }`}
           style={activeDropdown ? { backgroundColor: "#08090A" } : {}}
         >
@@ -93,7 +95,7 @@ export default function Navbar() {
               height={25}
               className="min-w-[25px]"
             />
-            <span className="text-lg font-medium">GAIA</span>
+            <span className="tracking-tigher text-xl font-medium">GAIA</span>
           </Button>
 
           <div className="hidden items-center gap-1 sm:flex">
