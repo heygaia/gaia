@@ -1,5 +1,4 @@
 import { HandMetal, LockIcon } from "lucide-react";
-
 import {
   DiscordIcon,
   Github,
@@ -9,6 +8,57 @@ import {
   WhatsappIcon,
   YoutubeIcon,
 } from "@/components/shared/icons";
+
+const emailLinks = [
+  {
+    href: "mailto:contact@heygaia.io",
+    label: "contact@heygaia.io",
+    Icon: Mail01Icon,
+  },
+  {
+    href: "mailto:ceo@heygaia.io",
+    label: "ceo@heygaia.io",
+    Icon: HandMetal,
+  },
+  {
+    href: "mailto:security@heygaia.io",
+    label: "security@heygaia.io",
+    Icon: LockIcon,
+  },
+];
+
+const socialLinks = [
+  {
+    ariaLabel: "Discord",
+    href: "https://discord.heygaia.io",
+    Icon: DiscordIcon,
+  },
+  {
+    ariaLabel: "Twitter",
+    href: "https://x.com/_heygaia",
+    Icon: TwitterIcon,
+  },
+  {
+    ariaLabel: "GitHub",
+    href: "https://github.com/heygaia",
+    Icon: Github,
+  },
+  {
+    ariaLabel: "WhatsApp",
+    href: "https://whatsapp.heygaia.io",
+    Icon: WhatsappIcon,
+  },
+  {
+    ariaLabel: "YouTube",
+    href: "https://youtube.com/@heygaia_io",
+    Icon: YoutubeIcon,
+  },
+  {
+    ariaLabel: "LinkedIn",
+    href: "https://www.linkedin.com/company/heygaia",
+    Icon: LinkedinIcon,
+  },
+];
 
 export default function ContactSidebar() {
   return (
@@ -20,27 +70,16 @@ export default function ContactSidebar() {
         >
           Get in Touch
         </h3>
-        <a
-          href="mailto:contact@heygaia.io"
-          className="text-muted-foreground inline-flex items-center gap-2 text-foreground-500 hover:underline"
-        >
-          <Mail01Icon className="size-5" aria-hidden="true" color={undefined} />
-          contact@heygaia.io
-        </a>
-        <a
-          href="mailto:ceo@heygaia.io"
-          className="text-muted-foreground inline-flex items-center gap-2 text-foreground-500 hover:underline"
-        >
-          <HandMetal className="size-5" aria-hidden="true" color={undefined} />
-          ceo@heygaia.io
-        </a>
-        <a
-          href="mailto:ceo@heygaia.io"
-          className="text-muted-foreground inline-flex items-center gap-2 text-foreground-500 hover:underline"
-        >
-          <LockIcon className="size-5" aria-hidden="true" color={undefined} />
-          security@heygaia.io
-        </a>
+        {emailLinks.map(({ href, label, Icon }) => (
+          <a
+            key={label}
+            href={href}
+            className="text-muted-foreground inline-flex items-center gap-2 text-foreground-500 hover:underline"
+          >
+            <Icon className="size-5" aria-hidden="true" />
+            {label}
+          </a>
+        ))}
       </section>
 
       <section aria-labelledby="follow-heading">
@@ -51,60 +90,18 @@ export default function ContactSidebar() {
           Socials
         </h3>
         <div className="mt-3 flex items-center gap-2 text-foreground-500">
-          <a
-            aria-label="Discord"
-            href="https://discord.heygaia.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <DiscordIcon className="size-5" />
-          </a>
-          <a
-            aria-label="Twitter"
-            href="https://x.com/_heygaia"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <TwitterIcon className="size-5" />
-          </a>
-          <a
-            aria-label="GitHub"
-            href="https://github.com/heygaia"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <Github className="size-5" />
-          </a>
-          <a
-            aria-label="WhatsApp"
-            href="https://whatsapp.heygaia.io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <WhatsappIcon className="size-5" />
-          </a>
-          <a
-            aria-label="YouTube"
-            href="https://youtube.com/@heygaia_io"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <YoutubeIcon className="size-5" />
-          </a>
-          <a
-            aria-label="LinkedIn"
-            href="https://www.linkedin.com/company/heygaia"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="hover:text-foreground"
-          >
-            <LinkedinIcon className="size-5" />
-          </a>
+          {socialLinks.map(({ ariaLabel, href, Icon }) => (
+            <a
+              key={ariaLabel}
+              aria-label={ariaLabel}
+              href={href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="hover:text-foreground"
+            >
+              <Icon className="size-5" />
+            </a>
+          ))}
         </div>
       </section>
     </div>

@@ -1,12 +1,47 @@
 import Image from "next/image";
 import Link from "next/link";
 
-import { appConfig, connect,footerSections } from "@/config/appConfig";
+import { appConfig, connect, footerSections } from "@/config/appConfig";
 import { useUser } from "@/features/auth/hooks/useUser";
 
 export default function Footer() {
   const user = useUser();
   const isAuthenticated = user?.email;
+
+  const taglines = [
+    "Life. Simplified.",
+    "Productivity without friction.",
+    "Frictionless productivity",
+    "AI that actually works.",
+    "Your silent superpower.",
+    "Effortless intelligence.",
+    "Time is yours again.",
+    "The assistant that thinks ahead.",
+    "Everything you need. Before you need it.",
+    "GAIA doesn’t just answer. It acts.",
+    "The future of personal intelligence is already here.",
+    "Productivity, personalized.",
+    "Your life. Simplified.",
+    "One step ahead, always.",
+    "Where productivity meets intelligence.",
+    "Because your time should be yours.",
+    "Your second brain, always on.",
+    "Do less. Live more. GAIA takes care of the rest.",
+    "Smarter days start here.",
+    "Not just an assistant. A partner in progress.",
+    "Life, organized. Future, unlocked.",
+    "Your silent superpower.",
+    "AI that works quietly for you.",
+    "Empowering your workflow, silently.",
+    "Productivity, reimagined.",
+    "Smarter, quieter, better.",
+    "Let your work speak.",
+    "AI, always in the background.",
+    "Unleash silent productivity.",
+    "The power behind your ideas.",
+    "Work smarter, not louder.",
+  ];
+  const randomTagline = taglines[Math.floor(Math.random() * taglines.length)];
 
   return (
     <div className="relative z-[1] m-0! flex flex-col items-center gap-7 overflow-hidden p-5 font-light sm:p-10 sm:pt-20 sm:pb-5">
@@ -23,8 +58,7 @@ export default function Footer() {
                 style={{ colorScheme: "normal" }}
               />
             </div>
-
-            <div className="mt-2 flex items-center gap-3 px-3 text-2xl font-medium text-white">
+            <div className="mt-2 flex flex-col items-start px-3 text-2xl font-medium text-white">
               <Link href={"/"}>
                 <Image
                   src="/images/logos/logo.webp"
@@ -33,6 +67,10 @@ export default function Footer() {
                   height={45}
                 />
               </Link>
+              <div className="mt-2">GAIA</div>
+              <div className="text-sm font-light text-foreground-400">
+                {randomTagline}
+              </div>
             </div>
           </div>
 
