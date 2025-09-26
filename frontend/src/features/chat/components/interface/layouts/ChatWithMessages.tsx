@@ -24,6 +24,7 @@ interface ChatWithMessagesProps {
     droppedFiles: File[];
     onDroppedFilesProcessed: () => void;
     hasMessages: boolean;
+    conversationId?: string;
   };
 }
 

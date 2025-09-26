@@ -2,7 +2,7 @@
 
 import { isToday, isYesterday, subDays } from "date-fns";
 import { Loader } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useMemo } from "react";
 
 import {
   Accordion,
@@ -10,11 +10,8 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/shadcn/accordion";
-import { Conversation } from "@/features/chat/api/chatApi";
-import {
-  useConversationList,
-  useFetchConversations,
-} from "@/features/chat/hooks/useConversationList";
+import { useConversations } from "@/hooks/useConversations";
+import type { IConversation } from "@/lib/db/chatDb";
 
 import { ChatTab } from "./ChatTab";
 
@@ -27,9 +24,7 @@ const accordionItemStyles = {
   chatContainer: "flex w-full flex-col",
 };
 
-const getTimeFrame = (dateString: string): string => {
-  const date = new Date(dateString);
-
+const getTimeFrame = (date: Date): string => {
   if (isToday(date)) return "Today";
   if (isYesterday(date)) return "Yesterday";
 
@@ -60,98 +55,48 @@ const timeFramePriority = (timeFrame: string): number => {
 };
 
 export default function ChatsList() {
-  const { conversations, paginationMeta } = useConversationList();
-  const fetchConversations = useFetchConversations();
-  const [loading, setLoading] = useState(true);
-  const [currentPage, setCurrentPage] = useState(1);
-  const [isFetchingMore, setIsFetchingMore] = useState(false);
-  const loadMoreRef = useRef<HTMLDivElement | null>(null);
+  const { conversations, conversationsLoadingStatus } = useConversations();
 
-  useEffect(() => {
-    fetchConversations();
-  }, [fetchConversations]);
+  const { systemConversations, starredConversations, sortedTimeFrames } =
+    useMemo(() => {
+      const system = conversations.filter(
+        (conversation) => conversation.isSystemGenerated === true,
+      );
 
-  // We assume the provider auto-fetches the first page.
-  // Once paginationMeta is available, we consider the initial load complete.
-  useEffect(() => {
-    if (paginationMeta) setLoading(false);
-  }, [paginationMeta]);
+      const regular = conversations.filter(
+        (conversation) => conversation.isSystemGenerated !== true,
+      );
 
-  // Set up an IntersectionObserver to load more pages.
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        const entry = entries[0];
+      const starred = regular.filter((conversation) => conversation.starred);
 
-        if (
-          entry.isIntersecting &&
-          !isFetchingMore &&
-          paginationMeta &&
-          currentPage < paginationMeta.total_pages
-        ) {
-          setIsFetchingMore(true);
-          // Always use a fixed limit (e.g. 10) and always append new results.
-          fetchConversations(currentPage + 1, 20, true)
-            .then(() => {
-              setCurrentPage((prevPage) => prevPage + 1);
-            })
-            .catch((error) => {
-              console.error("Failed to fetch more conversations", error);
-            })
-            .finally(() => {
-              setIsFetchingMore(false);
-            });
-        }
-      },
-      {
-        root: null,
-        threshold: 1.0,
-      },
-    );
+      const grouped = regular.reduce(
+        (acc, conversation) => {
+          const timeFrame = getTimeFrame(conversation.createdAt);
 
-    const currentLoadMoreRef = loadMoreRef.current;
+          if (!acc[timeFrame]) {
+            acc[timeFrame] = [];
+          }
+          acc[timeFrame].push(conversation);
 
-    if (currentLoadMoreRef) observer.observe(currentLoadMoreRef);
+          return acc;
+        },
+        {} as Record<string, IConversation[]>,
+      );
 
-    return () => {
-      if (currentLoadMoreRef) observer.unobserve(currentLoadMoreRef);
-    };
-  }, [currentPage, isFetchingMore, paginationMeta, fetchConversations]);
+      const sorted = Object.entries(grouped).sort(
+        ([timeFrameA], [timeFrameB]) =>
+          timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
+      );
 
-  // Separate system-generated conversations using the new flags
-  const systemConversations = conversations.filter(
-    (conversation) => conversation.is_system_generated === true,
-  );
+      return {
+        systemConversations: system,
+        starredConversations: starred,
+        sortedTimeFrames: sorted,
+      };
+    }, [conversations]);
 
-  // Regular conversations (excluding system-generated ones)
-  const regularConversations = conversations.filter(
-    (conversation) => conversation.is_system_generated !== true,
-  );
-
-  // Group regular conversations by time frame.
-  const groupedConversations = regularConversations.reduce(
-    (acc, conversation) => {
-      const timeFrame = getTimeFrame(conversation.createdAt);
-
-      if (!acc[timeFrame]) {
-        acc[timeFrame] = [];
-      }
-      acc[timeFrame].push(conversation);
-
-      return acc;
-    },
-    {} as Record<string, Conversation[]>,
-  );
-
-  // Sort time frames by defined priority.
-  const sortedTimeFrames = Object.entries(groupedConversations).sort(
-    ([timeFrameA], [timeFrameB]) =>
-      timeFramePriority(timeFrameA) - timeFramePriority(timeFrameB),
-  );
-
-  const starredConversations = regularConversations.filter(
-    (conversation) => conversation.starred,
-  );
+  const isLoading = conversationsLoadingStatus === "loading";
+  const isError = conversationsLoadingStatus === "error";
 
   // Calculate which accordions should be open by default - show ALL expanded
   const getDefaultAccordionValues = () => {
@@ -178,9 +123,15 @@ export default function ChatsList() {
 
   return (
     <>
-      {loading ? (
+      {isLoading && conversations.length === 0 ? (
         <div className="flex items-center justify-center p-10">
           <Loader className="animate-spin text-[#00bbff]" />
+        </div>
+      ) : isError ? (
+        <div className="flex flex-col items-center justify-center gap-2 p-6 text-center">
+          <p className="text-sm text-foreground-500">
+            We couldn&apos;t load your conversations. Please try again.
+          </p>
         </div>
       ) : (
         <Accordion
@@ -201,20 +152,19 @@ export default function ChatsList() {
                 <div className={accordionItemStyles.chatContainer}>
                   {systemConversations
                     .sort(
-                      (a: Conversation, b: Conversation) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime(),
+                      (a: IConversation, b: IConversation) =>
+                        b.createdAt.getTime() - a.createdAt.getTime(),
                     )
-                    .map((conversation: Conversation) => (
+                    .map((conversation: IConversation) => (
                       <ChatTab
-                        key={conversation.conversation_id}
-                        id={conversation.conversation_id}
-                        name={conversation.description || "System Actions"}
-                        starred={conversation.starred || false}
+                        key={conversation.id}
+                        id={conversation.id}
+                        name={conversation.title || "System Actions"}
+                        starred={conversation.starred ?? false}
                         isSystemGenerated={
-                          conversation.is_system_generated || false
+                          conversation.isSystemGenerated ?? false
                         }
-                        systemPurpose={conversation.system_purpose}
+                        systemPurpose={conversation.systemPurpose ?? undefined}
                       />
                     ))}
                 </div>
@@ -233,12 +183,12 @@ export default function ChatsList() {
               </AccordionTrigger>
               <AccordionContent className={accordionItemStyles.content}>
                 <div className="-mr-4 flex w-full flex-col">
-                  {starredConversations.map((conversation: Conversation) => (
+                  {starredConversations.map((conversation: IConversation) => (
                     <ChatTab
-                      key={conversation.conversation_id}
-                      id={conversation.conversation_id}
-                      name={conversation.description || "New chat"}
-                      starred={conversation.starred || false}
+                      key={conversation.id}
+                      id={conversation.id}
+                      name={conversation.title || "New chat"}
+                      starred={conversation.starred ?? false}
                     />
                   ))}
                 </div>
@@ -260,16 +210,15 @@ export default function ChatsList() {
                 <div className={accordionItemStyles.chatContainer}>
                   {conversationsGroup
                     .sort(
-                      (a: Conversation, b: Conversation) =>
-                        new Date(b.createdAt).getTime() -
-                        new Date(a.createdAt).getTime(),
+                      (a: IConversation, b: IConversation) =>
+                        b.createdAt.getTime() - a.createdAt.getTime(),
                     )
-                    .map((conversation: Conversation, index: number) => (
+                    .map((conversation: IConversation) => (
                       <ChatTab
-                        key={index}
-                        id={conversation.conversation_id}
-                        name={conversation.description || "New chat"}
-                        starred={conversation.starred}
+                        key={conversation.id}
+                        id={conversation.id}
+                        name={conversation.title || "New chat"}
+                        starred={conversation.starred ?? false}
                       />
                     ))}
                 </div>
@@ -278,14 +227,6 @@ export default function ChatsList() {
           ))}
         </Accordion>
       )}
-
-      {/* Sentinel element for the IntersectionObserver */}
-      <div
-        ref={loadMoreRef}
-        className="flex h-[50px] items-center justify-center p-2"
-      >
-        {isFetchingMore && <Loader className="animate-spin text-[#00bbff]" />}
-      </div>
     </>
   );
 }
