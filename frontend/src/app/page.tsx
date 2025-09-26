@@ -1,7 +1,7 @@
 "use client";
 
 import { ReactLenis } from "lenis/react";
-import Image from "next/image"
+import Image from "next/image";
 import { lazy, Suspense, useEffect } from "react";
 
 import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
@@ -60,16 +60,22 @@ export default function LandingPage() {
     <ReactLenis root>
       <LandingLayout>
         <div className="relative overflow-hidden">
-
-          <div className="absolute inset-0 w-full h-screen">
-            `<Image src={"/images/wallpapers/sf_night_high_res.webp"} alt="Wallpaper" width={4096} height={2160} className="object-cover aspect-video opacity-90" />
-            <div className="pointer-events-none absolute inset-x-0 top-0 h-[30vh] bg-gradient-to-b from-background to-transparent z-10" />
-            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-[20vh] bg-gradient-to-t from-background via-background to-transparent z-10" />
+          <div className="absolute inset-0 h-screen w-full">
+            <Image
+              src="/images/wallpapers/sf_night.webp"
+              alt="Wallpaper"
+              fill
+              sizes="100vw"
+              className="object-cover opacity-90 object-left"
+              priority
+            />
+            <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[30vh] bg-gradient-to-b from-background to-transparent" />
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[20vh] bg-gradient-to-t from-background via-background to-transparent" />
           </div>
 
-          <section className="relative z-20 min-h-screen w-full flex flex-col items-center justify-center">
+          <section className="relative z-20 flex min-h-screen w-full flex-col items-center justify-center">
             <HeroSection />
-            <div className="mt-8 mx-auto flex w-full items-center justify-center px-4 sm:px-6 max-w-screen-xl">
+            <div className="mx-auto mt-8 flex w-full max-w-screen-xl items-center justify-center px-4 sm:px-6">
               <HeroVideoDialog
                 className="block w-full rounded-3xl"
                 animationStyle="from-center"
@@ -81,7 +87,6 @@ export default function LandingPage() {
             </div>
           </section>
           <div>
-
             <Suspense fallback={<SuspenseLoader />}>
               <ChaoticWorkspaceSection />
             </Suspense>

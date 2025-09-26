@@ -12,7 +12,7 @@ export default function HeroSection() {
     useLatestRelease("heygaia/gaia");
 
   return (
-    <div className="mt-28 w-screen flex-col gap-8 py-16 sm:pb-10 relative">
+    <div className="relative mt-18 w-screen flex-col gap-8 py-16 sm:pb-10">
       {/* <div className="particles absolute top-0 z-1 h-screen w-full overflow-hidden bg-[#00bbff50] bg-[radial-gradient(circle_at_center,_#00bbff50_0%,_#00bbff50_40%,_#01bbff0d_75%,_transparent_100%)]">
 
         <div className="vignette absolute h-[351%] w-full bg-[radial-gradient(circle,_rgba(0,0,0,0)_0%,_rgba(0,0,0,0)_47%,_#000_80%)]" />
@@ -29,9 +29,9 @@ export default function HeroSection() {
 
         <SplitTextBlur
           text="Meet the personal assistant you’ve always wanted"
-          className="max-w-(--breakpoint-lg) text-center text-[2.8rem] font-medium sm:text-[5rem] z-[10] tracking-tighter leading-none"
+          className="z-[10] max-w-(--breakpoint-lg) text-center text-[2.8rem] leading-none font-medium tracking-tighter sm:text-[5rem]"
         />
-        <div className="mb-6 max-w-(--breakpoint-sm) px-4 py-0 text-center text-lg leading-7 font-light text-foreground-700 sm:px-0 sm:text-xl tracking-tighter">
+        <div className="mb-6 max-w-(--breakpoint-sm) px-4 py-0 text-center text-lg leading-7 font-light tracking-tighter text-foreground-700 sm:px-0 sm:text-xl">
           Tired of Siri, Google Assistant, and ChatGPT doing nothing useful?
         </div>
         <GetStartedButton />

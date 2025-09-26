@@ -25,7 +25,7 @@ export default function Tired() {
       <div className="relative z-[1] flex gap-14 pt-10">
         <Image
           src={
-            "https://upload.wikimedia.org/wikipedia/commons/thumb/d/de/Logo_Apple_Siri_iOS_2024.svg/1200px-Logo_Apple_Siri_iOS_2024.svg.png"
+            "/images/icons/siri.webp"
           }
           alt="Siri Logo"
           width={70}

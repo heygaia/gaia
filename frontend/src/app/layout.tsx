@@ -116,11 +116,6 @@ export default function RootLayout({
         </Script>
         {/* Defer all analytics to improve LCP and reduce unused JS */}
         <Script
-          src="https://uptime.betterstack.com/widgets/announcement.js"
-          data-id="212836"
-          strategy="afterInteractive"
-        />
-        <Script
           src="https://analytics.heygaia.io/api/script.js"
           data-site-id="1"
           strategy="afterInteractive"
