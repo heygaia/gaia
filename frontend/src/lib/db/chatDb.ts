@@ -79,6 +79,13 @@ export class ChatDexie extends Dexie {
       .sortBy("createdAt");
   }
 
+  public async getConversationIdsWithMessages(): Promise<string[]> {
+    const conversationIds = await this.messages
+      .orderBy("conversationId")
+      .keys();
+    return Array.from(new Set(conversationIds)) as string[];
+  }
+
   public putMessage(message: IMessage): Promise<string> {
     return this.messages.put(message);
   }
