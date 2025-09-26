@@ -24,7 +24,10 @@ from app.models.user_models import (
     OnboardingResponse,
     UserUpdateResponse,
 )
-from app.services.composio_service import COMPOSIO_SOCIAL_CONFIGS, composio_service
+from app.services.composio.composio_service import (
+    COMPOSIO_SOCIAL_CONFIGS,
+    composio_service,
+)
 from app.services.oauth_service import store_user_info
 from app.services.onboarding_service import (
     complete_onboarding,

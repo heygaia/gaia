@@ -1,9 +1,9 @@
 import json
 from typing import Any, List, Optional
 
+from app.agents.prompts.mail_prompts import EMAIL_COMPOSER
 from app.api.v1.dependencies.google_scope_dependencies import require_integration
 from app.decorators import tiered_rate_limit
-from app.langchain.prompts.mail_prompts import EMAIL_COMPOSER
 from app.models.mail_models import (
     ApplyLabelRequest,
     DraftRequest,
@@ -14,16 +14,16 @@ from app.models.mail_models import (
     LabelRequest,
     SendEmailRequest,
 )
-from app.services.email_importance_service import (
+from app.services.mail.email_importance_service import (
     get_bulk_email_importance_summaries as get_bulk_importance_summaries_service,
 )
-from app.services.email_importance_service import (
+from app.services.mail.email_importance_service import (
     get_email_importance_summaries as get_importance_summaries_service,
 )
-from app.services.email_importance_service import (
+from app.services.mail.email_importance_service import (
     get_single_email_importance_summary as get_single_importance_summary_service,
 )
-from app.services.mail_service import (
+from app.services.mail.mail_service import (
     apply_labels,
     archive_messages,
     create_draft,
@@ -47,10 +47,10 @@ from app.services.mail_service import (
     update_draft,
     update_label,
 )
-from app.services.mail_service import (
+from app.services.mail.mail_service import (
     get_email_by_id as get_email_by_id_service,
 )
-from app.services.mail_service import (
+from app.services.mail.mail_service import (
     list_labels as list_labels_service,
 )
 from app.utils.chat_utils import do_prompt_no_stream

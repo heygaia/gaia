@@ -15,7 +15,7 @@ from app.config.rate_limits import (
 )
 from app.decorators.rate_limiting import tiered_limiter
 from app.models.payment_models import PlanType
-from app.services.payment_service import payment_service
+from app.services.payments.payment_service import payment_service
 from app.services.usage_service import UsageService
 from fastapi import APIRouter, Depends, HTTPException, Query
 

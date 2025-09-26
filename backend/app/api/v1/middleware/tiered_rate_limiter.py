@@ -34,7 +34,7 @@ from app.models.usage_models import (
     UsagePeriod,
     UserUsageSnapshot,
 )
-from app.services.payment_service import payment_service
+from app.services.payments.payment_service import payment_service
 from app.services.usage_service import UsageService
 from fastapi import HTTPException
 from pydantic import BaseModel

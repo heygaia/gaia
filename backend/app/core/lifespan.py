@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from app.config.loggers import app_logger as logger
 from app.db.postgresql import close_postgresql_db
 from app.db.rabbitmq import get_rabbitmq_publisher
-from app.langchain.tools.core.store import initialize_tools_store
-from app.utils.websocket_consumer import (
+from app.agents.tools.core.store import initialize_tools_store
+from app.core.websocket_consumer import (
     start_websocket_consumer,
     stop_websocket_consumer,
 )
@@ -145,11 +145,11 @@ async def lifespan(app: FastAPI):
         from app.db.chromadb import init_chroma
         from app.db.postgresql import init_postgresql_engine
         from app.db.rabbitmq import init_rabbitmq_publisher
-        from app.langchain.core.graph_builder.build_graph import build_default_graph
-        from app.langchain.core.graph_builder.checkpointer_manager import (
+        from app.agents.core.graph_builder.build_graph import build_default_graph
+        from app.agents.core.graph_builder.checkpointer_manager import (
             init_checkpointer_managers,
         )
-        from app.langchain.llm.client import (
+        from app.agents.llm.client import (
             register_llm_providers,
         )
 

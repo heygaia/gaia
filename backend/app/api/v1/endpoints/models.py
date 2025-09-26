@@ -11,7 +11,7 @@ from app.services.model_service import (
     get_available_models,
     update_user_selected_model,
 )
-from app.services.payment_service import payment_service
+from app.services.payments.payment_service import payment_service
 from fastapi import APIRouter, Depends, HTTPException
 
 router = APIRouter(prefix="/chat-models", tags=["models"])

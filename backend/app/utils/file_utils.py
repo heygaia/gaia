@@ -11,7 +11,7 @@ from typing import List, Union
 from llama_cloud_services import LlamaParse
 from llama_cloud_services.parse.utils import ResultType
 
-import app.langchain.llm.chatbot as chatbot
+import app.agents.llm.chatbot as chatbot
 from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.models.files_models import DocumentPageModel, DocumentSummaryModel

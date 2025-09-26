@@ -17,8 +17,8 @@ from app.models.payment_models import (
     PlanResponse,
     UserSubscriptionStatus,
 )
-from app.services.payment_service import payment_service
-from app.services.payment_webhook_service import payment_webhook_service
+from app.services.payments.payment_service import payment_service
+from app.services.payments.payment_webhook_service import payment_webhook_service
 
 
 router = APIRouter()

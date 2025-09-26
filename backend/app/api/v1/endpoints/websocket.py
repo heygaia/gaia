@@ -1,6 +1,6 @@
 from app.api.v1.dependencies.oauth_dependencies import get_current_user_ws
 from app.config.loggers import auth_logger as logger
-from app.utils.common_utils import (
+from app.core.websocket_manager import (
     websocket_manager as connection_manager,
 )
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status

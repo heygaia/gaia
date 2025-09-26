@@ -20,7 +20,7 @@ from app.api.v1.middleware.tiered_rate_limiter import (
     tiered_limiter,
 )
 from app.models.payment_models import PlanType
-from app.services.payment_service import payment_service
+from app.services.payments.payment_service import payment_service
 
 # Context variables to avoid parameter pollution
 user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar(

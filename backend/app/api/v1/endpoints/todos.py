@@ -30,7 +30,7 @@ from app.models.workflow_models import (
     TriggerConfig,
     TriggerType,
 )
-from app.services.todo_service import ProjectService, TodoService
+from app.services.todos.todo_service import ProjectService, TodoService
 from app.services.workflow.service import WorkflowService
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, status
 
