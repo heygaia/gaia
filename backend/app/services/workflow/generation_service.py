@@ -3,9 +3,9 @@
 from typing import List
 
 from app.config.loggers import general_logger as logger
-from app.langchain.llm.client import init_llm
-from app.langchain.prompts.trigger_prompts import generate_trigger_context
-from app.langchain.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
+from app.agents.llm.client import init_llm
+from app.agents.prompts.trigger_prompts import generate_trigger_context
+from app.agents.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
 from app.models.workflow_models import WorkflowStep
 from langchain_core.output_parsers import PydanticOutputParser
 from pydantic import BaseModel, Field
@@ -30,7 +30,7 @@ class WorkflowGenerationService:
             parser = PydanticOutputParser(pydantic_object=WorkflowPlan)
 
             # Import here to avoid circular dependency at module level
-            from app.langchain.tools.core.registry import (
+            from app.agents.tools.core.registry import (
                 tool_registry,
             )
 

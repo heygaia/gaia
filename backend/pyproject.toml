@@ -110,6 +110,7 @@ dependencies = [
   "loguru>=0.7.3",
   "fastapi-cache2[redis]>=0.1.8",
   "ujson>=5.11.0",
+  "uvloop>=0.21.0",
 ]
 
 ## To run the tasks use commands like:
@@ -126,7 +127,7 @@ schema = "uvx schemathesis run http://localhost:8000/openapi.json"
 "schema.write" = "uvx schemathesis run http://localhost:8000/openapi.json --report-junit-path report.xml"
 bandit = "uvx bandit -r app"
 pip_audit = "uvx pip-audit"
-detect_secrets = "uvx detect-secrets scan --all-files > .secrets.baseline"
+detect_secrets = "uvx detect-secrets scan --all-files" # pragma: allowlist secret
 
 [dependency-groups]
 dev = [

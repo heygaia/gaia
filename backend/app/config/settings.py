@@ -87,9 +87,7 @@ class CommonSettings(BaseAppSettings):
     # Profiling & Performance Monitoring
     # ----------------------------------------------
     ENABLE_PROFILING: bool = False  # Must be explicitly enabled via .env
-    PROFILING_SAMPLE_RATE: float = 1  # 100% of requests by default
-    PROFILING_MAX_DEPTH: int = 20  # Maximum call stack depth
-    PROFILING_ASYNC_MODE: str = "enabled"  # enabled, disabled, strict
+    PROFILING_SAMPLE_RATE: float = 1.0  # 100% of requests by default
 
     # ----------------------------------------------
     # Computed Properties
