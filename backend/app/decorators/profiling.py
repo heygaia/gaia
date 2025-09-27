@@ -32,9 +32,10 @@ from typing import Callable, Optional
 from app.config.loggers import profiler_logger as logger
 from app.config.settings import settings
 
+Profiler = None
 try:
-    from pyinstrument import Profiler
-
+    from pyinstrument import Profiler as _Profiler
+    Profiler = _Profiler
     PROFILING_AVAILABLE = True
 except ImportError:
     logger.warning("pyinstrument not available - profiling disabled")
@@ -75,16 +76,18 @@ def profile_function(
             @functools.wraps(f)
             async def async_wrapper(*args, **kwargs):
                 # Apply sampling - skip profiling if random check fails
+                # Non-cryptographic sampling: random.random() is safe here (Bandit B311 # nosec)
                 if (
                     effective_sample_rate < 1.0
-                    and random.random() >= effective_sample_rate
+                    and random.random() >= effective_sample_rate  # nosec: B311
                 ):
                     return await f(*args, **kwargs)
 
                 profiler = None
                 try:
-                    profiler = Profiler()
-                    profiler.start()
+                    if Profiler is not None:
+                        profiler = Profiler()
+                        profiler.start()
                     result = await f(*args, **kwargs)
                     return result
                 except Exception:
@@ -107,16 +110,18 @@ def profile_function(
             @functools.wraps(f)
             def sync_wrapper(*args, **kwargs):
                 # Apply sampling - skip profiling if random check fails
+                # Non-cryptographic sampling: random.random() is safe here (Bandit B311 # nosec)
                 if (
                     effective_sample_rate < 1.0
-                    and random.random() >= effective_sample_rate
+                    and random.random() >= effective_sample_rate  # nosec: B311
                 ):
                     return f(*args, **kwargs)
 
                 profiler = None
                 try:
-                    profiler = Profiler()
-                    profiler.start()
+                    if Profiler is not None:
+                        profiler = Profiler()
+                        profiler.start()
                     result = f(*args, **kwargs)
                     return result
                 except Exception:
