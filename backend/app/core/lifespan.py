@@ -1,14 +1,15 @@
 import asyncio
 from contextlib import asynccontextmanager
 
+import uvloop
+from app.agents.tools.core.store import initialize_tools_store
 from app.config.loggers import app_logger as logger
-from app.db.postgresql import close_postgresql_db
-from app.db.rabbitmq import get_rabbitmq_publisher
-from app.langchain.tools.core.store import initialize_tools_store
-from app.utils.websocket_consumer import (
+from app.core.websocket_consumer import (
     start_websocket_consumer,
     stop_websocket_consumer,
 )
+from app.db.postgresql import close_postgresql_db
+from app.db.rabbitmq import get_rabbitmq_publisher
 from fastapi import FastAPI
 
 
@@ -28,10 +29,10 @@ async def init_reminder_service():
 async def init_workflow_service():
     """Initialize workflow service."""
     try:
-        from app.services.workflow.scheduler_service import workflow_scheduler_service
+        from app.services.workflow.scheduler import workflow_scheduler
 
-        await workflow_scheduler_service.initialize()
-        await workflow_scheduler_service.scheduler.scan_and_schedule_pending_tasks()
+        await workflow_scheduler.initialize()
+        await workflow_scheduler.scan_and_schedule_pending_tasks()
         logger.info("Workflow service initialized")
     except Exception as e:
         logger.error(f"Failed to initialize workflow service: {e}")
@@ -140,18 +141,16 @@ async def lifespan(app: FastAPI):
         logger.info("Registering lazy providers...")
 
         # Import and register providers
+        from app.agents.core.graph_builder.build_graph import build_default_graph
+        from app.agents.core.graph_builder.checkpointer_manager import (
+            init_checkpointer_managers,
+        )
+        from app.agents.llm.client import register_llm_providers
         from app.config.cloudinary import init_cloudinary
         from app.core.lazy_loader import providers
         from app.db.chromadb import init_chroma
         from app.db.postgresql import init_postgresql_engine
         from app.db.rabbitmq import init_rabbitmq_publisher
-        from app.langchain.core.graph_builder.build_graph import build_default_graph
-        from app.langchain.core.graph_builder.checkpointer_manager import (
-            init_checkpointer_managers,
-        )
-        from app.langchain.llm.client import (
-            register_llm_providers,
-        )
 
         # Register all providers
         init_postgresql_engine()
@@ -161,6 +160,8 @@ async def lifespan(app: FastAPI):
         init_chroma()
         init_cloudinary()
         init_checkpointer_managers()
+
+        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
         logger.info("All lazy providers registered successfully")
 

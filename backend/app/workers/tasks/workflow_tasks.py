@@ -8,16 +8,18 @@ from typing import Optional, Tuple
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
-from app.config.loggers import arq_worker_logger as logger
+from app.agents.core.agent import call_agent_silent
+from app.api.v1.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.config.loggers import worker_logger as logger
 from app.config.token_repository import token_repository
-from app.langchain.core.agent import call_agent_silent
-from app.middleware.tiered_rate_limiter import tiered_rate_limit
+from app.db.mongodb.collections import todos_collection
 from app.models.chat_models import MessageModel
 from app.models.message_models import (
     MessageRequestWithHistory,
     SelectedWorkflowData,
 )
 from app.services.model_service import get_user_selected_model
+from app.services.todos.todo_service import TodoService
 from app.services.user_service import get_user_by_id
 from app.services.workflow.conversation_service import (
     get_or_create_workflow_conversation,
@@ -91,13 +93,11 @@ async def process_workflow_generation_task(
     Returns:
         Processing result message
     """
-    from app.db.mongodb.collections import todos_collection
     from app.models.workflow_models import (
         CreateWorkflowRequest,
         TriggerConfig,
         TriggerType,
     )
-    from app.services.todo_service import TodoService
     from app.services.workflow.service import WorkflowService
 
     logger.info(f"Processing workflow generation for todo {todo_id}: {title}")
@@ -461,7 +461,7 @@ async def create_workflow_completion_notification(
             NotificationSourceEnum,
             RedirectConfig,
         )
-        from app.services.notification_service import notification_service
+        from app.services.notifications.notification_service import notification_service
         from app.services.workflow.conversation_service import (
             add_workflow_execution_messages,
             get_or_create_workflow_conversation,
@@ -517,3 +517,90 @@ async def create_workflow_completion_notification(
     except Exception as e:
         logger.error(f"Failed to create workflow completion notification: {str(e)}")
         # Don't raise - this shouldn't fail the workflow execution
+
+
+# from old process_workflow.py - kept for reference
+# async def process_workflow_generation(task_data: Dict[str, Any]) -> None:
+#     """
+#     Process workflow generation task in the background.
+
+#     Args:
+#         task_data: Dictionary containing todo_id, user_id, title, and description
+#     """
+#     try:
+#         todo_id = task_data.get("todo_id")
+#         user_id = task_data.get("user_id")
+#         title = task_data.get("title")
+#         description = task_data.get("description")
+
+#         if not all([todo_id, user_id, title]):
+#             logger.error(f"Missing required fields in workflow task data: {task_data}")
+#             return
+
+#         logger.info(f"Starting workflow generation for todo {todo_id}: {title}")
+
+#         # Create standalone workflow using the new workflow system
+#         from app.models.workflow_models import (
+#             CreateWorkflowRequest,
+#             TriggerConfig,
+#             TriggerType,
+#         )
+#         from app.services.workflow.service import WorkflowService
+
+#         workflow_request = CreateWorkflowRequest(
+#             title=f"Todo: {title}",
+#             description=description or f"Workflow for todo: {title}",
+#             trigger_config=TriggerConfig(type=TriggerType.MANUAL, enabled=True),
+#             generate_immediately=True,  # Generate steps immediately
+#         )
+
+#         workflow = await WorkflowService.create_workflow(workflow_request, str(user_id))
+
+#         if workflow and workflow.id:
+#             # Update the todo with the workflow_id for linking
+#             update_data = {
+#                 "workflow_id": workflow.id,
+#                 "updated_at": datetime.now(timezone.utc),
+#             }
+
+#             result = await todos_collection.update_one(
+#                 {"_id": ObjectId(todo_id), "user_id": user_id}, {"$set": update_data}
+#             )
+
+#             if result.modified_count > 0:
+#                 logger.info(
+#                     f"Successfully generated and linked standalone workflow {workflow.id} for todo {todo_id} with {len(workflow.steps)} steps"
+#                 )
+
+#                 if not user_id:
+#                     logger.warning(
+#                         f"User ID is missing for todo {todo_id}. Cannot invalidate cache."
+#                     )
+#                     return
+
+#                 # Invalidate cache for this todo
+#                 await TodoService._invalidate_cache(user_id, None, todo_id, "update")
+#             else:
+#                 logger.warning(f"Todo {todo_id} not found or not updated with workflow")
+
+#         else:
+#             logger.error(
+#                 f"Failed to generate workflow for todo {todo_id}: No workflow created"
+#             )
+
+#     except Exception as e:
+#         # Mark workflow generation as failed on exception
+#         try:
+#             todo_id = task_data.get("todo_id")
+#             user_id = task_data.get("user_id")
+#             if todo_id and user_id:
+#                 # Just log the failure, don't update legacy fields
+#                 logger.error(f"Failed to generate workflow for todo {todo_id}")
+#         except Exception as update_error:
+#             logger.error(
+#                 f"Failed to update workflow status to failed: {str(update_error)}"
+#             )
+
+#         logger.error(
+#             f"Error processing workflow generation task: {str(e)}", exc_info=True
+#         )
