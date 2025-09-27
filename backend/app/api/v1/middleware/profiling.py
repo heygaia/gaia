@@ -16,14 +16,12 @@ from app.config.settings import settings
 
 # Import pyinstrument with fallback
 PYINSTRUMENT_AVAILABLE = False
-Profiler = None
-
 try:
     from pyinstrument import Profiler
-
     PYINSTRUMENT_AVAILABLE = True
     logger.info("PyInstrument profiling available")
 except ImportError:
+    Profiler = None
     logger.info("PyInstrument not available. Profiling will be disabled.")
 
 

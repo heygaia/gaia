@@ -79,10 +79,10 @@ async def create_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Creating goal with title '{title}'")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "goal": None}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -133,10 +133,10 @@ async def create_goal(
 async def list_goals(config: RunnableConfig) -> Dict[str, Any]:
     try:
         logger.info("Goal Tool: Listing all goals")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "goals": []}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -178,10 +178,10 @@ async def get_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Getting goal {goal_id}")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "goal": None}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -236,10 +236,10 @@ async def delete_goal(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Deleting goal {goal_id}")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "success": False}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -288,10 +288,10 @@ async def generate_roadmap(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Generating roadmap for goal {goal_id}")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "roadmap": None}
+        user = {"user_id": user_id}
 
         # Get the goal to check if it exists and get the title
         goal = await goals_collection.find_one({"_id": ObjectId(goal_id)})
@@ -405,10 +405,10 @@ async def update_goal_node(
         logger.info(
             f"Goal Tool: Updating node {node_id} in goal {goal_id} to complete={is_complete}"
         )
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "goal": None}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -458,10 +458,10 @@ async def search_goals(
 ) -> Dict[str, Any]:
     try:
         logger.info(f"Goal Tool: Searching goals with query '{query}'")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "goals": []}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
@@ -521,10 +521,10 @@ async def search_goals(
 async def get_goal_statistics(config: RunnableConfig) -> Dict[str, Any]:
     try:
         logger.info("Goal Tool: Getting goal statistics")
-        user = get_user_id_from_config(config)
-
-        if not user.get("user_id"):
+        user_id = get_user_id_from_config(config)
+        if not user_id:
             return {"error": "User authentication required", "stats": None}
+        user = {"user_id": user_id}
 
         # Stream progress update
         writer = get_stream_writer()
