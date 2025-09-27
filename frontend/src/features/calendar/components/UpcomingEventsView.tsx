@@ -124,6 +124,7 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
       connectIntegrationId="google_calendar"
       onConnect={onConnect}
       connectButtonText="Connect Calendar"
+      path="/calendar"
     >
       <div className="space-y-6 p-4">
         {Object.entries(upcomingEventsByDay).map(
