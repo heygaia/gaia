@@ -8,8 +8,8 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Typography from "@tiptap/extension-typography";
 import Underline from "@tiptap/extension-underline";
-
 import { EditorContent, useEditor } from "@tiptap/react";
+import StarterKit from "@tiptap/starter-kit";
 import he from "he";
 import { Reply, ReplyAll, Send, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
@@ -25,7 +25,6 @@ import { parseEmail } from "@/features/mail/utils/mailUtils";
 import { EmailData, EmailImportanceSummary } from "@/types/features/mailTypes";
 
 import { useFetchEmailById } from "../hooks/useFetchEmailById";
-import StarterKit from "@tiptap/starter-kit";
 
 interface ViewEmailProps {
   mailId: string | null;
