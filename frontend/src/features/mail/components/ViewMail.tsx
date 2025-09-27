@@ -8,6 +8,7 @@ import Link from "@tiptap/extension-link";
 import Placeholder from "@tiptap/extension-placeholder";
 import Typography from "@tiptap/extension-typography";
 import Underline from "@tiptap/extension-underline";
+
 import { EditorContent, useEditor } from "@tiptap/react";
 import he from "he";
 import { Reply, ReplyAll, Send, XIcon } from "lucide-react";
@@ -24,6 +25,7 @@ import { parseEmail } from "@/features/mail/utils/mailUtils";
 import { EmailData, EmailImportanceSummary } from "@/types/features/mailTypes";
 
 import { useFetchEmailById } from "../hooks/useFetchEmailById";
+import StarterKit from "@tiptap/starter-kit";
 
 interface ViewEmailProps {
   mailId: string | null;
@@ -202,7 +204,7 @@ export default function ViewEmail({
 
   const editor = useEditor({
     extensions: [
-      // TODO: StarterKit,
+      StarterKit,
       Underline,
       Link,
       Typography,
