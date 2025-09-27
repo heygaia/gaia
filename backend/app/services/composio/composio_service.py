@@ -2,15 +2,13 @@ import asyncio
 import time
 from typing import Optional
 
-from langchain_core.tools import StructuredTool
-
 from app.config.loggers import langchain_logger as logger
 from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
 from app.decorators.caching import Cacheable, CacheInvalidator
 from app.models.oauth_models import TriggerConfig
 from app.services.composio.langchain_composio_service import LangchainProvider
-from app.utils.composio_hooks import (
+from app.utils.composio_hooks.composio_hooks import (
     master_after_execute_hook,
     master_before_execute_hook,
 )
@@ -87,10 +85,7 @@ class ComposioService:
 
         # Run the first tools.get() call asynchronously
         tools = await asyncio.to_thread(
-            self.composio.tools.get,
-            user_id="",
-            toolkits=[tool_kit],
-            limit=100
+            self.composio.tools.get, user_id="", toolkits=[tool_kit], limit=100
         )
 
         exclude_tools = exclude_tools or []
@@ -109,7 +104,7 @@ class ComposioService:
             user_id="",
             toolkits=[tool_kit],
             modifiers=[master_before_modifier, master_after_modifier],
-            limit=1000
+            limit=1000,
         )
 
         tools_time = time.time() - start_time
