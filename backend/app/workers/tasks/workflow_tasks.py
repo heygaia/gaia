@@ -4,7 +4,7 @@ Contains all workflow-related background tasks and execution logic.
 """
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Optional, Tuple
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -93,13 +93,11 @@ async def process_workflow_generation_task(
     Returns:
         Processing result message
     """
-    from app.db.mongodb.collections import todos_collection
     from app.models.workflow_models import (
         CreateWorkflowRequest,
         TriggerConfig,
         TriggerType,
     )
-    from app.services.todos.todo_service import TodoService
     from app.services.workflow.service import WorkflowService
 
     logger.info(f"Processing workflow generation for todo {todo_id}: {title}")

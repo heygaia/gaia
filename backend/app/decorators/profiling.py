@@ -35,6 +35,7 @@ from app.config.settings import settings
 Profiler = None
 try:
     from pyinstrument import Profiler as _Profiler
+
     Profiler = _Profiler
     PROFILING_AVAILABLE = True
 except ImportError:
