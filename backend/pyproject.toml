@@ -110,6 +110,7 @@ dependencies = [
   "loguru>=0.7.3",
   "fastapi-cache2[redis]>=0.1.8",
   "ujson>=5.11.0",
+  "uvloop>=0.21.0",
 ]
 
 ## To run the tasks use commands like:

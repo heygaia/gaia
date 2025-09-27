@@ -4,7 +4,7 @@ Service for managing and retrieving tool information.
 
 from typing import Dict
 
-from app.langchain.tools.core.registry import tool_registry
+from app.agents.tools.core.registry import tool_registry
 from app.models.tools_models import ToolInfo, ToolsCategoryResponse, ToolsListResponse
 
 

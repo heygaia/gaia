@@ -3,7 +3,7 @@
 from typing import Any, Dict, List, Optional
 
 from app.config.loggers import llm_logger as logger
-from app.memory.client import memory_client_manager
+from app.agents.memory.client import memory_client_manager
 from app.models.memory_models import (
     MemoryEntry,
     MemoryRelation,
