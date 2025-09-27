@@ -74,7 +74,6 @@ dependencies = [
   "slowapi>=0.1.9",
   "fastapi-mcp>=0.3.3",
   "langgraph-bigtool>=0.0.2",
-  "mem0ai[graph]>=0.1.110",
   "aio-pika>=9.5.5",
   "aiolimiter>=1.2.1",
   "arq>=0.26.0",
@@ -110,6 +109,8 @@ dependencies = [
   "loguru>=0.7.3",
   "fastapi-cache2[redis]>=0.1.8",
   "ujson>=5.11.0",
+  "uvloop>=0.21.0",
+  "mem0ai>=0.1.118",
 ]
 
 ## To run the tasks use commands like:
