@@ -1,7 +1,8 @@
 import json
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, cast, List
 from uuid import uuid4
+from app.models.chat_models import ToolDataEntry
 
 from app.config.loggers import llm_logger as logger
 from app.agents.tools.core.registry import tool_registry
@@ -160,7 +161,7 @@ async def store_agent_progress(
                         tool_data_entries.append(tool_entry)
 
                 if tool_data_entries:
-                    bot_message.tool_data = tool_data_entries
+                    bot_message.tool_data = cast(List[ToolDataEntry], tool_data_entries)
 
             # Handle follow_up_actions separately (it's a core field, not tool data)
             if "follow_up_actions" in current_tool_data:
