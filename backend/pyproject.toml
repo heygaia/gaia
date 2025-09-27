@@ -111,6 +111,7 @@ dependencies = [
   "fastapi-cache2[redis]>=0.1.8",
   "ujson>=5.11.0",
   "uvloop>=0.21.0",
+  "orjson>=3.11.3",
 ]
 
 ## To run the tasks use commands like:

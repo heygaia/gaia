@@ -6,8 +6,10 @@ from typing import Dict
 
 from app.agents.tools.core.registry import tool_registry
 from app.models.tools_models import ToolInfo, ToolsCategoryResponse, ToolsListResponse
+from app.decorators.caching import Cacheable
 
 
+@Cacheable(smart_hash=True, ttl=21600, model=ToolsListResponse)  # 6 hours
 async def get_available_tools() -> ToolsListResponse:
     """Get list of all available tools with their metadata."""
     tool_infos = []
