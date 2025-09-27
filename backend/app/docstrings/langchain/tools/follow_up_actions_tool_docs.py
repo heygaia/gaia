@@ -11,7 +11,7 @@ ACTION REQUIREMENTS:
 
 GOOD ACTION TYPES:
 - Process starters: "Create reminder", "Set timer", "Write email"
-- Data requests: "Show weather", "Get directions" 
+- Data requests: "Show weather", "Get directions"
 - Content generation: "Create list", "Draft response"
 - Task continuation: "Add another", "Try different style"
 
