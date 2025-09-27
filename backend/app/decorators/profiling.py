@@ -1,133 +1,248 @@
 """
-Profiling middleware for performance monitoring using pyinstrument.
+Universal profiling decorator for both async and sync functions using pyinstrument.
 
-This module provides middleware for profiling HTTP requests with detailed call stack analysis.
-Profiling is completely optional and must be explicitly enabled via environment variables.
+This module provides a single decorator that can profile both synchronous and
+asynchronous functions with detailed call stack analysis. Profiling is completely
+optional and must be explicitly enabled via environment variables.
+
+Features:
+- Works with both async and sync functions
+- Environment-based configuration
+- Optional profiling with sampling
+- Detailed call stack analysis
+- Configurable output formats
+- Graceful fallback when pyinstrument is not available
+
+Environment Variables:
+    ENABLE_PROFILING: bool = False (must be explicitly enabled)
+    PROFILING_SAMPLE_RATE: float = 1.0 (100% sampling rate)
+    PROFILING_MAX_DEPTH: int = 20 (max call stack depth)
+    PROFILING_ASYNC_MODE: str = "enabled" (enabled, disabled, strict)
+
+Usage:
+    @profile_function
+    async def my_async_function():
+        # Your async code here
+        pass
+
+    @profile_function
+    def my_sync_function():
+        # Your sync code here
+        pass
+
+    @profile_function(sample_rate=0.1)  # 10% sampling
+    def expensive_function():
+        # Your code here
+        pass
 """
 
+import functools
+import inspect
 import random
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
-from fastapi.responses import HTMLResponse
+from typing import Any, Callable, Optional, Union
+
+from pyinstrument import Profiler
 
 from app.config.loggers import profiler_logger as logger
 from app.config.settings import settings
 
-# Import pyinstrument with fallback
-PYINSTRUMENT_AVAILABLE = False
-Profiler = None
 
-try:
-    from pyinstrument import Profiler
-
-    PYINSTRUMENT_AVAILABLE = True
-    logger.info("PyInstrument profiling available")
-except ImportError:
-    logger.info("PyInstrument not available. Profiling will be disabled.")
-
-
-class ProfilingMiddleware(BaseHTTPMiddleware):
+def profile_function(
+    func: Optional[Callable] = None,
+    *,
+    sample_rate: Optional[float] = None,
+    max_depth: Optional[int] = None,
+    async_mode: Optional[str] = None,
+    output_format: str = "text",
+    log_results: bool = True,
+    **profiler_kwargs,
+) -> Union[Callable, Any]:
     """
-    Optional middleware to profile API requests with pyinstrument.
+    Universal profiling decorator for both async and sync functions.
 
-    This middleware provides detailed call stack profiling when:
-    1. ENABLE_PROFILING=true is set in environment variables
-    2. A request includes the 'profile' query parameter
-    3. Random sampling criteria are met (based on PROFILING_SAMPLE_RATE)
+    Args:
+        func: The function to profile (when used as decorator)
+        sample_rate: Override global sampling rate (0.0 to 1.0)
+        max_depth: Override global max call stack depth
+        async_mode: Override global async mode setting
+        output_format: Output format ("text", "html", "json")
+        log_results: Whether to log profiling results
+        **profiler_kwargs: Additional arguments passed to Profiler
 
-    The profiling report is returned as HTML when profiling is active.
+    Returns:
+        Decorated function or decorator function
+    """
 
-    Environment Variables:
-        ENABLE_PROFILING: bool = False (must be explicitly enabled)
-        PROFILING_SAMPLE_RATE: float = 0.1 (10% sampling rate)
-        PROFILING_MAX_DEPTH: int = 50 (max call stack depth)
-        PROFILING_ASYNC_MODE: str = "enabled"
+    def decorator(f: Callable) -> Callable:
+        # Check if profiling is available and enabled
+        if not settings.ENABLE_PROFILING:
+            logger.debug(f"Profiling disabled for {f.__name__}")
+            return f
+
+        # Determine if function is async
+        is_async = inspect.iscoroutinefunction(f)
+
+        # Get configuration
+        effective_sample_rate = (
+            sample_rate if sample_rate is not None else settings.PROFILING_SAMPLE_RATE
+        )
+        effective_max_depth = (
+            max_depth if max_depth is not None else settings.PROFILING_MAX_DEPTH
+        )
+
+        # Apply sampling
+        if effective_sample_rate < 1.0 and random.random() >= effective_sample_rate:
+            logger.debug(f"Profiling skipped for {f.__name__} due to sampling")
+            return f
+
+        if is_async:
+
+            @functools.wraps(f)
+            async def async_wrapper(*args, **kwargs):
+                profiler = Profiler(**profiler_kwargs)
+
+                try:
+                    profiler.start()
+                    result = await f(*args, **kwargs)
+                    profiler.stop()
+
+                    if log_results:
+                        _log_profiling_results(f.__name__, profiler, output_format)
+
+                    return result
+
+                except Exception as e:
+                    profiler.stop()
+                    logger.exception(
+                        f"Profiling error in async function {f.__name__}: {str(e)}"
+                    )
+                    raise
+
+            return async_wrapper
+        else:
+
+            @functools.wraps(f)
+            def sync_wrapper(*args, **kwargs):
+                profiler = Profiler(**profiler_kwargs)
+
+                try:
+                    profiler.start()
+                    result = f(*args, **kwargs)
+                    profiler.stop()
+
+                    if log_results:
+                        _log_profiling_results(f.__name__, profiler, output_format)
+
+                    return result
+
+                except Exception as e:
+                    profiler.stop()
+                    logger.exception(
+                        f"Profiling error in sync function {f.__name__}: {str(e)}"
+                    )
+                    raise
+
+            return sync_wrapper
+
+    # Handle both @profile_function and @profile_function() usage
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)
+
+
+def _log_profiling_results(
+    func_name: str, profiler: Profiler, output_format: str
+) -> None:
+    """
+    Log profiling results in the specified format.
+
+    Args:
+        func_name: Name of the profiled function
+        profiler: PyInstrument profiler instance
+        output_format: Desired output format
+    """
+    try:
+        if output_format == "html":
+            output = profiler.output_html()
+            logger.info(f"Profiling HTML report for {func_name}:\n{output}")
+        elif output_format == "json":
+            output = profiler.output_json()
+            logger.info(f"Profiling JSON report for {func_name}:\n{output}")
+        else:  # text format
+            output = profiler.output_text()
+            logger.info(f"Profiling results for {func_name}:\n{output}")
+    except Exception as e:
+        logger.warning(f"Could not generate profiling output for {func_name}: {e}")
+
+
+def profile_class_methods(
+    sample_rate: Optional[float] = None,
+    max_depth: Optional[int] = None,
+    async_mode: Optional[str] = None,
+    output_format: str = "text",
+    log_results: bool = True,
+    **profiler_kwargs,
+):
+    """
+    Class decorator to profile all methods of a class.
+
+    Args:
+        sample_rate: Override global sampling rate
+        max_depth: Override global max call stack depth
+        async_mode: Override global async mode setting
+        output_format: Output format for results
+        log_results: Whether to log profiling results
+        **profiler_kwargs: Additional profiler arguments
 
     Usage:
-        Add ?profile=1 to any request URL to get a profiling report (when enabled).
+        @profile_class_methods(sample_rate=0.1)
+        class MyClass:
+            def method1(self):
+                pass
+
+            async def method2(self):
+                pass
     """
 
-    def __init__(self, app):
-        super().__init__(app)
-        self._log_startup_info()
+    def decorator(cls):
+        for attr_name in dir(cls):
+            attr = getattr(cls, attr_name)
+            if callable(attr) and not attr_name.startswith("_"):
+                setattr(
+                    cls,
+                    attr_name,
+                    profile_function(
+                        attr,
+                        sample_rate=sample_rate,
+                        max_depth=max_depth,
+                        async_mode=async_mode,
+                        output_format=output_format,
+                        log_results=log_results,
+                        **profiler_kwargs,
+                    ),
+                )
+        return cls
 
-    def _log_startup_info(self):
-        """Log profiling configuration at startup."""
-        if not PYINSTRUMENT_AVAILABLE:
-            logger.warning(
-                "PyInstrument profiling is not available (package not installed)"
-            )
-            return
+    return decorator
 
-        if settings.ENABLE_PROFILING:
-            logger.info(
-                f"PyInstrument profiling enabled: "
-                f"sample_rate={settings.PROFILING_SAMPLE_RATE}, "
-                f"max_depth={settings.PROFILING_MAX_DEPTH}, "
-                f"async_mode={settings.PROFILING_ASYNC_MODE}"
-            )
-        else:
-            logger.info("PyInstrument profiling disabled (ENABLE_PROFILING=false)")
 
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Check if profiling is available and enabled
-        if (
-            not settings.ENABLE_PROFILING
-            or not PYINSTRUMENT_AVAILABLE
-            or Profiler is None
-        ):
-            return await call_next(request)
+# Convenience decorators for common use cases
+def profile_sync(sample_rate: Optional[float] = None, **kwargs):
+    """Decorator specifically for synchronous functions."""
+    return profile_function(sample_rate=sample_rate, **kwargs)
 
-        # Check if profiling is explicitly requested
-        profiling_requested = request.query_params.get("profile", "").lower() in (
-            "1",
-            "true",
-            "yes",
-        )
 
-        # Apply sampling rate for automatic profiling
-        should_profile = profiling_requested or (
-            settings.PROFILING_SAMPLE_RATE > 0
-            and random.random() < settings.PROFILING_SAMPLE_RATE
-        )
+def profile_async(sample_rate: Optional[float] = None, **kwargs):
+    """Decorator specifically for asynchronous functions."""
+    return profile_function(sample_rate=sample_rate, **kwargs)
 
-        if not should_profile:
-            return await call_next(request)
 
-        # Configure and start profiler with basic configuration
-        profiler = Profiler()
+def profile_heavy_operations(sample_rate: float = 0.1, **kwargs):
+    """Decorator for heavy operations with low sampling rate."""
+    return profile_function(sample_rate=sample_rate, **kwargs)
 
-        try:
-            profiler.start()
-            response = await call_next(request)
-            profiler.stop()
 
-            # If profiling was explicitly requested via query param, return HTML report
-            if profiling_requested:
-                html_output = profiler.output_html()
-                return HTMLResponse(html_output)
-            else:
-                # For sampled requests, log the actual profiling results and return normal response
-                try:
-                    # Get text output for logging
-                    text_output = profiler.output_text()
-                    logger.info(
-                        f"Profiling Results for {request.method} {request.url.path}:\n{text_output}"
-                    )
-                except Exception as profile_error:
-                    logger.warning(
-                        f"Could not generate profiling output for {request.method} {request.url.path}: {profile_error}"
-                    )
-                    logger.info(
-                        f"Profiled {request.method} {request.url.path} (output generation failed)"
-                    )
-                return response
-
-        except Exception as e:
-            profiler.stop()
-            logger.exception(
-                f"Profiling error during {request.method} {request.url.path}: {str(e)}"
-            )
-            # Always return the original response on error
-            return await call_next(request)
+def profile_critical_path(sample_rate: float = 1.0, **kwargs):
+    """Decorator for critical path functions with full sampling."""
+    return profile_function(sample_rate=sample_rate, **kwargs)
