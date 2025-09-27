@@ -168,7 +168,8 @@ class ComposioService:
     @Cacheable(
         key_pattern="composio:connection_status:{user_id}",
         ttl=300,  # 5 minutes
-        # No model needed for simple dict[str, bool] - default Any serialization works fine
+        serializer=lambda result: result,
+        deserializer=lambda result: result,
     )
     async def check_connection_status(
         self, providers: list[str], user_id: str

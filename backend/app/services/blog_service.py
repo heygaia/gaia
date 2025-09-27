@@ -20,7 +20,8 @@ class BlogService:
     @Cacheable(
         key_pattern="blogs:all:{page}:{limit}:{include_content}",
         ttl=3600,  # 1 hour cache
-        model=List[BlogPost],  # Type-safe list caching
+        serializer=lambda blogs: [blog.model_dump(mode="json") for blog in blogs],
+        deserializer=lambda blogs: [BlogPost(**blog) for blog in blogs],
     )
     async def get_all_blogs(
         page: int = 1, limit: int = 20, include_content: bool = True
@@ -123,7 +124,8 @@ class BlogService:
     @Cacheable(
         key_pattern="blog:{slug}",
         ttl=3600,  # 1 hour cache
-        model=BlogPost,  # Type-safe model caching
+        serializer=lambda blog: blog.model_dump(mode="json"),
+        deserializer=lambda blog: BlogPost(**blog),
     )
     async def get_blog_by_slug(slug: str) -> BlogPost:
         """

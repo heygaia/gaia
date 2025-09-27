@@ -695,7 +695,8 @@ async def update_file_service(
 @Cacheable(
     key_pattern="files:{user_id}:{conversation_id}",
     ttl=86400,  # 24 hours
-    model=List[FileData],
+    serializer=lambda files: [file.model_dump(mode="json") for file in files],
+    deserializer=lambda files: [deserialize_file(file) for file in files],
 )
 async def get_files(
     user_id: str,
