@@ -194,8 +194,8 @@ class ToolRegistry:
                 """Load tools for a single provider."""
                 provider_start = time.time()
                 try:
-                    # Use the async method for better performance
-                    tools = await composio_service.get_tools_async(toolkit)
+                    # Use the cached async method
+                    tools = await composio_service.get_tools(toolkit)
                     provider_time = time.time() - provider_start
 
                     if tools:
