@@ -1,3 +1,4 @@
+import StarterKit from "@tiptap/starter-kit";
 import CharacterCount from "@tiptap/extension-character-count";
 import Highlight from "@tiptap/extension-highlight";
 import Link from "@tiptap/extension-link";
@@ -106,7 +107,7 @@ export function useEmailComposition(): UseEmailCompositionReturn {
   // Editor configuration
   const editorConfig: Partial<EditorOptions> = {
     extensions: [
-      //TODO: StarterKit,
+      StarterKit,
       Highlight,
       Typography,
       Underline,
