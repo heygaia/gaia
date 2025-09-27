@@ -2,6 +2,8 @@ import asyncio
 import time
 from typing import Optional
 
+from langchain_core.tools import StructuredTool
+
 from app.config.loggers import langchain_logger as logger
 from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
@@ -71,14 +73,6 @@ class ComposioService:
             logger.error(f"Error connecting {provider} for {user_id}: {e}")
             raise
 
-    @Cacheable(
-        key_pattern="composio_tools:{tool_kit}",
-        ttl=3600,  # 1 hour
-        serializer=lambda tools: [
-            {"name": t.name, "description": t.description} for t in tools
-        ],
-        deserializer=lambda data: data,  # Cache hit returns metadata, will reconstruct tools
-    )
     async def get_tools(self, tool_kit: str, exclude_tools: Optional[list[str]] = None):
         """
         Get tools for a specific toolkit with unified master hooks.
@@ -118,7 +112,6 @@ class ComposioService:
             f"{tool_kit} toolkit loaded: {len(result)} tools in {tools_time:.3f}s"
         )
         return result
-
 
     def get_tool(
         self,
