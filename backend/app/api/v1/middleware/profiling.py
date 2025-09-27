@@ -41,8 +41,6 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
     Environment Variables:
         ENABLE_PROFILING: bool = False (must be explicitly enabled)
         PROFILING_SAMPLE_RATE: float = 0.1 (10% sampling rate)
-        PROFILING_MAX_DEPTH: int = 50 (max call stack depth)
-        PROFILING_ASYNC_MODE: str = "enabled"
 
     Usage:
         Add ?profile=1 to any request URL to get a profiling report (when enabled).
@@ -63,9 +61,7 @@ class ProfilingMiddleware(BaseHTTPMiddleware):
         if settings.ENABLE_PROFILING:
             logger.info(
                 f"PyInstrument profiling enabled: "
-                f"sample_rate={settings.PROFILING_SAMPLE_RATE}, "
-                f"max_depth={settings.PROFILING_MAX_DEPTH}, "
-                f"async_mode={settings.PROFILING_ASYNC_MODE}"
+                f"sample_rate={settings.PROFILING_SAMPLE_RATE}"
             )
         else:
             logger.info("PyInstrument profiling disabled (ENABLE_PROFILING=false)")

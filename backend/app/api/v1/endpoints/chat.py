@@ -19,6 +19,7 @@ from app.services.chat_service import (
 )
 from app.services.conversation_service import update_messages
 from app.utils.chat_utils import create_conversation
+from app.decorators.profiling import profile_function
 
 router = APIRouter()
 

@@ -85,7 +85,13 @@ class ComposioService:
         logger.info(f"Loading {tool_kit} toolkit...")
         start_time = time.time()
 
-        tools = self.composio.tools.get(user_id="", toolkits=[tool_kit], limit=100)
+        # Run the first tools.get() call asynchronously
+        tools = await asyncio.to_thread(
+            self.composio.tools.get,
+            user_id="",
+            toolkits=[tool_kit],
+            limit=100
+        )
 
         exclude_tools = exclude_tools or []
         tools_name = [tool.name for tool in tools if tool.name not in exclude_tools]
@@ -97,14 +103,13 @@ class ComposioService:
             master_after_execute_hook
         )
 
-        result = self.composio.tools.get(
+        # Run the second tools.get() call asynchronously
+        result = await asyncio.to_thread(
+            self.composio.tools.get,
             user_id="",
             toolkits=[tool_kit],
-            modifiers=[
-                master_before_modifier,
-                master_after_modifier,
-            ],
-            limit=1000,
+            modifiers=[master_before_modifier, master_after_modifier],
+            limit=1000
         )
 
         tools_time = time.time() - start_time
