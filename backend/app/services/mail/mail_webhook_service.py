@@ -1,12 +1,10 @@
 from app.config.loggers import mail_webhook_logger as logger
-from app.config.settings import settings
-from arq import create_pool
-from arq.connections import RedisSettings
+from app.utils.redis_utils import RedisPoolManager
 
 
 async def queue_email_processing(user_id: str, email_data: dict) -> dict:
     """
-    Queue an email for background processing.
+    Queue an email for background processing using unified queue service.
 
     Args:
         user_id (str): The user ID from the webhook
@@ -20,9 +18,8 @@ async def queue_email_processing(user_id: str, email_data: dict) -> dict:
     )
 
     try:
-        # Create ARQ connection pool
-        redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
-        pool = await create_pool(redis_settings)
+        # Use unified Redis pool manager
+        pool = await RedisPoolManager.get_pool()
 
         # Enqueue the email processing task
         job = await pool.enqueue_job(
@@ -30,8 +27,6 @@ async def queue_email_processing(user_id: str, email_data: dict) -> dict:
             user_id,
             email_data,
         )
-
-        await pool.close()
 
         if job:
             logger.info(

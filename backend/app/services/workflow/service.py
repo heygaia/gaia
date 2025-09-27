@@ -98,9 +98,13 @@ class WorkflowService:
                 )
                 return updated_workflow or workflow
             else:
-                await WorkflowQueueService.queue_workflow_generation(
+                success = await WorkflowQueueService.queue_workflow_generation(
                     workflow.id, user_id
                 )
+                if not success:
+                    logger.error(
+                        f"Failed to queue workflow generation for {workflow.id}"
+                    )
 
             return workflow
 
@@ -249,15 +253,11 @@ class WorkflowService:
         """Delete a workflow."""
         try:
             # Cancel any scheduled executions before deleting
-            await workflow_scheduler.cancel_scheduled_workflow_execution(
-                workflow_id
-            )
+            await workflow_scheduler.cancel_scheduled_workflow_execution(workflow_id)
 
             # Additional cleanup
             try:
-                await workflow_scheduler.cancel_task(
-                    workflow_id, user_id
-                )
+                await workflow_scheduler.cancel_task(workflow_id, user_id)
             except Exception as e:
                 logger.warning(
                     f"Additional cleanup failed for workflow {workflow_id}: {e}"
@@ -301,9 +301,13 @@ class WorkflowService:
 
             execution_id = f"exec_{workflow_id}_{uuid.uuid4().hex[:8]}"
 
-            await WorkflowQueueService.queue_workflow_execution(
+            success = await WorkflowQueueService.queue_workflow_execution(
                 workflow_id, user_id, request.context
             )
+            if not success:
+                raise ValueError(
+                    f"Failed to queue workflow execution for {workflow_id}"
+                )
 
             logger.info(f"Started execution {execution_id} for workflow {workflow_id}")
 
@@ -409,9 +413,7 @@ class WorkflowService:
                 return None
 
             # Cancel any scheduled executions
-            await workflow_scheduler.cancel_scheduled_workflow_execution(
-                workflow_id
-            )
+            await workflow_scheduler.cancel_scheduled_workflow_execution(workflow_id)
 
             # Update trigger to disabled and status to inactive
             update_data = {
