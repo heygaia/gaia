@@ -28,10 +28,10 @@ async def init_reminder_service():
 async def init_workflow_service():
     """Initialize workflow service."""
     try:
-        from app.services.workflow.scheduler_service import workflow_scheduler_service
+        from app.services.workflow.scheduler import workflow_scheduler
 
-        await workflow_scheduler_service.initialize()
-        await workflow_scheduler_service.scheduler.scan_and_schedule_pending_tasks()
+        await workflow_scheduler.initialize()
+        await workflow_scheduler.scan_and_schedule_pending_tasks()
         logger.info("Workflow service initialized")
     except Exception as e:
         logger.error(f"Failed to initialize workflow service: {e}")

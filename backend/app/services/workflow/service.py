@@ -19,7 +19,7 @@ from app.models.workflow_models import (
 )
 from .generation_service import WorkflowGenerationService
 from .queue_service import WorkflowQueueService
-from .scheduler_service import workflow_scheduler_service
+from .scheduler import workflow_scheduler
 from app.utils.workflow_utils import (
     ensure_trigger_config_object,
     handle_workflow_error,
@@ -82,7 +82,7 @@ class WorkflowService:
                 and trigger_config.enabled
                 and trigger_config.next_run
             ):
-                await workflow_scheduler_service.schedule_workflow_execution(
+                await workflow_scheduler.schedule_workflow_execution(
                     workflow.id,
                     user_id,
                     trigger_config.next_run,
@@ -214,14 +214,14 @@ class WorkflowService:
                         and current_workflow.activated
                     ):
                         # Reschedule to new time with new cron expression
-                        await workflow_scheduler_service.reschedule_workflow(
+                        await workflow_scheduler.reschedule_workflow(
                             workflow_id,
                             new_trigger_config.next_run,
                             repeat=new_trigger_config.cron_expression,
                         )
                     else:
                         # Cancel if workflow is being disabled or conditions not met
-                        await workflow_scheduler_service.cancel_scheduled_workflow_execution(
+                        await workflow_scheduler.cancel_scheduled_workflow_execution(
                             workflow_id
                         )
 
@@ -249,13 +249,13 @@ class WorkflowService:
         """Delete a workflow."""
         try:
             # Cancel any scheduled executions before deleting
-            await workflow_scheduler_service.cancel_scheduled_workflow_execution(
+            await workflow_scheduler.cancel_scheduled_workflow_execution(
                 workflow_id
             )
 
             # Additional cleanup
             try:
-                await workflow_scheduler_service.scheduler.cancel_task(
+                await workflow_scheduler.cancel_task(
                     workflow_id, user_id
                 )
             except Exception as e:
@@ -382,7 +382,7 @@ class WorkflowService:
                 and updated_workflow.trigger_config.enabled
                 and updated_workflow.trigger_config.next_run
             ):
-                await workflow_scheduler_service.schedule_workflow_execution(
+                await workflow_scheduler.schedule_workflow_execution(
                     workflow_id,
                     user_id,
                     updated_workflow.trigger_config.next_run,
@@ -409,7 +409,7 @@ class WorkflowService:
                 return None
 
             # Cancel any scheduled executions
-            await workflow_scheduler_service.cancel_scheduled_workflow_execution(
+            await workflow_scheduler.cancel_scheduled_workflow_execution(
                 workflow_id
             )
 
