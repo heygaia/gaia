@@ -51,7 +51,6 @@ async def init_websocket_consumer():
         raise
 
 
-
 async def init_mongodb_async():
     """Initialize MongoDB and create database indexes."""
     try:

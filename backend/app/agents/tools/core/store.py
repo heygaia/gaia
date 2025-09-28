@@ -18,11 +18,13 @@ from langgraph.store.memory import InMemoryStore
 def init_embeddings() -> GoogleGenerativeAIEmbeddings:
     return GoogleGenerativeAIEmbeddings(model="models/gemini-embedding-001")
 
+
 def get_embeddings() -> GoogleGenerativeAIEmbeddings:
     embeddings = providers.get("google_embeddings")
     if embeddings is None:
         raise RuntimeError("Embeddings not available")
     return embeddings
+
 
 @lazy_provider(
     name="tools_store",

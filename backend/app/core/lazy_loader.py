@@ -459,6 +459,7 @@ class ProviderRegistry:
         if loader:
             for dep in loader.dependencies:
                 self._check_cyclic_dependency(dep, visited.copy())
+
     """
     Registry for managing multiple lazy-loaded providers.
     Provides a centralized way to configure and access providers.
@@ -507,6 +508,7 @@ class ProviderRegistry:
 
     async def initialize_auto_providers(self):
         """Initialize all providers marked for auto-initialization concurrently."""
+
         async def _init_provider(name: str):
             """Initialize a single provider with error handling."""
             try:

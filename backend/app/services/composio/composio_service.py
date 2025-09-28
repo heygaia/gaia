@@ -258,6 +258,7 @@ class ComposioService:
         except Exception as e:
             logger.error(f"Error handling subscribe trigger for {user_id}: {e}")
 
+
 @lazy_provider(
     name="composio_service",
     required_keys=[settings.COMPOSIO_KEY],
