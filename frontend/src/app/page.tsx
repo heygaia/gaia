@@ -59,6 +59,8 @@ export default function LandingPage() {
             <Image
               src={"/images/wallpapers/switzerland_night.webp"}
               alt="Wallpaper"
+              sizes="100vw"
+              priority
               fill
               className="aspect-video object-cover opacity-90"
             />

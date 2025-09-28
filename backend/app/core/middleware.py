@@ -5,9 +5,12 @@ This module provides functions to configure middleware for the FastAPI applicati
 """
 
 from app.config.settings import settings
-from app.decorators import LoggingMiddleware, ProfilingMiddleware
-from app.middleware.auth_middleware import WorkOSAuthMiddleware
-from app.middleware.rate_limiter import limiter
+from app.api.v1.middleware import (
+    LoggingMiddleware,
+    ProfilingMiddleware,
+    WorkOSAuthMiddleware,
+)
+from app.api.v1.middleware.rate_limiter import limiter
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -45,7 +48,7 @@ def configure_middleware(app: FastAPI) -> None:
     # Add rate limiting middleware
     app.add_middleware(SlowAPIMiddleware)
 
-    # Add profiling middleware for logging request/response times
+    # Add pyinstrument profiling middleware for detailed call stack analysis
     app.add_middleware(ProfilingMiddleware)
 
     # Add logging middleware
