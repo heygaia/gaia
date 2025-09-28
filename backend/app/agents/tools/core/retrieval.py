@@ -92,6 +92,7 @@ def get_retrieve_tools_function(
         4. Retrieve ALL necessary tools before starting task execution
         5. Call this function multiple times for different tool categories as needed
         """
+        from app.agents.tools.core.registry import get_tool_registry
 
         # Validate that at least one search method is provided
         if not query and not exact_tool_names:
@@ -100,8 +101,8 @@ def get_retrieve_tools_function(
             )
 
         # Lazy import to avoid circular dependency
-        from app.agents.tools.core.registry import tool_registry
 
+        tool_registry = get_tool_registry()
         tool_ids = set()
 
         # Get all available tool names for validation

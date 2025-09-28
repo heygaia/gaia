@@ -7,11 +7,11 @@ to users based on the conversation context and tool usage patterns.
 
 from typing import List
 
+from app.agents.llm.client import init_llm
 from app.config.loggers import chat_logger as logger
 from app.templates.docstrings.follow_up_actions_tool_docs import (
     SUGGEST_FOLLOW_UP_ACTIONS,
 )
-from app.agents.llm.client import init_llm
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
@@ -41,8 +41,9 @@ async def follow_up_actions_node(
     Returns:
         Empty dict indicating successful completion (follow-up actions are streamed, not stored in state)
     """
-    from app.agents.tools.core.registry import tool_registry
+    from app.agents.tools.core.registry import get_tool_registry
 
+    tool_registry = get_tool_registry()
     llm = init_llm()
 
     try:

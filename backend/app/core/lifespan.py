@@ -2,7 +2,8 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import uvloop
-from app.agents.tools.core.store import initialize_tools_store
+from app.agents.tools.core.registry import init_tool_registry
+from app.agents.tools.core.store import init_embeddings, initialize_tools_store
 from app.config.loggers import app_logger as logger
 from app.core.websocket_consumer import (
     start_websocket_consumer,
@@ -10,6 +11,7 @@ from app.core.websocket_consumer import (
 )
 from app.db.postgresql import close_postgresql_db
 from app.db.rabbitmq import get_rabbitmq_publisher
+from app.services.composio.composio_service import init_composio_service
 from fastapi import FastAPI
 
 
@@ -48,15 +50,6 @@ async def init_websocket_consumer():
         logger.error(f"Failed to start WebSocket consumer: {e}")
         raise
 
-
-async def init_tools_store_async():
-    """Initialize tools store."""
-    try:
-        await initialize_tools_store()
-        logger.info("Tools store initialized")
-    except Exception as e:
-        logger.error(f"Failed to initialize tools store: {e}")
-        raise
 
 
 async def init_mongodb_async():
@@ -160,6 +153,10 @@ async def lifespan(app: FastAPI):
         init_chroma()
         init_cloudinary()
         init_checkpointer_managers()
+        init_tool_registry()
+        init_composio_service()
+        init_embeddings()
+        initialize_tools_store()
 
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
@@ -171,7 +168,6 @@ async def lifespan(app: FastAPI):
             init_reminder_service(),
             init_workflow_service(),
             init_websocket_consumer(),
-            init_tools_store_async(),
             providers.initialize_auto_providers(),
         ]
 
