@@ -16,6 +16,7 @@ interface IconProps {
   height?: number;
   strokeWidth?: number;
   className?: string;
+  showBackground?: boolean;
 }
 
 interface IconConfig {
@@ -130,37 +131,42 @@ export const getToolCategoryIcon = (
   category: string,
   iconProps: IconProps = {},
 ) => {
+  const { showBackground = true, ...restProps } = iconProps;
+
   const defaultProps = {
-    size: iconProps.size || 16,
-    width: iconProps.width || 20,
-    height: iconProps.height || 20,
-    strokeWidth: iconProps.strokeWidth || 2,
-    className: iconProps.className,
+    size: restProps.size || 16,
+    width: restProps.width || 20,
+    height: restProps.height || 20,
+    strokeWidth: restProps.strokeWidth || 2,
+    className: restProps.className,
   };
 
   const config = iconConfigs[category];
   if (!config) return null;
 
-  return (
-    <div className={`rounded-lg p-1 ${config.bgColor}`}>
-      {config.isImage ? (
-        <Image
-          alt={`${category} Icon`}
+  const iconElement = config.isImage ? (
+    <Image
+      alt={`${category} Icon`}
+      {...defaultProps}
+      className={`${restProps.className} aspect-square object-contain`}
+      src={config.icon as string}
+    />
+  ) : (
+    (() => {
+      const IconComponent = config.icon as React.ComponentType<IconProps>;
+      return (
+        <IconComponent
           {...defaultProps}
-          className={`${iconProps.className} aspect-square object-contain`}
-          src={config.icon as string}
+          className={restProps.className || config.iconColor}
         />
-      ) : (
-        (() => {
-          const IconComponent = config.icon as React.ComponentType<IconProps>;
-          return (
-            <IconComponent
-              {...defaultProps}
-              className={iconProps.className || config.iconColor}
-            />
-          );
-        })()
-      )}
-    </div>
+      );
+    })()
+  );
+
+  // Return with or without background based on showBackground prop
+  return showBackground ? (
+    <div className={`rounded-lg p-1 ${config.bgColor}`}>{iconElement}</div>
+  ) : (
+    iconElement
   );
 };

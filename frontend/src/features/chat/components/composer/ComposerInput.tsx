@@ -392,7 +392,7 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
     return (
       <>
         {slashCommandState.isActive && (
-          <div className="bg-black/05 backdrop-blur-xs pointer-events-none fixed left-0 top-0 z-[-1] h-screen w-screen" />
+          <div className="bg-black/05 pointer-events-none fixed top-0 left-0 z-[-1] h-screen w-screen backdrop-blur-xs" />
         )}
 
         <form onSubmit={handleFormSubmit}>
@@ -401,7 +401,7 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
             autoFocus
             classNames={{
               inputWrapper:
-                " px-3 data-[hover=true]:bg-zinc-800 group-data-[focus-visible=true]:ring-zinc-800 group-data-[focus-visible=true]:ring-offset-0",
+                " px-3 data-[hover=true]:bg-zinc-800 group-data-[focus-visible=true]:ring-zinc-800 group-data-[focus-visible=true]:ring-offset-0 shadow-none",
               innerWrapper: `${currentHeight > 24 ? "items-end" : "items-center"}`,
               input: "font-light",
             }}

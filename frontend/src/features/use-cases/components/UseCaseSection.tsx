@@ -23,7 +23,9 @@ export default function UseCaseSection({
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
   hideUserWorkflows?: boolean;
 }) {
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(
+    "featured",
+  );
   const { workflows, isLoading: isLoadingWorkflows } = useWorkflows();
 
   // Find scroll container - memoized to prevent effect re-runs
@@ -57,13 +59,16 @@ export default function UseCaseSection({
       // },
 
       onEnter: () => {
-        // Scrolling down - auto select featured
+        // Scrolling down - keep featured selected if no category is selected
         if (selectedCategory === null) setSelectedCategory("featured");
       },
 
       onLeaveBack: () => {
-        // Scrolling up - auto unselect
-        if (selectedCategory !== null) setSelectedCategory(null);
+        // Scrolling up - only unselect if we're not on the default "featured" category
+        // Keep "featured" as the default when scrolling back up
+        if (selectedCategory !== null && selectedCategory !== "featured") {
+          setSelectedCategory("featured");
+        }
       },
     });
 
@@ -86,7 +91,9 @@ export default function UseCaseSection({
 
   const filteredUseCases =
     selectedCategory === null
-      ? []
+      ? useCasesData.filter((useCase: UseCase) =>
+          useCase.categories?.includes("featured"),
+        ) // Show featured when null (fallback)
       : selectedCategory === "all"
         ? useCasesData
         : useCasesData.filter((useCase: UseCase) =>
@@ -100,13 +107,20 @@ export default function UseCaseSection({
     if (!scrollContainer) return;
 
     if (wasSelected) {
-      // Unselecting: scroll to top
-      setSelectedCategory(null);
-      gsap.to(scrollContainer, {
-        scrollTop: 0,
-        duration: 0.5,
-        ease: "power2.out",
-      });
+      // Unselecting: for featured, go back to default, for others scroll to top and reset to featured
+      if (category === "featured") {
+        // If featured is clicked again, briefly unselect then reselect to show visual feedback
+        setSelectedCategory(null);
+        setTimeout(() => setSelectedCategory("featured"), 100);
+      } else {
+        // For other categories, unselect and go back to featured as default
+        setSelectedCategory("featured");
+        gsap.to(scrollContainer, {
+          scrollTop: 0,
+          duration: 0.5,
+          ease: "power2.out",
+        });
+      }
     } else {
       // Selecting: only scroll if we need to bring the section into view
       setSelectedCategory(category);
@@ -183,7 +197,7 @@ export default function UseCaseSection({
           selectedCategory !== "workflows" && (
             <motion.div
               key={selectedCategory}
-              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}
@@ -220,7 +234,7 @@ export default function UseCaseSection({
           workflows.length > 0 && (
             <motion.div
               key="workflows"
-              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4"
+              className="mx-auto grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-3"
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -20 }}

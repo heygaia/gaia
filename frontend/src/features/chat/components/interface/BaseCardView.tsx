@@ -39,14 +39,14 @@ const BaseCardView: React.FC<BaseCardViewProps> = ({
 
   return (
     <div className={containerClassName}>
-      <div className="flex-shrink-0 px-4 py-3">
+      <div className="flex-shrink-0 py-3">
         <div className="flex items-center gap-2">
           {icon}
-          <h3 className="font-medium text-white">{title}</h3>
+          <h3 className="font-light text-zinc-400">{title}</h3>
         </div>
       </div>
 
-      <div className="h-full flex-1 px-4 pb-4">
+      <div className="h-full flex-1">
         <Skeleton
           className="w-full rounded-2xl"
           isLoaded={!isLoading}

@@ -7,7 +7,7 @@ import { ReactNode } from "react";
 
 import { PlayIcon, ToolsIcon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { formatRunCount } from "@/utils/formatters";
+import { RunCountDisplay } from "./WorkflowCardComponents";
 
 interface BaseWorkflowCardProps {
   title: string;
@@ -18,6 +18,7 @@ interface BaseWorkflowCardProps {
   showArrowIcon?: boolean;
   headerRight?: ReactNode;
   footerContent?: ReactNode;
+  triggerContent?: ReactNode;
   creator?: {
     name: string;
     avatar?: string;
@@ -34,6 +35,7 @@ export default function BaseWorkflowCard({
   showArrowIcon = false,
   headerRight,
   footerContent,
+  triggerContent,
   creator,
   totalExecutions = 0,
 }: BaseWorkflowCardProps) {
@@ -113,7 +115,7 @@ export default function BaseWorkflowCard({
 
   return (
     <div
-      className={`group relative flex min-h-[200px] w-full flex-col gap-2 rounded-2xl bg-zinc-800 p-4 transition-all select-none ${
+      className={`group relative flex min-h-[140px] w-full flex-col gap-2 rounded-2xl bg-zinc-800 p-4 transition-all select-none ${
         onClick ? "cursor-pointer hover:bg-zinc-700/50" : ""
       }`}
       onClick={onClick}
@@ -131,18 +133,20 @@ export default function BaseWorkflowCard({
       </div>
 
       <div>
-        <h3 className="line-clamp-1 text-lg font-medium">{title}</h3>
+        <h3 className="line-clamp-2 text-lg font-medium">{title}</h3>
         <div className="mt-1 line-clamp-3 flex-1 text-xs text-zinc-400">
           {description}
         </div>
       </div>
 
       <div className="mt-auto">
-        <div className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
-          <PlayIcon width={15} height={15} className="text-zinc-500" />
-          {formatRunCount(totalExecutions)}
+        {triggerContent && <div className="mt-1">{triggerContent}</div>}
+        <div className="flex items-center justify-between gap-2">
+          <RunCountDisplay totalExecutions={totalExecutions} />
+          {footerContent && (
+            <div className="flex-shrink-0">{footerContent}</div>
+          )}
         </div>
-        {footerContent}
       </div>
     </div>
   );
