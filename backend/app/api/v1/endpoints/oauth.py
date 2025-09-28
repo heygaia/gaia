@@ -26,7 +26,7 @@ from app.models.user_models import (
 )
 from app.services.composio.composio_service import (
     COMPOSIO_SOCIAL_CONFIGS,
-    composio_service,
+    get_composio_service,
 )
 from app.services.oauth_service import store_user_info
 from app.services.onboarding_service import (
@@ -175,6 +175,7 @@ async def login_integration(
 ):
     """Dynamic OAuth login for any configured integration."""
     integration = get_integration_by_id(integration_id)
+    composio_service = get_composio_service()
 
     if not integration:
         raise HTTPException(
@@ -264,6 +265,7 @@ async def composio_callback(
             url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
         )
 
+    composio_service = get_composio_service()
     try:
         # Retrieve connected account details
         connected_account = composio_service.get_connected_account_by_id(
@@ -295,8 +297,6 @@ async def composio_callback(
             return RedirectResponse(
                 url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed"
             )
-
-        print("Integration Config:", integration_config.associated_triggers)
 
         # Setup triggers if available
         if integration_config.associated_triggers:
@@ -439,6 +439,7 @@ async def get_integrations_status(
     """
     Get the integration status for the current user based on OAuth scopes.
     """
+    composio_service = get_composio_service()
     try:
         authorized_scopes = []
         user_id = user.get("user_id")
