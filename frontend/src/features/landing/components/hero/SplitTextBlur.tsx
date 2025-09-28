@@ -39,7 +39,7 @@ const SplitTextBlur = ({
     visible: {
       opacity: 1,
       transition: {
-        delay: delay,
+        delay,
         when: "beforeChildren",
         staggerChildren: staggerDelay,
       },
@@ -77,7 +77,7 @@ const SplitTextBlur = ({
         background: "linear-gradient(to bottom, #a3a3a3, #ffffff)",
         WebkitBackgroundClip: "text",
         WebkitTextFillColor: "transparent",
-        backgroundClip: "text"
+        backgroundClip: "text",
       }}
     >
       {words.map((word, index) => (
@@ -92,7 +92,7 @@ const SplitTextBlur = ({
             WebkitBackgroundClip: "inherit",
             WebkitTextFillColor: "inherit",
             backgroundClip: "inherit",
-            paddingBottom: "7px"
+            paddingBottom: "7px",
           }}
         >
           {word}
@@ -102,22 +102,4 @@ const SplitTextBlur = ({
   );
 };
 
-// Usage example with your div
-const HeroText = () => {
-  return (
-    <SplitTextBlur
-      text="Meet the AI assistant that actually works"
-      className="max-w-(--breakpoint-md) py-3 text-center font-inter text-[5.13rem] font-medium sm:text-7xl"
-      delay={1}
-      staggerDelay={0.1}
-      springConfig={{
-        stiffness: 400,
-        damping: 70,
-        mass: 1,
-      }}
-      yOffset={2}
-    />
-  );
-};
-
-export { HeroText, SplitTextBlur };
+export { SplitTextBlur };

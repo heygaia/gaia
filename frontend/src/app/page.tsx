@@ -4,12 +4,11 @@ import { ReactLenis } from "lenis/react";
 import Image from "next/image";
 import { lazy, Suspense, useEffect } from "react";
 
-import HeroVideoDialog from "@/components/magicui/hero-video-dialog";
+import HeroVideoDialog from "@/components/ui/magic-ui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
 
 import LandingLayout from "./(landing)/layout";
-// Hero video dialog is critical for LCP, so don't lazy load it
 
 const ChaoticWorkspaceSection = lazy(
   () =>
@@ -36,12 +35,8 @@ const FAQAccordion = lazy(() =>
     default: module.FAQAccordion,
   })),
 );
-
 const OpenSource = lazy(
   () => import("@/features/landing/components/sections/OpenSource"),
-);
-const CommunitySection = lazy(
-  () => import("@/features/landing/components/sections/CommunitySection"),
 );
 const FinalSection = lazy(
   () => import("@/features/landing/components/sections/FinalSection"),
@@ -62,12 +57,12 @@ export default function LandingPage() {
         <div className="relative overflow-hidden">
           <div className="absolute inset-0 h-screen w-full">
             <Image
-              src="/images/wallpapers/sf_night.webp"
+              src={"/images/wallpapers/switzerland_night.webp"}
               alt="Wallpaper"
-              fill
               sizes="100vw"
-              className="object-cover opacity-90 object-left"
               priority
+              fill
+              className="aspect-video object-cover opacity-90"
             />
             <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-[30vh] bg-gradient-to-b from-background to-transparent" />
             <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-[20vh] bg-gradient-to-t from-background via-background to-transparent" />
@@ -102,34 +97,32 @@ export default function LandingPage() {
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
-              <FAQAccordion />
               <OpenSource />
+              <FAQAccordion />
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
-              <CommunitySection />
               <FinalSection />
             </Suspense>
           </div>
         </div>
 
-        {/* Product Hunt Badge - Fixed Bottom Right */}
         {/* <div className="fixed right-6 bottom-6 z-50">
-        <a
-          href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="block transition-transform"
-        >
-          <Image
-            src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1000528&theme=light&t=1754093183881"
-            alt="GAIA - Proactive, Personal AI Assistant to boost your productivity | Product Hunt"
-            width={250}
-            height={54}
-            className="drop-shadow-lg"
-          />
-        </a>
-      </div> */}
+          <a
+            href="https://www.producthunt.com/products/gaia-8010ee43-bc6e-40ef-989c-02c950a5b778?embed=true&utm_source=badge-featured&utm_medium=badge&utm_source=badge-gaia-6"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="block transition-transform"
+          >
+            <Image
+              src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1000528&theme=light&t=1754093183881"
+              alt="GAIA - Proactive, Personal AI Assistant to boost your productivity | Product Hunt"
+              width={250}
+              height={54}
+              className="drop-shadow-lg"
+            />
+          </a>
+        </div> */}
       </LandingLayout>
     </ReactLenis>
   );
