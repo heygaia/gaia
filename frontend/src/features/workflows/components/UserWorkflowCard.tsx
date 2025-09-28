@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Play } from "lucide-react";
+import { Play, Zap } from "lucide-react";
 import { useState } from "react";
 
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
@@ -34,10 +34,11 @@ export default function UserWorkflowCard({ workflow }: UserWorkflowCardProps) {
       <Button
         color="primary"
         size="sm"
-        startContent={<Play width={16} height={16} />}
-        className="w-full"
         isLoading={isRunning}
         onPress={handleRunWorkflow}
+        variant="flat"
+        className="ml-auto w-fit text-primary"
+        startContent={<Zap width={16} height={16} />}
       >
         Run Workflow
       </Button>

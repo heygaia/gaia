@@ -2,7 +2,7 @@
 
 import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
-import { PlusIcon, RefreshCw } from "lucide-react";
+import { ExternalLink, PlusIcon, RefreshCw, ZapIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
@@ -13,6 +13,8 @@ import CreateWorkflowModal from "./CreateWorkflowModal";
 import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
+import { OpenInNewWindowIcon } from "@radix-ui/react-icons";
+import Link from "next/link";
 
 export default function WorkflowPage() {
   const pageRef = useRef(null);
@@ -134,54 +136,63 @@ export default function WorkflowPage() {
       ref={pageRef}
     >
       <div className="flex flex-col gap-6 md:gap-7">
-        <div>
-          <div className="flex w-full items-center justify-between">
-            <div>
-              <h1>Your Workflows</h1>
-              <div className="text-foreground-400">
-                Automate your tasks with AI-powered workflows
-                {workflows.length > 0 && (
-                  <span className="ml-2">
-                    ({workflows.length} workflow
-                    {workflows.length !== 1 ? "s" : ""})
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              {workflows.length > 0 && (
-                <Button
-                  variant="flat"
-                  size="sm"
-                  isIconOnly
-                  onPress={refetch}
-                  isLoading={isLoading}
-                >
-                  <RefreshCw className="h-4 w-4" />
-                </Button>
-              )}
+        <div className="flex w-full flex-col items-center justify-center">
+          <h1 className="mb-2 text-5xl font-normal">See what's Possible</h1>
+          <p className="mx-auto max-w-3xl text-lg text-zinc-500">
+            Practical use cases showing how GAIA works for you
+          </p>
+
+          <div className="mt-3 flex justify-center gap-2">
+            {workflows.length > 0 && (
               <Button
-                color="primary"
+                variant="flat"
                 size="sm"
-                startContent={<PlusIcon width={16} height={16} />}
-                onPress={onOpen}
+                isIconOnly
+                onPress={refetch}
+                isLoading={isLoading}
+                className="text-zinc-400"
               >
-                Create
+                <RefreshCw className="h-4 w-4" />
               </Button>
-            </div>
+            )}
+
+            <Link href={"/use-cases"}>
+              <Button
+                variant="flat"
+                size="sm"
+                className="text-zinc-400"
+                endContent={<ExternalLink width={16} height={16} />}
+              >
+                Community Marketplace
+              </Button>
+            </Link>
+
+            <Button
+              color="primary"
+              size="sm"
+              variant="flat"
+              onPress={onOpen}
+              className="text-primary"
+              endContent={<ZapIcon width={14} height={14} />}
+            >
+              Create
+            </Button>
           </div>
         </div>
 
         {renderWorkflowsGrid()}
       </div>
 
-      <div className="flex min-h-[50vh] flex-col gap-5">
-        <div>
-          <h1>Explore</h1>
-          <div className="text-foreground-400">
-            Discover workflow templates and community creations
-          </div>
+      <div className="mt-20 flex min-h-[50vh] flex-col gap-5">
+        <div className="text-center">
+          <h1 className="mb-2 text-4xl font-normal">
+            Published by The Community
+          </h1>
+          <p className="mx-auto max-w-3xl text-lg text-zinc-500">
+            Discover what others are building with GAIA
+          </p>
         </div>
+
         <UseCaseSection dummySectionRef={pageRef} hideUserWorkflows={true} />
       </div>
 

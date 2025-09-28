@@ -1,7 +1,7 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { ChevronUp, Plus } from "lucide-react";
+import { ChevronUp, User, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
@@ -10,6 +10,8 @@ import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreat
 
 import { CommunityWorkflow, workflowApi } from "../api/workflowApi";
 import BaseWorkflowCard from "./shared/BaseWorkflowCard";
+import { Tooltip } from "@heroui/tooltip";
+import Image from "next/image";
 
 interface CommunityWorkflowCardProps {
   workflow: CommunityWorkflow;
@@ -143,18 +145,44 @@ export default function CommunityWorkflowCard({
 
   const footerContent = (
     <div className="flex w-full items-center gap-3">
+      {localWorkflow.creator && (
+        <Tooltip
+          content={`Created by ${localWorkflow.creator.name}`}
+          showArrow
+          placement="left"
+          color="foreground"
+        >
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-full">
+              {localWorkflow.creator.avatar ? (
+                <Image
+                  src={localWorkflow.creator.avatar}
+                  alt={localWorkflow.creator.name}
+                  width={27}
+                  height={27}
+                  className="rounded-full"
+                />
+              ) : (
+                <User className="h-4 w-4 text-zinc-400" />
+              )}
+            </div>
+          </div>
+        </Tooltip>
+      )}
+
       <Button
-        color="default"
+        color="primary"
         size="sm"
-        startContent={<Plus width={16} height={16} />}
-        className="flex-1"
+        variant="flat"
+        className="ml-auto w-fit text-primary"
+        endContent={<Zap width={14} height={14} />}
         isLoading={isCreatingWorkflow}
         onPress={handleCreateWorkflow}
       >
-        Create Workflow
+        Create
       </Button>
 
-      <Button
+      {/* <Button
         variant={localWorkflow.is_upvoted ? "solid" : "flat"}
         color={localWorkflow.is_upvoted ? "primary" : "default"}
         size="sm"
@@ -169,7 +197,7 @@ export default function CommunityWorkflowCard({
         >
           {localWorkflow.upvotes}
         </span>
-      </Button>
+      </Button> */}
     </div>
   );
 

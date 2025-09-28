@@ -9,6 +9,8 @@ import {
   workflowApi,
 } from "@/features/workflows/api/workflowApi";
 import CommunityWorkflowCard from "@/features/workflows/components/CommunityWorkflowCard";
+import Image from "next/image";
+import FinalSection from "@/features/landing/components/sections/FinalSection";
 
 export default function UseCasesPage() {
   const [communityWorkflows, setCommunityWorkflows] = useState<
@@ -37,25 +39,25 @@ export default function UseCasesPage() {
 
   return (
     <div className="min-h-screen" ref={contentRef}>
-      <div className="container mx-auto px-6 pt-30 pb-8">
+      <div className="container mx-auto px-6 pt-40 pb-8">
         <div className="mb-8 text-center">
-          <h1 className="mb-4 text-5xl font-bold">Use Cases</h1>
-          <p className="mx-auto max-w-3xl text-xl text-foreground-500">
-            Discover powerful automation templates and AI prompts to streamline
-            your workflow
+          <h1 className="mb-2 text-6xl font-normal">See what's Possible</h1>
+          <p className="mx-auto max-w-3xl text-lg text-zinc-500">
+            Practical use cases showing how GAIA works for you
           </p>
         </div>
 
         <UseCaseSection dummySectionRef={contentRef} />
 
-        <div id="community-section" className="mt-14 space-y-6">
-          <div className="text-center">
-            <h2 className="mb-2 text-4xl font-bold">By the Community</h2>
-            <p className="mx-auto max-w-2xl text-lg text-foreground-500">
-              Discover workflows created and shared by our community of users
+        <div id="community-section" className="mt-22 space-y-6">
+          <div className="mb-14 text-center">
+            <h1 className="mb-2 text-5xl font-normal">
+              Published by The Community
+            </h1>
+            <p className="mx-auto max-w-3xl text-lg text-zinc-500">
+              Discover what others are building with GAIA
             </p>
           </div>
-
           {isLoadingCommunity ? (
             <div className="flex h-48 items-center justify-center">
               <Spinner />
@@ -75,6 +77,8 @@ export default function UseCasesPage() {
           )}
         </div>
       </div>
+
+      <FinalSection />
     </div>
   );
 }

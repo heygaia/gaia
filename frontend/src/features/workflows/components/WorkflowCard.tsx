@@ -90,7 +90,9 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
             workflow.trigger_config.type,
             triggerDisplay.icon || undefined,
           )}
-          className="flex gap-1 px-2!"
+          radius="sm"
+          variant="light"
+          className="flex gap-1 px-2! text-zinc-400"
         >
           {triggerDisplay.label
             .split(" ")
@@ -105,6 +107,7 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
           <Chip
             size="sm"
             variant="flat"
+            radius="sm"
             className="text-xs text-foreground-500"
           >
             {getNextRunDisplay(workflow)}
@@ -116,6 +119,7 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
         color={getActivationColor(workflow.activated)}
         variant="flat"
         size="sm"
+        radius="sm"
       >
         {getActivationLabel(workflow.activated)}
       </Chip>

@@ -984,8 +984,8 @@ export default function WorkflowModal({
                   {/* Trigger/Schedule Configuration */}
                   <div className="space-y-3">
                     <div className="flex items-start gap-3">
-                      <div className="min-w-26 mt-2.5 flex items-center justify-between gap-1.5 text-sm font-medium text-zinc-400">
-                        <span>When to Run</span>
+                      <div className="mt-2.5 flex min-w-26 items-center justify-between gap-1.5 text-sm font-medium text-zinc-400">
+                        <span className="text-nowrap">When to Run</span>
                         <Tooltip
                           content={
                             <div className="px-1 py-2">
@@ -1102,7 +1102,7 @@ export default function WorkflowModal({
                 </div>
 
                 {/* Form Footer */}
-                <div className="mt-8 border-t border-zinc-800 pb-3 pt-6">
+                <div className="mt-8 border-t border-zinc-800 pt-6 pb-3">
                   {/* All controls in one row */}
                   <div className="flex items-center justify-between">
                     {/* Left side: Switch and Run Workflow */}
@@ -1188,9 +1188,9 @@ export default function WorkflowModal({
                       <div className="flex flex-col items-center justify-center py-8">
                         <div className="text-center">
                           <div className="mb-4">
-                            <AlertCircle className="text-danger mx-auto h-12 w-12" />
+                            <AlertCircle className="mx-auto h-12 w-12 text-danger" />
                           </div>
-                          <h3 className="text-danger text-lg font-medium">
+                          <h3 className="text-lg font-medium text-danger">
                             Generation Failed
                           </h3>
                           <p className="mb-4 text-sm text-zinc-400">
@@ -1331,9 +1331,9 @@ export default function WorkflowModal({
             </div>
           ) : creationPhase === "error" ? (
             <div className="flex flex-col items-center justify-center space-y-4 py-8">
-              <AlertCircle className="text-danger h-12 w-12" />
+              <AlertCircle className="h-12 w-12 text-danger" />
               <div className="text-center">
-                <h3 className="text-danger text-lg font-medium">
+                <h3 className="text-lg font-medium text-danger">
                   {mode === "create" ? "Creation" : "Update"} Failed
                 </h3>
                 <p className="text-sm text-zinc-400">
@@ -1384,9 +1384,9 @@ export default function WorkflowModal({
           ) : creationPhase === "success" ? (
             <div className="flex flex-col space-y-6 py-6">
               <div className="flex flex-col items-center justify-center space-y-4">
-                <CheckmarkCircle02Icon className="text-success h-16 w-16" />
+                <CheckmarkCircle02Icon className="h-16 w-16 text-success" />
                 <div className="text-center">
-                  <h3 className="text-success text-lg font-medium">
+                  <h3 className="text-lg font-medium text-success">
                     Workflow {mode === "create" ? "Created" : "Updated"}!
                   </h3>
                   <p className="text-sm text-zinc-400">
