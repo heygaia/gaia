@@ -135,7 +135,7 @@ async def lifespan(app: FastAPI):
         # Import and register providers
         from app.agents.core.graph_builder.build_graph import build_default_graph
         from app.agents.core.graph_builder.checkpointer_manager import (
-            init_checkpointer_managers,
+            init_checkpointer_manager,
         )
         from app.agents.llm.client import register_llm_providers
         from app.config.cloudinary import init_cloudinary
@@ -151,7 +151,7 @@ async def lifespan(app: FastAPI):
         build_default_graph()
         init_chroma()
         init_cloudinary()
-        init_checkpointer_managers()
+        init_checkpointer_manager()
         init_tool_registry()
         init_composio_service()
         init_embeddings()
