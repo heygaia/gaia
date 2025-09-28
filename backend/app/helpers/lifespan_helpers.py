@@ -52,7 +52,6 @@ async def init_tools_store_async():
         raise
 
 
-
 async def init_mongodb_async():
     """Initialize MongoDB and create database indexes."""
     try:
