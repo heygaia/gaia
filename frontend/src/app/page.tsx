@@ -4,8 +4,8 @@ import { ReactLenis } from "lenis/react";
 import Image from "next/image";
 import { lazy, Suspense, useEffect } from "react";
 
-import HeroVideoDialog from "@/components/ui/magic-ui/hero-video-dialog";
 import SuspenseLoader from "@/components/shared/SuspenseLoader";
+import HeroVideoDialog from "@/components/ui/magic-ui/hero-video-dialog";
 import HeroSection from "@/features/landing/components/hero/HeroSection";
 
 import LandingLayout from "./(landing)/layout";
