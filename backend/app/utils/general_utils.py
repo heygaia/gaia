@@ -1,6 +1,9 @@
-from datetime import datetime
-from typing import Dict
 import base64
+from datetime import datetime
+from pathlib import Path
+from typing import Dict
+
+import tomllib
 
 
 def get_context_window(
@@ -100,3 +103,20 @@ def decode_message_body(msg):
 
     # Return HTML if available (frontend expects HTML), otherwise plain text
     return html_body or plain_body
+
+
+def get_project_info() -> dict:
+    """Get project info from pyproject.toml file."""
+    try:
+        # Path to pyproject.toml from this file location
+        pyproject_path = Path(__file__).parent.parent.parent / "pyproject.toml"
+        with open(pyproject_path, "rb") as f:
+            pyproject_data = tomllib.load(f)
+            project = pyproject_data.get("project", {})
+            return {
+                "name": project.get("name", "GAIA API"),
+                "version": project.get("version", "dev"),
+                "description": project.get("description", "Backend for GAIA"),
+            }
+    except Exception:
+        return {"name": "GAIA API", "version": "dev", "description": "Backend for GAIA"}

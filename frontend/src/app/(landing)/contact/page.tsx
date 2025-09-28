@@ -1,5 +1,7 @@
-import { Button } from "@heroui/button";
 import type { Metadata } from "next";
+
+import ContactForm from "@/features/contact/components/ContactForm";
+import ContactSidebar from "@/features/contact/components/ContactSidebar";
 
 export const metadata: Metadata = {
   title: "Contact Us",
@@ -25,22 +27,29 @@ export const metadata: Metadata = {
 
 export default function ContactPage() {
   return (
-    <div className="bg-custom-gradient flex min-h-screen w-screen items-center justify-center p-6">
-      <div className="w-full max-w-lg rounded-2xl bg-zinc-900 p-8 text-center shadow-lg">
-        <h1 className="text-2xl font-bold">Need Help?</h1>
-        <p className="mt-2 text-zinc-300">
-          For any assistance or inquiries, feel free to reach out to us.
+    <main className="flex h-screen w-screen flex-col items-center justify-center bg-gradient-to-b from-zinc-900 to-black px-6 py-16">
+      <header className="text-center">
+        <h1 className="text-5xl font-semibold tracking-tight text-balance">
+          Contact us
+        </h1>
+        <p className="mt-3 text-foreground-500">
+          Get in touch with our team for support, feature requests, or general
+          inquiries.
         </p>
-        <a
-          href="mailto:support@heygaia.io"
-          className="mt-4 inline-block"
-          aria-label="Email GAIA Support"
-        >
-          <Button color="primary" size="lg" variant="shadow" radius="full">
-            Email us at: <b>support@heygaia.io</b>
-          </Button>
-        </a>
-      </div>
-    </div>
+      </header>
+
+      <section className="mt-16 grid w-full max-w-5xl gap-10 md:grid-cols-[250px_1fr]">
+        <aside className="border-zinc-800 md:border-r md:pr-10">
+          <ContactSidebar />
+        </aside>
+
+        <section>
+          <h2 id="inquiries-heading" className="mb-4 text-lg font-medium">
+            Send us a message
+          </h2>
+          <ContactForm aria-labelledby="inquiries-heading" />
+        </section>
+      </section>
+    </main>
   );
 }
