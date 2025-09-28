@@ -5,6 +5,7 @@ from typing import Optional
 from app.config.loggers import langchain_logger as logger
 from app.config.oauth_config import get_composio_social_configs
 from app.config.settings import settings
+from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from app.decorators.caching import Cacheable, CacheInvalidator
 from app.models.oauth_models import TriggerConfig
 from app.services.composio.langchain_composio_service import LangchainProvider
@@ -19,10 +20,8 @@ COMPOSIO_SOCIAL_CONFIGS = get_composio_social_configs()
 
 
 class ComposioService:
-    def __init__(self):
-        self.composio = Composio(
-            provider=LangchainProvider(), api_key=settings.COMPOSIO_KEY
-        )
+    def __init__(self, api_key: str):
+        self.composio = Composio(provider=LangchainProvider(), api_key=api_key)
 
     @CacheInvalidator(
         key_patterns=[
@@ -260,4 +259,23 @@ class ComposioService:
             logger.error(f"Error handling subscribe trigger for {user_id}: {e}")
 
 
-composio_service = ComposioService()
+@lazy_provider(
+    name="composio_service",
+    required_keys=[settings.COMPOSIO_KEY],
+    strategy=MissingKeyStrategy.WARN,
+    auto_initialize=False,
+)
+def init_composio_service():
+    # This condition is just for type checking purposes and will never be false at runtime
+    # because of the required_keys in the lazy_provider decorator
+    if settings.COMPOSIO_KEY is None:
+        raise RuntimeError("COMPOSIO_KEY is not set in settings")
+
+    return ComposioService(settings.COMPOSIO_KEY)
+
+
+def get_composio_service():
+    service = providers.get("composio_service")
+    if service is None:
+        raise RuntimeError("ComposioService is not available")
+    return service

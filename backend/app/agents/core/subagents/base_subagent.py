@@ -5,7 +5,6 @@ This module provides the core framework for building specialized sub-agents
 that can handle specific tool categories with deep domain expertise.
 """
 
-from app.config.loggers import langchain_logger as logger
 from app.agents.core.nodes import trim_messages_node
 from app.agents.core.nodes.delete_system_messages import (
     create_delete_system_messages_node,
@@ -14,6 +13,7 @@ from app.agents.core.nodes.filter_messages import create_filter_messages_node
 from app.agents.tools.core.retrieval import get_retrieve_tools_function
 from app.agents.tools.core.store import get_tools_store
 from app.agents.tools.memory_tools import get_all_memory, search_memory
+from app.config.loggers import langchain_logger as logger
 from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.messages import AIMessage
@@ -44,14 +44,14 @@ class SubAgentFactory:
         Returns:
             Compiled LangGraph agent with tool registry and retrieval
         """
+        from app.agents.tools.core.registry import get_tool_registry
+
         logger.info(
             f"Creating {provider} sub-agent graph using tool space '{tool_space}' with retrieve tools functionality"
         )
 
-        # Get the entire tool registry - filtering will be handled by retrieve_tools_function
-        from app.agents.tools.core.registry import tool_registry
-
         store = get_tools_store()
+        tool_registry = get_tool_registry()
 
         def transform_output(
             state: State, config: RunnableConfig, store: BaseStore
@@ -76,7 +76,7 @@ class SubAgentFactory:
         # The retrieve_tools_function will filter tools based on tool_space
         builder = create_agent(
             llm=llm,
-            tool_registry=tool_registry.get_tool_registry(),
+            tool_registry=tool_registry.get_tool_dict(),
             agent_name=name,
             retrieve_tools_function=get_retrieve_tools_function(
                 tool_space=tool_space,

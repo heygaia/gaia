@@ -1,6 +1,11 @@
 from typing import Any, Dict, List, Optional, TypedDict
 
 from app.config.settings import settings
+from app.constants.llm import (
+    DEFAULT_CEREBRAS_MODEL_NAME,
+    DEFAULT_GEMINI_MODEL_NAME,
+    DEFAULT_MODEL_NAME,
+)
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from langchain_cerebras import ChatCerebras
 from langchain_core.language_models import LanguageModelLike
@@ -9,9 +14,9 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_openai import ChatOpenAI
 
 PROVIDER_MODELS = {
-    "openai": "gpt-4o-mini",
-    "gemini": "gemini-2.5-flash",
-    "cerebras": "gpt-oss-120b",
+    "openai": DEFAULT_MODEL_NAME,
+    "gemini": DEFAULT_GEMINI_MODEL_NAME,
+    "cerebras": DEFAULT_CEREBRAS_MODEL_NAME,
 }
 PROVIDER_PRIORITY = {
     1: "openai",

@@ -15,7 +15,7 @@ from fastapi import HTTPException
     serializer=lambda models: [model.model_dump() for model in models],
     deserializer=lambda data: [ModelResponse(**item) for item in data] if data else [],
 )
-async def get_available_models(user_plan: Optional[str] = None) -> List[ModelResponse]:
+async def get_available_models(user_plan: str = "all") -> List[ModelResponse]:
     """
     Get all available models for a user based on their plan.
 
@@ -26,7 +26,7 @@ async def get_available_models(user_plan: Optional[str] = None) -> List[ModelRes
         List of available models
     """
     try:
-        if user_plan is None:
+        if user_plan == "all":
             # If no plan specified, return all active models
             models_cursor = ai_models_collection.find({"is_active": True})
         else:
