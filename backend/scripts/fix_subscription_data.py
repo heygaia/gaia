@@ -53,7 +53,6 @@ from bson import ObjectId  # noqa: E402
 async def find_invalid_subscriptions():
     """Find subscriptions with plan_ids that don't exist in plans collection."""
     try:
-
         # Get all active plan IDs
         plans_cursor = plans_collection.find({}, {"_id": 1})
         valid_plan_ids = set()

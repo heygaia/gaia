@@ -198,10 +198,9 @@ class ToolRegistry:
             )
 
         # Parallelize provider category addition
-        await asyncio.gather(*[
-            add_provider_category(name)
-            for name, _ in provider_configs
-        ])
+        await asyncio.gather(
+            *[add_provider_category(name) for name, _ in provider_configs]
+        )
 
     def get_category(self, name: str) -> Optional[ToolCategory]:
         """Get a specific category by name."""
