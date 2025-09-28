@@ -477,6 +477,51 @@ class WorkflowService:
             raise
 
     @staticmethod
+    async def increment_execution_count(
+        workflow_id: str, user_id: str, is_successful: bool = False
+    ) -> bool:
+        """Increment workflow execution statistics.
+
+        Args:
+            workflow_id: ID of the workflow
+            user_id: ID of the user who owns the workflow
+            is_successful: Whether the execution was successful
+
+        Returns:
+            True if update succeeded, False otherwise
+        """
+        try:
+            update_data = {
+                "$inc": {"total_executions": 1},
+                "$set": {"last_executed_at": datetime.now(timezone.utc)},
+            }
+
+            if is_successful:
+                update_data["$inc"]["successful_executions"] = 1
+
+            result = await workflows_collection.update_one(
+                {"_id": workflow_id, "user_id": user_id}, update_data
+            )
+
+            success = result.matched_count > 0
+            if success:
+                logger.debug(
+                    f"Updated execution count for workflow {workflow_id}: total +1, successful +{1 if is_successful else 0}"
+                )
+            else:
+                logger.warning(
+                    f"Failed to update execution count - workflow not found: {workflow_id}"
+                )
+
+            return success
+
+        except Exception as e:
+            logger.error(
+                f"Error updating execution count for workflow {workflow_id}: {str(e)}"
+            )
+            return False
+
+    @staticmethod
     async def _generate_workflow_steps(workflow_id: str, user_id: str) -> None:
         """Generate workflow steps using LLM with structured output."""
         try:

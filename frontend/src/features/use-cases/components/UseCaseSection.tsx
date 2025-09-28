@@ -10,7 +10,7 @@ import {
   useCasesData,
 } from "@/features/use-cases/constants/dummy-data";
 import { Workflow } from "@/features/workflows/api/workflowApi";
-import UserWorkflowCard from "@/features/workflows/components/UserWorkflowCard";
+import WorkflowCard from "@/features/workflows/components/WorkflowCard";
 import { useWorkflows } from "@/features/workflows/hooks/useWorkflows";
 
 // Register GSAP plugin
@@ -90,8 +90,8 @@ export default function UseCaseSection({
       : selectedCategory === "all"
         ? useCasesData
         : useCasesData.filter((useCase: UseCase) =>
-          useCase.categories?.includes(selectedCategory),
-        );
+            useCase.categories?.includes(selectedCategory),
+          );
 
   const handleCategoryClick = (category: string) => {
     const wasSelected = selectedCategory === category;
@@ -132,7 +132,9 @@ export default function UseCaseSection({
         // For other categories, only scroll if section is not fully visible
         if (!isSectionFullyVisible) {
           const targetScrollTop =
-            currentScrollTop + (sectionRect.bottom - containerRect.bottom) + 100;
+            currentScrollTop +
+            (sectionRect.bottom - containerRect.bottom) +
+            100;
 
           gsap.to(scrollContainer, {
             scrollTop: Math.max(0, targetScrollTop),
@@ -237,7 +239,11 @@ export default function UseCaseSection({
                       ease: "easeOut",
                     }}
                   >
-                    <UserWorkflowCard workflow={workflow} />
+                    <WorkflowCard
+                      workflow={workflow}
+                      variant="execution"
+                      showArrowIcon={false}
+                    />
                   </motion.div>
                 ))}
             </motion.div>

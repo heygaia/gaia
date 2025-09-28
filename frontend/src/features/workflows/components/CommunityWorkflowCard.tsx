@@ -1,10 +1,12 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { Chip } from "@heroui/chip";
 import { ChevronUp, User, Zap } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
+import { CursorMagicSelection03Icon } from "@/components";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
 
@@ -144,60 +146,58 @@ export default function CommunityWorkflowCard({
   }, []);
 
   const footerContent = (
-    <div className="flex w-full items-center gap-3">
-      {localWorkflow.creator && (
-        <Tooltip
-          content={`Created by ${localWorkflow.creator.name}`}
-          showArrow
-          placement="left"
-          color="foreground"
+    <div className="flex w-full flex-col gap-3">
+      {/* Trigger information - Community workflows are manual by default */}
+      <div className="flex items-center gap-2">
+        <Chip
+          size="sm"
+          startContent={<CursorMagicSelection03Icon width={15} />}
+          radius="sm"
+          variant="light"
+          className="flex gap-1 px-2! text-zinc-400"
         >
-          <div className="flex items-center gap-2">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full">
-              {localWorkflow.creator.avatar ? (
-                <Image
-                  src={localWorkflow.creator.avatar}
-                  alt={localWorkflow.creator.name}
-                  width={27}
-                  height={27}
-                  className="rounded-full"
-                />
-              ) : (
-                <User className="h-4 w-4 text-zinc-400" />
-              )}
+          Manual
+        </Chip>
+      </div>
+
+      <div className="flex w-full items-center gap-3">
+        {localWorkflow.creator && (
+          <Tooltip
+            content={`Created by ${localWorkflow.creator.name}`}
+            showArrow
+            placement="left"
+            color="foreground"
+          >
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-full">
+                {localWorkflow.creator.avatar ? (
+                  <Image
+                    src={localWorkflow.creator.avatar}
+                    alt={localWorkflow.creator.name}
+                    width={27}
+                    height={27}
+                    className="rounded-full"
+                  />
+                ) : (
+                  <User className="h-4 w-4 text-zinc-400" />
+                )}
+              </div>
             </div>
-          </div>
-        </Tooltip>
-      )}
+          </Tooltip>
+        )}
 
-      <Button
-        color="primary"
-        size="sm"
-        variant="flat"
-        className="ml-auto w-fit text-primary"
-        endContent={<Zap width={14} height={14} />}
-        isLoading={isCreatingWorkflow}
-        onPress={handleCreateWorkflow}
-      >
-        Create
-      </Button>
-
-      {/* <Button
-        variant={localWorkflow.is_upvoted ? "solid" : "flat"}
-        color={localWorkflow.is_upvoted ? "primary" : "default"}
-        size="sm"
-        isIconOnly
-        isLoading={isUpvoting}
-        onPress={handleUpvote}
-        className={`flex flex-shrink-0 flex-col`}
-      >
-        <ChevronUp width={50} height={50} />
-        <span
-          className={`min-w-0 text-xs font-bold ${localWorkflow.is_upvoted ? "text-black" : "text-zinc-500"}`}
+        <Button
+          color="primary"
+          size="sm"
+          variant="flat"
+          className="ml-auto w-fit text-primary"
+          endContent={<Zap width={14} height={14} />}
+          isLoading={isCreatingWorkflow}
+          onPress={handleCreateWorkflow}
         >
-          {localWorkflow.upvotes}
-        </span>
-      </Button> */}
+          Create
+        </Button>
+      </div>
     </div>
   );
 

@@ -24,6 +24,8 @@ from app.services.user_service import get_user_by_id
 from app.services.workflow.conversation_service import (
     get_or_create_workflow_conversation,
 )
+from app.services.workflow.scheduler import WorkflowScheduler
+from app.services.workflow.service import WorkflowService
 from bson import ObjectId
 
 
@@ -156,50 +158,51 @@ async def execute_workflow_by_id(
     ctx: dict, workflow_id: str, context: Optional[dict] = None
 ) -> str:
     """
-    ARQ-compatible workflow execution function.
-    Fetches workflow by ID and executes it using execute_workflow_as_chat.
-
-    Args:
-        ctx: ARQ context
-        workflow_id: ID of the workflow to execute
-        context: Optional execution context
-
-    Returns:
-        Processing result message
+    Execute a workflow by ID with proper execution count tracking.
     """
     logger.info(f"Processing workflow execution: {workflow_id}")
 
+    scheduler = WorkflowScheduler()
+    workflow = None
+
     try:
-        # Get workflow from database
-        from app.services.workflow.scheduler import WorkflowScheduler
-
-        scheduler = WorkflowScheduler()
         await scheduler.initialize()
+        workflow = await scheduler.get_task(workflow_id)
 
-        try:
-            workflow = await scheduler.get_task(workflow_id)
-            if not workflow:
-                return f"Workflow {workflow_id} not found"
+        if not workflow:
+            return f"Workflow {workflow_id} not found"
 
-            # Execute the workflow and get messages
-            execution_messages = await execute_workflow_as_chat(
-                workflow, {"user_id": workflow.user_id}, context or {}
-            )
+        # Execute the workflow
+        execution_messages = await execute_workflow_as_chat(
+            workflow, {"user_id": workflow.user_id}, context or {}
+        )
 
-            # Store messages and send notification
-            await create_workflow_completion_notification(
-                workflow, execution_messages, workflow.user_id
-            )
+        # Track successful execution
+        await WorkflowService.increment_execution_count(
+            workflow_id, workflow.user_id, is_successful=True
+        )
 
-            return f"Workflow {workflow_id} executed successfully with {len(execution_messages)} messages"
+        # Store messages and send notification
+        await create_workflow_completion_notification(
+            workflow, execution_messages, workflow.user_id
+        )
 
-        finally:
-            await scheduler.close()
+        return f"Workflow {workflow_id} executed successfully with {len(execution_messages)} messages"
 
     except Exception as e:
-        error_msg = f"Error executing workflow {workflow_id}: {str(e)}"
-        logger.error(error_msg)
-        return error_msg
+        logger.error(f"Error executing workflow {workflow_id}: {str(e)}")
+
+        # Track failed execution if we have workflow info
+        if workflow:
+            await WorkflowService.increment_execution_count(
+                workflow_id, workflow.user_id, is_successful=False
+            )
+
+        return f"Error executing workflow {workflow_id}: {str(e)}"
+
+    finally:
+        if scheduler:
+            await scheduler.close()
 
 
 @tiered_rate_limit("email_workflow_executions")
@@ -461,7 +464,7 @@ async def create_workflow_completion_notification(
             NotificationSourceEnum,
             RedirectConfig,
         )
-        from app.services.notifications.notification_service import notification_service
+        from app.services.notification_service import notification_service
         from app.services.workflow.conversation_service import (
             add_workflow_execution_messages,
             get_or_create_workflow_conversation,

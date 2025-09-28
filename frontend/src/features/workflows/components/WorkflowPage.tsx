@@ -137,9 +137,9 @@ export default function WorkflowPage() {
     >
       <div className="flex flex-col gap-6 md:gap-7">
         <div className="flex w-full flex-col items-center justify-center">
-          <h1 className="mb-2 text-5xl font-normal">See what's Possible</h1>
+          <h1 className="mb-2 text-5xl font-normal">Explore Workflows</h1>
           <p className="mx-auto max-w-3xl text-lg text-zinc-500">
-            Practical use cases showing how GAIA works for you
+            Your workflows and community creations in one place
           </p>
 
           <div className="mt-3 flex justify-center gap-2">
@@ -183,7 +183,7 @@ export default function WorkflowPage() {
         {renderWorkflowsGrid()}
       </div>
 
-      <div className="mt-20 flex min-h-[50vh] flex-col gap-5">
+      <div className="mt-12 flex min-h-[50vh] flex-col gap-5">
         <div className="text-center">
           <h1 className="mb-2 text-4xl font-normal">
             Published by The Community
@@ -192,8 +192,7 @@ export default function WorkflowPage() {
             Discover what others are building with GAIA
           </p>
         </div>
-
-        <UseCaseSection dummySectionRef={pageRef} hideUserWorkflows={true} />
+        <UseCaseSection dummySectionRef={pageRef} hideUserWorkflows={false} />
       </div>
 
       <CreateWorkflowModal

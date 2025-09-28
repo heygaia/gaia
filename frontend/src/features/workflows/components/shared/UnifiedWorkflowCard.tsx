@@ -9,12 +9,11 @@ import { useState } from "react";
 import { CursorMagicSelection03Icon } from "@/components";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
+import { Workflow } from "@/features/workflows/api/workflowApi";
+import { getTriggerDisplay } from "../../utils/triggerDisplay";
+import BaseWorkflowCard from "./BaseWorkflowCard";
 
-import { Workflow } from "../api/workflowApi";
-import { getTriggerDisplay } from "../utils/triggerDisplay";
-import BaseWorkflowCard from "./shared/BaseWorkflowCard";
-
-interface WorkflowCardProps {
+interface UnifiedWorkflowCardProps {
   workflow: Workflow;
   onClick?: () => void;
   variant?: "management" | "execution";
@@ -22,7 +21,6 @@ interface WorkflowCardProps {
 }
 
 const getTriggerIcon = (triggerType: string, integrationIconUrl?: string) => {
-  // Use integration icon if available (Gmail, Calendar, etc.)
   if (integrationIconUrl) {
     return (
       <Image
@@ -34,14 +32,12 @@ const getTriggerIcon = (triggerType: string, integrationIconUrl?: string) => {
     );
   }
 
-  // Fallback to type-specific icons only for non-integration triggers
   switch (triggerType) {
     case "schedule":
       return <Clock width={15} />;
     case "manual":
       return <CursorMagicSelection03Icon width={15} />;
     default:
-      // For email/calendar without integration icon, show generic icon
       return <Mail width={15} />;
   }
 };
@@ -53,7 +49,6 @@ const getNextRunDisplay = (workflow: Workflow) => {
     const nextRun = new Date(trigger_config.next_run);
     const now = new Date();
 
-    // Check if next run is in the future
     if (nextRun > now) {
       const diffMs = nextRun.getTime() - now.getTime();
       const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
@@ -80,17 +75,16 @@ const getActivationLabel = (activated: boolean) => {
   return activated ? "Activated" : "Deactivated";
 };
 
-export default function WorkflowCard({
+export default function UnifiedWorkflowCard({
   workflow,
   onClick,
   variant = "management",
-  showArrowIcon = true,
-}: WorkflowCardProps) {
+  showArrowIcon = false,
+}: UnifiedWorkflowCardProps) {
   const [isRunning, setIsRunning] = useState(false);
   const { selectWorkflow } = useWorkflowSelection();
   const { integrations } = useIntegrations();
 
-  // Get trigger display info using integration data
   const triggerDisplay = getTriggerDisplay(workflow, integrations);
 
   const handleRunWorkflow = async () => {
@@ -107,14 +101,16 @@ export default function WorkflowCard({
 
   const renderTriggerInfo = () => (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="flex items-center gap-1 text-xs text-zinc-500">
-        <div className="w-4">
-          {getTriggerIcon(
-            workflow.trigger_config.type,
-            triggerDisplay.icon || undefined,
-          )}
-        </div>
-
+      <Chip
+        size="sm"
+        startContent={getTriggerIcon(
+          workflow.trigger_config.type,
+          triggerDisplay.icon || undefined,
+        )}
+        radius="sm"
+        variant="light"
+        className="flex gap-1 px-2! text-zinc-400"
+      >
         {triggerDisplay.label
           .split(" ")
           .map(
@@ -122,7 +118,7 @@ export default function WorkflowCard({
               word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
           )
           .join(" ")}
-      </div>
+      </Chip>
 
       {getNextRunDisplay(workflow) && (
         <Chip

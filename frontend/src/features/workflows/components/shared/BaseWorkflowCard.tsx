@@ -5,8 +5,9 @@ import { ArrowUpRight, User } from "lucide-react";
 import Image from "next/image";
 import { ReactNode } from "react";
 
-import { ToolsIcon } from "@/components";
+import { PlayIcon, ToolsIcon } from "@/components";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { formatRunCount } from "@/utils/formatters";
 
 interface BaseWorkflowCardProps {
   title: string;
@@ -21,6 +22,7 @@ interface BaseWorkflowCardProps {
     name: string;
     avatar?: string;
   };
+  totalExecutions?: number;
 }
 
 export default function BaseWorkflowCard({
@@ -33,6 +35,7 @@ export default function BaseWorkflowCard({
   headerRight,
   footerContent,
   creator,
+  totalExecutions = 0,
 }: BaseWorkflowCardProps) {
   const renderToolIcons = () => {
     let categories: string[];
@@ -110,7 +113,7 @@ export default function BaseWorkflowCard({
 
   return (
     <div
-      className={`group relative flex min-h-[195px] w-full flex-col gap-3 rounded-2xl bg-zinc-800 p-4 transition-all select-none ${
+      className={`group relative flex min-h-[200px] w-full flex-col gap-2 rounded-2xl bg-zinc-800 p-4 transition-all select-none ${
         onClick ? "cursor-pointer hover:bg-zinc-700/50" : ""
       }`}
       onClick={onClick}
@@ -134,7 +137,13 @@ export default function BaseWorkflowCard({
         </div>
       </div>
 
-      <div className="mt-auto">{footerContent}</div>
+      <div className="mt-auto">
+        <div className="mb-1 flex items-center gap-1 text-xs text-zinc-500">
+          <PlayIcon width={15} height={15} className="text-zinc-500" />
+          {formatRunCount(totalExecutions)}
+        </div>
+        {footerContent}
+      </div>
     </div>
   );
 }
