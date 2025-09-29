@@ -274,7 +274,7 @@ def init_composio_service():
     return ComposioService(settings.COMPOSIO_KEY)
 
 
-def get_composio_service():
+def get_composio_service() -> ComposioService:
     service = providers.get("composio_service")
     if service is None:
         raise RuntimeError("ComposioService is not available")

@@ -265,7 +265,7 @@ class ToolRegistry:
         return [tool.name for tool in tools]
 
 
-def get_tool_registry() -> ToolRegistry:
+async def get_tool_registry() -> ToolRegistry:
     """
     Accessor for the global tool registry instance.
 
@@ -275,7 +275,7 @@ def get_tool_registry() -> ToolRegistry:
     Returns:
         The global ToolRegistry instance.
     """
-    tool_registry = providers.get("tool_registry")
+    tool_registry = await providers.aget("tool_registry")
 
     if tool_registry is None:
         raise RuntimeError("ToolRegistry is not available")
@@ -287,7 +287,7 @@ def get_tool_registry() -> ToolRegistry:
     name="tool_registry",
     required_keys=[],
     strategy=MissingKeyStrategy.ERROR,
-    auto_initialize=True,
+    auto_initialize=False,
 )
 async def init_tool_registry():
     tool_registry = ToolRegistry()

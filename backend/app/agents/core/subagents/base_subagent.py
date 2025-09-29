@@ -5,6 +5,8 @@ This module provides the core framework for building specialized sub-agents
 that can handle specific tool categories with deep domain expertise.
 """
 
+import asyncio
+
 from app.agents.core.nodes import trim_messages_node
 from app.agents.core.nodes.delete_system_messages import (
     create_delete_system_messages_node,
@@ -26,7 +28,7 @@ class SubAgentFactory:
     """Factory for creating provider-specific sub-agents with specialized tool registries."""
 
     @staticmethod
-    def create_provider_subagent(
+    async def create_provider_subagent(
         provider: str,
         name: str,
         prompt: str,
@@ -50,8 +52,9 @@ class SubAgentFactory:
             f"Creating {provider} sub-agent graph using tool space '{tool_space}' with retrieve tools functionality"
         )
 
-        store = get_tools_store()
-        tool_registry = get_tool_registry()
+        store, tool_registry = await asyncio.gather(
+            get_tools_store(), get_tool_registry()
+        )
 
         def transform_output(
             state: State, config: RunnableConfig, store: BaseStore
@@ -78,7 +81,7 @@ class SubAgentFactory:
             llm=llm,
             tool_registry=tool_registry.get_tool_dict(),
             agent_name=name,
-            retrieve_tools_function=get_retrieve_tools_function(
+            retrieve_tools_coroutine=get_retrieve_tools_function(
                 tool_space=tool_space,
                 include_core_tools=False,  # Provider agents don't need core tools
                 additional_tools=[get_all_memory, search_memory],

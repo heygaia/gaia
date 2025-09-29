@@ -243,7 +243,7 @@ async def execute_graph_streaming(
                 # Show tool execution progress
                 if tool_calls:
                     for tool_call in tool_calls:
-                        progress_data = format_tool_progress(tool_call)
+                        progress_data = await format_tool_progress(tool_call)
                         if progress_data:
                             yield format_sse_data(progress_data)
 

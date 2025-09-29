@@ -32,7 +32,7 @@ class WorkflowGenerationService:
             # Import here to avoid circular dependency at module level
             from app.agents.tools.core.registry import get_tool_registry
 
-            tool_registry = get_tool_registry()
+            tool_registry = await get_tool_registry()
 
             # Create structured tool information with categories
             tools_with_categories = []

@@ -5,10 +5,17 @@ This module initializes and runs the FastAPI application.
 """
 
 import time
+import warnings
+
+from pydantic import PydanticDeprecatedSince20
 
 from app.config.loggers import app_logger as logger
 from app.config.sentry import init_sentry
 from app.core.app_factory import create_app
+
+warnings.filterwarnings(
+    "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
+)
 
 # Create the FastAPI application
 logger.info("Starting application initialization...")

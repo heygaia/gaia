@@ -31,7 +31,7 @@ class FollowUpActions(BaseModel):
 
 async def follow_up_actions_node(
     state: State, config: RunnableConfig, store: BaseStore
-):
+) -> State:
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
@@ -43,7 +43,7 @@ async def follow_up_actions_node(
     """
     from app.agents.tools.core.registry import get_tool_registry
 
-    tool_registry = get_tool_registry()
+    tool_registry = await get_tool_registry()
     llm = init_llm()
 
     try:
@@ -81,7 +81,7 @@ async def follow_up_actions_node(
 
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
-        return {}
+        return state
 
 
 def _pretty_print_messages(

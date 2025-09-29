@@ -1,4 +1,4 @@
-from typing import Annotated
+from typing import Annotated, Awaitable, Callable
 
 from langchain_core.tools import BaseTool
 from langgraph.prebuilt import InjectedStore
@@ -10,7 +10,7 @@ def get_retrieve_tools_function(
     include_core_tools: bool = True,
     additional_tools: list[BaseTool] = [],
     limit: int = 5,
-):
+) -> Callable[..., Awaitable[list[str]]]:
     """
     Get a function to retrieve tools based on a search query.
 
@@ -23,7 +23,7 @@ def get_retrieve_tools_function(
         A function that retrieves tools based on the provided parameters.
     """
 
-    def retrieve_tools(
+    async def retrieve_tools(
         store: Annotated[BaseStore, InjectedStore],
         query: str = "",
         exclude_tools: list[str] = [],
@@ -102,7 +102,7 @@ def get_retrieve_tools_function(
 
         # Lazy import to avoid circular dependency
 
-        tool_registry = get_tool_registry()
+        tool_registry = await get_tool_registry()
         tool_ids = set()
 
         # Get all available tool names for validation

@@ -30,10 +30,7 @@ def get_embeddings() -> GoogleGenerativeAIEmbeddings:
     name="tools_store",
     required_keys=[],
     strategy=MissingKeyStrategy.ERROR,
-    auto_initialize=True,
-    dependencies=[
-        "tool_registry"
-    ],  # Because tool_registry and tools_store are auto initialized together and tool_registry is needed to initialize tools_store, we add it as a dependency
+    auto_initialize=False,
 )
 async def initialize_tools_store():
     """Initialize and return the tool registry and store.
@@ -44,7 +41,7 @@ async def initialize_tools_store():
     # Lazy import to avoid circular dependency
     from app.agents.tools.core.registry import get_tool_registry
 
-    tool_registry = get_tool_registry()
+    tool_registry = await get_tool_registry()
 
     # Register both regular and always available tools
     tool_dict = tool_registry.get_tool_dict()
@@ -93,8 +90,8 @@ async def initialize_tools_store():
     return store
 
 
-def get_tools_store() -> InMemoryStore:
-    tools_store = providers.get("tools_store")
+async def get_tools_store() -> InMemoryStore:
+    tools_store = await providers.aget("tools_store")
     if tools_store is None:
         raise RuntimeError("Tools store not available")
     return tools_store

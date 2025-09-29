@@ -13,7 +13,7 @@ async def get_available_tools() -> ToolsListResponse:
     tool_infos = []
     categories = set()
 
-    tool_registry = get_tool_registry()
+    tool_registry = await get_tool_registry()
 
     # Use category-based approach for better performance and integration info
     _categories = tool_registry.get_all_category_objects(
@@ -39,7 +39,7 @@ async def get_available_tools() -> ToolsListResponse:
 
 async def get_tools_by_category(category: str) -> ToolsCategoryResponse:
     """Get tools filtered by category."""
-    tool_registry = get_tool_registry()
+    tool_registry = await get_tool_registry()
     category_obj = tool_registry.get_category(category)
 
     if not category_obj:
@@ -62,7 +62,7 @@ async def get_tools_by_category(category: str) -> ToolsCategoryResponse:
 async def get_tool_categories() -> Dict[str, int]:
     """Get all tool categories with their counts."""
     category_counts: Dict[str, int] = {}
-    tool_registry = get_tool_registry()
+    tool_registry = await get_tool_registry()
 
     # Use the new category-based approach for better performance
     all_categories = tool_registry.get_all_category_objects()
