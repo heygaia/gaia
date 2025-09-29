@@ -1,34 +1,36 @@
 #!/usr/bin/env python3
 """
-Complete Dodo Payments setup script for GAIA.
+Complete Payment setup script for GAIA.
 This script sets up subscription plans in the database using Dodo product IDs.
 
 IMPORTANT: Run this script from the correct directory!
 
 1. If running locally:
-   cd /path/to/your/gaia/backend
-   python scripts/dodo_setup.py --monthly-product-id <id> --yearly-product-id <id>
+    cd /path/to/your/gaia/backend
+    python scripts/payment_setup.py --monthly-product-id <id> --yearly-product-id <id>
 
 2. If running inside Docker container:
-   cd /app
-   python scripts/dodo_setup.py --monthly-product-id <id> --yearly-product-id <id>
+    cd /app
+    python scripts/payment_setup.py --monthly-product-id <id> --yearly-product-id <id>
 
 3. Alternative Docker approach (set PYTHONPATH):
-   PYTHONPATH=/app python scripts/dodo_setup.py --monthly-product-id <id> --yearly-product-id <id>
+    PYTHONPATH=/app python scripts/payment_setup.py --monthly-product-id <id> --yearly-product-id <id>
 
 4. Run as module (from app directory):
-   python -m scripts.dodo_setup --monthly-product-id <id> --yearly-product-id <id>
+    python -m scripts.payment_setup --monthly-product-id <id> --yearly-product-id <id>
 
 Prerequisites:
-- DODO_PAYMENTS_API_KEY environment variable must be set
+- DODO_PAYMENTS_API_KEY must be available in Infisical secrets or as an environment variable.
+  - The script will first attempt to fetch DODO_PAYMENTS_API_KEY from Infisical (if configured),
+     and fallback to the environment variable or settings if not found.
 - MongoDB connection string (MONGO_DB) must be configured
 - Have your Dodo product IDs ready from your Dodo Payments dashboard
 
 Usage:
-    python dodo_setup.py --monthly-product-id <product_id> --yearly-product-id <product_id>
+     python payment_setup.py --monthly-product-id <product_id> --yearly-product-id <product_id>
 
 Example:
-    python dodo_setup.py --monthly-product-id "xyz" --yearly-product-id "xyz"
+     python payment_setup.py --monthly-product-id "xyz" --yearly-product-id "xyz"
 """
 
 import argparse
@@ -36,6 +38,33 @@ import asyncio
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+
+import os
+
+# Ensure Infisical secrets are injected before importing settings
+try:
+    from app.config.secrets import inject_infisical_secrets
+
+    inject_infisical_secrets()
+    # Debug: Print Infisical ENV and credentials
+    print(f"[DEBUG] ENV: {os.environ.get('ENV')}")
+    print(f"[DEBUG] INFISICAL_PROJECT_ID: {os.environ.get('INFISICAL_PROJECT_ID')}")
+    print(
+        f"[DEBUG] INFISICAL_MACHINE_INDENTITY_CLIENT_ID: {os.environ.get('INFISICAL_MACHINE_INDENTITY_CLIENT_ID')}"
+    )
+    print(
+        f"[DEBUG] INFISICAL_MACHINE_INDENTITY_CLIENT_SECRET: {os.environ.get('INFISICAL_MACHINE_INDENTITY_CLIENT_SECRET')}"
+    )
+    # Debug: Print if DODO_PAYMENTS_API_KEY is present after injection
+    dodo_key = os.environ.get("DODO_PAYMENTS_API_KEY")
+    if dodo_key:
+        print(
+            f"[DEBUG] DODO_PAYMENTS_API_KEY is present after Infisical injection (starts with: {dodo_key[:6]})"
+        )
+    else:
+        print("[DEBUG] DODO_PAYMENTS_API_KEY is NOT present after Infisical injection")
+except Exception as e:
+    print(f"[WARN] Could not inject Infisical secrets: {e}")
 
 # Add the backend directory to Python path so we can import from app
 backend_dir = Path(__file__).parent.parent
@@ -66,16 +95,22 @@ async def cleanup_old_indexes(collection):
         print(f"⚠️  Warning: Could not clean up old indexes: {e}")
 
 
-async def setup_dodo_plans(monthly_product_id: str, yearly_product_id: str):
+async def setup_payment_plans(monthly_product_id: str, yearly_product_id: str):
     """Set up GAIA subscription plans in the database using Dodo product IDs."""
-    print("🚀 GAIA Dodo Payments Setup")
+    print("🚀 GAIA Payment Setup")
     print("=" * 50)
 
-    if not settings.DODO_PAYMENTS_API_KEY:
-        print("❌ DODO_PAYMENTS_API_KEY not found in environment variables")
+    # Try to fetch DODO_PAYMENTS_API_KEY from Infisical-injected env, fallback to settings
+    dodo_payments_api_key = os.environ.get("DODO_PAYMENTS_API_KEY") or getattr(
+        settings, "DODO_PAYMENTS_API_KEY", None
+    )
+    if not dodo_payments_api_key:
+        print(
+            "❌ DODO_PAYMENTS_API_KEY not found in Infisical or environment variables/settings"
+        )
         return False
 
-    print(f"🔗 Using Dodo Payments API Key: {settings.DODO_PAYMENTS_API_KEY[:10]}...")
+    print(f"🔗 Using Dodo Payments API Key: {dodo_payments_api_key[:10]}...")
     print(f"📦 Monthly Product ID: {monthly_product_id}")
     print(f"📦 Yearly Product ID: {yearly_product_id}")
     print()
@@ -294,7 +329,7 @@ async def setup_dodo_plans(monthly_product_id: str, yearly_product_id: str):
 
 async def main():
     """Main entry point."""
-    parser = argparse.ArgumentParser(description="Setup Dodo Payments plans for GAIA")
+    parser = argparse.ArgumentParser(description="Setup Payment plans for GAIA")
     parser.add_argument(
         "--monthly-product-id",
         required=True,
@@ -309,8 +344,8 @@ async def main():
     args = parser.parse_args()
 
     try:
-        await setup_dodo_plans(args.monthly_product_id, args.yearly_product_id)
-        print("\n🎉 Dodo Payments setup completed successfully!")
+        await setup_payment_plans(args.monthly_product_id, args.yearly_product_id)
+        print("\n🎉 Payment setup completed successfully!")
     except Exception as e:
         print(f"\n💥 Setup failed with error: {e}")
 
