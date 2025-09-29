@@ -26,39 +26,32 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
   isConnected = true,
   onConnect,
 }) => {
-  // Filter and group upcoming events by day (next 7 days)
+  // Group all events by their date (show all events from API, grouped by day)
   const upcomingEventsByDay = useMemo(() => {
-    const today = new Date();
     const eventsByDay: { [key: string]: GoogleCalendarEvent[] } = {};
-
-    // Get events for the next 7 days
-    for (let i = 0; i < 7; i++) {
-      const date = new Date(today);
-      date.setDate(today.getDate() + i);
-      const dateString = date.toDateString();
-
-      const dayEvents = events
-        .filter((event) => {
-          const eventStart = new Date(
-            event.start.dateTime || event.start.date || "",
-          );
-          return eventStart.toDateString() === dateString;
-        })
-        .sort((a, b) => {
-          const timeA = new Date(
-            a.start.dateTime || a.start.date || "",
-          ).getTime();
-          const timeB = new Date(
-            b.start.dateTime || b.start.date || "",
-          ).getTime();
-          return timeA - timeB;
-        });
-
-      if (dayEvents.length > 0) {
-        eventsByDay[dateString] = dayEvents;
+    events.forEach((event) => {
+      // Prefer date (all-day) or dateTime (timed)
+      let eventDate: string;
+      if (event.start.date) {
+        eventDate = event.start.date; // YYYY-MM-DD
+      } else if (event.start.dateTime) {
+        // Convert to local YYYY-MM-DD
+        const d = new Date(event.start.dateTime);
+        eventDate = d.toISOString().slice(0, 10);
+      } else {
+        return; // skip if no date
       }
-    }
-
+      if (!eventsByDay[eventDate]) eventsByDay[eventDate] = [];
+      eventsByDay[eventDate].push(event);
+    });
+    // Sort events within each day
+    Object.values(eventsByDay).forEach((arr) =>
+      arr.sort((a, b) => {
+        const getSortDate = (ev: GoogleCalendarEvent) =>
+          new Date(ev.start.dateTime || ev.start.date || "").getTime();
+        return getSortDate(a) - getSortDate(b);
+      }),
+    );
     return eventsByDay;
   }, [events]);
 
@@ -84,18 +77,14 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
     const endStr = formatTimeString(end);
 
     // Smart formatting - show AM/PM only when needed
-    if (start.getHours() < 12 && end.getHours() >= 12) {
+    if (start.getHours() < 12 && end.getHours() >= 12)
       // Crossing from AM to PM
       return `${startStr} – ${endStr}`;
-    } else if (start.getHours() >= 12 && end.getHours() >= 12) {
+    else if (start.getHours() >= 12 && end.getHours() >= 12)
       // Both PM
-      const startWithoutAMPM = startStr.replace(" PM", "");
-      return `${startWithoutAMPM} – ${endStr}`;
-    } else if (start.getHours() < 12 && end.getHours() < 12) {
-      // Both AM
-      const startWithoutAMPM = startStr.replace(" AM", "");
-      return `${startWithoutAMPM} – ${endStr}`;
-    }
+      return `${startStr.replace(" PM", "")} – ${endStr}`;
+    else if (start.getHours() < 12 && end.getHours() < 12)
+      return `${startStr.replace(" AM", "")} – ${endStr}`;
 
     return `${startStr} – ${endStr}`;
   };
@@ -135,6 +124,7 @@ const UpcomingEventsView: React.FC<UpcomingEventsViewProps> = ({
       connectIntegrationId="google_calendar"
       onConnect={onConnect}
       connectButtonText="Connect Calendar"
+      path="/calendar"
     >
       <div className="space-y-6 p-4">
         {Object.entries(upcomingEventsByDay).map(

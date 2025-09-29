@@ -21,7 +21,7 @@ export default function GetStartedButton({
       </Link>
 
       {small_text && (
-        <div className="text-xs text-foreground-300">
+        <div className="text-xs font-light text-black">
           No credit card required. Free forever plan included.
         </div>
       )}

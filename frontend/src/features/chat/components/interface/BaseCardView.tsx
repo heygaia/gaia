@@ -1,5 +1,6 @@
 import { Button } from "@heroui/button";
 import { Skeleton } from "@heroui/react";
+import Link from "next/link";
 import React from "react";
 
 interface BaseCardViewProps {
@@ -17,6 +18,7 @@ interface BaseCardViewProps {
   connectIntegrationId?: string;
   onConnect?: (integrationId: string) => void;
   connectButtonText?: string;
+  path?: string;
 }
 
 const BaseCardView: React.FC<BaseCardViewProps> = ({
@@ -34,16 +36,24 @@ const BaseCardView: React.FC<BaseCardViewProps> = ({
   connectIntegrationId,
   onConnect,
   connectButtonText = "Connect",
+  path,
 }) => {
   const containerClassName = `flex h-full min-h-[40vh] max-h-[40vh] w-full flex-col ${className} rounded-3xl`;
 
   return (
     <div className={containerClassName}>
-      <div className="flex-shrink-0 px-4 py-3">
+      <div className="flex flex-shrink-0 items-center justify-between px-4 py-3">
         <div className="flex items-center gap-2">
           {icon}
           <h3 className="font-medium text-white">{title}</h3>
         </div>
+        {path && (
+          <Link href={path}>
+            <Button size="sm" color="primary" variant="light">
+              View All
+            </Button>
+          </Link>
+        )}
       </div>
 
       <div className="h-full flex-1 px-4 pb-4">
