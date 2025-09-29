@@ -1,4 +1,5 @@
 import asyncio
+import warnings
 from contextlib import asynccontextmanager
 
 import uvloop
@@ -13,6 +14,12 @@ from app.db.postgresql import close_postgresql_db
 from app.db.rabbitmq import get_rabbitmq_publisher
 from app.services.composio.composio_service import init_composio_service
 from fastapi import FastAPI
+from pydantic import PydanticDeprecatedSince20
+
+# Ignore specific deprecation warnings from pydantic in langchain_core
+warnings.filterwarnings(
+    "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
+)
 
 
 async def init_reminder_service():
