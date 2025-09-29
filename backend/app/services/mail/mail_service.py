@@ -474,7 +474,6 @@ async def search_messages(
     Returns:
         Dict containing messages and next page token
     """
-    logger.info(f"Searching messages with query: {query}")
     try:
         parameters = {
             "query": query or "",
@@ -487,17 +486,15 @@ async def search_messages(
 
         if result.get("successful", True):
             # Transform messages if needed
-            messages = result.get("messages", [])
+            messages = result.get("data", {}).get("messages", [])
             return {
                 "messages": [transform_gmail_message(msg) for msg in messages],
                 "nextPageToken": result.get("nextPageToken"),
             }
         else:
-            logger.error(f"Error from GMAIL_FETCH_EMAILS: {result.get('error')}")
             return {"messages": [], "nextPageToken": None}
 
-    except Exception as error:
-        logger.error(f"Error searching messages: {error}")
+    except Exception:
         return {"messages": [], "nextPageToken": None}
 
 

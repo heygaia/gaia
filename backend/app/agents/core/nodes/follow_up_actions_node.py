@@ -43,6 +43,10 @@ async def follow_up_actions_node(
     """
     from app.agents.tools.core.registry import tool_registry
 
+    # Send completion marker as soon as follow-up actions start
+    writer = get_stream_writer()
+    writer({"main_response_complete": True})
+
     llm = init_llm()
 
     try:
@@ -50,6 +54,7 @@ async def follow_up_actions_node(
 
         # Skip if insufficient conversation history for meaningful suggestions
         if not messages or len(messages) < 2:
+            writer({"follow_up_actions": []})
             return state
 
         # Set up structured output parsing
@@ -69,17 +74,20 @@ async def follow_up_actions_node(
             ],
             config={**config, "silent": True},  # type: ignore
         )
-        actions = parser.parse(result if isinstance(result, str) else result.text())
+        try:
+            actions = parser.parse(result if isinstance(result, str) else result.text())
+        except Exception as parse_exc:
+            logger.error(f"Error parsing follow-up actions: {parse_exc}")
+            writer({"follow_up_actions": []})
+            return state
 
-        # Only stream follow-up actions if there are any to show
-        if actions.actions and len(actions.actions) > 0:
-            writer = get_stream_writer()
-            writer({"follow_up_actions": actions.actions})
-
+        # Always stream follow-up actions, even if empty
+        writer({"follow_up_actions": actions.actions if actions.actions else []})
         return state
 
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
+        writer({"follow_up_actions": []})
         return {}
 
 
