@@ -110,7 +110,7 @@ dependencies = [
   "fastapi-cache2[redis]>=0.1.8",
   "orjson>=3.11.3",
   "ujson>=5.11.0",
-  "uvloop>=0.21.0",
+  "uvloop>=0.21.0; sys_platform != 'win32'",
   "mem0ai>=0.1.118",
 ]
 
