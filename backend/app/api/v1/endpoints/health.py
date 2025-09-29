@@ -8,8 +8,6 @@ from app.utils.general_utils import get_project_info
 from fastapi import APIRouter
 from fastapi.responses import FileResponse
 
-from app.decorators.caching import Cacheable
-
 router = APIRouter()
 
 
@@ -18,7 +16,6 @@ router = APIRouter()
 @router.get("/health")
 @router.get("/api/v1/")
 @router.get("/api/v1/ping")
-@Cacheable(smart_hash=True, ttl=21600)  # 6 hours
 def health_check():
     """
     Health check endpoint for the API.
