@@ -16,7 +16,7 @@ from app.models.notification.notification_models import (
     NotificationType,
     RedirectConfig,
 )
-from app.services.notification_service import notification_service
+from app.services.notifications.notification_service import notification_service
 
 
 class AIProactiveNotificationSource:

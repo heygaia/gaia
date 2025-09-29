@@ -12,6 +12,7 @@ import json
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
+import httpx
 from app.config.loggers import token_repository_logger as logger
 from app.config.settings import settings
 from app.db.postgresql import get_db_session
@@ -32,17 +33,13 @@ class TokenRepository:
 
     def __init__(self):
         """Initialize the token repository."""
-        # Import logger here to avoid circular import
-        from app.config.loggers import get_logger
-
-        self.logger = get_logger(__name__)
 
         self.oauth = OAuth()
 
         # Initialize supported providers
         self._init_oauth_clients()
 
-        self.logger.info(
+        logger.info(
             "Token repository initialized for managing API tokens (Google, etc.)"
         )
 
@@ -60,11 +57,9 @@ class TokenRepository:
                     "prompt": "select_account",
                 },
             )
-            self.logger.info("Google OAuth client registered")
+            logger.info("Google OAuth client registered")
         else:
-            self.logger.warning(
-                "Google OAuth credentials not found, client not registered"
-            )
+            logger.warning("Google OAuth credentials not found, client not registered")
 
     def _get_token_expiration(self, token_data: dict) -> datetime:
         """Get token expiration time with fallback logic."""
@@ -255,7 +250,6 @@ class TokenRepository:
         Returns:
             A new OAuth2Token or None if refreshing failed
         """
-        import httpx
 
         if not self.oauth.google:
             logger.error("Google OAuth client not properly initialized")
@@ -400,10 +394,6 @@ class TokenRepository:
         Returns:
             True if successful, False otherwise
         """
-        # Import logger here to avoid circular import
-        from app.config.loggers import get_logger
-
-        logger = get_logger(__name__)
 
         async with get_db_session() as session:
             # Find the token for the specific provider
@@ -440,11 +430,6 @@ class TokenRepository:
         Returns:
             True if successful, False otherwise
         """
-        # Import logger here to avoid circular import
-        from app.config.loggers import get_logger
-
-        logger = get_logger(__name__)
-
         async with get_db_session() as session:
             # Find all tokens for this user
             stmt = select(OAuthToken).where(OAuthToken.user_id == user_id)
@@ -479,10 +464,6 @@ class TokenRepository:
         Returns:
             List of authorized scope strings
         """
-        # Import logger here to avoid circular import
-        from app.config.loggers import get_logger
-
-        logger = get_logger(__name__)
 
         async with get_db_session() as session:
             # Query the specific provider token

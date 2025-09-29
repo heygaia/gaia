@@ -1,134 +1,148 @@
 """
-Profiling decorators and middleware for performance monitoring.
+Clean and simple profiling decorator using pyinstrument.
 
-This module provides decorators and middleware for profiling function execution and HTTP requests.
+This module provides a lightweight decorator that can profile both synchronous and
+asynchronous functions. Profiling is optional and controlled via environment variables.
+
+Features:
+- Works with both async and sync functions
+- Simple environment-based enable/disable
+- Proper error handling and race condition prevention
+- Clean logging output
+
+Environment Variables:
+    ENABLE_PROFILING: bool = False (must be explicitly enabled)
+    PROFILING_SAMPLE_RATE: float = 1.0 (100% sampling rate)
+
+Usage:
+    @profile_function
+    async def my_async_function():
+        pass
+
+    @profile_function
+    def my_sync_function():
+        pass
 """
 
-import cProfile
-import io
-import pstats
-import time
-from functools import wraps
-from typing import Any, Callable, Optional
-
-from starlette.middleware.base import BaseHTTPMiddleware
-from starlette.requests import Request
-from starlette.responses import Response
+import functools
+import inspect
+import random
+from typing import Callable, Optional
 
 from app.config.loggers import profiler_logger as logger
 from app.config.settings import settings
-from app.utils.profiler_utils import profile_block
+
+Profiler = None
+try:
+    from pyinstrument import Profiler as _Profiler
+
+    Profiler = _Profiler
+    PROFILING_AVAILABLE = True
+except ImportError:
+    logger.warning("pyinstrument not available - profiling disabled")
+    PROFILING_AVAILABLE = False
 
 
-def profile_celery_task(print_lines=7):
-    """Decorator to profile Celery tasks with configurable print stats."""
-
-    def decorator(func):
-        @wraps(func)
-        def wrapper(*args, **kwargs):
-            profiler = cProfile.Profile()
-            profiler.enable()
-
-            try:
-                result = func(*args, **kwargs)
-            finally:
-                profiler.disable()
-
-                # Collect profiling stats
-                s = io.StringIO()
-                ps = pstats.Stats(profiler, stream=s).sort_stats(
-                    pstats.SortKey.CUMULATIVE
-                )
-                ps.print_stats(print_lines)
-
-            return result
-
-        return wrapper
-
-    return decorator
-
-
-def profile_time(func_name: Optional[str] = None):
+def profile_function(
+    func: Optional[Callable] = None,
+    *,
+    sample_rate: Optional[float] = None,
+) -> Callable:
     """
-    Decorator to profile function execution time.
+    Simple profiling decorator for both async and sync functions.
 
     Args:
-        func_name: Optional custom name for the function in logs
+        func: The function to profile (when used as decorator)
+        sample_rate: Override global sampling rate (0.0 to 1.0)
+
+    Returns:
+        Decorated function or decorator function
     """
 
-    def decorator(func: Callable) -> Callable:
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs) -> Any:
-            name = func_name or f"{func.__module__}.{func.__name__}"
-            start_time = time.time()
+    def decorator(f: Callable) -> Callable:
+        # Early return if profiling not available or disabled
+        if not PROFILING_AVAILABLE or not settings.ENABLE_PROFILING:
+            return f
 
-            try:
-                result = await func(*args, **kwargs)
-                execution_time = time.time() - start_time
-                logger.info(f"Profile: {name} completed in {execution_time:.4f}s")
-                return result
-            except Exception as e:
-                execution_time = time.time() - start_time
-                logger.error(
-                    f"Profile: {name} failed after {execution_time:.4f}s - {str(e)}"
-                )
-                raise
+        # Get effective sample rate
+        effective_sample_rate = (
+            sample_rate if sample_rate is not None else settings.PROFILING_SAMPLE_RATE
+        )
 
-        @wraps(func)
-        def sync_wrapper(*args, **kwargs) -> Any:
-            name = func_name or f"{func.__module__}.{func.__name__}"
-            start_time = time.time()
+        # Determine if function is async
+        is_async = inspect.iscoroutinefunction(f)
 
-            try:
-                result = func(*args, **kwargs)
-                execution_time = time.time() - start_time
-                logger.info(f"Profile: {name} completed in {execution_time:.4f}s")
-                return result
-            except Exception as e:
-                execution_time = time.time() - start_time
-                logger.error(
-                    f"Profile: {name} failed after {execution_time:.4f}s - {str(e)}"
-                )
-                raise
+        if is_async:
 
-        # Return appropriate wrapper based on function type
-        import asyncio
+            @functools.wraps(f)
+            async def async_wrapper(*args, **kwargs):
+                # Apply sampling - skip profiling if random check fails
+                # Non-cryptographic sampling: random.random() is safe here (Bandit B311 # nosec)
+                if (
+                    effective_sample_rate < 1.0
+                    and random.random() >= effective_sample_rate  # nosec: B311
+                ):
+                    return await f(*args, **kwargs)
 
-        if asyncio.iscoroutinefunction(func):
+                profiler = None
+                try:
+                    if Profiler is not None:
+                        profiler = Profiler()
+                        profiler.start()
+                    result = await f(*args, **kwargs)
+                    return result
+                except Exception:
+                    # Re-raise the original exception, profiling error logged separately
+                    raise
+                finally:
+                    if profiler is not None:
+                        try:
+                            profiler.stop()
+                            output = profiler.output_text()
+                            logger.info(f"Profile for {f.__name__}:\n{output}")
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to generate profile for {f.__name__}: {e}"
+                            )
+
             return async_wrapper
         else:
+
+            @functools.wraps(f)
+            def sync_wrapper(*args, **kwargs):
+                # Apply sampling - skip profiling if random check fails
+                # Non-cryptographic sampling: random.random() is safe here (Bandit B311 # nosec)
+                if (
+                    effective_sample_rate < 1.0
+                    and random.random() >= effective_sample_rate  # nosec: B311
+                ):
+                    return f(*args, **kwargs)
+
+                profiler = None
+                try:
+                    if Profiler is not None:
+                        profiler = Profiler()
+                        profiler.start()
+                    result = f(*args, **kwargs)
+                    return result
+                except Exception:
+                    # Re-raise the original exception, profiling error logged separately
+                    raise
+                finally:
+                    if profiler is not None:
+                        try:
+                            profiler.stop()
+                            output = profiler.output_text()
+                            logger.info(f"Profile for {f.__name__}:\n{output}")
+                        except Exception as e:
+                            logger.warning(
+                                f"Failed to generate profile for {f.__name__}: {e}"
+                            )
+
             return sync_wrapper
 
-    return decorator
-
-
-class ProfilingMiddleware(BaseHTTPMiddleware):
-    """Middleware to profile API request execution time."""
-
-    async def dispatch(self, request: Request, call_next) -> Response:
-        # Only profile in development or when explicitly enabled
-        if not settings.ENABLE_PROFILING:
-            return await call_next(request)
-
-        # Skip profiling for static assets, health checks, etc.
-        path = request.url.path
-        if path.startswith(("/static/", "/docs/", "/openapi.json")) or path in {
-            "/health",
-            "/ping",
-            "/api/v1/ping",
-            "/api/v1/",
-            "/api/v1",
-            "/api/v1/oauth/me",
-            "/api/v1/conversations",
-            "/",
-        }:
-            return await call_next(request)
-
-        try:
-            with profile_block(name=f"Request: {request.method} {path}"):
-                response = await call_next(request)
-            return response
-        except Exception as e:
-            # Ensure the application continues even if profiling fails
-            logger.exception(f"Profiling error: {str(e)}")
-            return await call_next(request)
+    # Handle both @profile_function and @profile_function() usage
+    if func is None:
+        return decorator
+    else:
+        return decorator(func)

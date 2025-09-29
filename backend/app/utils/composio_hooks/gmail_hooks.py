@@ -8,7 +8,7 @@ and response processing for raw Gmail API data.
 from typing import Any
 
 from app.config.loggers import app_logger as logger
-from app.langchain.templates.mail_templates import (
+from app.agents.templates.mail_templates import (
     detailed_message_template,
     draft_template,
     process_get_thread_response,
