@@ -1,7 +1,6 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-import uvloop
 from app.agents.core.graph_builder.build_graph import build_default_graph
 from app.agents.core.graph_builder.checkpointer_manager import (
     init_checkpointer_managers,
@@ -24,6 +23,7 @@ from app.helpers.lifespan_helpers import (
     init_tools_store_async,
     init_websocket_consumer,
     init_workflow_service,
+    setup_event_loop_policy,
 )
 from app.services.startup_validation import validate_startup_requirements
 from fastapi import FastAPI
@@ -50,9 +50,7 @@ async def lifespan(app: FastAPI):
         init_cloudinary()
         init_checkpointer_managers()
         validate_startup_requirements()
-
-        # Use uvloop for better performance if available instead of asyncio
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        setup_event_loop_policy()
 
         logger.info("All lazy providers registered successfully")
 
