@@ -2,10 +2,17 @@ import asyncio
 from contextlib import asynccontextmanager
 
 import uvloop
+from app.agents.core.graph_builder.build_graph import build_default_graph
+from app.agents.core.graph_builder.checkpointer_manager import (
+    init_checkpointer_managers,
+)
+from app.agents.llm.client import register_llm_providers
+from app.config.cloudinary import init_cloudinary
 from app.config.loggers import app_logger as logger
-from fastapi import FastAPI
-
-from app.services.startup_validation import validate_startup_requirements
+from app.core.lazy_loader import providers
+from app.db.chromadb import init_chroma
+from app.db.postgresql import init_postgresql_engine
+from app.db.rabbitmq import init_rabbitmq_publisher
 from app.helpers.lifespan_helpers import (
     _process_results,
     close_postgresql_async,
@@ -18,6 +25,8 @@ from app.helpers.lifespan_helpers import (
     init_websocket_consumer,
     init_workflow_service,
 )
+from app.services.startup_validation import validate_startup_requirements
+from fastapi import FastAPI
 
 
 @asynccontextmanager
@@ -32,18 +41,6 @@ async def lifespan(app: FastAPI):
         # Register all lazy providers
         logger.info("Registering lazy providers...")
 
-        # Import and register providers
-        from app.agents.core.graph_builder.build_graph import build_default_graph
-        from app.agents.core.graph_builder.checkpointer_manager import (
-            init_checkpointer_managers,
-        )
-        from app.agents.llm.client import register_llm_providers
-        from app.config.cloudinary import init_cloudinary
-        from app.core.lazy_loader import providers
-        from app.db.chromadb import init_chroma
-        from app.db.postgresql import init_postgresql_engine
-        from app.db.rabbitmq import init_rabbitmq_publisher
-
         # Register all providers
         init_postgresql_engine()
         init_rabbitmq_publisher()
@@ -52,6 +49,7 @@ async def lifespan(app: FastAPI):
         init_chroma()
         init_cloudinary()
         init_checkpointer_managers()
+        validate_startup_requirements()
 
         # Use uvloop for better performance if available instead of asyncio
         asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
@@ -65,7 +63,6 @@ async def lifespan(app: FastAPI):
             init_workflow_service(),
             init_websocket_consumer(),
             init_tools_store_async(),
-            validate_startup_requirements(),
             providers.initialize_auto_providers(),
         ]
 
@@ -80,7 +77,6 @@ async def lifespan(app: FastAPI):
                 "workflow_service",
                 "websocket_consumer",
                 "tools_store",
-                "startup_validation",
                 "lazy_providers_auto_initializer",
             ],
         )
