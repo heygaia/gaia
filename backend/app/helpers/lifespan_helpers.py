@@ -1,7 +1,6 @@
 import asyncio
 import sys
 
-from app.agents.tools.core.store import initialize_tools_store
 from app.config.loggers import app_logger as logger
 from app.core.websocket_consumer import (
     start_websocket_consumer,
@@ -61,16 +60,6 @@ async def init_websocket_consumer():
         logger.info("WebSocket event consumer started")
     except Exception as e:
         logger.error(f"Failed to start WebSocket consumer: {e}")
-        raise
-
-
-async def init_tools_store_async():
-    """Initialize tools store."""
-    try:
-        await initialize_tools_store()
-        logger.info("Tools store initialized")
-    except Exception as e:
-        logger.error(f"Failed to initialize tools store: {e}")
         raise
 
 
