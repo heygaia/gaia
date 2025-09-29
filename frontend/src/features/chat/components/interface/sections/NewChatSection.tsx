@@ -16,10 +16,12 @@ interface NewChatSectionProps {
     onDroppedFilesProcessed: () => void;
     hasMessages: boolean;
   };
+  voiceModeActive: () => void;
 }
 
 export const NewChatSection: React.FC<NewChatSectionProps> = ({
   composerProps,
+  voiceModeActive
 }) => {
   return (
     <div className="relative flex w-full snap-start items-center justify-center p-4 pt-[25vh]">
@@ -28,7 +30,7 @@ export const NewChatSection: React.FC<NewChatSectionProps> = ({
           <StarterText />
         </div>
         <div className="w-full">
-          <Composer {...composerProps} />
+          <Composer {...composerProps} voiceModeActive={voiceModeActive} />
         </div>
         {/* <CardStackContainer /> */}
       </div>

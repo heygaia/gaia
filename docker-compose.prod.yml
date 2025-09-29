@@ -131,10 +131,33 @@ services:
     networks:
       - gaia_network
 
+  # # Voice Agent Worker
+  # voice-agent-worker:
+  #   container_name: voice-agent-worker
+  #   profiles: ["", "backend-only"]
+  #   build:
+  #     context: ./backend
+  #     target: final
+  #   image: gaia-voice-agent:latest
+  #   working_dir: /app
+  #   command: ["python", "-m", "app.voice_agent", "start"]
+  #   environment:
+  #     PYTHONUNBUFFERED: 1
+  #     FORCE_COLOR: 1
+  #     WORKER_TYPE: voice_agent_worker
+  #   env_file:
+  #     - ./backend/.env
+  #   volumes:
+  #     - livekit_models:/home/appuser/.cache/huggingface
+  #   restart: on-failure
+  #   networks:
+  #     - gaia_network
+
 volumes:
   chroma_data:
   pgdata:
   rabbitmq_data:
+  # livekit_models:
 
 networks:
   gaia_network:

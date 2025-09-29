@@ -266,7 +266,7 @@ class ToolRegistry:
 
                 logger.info("Scheduling provider tools loading in background...")
                 with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, load_provider_tools())
+                    executor.submit(asyncio.run, load_provider_tools())
                     # Don't wait for completion to avoid blocking startup
             else:
                 # If no loop is running, run directly

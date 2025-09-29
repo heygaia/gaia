@@ -1,9 +1,9 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 
 import { chatApi } from "@/features/chat/api/chatApi";
+import { VoiceApp } from "@/features/chat/components/composer/VoiceModeOverlay";
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { useConversation } from "@/features/chat/hooks/useConversation";
 import { useDragAndDrop } from "@/hooks/ui/useDragAndDrop";
@@ -17,8 +17,7 @@ import { ChatWithMessages, NewChatLayout } from "./layouts";
 import ScrollToBottomButton from "./ScrollToBottomButton";
 
 const ChatPage = React.memo(function MainChat() {
-  const searchParams = useSearchParams();
-
+  const [voiceModeActive, setVoiceModeActive] = useState(false);
   const { updateConvoMessages, clearMessages, convoMessages } =
     useConversation();
   const pendingPrompt = usePendingPrompt();
@@ -97,7 +96,9 @@ const ChatPage = React.memo(function MainChat() {
     <div className="flex h-full flex-col">
       <FileDropModal isDragging={isDragging} />
 
-      {hasMessages ? (
+      {voiceModeActive ? (
+        <VoiceApp onEndCall={() => setVoiceModeActive(false)} />
+      ) : hasMessages ? (
         <>
           <ChatWithMessages
             scrollContainerRef={scrollContainerRef}
@@ -105,6 +106,7 @@ const ChatPage = React.memo(function MainChat() {
             handleScroll={handleScroll}
             dragHandlers={dragHandlers}
             composerProps={composerProps}
+            voiceModeActive={() => setVoiceModeActive(true)}
           />
           <ScrollToBottomButton
             onScrollToBottom={scrollToBottom}
@@ -120,6 +122,7 @@ const ChatPage = React.memo(function MainChat() {
             handleScroll={handleScroll}
             dragHandlers={dragHandlers}
             composerProps={composerProps}
+            voiceModeActive={() => setVoiceModeActive(true)}
           />
           <ScrollToBottomButton
             onScrollToBottom={scrollToBottom}

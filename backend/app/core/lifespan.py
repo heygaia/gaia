@@ -1,7 +1,7 @@
 import asyncio
 from contextlib import asynccontextmanager
 
-import uvloop
+# import uvloop
 from app.agents.tools.core.store import initialize_tools_store
 from app.config.loggers import app_logger as logger
 from app.core.websocket_consumer import (
@@ -161,7 +161,7 @@ async def lifespan(app: FastAPI):
         init_cloudinary()
         init_checkpointer_managers()
 
-        asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
+        # asyncio.set_event_loop_policy(uvloop.EventLoopPolicy())
 
         logger.info("All lazy providers registered successfully")
 
