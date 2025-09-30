@@ -267,16 +267,11 @@ export function ComparisonTable() {
   return (
     <div className="mx-auto w-full max-w-7xl px-6 py-16">
       <div className="mb-12 text-center">
-        <Chip color="default" size="sm" variant="flat" className="mb-4">
-          Comparison
-        </Chip>
-        <h2 className="mb-4 text-4xl font-semibold">
-          See how GAIA stacks up
-          <br />
-          against the competition
+        <h2 className="mb-4 text-5xl font-semibold">
+          See how GAIA stacks up against the competition.
         </h2>
         <p className="text-lg text-gray-400">
-          Discover why our customers choose GAIA over other AI assistants
+          What makes GAIA better and not just a "chatbot"
         </p>
       </div>
 
