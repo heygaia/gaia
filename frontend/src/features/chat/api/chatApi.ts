@@ -55,12 +55,6 @@ export interface FetchConversationsResponse {
   total_pages: number;
 }
 
-export interface UpdateMessagesResponse {
-  conversation_id: string;
-  message_ids: string[];
-  modified_count: number;
-}
-
 export const chatApi = {
   // Fetch conversations with pagination
   fetchConversations: async (
@@ -172,33 +166,6 @@ export const chatApi = {
     );
   },
 
-  // Send a new message to a conversation
-  sendMessage: async (
-    conversationId: string,
-    message: MessageType,
-  ): Promise<MessageType> => {
-    const payload = {
-      conversation_id: conversationId,
-      messages: [mapMessageForRequest(message)],
-    };
-
-    const response = await apiService.put<UpdateMessagesResponse>(
-      `/conversations/${conversationId}/messages`,
-      payload,
-      {
-        errorMessage: "Failed to send message",
-      },
-    );
-
-    const serverMessageId = response.message_ids?.[0];
-
-    return {
-      ...message,
-      message_id: serverMessageId ?? message.message_id,
-      date: message.date || new Date().toISOString(),
-    };
-  },
-
   // Save incomplete conversation when stream is cancelled
   saveIncompleteConversation: async (
     inputText: string,
@@ -307,18 +274,3 @@ export const chatApi = {
     );
   },
 };
-
-const mapMessageForRequest = (message: MessageType) => ({
-  type: message.type,
-  response: message.response,
-  date: message.date,
-  message_id: message.message_id,
-  image_data: message.image_data,
-  fileIds: message.fileIds,
-  fileData: message.fileData,
-  selectedTool: message.selectedTool,
-  toolCategory: message.toolCategory,
-  selectedWorkflow: message.selectedWorkflow,
-  follow_up_actions: message.follow_up_actions,
-  integration_connection_required: message.integration_connection_required,
-});

@@ -1,7 +1,6 @@
 import { useCallback } from "react";
 import { v4 as uuidv4 } from "uuid";
 
-import { chatApi } from "@/features/chat/api/chatApi";
 import { useChatStream } from "@/features/chat/hooks/useChatStream";
 import { db, type IMessage } from "@/lib/db/chatDb";
 import { useChatStore } from "@/stores/chatStore";
@@ -95,44 +94,45 @@ export const useSendMessage = () => {
 
       addOrUpdateMessage(optimisticMessage);
 
-      try {
-        const persistedMessage = await chatApi.sendMessage(
-          conversationId,
-          userMessage,
-        );
-
-        const finalMessage: IMessage = {
-          ...optimisticMessage,
-          id: persistedMessage.message_id ?? optimisticMessage.id,
-          messageId: persistedMessage.message_id ?? optimisticMessage.messageId,
-          status: "sent",
-          updatedAt: new Date(),
-          metadata: {
-            originalMessage: {
-              ...persistedMessage,
-              loading: false,
-            },
+      const finalMessage: IMessage = {
+        ...optimisticMessage,
+        status: "sent",
+        updatedAt: new Date(),
+        metadata: {
+          originalMessage: {
+            ...userMessage,
+            loading: false,
           },
-        };
+        },
+      };
 
+      try {
         await db.replaceMessage(optimisticMessage.id, finalMessage);
+      } catch {
+        try {
+          await db.putMessage(finalMessage);
+        } catch {
+          // Ignore persistence failures when updating the final state
+        }
+      }
 
-        const existingMessages =
-          useChatStore.getState().messagesByConversation[conversationId] ?? [];
-        const withoutOptimistic = existingMessages.filter(
-          (message) => message.id !== optimisticMessage.id,
-        );
-        setMessagesForConversation(conversationId, [
-          ...withoutOptimistic,
-          finalMessage,
-        ]);
-        addOrUpdateMessage(finalMessage);
+      const existingMessages =
+        useChatStore.getState().messagesByConversation[conversationId] ?? [];
+      const withoutOptimistic = existingMessages.filter(
+        (message) => message.id !== optimisticMessage.id,
+      );
+      setMessagesForConversation(conversationId, [
+        ...withoutOptimistic,
+        finalMessage,
+      ]);
+      addOrUpdateMessage(finalMessage);
 
-        const streamingUserMessage: MessageType = {
-          ...persistedMessage,
-          loading: false,
-        };
+      const streamingUserMessage: MessageType = {
+        ...userMessage,
+        loading: false,
+      };
 
+      try {
         await fetchChatStream(
           trimmedContent,
           [streamingUserMessage],
@@ -144,7 +144,7 @@ export const useSendMessage = () => {
         );
       } catch (error) {
         const failedMessage: IMessage = {
-          ...optimisticMessage,
+          ...finalMessage,
           status: "failed",
           updatedAt: new Date(),
         };

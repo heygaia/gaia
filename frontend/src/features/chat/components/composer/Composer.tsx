@@ -114,7 +114,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
     clearSelectedWorkflow();
 
     setIsLoading(true);
-  sendMessage("Run this workflow", conversationId ?? "");
+    sendMessage("Run this workflow", conversationId ?? "");
 
     if (inputRef.current) inputRef.current.focus();
 

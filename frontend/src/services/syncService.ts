@@ -1,12 +1,8 @@
-import { chatApi } from "@/features/chat/api/chatApi";
-import { db, type IMessage } from "@/lib/db/chatDb";
+import { chatApi, type Conversation } from "@/features/chat/api/chatApi";
+import { db, type IConversation, type IMessage } from "@/lib/db/chatDb";
 import { MessageType } from "@/types/features/convoTypes";
 
-const PAGE_SIZE = 50;
-
-type ConversationSummary = {
-  conversation_id: string;
-};
+const MAX_SYNC_CONVERSATIONS = 50;
 
 const mapApiMessagesToStored = (
   messages: MessageType[],
@@ -51,62 +47,108 @@ const mapMessageRole = (
   }
 };
 
-const fetchAllConversationIds = async (): Promise<string[]> => {
-  let page = 1;
-  let totalPages = 1;
-  const conversationIds: string[] = [];
-
-  while (page <= totalPages) {
-    try {
-      const response = await chatApi.fetchConversations(page, PAGE_SIZE);
-      totalPages = response.total_pages ?? 1;
-      conversationIds.push(
-        ...response.conversations
-          .map((conversation: ConversationSummary) => conversation.conversation_id)
-          .filter((id): id is string => Boolean(id)),
-      );
-      page += 1;
-    } catch {
-      break;
-    }
+const fetchRecentConversations = async (): Promise<Conversation[]> => {
+  try {
+    const { conversations } = await chatApi.fetchConversations(
+      1,
+      MAX_SYNC_CONVERSATIONS,
+    );
+    return conversations;
+  } catch {
+    return [];
   }
+};
 
-  return Array.from(new Set(conversationIds));
+const mapApiConversation = (conversation: Conversation): IConversation => ({
+  id: conversation.conversation_id,
+  title: conversation.description || "Untitled conversation",
+  description: conversation.description,
+  userId: conversation.user_id,
+  starred: conversation.starred ?? false,
+  isSystemGenerated: conversation.is_system_generated ?? false,
+  systemPurpose: conversation.system_purpose ?? null,
+  createdAt: new Date(conversation.createdAt),
+  updatedAt: conversation.updatedAt
+    ? new Date(conversation.updatedAt)
+    : new Date(conversation.createdAt),
+});
+
+const toTimestamp = (timestamp?: string): number => {
+  if (!timestamp) return Date.now();
+  const parsed = new Date(timestamp);
+  return Number.isNaN(parsed.getTime()) ? Date.now() : parsed.getTime();
 };
 
 export const syncAndPrecacheMessages = async (): Promise<void> => {
   try {
-    const [remoteConversationIds, cachedConversationIds] = await Promise.all([
-      fetchAllConversationIds(),
-      db.getConversationIdsWithMessages(),
-    ]);
+    const [remoteConversations, cachedConversationIds, localConversations] =
+      await Promise.all([
+        fetchRecentConversations(),
+        db.getConversationIdsWithMessages(),
+        db.getAllConversations(),
+      ]);
 
-    if (remoteConversationIds.length === 0) {
+    if (remoteConversations.length === 0) {
       return;
     }
 
     const cachedSet = new Set(cachedConversationIds);
-    const pendingConversationIds = remoteConversationIds.filter(
-      (conversationId) => !cachedSet.has(conversationId),
+    const localConversationUpdatedAt = new Map(
+      localConversations.map((conversation) => [
+        conversation.id,
+        conversation.updatedAt.getTime(),
+      ]),
     );
 
-    for (const conversationId of pendingConversationIds) {
-      try {
-        const messages = await chatApi.fetchMessages(conversationId);
-        if (messages.length === 0) continue;
+    const pendingConversations = remoteConversations.filter(
+      (conversation) => {
+        const conversationId = conversation.conversation_id;
+        if (!conversationId) return false;
 
-        const mappedMessages = mapApiMessagesToStored(
-          messages,
-          conversationId,
+        const remoteUpdatedAt = toTimestamp(
+          conversation.updatedAt ?? conversation.createdAt,
         );
+        const localUpdatedAt = localConversationUpdatedAt.get(conversationId);
 
-        if (mappedMessages.length === 0) continue;
+        if (!cachedSet.has(conversationId)) {
+          return true;
+        }
 
-        await db.putMessagesBulk(mappedMessages);
-      } catch {
-        continue;
-      }
+        if (!localUpdatedAt) {
+          return true;
+        }
+
+        return remoteUpdatedAt > localUpdatedAt;
+      },
+    );
+
+    if (pendingConversations.length === 0) {
+      return;
     }
+
+    await Promise.allSettled(
+      pendingConversations.map(async (conversation) => {
+        const conversationId = conversation.conversation_id;
+        if (!conversationId) return;
+
+        try {
+          const messages = await chatApi.fetchMessages(conversationId);
+          if (messages.length === 0) return;
+
+          const mappedMessages = mapApiMessagesToStored(
+            messages,
+            conversationId,
+          );
+
+          await Promise.allSettled([
+            db.putMessagesBulk(mappedMessages),
+            db.putConversation(mapApiConversation(conversation)),
+          ]);
+        } catch {
+          // Ignore conversation-level sync failures
+        }
+      }),
+    );
   } catch {
     // Ignore background sync errors to avoid impacting the UI
   }

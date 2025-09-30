@@ -31,32 +31,52 @@ export const useDeleteConversation = () => {
 
       removeConversation(conversationId);
 
-      try {
-        await db.deleteConversationAndMessages(conversationId);
-      } catch {
-        // Ignore local persistence errors to keep UI responsive
+      const [dbResult, apiResult] = await Promise.allSettled([
+        db.deleteConversationAndMessages(conversationId),
+        chatApi.deleteConversation(conversationId),
+      ]);
+
+      if (
+        dbResult.status === "fulfilled" &&
+        apiResult.status === "fulfilled"
+      ) {
+        return;
       }
 
-      try {
-        await chatApi.deleteConversation(conversationId);
-      } catch (error) {
-        if (conversation) {
-          try {
-            await db.putConversation(conversation);
-            if (messages.length > 0) {
-              await db.putMessagesBulk(messages);
-            }
-          } catch {
-            // If local persistence fails during rollback we proceed with store update only
-          }
+      const rollbackError =
+        apiResult.status === "rejected"
+          ? apiResult.reason
+          : dbResult.status === "rejected"
+            ? dbResult.reason
+            : undefined;
 
-          upsertConversation(conversation);
+      if (conversation) {
+        try {
+          await db.putConversation(conversation);
           if (messages.length > 0) {
-            setMessagesForConversation(conversationId, messages);
+            await db.putMessagesBulk(messages);
           }
+        } catch {
+          // If local persistence fails during rollback we proceed with store update only
         }
 
-        throw error;
+        upsertConversation(conversation);
+        if (messages.length > 0) {
+          setMessagesForConversation(conversationId, messages);
+        }
+      }
+
+      if (apiResult.status === "rejected" || dbResult.status === "rejected") {
+        if (rollbackError instanceof Error) {
+          throw rollbackError;
+        }
+
+        const message =
+          apiResult.status === "rejected"
+            ? "Failed to delete conversation from server"
+            : "Failed to delete conversation from local cache";
+
+        throw new Error(message);
       }
     },
     [removeConversation, setMessagesForConversation, upsertConversation],
