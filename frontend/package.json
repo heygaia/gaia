@@ -137,6 +137,7 @@
     "dagre": "^0.8.5",
     "date-fns": "^4.1.0",
     "date-fns-tz": "^3.2.0",
+    "dexie": "^4.2.0",
     "dompurify": "^3.2.6",
     "embla-carousel-react": "^8.6.0",
     "emblor": "^1.4.8",
@@ -189,6 +190,7 @@
     "tailwindcss": "^4.1.12",
     "tailwindcss-animate": "^1.0.7",
     "tinycolor2": "^1.6.0",
+    "uuid": "^13.0.0",
     "vaul": "^1.1.2",
     "zod": "^3.25.76",
     "zustand": "^5.0.8"
@@ -200,6 +202,7 @@
     "@types/react": "^19.1.11",
     "@types/react-dom": "^19.1.7",
     "@types/string-similarity": "^4.0.2",
+    "@types/uuid": "^9.0.8",
     "@typescript-eslint/eslint-plugin": "^8.40.0",
     "@typescript-eslint/parser": "^8.40.0",
     "barrelsby": "^2.8.1",

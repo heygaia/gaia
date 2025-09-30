@@ -29,6 +29,7 @@ import {
 import { PencilRenameIcon } from "@/components/shared/icons";
 import { chatApi } from "@/features/chat/api/chatApi";
 import { useFetchConversations } from "@/features/chat/hooks/useConversationList";
+import { useDeleteConversation } from "@/hooks/useDeleteConversation";
 
 export default function ChatOptionsDropdown({
   buttonHovered,
@@ -46,6 +47,7 @@ export default function ChatOptionsDropdown({
   btnChildren?: ReactNode;
 }) {
   const fetchConversations = useFetchConversations();
+  const deleteConversation = useDeleteConversation();
   const [dangerStateHovered, setDangerStateHovered] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
   const [newName, setNewName] = useState(chatName);
@@ -87,13 +89,13 @@ export default function ChatOptionsDropdown({
   const handleDelete = useCallback(async () => {
     try {
       router.push("/c");
-      await chatApi.deleteConversation(chatId);
+      await deleteConversation(chatId);
       closeModal();
       await fetchConversations(1, 20, false);
     } catch (error) {
       console.error("Failed to delete chat", error);
     }
-  }, [router, chatId, fetchConversations, closeModal]);
+  }, [router, chatId, deleteConversation, fetchConversations, closeModal]);
 
   const openModal = (action: "edit" | "delete") => {
     setModalAction(action);
