@@ -30,6 +30,10 @@ const Personalised = lazy(
   () => import("@/features/landing/components/sections/Personalised"),
 );
 
+const TestimonialsSection = lazy(
+  () => import("@/features/landing/components/sections/TestimonialsSection"),
+);
+
 const FAQAccordion = lazy(() =>
   import("@/features/pricing/components/FAQAccordion").then((module) => ({
     default: module.FAQAccordion,
@@ -94,6 +98,10 @@ export default function LandingPage() {
             <Suspense fallback={<SuspenseLoader />}>
               <Tired />
               <Personalised />
+            </Suspense>
+
+            <Suspense fallback={<SuspenseLoader />}>
+              <TestimonialsSection />
             </Suspense>
 
             <Suspense fallback={<SuspenseLoader />}>
