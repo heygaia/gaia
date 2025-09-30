@@ -20,7 +20,7 @@ export default function Personalised() {
         <div className="text-center text-5xl font-normal">
           Finally, AI that feels like it's made for you
         </div>
-        <div className="grid w-full max-w-7xl grid-cols-3 grid-rows-1 justify-between gap-7 py-10">
+        <div className="mx-auto grid w-full max-w-4xl grid-cols-2 grid-rows-1 justify-between gap-7 py-10">
           <BentoItem
             title="Recall Everything Instantly"
             description="GAIA remembers every detail you mention in a conversation"
@@ -41,7 +41,7 @@ export default function Personalised() {
               ))}
             </div>
           </BentoItem>
-          <BentoItem title="lorem ipsum" description="lorem ipsum" />
+          {/* <BentoItem title="lorem ipsum" description="lorem ipsum" /> */}
 
           <BentoItem
             title="Build a Knowledge Graph"

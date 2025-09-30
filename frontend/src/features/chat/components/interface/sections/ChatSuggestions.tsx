@@ -1,5 +1,5 @@
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { useAppendToInput } from "@/stores/composerStore";
+import { useComposerTextActions } from "@/stores/composerStore";
 import { Button } from "@heroui/button";
 import { ShuffleIcon } from "lucide-react";
 import React, { useCallback, useState } from "react";
@@ -167,7 +167,7 @@ export const ChatSuggestions: React.FC<ChatSuggestionsProps> = () => {
   const [currentSuggestions, setCurrentSuggestions] = useState(
     () => getAllSuggestions().slice(0, 4), // Show first 4 items on load (default suggestions)
   );
-  const appendToInput = useAppendToInput();
+  const { setInputText } = useComposerTextActions();
 
   const handleShuffle = useCallback(() => {
     const allSuggestions = getAllSuggestions();
@@ -190,9 +190,9 @@ export const ChatSuggestions: React.FC<ChatSuggestionsProps> = () => {
 
   const handleSuggestionClick = useCallback(
     (suggestion: ChatSuggestion) => {
-      appendToInput(suggestion.text);
+      setInputText(suggestion.text);
     },
-    [appendToInput],
+    [setInputText],
   );
 
   return (
