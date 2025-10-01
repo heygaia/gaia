@@ -38,10 +38,9 @@ class ProviderSubAgents:
         logger.info("Creating clean Gmail plan-and-execute subgraph")
 
         # Import the Gmail subgraph here to avoid circular imports
-        from app.langchain.core.subgraphs.gmail_subgraph import GmailPlanAndExecute
+        from app.langchain.core.subgraphs.gmail_subgraph import create_gmail_subgraph
 
-        gmail_subgraph = GmailPlanAndExecute(llm=llm)
-        gmail_agent = gmail_subgraph.compile()
+        gmail_agent = create_gmail_subgraph(llm=llm)
 
         logger.info("Gmail subgraph created successfully")
         return gmail_agent
