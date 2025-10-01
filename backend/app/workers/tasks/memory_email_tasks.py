@@ -1,6 +1,5 @@
 """ARQ worker task for Gmail email memory processing."""
 
-from app.config.loggers import app_logger as logger
 from app.agents.memory.email_processor import process_gmail_to_memory
 
 
@@ -16,16 +15,20 @@ async def process_gmail_emails_to_memory(ctx, user_id: str) -> str:
         Processing result message
     """
     try:
-        logger.info(f"Starting Gmail email processing task for user {user_id}")
+        result = await process_gmail_to_memory(user_id)
 
-        # Use the existing service function
-        await process_gmail_to_memory(user_id)
+        if result.get("already_processed", False):
+            return f"Gmail emails already processed for user {user_id}"
 
-        success_message = f"Gmail email processing completed for user {user_id}"
-        logger.info(success_message)
-        return success_message
+        total = result.get("total", 0)
+        successful = result.get("successful", 0)
+        failed = result.get("failed", 0)
+        processing_complete = result.get("processing_complete", False)
+
+        if processing_complete:
+            return f"Gmail email processing completed for user {user_id}: {successful}/{total} emails processed successfully"
+        else:
+            return f"Gmail email processing failed for user {user_id}: {successful}/{total} emails processed, {failed} failed - not marking as complete"
 
     except Exception as e:
-        error_message = f"Fatal error in Gmail email processing for user {user_id}: {e}"
-        logger.error(error_message, exc_info=True)
-        return error_message
+        return f"Fatal error in Gmail email processing for user {user_id}: {e}"

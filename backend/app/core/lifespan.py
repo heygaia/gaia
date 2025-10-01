@@ -1,18 +1,12 @@
 import asyncio
-import warnings
 from contextlib import asynccontextmanager
 
-from app.agents.core.graph_builder.build_graph import build_default_graph
-from app.agents.core.graph_builder.checkpointer_manager import init_checkpointer_manager
-from app.agents.llm.client import register_llm_providers
-from app.agents.tools.core.registry import init_tool_registry
-from app.agents.tools.core.store import init_embeddings, initialize_tools_store
-from app.config.cloudinary import init_cloudinary
 from app.config.loggers import app_logger as logger
-from app.core.lazy_loader import providers
-from app.db.chromadb import init_chroma
-from app.db.postgresql import init_postgresql_engine
-from app.db.rabbitmq import init_rabbitmq_publisher
+from app.core.provider_registration import (
+    register_all_providers,
+    initialize_auto_providers,
+    setup_warnings,
+)
 from app.helpers.lifespan_helpers import (
     _process_results,
     close_postgresql_async,
@@ -23,17 +17,11 @@ from app.helpers.lifespan_helpers import (
     init_reminder_service,
     init_websocket_consumer,
     init_workflow_service,
-    setup_event_loop_policy,
 )
-from app.services.composio.composio_service import init_composio_service
-from app.services.startup_validation import validate_startup_requirements
 from fastapi import FastAPI
-from pydantic import PydanticDeprecatedSince20
 
-# Ignore specific deprecation warnings from pydantic in langchain_core
-warnings.filterwarnings(
-    "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
-)
+# Set up common warning filters
+setup_warnings()
 
 
 @asynccontextmanager
@@ -45,24 +33,8 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting up the API with lazy providers...")
 
-        # Register all lazy providers
-        logger.info("Registering lazy providers...")
-        # Register all providers
-        init_postgresql_engine()
-        init_rabbitmq_publisher()
-        register_llm_providers()
-        build_default_graph()
-        init_chroma()
-        init_cloudinary()
-        init_checkpointer_manager()
-        init_tool_registry()
-        init_composio_service()
-        init_embeddings()
-        initialize_tools_store()
-        validate_startup_requirements()
-        setup_event_loop_policy()
-
-        logger.info("All lazy providers registered successfully")
+        # Register all lazy providers using common function
+        register_all_providers("main_app")
 
         # Initialize services that still require eager initialization
         startup_tasks = [
@@ -70,7 +42,7 @@ async def lifespan(app: FastAPI):
             init_reminder_service(),
             init_workflow_service(),
             init_websocket_consumer(),
-            providers.initialize_auto_providers(),
+            initialize_auto_providers("main_app"),
         ]
 
         # Run remaining initialization tasks in parallel
@@ -83,7 +55,6 @@ async def lifespan(app: FastAPI):
                 "reminder_service",
                 "workflow_service",
                 "websocket_consumer",
-                "tools_store",
                 "lazy_providers_auto_initializer",
             ],
         )

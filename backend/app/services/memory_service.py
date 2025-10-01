@@ -331,24 +331,32 @@ class MemoryService:
 
         try:
             client = await self._get_client()
-            results = await client.search(
+            response = await client.search(
                 query=query,
                 user_id=user_id,
                 limit=limit,
-                version="v2",
                 keyword_search=True,
                 rerank=True,
+                output_format="v1.1",
             )
 
-            # Response is a list of memory objects
-            if not isinstance(results, list):
+            # Check if response has graph data
+            memories_list = []
+
+            if isinstance(response, dict):
+                # v1.1 format with potential graph data
+                memories_list = response.get("results", response.get("memories", []))
+            elif isinstance(response, list):
+                # Fallback to simple list format
+                memories_list = response
+            else:
                 self.logger.warning(
-                    f"Unexpected response format from mem0 search: {type(results)}"
+                    f"Unexpected response format from mem0 search: {type(response)}"
                 )
                 return MemorySearchResult()
 
-            memories = self._parse_memory_list(results, user_id)
-
+            # Parse memories and relationships
+            memories = self._parse_memory_list(memories_list, user_id)
             return MemorySearchResult(
                 memories=memories,
                 total_count=len(memories),

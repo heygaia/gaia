@@ -14,6 +14,7 @@ from app.workers.tasks import (
     process_gmail_emails_to_memory,
     process_reminder,
     process_workflow_generation_task,
+    store_memories_batch,
 )
 
 # Configure the worker settings with all task functions and lifecycle hooks
@@ -25,6 +26,7 @@ WorkerSettings.functions = [
     execute_workflow_by_id,
     generate_workflow_steps,
     process_gmail_emails_to_memory,
+    store_memories_batch,
 ]
 
 WorkerSettings.cron_jobs = [
