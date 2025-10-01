@@ -14,17 +14,16 @@ import {
 
 import { useChatLayout, useScrollBehavior } from "./hooks";
 import { ChatWithMessages, NewChatLayout } from "./layouts";
-import { ScrollButtons } from "./scroll";
+import ScrollToBottomButton from "./ScrollToBottomButton";
 
 const ChatPage = React.memo(function MainChat() {
   const searchParams = useSearchParams();
-  const messageId = searchParams.get("messageId");
 
-  const { updateConvoMessages, clearMessages } = useConversation();
+  const { updateConvoMessages, clearMessages, convoMessages } =
+    useConversation();
   const pendingPrompt = usePendingPrompt();
   const { clearPendingPrompt } = useComposerTextActions();
 
-  // Use our custom hooks
   const {
     hasMessages,
     chatRef,
@@ -41,8 +40,8 @@ const ChatPage = React.memo(function MainChat() {
     scrollContainerRef,
     scrollToBottom,
     handleScroll,
-    handleNewChatScroll,
-  } = useScrollBehavior(hasMessages, messageId);
+    shouldShowScrollButton,
+  } = useScrollBehavior(hasMessages, convoMessages?.length);
 
   // Drag and drop functionality
   const { isDragging, dragHandlers } = useDragAndDrop({
@@ -107,9 +106,9 @@ const ChatPage = React.memo(function MainChat() {
             dragHandlers={dragHandlers}
             composerProps={composerProps}
           />
-          <ScrollButtons
-            containerRef={scrollContainerRef}
+          <ScrollToBottomButton
             onScrollToBottom={scrollToBottom}
+            shouldShow={shouldShowScrollButton}
             hasMessages={hasMessages}
           />
         </>
@@ -118,15 +117,14 @@ const ChatPage = React.memo(function MainChat() {
           <NewChatLayout
             scrollContainerRef={scrollContainerRef}
             dummySectionRef={dummySectionRef}
-            handleNewChatScroll={handleNewChatScroll}
+            handleScroll={handleScroll}
             dragHandlers={dragHandlers}
             composerProps={composerProps}
           />
-          <ScrollButtons
-            containerRef={scrollContainerRef}
+          <ScrollToBottomButton
             onScrollToBottom={scrollToBottom}
+            shouldShow={shouldShowScrollButton}
             hasMessages={hasMessages}
-            gridSectionRef={dummySectionRef}
           />
         </>
       )}

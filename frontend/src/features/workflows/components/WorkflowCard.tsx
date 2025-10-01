@@ -1,15 +1,15 @@
 "use client";
 
 import { Chip } from "@heroui/chip";
-import { ArrowUpRight, Clock, Mail } from "lucide-react";
+import { Clock, Mail } from "lucide-react";
 import Image from "next/image";
 
 import { CursorMagicSelection03Icon } from "@/components";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 
 import { Workflow } from "../api/workflowApi";
 import { getTriggerDisplay } from "../utils/triggerDisplay";
+import BaseWorkflowCard from "./shared/BaseWorkflowCard";
 
 interface WorkflowCardProps {
   workflow: Workflow;
@@ -81,96 +81,55 @@ export default function WorkflowCard({ workflow, onClick }: WorkflowCardProps) {
   // Get trigger display info using integration data
   const triggerDisplay = getTriggerDisplay(workflow, integrations);
 
-  return (
-    <div
-      className="group relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6 transition duration-300 hover:scale-105 hover:border-zinc-600"
-      onClick={onClick}
-    >
-      <ArrowUpRight
-        className="absolute top-4 right-4 text-foreground-400 opacity-0 transition group-hover:opacity-100"
-        width={25}
-        height={25}
-      />
+  const footerContent = (
+    <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center gap-2">
+        <Chip
+          size="sm"
+          startContent={getTriggerIcon(
+            workflow.trigger_config.type,
+            triggerDisplay.icon || undefined,
+          )}
+          className="flex gap-1 px-2!"
+        >
+          {triggerDisplay.label
+            .split(" ")
+            .map(
+              (word) =>
+                word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
+            )
+            .join(" ")}
+        </Chip>
 
-      {/* Tool icons from workflow steps */}
-      <div className="flex items-start gap-2">
-        {(() => {
-          const categories = [
-            ...new Set(workflow.steps.map((step) => step.tool_category)),
-          ];
-          const validIcons = categories
-            .slice(0, 3)
-            .map((category) => {
-              const IconComponent = getToolCategoryIcon(category, {
-                width: 25,
-                height: 25,
-              });
-              return IconComponent ? (
-                <div
-                  key={category}
-                  className="mb-3 flex items-center justify-center"
-                >
-                  {IconComponent}
-                </div>
-              ) : null;
-            })
-            .filter(Boolean);
-
-          return validIcons.length > 0 ? validIcons : null;
-        })()}
-        {[...new Set(workflow.steps.map((step) => step.tool_category))].length >
-          3 && (
-          <div className="relative bottom-1 flex h-[30px] w-[30px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
-            +
-            {[...new Set(workflow.steps.map((step) => step.tool_category))]
-              .length - 3}
-          </div>
+        {getNextRunDisplay(workflow) && (
+          <Chip
+            size="sm"
+            variant="flat"
+            className="text-xs text-foreground-500"
+          >
+            {getNextRunDisplay(workflow)}
+          </Chip>
         )}
       </div>
 
-      <h3 className="text-xl font-medium">{workflow.title}</h3>
-      <div className="mb-4 line-clamp-3 flex-1 text-sm text-foreground-500">
-        {workflow.description}
-      </div>
-
-      <div className="mt-auto flex w-full flex-wrap items-center justify-between gap-2">
-        <div className="flex flex-wrap items-center gap-2">
-          <Chip
-            size="sm"
-            startContent={getTriggerIcon(
-              workflow.trigger_config.type,
-              triggerDisplay.icon || undefined,
-            )}
-            className="flex gap-1 px-2!"
-          >
-            {triggerDisplay.label
-              .split(" ")
-              .map(
-                (word) =>
-                  word.charAt(0).toUpperCase() + word.slice(1).toLowerCase(),
-              )
-              .join(" ")}
-          </Chip>
-
-          {getNextRunDisplay(workflow) && (
-            <Chip
-              size="sm"
-              variant="flat"
-              className="text-xs text-foreground-500"
-            >
-              {getNextRunDisplay(workflow)}
-            </Chip>
-          )}
-        </div>
-
-        <Chip
-          color={getActivationColor(workflow.activated)}
-          variant="flat"
-          size="sm"
-        >
-          {getActivationLabel(workflow.activated)}
-        </Chip>
-      </div>
+      <Chip
+        color={getActivationColor(workflow.activated)}
+        variant="flat"
+        size="sm"
+      >
+        {getActivationLabel(workflow.activated)}
+      </Chip>
     </div>
+  );
+
+  return (
+    <BaseWorkflowCard
+      title={workflow.title}
+      description={workflow.description}
+      steps={workflow.steps}
+      onClick={onClick}
+      showArrowIcon={true}
+      footerContent={footerContent}
+    />
   );
 }

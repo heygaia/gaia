@@ -3,7 +3,7 @@ import { Input } from "@heroui/input";
 import { ScrollShadow } from "@heroui/scroll-shadow";
 import { AnimatePresence, motion } from "framer-motion";
 import { Hash, Search, X } from "lucide-react";
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef,useState } from "react";
 
 import { SlashCommandMatch } from "@/features/chat/hooks/useSlashCommands";
 import { formatToolName } from "@/features/chat/utils/chatUtils";
@@ -21,6 +21,11 @@ interface SlashCommandDropdownProps {
   position: { top?: number; bottom?: number; left: number; width?: number };
   isVisible: boolean;
   openedViaButton?: boolean;
+  selectedCategory?: string;
+  categories?: string[];
+  onCategoryChange?: (category: string) => void;
+  onNavigateUp?: () => void;
+  onNavigateDown?: () => void;
 }
 
 const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
@@ -31,17 +36,147 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
   position,
   isVisible,
   openedViaButton = false,
+  selectedCategory: externalSelectedCategory,
+  categories: externalCategories,
+  onCategoryChange,
+  onNavigateUp,
+  onNavigateDown,
 }) => {
-  const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+  const itemRefs = useRef<Map<number, HTMLDivElement>>(new Map());
 
-  // Get unique categories from matches
+  // Use external category state if provided, otherwise fall back to internal state
+  const [internalSelectedCategory, setInternalSelectedCategory] =
+    useState<string>("all");
+  const selectedCategory = externalSelectedCategory ?? internalSelectedCategory;
+
+  // Focus the dropdown when it becomes visible (only when opened via button)
+  useEffect(() => {
+    if (isVisible && openedViaButton && dropdownRef.current) {
+      // Small delay to ensure the dropdown is rendered
+      setTimeout(() => {
+        dropdownRef.current?.focus();
+      }, 100);
+    }
+  }, [isVisible, openedViaButton]);
+
+  // Scroll to selected item when selectedIndex changes
+  useEffect(() => {
+    if (selectedIndex >= 0 && scrollContainerRef.current) {
+      const selectedElement = itemRefs.current.get(selectedIndex);
+      if (selectedElement) {
+        const container = scrollContainerRef.current;
+        const containerRect = container.getBoundingClientRect();
+        const elementRect = selectedElement.getBoundingClientRect();
+
+        // Check if element is fully visible
+        const isElementAboveView = elementRect.top < containerRect.top;
+        const isElementBelowView = elementRect.bottom > containerRect.bottom;
+
+        if (isElementAboveView || isElementBelowView) {
+          selectedElement.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+            inline: "nearest",
+          });
+        }
+      }
+    }
+  }, [selectedIndex]);
+
+  const handleCategoryChange = (category: string) => {
+    if (onCategoryChange) {
+      onCategoryChange(category);
+    } else {
+      setInternalSelectedCategory(category);
+    }
+  };
+
+  // Handle keyboard navigation within the dropdown
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    // Get filtered matches based on current category
+    const getFilteredMatches = (
+      category: string,
+      matches: SlashCommandMatch[],
+    ) => {
+      if (category === "all") return matches;
+      return matches.filter((match) => match.tool.category === category);
+    };
+
+    const currentFilteredMatches = getFilteredMatches(
+      selectedCategory,
+      matches,
+    );
+
+    switch (e.key) {
+      case "ArrowUp":
+        e.preventDefault();
+        if (onNavigateUp) {
+          onNavigateUp();
+        }
+        break;
+
+      case "ArrowDown":
+        e.preventDefault();
+        if (onNavigateDown) {
+          onNavigateDown();
+        }
+        break;
+
+      case "ArrowLeft":
+        e.preventDefault();
+        const currentCategoryIndex = categories.indexOf(selectedCategory);
+        const newLeftIndex = Math.max(0, currentCategoryIndex - 1);
+        const newLeftCategory = categories[newLeftIndex];
+        handleCategoryChange(newLeftCategory);
+        break;
+
+      case "ArrowRight":
+        e.preventDefault();
+        const currentRightIndex = categories.indexOf(selectedCategory);
+        const newRightIndex = Math.min(
+          categories.length - 1,
+          currentRightIndex + 1,
+        );
+        const newRightCategory = categories[newRightIndex];
+        handleCategoryChange(newRightCategory);
+        break;
+
+      case "Enter":
+      case "Tab":
+        e.preventDefault();
+        if (currentFilteredMatches.length === 1) {
+          onSelect(currentFilteredMatches[0]);
+        } else {
+          const selectedMatch = currentFilteredMatches[selectedIndex];
+          if (selectedMatch) {
+            onSelect(selectedMatch);
+          }
+        }
+        break;
+
+      case "Escape":
+        e.preventDefault();
+        onClose();
+        break;
+
+      default:
+        break;
+    }
+  };
+
+  // Get unique categories from matches, use external if provided
   const categories = useMemo(() => {
+    if (externalCategories && externalCategories.length > 0) {
+      return externalCategories;
+    }
     const uniqueCategories = Array.from(
       new Set(matches.map((match) => match.tool.category)),
     );
     return ["all", ...uniqueCategories.sort()];
-  }, [matches]);
+  }, [matches, externalCategories]);
 
   // Filter matches based on selected category and search query
   const filteredMatches = useMemo(() => {
@@ -95,6 +230,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
     <AnimatePresence>
       {isVisible && matches.length > 0 && (
         <motion.div
+          ref={dropdownRef}
           initial={{ opacity: 0, y: -8, scale: 0.95 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           exit={{ opacity: 0, y: -8, scale: 0.95 }}
@@ -104,7 +240,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
             stiffness: 300,
             duration: 0.15,
           }}
-          className="slash-command-dropdown fixed z-[200] overflow-hidden rounded-3xl border-1 border-zinc-700 bg-zinc-900/60 shadow-2xl backdrop-blur-2xl"
+          className="slash-command-dropdown fixed z-[200] overflow-hidden rounded-3xl border-1 border-zinc-700 bg-zinc-900/60 shadow-2xl outline-0! backdrop-blur-2xl active:border-zinc-700"
           style={{
             ...(position.top !== undefined && { top: 0, height: position.top }),
             ...(position.bottom !== undefined && {
@@ -117,6 +253,8 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
             boxShadow: "0px -18px 30px 5px rgba(0, 0, 0, 0.5)",
           }}
           onClick={(e) => e.stopPropagation()}
+          onKeyDown={handleKeyDown}
+          tabIndex={-1}
         >
           {/* Header section - Only show when opened via button */}
           {openedViaButton && (
@@ -131,7 +269,6 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                   radius="full"
                   startContent={<Search size={16} />}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  autoFocus
                 />
               </div>
               {/* Close Button */}
@@ -161,7 +298,7 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                     key={category}
                     onClick={(e) => {
                       e.stopPropagation();
-                      setSelectedCategory(category);
+                      handleCategoryChange(category);
                     }}
                     className={`flex cursor-pointer items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-medium whitespace-nowrap transition-all ${
                       selectedCategory === category
@@ -178,8 +315,8 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                     ) : (
                       getToolCategoryIcon(category)
                     )}
-                    <span className="capitalize">
-                      {category === "all" ? "All" : category.replace("_", " ")}
+                    <span>
+                      {category === "all" ? "All" : formatToolName(category)}
                     </span>
                     <CategoryIntegrationStatus category={category} />
                   </button>
@@ -189,7 +326,10 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
           </motion.div>
 
           {/* Tool List */}
-          <div className="relative z-[1] h-fit max-h-96 overflow-y-auto">
+          <div
+            ref={scrollContainerRef}
+            className="relative z-[1] h-fit max-h-72 overflow-y-auto"
+          >
             <div className="py-2">
               {/* Integrations Card - Only show in "all" category and when not filtering */}
               {selectedCategory === "all" &&
@@ -200,38 +340,51 @@ const SlashCommandDropdown: React.FC<SlashCommandDropdownProps> = ({
                 )}
 
               {/* Render unlocked tools first */}
-              {unlockedMatches.map((match, index) => (
-                <div
-                  key={match.tool.name}
-                  className={`relative mx-2 mb-1 cursor-pointer rounded-xl transition-all duration-150 ${
-                    index === selectedIndex
-                      ? "border border-zinc-600 bg-zinc-700/60"
-                      : "border border-transparent hover:bg-white/5"
-                  }`}
-                  onClick={() => onSelect(match)}
-                >
-                  <div className="flex items-center gap-3 p-3">
-                    {/* Icon */}
-                    <div className="flex-shrink-0">
-                      {getToolCategoryIcon(match.tool.category)}
-                    </div>
+              {unlockedMatches.map((match, index) => {
+                // Calculate if this item should be highlighted
+                // selectedIndex is based on filteredMatches (unlocked + locked), so we need to map correctly
+                const isSelected = index === selectedIndex;
 
-                    {/* Content */}
-                    <div className="min-w-0 flex-1">
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="truncate text-sm text-foreground-600 capitalize">
-                          {formatToolName(match.tool.name.toLowerCase())}
-                        </span>
-                        {selectedCategory === "all" && (
-                          <span className="rounded-full bg-zinc-600 px-2 py-0.5 text-xs text-zinc-200 capitalize">
-                            {match.tool.category.replace("_", " ")}
+                return (
+                  <div
+                    key={match.tool.name}
+                    ref={(el) => {
+                      if (el) {
+                        itemRefs.current.set(index, el);
+                      } else {
+                        itemRefs.current.delete(index);
+                      }
+                    }}
+                    className={`relative mx-2 mb-1 cursor-pointer rounded-xl transition-all duration-150 ${
+                      isSelected
+                        ? "border border-zinc-600 bg-zinc-700/60"
+                        : "border border-transparent hover:bg-white/5"
+                    }`}
+                    onClick={() => onSelect(match)}
+                  >
+                    <div className="flex items-center gap-3 p-3">
+                      {/* Icon */}
+                      <div className="flex-shrink-0">
+                        {getToolCategoryIcon(match.tool.category)}
+                      </div>
+
+                      {/* Content */}
+                      <div className="min-w-0 flex-1">
+                        <div className="flex items-center justify-between gap-2">
+                          <span className="truncate text-sm text-foreground-600">
+                            {formatToolName(match.tool.name)}
                           </span>
-                        )}
+                          {selectedCategory === "all" && (
+                            <span className="rounded-full bg-zinc-600 px-2 py-0.5 text-xs text-zinc-200">
+                              {formatToolName(match.tool.category)}
+                            </span>
+                          )}
+                        </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {/* Render locked categories as grouped sections */}
               {Object.entries(lockedCategories).map(

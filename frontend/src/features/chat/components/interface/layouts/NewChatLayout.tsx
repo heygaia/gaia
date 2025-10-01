@@ -7,7 +7,7 @@ import { GridSection, NewChatSection } from "../sections";
 interface NewChatLayoutProps {
   scrollContainerRef: React.RefObject<HTMLDivElement | null>;
   dummySectionRef: React.RefObject<HTMLDivElement | null>;
-  handleNewChatScroll: (event: React.UIEvent) => void;
+  handleScroll: (event: React.UIEvent) => void;
   dragHandlers: {
     onDragEnter: (e: React.DragEvent<HTMLElement>) => void;
     onDragOver: (e: React.DragEvent<HTMLElement>) => void;
@@ -31,7 +31,7 @@ interface NewChatLayoutProps {
 export const NewChatLayout: React.FC<NewChatLayoutProps> = ({
   scrollContainerRef,
   dummySectionRef,
-  handleNewChatScroll,
+  handleScroll,
   dragHandlers,
   composerProps,
 }) => {
@@ -39,7 +39,7 @@ export const NewChatLayout: React.FC<NewChatLayoutProps> = ({
     <div
       ref={scrollContainerRef}
       className="h-full space-y-20 overflow-y-auto"
-      onScroll={handleNewChatScroll}
+      onScroll={handleScroll}
       {...dragHandlers}
     >
       <div className="flex w-full flex-col items-center px-4">

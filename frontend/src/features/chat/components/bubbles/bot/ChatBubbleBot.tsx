@@ -8,9 +8,7 @@ import ChatBubble_Actions_Image from "@/features/chat/components/bubbles/actions
 import { IntegrationConnectionPrompt } from "@/features/chat/components/integration/IntegrationConnectionPrompt";
 import MemoryIndicator from "@/features/chat/components/memory/MemoryIndicator";
 import { useLoading } from "@/features/chat/hooks/useLoading";
-import {
-  shouldShowTextBubble,
-} from "@/features/chat/utils/messageContentUtils";
+import { shouldShowTextBubble } from "@/features/chat/utils/messageContentUtils";
 import { ChatBubbleBotProps } from "@/types/features/chatBubbleTypes";
 import { parseDate } from "@/utils/date/dateUtils";
 
@@ -86,7 +84,7 @@ export default function ChatBubbleBot(props: ChatBubbleBotProps) {
             ) && (
               <Image
                 alt="GAIA Logo"
-                src={"/branding/logo.webp"}
+                src={"/images/logos/logo.webp"}
                 width={30}
                 height={30}
                 className={`${isLoading && isLastMessage ? "animate-spin" : ""} relative z-[5] transition duration-900`}

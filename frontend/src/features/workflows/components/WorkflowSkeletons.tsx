@@ -1,29 +1,12 @@
 import { Skeleton } from "@/components/ui/shadcn/skeleton";
 
+import BaseWorkflowCard from "./shared/BaseWorkflowCard";
+
 export const WorkflowCardSkeleton = () => {
   return (
-    <div className="relative flex min-h-[280px] w-full cursor-pointer flex-col rounded-2xl border-1 border-zinc-800 bg-zinc-800 p-6">
-      {/* Tool icons skeleton */}
-      <div className="flex items-center gap-3">
-        <Skeleton className="h-[40px] w-[40px] rounded-lg" />
-        <Skeleton className="h-[40px] w-[40px] rounded-lg" />
-      </div>
-
-      {/* Title skeleton */}
-      <Skeleton className="mt-4 h-6 w-3/4" />
-
-      {/* Description skeleton */}
-      <div className="mt-2 flex-1 space-y-2">
-        <Skeleton className="h-4 w-full" />
-        <Skeleton className="h-4 w-2/3" />
-      </div>
-
-      {/* Footer skeleton */}
-      <div className="mt-4 flex w-full items-center justify-between">
-        <Skeleton className="h-6 w-24 rounded-full" />
-        <Skeleton className="h-6 w-20 rounded-full" />
-      </div>
-    </div>
+    <Skeleton>
+      <BaseWorkflowCard title="" description="" />
+    </Skeleton>
   );
 };
 

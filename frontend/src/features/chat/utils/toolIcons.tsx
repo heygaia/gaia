@@ -1,4 +1,4 @@
-import { Info } from "lucide-react";
+import { Bell, Info } from "lucide-react";
 import Image from "next/image";
 
 import {
@@ -87,7 +87,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/c/c1/Google_%22G%22_logo.svg"
+          src="/images/icons/google.svg"
         />
       );
     case "memory":
@@ -110,7 +110,7 @@ export const getToolCategoryIcon = (
           alt={`${category} Icon`}
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
-          src="https://upload.wikimedia.org/wikipedia/commons/1/1e/Weather_%28iOS%29.png"
+          src="/images/icons/weather.webp"
         />
       );
     case "goal_tracking":
@@ -127,6 +127,31 @@ export const getToolCategoryIcon = (
           {...defaultProps}
           className={`${iconProps.className} aspect-square object-contain`}
           src="/images/icons/notion.webp"
+        />
+      );
+    case "twitter":
+      return (
+        <Image
+          alt={`${category} Icon`}
+          {...defaultProps}
+          className={`${iconProps.className} aspect-square object-contain`}
+          src="/images/icons/twitter.webp"
+        />
+      );
+    case "linkedin":
+      return (
+        <Image
+          alt={`${category} Icon`}
+          {...defaultProps}
+          className={`${iconProps.className} aspect-square object-contain`}
+          src="/images/icons/linkedin.svg"
+        />
+      );
+    case "notifications":
+      return (
+        <Bell
+          {...defaultProps}
+          className={iconProps.className || "text-yellow-400"}
         />
       );
     case "webpage":

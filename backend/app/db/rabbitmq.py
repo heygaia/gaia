@@ -12,7 +12,7 @@ class RabbitMQPublisher:
         self.amqp_url = amqp_url
         self.connection = None
         self.channel = None
-        self.declared_queues = set()
+        self.declared_queues: set[str] = set()
 
     async def connect(self):
         """Connect to RabbitMQ and create channel."""

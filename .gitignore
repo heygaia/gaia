@@ -92,3 +92,5 @@ dist/
 .pnpm-store/
 
 .vscode/settings.json
+.cursor
+.hypothesis

@@ -121,10 +121,13 @@ export default function ChatOptionsDropdown({
 
   return (
     <>
-      <Dropdown className="w-fit min-w-fit text-foreground dark" size="sm">
+      <Dropdown
+        className={`group/${chatId} w-fit min-w-fit text-foreground dark`}
+        size="sm"
+      >
         <DropdownTrigger>
           <Button
-            className="ml-auto"
+            className={`ml-auto ${buttonHovered ? "backdrop-blur-lg" : ""}`}
             isIconOnly={btnChildren ? false : true}
             variant={btnChildren ? "flat" : "light"}
             radius={btnChildren ? "md" : "full"}

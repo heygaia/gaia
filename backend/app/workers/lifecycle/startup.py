@@ -5,13 +5,13 @@ ARQ worker startup functionality.
 import asyncio
 
 from app.config.loggers import arq_worker_logger as logger
-from app.langchain.llm.client import register_llm_providers
+from app.agents.llm.client import register_llm_providers
 
 
 async def startup(ctx: dict):
     """ARQ worker startup function."""
-    from app.langchain.core.graph_builder.build_graph import build_graph
-    from app.langchain.core.graph_manager import GraphManager
+    from app.agents.core.graph_builder.build_graph import build_graph
+    from app.agents.core.graph_manager import GraphManager
 
     logger.info("ARQ worker starting up...")
 
@@ -26,7 +26,7 @@ async def startup(ctx: dict):
             in_memory_checkpointer=True,  # Use in-memory for ARQ worker to avoid DB connection issues
         ) as normal_graph
     ):
-        await GraphManager.set_graph(normal_graph)  # Set as default graph
+        GraphManager.set_graph(normal_graph)  # Set as default graph
 
     logger.info(
         "ARQ worker startup complete with workflow processing graph initialized"

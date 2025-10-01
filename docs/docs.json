@@ -29,8 +29,7 @@
             "pages": [
               "developers/introduction",
               "developers/development-setup",
-              "developers/contributing",
-              "developers/release-workflow"
+              "developers/contributing"
             ]
           },
           {
@@ -41,17 +40,19 @@
             "group": "Configuration",
             "pages": [
               "configuration/environment-variables",
-              "configuration/conventional-commits",
-              "configuration/docker"
+              "configuration/docker",
+              "configuration/profiling",
+              "configuration/logging",
+              "configuration/conventional-commits"
             ]
           },
           {
             "group": "Extra Developer Docs",
             "pages": [
-              "developers/extra/lazy-loading",
               "developers/extra/add-tools",
+              "developers/extra/release-workflow",
               "developers/extra/add-env-vars",
-              "developers/extra/frontend-config"
+              "developers/extra/lazy-loading"
             ]
           }
         ]

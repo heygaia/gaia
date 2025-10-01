@@ -1,7 +1,7 @@
 {
   "name": "gaia",
   "description": "Frontend of GAIA - The personal AI assistant",
-  "version": "0.4.0-beta",
+  "version": "0.5.0-beta",
   "private": true,
   "homepage": "https://github.com/heygaia/gaia",
   "bugs": {
@@ -163,6 +163,7 @@
     "postcss": "^8.5.6",
     "posthog-js": "^1.260.2",
     "prettier-plugin-tailwindcss": "^0.6.14",
+    "prosemirror-view": "^1.41.1",
     "react": "^19.1.1",
     "react-day-picker": "8.10.1",
     "react-dom": "^19.1.1",

@@ -15,12 +15,12 @@ from fastapi import HTTPException
 from app.config.loggers import app_logger
 from app.config.rate_limits import get_limits_for_plan
 from app.db.redis import redis_cache
-from app.middleware.tiered_rate_limiter import (
+from app.api.v1.middleware.tiered_rate_limiter import (
     RateLimitExceededException,
     tiered_limiter,
 )
 from app.models.payment_models import PlanType
-from app.services.payment_service import payment_service
+from app.services.payments.payment_service import payment_service
 
 # Context variables to avoid parameter pollution
 user_context: ContextVar[Optional[Dict[str, Any]]] = ContextVar(

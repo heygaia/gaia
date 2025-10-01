@@ -3,10 +3,9 @@
 import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
 import { PlusIcon, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import UseCaseCard from "@/features/use-cases/components/UseCaseCard";
-import { useCasesData } from "@/features/use-cases/constants/dummy-data";
+import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
 
 import { Workflow } from "../api/workflowApi";
 import { useWorkflowPolling, useWorkflows } from "../hooks";
@@ -16,6 +15,7 @@ import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
 
 export default function WorkflowPage() {
+  const pageRef = useRef(null);
   const { isOpen, onOpen, onOpenChange } = useDisclosure();
   const {
     isOpen: isEditOpen,
@@ -75,9 +75,7 @@ export default function WorkflowPage() {
   };
 
   const renderWorkflowsGrid = () => {
-    if (isLoading) {
-      return <WorkflowListSkeleton />;
-    }
+    if (isLoading) return <WorkflowListSkeleton />;
 
     if (error) {
       return (
@@ -131,7 +129,10 @@ export default function WorkflowPage() {
   };
 
   return (
-    <div className="space-y-10 overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10">
+    <div
+      className="space-y-10 overflow-y-auto p-4 sm:p-6 md:p-8 lg:px-10"
+      ref={pageRef}
+    >
       <div className="flex flex-col gap-6 md:gap-7">
         <div>
           <div className="flex w-full items-center justify-between">
@@ -181,21 +182,7 @@ export default function WorkflowPage() {
             Discover workflow templates and community creations
           </div>
         </div>
-        <div className="grid max-w-7xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-          {useCasesData
-            .filter((useCase) => useCase.action_type === "workflow")
-            .slice(0, 8)
-            .map((useCase, index) => (
-              <UseCaseCard
-                key={useCase.published_id || index}
-                title={useCase.title || ""}
-                description={useCase.description || ""}
-                action_type={useCase.action_type}
-                integrations={useCase.integrations || []}
-                prompt={useCase.prompt}
-              />
-            ))}
-        </div>
+        <UseCaseSection dummySectionRef={pageRef} hideUserWorkflows={true} />
       </div>
 
       <CreateWorkflowModal
