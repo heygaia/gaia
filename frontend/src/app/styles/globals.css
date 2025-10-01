@@ -137,7 +137,6 @@ li {
 /* Bot messages (from-them style) */
 .imessage-from-them {
   background: #27272a;
-  color: black;
   align-self: flex-start;
 }
 

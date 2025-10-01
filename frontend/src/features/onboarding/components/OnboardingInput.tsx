@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 
 import { FIELD_NAMES, professionOptions, questions } from "../constants";
 import { OnboardingState } from "../types";
+import { ArrowUp } from "lucide-react";
 
 interface OnboardingInputProps {
   onboardingState: OnboardingState;
@@ -117,12 +118,23 @@ export const OnboardingInput = ({
                   !onboardingState.currentInputs.text.trim() ||
                   onboardingState.isProcessing
                 }
-                color="primary"
+                color={
+                  !onboardingState.currentInputs.text.trim() ||
+                  onboardingState.isProcessing
+                    ? "default"
+                    : "primary"
+                }
                 radius="full"
                 aria-label="Send message"
-                className={cn(onboardingState.isProcessing && "cursor-wait")}
+                className={cn(
+                  onboardingState.isProcessing && "cursor-wait",
+                  !onboardingState.currentInputs.text.trim() ||
+                    onboardingState.isProcessing
+                    ? "text-zinc-500"
+                    : "text-black",
+                )}
               >
-                <SentIcon color="black" />
+                <ArrowUp />
               </Button>
             }
           />
