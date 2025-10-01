@@ -13,6 +13,7 @@ from app.agents.prompts.mail_prompts import (
     EMAIL_PROCESSING_PLANNER,
     EMAIL_PROCESSING_REPLANNER,
 )
+from app.config.loggers import app_logger as logger
 from bs4 import BeautifulSoup
 from langchain_core.prompts import PromptTemplate
 
@@ -51,7 +52,7 @@ class GmailMessageParser:
             return self.email_message is not None
 
         except Exception as e:
-            print(f"GmailMessageParser failed: {e}")
+            logger.error(f"Error parsing email message: {e}")
             self._parsed = False
             return False
 

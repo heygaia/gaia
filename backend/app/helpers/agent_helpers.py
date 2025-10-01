@@ -10,6 +10,12 @@ import json
 from datetime import datetime, timezone
 from typing import AsyncGenerator, Optional
 
+from app.constants.llm import (
+    DEFAULT_LLM_PROVIDER,
+    DEFAULT_MAX_TOKENS,
+    DEFAULT_MODEL_NAME,
+)
+from app.models.models_models import ModelConfig
 from app.utils.agent_utils import (
     format_sse_data,
     format_sse_response,
@@ -17,7 +23,6 @@ from app.utils.agent_utils import (
     process_custom_event_for_tools,
     store_agent_progress,
 )
-from app.models.models_models import ModelConfig
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langchain_core.messages import AIMessageChunk
 from langsmith import traceable
@@ -49,11 +54,17 @@ def build_agent_config(
     """
     model_configuration = {
         "provider": (
-            user_model_config.inference_provider.value if user_model_config else None
+            user_model_config.inference_provider.value
+            if user_model_config
+            else DEFAULT_LLM_PROVIDER
         ),
-        "max_tokens": user_model_config.max_tokens if user_model_config else None,
+        "max_tokens": user_model_config.max_tokens
+        if user_model_config
+        else DEFAULT_MAX_TOKENS,
         "model_name": (
-            user_model_config.provider_model_name if user_model_config else None
+            user_model_config.provider_model_name
+            if user_model_config
+            else DEFAULT_MODEL_NAME
         ),
     }
 
@@ -232,7 +243,7 @@ async def execute_graph_streaming(
                 # Show tool execution progress
                 if tool_calls:
                     for tool_call in tool_calls:
-                        progress_data = format_tool_progress(tool_call)
+                        progress_data = await format_tool_progress(tool_call)
                         if progress_data:
                             yield format_sse_data(progress_data)
 

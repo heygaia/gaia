@@ -87,7 +87,6 @@ class WorkflowScheduler(BaseSchedulerService):
         try:
             # Cast to Workflow since we know it's a workflow
             workflow: Optional[Workflow] = task if isinstance(task, Workflow) else None
-            print(workflow)
             if not workflow:
                 raise ValueError("Task must be a Workflow instance")
 

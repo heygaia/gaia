@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 from typing import Any, Dict, List
 
+from app.config.loggers import app_logger as logger
 from app.models.calendar_models import EventCreateRequest
 from app.models.notification.notification_models import (
     ActionConfig,
@@ -16,7 +17,7 @@ from app.models.notification.notification_models import (
     NotificationType,
     RedirectConfig,
 )
-from app.services.notifications.notification_service import notification_service
+from app.services.notification_service import notification_service
 
 
 class AIProactiveNotificationSource:
@@ -76,7 +77,7 @@ class AIProactiveNotificationSource:
                 for notification in notification_data
             ]
         except Exception as e:
-            print(f"Error creating calendar event notification: {e}")
+            logger.error(f"Failed to create calendar event notification: {e}")
             return []
 
     @staticmethod

@@ -7,11 +7,11 @@ to users based on the conversation context and tool usage patterns.
 
 from typing import List
 
+from app.agents.llm.client import init_llm
 from app.config.loggers import chat_logger as logger
 from app.templates.docstrings.follow_up_actions_tool_docs import (
     SUGGEST_FOLLOW_UP_ACTIONS,
 )
-from app.agents.llm.client import init_llm
 from langchain_core.messages import AnyMessage, HumanMessage, SystemMessage
 from langchain_core.output_parsers import PydanticOutputParser
 from langchain_core.runnables import RunnableConfig
@@ -31,7 +31,7 @@ class FollowUpActions(BaseModel):
 
 async def follow_up_actions_node(
     state: State, config: RunnableConfig, store: BaseStore
-):
+) -> State:
     """
     Analyze conversation context and suggest relevant follow-up actions.
 
@@ -41,8 +41,13 @@ async def follow_up_actions_node(
     Returns:
         Empty dict indicating successful completion (follow-up actions are streamed, not stored in state)
     """
-    from app.agents.tools.core.registry import tool_registry
+    from app.agents.tools.core.registry import get_tool_registry
 
+    # Send completion marker as soon as follow-up actions start
+    writer = get_stream_writer()
+    writer({"main_response_complete": True})
+
+    tool_registry = await get_tool_registry()
     llm = init_llm()
 
     try:
@@ -50,6 +55,7 @@ async def follow_up_actions_node(
 
         # Skip if insufficient conversation history for meaningful suggestions
         if not messages or len(messages) < 2:
+            writer({"follow_up_actions": []})
             return state
 
         # Set up structured output parsing
@@ -69,18 +75,21 @@ async def follow_up_actions_node(
             ],
             config={**config, "silent": True},  # type: ignore
         )
-        actions = parser.parse(result if isinstance(result, str) else result.text())
+        try:
+            actions = parser.parse(result if isinstance(result, str) else result.text())
+        except Exception as parse_exc:
+            logger.error(f"Error parsing follow-up actions: {parse_exc}")
+            writer({"follow_up_actions": []})
+            return state
 
-        # Only stream follow-up actions if there are any to show
-        if actions.actions and len(actions.actions) > 0:
-            writer = get_stream_writer()
-            writer({"follow_up_actions": actions.actions})
-
+        # Always stream follow-up actions, even if empty
+        writer({"follow_up_actions": actions.actions if actions.actions else []})
         return state
 
     except Exception as e:
         logger.error(f"Error in follow-up actions node: {e}")
-        return {}
+        writer({"follow_up_actions": []})
+        return state
 
 
 def _pretty_print_messages(

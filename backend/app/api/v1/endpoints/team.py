@@ -1,18 +1,23 @@
 from typing import List
 from fastapi import APIRouter, status
 from app.models.team_models import TeamMemberCreate, TeamMemberUpdate, TeamMember
+from app.decorators.caching import Cacheable
 from app.services.team_service import TeamService
 
 router = APIRouter()
 
 
 @router.get("/team", response_model=List[TeamMember])
+@Cacheable(smart_hash=True, ttl=1800, model=List[TeamMember])  # 30 minutes
 async def get_team_members():
     """Get all team members with caching."""
     return await TeamService.get_all_team_members()
 
 
 @router.get("/team/{member_id}", response_model=TeamMember)
+@Cacheable(
+    key_pattern="team_member:{member_id}", ttl=1800, model=TeamMember
+)  # 30 minutes
 async def get_team_member(member_id: str):
     """Get a specific team member by ID with caching."""
     return await TeamService.get_team_member_by_id(member_id)

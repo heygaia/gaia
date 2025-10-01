@@ -1,5 +1,4 @@
 import asyncio
-import time
 from functools import cache
 from typing import Dict, List, Optional
 
@@ -22,8 +21,10 @@ from app.agents.tools import (
     weather_tool,
     webpage_tool,
 )
-from app.config.loggers import langchain_logger as logger
-from app.services.composio.composio_service import composio_service
+from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
+from app.services.composio.composio_service import (
+    get_composio_service,
+)
 from langchain_core.tools import BaseTool
 
 
@@ -95,10 +96,13 @@ class ToolRegistry:
 
     def __init__(self):
         self._categories: Dict[str, ToolCategory] = {}
-        self._initialize_categories()
 
-    def _initialize_categories(self):
+    async def setup(self):
+        await self._initialize_categories()
+
+    async def _initialize_categories(self):
         """Initialize all tool categories with their metadata and tools."""
+        composio_service = get_composio_service()
 
         # Helper function to create and register categories
         def add_category(
@@ -171,128 +175,7 @@ class ToolRegistry:
             integration_name="google_docs",
         )
 
-        # Provider categories (integration required + delegated) - Load async
-        self._initialize_provider_categories_async()
-
-    def _initialize_provider_categories_async(self):
-        """Initialize provider categories asynchronously for better startup performance."""
-
-        async def load_provider_tools():
-            """Load all provider tools concurrently using asyncio.gather."""
-            logger.info("Loading provider tools concurrently...")
-            start_time = time.time()
-
-            provider_configs = [
-                ("twitter", "TWITTER"),
-                ("notion", "NOTION"),
-                ("linkedin", "LINKEDIN"),
-                ("google_sheets", "GOOGLE_SHEETS"),
-                ("gmail", "GMAIL"),
-            ]
-
-            async def load_single_provider(name: str, toolkit: str):
-                """Load tools for a single provider."""
-                provider_start = time.time()
-                try:
-                    # Use the cached async method
-                    tools = await composio_service.get_tools(toolkit)
-                    provider_time = time.time() - provider_start
-
-                    if tools:
-                        logger.info(
-                            f"{name} provider: {len(tools)} tools loaded in {provider_time:.3f}s"
-                        )
-                    else:
-                        logger.warning(
-                            f"{name} provider: no tools found ({provider_time:.3f}s)"
-                        )
-
-                    return name, toolkit, tools
-                except Exception as e:
-                    provider_time = time.time() - provider_start
-                    logger.error(
-                        f"{name} provider failed in {provider_time:.3f}s: {str(e)}"
-                    )
-                    return name, toolkit, []
-
-            # Create tasks for all providers
-            tasks = [
-                load_single_provider(name, toolkit)
-                for name, toolkit in provider_configs
-            ]
-
-            # Execute all provider loading tasks concurrently
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-
-            # Process results and add categories
-            successful_providers = []
-            failed_providers = []
-            total_tools_loaded = 0
-
-            for result in results:
-                if isinstance(result, Exception):
-                    logger.error(f"Provider task exception: {result}")
-                    failed_providers.append("unknown")
-                    continue
-
-                name, toolkit, tools = result
-                if tools:
-                    category = ToolCategory(
-                        name=name,
-                        space=name,
-                        require_integration=True,
-                        integration_name=name,
-                        is_delegated=True,
-                    )
-                    category.add_tools(tools)
-                    self._categories[name] = category
-                    successful_providers.append(name)
-                    total_tools_loaded += len(tools)
-                else:
-                    failed_providers.append(name)
-
-            total_time = time.time() - start_time
-            logger.info(
-                f"Provider tools loaded: {len(successful_providers)}/{len(provider_configs)} successful, {total_tools_loaded} total tools in {total_time:.3f}s"
-            )
-
-        # Run the async function in the event loop
-        try:
-            # Try to get existing event loop
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                # If we're already in an async context, schedule as a task
-                import concurrent.futures
-
-                logger.info("Scheduling provider tools loading in background...")
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, load_provider_tools())
-                    # Don't wait for completion to avoid blocking startup
-            else:
-                # If no loop is running, run directly
-                asyncio.run(load_provider_tools())
-        except RuntimeError as e:
-            # Fallback to synchronous loading if async fails
-            logger.warning(
-                f"Async loading failed - falling back to synchronous mode: {str(e)}"
-            )
-            self._initialize_provider_categories_sync()
-        except Exception as e:
-            # Unexpected error - still fallback to sync
-            logger.error(
-                f"Unexpected error in async setup - falling back to sync: {str(e)}"
-            )
-            self._initialize_provider_categories_sync()
-
-    def _initialize_provider_categories_sync(self):
-        """Fallback synchronous provider initialization."""
-        import time
-
-        from app.config.loggers import app_logger as logger
-
-        logger.info("Loading provider tools synchronously...")
-        start_time = time.time()
-
+        # Provider categories (integration required + delegated)
         provider_configs = [
             ("twitter", "TWITTER"),
             ("notion", "NOTION"),
@@ -301,49 +184,22 @@ class ToolRegistry:
             ("gmail", "GMAIL"),
         ]
 
-        successful_providers = []
-        failed_providers = []
-        total_tools_loaded = 0
+        async def add_provider_category(
+            name: str,
+        ):
+            tools = await composio_service.get_tools(tool_kit=name)
+            add_category(
+                name,
+                tools=tools,
+                require_integration=True,
+                integration_name=name,
+                is_delegated=True,
+                space=name,
+            )
 
-        for name, toolkit in provider_configs:
-            provider_start = time.time()
-            try:
-                tools = composio_service.get_tools(tool_kit=toolkit)
-                provider_time = time.time() - provider_start
-
-                if tools:
-                    logger.info(
-                        f"{name} provider: {len(tools)} tools loaded in {provider_time:.3f}s"
-                    )
-                    successful_providers.append(name)
-                    total_tools_loaded += len(tools)
-                else:
-                    logger.warning(
-                        f"{name} provider: no tools found ({provider_time:.3f}s)"
-                    )
-                    failed_providers.append(name)
-
-                category = ToolCategory(
-                    name=name,
-                    space=name,
-                    require_integration=True,
-                    integration_name=name,
-                    is_delegated=True,
-                )
-                if tools:
-                    category.add_tools(tools)
-                self._categories[name] = category
-
-            except Exception as e:
-                provider_time = time.time() - provider_start
-                logger.error(
-                    f"{name} provider failed in {provider_time:.3f}s: {str(e)}"
-                )
-                failed_providers.append(name)
-
-        total_time = time.time() - start_time
-        logger.info(
-            f"Provider tools loaded synchronously: {len(successful_providers)}/{len(provider_configs)} successful, {total_tools_loaded} total tools in {total_time:.3f}s"
+        # Parallelize provider category addition
+        await asyncio.gather(
+            *[add_provider_category(name) for name, _ in provider_configs]
         )
 
     def get_category(self, name: str) -> Optional[ToolCategory]:
@@ -395,7 +251,7 @@ class ToolRegistry:
             core_tools.extend(category.get_core_tools())
         return core_tools
 
-    def get_tool_registry(self) -> Dict[str, BaseTool]:
+    def get_tool_dict(self) -> Dict[str, BaseTool]:
         """Get a dictionary mapping tool names to tool instances for agent binding.
 
         This excludes delegated tools that should only be available via sub-agents.
@@ -409,4 +265,31 @@ class ToolRegistry:
         return [tool.name for tool in tools]
 
 
-tool_registry = ToolRegistry()
+async def get_tool_registry() -> ToolRegistry:
+    """
+    Accessor for the global tool registry instance.
+
+    Note: We can use sync access here because the tool registry is
+    initialized with auto_initialize=True in the lazy provider.
+
+    Returns:
+        The global ToolRegistry instance.
+    """
+    tool_registry = await providers.aget("tool_registry")
+
+    if tool_registry is None:
+        raise RuntimeError("ToolRegistry is not available")
+
+    return tool_registry
+
+
+@lazy_provider(
+    name="tool_registry",
+    required_keys=[],
+    strategy=MissingKeyStrategy.ERROR,
+    auto_initialize=False,
+)
+async def init_tool_registry():
+    tool_registry = ToolRegistry()
+    await tool_registry.setup()
+    return tool_registry

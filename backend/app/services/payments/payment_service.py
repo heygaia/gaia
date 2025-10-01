@@ -5,6 +5,7 @@ Clean, simple, and maintainable.
 
 from typing import Any, Dict, List
 
+from app.config.loggers import app_logger as logger
 from app.config.settings import settings
 from app.db.mongodb.collections import (
     plans_collection,
@@ -37,7 +38,7 @@ class DodoPaymentService:
                 environment=environment,
             )
         except Exception as e:
-            print(f"Failed to instantiate dodo payments: {e}")
+            logger.error(f"Failed to instantiate dodo payments: {e}")
 
     async def get_plans(self, active_only: bool = True) -> List[PlanResponse]:
         """Get subscription plans with caching."""

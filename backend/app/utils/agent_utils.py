@@ -1,17 +1,21 @@
 import json
 from datetime import datetime, timezone
-from typing import Optional, cast, List
+from typing import List, Optional, cast
 from uuid import uuid4
-from app.models.chat_models import ToolDataEntry
 
+from app.agents.tools.core.registry import get_tool_registry
 from app.config.loggers import llm_logger as logger
-from app.agents.tools.core.registry import tool_registry
-from app.models.chat_models import MessageModel, UpdateMessagesRequest, tool_fields
+from app.models.chat_models import (
+    MessageModel,
+    ToolDataEntry,
+    UpdateMessagesRequest,
+    tool_fields,
+)
 from app.services.conversation_service import update_messages
 from langchain_core.messages import ToolCall
 
 
-def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
+async def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
     """Format tool execution progress data for streaming UI updates.
 
     Transforms a LangChain ToolCall object into a structured progress update
@@ -25,6 +29,7 @@ def format_tool_progress(tool_call: ToolCall) -> Optional[dict]:
         Dictionary with progress information including formatted message,
         tool name, and category, or None if tool name is missing
     """
+    tool_registry = await get_tool_registry()
     tool_name_raw = tool_call.get("name")
     if not tool_name_raw:
         return None

@@ -2,8 +2,8 @@
 
 from typing import Any, Dict, List, Optional
 
-from app.config.loggers import llm_logger as logger
 from app.agents.memory.client import memory_client_manager
+from app.config.loggers import llm_logger as logger
 from app.models.memory_models import (
     MemoryEntry,
     MemoryRelation,
@@ -286,7 +286,7 @@ class MemoryService:
                 return None
 
             if not results_list:
-                self.logger.warning("No results returned from mem0 add")
+                self.logger.debug("No results returned from mem0 add")
                 return None
 
             # Get the first result (usually only one when adding)

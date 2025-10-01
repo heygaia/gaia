@@ -1,33 +1,15 @@
-"""Agent execution module providing streaming and silent execution modes.
+"""Agent execution module with streaming and silent modes.
 
-This module handles the core agent execution logic with two distinct pa        graph, initial_state, config = await _core_agent_logic(
-            request,
-            conversation_id,
-            user,
-            user_time,
-            user_model_config,
-            trigger_context,
-        )
+Two execution patterns due to Python async limitations:
 
-        # Create token tracking callback
-        from langchain_core.callbacks import UsageMetadataCallbackHandler
+1. call_agent() - Returns AsyncGenerator for real-time SSE streaming
+   Use for: Interactive chat, voice agents, frontend interfaces
 
-        user_id = user.get("user_id")
-        token_callback = UsageMetadataCallbackHandler()
+2. call_agent_silent() - Returns complete results tuple
+   Use for: Workflows, batch processing, API integrations
 
-        return execute_graph_streaming(graph, initial_state, config, token_callback). Streaming Mode (call_agent)* Returns AsyncGenerator for real-time SSE streaming
-   - Required for interactive chat where users need immediate feedback
-   - Cannot return awaited results directly due to AsyncGenerator yield semantics
-   - Must yield SSE-formatted strings as they're produced
-
-2. Silent Mode (call_agent_silent): Returns awaited tuple for background processing
-   - Used for workflow triggers and batch processing where streaming isn't needed
-   - Can return complete results after full execution
-   - More efficient for automation and server-to-server communication
-
-The separation exists because Python async functions cannot both yield values
-(AsyncGenerator) and return awaited results simultaneously. Each pattern serves
-different use cases in the agent architecture.
+Both share _core_agent_logic() for common setup (messages, graph, config).
+Choose streaming for user interactions, silent for background processing.
 """
 
 import asyncio
@@ -35,6 +17,8 @@ import json
 from datetime import datetime
 from typing import AsyncGenerator, Optional
 
+from app.agents.core.graph_manager import GraphManager
+from app.agents.core.messages import construct_langchain_messages
 from app.config.loggers import llm_logger as logger
 from app.helpers.agent_helpers import (
     build_agent_config,
@@ -42,8 +26,6 @@ from app.helpers.agent_helpers import (
     execute_graph_silent,
     execute_graph_streaming,
 )
-from app.agents.core.graph_manager import GraphManager
-from app.agents.core.messages import construct_langchain_messages
 from app.models.message_models import MessageRequestWithHistory
 from app.models.models_models import ModelConfig
 from app.utils.memory_utils import store_user_message_memory

@@ -77,7 +77,7 @@ export default function EmailListCard({
   if (emails)
     return (
       <div
-        className={`mt-3 w-full max-w-2xl rounded-3xl ${backgroundColor} p-3 text-white`}
+        className={`w-full max-w-2xl rounded-3xl ${backgroundColor} p-3 text-white`}
       >
         {/* Header */}
         {showTitle && (

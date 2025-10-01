@@ -6,6 +6,7 @@ from typing import Dict
 from fastapi import APIRouter, HTTPException, Depends
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.decorators.caching import Cacheable
 from app.models.tools_models import ToolsListResponse, ToolsCategoryResponse
 from app.services.tools_service import (
     get_available_tools,
@@ -35,6 +36,7 @@ async def list_available_tools(
 
 
 @router.get("/tools/categories")
+@Cacheable(smart_hash=True, ttl=21600)  # 6 hours
 async def list_tool_categories(
     user: dict = Depends(get_current_user),
 ) -> Dict[str, int]:

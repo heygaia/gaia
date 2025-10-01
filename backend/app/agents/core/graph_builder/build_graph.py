@@ -1,8 +1,7 @@
+import asyncio
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from app.config.loggers import app_logger as logger
-from app.core.lazy_loader import MissingKeyStrategy, lazy_provider
 from app.agents.core.graph_builder.checkpointer_manager import (
     get_checkpointer_manager,
 )
@@ -15,8 +14,11 @@ from app.agents.core.nodes.filter_messages import create_filter_messages_node
 from app.agents.core.subagents.provider_subagents import ProviderSubAgents
 from app.agents.llm.client import init_llm
 from app.agents.prompts.agent_prompts import AGENT_SYSTEM_PROMPT
+from app.agents.tools.core.registry import get_tool_registry
 from app.agents.tools.core.retrieval import get_retrieve_tools_function
 from app.agents.tools.core.store import get_tools_store
+from app.config.loggers import app_logger as logger
+from app.core.lazy_loader import MissingKeyStrategy, lazy_provider
 from app.override.langgraph_bigtool.create_agent import create_agent
 from langchain_core.language_models import LanguageModelLike
 from langgraph.checkpoint.memory import InMemorySaver
@@ -28,23 +30,23 @@ async def build_graph(
     in_memory_checkpointer: bool = False,
 ):
     """Construct and compile the state graph with integrated sub-agent graphs."""
-    # Lazy import to avoid circular dependency
-    from app.agents.tools.core.registry import tool_registry
 
     # Get default LLM if none provided
     if chat_llm is None:
         chat_llm = init_llm()
 
-    store = get_tools_store()
-
-    sub_agents = ProviderSubAgents.get_all_subagents(chat_llm)
+    tool_registry, store, sub_agents = await asyncio.gather(
+        get_tool_registry(),
+        get_tools_store(),
+        ProviderSubAgents.get_all_subagents(chat_llm),
+    )
 
     # Create main agent with custom tool retrieval logic
     builder = create_agent(
         llm=chat_llm,
         agent_name="main_agent",
-        tool_registry=tool_registry.get_tool_registry(),
-        retrieve_tools_function=get_retrieve_tools_function(tool_space="general"),
+        tool_registry=tool_registry.get_tool_dict(),
+        retrieve_tools_coroutine=get_retrieve_tools_function(tool_space="general"),
         sub_agents=sub_agents,  # pyright: ignore[reportArgumentType]
         pre_model_hooks=[
             create_filter_messages_node(
