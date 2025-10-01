@@ -11,6 +11,7 @@ from app.workers.tasks import (
     cleanup_expired_reminders,
     execute_workflow_by_id,
     generate_workflow_steps,
+    process_gmail_emails_to_memory,
     process_reminder,
     process_workflow_generation_task,
 )
@@ -23,6 +24,7 @@ WorkerSettings.functions = [
     process_workflow_generation_task,
     execute_workflow_by_id,
     generate_workflow_steps,
+    process_gmail_emails_to_memory,
 ]
 
 WorkerSettings.cron_jobs = [
