@@ -2,14 +2,13 @@ import { Autocomplete, AutocompleteItem } from "@heroui/autocomplete";
 import { Button } from "@heroui/button";
 import { Input } from "@heroui/input";
 import { Kbd } from "@heroui/kbd";
+import { ArrowUp } from "lucide-react";
 import { useEffect } from "react";
 
-import { SentIcon } from "@/components/shared/icons";
 import { cn } from "@/lib/utils";
 
 import { FIELD_NAMES, professionOptions, questions } from "../constants";
 import { OnboardingState } from "../types";
-import { ArrowUp } from "lucide-react";
 
 interface OnboardingInputProps {
   onboardingState: OnboardingState;

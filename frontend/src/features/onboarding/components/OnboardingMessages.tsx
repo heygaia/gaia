@@ -2,6 +2,7 @@ import { motion } from "framer-motion";
 
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import ChatBubbleUser from "@/features/chat/components/bubbles/user/ChatBubbleUser";
+
 import { Message } from "../types";
 import OnboardingIntegrationButtons from "./OnboardingIntegrationButtons";
 

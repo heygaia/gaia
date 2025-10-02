@@ -1,5 +1,4 @@
 import { Button } from "@heroui/button";
-import Image from "next/image";
 import React from "react";
 
 import { Gmail, GoogleCalendarIcon } from "@/components/shared/icons";

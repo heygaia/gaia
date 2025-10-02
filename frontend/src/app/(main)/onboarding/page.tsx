@@ -6,7 +6,6 @@ import {
   OnboardingInput,
   OnboardingMessages,
 } from "@/features/onboarding/components";
-import { OnboardingBackground } from "@/features/onboarding/components/OnboardingBackground";
 import { useOnboarding } from "@/features/onboarding/hooks/useOnboarding";
 
 export default function Onboarding() {
