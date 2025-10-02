@@ -1,4 +1,6 @@
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { useSendMessage } from "@/features/chat/hooks/useSendMessage";
+import { useLoadingText } from "@/features/chat/hooks/useLoadingText";
 import { useComposerTextActions } from "@/stores/composerStore";
 import { Button } from "@heroui/button";
 import { ShuffleIcon } from "lucide-react";
@@ -11,7 +13,9 @@ interface ChatSuggestion {
   category: string;
 }
 
-interface ChatSuggestionsProps {}
+interface ChatSuggestionsProps {
+  onSubmitSuggestion?: () => void;
+}
 
 const getAllSuggestions = (): ChatSuggestion[] => [
   // Default suggestions shown on page load
@@ -163,11 +167,17 @@ const shuffleArray = <T,>(array: T[]): T[] => {
   return shuffled;
 };
 
+interface ChatSuggestionsProps {
+  onSubmitSuggestion?: () => void;
+}
+
 export const ChatSuggestions: React.FC<ChatSuggestionsProps> = () => {
   const [currentSuggestions, setCurrentSuggestions] = useState(
     () => getAllSuggestions().slice(0, 4), // Show first 4 items on load (default suggestions)
   );
-  const { setInputText } = useComposerTextActions();
+  const { clearInputText } = useComposerTextActions();
+  const sendMessage = useSendMessage();
+  const { setContextualLoading } = useLoadingText();
 
   const handleShuffle = useCallback(() => {
     const allSuggestions = getAllSuggestions();
@@ -189,10 +199,17 @@ export const ChatSuggestions: React.FC<ChatSuggestionsProps> = () => {
   }, [currentSuggestions]);
 
   const handleSuggestionClick = useCallback(
-    (suggestion: ChatSuggestion) => {
-      setInputText(suggestion.text);
+    async (suggestion: ChatSuggestion) => {
+      // Set loading state with contextual message
+      setContextualLoading(true, suggestion.text);
+
+      // Send message directly with the suggestion text
+      await sendMessage(suggestion.text);
+
+      // Clear the input text after sending (mimicking Composer behavior)
+      clearInputText();
     },
-    [setInputText],
+    [sendMessage, setContextualLoading, clearInputText],
   );
 
   return (

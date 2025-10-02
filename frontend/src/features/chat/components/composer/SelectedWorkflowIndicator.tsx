@@ -40,7 +40,7 @@ export default function SelectedWorkflowIndicator({
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ duration: 0.3 }}
-      className="w-80 p-3"
+      className="m-3 w-80 rounded-2xl border-2 border-zinc-700"
     >
       <BaseWorkflowCard
         title={workflow.title}

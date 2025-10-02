@@ -18,10 +18,12 @@ import Image from "next/image";
 
 interface CommunityWorkflowCardProps {
   workflow: CommunityWorkflow;
+  onClick?: () => void;
 }
 
 export default function CommunityWorkflowCard({
   workflow,
+  onClick,
 }: CommunityWorkflowCardProps) {
   const [isCreatingWorkflow, setIsCreatingWorkflow] = useState(false);
   const [isUpvoting, setIsUpvoting] = useState(false);
@@ -174,6 +176,7 @@ export default function CommunityWorkflowCard({
       triggerContent={triggerContent}
       footerContent={footerContent}
       totalExecutions={0}
+      onClick={onClick}
     />
   );
 }

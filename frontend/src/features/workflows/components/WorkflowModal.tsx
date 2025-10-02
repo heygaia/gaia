@@ -606,7 +606,7 @@ export default function WorkflowModal({
 
                     {/* Action dropdown for edit mode */}
                     {mode === "edit" && (
-                      <Dropdown placement="bottom-end" className="max-w-60">
+                      <Dropdown placement="bottom-end" className="max-w-100">
                         <DropdownTrigger>
                           <Button variant="flat" size="sm" isIconOnly>
                             <DotsVerticalIcon />
@@ -963,7 +963,9 @@ export default function WorkflowModal({
                                       )
                                     }
                                     startContent={
-                                      <RefreshCw className="h-4 w-4" />
+                                      !isRegeneratingSteps && (
+                                        <RefreshCw className="h-4 w-4" />
+                                      )
                                     }
                                   >
                                     {isRegeneratingSteps
