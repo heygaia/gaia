@@ -8,18 +8,25 @@ from app.config.loggers import app_logger as logger
 from app.core.lazy_loader import providers
 from pydantic import PydanticDeprecatedSince20
 
-# Ignore specific deprecation warnings from pydantic in langchain_core
-warnings.filterwarnings(
-    "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
-)
+
+def setup_warnings() -> None:
+    """Set up common warning filters."""
+    warnings.filterwarnings(
+        "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
+    )
+
+
+setup_warnings()
 
 
 def register_all_providers(context: str = "main_app") -> None:
     """
-    Register all lazy providers required by both main app and ARQ worker.
+    Register all lazy providers with the provider registry.
 
-    Args:
-        context: Either "main_app" or "arq_worker" for logging purposes
+    This sets up the lazy loading system by registering provider factory functions,
+    but does NOT initialize them yet. Providers remain dormant until first access
+    or auto-initialization. This separation allows for fast startup and controlled
+    initialization timing.
     """
     from app.agents.core.graph_builder.build_graph import build_default_graph
     from app.agents.core.graph_builder.checkpointer_manager import (
@@ -64,18 +71,12 @@ def register_all_providers(context: str = "main_app") -> None:
 
 async def initialize_auto_providers(context: str = "main_app") -> None:
     """
-    Initialize all auto providers.
+    Initialize providers marked with auto_initialize=True.
 
-    Args:
-        context: Either "main_app" or "arq_worker" for logging purposes
+    This actually connects to services and configures global state for providers
+    that need to be ready immediately at startup (like database connections,
+    global configurations, etc.). Other providers remain lazy until first use.
     """
     logger.info(f"Initializing auto providers for {context}...")
     await providers.initialize_auto_providers()
     logger.info(f"Auto providers initialized successfully for {context}")
-
-
-def setup_warnings() -> None:
-    """Set up common warning filters."""
-    warnings.filterwarnings(
-        "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
-    )

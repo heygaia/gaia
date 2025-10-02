@@ -147,7 +147,7 @@ class RedisCache:
 
         try:
             value = await self.redis.get(name=key)
-            if value is not None:
+            if value:
                 # Use TypeAdapter to deserialize any data structure
                 return deserialize_any(value, model)
             return None
