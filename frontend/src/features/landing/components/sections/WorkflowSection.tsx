@@ -3,27 +3,28 @@ import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import Image from "next/image";
 
 import { BentoItem } from "./TodosBentoContent";
+import { useEffect, useRef } from "react";
+
+const triggers = [
+  {
+    icon: "/images/icons/slack.svg",
+    title: "Slack",
+    description: "Trigger on Slack mention",
+  },
+  {
+    icon: "/images/icons/googlecalendar.webp",
+    title: "Calendar",
+    description: "Trigger on calendar event",
+  },
+
+  {
+    icon: "/images/icons/gmail.svg",
+    title: "Gmail",
+    description: "Trigger on new email",
+  },
+];
 
 export default function WorkflowSection() {
-  const triggers = [
-    {
-      icon: "/images/icons/slack.svg",
-      title: "Slack",
-      description: "Trigger on Slack mention",
-    },
-    {
-      icon: "/images/icons/googlecalendar.webp",
-      title: "Calendar",
-      description: "Trigger on calendar event",
-    },
-
-    {
-      icon: "/images/icons/gmail.svg",
-      title: "Gmail",
-      description: "Trigger on new email",
-    },
-  ];
-
   return (
     <div className="flex w-full max-w-7xl flex-col justify-center p-4 px-4 sm:p-6 sm:px-6 lg:p-7 lg:px-8">
       <div className="mb-2 text-xl font-light text-primary sm:text-2xl">
@@ -77,10 +78,10 @@ export default function WorkflowSection() {
         >
           <DotLottieReact
             src="/animations/proactive.lottie"
-            // loop
-            // autoplay
-            speed={0.7}
-            playOnHover
+            loop
+            autoplay
+            speed={0.5}
+            // playOnHover
           />
         </BentoItem>
         <BentoItem
@@ -89,8 +90,8 @@ export default function WorkflowSection() {
         >
           <DotLottieReact
             src="/animations/seamless.json"
-            // loop
-            // autoplay
+            loop
+            autoplay
             speed={0.7}
             playOnHover
           />
