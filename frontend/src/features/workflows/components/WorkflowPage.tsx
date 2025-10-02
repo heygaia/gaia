@@ -2,19 +2,18 @@
 
 import { Button } from "@heroui/button";
 import { useDisclosure } from "@heroui/modal";
-import { ExternalLink, PlusIcon, RefreshCw, ZapIcon } from "lucide-react";
+import { ExternalLink, RefreshCw, ZapIcon } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import UseCaseSection from "@/features/use-cases/components/UseCaseSection";
 
+import Link from "next/link";
 import { Workflow } from "../api/workflowApi";
-import { useWorkflowPolling, useWorkflows } from "../hooks";
+import { useWorkflows } from "../hooks";
 import CreateWorkflowModal from "./CreateWorkflowModal";
 import EditWorkflowModal from "./EditWorkflowModal";
 import WorkflowCard from "./WorkflowCard";
 import { WorkflowListSkeleton } from "./WorkflowSkeletons";
-import { OpenInNewWindowIcon } from "@radix-ui/react-icons";
-import Link from "next/link";
 
 export default function WorkflowPage() {
   const pageRef = useRef(null);
@@ -25,39 +24,16 @@ export default function WorkflowPage() {
     onOpenChange: onEditOpenChange,
   } = useDisclosure();
 
-  const [selectedWorkflowId, setSelectedWorkflowId] = useState<string | null>(
-    null,
-  );
   const [selectedWorkflow, setSelectedWorkflow] = useState<Workflow | null>(
     null,
   );
 
-  const { workflows, isLoading, error, refetch, updateWorkflow } =
-    useWorkflows();
-
-  const { workflow: pollingWorkflow, startPolling } = useWorkflowPolling();
+  const { workflows, isLoading, error, refetch } = useWorkflows();
 
   // Handle workflow creation completion
-  const handleWorkflowCreated = useCallback(
-    (workflowId: string) => {
-      setSelectedWorkflowId(workflowId);
-      startPolling(workflowId);
-      refetch(); // Refresh the list to show the new workflow
-    },
-    [startPolling, refetch],
-  );
-
-  // Update workflow from polling
-  const handlePollingUpdate = useCallback(() => {
-    if (pollingWorkflow && selectedWorkflowId) {
-      updateWorkflow(selectedWorkflowId, pollingWorkflow);
-    }
-  }, [pollingWorkflow, selectedWorkflowId, updateWorkflow]);
-
-  // Effect to handle polling updates
-  useEffect(() => {
-    handlePollingUpdate();
-  }, [handlePollingUpdate]);
+  const handleWorkflowCreated = useCallback(() => {
+    refetch(); // Refresh the list to show the new workflow
+  }, [refetch]);
 
   const handleWorkflowDeleted = useCallback(
     (workflowId: string) => {
@@ -99,18 +75,11 @@ export default function WorkflowPage() {
       return (
         <div className="flex flex-col items-center justify-center space-y-4 py-12">
           <div className="text-center">
-            <h3 className="text-lg font-medium text-foreground-600">
+            <h3 className="text-xl font-medium text-zinc-300">
               No workflows yet
             </h3>
-            <p className="mt-1 text-sm text-foreground-400">
-              Create your first workflow to get started
-            </p>
           </div>
-          <Button
-            color="primary"
-            onPress={onOpen}
-            startContent={<PlusIcon className="h-4 w-4" />}
-          >
+          <Button color="primary" onPress={onOpen}>
             Create Your First Workflow
           </Button>
         </div>

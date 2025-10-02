@@ -24,6 +24,7 @@ interface BaseWorkflowCardProps {
     avatar?: string;
   };
   totalExecutions?: number;
+  hideExecutions?: boolean;
 }
 
 export default function BaseWorkflowCard({
@@ -38,6 +39,7 @@ export default function BaseWorkflowCard({
   triggerContent,
   creator,
   totalExecutions = 0,
+  hideExecutions = false,
 }: BaseWorkflowCardProps) {
   const renderToolIcons = () => {
     let categories: string[];
@@ -87,7 +89,15 @@ export default function BaseWorkflowCard({
           <div
             key={category}
             className="relative flex items-center justify-center"
-            style={{ rotate: index % 2 == 0 ? "8deg" : "-8deg", zIndex: index }}
+            style={{
+              rotate:
+                categories.length > 1
+                  ? index % 2 == 0
+                    ? "8deg"
+                    : "-8deg"
+                  : "0deg",
+              zIndex: index,
+            }}
           >
             {IconComponent}
           </div>
@@ -103,7 +113,7 @@ export default function BaseWorkflowCard({
 
     return (
       <>
-        <div className="flex -space-x-1.5">{validIcons}</div>
+        <div className="flex min-h-8 -space-x-1.5">{validIcons}</div>
         {categories.length > 3 && (
           <div className="flex h-[25px] w-[25px] items-center justify-center rounded-lg bg-zinc-700 text-xs text-foreground-500">
             +{categories.length - 3}
@@ -134,7 +144,7 @@ export default function BaseWorkflowCard({
 
       <div>
         <h3 className="line-clamp-2 text-lg font-medium">{title}</h3>
-        <div className="mt-1 line-clamp-3 flex-1 text-xs text-zinc-400">
+        <div className="mt-1 line-clamp-2 min-h-8 flex-1 text-xs text-zinc-400">
           {description}
         </div>
       </div>
@@ -142,7 +152,9 @@ export default function BaseWorkflowCard({
       <div className="mt-auto">
         {triggerContent && <div className="mt-1">{triggerContent}</div>}
         <div className="flex items-center justify-between gap-2">
-          <RunCountDisplay totalExecutions={totalExecutions} />
+          {!hideExecutions && (
+            <RunCountDisplay totalExecutions={totalExecutions} />
+          )}
           {footerContent && (
             <div className="flex-shrink-0">{footerContent}</div>
           )}

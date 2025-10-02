@@ -199,13 +199,13 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
         }
 
         // Focus back to input and position cursor where the slash command was
-        setTimeout(() => {
+        requestAnimationFrame(() => {
           if (inputRef.current) {
             const newCursorPos = slashCommandState.commandStart;
             inputRef.current.setSelectionRange(newCursorPos, newCursorPos);
             inputRef.current.focus();
           }
-        }, 0);
+        });
       },
       [
         searchbarText,
@@ -329,13 +329,11 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
       (text: string) => {
         onSearchbarTextChange(text);
 
-        // Update slash command detection
-        setTimeout(() => {
-          if (inputRef.current) {
-            const cursorPosition = inputRef.current.selectionStart || 0;
-            updateSlashCommandDetection(text, cursorPosition);
-          }
-        }, 0);
+        // Update slash command detection immediately without setTimeout
+        if (inputRef.current) {
+          const cursorPosition = inputRef.current.selectionStart || 0;
+          updateSlashCommandDetection(text, cursorPosition);
+        }
       },
       [onSearchbarTextChange, updateSlashCommandDetection, inputRef],
     );
@@ -356,10 +354,13 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
 
     // Update cursor position tracking
     const handleCursorPositionChange = useCallback(() => {
-      if (inputRef.current) {
-        const cursorPosition = inputRef.current.selectionStart || 0;
-        updateSlashCommandDetection(searchbarText, cursorPosition);
-      }
+      // Use requestAnimationFrame for better performance
+      requestAnimationFrame(() => {
+        if (inputRef.current) {
+          const cursorPosition = inputRef.current.selectionStart || 0;
+          updateSlashCommandDetection(searchbarText, cursorPosition);
+        }
+      });
     }, [searchbarText, updateSlashCommandDetection, inputRef]);
 
     // Close dropdown when clicking outside
@@ -391,10 +392,6 @@ const ComposerInput = React.forwardRef<ComposerInputRef, SearchbarInputProps>(
 
     return (
       <>
-        {slashCommandState.isActive && (
-          <div className="bg-black/05 pointer-events-none fixed top-0 left-0 z-[-1] h-screen w-screen backdrop-blur-xs" />
-        )}
-
         <form onSubmit={handleFormSubmit}>
           <Textarea
             ref={inputRef}
