@@ -2,6 +2,8 @@
 Task modules for ARQ worker.
 """
 
+from .memory_email_tasks import process_gmail_emails_to_memory
+from .memory_tasks import store_memories_batch
 from .reminder_tasks import cleanup_expired_reminders, process_reminder
 from .user_tasks import check_inactive_users
 from .workflow_tasks import (
@@ -13,6 +15,8 @@ from .workflow_tasks import (
 )
 
 __all__ = [
+    "process_gmail_emails_to_memory",
+    "store_memories_batch",
     "process_reminder",
     "cleanup_expired_reminders",
     "check_inactive_users",

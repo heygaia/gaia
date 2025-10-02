@@ -23,15 +23,16 @@ export default function Onboarding() {
   } = useOnboarding();
 
   return (
-    <div className="fixed inset-0 z-50 flex flex-col bg-black backdrop-blur-2xl">
-      <OnboardingBackground />
+    <div className="fixed inset-0 z-50 flex flex-col bg-[#1a1a1a] backdrop-blur-2xl">
+      {/* <OnboardingBackground /> */}
 
       {/* Messages Container */}
-      <div className="relative z-10 flex-1 overflow-y-auto px-4 py-32">
+      <div className="relative z-10 flex-1 overflow-y-auto px-4 pt-20 pb-10">
         <div className="relative mx-auto max-w-2xl">
           <OnboardingMessages
             messages={onboardingState.messages}
             messagesEndRef={messagesEndRef}
+            isOnboardingComplete={onboardingState.isOnboardingComplete}
           />
           <OnboardingChips
             onboardingState={onboardingState}

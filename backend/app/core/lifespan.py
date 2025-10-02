@@ -1,18 +1,12 @@
 import asyncio
-import warnings
 from contextlib import asynccontextmanager
 
-from app.agents.core.graph_builder.build_graph import build_default_graph
-from app.agents.core.graph_builder.checkpointer_manager import init_checkpointer_manager
-from app.agents.llm.client import register_llm_providers
-from app.agents.tools.core.registry import init_tool_registry
-from app.agents.tools.core.store import init_embeddings, initialize_tools_store
-from app.config.cloudinary import init_cloudinary
 from app.config.loggers import app_logger as logger
-from app.core.lazy_loader import providers
-from app.db.chromadb import init_chroma
-from app.db.postgresql import init_postgresql_engine
-from app.db.rabbitmq import init_rabbitmq_publisher
+from app.core.provider_registration import (
+    register_all_providers,
+    initialize_auto_providers,
+    setup_warnings,
+)
 from app.helpers.lifespan_helpers import (
     _process_results,
     close_postgresql_async,
@@ -23,17 +17,10 @@ from app.helpers.lifespan_helpers import (
     init_reminder_service,
     init_websocket_consumer,
     init_workflow_service,
-    setup_event_loop_policy,
 )
-from app.services.composio.composio_service import init_composio_service
-from app.services.startup_validation import validate_startup_requirements
 from fastapi import FastAPI
-from pydantic import PydanticDeprecatedSince20
 
-# Ignore specific deprecation warnings from pydantic in langchain_core
-warnings.filterwarnings(
-    "ignore", category=PydanticDeprecatedSince20, module="langchain_core.tools.base"
-)
+setup_warnings()
 
 
 @asynccontextmanager
@@ -45,46 +32,43 @@ async def lifespan(app: FastAPI):
     try:
         logger.info("Starting up the API with lazy providers...")
 
-        # Register all lazy providers
-        logger.info("Registering lazy providers...")
-        # Register all providers
-        init_postgresql_engine()
-        init_rabbitmq_publisher()
-        register_llm_providers()
-        build_default_graph()
-        init_chroma()
-        init_cloudinary()
-        init_checkpointer_manager()
-        init_tool_registry()
-        init_composio_service()
-        init_embeddings()
-        initialize_tools_store()
-        validate_startup_requirements()
-        setup_event_loop_policy()
+        # LAZY LOADING SETUP: Register all lazy providers with the registry
+        # This is synchronous and fast - just sets up provider factory functions
+        # Add new lazy providers by calling their registration functions here
+        # Example: init_new_lazy_service() - this registers but doesn't initialize
+        register_all_providers("main_app")
 
-        logger.info("All lazy providers registered successfully")
-
-        # Initialize services that still require eager initialization
+        # EAGER INITIALIZATION: Services that MUST be ready before app starts
+        # Add services here that need to be fully initialized before serving requests
+        # These run in parallel for faster startup
         startup_tasks = [
+            # Database connections that need to be ready immediately
             init_mongodb_async(),
+            # Background services that need to start with the app
             init_reminder_service(),
             init_workflow_service(),
             init_websocket_consumer(),
-            providers.initialize_auto_providers(),
+            # AUTO-INIT LAZY PROVIDERS: Providers marked with auto_initialize=True
+            # This initializes global configs, DB connections, etc. that are marked for auto-init
+            # DO NOT add regular services here - only the auto-init lazy providers call
+            initialize_auto_providers("main_app"),
         ]
 
         # Run remaining initialization tasks in parallel
         results = await asyncio.gather(*startup_tasks, return_exceptions=True)
 
+        # RESULT PROCESSING: Check startup results and log any failures
+        # The service names array MUST match the startup_tasks order exactly
+        # Each name corresponds to its respective task in startup_tasks for error reporting
+        # Add new service names here when adding new startup_tasks above
         _process_results(
             results,
             [
-                "mongodb",
-                "reminder_service",
-                "workflow_service",
-                "websocket_consumer",
-                "tools_store",
-                "lazy_providers_auto_initializer",
+                "mongodb",  # matches init_mongodb_async()
+                "reminder_service",  # matches init_reminder_service()
+                "workflow_service",  # matches init_workflow_service()
+                "websocket_consumer",  # matches init_websocket_consumer()
+                "lazy_providers_auto_initializer",  # matches initialize_auto_providers()
             ],
         )
 
@@ -99,12 +83,19 @@ async def lifespan(app: FastAPI):
     finally:
         logger.info("Shutting down the API...")
 
-        # Run all shutdown tasks in parallel
+        # SHUTDOWN CLEANUP: Close all connections and cleanup resources
+        # Add cleanup functions here for services that need graceful shutdown
+        # These run in parallel for faster shutdown
         shutdown_tasks = [
+            # Database connection cleanup
             close_postgresql_async(),
+            # Background service cleanup
             close_reminder_scheduler(),
             close_websocket_async(),
+            # Message queue cleanup
             close_publisher_async(),
+            # Add new cleanup functions here:
+            # close_new_service_async(),
         ]
 
         # Use return_exceptions=True so one failure doesn't stop others during shutdown
