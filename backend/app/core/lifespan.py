@@ -2,6 +2,7 @@ import asyncio
 import warnings
 from contextlib import asynccontextmanager
 
+import app.patches  # noqa: F401 # Apply patches
 from app.agents.core.graph_builder.build_graph import build_default_graph
 from app.agents.core.graph_builder.checkpointer_manager import init_checkpointer_manager
 from app.agents.llm.client import register_llm_providers
