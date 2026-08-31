@@ -58,11 +58,11 @@ class LinearTriggerHandler(TriggerHandler):
 
     async def get_config_options(
         self,
-        trigger_name: str,
+        trigger_name: str,  # noqa: ARG002 -- framework contract
         field_name: str,
         user_id: str,
         integration_id: str,
-        parent_ids: list[str] | None = None,
+        parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
         **kwargs: str,
     ) -> list[TriggerOption]:
         """Get dynamic options for Linear trigger config fields."""
@@ -79,7 +79,12 @@ class LinearTriggerHandler(TriggerHandler):
 
             # Check response status
             if not result["successful"]:
-                log.error(f"{LogTag.TRIGGER} Linear API error: {result['error']}")
+                log.error(
+                    f"{LogTag.TRIGGER} Linear API error",
+                    error=result["error"],
+                    user_id=user_id,
+                    integration_id=integration_id,
+                )
                 return []
 
             # Extract and parse data
@@ -95,7 +100,7 @@ class LinearTriggerHandler(TriggerHandler):
                     continue
                 options.append(TriggerOption(value=team.id, label=team.name))
 
-            log.info(f"{LogTag.TRIGGER} Returning {len(options)} Linear team options")
+            log.info(f"{LogTag.TRIGGER} Returning Linear team options", options_count=len(options))
             return options
 
         return []
@@ -171,14 +176,23 @@ class LinearTriggerHandler(TriggerHandler):
                 elif "comment_added" in event_type.lower():
                     LinearCommentAddedPayload.model_validate(data)
             except Exception as e:
-                log.debug(f"{LogTag.TRIGGER} Linear payload validation failed: {e}")
+                log.debug(
+                    f"{LogTag.TRIGGER} Linear payload validation failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
             workflows: list[Workflow] = []
             workflows.extend(await workflow_repository.find_active_by_composio_trigger(trigger_id))
             return workflows
 
         except Exception as e:
-            log.error(f"{LogTag.TRIGGER} Error finding workflows for trigger {trigger_id}: {e}")
+            log.error(
+                f"{LogTag.TRIGGER} Error finding workflows for trigger",
+                trigger_id=trigger_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return []
 
 

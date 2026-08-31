@@ -38,14 +38,15 @@ from app.models.workflow_models import (
     WorkflowResponse,
     WorkflowStatusResponse,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.oauth.oauth_service import get_all_integrations_status
 from app.services.system_workflows.provisioner import reset_system_workflow_to_default
-from app.services.workflow import WorkflowService
 from app.services.workflow.execution_service import (
     get_workflow_executions as get_executions,
 )
 from app.services.workflow.generation_service import WorkflowGenerationService
 from app.services.workflow.service import (
+    WorkflowService,
     ensure_public_workflow_slug,
     generate_unique_workflow_slug,
 )
@@ -91,16 +92,27 @@ async def create_workflow(
         workflow = await WorkflowService.create_workflow(
             request, user["user_id"], user_timezone=user_timezone
         )
+        # The trigger type lives on the REQUEST (the pre-create log above reads
+        # request.trigger_config.type) — the created Workflow model does not
+        # carry a trigger_type attribute, so reading it off the workflow would
+        # always yield None. Both fields are required, so no guard needed.
+        trigger_type = request.trigger_config.type.value
         log.set(
             workflow=WorkflowContext(
                 id=str(workflow.id),
                 title=workflow.title,
                 steps_count=len(workflow.steps) if workflow.steps else None,
-                trigger_type=str(workflow.trigger_type)
-                if hasattr(workflow, "trigger_type") and workflow.trigger_type
-                else None,
+                trigger_type=trigger_type,
             ),
             outcome="success",
+        )
+        capture_context_event(
+            AnalyticsEvents.WORKFLOW_CREATED,
+            {
+                "trigger_type": trigger_type,
+                "steps_count": len(workflow.steps) if workflow.steps else 0,
+                "generated_immediately": request.generate_immediately,
+            },
         )
         return WorkflowResponse(workflow=workflow, message="Workflow created successfully")
 
@@ -109,22 +121,28 @@ async def create_workflow(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error creating workflow: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error creating workflow",
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create workflow",
-        )
+        ) from e
 
 
 @router.get("/workflows", response_model=WorkflowListResponse)
 @limiter.limit("100/minute")
 @limiter.limit("1000/hour")
 async def list_workflows(
-    request: Request, user: AuthenticatedUser = Depends(get_current_user)
+    request: Request,  # noqa: ARG001 -- slowapi requires request in the handler signature
+    user: AuthenticatedUser = Depends(get_current_user),
 ) -> WorkflowListResponse:
     """List all workflows for the current user."""
     log.set(
@@ -141,11 +159,16 @@ async def list_workflows(
         return WorkflowListResponse(workflows=workflows)
 
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error listing workflows for user {user['user_id']}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error listing workflows",
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list workflows",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/execute", response_model=WorkflowExecutionResponse)
@@ -163,30 +186,37 @@ async def execute_workflow(
 
     try:
         result = await WorkflowService.execute_workflow(workflow_id, request, user["user_id"])
+        # execute_workflow is typed to return WorkflowExecutionResponse, whose
+        # execution_id is required — the hasattr guard was dead defensive code.
         log.set(
             workflow=WorkflowContext(
-                execution_id=str(result.execution_id)
-                if hasattr(result, "execution_id") and result.execution_id
-                else None,
+                execution_id=str(result.execution_id),
             ),
             outcome="success",
         )
+        capture_context_event(AnalyticsEvents.WORKFLOW_EXECUTED)
         return result
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error executing workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error executing workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to execute workflow",
-        )
+        ) from e
 
 
 @router.get("/workflows/{workflow_id}/executions", response_model=WorkflowExecutionsResponse)
 @limiter.limit("100/minute")
 async def get_workflow_executions(
-    request: Request,
+    request: Request,  # noqa: ARG001 -- framework contract
     workflow_id: str,
     limit: int = 10,
     offset: int = 0,
@@ -217,11 +247,17 @@ async def get_workflow_executions(
         )
         return result
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error getting executions for workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error getting executions for workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get workflow executions",
-        )
+        ) from e
 
 
 @router.get("/workflows/{workflow_id}/status", response_model=WorkflowStatusResponse)
@@ -247,13 +283,19 @@ async def get_workflow_status(
         return status_response
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error getting workflow status {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error getting workflow status",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get workflow status",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/activate", response_model=WorkflowResponse)
@@ -279,6 +321,7 @@ async def activate_workflow(
             )
 
         log.set(outcome="success")
+        capture_context_event(AnalyticsEvents.WORKFLOW_ACTIVATED)
         return WorkflowResponse(workflow=workflow, message="Workflow activated successfully")
 
     except TriggerRegistrationError as e:
@@ -286,21 +329,27 @@ async def activate_workflow(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except ValueError as e:
         # Missing step integrations or other validation failures
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error activating workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error activating workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to activate workflow",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/deactivate", response_model=WorkflowResponse)
@@ -331,11 +380,17 @@ async def deactivate_workflow(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error deactivating workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error deactivating workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to deactivate workflow",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/regenerate-steps", response_model=WorkflowResponse)
@@ -368,13 +423,19 @@ async def regenerate_workflow_steps(
         return WorkflowResponse(workflow=workflow, message="Workflow regeneration started")
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error regenerating workflow steps: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error regenerating workflow steps",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to regenerate workflow steps",
-        )
+        ) from e
 
 
 @router.post("/workflows/from-todo", response_model=WorkflowResponse)
@@ -428,11 +489,16 @@ async def create_workflow_from_todo(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error creating workflow from todo: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error creating workflow from todo",
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create workflow from todo",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/publish", response_model=PublishWorkflowResponse)
@@ -480,7 +546,12 @@ async def publish_workflow(
             )
 
         log.set(outcome="success")
-        log.info(f"{LogTag.WORKFLOW} Published workflow {workflow_id} by user {user['user_id']}")
+        log.info(
+            f"{LogTag.WORKFLOW} Published workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+        )
+        capture_context_event(AnalyticsEvents.WORKFLOW_PUBLISHED)
 
         return PublishWorkflowResponse(
             message="Workflow published successfully",
@@ -491,11 +562,17 @@ async def publish_workflow(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error publishing workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error publishing workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to publish workflow",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/unpublish")
@@ -522,70 +599,92 @@ async def unpublish_workflow(
         await workflow_repository.unpublish(workflow_id)
 
         log.set(outcome="success")
-        log.info(f"{LogTag.WORKFLOW} Unpublished workflow {workflow_id} by user {user['user_id']}")
+        log.info(
+            f"{LogTag.WORKFLOW} Unpublished workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+        )
 
         return WorkflowMessageResponse(message="Workflow unpublished successfully")
 
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error unpublishing workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error unpublishing workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to unpublish workflow",
-        )
+        ) from e
 
 
 @router.get("/workflows/explore", response_model=PublicWorkflowsResponse)
 @limiter.limit("500/minute")
 @limiter.limit("5000/hour")
 async def get_explore_workflows(
-    request: Request,
+    request: Request,  # noqa: ARG001 -- framework contract
     limit: int = 25,
     offset: int = 0,
 ) -> PublicWorkflowsResponse:
     """Get explore/featured workflows for the discover section."""
+    log.set(workflow=WorkflowContext(operation="explore"))
     try:
         result = await WorkflowService.get_explore_workflows(limit=limit, offset=offset)
+        log.set_ns("workflow", result_count=len(result.workflows))
         # Cacheable erases the wrapped function's return type; get_explore_workflows
         # is declared -> PublicWorkflowsResponse, so this is correct by construction.
         return cast(PublicWorkflowsResponse, result)
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error fetching explore workflows: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error fetching explore workflows",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch explore workflows",
-        )
+        ) from e
 
 
 @router.get("/workflows/community", response_model=PublicWorkflowsResponse)
 @limiter.limit("500/minute")
 @limiter.limit("5000/hour")
 async def get_public_workflows(
-    request: Request,
+    request: Request,  # noqa: ARG001 -- framework contract
     limit: int = 20,
     offset: int = 0,
 ) -> PublicWorkflowsResponse:
     """Get public workflows from the community marketplace."""
+    log.set(workflow=WorkflowContext(operation="list_public"))
     try:
         result = await WorkflowService.get_community_workflows(
             limit=limit, offset=offset, user_id=None
         )
+        log.set_ns("workflow", result_count=len(result.workflows))
         # Cacheable erases the wrapped function's return type; get_community_workflows
         # is declared -> PublicWorkflowsResponse, so this is correct by construction.
         return cast(PublicWorkflowsResponse, result)
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error fetching public workflows: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error fetching public workflows",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch public workflows",
-        )
+        ) from e
 
 
 @router.get("/workflows/public/{workflow_ref}", response_model=WorkflowResponse)
 @limiter.limit("500/minute")
 @limiter.limit("5000/hour")
-async def get_public_workflow(request: Request, workflow_ref: str) -> WorkflowResponse:
+async def get_public_workflow(request: Request, workflow_ref: str) -> WorkflowResponse:  # noqa: ARG001 -- contract
     """Get a public workflow by ID (wf_xxx) or slug."""
     lookup_mode = "id" if workflow_ref.startswith("wf_") else "slug"
     log.set(
@@ -599,7 +698,8 @@ async def get_public_workflow(request: Request, workflow_ref: str) -> WorkflowRe
 
         if not workflow:
             log.info(
-                f"{LogTag.WORKFLOW} get_public_workflow: no public workflow for ref={workflow_ref}"
+                f"{LogTag.WORKFLOW} get_public_workflow: no public workflow found",
+                workflow_ref=workflow_ref,
             )
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
@@ -625,11 +725,16 @@ async def get_public_workflow(request: Request, workflow_ref: str) -> WorkflowRe
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error getting public workflow {workflow_ref}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error getting public workflow",
+            workflow_ref=workflow_ref,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get workflow",
-        )
+        ) from e
 
 
 @router.post("/workflows/generate-prompt", response_model=GenerateWorkflowPromptResponse)
@@ -650,22 +755,30 @@ async def generate_workflow_prompt_endpoint(
             trigger_config=request.trigger_config,
             existing_prompt=request.existing_prompt,
             integration_ids=request.integration_ids,
+            user_id=user["user_id"],
         )
         log.set(outcome="success")
         return GenerateWorkflowPromptResponse(**result)
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error generating workflow prompt: {e}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error generating workflow prompt",
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate workflow prompt",
-        )
+        ) from e
 
 
 @router.get("/workflows/{workflow_id}", response_model=WorkflowResponse)
 @limiter.limit("500/minute")
 @limiter.limit("5000/hour")
 async def get_workflow(
-    request: Request, workflow_id: str, user: AuthenticatedUser = Depends(get_current_user)
+    request: Request,  # noqa: ARG001 -- slowapi requires request in the handler signature
+    workflow_id: str,
+    user: AuthenticatedUser = Depends(get_current_user),
 ) -> WorkflowResponse:
     """Get a specific workflow by ID."""
     log.set(
@@ -695,11 +808,17 @@ async def get_workflow(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error getting workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error getting workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get workflow",
-        )
+        ) from e
 
 
 @router.put("/workflows/{workflow_id}")
@@ -733,15 +852,21 @@ async def update_workflow(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=str(e),
-        )
+        ) from e
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error updating workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error updating workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update workflow",
-        )
+        ) from e
 
 
 @router.post("/workflows/{workflow_id}/reset-to-default")
@@ -777,11 +902,17 @@ async def reset_workflow_to_default(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error resetting workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error resetting workflow",
+            workflow_id=workflow_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to reset workflow",
-        )
+        ) from e
 
 
 @router.delete("/workflows/{workflow_id}")
@@ -808,8 +939,14 @@ async def delete_workflow(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.WORKFLOW} Error deleting workflow {workflow_id}: {e!s}")
+        log.error(
+            f"{LogTag.WORKFLOW} Error deleting workflow",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete workflow",
-        )
+        ) from e

@@ -16,6 +16,7 @@ from app.db.rabbitmq import RabbitMQPublisher, get_rabbitmq_publisher
 from app.models.chat_models import ConversationSource
 from app.schemas.outbound import OutboundAttachment, OutboundMessageEnvelope
 from app.services.platform_link_service import PlatformLinkService
+from app.utils.message_breaks import split_message_bubbles
 from shared.py.wide_events import log
 
 
@@ -60,13 +61,17 @@ async def _prepare(
 
     destination_id = await _resolve_destination(platform, user_id)
     if not destination_id:
-        log.warning(f"{log_label}: account not linked", platform=platform.value)
+        log.warning(
+            ": account not linked", log_label=log_label, user_id=user_id, platform=platform.value
+        )
         return OutboundResult.SKIPPED
 
     try:
         publisher = await get_rabbitmq_publisher()
     except RuntimeError:
-        log.warning(f"{log_label}: RabbitMQ unavailable", platform=platform.value)
+        log.warning(
+            ": RabbitMQ unavailable", log_label=log_label, user_id=user_id, platform=platform.value
+        )
         return OutboundResult.FAILED
 
     return queue_name, str(destination_id), publisher
@@ -85,12 +90,17 @@ async def publish_outbound_message(
     them in order. Publishing one envelope per part instead lets a concurrent
     consumer (prefetch > 1) reorder the bubbles — the bug this avoids.
 
+    Each incoming part is itself split on the bubble-break sentinel, so any
+    caller handing over raw agent text (executor replies, notifications, the
+    account-linked confirmation) delivers as the bubbles the model asked for
+    instead of one wall carrying literal ``<NEW_MESSAGE_BREAK>`` tokens.
+
     Returns ``PUBLISHED`` when the envelope was enqueued. ``SKIPPED`` when the
     platform is unsupported, the account is unlinked, or there is nothing to
     send. ``FAILED`` when the broker is unavailable or the publish errored.
     Best-effort: never raises into the caller's flow.
     """
-    parts = [p for p in (s.strip() for s in text_parts) if p]
+    parts = [bubble for part in text_parts for bubble in split_message_bubbles(part)]
     if not parts:
         return OutboundResult.SKIPPED
 
@@ -135,8 +145,9 @@ async def publish_outbound_message(
     return OutboundResult.PUBLISHED
 
 
-# Friendly platform names for user-facing copy (e.g. the link confirmation).
-_PLATFORM_DISPLAY_NAMES: dict[ConversationSource, str] = {
+# Friendly platform names for user-facing copy (e.g. the link confirmation,
+# delivery provenance frames). Single source — import, don't restate.
+PLATFORM_DISPLAY_NAMES: dict[ConversationSource, str] = {
     ConversationSource.TELEGRAM: "Telegram",
     ConversationSource.DISCORD: "Discord",
     ConversationSource.SLACK: "Slack",
@@ -156,7 +167,7 @@ async def notify_account_linked(platform: str, user_id: str) -> OutboundResult:
     if source is None or source not in OUTBOUND_QUEUES:
         return OutboundResult.SKIPPED
 
-    display_name = _PLATFORM_DISPLAY_NAMES.get(source, source.value.capitalize())
+    display_name = PLATFORM_DISPLAY_NAMES.get(source, source.value.capitalize())
     text = (
         "✅ **You're connected!**\n\n"
         f"Your {display_name} account is now linked to GAIA. "

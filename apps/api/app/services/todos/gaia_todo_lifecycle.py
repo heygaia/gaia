@@ -440,7 +440,7 @@ async def handoff(todo_id: str, user_id: str) -> None:
     # Seed facets only if the todo has no working memory yet — a prep-classified
     # user todo may already carry notes_content (see todo_classification).
     if not doc.notes_content and not doc.canvas_content:
-        update_kwargs["vfs_path"] = build_vfs_label(user_id, todo_id)
+        update_kwargs["vfs_path"] = build_vfs_label(todo_id)
         update_kwargs["deliverable_content"] = DELIVERABLE_TEMPLATE.format(title=title)
         update_kwargs["notes_content"] = NOTES_TEMPLATE.format(title=title)
         update_kwargs["log_content"] = (

@@ -7,7 +7,7 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
-from app.agents.llm.client import ainvoke_llm, get_default_llm
+from app.agents.llm.client import ainvoke_llm, get_helper_llm
 from app.constants.cache import SIX_HOUR_TTL
 from app.constants.log_tags import LogTag
 from app.decorators.caching import Cacheable
@@ -54,7 +54,7 @@ async def decompose_research_queries(
 
     try:
         response = await ainvoke_llm(
-            get_default_llm(), [HumanMessage(content=prompt)], label="research_queries"
+            get_helper_llm(), [HumanMessage(content=prompt)], label="research_queries"
         )
         # ``.text`` flattens the message's content blocks to a string; ``.content``
         # may be a list (Gemini), whose repr would never parse as JSON.
@@ -69,7 +69,11 @@ async def decompose_research_queries(
             if valid:
                 return valid
     except Exception as e:
-        log.warning(f"{LogTag.TOOL} Query decomposition LLM call failed: {e}")
+        log.warning(
+            f"{LogTag.TOOL} Query decomposition LLM call failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Fallback: heuristic sub-queries matching n_queries contract (depth 1→3, 2→6, 3→9)
     base = [

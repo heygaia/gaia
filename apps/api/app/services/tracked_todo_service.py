@@ -2,7 +2,7 @@
 Tracked todo service — Mongo-backed lifecycle for GAIA's working memory todos.
 
 A tracked todo is a regular todo with:
-- vfs_path (display label) set to /users/{user_id}/todos/{todo_id}/
+- vfs_path (display label) set to /workspace/gaia-tasks/{todo_id}
 - assignee == "gaia" (the discriminator for GAIA-owned todos)
 - facet content on the doc: deliverable / notes (agent-written, indexed in
   ChromaDB) and log (system-written audit trail)
@@ -240,7 +240,7 @@ class TrackedTodoService:
         # carries its finished deliverable; an internal todo starts from the
         # light template. Notes always seed from the working-memory template
         # unless the caller supplied a head start.
-        vfs_path = build_vfs_label(user_id, todo_id)
+        vfs_path = build_vfs_label(todo_id)
         deliverable_content = initial_deliverable or DELIVERABLE_TEMPLATE.format(title=title)
         notes_content = initial_notes or NOTES_TEMPLATE.format(title=title)
         now = datetime.now(UTC)
@@ -305,7 +305,6 @@ class TrackedTodoService:
         if doc.completed:
             return True
 
-        vfs_path = doc.vfs_path or build_vfs_label(user_id, todo_id)
         now = datetime.now(UTC)
 
         # Append completion to log
@@ -316,8 +315,10 @@ class TrackedTodoService:
             f"\n## {now.isoformat()} [COMPLETED]\n- Summary: {summary}\n",
         )
 
-        # Switch the display label to the archived form (purely cosmetic).
-        archive_path = vfs_path.replace("/todos/", "/todos/archive/")
+        # Always derive the archived label — never persist a stored one back.
+        # Legacy docs still carry the host-side /users/<uid>/todos/<id> format;
+        # deriving here heals them on completion instead of re-saving the leak.
+        archive_path = build_vfs_label(todo_id, archived=True)
 
         # Update todo (the execution_status flip goes through the lifecycle so
         # the transition is broadcast; it also emits the completion track event).

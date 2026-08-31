@@ -36,7 +36,8 @@ def _get_mongodb_instance() -> MongoDB:
     global _mongodb_instance
     if _mongodb_instance is None:
         log.info(f"{LogTag.MONGO} Initializing MongoDB instance (lazy loading)")
-        from app.db.mongodb.mongodb import init_mongodb
+        # Deferred import: kept inside the lazy initializer so MongoDB connects on first collection access, not at import
+        from app.db.mongodb.mongodb import init_mongodb  # noqa: PLC0415 -- lazy init
 
         _mongodb_instance = init_mongodb()
         log.info(f"{LogTag.MONGO} MongoDB instance initialized")
@@ -46,7 +47,10 @@ def _get_mongodb_instance() -> MongoDB:
 def _get_collection(collection_name: str) -> AsyncIOMotorCollection[dict[str, Any]]:
     """Get async collection with lazy loading and caching."""
     if collection_name not in _collections_cache:
-        log.info(f"{LogTag.MONGO} Creating async collection '{collection_name}' (lazy loading)")
+        log.info(
+            f"{LogTag.MONGO} Creating async collection (lazy loading)",
+            collection_name=collection_name,
+        )
         mongodb_instance = _get_mongodb_instance()
         _collections_cache[collection_name] = mongodb_instance.get_collection(collection_name)
     return _collections_cache[collection_name]

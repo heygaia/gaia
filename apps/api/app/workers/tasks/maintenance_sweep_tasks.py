@@ -9,7 +9,7 @@ from uuid import uuid4
 
 from arq.connections import ArqRedis
 
-from app.agents.core.agent import call_agent_silent
+from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.constants.memory import MemorySourceType
 from app.constants.notifications import (
     NOTIFICATION_KIND_URGENT_SIGNAL,
@@ -38,14 +38,13 @@ from app.models.notification.notification_models import (
 )
 from app.models.todo_models import TodoDocument
 from app.models.user_models import AuthenticatedUser
-from app.services.model_service import get_default_model
 from app.services.notification_service import notification_service
 from app.services.todo_canvas_storage import read_facet
 from app.services.tracked_todo_service import tracked_todo_service
 from app.services.user_service import get_user_by_id
 from app.utils.redis_utils import RedisPoolManager
 from app.utils.timezone import is_within_local_daytime
-from shared.py.wide_events import log, wide_task
+from shared.py.wide_events import log
 
 DORMANT_DAYS = 5
 WAITING_LABEL_MAX_DAYS = 8
@@ -82,46 +81,54 @@ async def maintenance_sweep_tracked_todos(_ctx: dict[str, Any]) -> str:
     - Overdue (due_date <= now, no upcoming schedule): individual notification.
     - Dormant (no update in DORMANT_DAYS): agent re-queues or bundles a digest.
     """
-    async with wide_task("maintenance_sweep_tracked_todos"):
-        now = datetime.now(UTC)
-        log.info("maintenance_sweep.scan_started")
+    now = datetime.now(UTC)
+    log.info("maintenance_sweep.scan_started")
 
-        pool = await RedisPoolManager.get_pool()
+    pool = await RedisPoolManager.get_pool()
 
-        expired, overdue, dormant = await _classify_tracked_todos(pool, now)
+    expired, overdue, dormant = await _classify_tracked_todos(pool, now)
 
-        # Track health-check calls per user to cap LLM usage per sweep
-        health_checks_used: dict[str, int] = {}
-        # Cache the daytime decision per user for the duration of this sweep.
-        daytime_cache: dict[str, bool] = {}
+    # Track health-check calls per user to cap LLM usage per sweep
+    health_checks_used: dict[str, int] = {}
+    # Cache the daytime decision per user for the duration of this sweep.
+    daytime_cache: dict[str, bool] = {}
 
-        archived, notified_expired = await _process_expired(
-            expired, pool, now, health_checks_used, daytime_cache
-        )
-        notified_overdue = await _process_overdue(overdue, pool, now, daytime_cache)
-        requeued, needs_attention_todos = await _process_dormant(
-            dormant, pool, now, health_checks_used, daytime_cache
-        )
+    archived, notified_expired = await _process_expired(
+        expired, pool, now, health_checks_used, daytime_cache
+    )
+    notified_overdue = await _process_overdue(overdue, pool, now, daytime_cache)
+    requeued, needs_attention_todos = await _process_dormant(
+        dormant, pool, now, health_checks_used, daytime_cache
+    )
 
-        if needs_attention_todos:
-            await _send_dormant_digest(needs_attention_todos)
+    if needs_attention_todos:
+        await _send_dormant_digest(needs_attention_todos)
 
-        urgent_strikes = await _strike_ignored_urgent_alerts(now)
+    urgent_strikes = await _strike_ignored_urgent_alerts(now)
 
-        summary = (
-            f"archived:{archived} notified_expired:{notified_expired} "
-            f"notified_overdue:{notified_overdue} requeued:{requeued} "
-            f"digest_items:{len(needs_attention_todos)} urgent_strikes:{urgent_strikes}"
-        )
-        log.info(
-            "maintenance_sweep.done",
-            archived=archived,
-            notified_expired=notified_expired,
-            notified_overdue=notified_overdue,
-            requeued=requeued,
-            digest_items=len(needs_attention_todos),
-        )
-        return summary
+    summary = (
+        f"archived:{archived} notified_expired:{notified_expired} "
+        f"notified_overdue:{notified_overdue} requeued:{requeued} "
+        f"digest_items:{len(needs_attention_todos)} urgent_strikes:{urgent_strikes}"
+    )
+    log.set(
+        archived=archived,
+        notified_expired=notified_expired,
+        notified_overdue=notified_overdue,
+        requeued=requeued,
+        digest_items=len(needs_attention_todos),
+        urgent_strikes=urgent_strikes,
+    )
+    log.info(
+        "maintenance_sweep.done",
+        archived=archived,
+        notified_expired=notified_expired,
+        notified_overdue=notified_overdue,
+        requeued=requeued,
+        digest_items=len(needs_attention_todos),
+        urgent_strikes=urgent_strikes,
+    )
+    return summary
 
 
 async def _strike_ignored_urgent_alerts(now: datetime) -> int:
@@ -324,10 +331,7 @@ def _is_dormant(doc: TodoDocument, now: datetime) -> bool:
 
     # Blocking label present — only surface if it has been stuck too long
     # Use idle_days as proxy for label age (label changes trigger updated_at)
-    if idle_days > WAITING_LABEL_MAX_DAYS:
-        return True
-
-    return False
+    return idle_days > WAITING_LABEL_MAX_DAYS
 
 
 async def _health_check_expired(doc: TodoDocument, pool: ArqRedis) -> ExpiredOutcome:
@@ -600,16 +604,6 @@ async def _call_health_check_agent(todo_id: str, user_id: str, prompt: str) -> s
         log.warning("maintenance_sweep.user_fetch_failed", user_id=user_id, error=str(exc))
         user_data = {"user_id": user_id, "name": "User"}
 
-    user_model_config = None
-    try:
-        user_model_config = await get_default_model()
-    except Exception as exc:
-        log.warning(
-            "maintenance_sweep.model_config_failed",
-            todo_id=todo_id,
-            error=str(exc),
-        )
-
     conversation_id = str(uuid4())
 
     # The human turn must live in `messages`; `message` alone is not consulted
@@ -623,15 +617,16 @@ async def _call_health_check_agent(todo_id: str, user_id: str, prompt: str) -> s
     )
 
     try:
-        complete_message, _tool_data = await call_agent_silent(
+        run = await call_agent_silent(
             request=request,
             conversation_id=conversation_id,
             user=user_data,
-            user_model_config=user_model_config,
-            trigger_context={
-                "trigger_type": "maintenance_health_check",
-                "todo_id": todo_id,
-            },
+            options=AgentRunOptions(
+                trigger_context={
+                    "trigger_type": "maintenance_health_check",
+                    "todo_id": todo_id,
+                }
+            ),
         )
     except Exception as exc:
         log.warning(
@@ -641,10 +636,18 @@ async def _call_health_check_agent(todo_id: str, user_id: str, prompt: str) -> s
         )
         return "NEEDS_ATTENTION: Health check failed"
 
-    if complete_message and complete_message.startswith("Error when calling silent agent:"):
-        return "NEEDS_ATTENTION: Health check failed"
+    # A queued dispatch is an acknowledgement, not a verdict: the check did not
+    # run, and reading the acknowledgement as its result would mark the todo
+    # healthy on the strength of work that has not happened.
+    if run.queued_task_id:
+        log.warning(
+            "maintenance_sweep.health_check_queued",
+            todo_id=todo_id,
+            queued_task_id=run.queued_task_id,
+        )
+        return "NEEDS_ATTENTION: Health check queued behind an in-flight run; not run"
 
-    return (complete_message or "").strip()
+    return (run.message or "").strip()
 
 
 async def _send_individual_notification(

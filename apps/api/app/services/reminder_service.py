@@ -91,7 +91,11 @@ class ReminderScheduler(BaseSchedulerService):
         # Schedule the task using base scheduler
         await self.schedule_task(reminder_id, schedule_config)
 
-        log.info(f"Created and scheduled reminder {reminder_id} for {created.scheduled_at}")
+        log.info(
+            "Created and scheduled reminder for",
+            reminder_id=reminder_id,
+            scheduled_at=created.scheduled_at,
+        )
         return reminder_id
 
     async def update_reminder(self, reminder_id: str, update: ReminderUpdate, user_id: str) -> bool:
@@ -108,7 +112,7 @@ class ReminderScheduler(BaseSchedulerService):
         if updated is None:
             return False
 
-        log.info(f"Updated reminder {reminder_id}")
+        log.info("Updated reminder", reminder_id=reminder_id)
 
         # If scheduled_at was updated, reschedule the task. ``model_fields_set``
         # is what the old dict's `"key" in update_data` checked — a field the
@@ -149,7 +153,10 @@ class ReminderScheduler(BaseSchedulerService):
         """Execute a reminder task."""
         try:
             # Import here to avoid circular imports
-            from app.tasks.reminder_tasks import execute_reminder_by_agent
+            # Deferred import: breaks circular import: app.tasks.reminder_tasks reaches back into this service
+            from app.tasks.reminder_tasks import (  # noqa: PLC0415 -- deferred
+                execute_reminder_by_agent,
+            )
 
             # Ensure task is a ReminderModel
             if not isinstance(task, ReminderModel):

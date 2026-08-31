@@ -24,6 +24,7 @@ from typing import Any
 
 from app.constants.log_tags import LogTag
 from app.models.agent_models import AgentConfigurable
+from app.models.chat_models import SourceCategory
 from app.models.user_models import AuthenticatedUser
 from shared.py.wide_events import log
 
@@ -49,6 +50,12 @@ class StreamSession:
     stream_id: str
     kind: RunKind
     executor_spawned: bool = False
+    #: task_id of a ``call_executor`` dispatch this stream put on the
+    #: per-conversation queue instead of running, because another run held the
+    #: busy lock. The counterpart of ``executor_spawned``: exactly one of the two
+    #: is written per dispatch, so a caller can tell "the work started" from "the
+    #: work was deferred" without reading the tool's prose.
+    executor_queued_task_id: str | None = None
     done_event: asyncio.Event = field(default_factory=asyncio.Event)
     tool_events: list[dict[str, Any]] = field(default_factory=list)
     pending_subagents: int = 0
@@ -79,6 +86,23 @@ class StreamSession:
 
 
 @dataclass(frozen=True)
+class RunIdentity:
+    """The caller-supplied identity of one executor run.
+
+    Grouped so ``ExecutorRun.from_configurable`` takes the run's identity as one
+    object beside the LangGraph ``configurable`` it reads the rest from.
+    """
+
+    stream_id: str
+    conversation_id: str
+    kind: RunKind
+    task_id: str | None
+    user_message_id: str | None
+    #: The ORIGINAL live turn's bot message id — see ``ExecutorRun.bot_message_id``.
+    bot_message_id: str | None = None
+
+
+@dataclass(frozen=True)
 class ExecutorRun:
     """Immutable context for one background executor run."""
 
@@ -88,6 +112,11 @@ class ExecutorRun:
     kind: RunKind
     task_id: str | None
     user_message_id: str | None
+    #: The ORIGINAL live turn's bot message id, present only when this run is a
+    #: HIL pause/resume of that turn's executor — see ``executor_runner._record_pause``.
+    #: A plain queued (busy-lock) dispatch never carries this, so its result still
+    #: mints a fresh message keyed on ``task_id``.
+    bot_message_id: str | None = None
     workflow_id: str | None = None
     workflow_title: str = ""
     workflow_notify_on_completion: bool = True
@@ -99,22 +128,22 @@ class ExecutorRun:
     # by result_delivery to attach a completion nudge to a released todo's
     # finish message — see app.services.todos.completion_nudge.
     active_todo_id: str | None = None
+    #: Where the turn that spawned this run came from. Defaults to background
+    #: work, matching ``build_agent_config``: the only callers that leave the
+    #: source unset are the silent background paths.
+    source_category: SourceCategory = SourceCategory.BG
 
     @classmethod
     def from_configurable(
         cls,
         configurable: AgentConfigurable,
         *,
-        stream_id: str,
-        conversation_id: str,
-        kind: RunKind,
-        task_id: str | None,
-        user_message_id: str | None,
+        identity: RunIdentity,
     ) -> "ExecutorRun":
         """Build the run context from a LangGraph ``configurable`` dict."""
         return cls(
-            stream_id=stream_id,
-            conversation_id=conversation_id,
+            stream_id=identity.stream_id,
+            conversation_id=identity.conversation_id,
             user={
                 "user_id": configurable.get("user_id", ""),
                 "email": configurable.get("email", ""),
@@ -124,19 +153,34 @@ class ExecutorRun:
                 # silently falling back to UTC.
                 "timezone": configurable.get("user_timezone"),
             },
-            kind=kind,
-            task_id=task_id,
-            user_message_id=user_message_id,
+            kind=identity.kind,
+            task_id=identity.task_id,
+            user_message_id=identity.user_message_id,
+            bot_message_id=identity.bot_message_id,
             workflow_id=configurable.get("workflow_id"),
             workflow_title=configurable.get("workflow_title", ""),
             workflow_notify_on_completion=configurable.get("workflow_notify_on_completion", True),
             suppress_platform_delivery=bool(configurable.get("suppress_platform_delivery", False)),
             active_todo_id=configurable.get("active_todo_id"),
+            source_category=SourceCategory(
+                configurable.get("source_category") or SourceCategory.BG.value
+            ),
         )
 
     @property
     def is_queued(self) -> bool:
         return self.kind is RunKind.QUEUED
+
+    @property
+    def renders_native_cards(self) -> bool:
+        """Whether this run's items reach the user as cards rather than as words.
+
+        Only first-party clients render tool cards. A bot conversation gets plain
+        text over its platform API and a scheduled workflow gets a notification,
+        so telling comms "these items are already on the user's screen" there
+        suppresses the only copy of the data the user would ever see.
+        """
+        return self.source_category is SourceCategory.UI
 
     @property
     def executor_owns_tool_data(self) -> bool:
@@ -210,6 +254,26 @@ def was_executor_spawned(stream_id: str) -> bool:
     """Return True if call_executor successfully spawned for this stream."""
     session = _sessions.get(stream_id)
     return bool(session and session.executor_spawned)
+
+
+def mark_executor_queued(stream_id: str, task_id: str) -> None:
+    """Record that call_executor queued this task instead of running it."""
+    get_or_create_session(stream_id).executor_queued_task_id = task_id
+
+
+def queued_without_run(stream_id: str) -> str | None:
+    """The task_id this stream queued when nothing ran for it at all.
+
+    ``None`` once an executor actually spawned: the turn then did real work and
+    a queued dispatch alongside it is extra work, not a substitute for it. This
+    is the truthful "nothing happened yet" signal — the alternative, reading the
+    queue acknowledgement out of the tool's returned prose, is a model-visible
+    string that says nothing about what the dispatch actually did.
+    """
+    session = _sessions.get(stream_id)
+    if session is None or session.executor_spawned:
+        return None
+    return session.executor_queued_task_id
 
 
 def signal_executor_done(stream_id: str) -> None:

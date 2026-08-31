@@ -161,14 +161,18 @@ class CalendarTriggerHandler(TriggerHandler):
                     GoogleCalendarEventCreatedPayload.model_validate(data)
                 except Exception as e:
                     log.debug(
-                        f"{LogTag.TRIGGER} Calendar event created payload validation failed: {e}"
+                        f"{LogTag.TRIGGER} Calendar event created payload validation failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
                     )
             elif "event_starting_soon" in event_type.lower():
                 try:
                     GoogleCalendarEventStartingSoonPayload.model_validate(data)
                 except Exception as e:
                     log.debug(
-                        f"{LogTag.TRIGGER} Calendar event starting soon payload validation failed: {e}"
+                        f"{LogTag.TRIGGER} Calendar event starting soon payload validation failed",
+                        error=str(e),
+                        error_type=type(e).__name__,
                     )
 
             workflows: list[Workflow] = []
@@ -176,7 +180,12 @@ class CalendarTriggerHandler(TriggerHandler):
             return workflows
 
         except Exception as e:
-            log.error(f"{LogTag.TRIGGER} Error finding workflows for trigger {trigger_id}: {e}")
+            log.error(
+                f"{LogTag.TRIGGER} Error finding workflows for trigger",
+                trigger_id=trigger_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return []
 
     async def _fetch_user_calendars(self, user_id: str) -> list[str]:
@@ -186,7 +195,8 @@ class CalendarTriggerHandler(TriggerHandler):
         """
         try:
             # Import here to avoid circular imports
-            from app.services import calendar_service
+            # Deferred import: breaks circular import: calendar_service chain re-enters the trigger-handler modules
+            from app.services import calendar_service  # noqa: PLC0415 -- calendar cycle
 
             calendar_list = await calendar_service.list_calendars(user_id)
 
@@ -198,7 +208,12 @@ class CalendarTriggerHandler(TriggerHandler):
             return ["primary"]
 
         except Exception as e:
-            log.error(f"{LogTag.TRIGGER} Failed to fetch calendars for user {user_id}: {e}")
+            log.error(
+                f"{LogTag.TRIGGER} Failed to fetch calendars for user",
+                user_id=user_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return ["primary"]  # Fallback to primary calendar
 
 

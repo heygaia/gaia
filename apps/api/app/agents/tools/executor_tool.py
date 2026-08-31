@@ -25,9 +25,12 @@ from app.agents.core.background.executor_queue import (
 from app.agents.core.background.executor_runner import run_executor_background
 from app.agents.core.background.session import (
     ExecutorRun,
+    RunIdentity,
     RunKind,
+    mark_executor_queued,
     mark_executor_spawned,
 )
+from app.agents.core.subagents.subagent_runner import compose_executor_brief
 from app.constants.cache import (
     EXECUTOR_BUSY_PREFIX,
     EXECUTOR_QUEUE_PREFIX,
@@ -41,10 +44,10 @@ from app.core.websocket_manager import websocket_manager
 from app.db.redis import redis_cache
 from app.models.agent_models import AgentConfigurable, agent_configurable
 from app.services.hil.resolution import cancel_conversation_approvals
+from app.services.workflow.execution_service import get_last_run_brief
+from app.services.workflow.playbook.check import playbook_check_brief
+from app.utils.background_tasks import spawn_background_task
 from shared.py.wide_events import log
-
-# Prevent GC of background tasks
-_executor_tasks: set[asyncio.Task[None]] = set()
 
 # A "stop X, do Y" redirect makes the comms model emit cancel_executor and
 # call_executor in ONE turn. The tool node runs both concurrently, so
@@ -102,6 +105,13 @@ async def call_executor(
         str,
         "The task to execute - describe what needs to be done",
     ],
+    acceptance_criteria: Annotated[
+        list[str],
+        "What must be TRUE for this task to count as done, as a checklist (e.g. "
+        "['the 3 promo emails archived', 'the offer letter flagged']). Give the "
+        "executor a concrete target so it doesn't stop after one step. NEVER "
+        "omit: even a single-step ask needs a concrete done state.",
+    ],
     active_todo_id: Annotated[
         str | None,
         "Optional tracked-todo ID to BIND this executor run to. When set, "
@@ -135,15 +145,47 @@ async def call_executor(
         return "Internal error: conversation context unavailable. Please try again."
 
     task_id = str(uuid4())
+    # Read off the configurable, never taken as a tool argument. Asking the comms
+    # model to re-transcribe the request made the backstop a model output, so it
+    # failed exactly when it was needed: on a pasted billing table it corrupted 3 of
+    # 4 recipient addresses AND omitted the verbatim copy entirely, leaving the
+    # executor to hunt Gmail for addresses the server had all along.
+
+    # A workflow run's threads are reset before it starts, so its previous run
+    # reaches the executor here — as one recorded trace instead of the whole
+    # replayed transcript. Empty for interactive chat and for a first run.
+    workflow_id = base_configurable.get("workflow_id")
+    user_id = base_configurable.get("user_id")
+    is_workflow_run = bool(workflow_id and user_id)
+    last_run = await get_last_run_brief(workflow_id, user_id) if is_workflow_run else ""
+    # Asked here rather than at narration time: write_playbook is an executor
+    # tool, and comms — which narrates the finished result — cannot reach it.
+    # A stopped replay's record rides along verbatim, off the configurable, for
+    # the same reason the verbatim request does: comms paraphrases.
+    playbook_check = (
+        await playbook_check_brief(
+            workflow_id, user_id, fallback_note=base_configurable.get("playbook_fallback")
+        )
+        if is_workflow_run
+        else ""
+    )
+
+    composed_task = compose_executor_brief(
+        task,
+        acceptance_criteria,
+        verbatim_request=base_configurable.get("user_request"),
+        last_run=last_run,
+        playbook_check=playbook_check,
+    )
 
     try:
         return await _dispatch_executor(
-            task=task,
+            task=composed_task,
             task_id=task_id,
             configurable=configurable,
             conversation_id=conversation_id,
         )
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         log.error(f"{LogTag.TOOL} Error dispatching executor", error=str(e))
         # Release only if THIS dispatch's acquire is what holds the lock. An
         # unconditional delete here freed a FOREIGN lock when the failure
@@ -170,6 +212,7 @@ async def _dispatch_executor(
     )
     stream_id = configurable.get("stream_id")
     user_message_id = configurable.get("user_message_id")
+    bot_message_id = configurable.get("bot_message_id")
 
     lock_key = f"{EXECUTOR_BUSY_PREFIX}{conversation_id}"
     lock_value = build_lock_value(stream_id, task_id)
@@ -192,7 +235,7 @@ async def _dispatch_executor(
                 conversation_id=conversation_id,
             )
             return (
-                "That task is already running from this same message — not "
+                "That task is already running from this same message, not "
                 "starting it again. The results are on the way."
             )
 
@@ -218,6 +261,12 @@ async def _dispatch_executor(
                 conversation_id=conversation_id,
                 user_message_id=user_message_id,
             )
+            # The only record that this dispatch deferred rather than ran. The
+            # returned prose below is written for the comms model, so a caller
+            # that has to know whether work started cannot be left to parse it —
+            # a silent/workflow turn reads this instead (see queued_without_run).
+            if stream_id:
+                mark_executor_queued(stream_id, task_id)
             log.info(
                 f"{LogTag.TOOL} Executor busy — task queued",
                 task_id=task_id,
@@ -238,28 +287,42 @@ async def _dispatch_executor(
 
     run = ExecutorRun.from_configurable(
         configurable,
-        stream_id=stream_id or "",
-        conversation_id=conversation_id,
-        kind=RunKind.LIVE,
-        task_id=task_id,
-        user_message_id=user_message_id,
+        identity=RunIdentity(
+            stream_id=stream_id or "",
+            conversation_id=conversation_id,
+            kind=RunKind.LIVE,
+            task_id=task_id,
+            user_message_id=user_message_id,
+            bot_message_id=bot_message_id,
+        ),
     )
-    bg_task = asyncio.create_task(
+    spawn_background_task(
         run_executor_background(
             run=run,
             task=task,
             configurable=configurable,
         ),
     )
-    _executor_tasks.add(bg_task)
-    bg_task.add_done_callback(_executor_tasks.discard)
 
     log.info(
         f"{LogTag.TOOL} Executor dispatched to background",
         task_id=task_id,
         stream_id=stream_id,
     )
-    return f"Task accepted (task_id: {task_id}). I'm on it — you'll get progress updates as I work."
+    # Comms writes its user-facing reply from THIS string, before the executor
+    # has run a single tool — so it must not read as completion, and it has to
+    # name the approval gate the user may be about to see.
+    return (
+        f"Task accepted (task_id: {task_id}). Nothing has run yet: this only means the "
+        "work has STARTED. Do not tell the user anything was sent, created, deleted, or "
+        "finished. Risky actions pause for the user's approval first and they see an "
+        "approval card; if that happens the work waits on them, not on you. Acknowledge "
+        "that you are on it, and say the action is waiting for their approval if one is "
+        "pending. This guidance applies ONLY to this acknowledgment. The real result "
+        "arrives later as its own message and supersedes it completely: by then the gate "
+        "is settled, so report what happened and never ask again for an approval the "
+        "user has already given."
+    )
 
 
 @tool
@@ -268,7 +331,7 @@ async def cancel_executor(
     task_ids: Annotated[
         list[str],
         "List of task_ids to cancel. Empty list = cancel ALL (running + queued).",
-    ] = [],  # noqa: B006
+    ] = [],  # noqa: B006 -- empty default is the cancel-all sentinel; list is never mutated
 ) -> str:
     """Cancel background executor tasks by their task_ids.
 
@@ -343,10 +406,10 @@ async def cancel_executor(
 
         result = f"Cancelled: {', '.join(cancelled)}."
         if skipped_running:
-            result += " Currently running task was not in the cancel list — still running."
+            result += " Currently running task was not in the cancel list, still running."
         return result
 
-    except Exception as e:  # noqa: BLE001
+    except Exception as e:
         # Deliberately no lock cleanup here: this handler used to delete the busy
         # key unconditionally, which freed the lock of a run it had NOT managed to
         # cancel (no cancel_stream reached it), so the old executor kept going
@@ -374,7 +437,7 @@ async def _broadcast_executor_cancelled(
                 "cancelled": cancelled,
             },
         )
-    except Exception as e:  # noqa: BLE001 — best-effort UI signal
+    except Exception as e:  # best-effort UI signal
         log.warning(f"{LogTag.TOOL} Failed to broadcast executor.cancelled", error=str(e))
 
 

@@ -23,7 +23,7 @@ from app.agents.tools.tracked_todo_tools import (
     _build_priority_update,
     _build_recurrence_update,
     _build_scheduled_at_update,
-    _fire_and_forget,
+    _format_create_output,
     _format_first_fire_note,
     _format_tracked_todo_full,
     _get_user_tz,
@@ -43,8 +43,7 @@ from app.agents.tools.tracked_todo_tools import (
     update_tracked_todo_canvas,
 )
 from app.models.todo_models import Priority, TodoDocument, TodoResponse
-
-pytestmark = pytest.mark.unit
+from shared.py.wide_events import spawn_logged_task
 
 _FUTURE = (datetime.now(UTC) + timedelta(days=7)).replace(microsecond=0)
 _FUTURE_ISO = _FUTURE.isoformat()
@@ -626,18 +625,18 @@ class TestGetUserTz:
 
 
 # ---------------------------------------------------------------------------
-# _fire_and_forget
+# spawn_logged_task (wide-event-aware fire-and-forget)
 # ---------------------------------------------------------------------------
 
 
-class TestFireAndForget:
+class TestSpawnBackgroundTask:
     async def test_schedules_the_coroutine_as_a_background_task(self):
         ran = {"done": False}
 
         async def _mark_done():
             ran["done"] = True
 
-        _fire_and_forget(_mark_done())
+        spawn_logged_task("mark_done_test", _mark_done())
         # The task is scheduled, not awaited inline — give the loop one tick.
         import asyncio
 
@@ -663,7 +662,12 @@ class TestResolveCronFirstFire:
     def test_scheduled_at_ignored_note_added_when_provided_alongside_cron(self):
         parsed, notes, error = _resolve_cron_first_fire("0 9 * * *", _FUTURE_ISO, "UTC")
         assert error is None
-        assert any("ignored" in n for n in notes)
+        # Pinned whole: the note has to say WHICH input won and where the time
+        # came from, or the user reads "ignored" and cannot tell what was booked.
+        assert notes == [
+            "scheduled_at was ignored: for a cron recurrence the first fire "
+            "is computed from the cron in the user's timezone."
+        ]
 
     def test_no_note_when_scheduled_at_not_provided(self):
         parsed, notes, error = _resolve_cron_first_fire("0 9 * * *", None, "UTC")
@@ -750,6 +754,22 @@ class TestScheduleExecutionAfterCreate:
 # ---------------------------------------------------------------------------
 
 
+class TestFormatCreateOutput:
+    def test_the_summary_routes_canvas_edits_away_from_filesystem_tools(self) -> None:
+        """The canvas lives on the todo, not on disk. Without this line the model
+        reaches for the file tools, edits nothing the todo can see, and reports
+        success — so the sentence is the guardrail, pinned verbatim."""
+        now = datetime.now(UTC)
+        result = TodoResponse(id="t1", user_id="user-1", title="t", created_at=now, updated_at=now)
+
+        out = _format_create_output(result, None, None, [])
+
+        assert (
+            "Canvas + activity log are stored on this todo. Edit them ONLY via "
+            "update_tracked_todo_canvas(todo_id='t1', ...), never with filesystem tools."
+        ) in out
+
+
 class TestFormatFirstFireNote:
     def test_with_valid_user_timezone(self):
         note = _format_first_fire_note(_FUTURE, "America/New_York")
@@ -811,7 +831,12 @@ class TestApplyCronFirstFire:
         ):
             error = await _apply_cron_first_fire("0 9 * * *", _FUTURE_ISO, "u1", fields, notes)
         assert error is None
-        assert any("ignored" in n for n in notes)
+        # The update path addresses the user directly ("your timezone"), unlike
+        # the create path's third-person copy — same fact, different speaker.
+        assert notes == [
+            "scheduled_at was ignored: for a cron recurrence the first fire "
+            "is computed from the cron in your timezone."
+        ]
         assert isinstance(fields["scheduled_at"], datetime)
 
 

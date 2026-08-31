@@ -110,6 +110,13 @@ async def _reconcile_ambiguous(
             row = candidate_rows.get(memory_id)
             if row is None or similarity < RECONCILE_SIMILARITY_THRESHOLD:
                 continue
+            # Chroma metadata can lag Postgres by one flag update, so liveness
+            # is re-checked on the hydrated row (mirrors the read path): a
+            # superseded/forgotten/expired row must never absorb a new fact.
+            if not row.is_latest or row.is_forgotten:
+                continue
+            if row.forget_after is not None and row.forget_after <= now:
+                continue
             # Byte-identical text at high similarity collapses without the LLM.
             if (
                 exact_target is None
@@ -134,6 +141,14 @@ async def _reconcile_ambiguous(
             )
             continue
 
+        # Every neighbor hydrated to a dead or missing row: nothing live to
+        # reconcile against, so the fact is NEW without an LLM call.
+        if not candidates:
+            decided[index] = ReconciledFact(
+                fact=facts[index], embedding=embeddings[index], outcome=ReconcileOutcome.NEW
+            )
+            continue
+
         pairs.append((facts[index], candidates))
         llm_fact_indexes.append(index)
         allowed_ids_per_pair.append({candidate.id for candidate in candidates})
@@ -141,7 +156,7 @@ async def _reconcile_ambiguous(
     if not pairs:
         return decided
 
-    batch = await reconcile_facts(pairs)
+    batch = await reconcile_facts(pairs, user_id=user_id)
     for pair_index, decision in enumerate(batch.decisions):
         fact_index = llm_fact_indexes[pair_index]
         outcome = decision.decision

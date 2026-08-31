@@ -1,13 +1,13 @@
 """Unit tests for app.agents.tools.workflow_tool."""
 
-from typing import Any
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+from app.constants.log_tags import LogTag
 
 # Pre-import to break circular dependency chain:
 # workflow_tool -> workflow_utils -> workflow.subagent_output -> workflow.__init__ -> service -> workflow_utils
-import app.services.workflow.service  # noqa: F401
+import app.services.workflow.service  # noqa: F401  # side-effect import breaks the documented circular-dependency chain
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -99,7 +99,6 @@ def _make_workflow_mock(**overrides: Any) -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestCreateWorkflow:
     """Tests for the create_workflow tool."""
 
@@ -118,7 +117,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_runner.execute = AsyncMock(return_value="subagent output")
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="send me a summary every morning",
             )
@@ -141,7 +140,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_runner.execute = AsyncMock(return_value="output")
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="create a workflow",
             )
@@ -164,7 +163,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_runner.execute = AsyncMock(return_value="output")
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="create workflow",
             )
@@ -179,7 +178,7 @@ class TestCreateWorkflow:
         with patch(f"{MODULE}.get_stream_writer") as mock_writer_factory:
             mock_writer_factory.return_value = _writer_mock()
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="",
             )
@@ -198,7 +197,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_runner.execute = AsyncMock(side_effect=Exception("Runner crashed"))
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="make a workflow",
             )
@@ -228,7 +227,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_runner.execute = AsyncMock(return_value="output")
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="run daily at 9am",
             )
@@ -257,7 +256,7 @@ class TestCreateWorkflow:
             mock_writer_factory.return_value = writer
             mock_runner.execute = AsyncMock(return_value="output")
 
-            result = await create_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await create_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 user_request="run daily",
             )
@@ -272,7 +271,6 @@ class TestCreateWorkflow:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetWorkflow:
     """Tests for the get_workflow tool."""
 
@@ -290,7 +288,7 @@ class TestGetWorkflow:
             mock_writer_factory.return_value = writer
             mock_service.get_workflow = AsyncMock(return_value=workflow)
 
-            result = await get_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await get_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 workflow_id="wf-1",
             )
@@ -308,7 +306,7 @@ class TestGetWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_service.get_workflow = AsyncMock(return_value=None)
 
-            result = await get_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await get_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 workflow_id="wf-nonexistent",
             )
@@ -327,7 +325,7 @@ class TestGetWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_service.get_workflow = AsyncMock(side_effect=Exception("DB timeout"))
 
-            result = await get_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await get_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 workflow_id="wf-1",
             )
@@ -341,7 +339,6 @@ class TestGetWorkflow:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestExecuteWorkflow:
     """Tests for the execute_workflow tool."""
 
@@ -361,7 +358,7 @@ class TestExecuteWorkflow:
             mock_writer_factory.return_value = writer
             mock_service.execute_workflow = AsyncMock(return_value=exec_result)
 
-            result = await execute_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await execute_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 workflow_id="wf-1",
             )
@@ -380,7 +377,7 @@ class TestExecuteWorkflow:
             mock_writer_factory.return_value = _writer_mock()
             mock_service.execute_workflow = AsyncMock(side_effect=Exception("Workflow disabled"))
 
-            result = await execute_workflow.coroutine(  # type: ignore[attr-defined]
+            result = await execute_workflow.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 workflow_id="wf-1",
             )
@@ -394,7 +391,6 @@ class TestExecuteWorkflow:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchTriggers:
     """Tests for the search_triggers shared tool."""
 
@@ -410,7 +406,7 @@ class TestSearchTriggers:
                 ]
             )
 
-            result = await search_triggers.coroutine(  # type: ignore[attr-defined]
+            result = await search_triggers.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 query="when I get a calendar event",
             )
@@ -426,7 +422,7 @@ class TestSearchTriggers:
         with patch(f"{SHARED_MODULE}.TriggerSearchService") as mock_trigger_svc:
             mock_trigger_svc.search = AsyncMock(side_effect=Exception("ChromaDB unavailable"))
 
-            result = await search_triggers.coroutine(  # type: ignore[attr-defined]
+            result = await search_triggers.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
                 config=_make_config(),
                 query="test",
             )
@@ -440,7 +436,6 @@ class TestSearchTriggers:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListWorkflows:
     """Tests for the list_workflows shared tool."""
 
@@ -458,7 +453,7 @@ class TestListWorkflows:
             mock_writer_factory.return_value = writer
             mock_service.list_workflows = AsyncMock(return_value=([workflow], 1))
 
-            result = await list_workflows.coroutine(config=_make_config())  # type: ignore[attr-defined]
+            result = await list_workflows.coroutine(config=_make_config())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
 
         assert result["success"] is True
         assert result["data"]["total"] == 1
@@ -475,7 +470,91 @@ class TestListWorkflows:
             mock_writer_factory.return_value = _writer_mock()
             mock_service.list_workflows = AsyncMock(side_effect=Exception("Connection refused"))
 
-            result = await list_workflows.coroutine(config=_make_config())  # type: ignore[attr-defined]
+            result = await list_workflows.coroutine(config=_make_config())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
 
         assert result["success"] is False
         assert result["error"] == "fetch_failed"
+
+
+class TestCreateWorkflowPins:
+    """Exact pins for the create_workflow tool's guards, logs, and wiring."""
+
+    async def test_log_context_is_exact(self) -> None:
+        from app.agents.tools.workflow_tool import create_workflow
+
+        parsed = _make_parsed_result(mode="clarifying", message="what time of day?")
+        with (
+            patch(f"{MODULE}.log") as mock_log,
+            patch(f"{MODULE}.get_stream_writer") as mock_writer_factory,
+            patch(f"{MODULE}.parse_subagent_response", return_value=parsed),
+            patch(f"{MODULE}.WorkflowSubagentRunner") as mock_runner,
+        ):
+            mock_writer_factory.return_value = _writer_mock()
+            mock_runner.execute = AsyncMock(return_value="out")
+            await cast(Any, create_workflow).coroutine(
+                config=_make_config(), user_request="every morning"
+            )
+
+        mock_log.set.assert_called_once_with(tool={"name": "create_workflow", "action": "create"})
+        mock_log.info.assert_any_call(f"{LogTag.TOOL} create_workflow: Executing")
+
+    async def test_empty_whitespace_request_returns_exact_error(self) -> None:
+        from app.agents.tools.workflow_tool import create_workflow
+
+        result = await cast(Any, create_workflow).coroutine(
+            config=_make_config(), user_request="   "
+        )
+        assert result["success"] is False
+        assert result["error"] == "missing_request"
+        assert (
+            result["message"]
+            == "user_request is required. Pass the user's words describing what workflow they want."
+        )
+
+    async def test_subagent_receives_the_exact_context(self) -> None:
+        from app.agents.tools.workflow_tool import create_workflow
+
+        parsed = _make_parsed_result(mode="clarifying", message="which services?")
+        with (
+            patch(f"{MODULE}.get_stream_writer") as mock_writer_factory,
+            patch(f"{MODULE}.parse_subagent_response", return_value=parsed),
+            patch(f"{MODULE}.WorkflowSubagentRunner") as mock_runner,
+        ):
+            mock_writer_factory.return_value = writer = _writer_mock()
+            mock_runner.execute = AsyncMock(return_value="out")
+            await cast(Any, create_workflow).coroutine(
+                config=_make_config(), user_request="daily digest"
+            )
+
+        kwargs = mock_runner.execute.await_args.kwargs
+        assert kwargs["user_id"] == "507f1f77bcf86cd799439011"
+        # The subagent receives the structured task prompt with the request embedded.
+        assert '"daily digest"' in kwargs["task"]
+        # Every field the subagent runs on: dropping any one of them degrades the
+        # workflow it drafts (wrong name in the copy, wrong schedule hour, no
+        # inherited agent config) without failing anything else here.
+        ctx = kwargs["context"]
+        assert ctx.stream_writer is writer
+        assert ctx.user_name == "Test User"
+        assert ctx.user_timezone == "+05:30"
+        assert ctx.base_configurable == _make_config()["configurable"]
+
+    async def test_parsed_mode_log_carries_the_mode(self) -> None:
+        from app.agents.tools.workflow_tool import create_workflow
+
+        parsed = _make_parsed_result(mode="finalized", draft=_make_draft())
+        with (
+            patch(f"{MODULE}.log") as mock_log,
+            patch(f"{MODULE}.get_stream_writer") as mock_writer_factory,
+            patch(f"{MODULE}.parse_subagent_response", return_value=parsed),
+            patch(f"{MODULE}.WorkflowSubagentRunner") as mock_runner,
+        ):
+            mock_writer_factory.return_value = _writer_mock()
+            mock_runner.execute = AsyncMock(return_value="out")
+            await cast(Any, create_workflow).coroutine(
+                config=_make_config(), user_request="weekly report"
+            )
+
+        mode_logs = [c for c in mock_log.info.call_args_list if "parsed mode" in str(c.args[0])]
+        assert len(mode_logs) == 1
+        assert mode_logs[0].kwargs["mode"] == "finalized"

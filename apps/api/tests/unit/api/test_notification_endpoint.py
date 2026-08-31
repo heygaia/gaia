@@ -20,8 +20,24 @@ from app.models.notification.notification_models import (
     NotificationType,
     NotificationView,
 )
+from app.services.analytics_service import AnalyticsEvents
 
 NOTIF_BASE = "/api/v1/notifications"
+ANALYTICS_PATCH = "app.api.v1.endpoints.notification.capture_context_event"
+
+
+@pytest.fixture(autouse=True)
+def _noop_analytics():
+    """Neutralize capture_context_event for every test in this module.
+
+    The test app runs a no-op lifespan, so the PostHog provider is never
+    registered; a bare capture_context_event call would raise KeyError on the
+    missing provider. Tests that assert on captures patch the call site again
+    and assert on their own mock.
+    """
+    with patch(ANALYTICS_PATCH):
+        yield
+
 
 FAKE_USER_ID = "507f1f77bcf86cd799439011"
 
@@ -62,7 +78,6 @@ def _make_record(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetNotifications:
     """GET /api/v1/notifications"""
 
@@ -143,7 +158,6 @@ class TestGetNotifications:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetChannelPreferences:
     """GET /api/v1/notifications/preferences/channels"""
 
@@ -182,7 +196,6 @@ class TestGetChannelPreferences:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateChannelPreferences:
     """PUT /api/v1/notifications/preferences/channels"""
 
@@ -207,14 +220,16 @@ class TestUpdateChannelPreferences:
             "slack": False,
             "email": False,
         }
-        response = await client.put(
-            f"{NOTIF_BASE}/preferences/channels",
-            json={"telegram": False, "discord": True},
-        )
+        with patch("app.api.v1.endpoints.notification.schedule_account_sync") as mock_schedule_sync:
+            response = await client.put(
+                f"{NOTIF_BASE}/preferences/channels",
+                json={"telegram": False, "discord": True},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["telegram"] is False
         assert data["discord"] is True
+        mock_schedule_sync.assert_called_once_with(FAKE_USER_ID)
 
     @patch(
         "app.api.v1.endpoints.notification.fetch_channel_preferences",
@@ -238,12 +253,51 @@ class TestUpdateChannelPreferences:
         assert response.status_code == 500
 
 
+class TestNotificationAnalytics:
+    """Analytics captures on notification preference updates."""
+
+    @patch(
+        "app.api.v1.endpoints.notification.fetch_channel_preferences",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "app.api.v1.endpoints.notification.user_repository.set_channel_preferences",
+        new_callable=AsyncMock,
+    )
+    async def test_update_channel_preferences_captures_notifications_toggled(
+        self,
+        mock_set_prefs: AsyncMock,
+        mock_fetch: AsyncMock,
+        client: AsyncClient,
+    ):
+        mock_fetch.return_value = {
+            "telegram": False,
+            "discord": True,
+            "whatsapp": False,
+            "slack": False,
+        }
+        with patch(ANALYTICS_PATCH) as mock_capture:
+            response = await client.put(
+                f"{NOTIF_BASE}/preferences/channels",
+                json={"telegram": False, "discord": True},
+            )
+
+        assert response.status_code == 200
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.NOTIFICATION_PREFERENCE_UPDATED,
+            {
+                "changed_channel_count": 2,
+                "channels_enabled": ["discord"],
+                "channels_disabled": ["telegram"],
+            },
+        )
+
+
 # ---------------------------------------------------------------------------
 # POST /notifications/{notification_id}/actions/{action_id}/execute
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestExecuteAction:
     """POST /api/v1/notifications/{id}/actions/{aid}/execute"""
 
@@ -289,7 +343,6 @@ class TestExecuteAction:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestMarkAsRead:
     """POST /api/v1/notifications/{id}/read"""
 
@@ -330,7 +383,6 @@ class TestMarkAsRead:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestBulkActions:
     """POST /api/v1/notifications/bulk-actions"""
 
@@ -380,7 +432,6 @@ class TestBulkActions:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestRegisterDevice:
     """POST /api/v1/notifications/register-device"""
 
@@ -450,7 +501,6 @@ class TestRegisterDevice:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUnregisterDevice:
     """POST /api/v1/notifications/unregister-device"""
 
@@ -499,7 +549,6 @@ class TestUnregisterDevice:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetNotification:
     """GET /api/v1/notifications/{id}"""
 

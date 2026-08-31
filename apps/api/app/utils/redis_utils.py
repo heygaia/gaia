@@ -30,16 +30,26 @@ class RedisPoolManager:
 
         async with cls._lock:
             if cls._pool is None:
-                from arq import create_pool
-                from arq.connections import RedisSettings
+                # arq loads only when the lazy pool is first created.
+                from arq import create_pool  # noqa: PLC0415 -- arq loads only when the
+                from arq.connections import (  # noqa: PLC0415 -- arq loads only when the lazy pool is first created
+                    RedisSettings,
+                )
 
-                from app.config.settings import settings
+                # Settings load deferred until a pool is actually created.
+                from app.config.settings import (  # noqa: PLC0415 -- settings on demand
+                    settings,
+                )
 
                 try:
                     redis_settings = RedisSettings.from_dsn(settings.REDIS_URL)
                     cls._pool = await create_pool(redis_settings)
                     log.info(f"{LogTag.STORAGE} Redis pool created successfully")
                 except Exception as e:
-                    log.error(f"{LogTag.STORAGE} Failed to create Redis pool: {e}")
+                    log.error(
+                        f"{LogTag.STORAGE} Failed to create Redis pool",
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
                     raise
             return cls._pool

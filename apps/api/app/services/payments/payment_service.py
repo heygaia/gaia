@@ -3,6 +3,7 @@ Streamlined Dodo Payments integration service.
 Clean, simple, and maintainable.
 """
 
+import asyncio
 from typing import Any, Literal
 
 from dodopayments import DodoPayments
@@ -10,20 +11,31 @@ from fastapi import HTTPException
 
 from app.config.settings import settings
 from app.constants.cache import (
+    ACTIVE_PLANS_CACHE_KEY,
+    ALL_PLANS_CACHE_KEY,
     SUBSCRIPTION_PLAN_CACHE_PREFIX,
     SUBSCRIPTION_PLAN_CACHE_TTL,
+    UPGRADE_LINK_CACHE_PREFIX,
+    UPGRADE_LINK_CACHE_TTL,
 )
 from app.constants.log_tags import LogTag
+from app.constants.payments import PAYMENT_HISTORY_LIMIT
 from app.db.redis import redis_cache
 from app.db.repositories.plans import plan_repository
 from app.db.repositories.subscriptions import subscription_repository
 from app.db.repositories.users import user_repository
 from app.models.payment_models import (
     CreateSubscriptionResponse,
+    PaymentHistoryEntry,
     PaymentVerificationResponse,
+    PlanDuration,
     PlanResponse,
     PlanType,
+    ProCheckout,
+    SubscriptionDetails,
+    SubscriptionDocument,
     SubscriptionStatus,
+    SubscriptionUpdate,
     UserSubscriptionStatus,
 )
 from app.services.email import send_pro_subscription_email
@@ -39,16 +51,31 @@ class DodoPaymentService:
                 "live_mode" if settings.ENV == "production" else "test_mode"
             )
 
-            self.client = DodoPayments(
-                bearer_token=settings.DODO_PAYMENTS_API_KEY,
-                environment=environment,
-            )
+            # DODO_PAYMENTS_BASE_URL lets the SDK point at a non-default
+            # endpoint (a stub or sandbox mirror) instead of the real API —
+            # the same override pattern the LLM client uses. When set it wins
+            # over the environment-derived URL; the SDK requires the
+            # `environment` arg be omitted in that case.
+            if settings.DODO_PAYMENTS_BASE_URL:
+                self.client = DodoPayments(
+                    bearer_token=settings.DODO_PAYMENTS_API_KEY,
+                    base_url=settings.DODO_PAYMENTS_BASE_URL,
+                )
+            else:
+                self.client = DodoPayments(
+                    bearer_token=settings.DODO_PAYMENTS_API_KEY,
+                    environment=environment,
+                )
         except Exception as e:
-            log.error(f"{LogTag.PAYMENT} Failed to instantiate dodo payments: {e}")
+            log.error(
+                f"{LogTag.PAYMENT} Failed to instantiate dodo payments",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
     async def get_plans(self, active_only: bool = True) -> list[PlanResponse]:
         """Get subscription plans with caching."""
-        cache_key = f"plans:{'active' if active_only else 'all'}"
+        cache_key = ACTIVE_PLANS_CACHE_KEY if active_only else ALL_PLANS_CACHE_KEY
 
         # Try cache first
         cached = await redis_cache.get(cache_key)
@@ -140,10 +167,19 @@ class DodoPaymentService:
                 # Pre-apply a known discount (customer can still edit it on the page)
                 params["discount_code"] = discount_code
 
-            checkout_session = self.client.checkout_sessions.create(**params)
+            # The Dodo SDK's client is synchronous — run it off the event loop so a
+            # slow HTTP round-trip doesn't stall other requests.
+            checkout_session = await asyncio.to_thread(
+                self.client.checkout_sessions.create, **params
+            )
         except Exception as e:
-            log.error(f"{LogTag.PAYMENT} Error creating Dodo checkout session: {e}")
-            raise HTTPException(502, f"Payment service error: {e!s}")
+            log.error(
+                f"{LogTag.PAYMENT} Error creating Dodo checkout session",
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
+            raise HTTPException(502, f"Payment service error: {e!s}") from e
 
         # Look up plan name for richer logging
         plan_name: str | None = None
@@ -170,6 +206,65 @@ class DodoPaymentService:
             status="payment_link_created",
         )
 
+    async def cancel_subscription(self, user_id: str) -> UserSubscriptionStatus:
+        """Cancel the user's subscription in Dodo and mirror it locally.
+
+        Cancels at the end of the current billing period (``cancel_at_next_billing_date``)
+        so the user keeps Pro access until the period ends — matching the Terms'
+        auto-renewal promise. Dodo returns the updated subscription; the local
+        row is synced with it.
+        """
+        subscription = await subscription_repository.get_active_for_user(user_id)
+        if not subscription:
+            raise HTTPException(404, "No active subscription to cancel")
+
+        if not subscription.dodo_subscription_id:
+            raise HTTPException(400, "Subscription has no Dodo id to cancel")
+
+        try:
+            # The Dodo SDK's client is synchronous — run it off the event loop
+            # so a slow HTTP round-trip doesn't stall other requests.
+            updated = await asyncio.to_thread(
+                self.client.subscriptions.update,
+                subscription.dodo_subscription_id,
+                cancel_at_next_billing_date=True,
+            )
+        except Exception as e:
+            log.error(
+                f"{LogTag.PAYMENT} Error cancelling subscription in Dodo",
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            raise HTTPException(502, f"Payment service error: {e!s}") from e
+
+        # Mirror Dodo's authoritative state locally. cancelled_at is only set
+        # when Dodo supplied one — leaving it unset keeps it out of the $set.
+        update = SubscriptionUpdate(status=updated.status, cancel_at_next_billing_date=True)
+        if updated.cancelled_at:
+            update.cancelled_at = updated.cancelled_at.isoformat()
+        if updated.next_billing_date:
+            update.next_billing_date = updated.next_billing_date.isoformat()
+
+        updated_local = await subscription_repository.apply_update_by_dodo_id(
+            subscription.dodo_subscription_id, update
+        )
+        if not updated_local:
+            # Dodo accepted the cancellation but no local row matched — surfacing
+            # success here would leave the user's status stale and silently drop
+            # the change. Fail loud so it gets attention instead of looking done.
+            log.error(
+                f"{LogTag.PAYMENT} Cancellation not mirrored locally; no subscription row matched",
+                dodo_subscription_id=subscription.dodo_subscription_id,
+                user_id=user_id,
+            )
+            raise HTTPException(
+                502,
+                "Cancellation processed by Dodo but could not be recorded locally",
+            )
+        await self.invalidate_plan_cache_by_dodo_id(subscription.dodo_subscription_id)
+
+        return await self.get_user_subscription_status(user_id)
+
     async def verify_payment_completion(self, user_id: str) -> PaymentVerificationResponse:
         """Check payment completion status from webhook data."""
         subscription = await subscription_repository.get_latest_active_for_user(user_id)
@@ -189,7 +284,11 @@ class DodoPaymentService:
                     user_email=user.email,
                 )
         except Exception as e:
-            log.debug(f"{LogTag.PAYMENT} Failed to send welcome email: {e}")
+            log.debug(
+                f"{LogTag.PAYMENT} Failed to send welcome email",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
         return PaymentVerificationResponse(
             payment_completed=True,
@@ -215,15 +314,7 @@ class DodoPaymentService:
                 status=SubscriptionStatus.PENDING,
             )
 
-        # Get plan details
-        try:
-            plans = await self.get_plans(active_only=False)
-            plan = next(
-                (p for p in plans if p.dodo_product_id == subscription.product_id),
-                None,
-            )
-        except Exception:
-            plan = None
+        plan = await self._plan_for_subscription(subscription)
 
         return UserSubscriptionStatus(
             user_id=user_id,
@@ -236,6 +327,152 @@ class DodoPaymentService:
             has_subscription=True,
             plan_type=PlanType.PRO,
             status=SubscriptionStatus(subscription.status),
+        )
+
+    async def _plan_for_subscription(
+        self, subscription: SubscriptionDocument
+    ) -> PlanResponse | None:
+        """The catalogue entry this subscription was bought from, if it still exists.
+
+        The catalogue is decoration on top of the authoritative subscription row —
+        the user is subscribed whether or not their plan can be resolved — so a
+        catalogue read that fails degrades to "no plan details" instead of taking
+        the whole status lookup down. It is logged, never swallowed.
+        """
+        try:
+            plans = await self.get_plans(active_only=False)
+        except Exception as e:
+            # Bounded fields, not provider error text: the warning stays
+            # queryable without persisting unbounded upstream payloads.
+            log.warning(
+                f"{LogTag.PAYMENT} Could not resolve the plan behind a subscription",
+                dodo_subscription_id=subscription.dodo_subscription_id,
+                failure_reason="plan_resolution_failed",
+                error_type=type(e).__name__,
+            )
+            return None
+        return next((p for p in plans if p.dodo_product_id == subscription.product_id), None)
+
+    async def get_pro_plan(self, billing_cycle: PlanDuration) -> PlanResponse:
+        """The purchasable Pro plan for this billing cycle.
+
+        Identified by shape rather than by name: Free and Enterprise are both
+        priced at 0 with no Dodo product, so the one active plan that costs money
+        and has a product id for a given cycle IS Pro (``PlanType`` has no other
+        paid tier).
+        """
+        plans = await self.get_plans(active_only=True)
+        plan = next(
+            (
+                candidate
+                for candidate in plans
+                if candidate.duration == billing_cycle
+                and candidate.amount > 0
+                and candidate.dodo_product_id
+            ),
+            None,
+        )
+        if plan is None:
+            log.error(
+                f"{LogTag.PAYMENT} No purchasable plan in the catalogue",
+                billing_cycle=billing_cycle,
+                active_plans=len(plans),
+            )
+            raise HTTPException(500, f"No purchasable {billing_cycle} plan is configured")
+        return plan
+
+    async def create_pro_checkout(
+        self, user_id: str, billing_cycle: PlanDuration = PlanDuration.MONTHLY
+    ) -> ProCheckout:
+        """Mint (or reuse) a hosted checkout session that upgrades this user to Pro.
+
+        Cached for an hour per user and cycle so asking twice — or hitting a usage
+        wall repeatedly — reuses one session instead of stranding a new one in Dodo
+        each time. The plan is cached alongside the session so a cached hit quotes
+        the price the session was minted under, never a newer catalogue read.
+        """
+        cache_key = f"{UPGRADE_LINK_CACHE_PREFIX}{user_id}:{billing_cycle}"
+        cached = await redis_cache.get(cache_key)
+        if isinstance(cached, dict) and "plan" in cached and "checkout" in cached:
+            return ProCheckout(
+                plan=PlanResponse.model_validate(cached["plan"]),
+                checkout=CreateSubscriptionResponse.model_validate(cached["checkout"]),
+            )
+
+        plan = await self.get_pro_plan(billing_cycle)
+        checkout = await self.create_subscription(user_id, plan.dodo_product_id)
+        await redis_cache.set(
+            cache_key,
+            {"plan": plan.model_dump(), "checkout": checkout.model_dump()},
+            ttl=UPGRADE_LINK_CACHE_TTL,
+        )
+        return ProCheckout(plan=plan, checkout=checkout)
+
+    async def get_payment_history(
+        self, user_id: str, limit: int = PAYMENT_HISTORY_LIMIT
+    ) -> list[PaymentHistoryEntry]:
+        """This user's charges, newest first.
+
+        Dodo is the ledger — nothing local records individual charges — so this
+        reads ``payments.list`` for every subscription the user has ever had,
+        including cancelled and expired ones.
+        """
+        subscriptions = await subscription_repository.list_for_user(user_id)
+        dodo_ids = [sub.dodo_subscription_id for sub in subscriptions if sub.dodo_subscription_id]
+        if not dodo_ids:
+            return []
+
+        pages = await asyncio.gather(
+            *(
+                asyncio.to_thread(
+                    self.client.payments.list, subscription_id=dodo_id, page_size=limit
+                )
+                for dodo_id in dodo_ids
+            )
+        )
+        entries = [
+            PaymentHistoryEntry(
+                payment_id=payment.payment_id,
+                status=payment.status,
+                amount=payment.total_amount,
+                currency=payment.currency,
+                created_at=payment.created_at,
+                payment_method=payment.payment_method,
+            )
+            for page in pages
+            for payment in page.items
+        ]
+        entries.sort(key=lambda entry: entry.created_at, reverse=True)
+        return entries[:limit]
+
+    async def get_subscription_details(
+        self, user_id: str, history_limit: int = PAYMENT_HISTORY_LIMIT
+    ) -> SubscriptionDetails:
+        """Plan, billing state, and recent charges — the flattened view GAIA reads."""
+        subscription = await subscription_repository.get_active_for_user(user_id)
+        if not subscription:
+            # No ACTIVE subscription — but a former subscriber's charges still
+            # live in Dodo under their cancelled/expired subscription ids, so the
+            # ledger is read before declaring this user plain free.
+            payments = await self.get_payment_history(user_id, history_limit)
+            return SubscriptionDetails(
+                plan_type=PlanType.FREE, is_subscribed=False, payments=payments
+            )
+
+        plan = await self._plan_for_subscription(subscription)
+        payments = await self.get_payment_history(user_id, history_limit)
+
+        return SubscriptionDetails(
+            plan_type=PlanType.PRO,
+            is_subscribed=True,
+            status=SubscriptionStatus(subscription.status),
+            plan_name=plan.name if plan else None,
+            amount=plan.amount if plan else None,
+            currency=plan.currency if plan else None,
+            billing_cycle=plan.duration if plan else None,
+            next_billing_date=subscription.next_billing_date,
+            cancel_at_next_billing_date=bool(subscription.cancel_at_next_billing_date),
+            payments=payments,
         )
 
     async def get_cached_plan_type(self, user_id: str) -> PlanType:

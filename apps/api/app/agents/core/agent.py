@@ -8,6 +8,7 @@ Both share _core_agent_logic() for common setup (messages, graph, config).
 
 import asyncio
 from collections.abc import AsyncGenerator
+from dataclasses import dataclass
 import json
 from typing import Any, cast
 from uuid import uuid4
@@ -20,13 +21,19 @@ from app.agents.core.background.executor_capture import (
     register_executor_capture,
     teardown_executor_capture,
 )
+from app.agents.core.background.session import queued_without_run
 from app.agents.core.graph_manager import CompiledAgentGraph, GraphManager
 from app.agents.core.messages import construct_langchain_messages
-from app.agents.llm.plan_model import apply_dev_model_override, apply_plan_model
+from app.agents.llm.lane import AgentRole, dev_model_id, dev_option_for
 from app.config.langfuse import trace_id_for_message
 from app.config.settings import settings
+from app.constants.agents import PLAYBOOK_FALLBACK_CONTEXT_KEY
 from app.constants.log_tags import LogTag
 from app.helpers.agent_helpers import (
+    AgentIdentity,
+    AgentLane,
+    AgentTracing,
+    AgentTurn,
     build_agent_config,
     build_initial_state,
     execute_graph_silent,
@@ -37,25 +44,48 @@ from app.models.agent_models import (
     AgentConfigurable,
     AgentRunnableConfig,
     ExecutionMode,
+    SilentRunResult,
     agent_configurable,
 )
 from app.models.message_models import MessageDict, MessageRequestWithHistory
-from app.models.models_models import ModelConfig
 from app.models.user_models import AuthenticatedUser
+from app.services.analytics_service import AnalyticsEvents, capture_event
+from app.utils.user_preferences_utils import onboarding_preferences
 from shared.py.wide_events import log
+
+
+@dataclass(frozen=True)
+class AgentRunOptions:
+    """The optional settings of one agent run, shared by every entry point.
+
+    ``trigger_context`` is the workflow/todo/trigger data of a background run;
+    ``usage_metadata_callback`` collects token usage; ``source`` names the
+    surface the turn came from; the two ``langfuse_*`` fields seed the trace.
+    """
+
+    usage_metadata_callback: UsageMetadataCallbackHandler | None = None
+    trigger_context: dict[str, Any] | None = None
+    source: str | None = None
+    langfuse_trace_id: str | None = None
+    langfuse_tags: list[str] | None = None
+
+
+@dataclass(frozen=True)
+class StreamMessageIds:
+    """The ids a streaming turn carries: the stream (for cancellation), the
+    user's message (for reply linking) and the assistant's message (for the
+    Langfuse trace and HIL resume)."""
+
+    stream_id: str | None = None
+    user_message_id: str | None = None
+    bot_message_id: str | None = None
 
 
 async def _core_agent_logic(
     request: MessageRequestWithHistory,
     conversation_id: str,
     user: AuthenticatedUser,
-    *,
-    user_model_config: ModelConfig | None = None,
-    trigger_context: dict[str, Any] | None = None,
-    usage_metadata_callback: UsageMetadataCallbackHandler | None = None,
-    source: str | None = None,
-    langfuse_trace_id: str | None = None,
-    langfuse_tags: list[str] | None = None,
+    options: AgentRunOptions | None = None,
 ) -> tuple[CompiledAgentGraph, dict[str, Any], AgentRunnableConfig]:
     """Shared setup for streaming and silent execution.
 
@@ -66,7 +96,6 @@ async def _core_agent_logic(
         request: Message request with conversation history and file data
         conversation_id: Unique identifier for the conversation thread
         user: User information dictionary with ID, email, name, and home timezone
-        user_model_config: Optional model configuration for inference
         trigger_context: Optional context data from workflow triggers
         langfuse_trace_id: Seed for the Langfuse trace; forwarded into the
             config metadata + configurable so child agents inherit it.
@@ -78,6 +107,13 @@ async def _core_agent_logic(
         - initial_state: Prepared state dictionary with all context
         - config: Configuration dictionary with user settings and tokens
     """
+    options = options or AgentRunOptions()
+    trigger_context = options.trigger_context
+    usage_metadata_callback = options.usage_metadata_callback
+    source = options.source
+    langfuse_trace_id = options.langfuse_trace_id
+    langfuse_tags = options.langfuse_tags
+
     user_id = user.get("user_id")
 
     # Extract active todo binding + execution mode from trigger_context (scheduled
@@ -118,21 +154,45 @@ async def _core_agent_logic(
         request, user_id or "", conversation_id, history, trigger_context
     )
 
-    # Build config with optional tokens
-    config = build_agent_config(
-        conversation_id=conversation_id,
-        user=user,
-        user_model_config=user_model_config,
-        usage_metadata_callback=usage_metadata_callback,
-        agent_name="comms_agent",
-        selected_tool=request.selectedTool,
-        tool_category=request.toolCategory,
-        active_todo_id=active_todo_id,
-        execution_mode=execution_mode,
-        source=source,
-        user_messages=recent_user_messages(request.messages, request.message),
-        langfuse_trace_id=langfuse_trace_id,
-        langfuse_tags=langfuse_tags,
+    # DEV-ONLY: the chat-header model selector picks a model per role. It wins over
+    # plan routing inside resolve_lane. Never reached in production.
+    dev_option = (
+        dev_option_for(request.comms_model, request.use_default_models)
+        if settings.ENV == "development"
+        else None
+    )
+
+    # Established here (comms already has the full user document) so the
+    # executor and every subagent it hands off to inherit it — the worker
+    # tiers' context sections read it off configurable, not off a user doc
+    # they never have.
+    user_preferences, writing_style = onboarding_preferences(user.get("onboarding"))
+
+    # This is the top-level run, so build_agent_config resolves the comms lane
+    # here; the executor and every subagent inherit it whole.
+    config = await build_agent_config(
+        identity=AgentIdentity(
+            conversation_id=conversation_id,
+            user=user,
+            agent_name="comms_agent",
+        ),
+        lane=AgentLane(role=AgentRole.COMMS, dev_option=dev_option),
+        turn=AgentTurn(
+            selected_tool=request.selectedTool,
+            tool_category=request.toolCategory,
+            active_todo_id=active_todo_id,
+            execution_mode=execution_mode,
+            source=source,
+            user_messages=recent_user_messages(request.messages, request.message),
+            user_request=request.message,
+            user_preferences=user_preferences,
+            writing_style=writing_style,
+        ),
+        tracing=AgentTracing(
+            usage_metadata_callback=usage_metadata_callback,
+            langfuse_trace_id=langfuse_trace_id,
+            langfuse_tags=langfuse_tags,
+        ),
     )
 
     # The live bag build_agent_config just produced — mutated below, so it is
@@ -140,19 +200,13 @@ async def _core_agent_logic(
     # whose empty-dict fallback would swallow the writes.
     configurable = cast(AgentConfigurable, config["configurable"])
 
-    # Route the model by subscription plan (Free -> Gemini, Pro -> MiniMax).
-    # Hardcoded policy; the executor and subagents inherit it via the configurable.
-    await apply_plan_model(configurable, user_id)
-
-    # DEV-ONLY: the chat-header model selector overrides comms/executor models per
-    # request, winning over the plan model above. Stripped to a no-op in production.
-    if settings.ENV == "development":
-        apply_dev_model_override(
-            configurable,
-            comms_model=request.comms_model,
-            executor_model=request.executor_model,
-            use_defaults=request.use_default_models,
-        )
+    # DEV-ONLY: the executor builds its own configurable and would otherwise
+    # inherit comms's lane, so the executor's own dev choice rides down here and
+    # prepare_executor_execution resolves it into that run's lane.
+    if settings.ENV == "development" and (
+        executor_dev := dev_model_id(request.executor_model, request.use_default_models)
+    ):
+        configurable["dev_executor_model"] = executor_dev
 
     # Workflow runs carry their id/title so the background executor's delivery
     # path can route the final result to the workflow-completion notification
@@ -163,6 +217,7 @@ async def _core_agent_logic(
         configurable["workflow_notify_on_completion"] = trigger_context.get(
             "workflow_notify_on_completion", True
         )
+        configurable["playbook_fallback"] = trigger_context.get(PLAYBOOK_FALLBACK_CONTEXT_KEY)
 
     # Night-shift prep runs work silently: their result is reported by the
     # morning briefing, not pinged per-todo as it finishes.
@@ -170,14 +225,14 @@ async def _core_agent_logic(
         config["configurable"]["suppress_platform_delivery"] = True
 
     log.set(
-        agent=dict(
-            model=configurable.get("model_name"),
-            has_workflow=bool(request.selectedWorkflow),
-            has_trigger_context=bool(trigger_context),
-            has_calendar_event=bool(request.selectedCalendarEvent),
-            has_reply=bool(request.replyToMessage),
-            history_message_count=len(history),
-        )
+        agent={
+            "model": configurable.get("model"),
+            "has_workflow": bool(request.selectedWorkflow),
+            "has_trigger_context": bool(trigger_context),
+            "has_calendar_event": bool(request.selectedCalendarEvent),
+            "has_reply": bool(request.replyToMessage),
+            "history_message_count": len(history),
+        }
     )
 
     return graph, initial_state, config
@@ -187,13 +242,8 @@ async def call_agent(
     request: MessageRequestWithHistory,
     conversation_id: str,
     user: AuthenticatedUser,
-    *,
-    user_model_config: ModelConfig | None = None,
-    usage_metadata_callback: UsageMetadataCallbackHandler | None = None,
-    stream_id: str | None = None,
-    user_message_id: str | None = None,
-    bot_message_id: str | None = None,
-    source: str | None = None,
+    options: AgentRunOptions | None = None,
+    ids: StreamMessageIds | None = None,
 ) -> AsyncGenerator[str, None]:
     """
     Execute agent in streaming mode for interactive chat.
@@ -209,6 +259,16 @@ async def call_agent(
 
     Returns an AsyncGenerator that yields SSE-formatted streaming data.
     """
+    options = options or AgentRunOptions()
+    ids = ids or StreamMessageIds()
+    usage_metadata_callback, source = options.usage_metadata_callback, options.source
+    stream_id, user_message_id, bot_message_id = (
+        ids.stream_id,
+        ids.user_message_id,
+        ids.bot_message_id,
+    )
+
+    user_id = user.get("user_id")
     try:
         langfuse_trace_id = trace_id_for_message(bot_message_id) if bot_message_id else None
 
@@ -216,11 +276,12 @@ async def call_agent(
             request,
             conversation_id,
             user,
-            user_model_config=user_model_config,
-            usage_metadata_callback=usage_metadata_callback,
-            source=source,
-            langfuse_trace_id=langfuse_trace_id,
-            langfuse_tags=["comms_agent", settings.ENV],
+            AgentRunOptions(
+                usage_metadata_callback=usage_metadata_callback,
+                source=source,
+                langfuse_trace_id=langfuse_trace_id,
+                langfuse_tags=["comms_agent", settings.ENV],
+            ),
         )
 
         # The live bag (see the same cast in _core_agent_logic) — mutated, so
@@ -235,10 +296,53 @@ async def call_agent(
         if user_message_id:
             configurable["user_message_id"] = user_message_id
 
-        return execute_graph_streaming(graph, initial_state, config)
+        # Add bot_message_id so a HIL pause on this turn's executor can later
+        # resume onto this SAME message instead of minting a rival one.
+        if bot_message_id:
+            configurable["bot_message_id"] = bot_message_id
+
+        stream = execute_graph_streaming(graph, initial_state, config)
+        if not user_id:
+            return stream
+
+        capture_event(
+            user_id,
+            AnalyticsEvents.AGENT_RUN_STARTED,
+            {"agent": "comms", "mode": "interactive", "conversation_id": conversation_id},
+        )
+
+        async def _tracked_stream() -> AsyncGenerator[str, None]:
+            """Yield the comms SSE stream, capturing the run's terminal outcome."""
+            try:
+                async for chunk in stream:
+                    yield chunk
+            except Exception:
+                capture_event(
+                    user_id,
+                    AnalyticsEvents.AGENT_RUN_FAILED,
+                    {"agent": "comms", "mode": "interactive", "conversation_id": conversation_id},
+                )
+                raise
+            capture_event(
+                user_id,
+                AnalyticsEvents.AGENT_RUN_COMPLETED,
+                {"agent": "comms", "mode": "interactive", "conversation_id": conversation_id},
+            )
+
+        return _tracked_stream()
 
     except Exception as exc:
-        log.error(f"{LogTag.AGENT} Error when calling agent: {exc}")
+        log.error(
+            f"{LogTag.AGENT} Error when calling agent",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        if user_id:
+            capture_event(
+                user_id,
+                AnalyticsEvents.AGENT_RUN_FAILED,
+                {"agent": "comms", "mode": "interactive", "conversation_id": conversation_id},
+            )
         error_message = f"Error when calling agent: {exc!s}"
 
         async def error_generator() -> AsyncGenerator[str, None]:
@@ -254,21 +358,21 @@ async def call_agent_silent(
     request: MessageRequestWithHistory,
     conversation_id: str,
     user: AuthenticatedUser,
-    usage_metadata_callback: UsageMetadataCallbackHandler | None = None,
-    user_model_config: ModelConfig | None = None,
-    trigger_context: dict[str, Any] | None = None,
-    source: str | None = None,
-) -> tuple[str, dict[str, Any]]:
+    options: AgentRunOptions | None = None,
+) -> SilentRunResult:
     """
     Execute agent in silent mode for background processing.
-
-    Returns a tuple of (complete_message, tool_data_dict).
 
     The comms agent may delegate to the executor, which runs as a detached
     background task. We register an executor capture for this run's stream_id,
     wait for the executor to finish, then merge its (and its subagents') grouped
     tool_data into the returned tool_data — so background/workflow runs render
     tool calls identically to live chat.
+
+    When that delegation was queued behind an in-flight run for the same
+    conversation, nothing ran this turn and the result carries the queued
+    ``task_id`` — read off the stream's session before it is torn down, since
+    the session is this function's own and no caller can reach it.
     """
     # Root guard for a recurring background-caller footgun: the human turn is
     # read from `messages`, not `message`, when no workflow/tool is selected. A
@@ -283,16 +387,23 @@ async def call_agent_silent(
     ):
         request.messages = [MessageDict(role="user", content=request.message)]
 
+    options = options or AgentRunOptions()
+    usage_metadata_callback = options.usage_metadata_callback
+    trigger_context = options.trigger_context
+    source = options.source
+
     stream_id = str(uuid4())
+    user_id = user.get("user_id")
     try:
         graph, initial_state, config = await _core_agent_logic(
             request,
             conversation_id,
             user,
-            user_model_config=user_model_config,
-            trigger_context=trigger_context,
-            usage_metadata_callback=usage_metadata_callback,
-            source=source,
+            AgentRunOptions(
+                usage_metadata_callback=usage_metadata_callback,
+                trigger_context=trigger_context,
+                source=source,
+            ),
         )
 
         # Mirror the live-chat path: comms delegates to the executor (which runs
@@ -303,6 +414,13 @@ async def call_agent_silent(
         # executor's tool events are captured.
         cast(AgentConfigurable, config["configurable"])["stream_id"] = stream_id
         register_executor_capture(stream_id)
+
+        if user_id:
+            capture_event(
+                user_id,
+                AnalyticsEvents.AGENT_RUN_STARTED,
+                {"agent": "comms", "mode": "background", "conversation_id": conversation_id},
+            )
 
         complete_message, tool_data = await execute_graph_silent(graph, initial_state, config)
 
@@ -322,16 +440,37 @@ async def call_agent_silent(
                 v.get("output_tokens", 0) for v in usage.values() if isinstance(v, dict)
             )
             log.set(
-                agent={"model": agent_configurable(config).get("model_name")},
+                agent={"model": agent_configurable(config).get("model")},
                 token_input=total_input,
                 token_output=total_output,
                 token_total=total_input + total_output,
             )
 
-        return complete_message, tool_data
+        if user_id:
+            capture_event(
+                user_id,
+                AnalyticsEvents.AGENT_RUN_COMPLETED,
+                {"agent": "comms", "mode": "background", "conversation_id": conversation_id},
+            )
+
+        return SilentRunResult(
+            message=complete_message,
+            tool_data=tool_data,
+            queued_task_id=queued_without_run(stream_id),
+        )
 
     except Exception as exc:
-        log.error(f"{LogTag.AGENT} Error when calling silent agent: {exc}")
-        return f"Error when calling silent agent: {exc!s}", {}
+        log.error(
+            f"{LogTag.AGENT} Error when calling silent agent",
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        if user_id:
+            capture_event(
+                user_id,
+                AnalyticsEvents.AGENT_RUN_FAILED,
+                {"agent": "comms", "mode": "background", "conversation_id": conversation_id},
+            )
+        raise
     finally:
         teardown_executor_capture(stream_id)

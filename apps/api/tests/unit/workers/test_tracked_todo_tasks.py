@@ -22,6 +22,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from app.constants.todos import FAILED_LABEL
+from app.models.agent_models import SilentRunResult
 from app.models.notification.notification_models import (
     NotificationSourceEnum,
     NotificationType,
@@ -41,8 +42,6 @@ from app.workers.tasks.tracked_todo_tasks import (
     execute_tracked_todo,
     safety_net_check_orphaned_todos,
 )
-
-pytestmark = pytest.mark.unit
 
 MODULE = "app.workers.tasks.tracked_todo_tasks"
 KOLKATA = ZoneInfo("Asia/Kolkata")
@@ -129,6 +128,10 @@ class TestExecuteTrackedTodoLock:
 
 
 class TestExecuteTodoWithRetryEarlyExits:
+    @pytest.fixture(autouse=True)
+    def _route_enqueue(self, route_enqueue_via_pool):
+        return
+
     async def _run(self, doc, *, pool=None):
         pool = pool or _pool()
         repo = MagicMock()
@@ -185,6 +188,10 @@ class TestExecuteTodoWithRetryEarlyExits:
 
 
 class TestExecuteTodoWithRetrySuccess:
+    @pytest.fixture(autouse=True)
+    def _route_enqueue(self, route_enqueue_via_pool):
+        return
+
     async def _run(self, doc, *, tz="UTC"):
         pool = _pool()
         repo = MagicMock()
@@ -528,7 +535,6 @@ class TestExecuteViaAgent:
         agent,
         notes="## Current State\nall good",
         deliverable="",
-        model_side_effect=None,
         facet_side_effect=None,
     ):
         self.timeline = AsyncMock(return_value=True)
@@ -537,17 +543,11 @@ class TestExecuteViaAgent:
             if facet_side_effect
             else AsyncMock(return_value=notes)
         )
-        model = (
-            AsyncMock(side_effect=model_side_effect)
-            if model_side_effect
-            else AsyncMock(return_value={"model": "test-model"})
-        )
         repo = MagicMock()
         repo.update = AsyncMock()
         return (
             patch(f"{MODULE}.call_agent_silent", agent),
             patch(f"{MODULE}.read_facet", read),
-            patch(f"{MODULE}.get_default_model", model),
             patch(f"{MODULE}.tracked_todo_service.append_activity_marker", self.timeline),
             patch(f"{MODULE}.todo_repository", repo),
             patch(f"{MODULE}._collect_reference_context", AsyncMock(return_value="")),
@@ -557,9 +557,11 @@ class TestExecuteViaAgent:
         return [c.kwargs["entry"] for c in self.timeline.call_args_list]
 
     async def test_writes_start_and_success_markers_around_the_agent_call(self):
-        agent = AsyncMock(return_value=("Deploy verified.\nAll green.", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6:
+        agent = AsyncMock(
+            return_value=SilentRunResult(message="Deploy verified.\nAll green.", tool_data={})
+        )
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5:
             result = await _execute_via_agent(_doc(), "user-1", user_data={"user_id": "user-1"})
 
         assert result == "Deploy verified.\nAll green."
@@ -569,17 +571,92 @@ class TestExecuteViaAgent:
         assert end.startswith("✓ ")
         assert "summary='Deploy verified. All green.'" in end
 
-    async def test_the_start_marker_is_written_before_the_agent_runs(self):
-        """A run that dies inside the agent must still leave evidence."""
-        order: list[str] = []
-        timeline = AsyncMock(side_effect=lambda **kw: order.append("timeline"))
-        agent = AsyncMock(side_effect=lambda **kw: (order.append("agent"), ("ok", {}))[1])
+    async def test_a_queued_dispatch_is_not_a_finished_run(self):
+        """The executor was busy, so the request was queued and answered with an
+        acknowledgement. Reading that acknowledgement as the result wrote a
+        success marker for work that had not happened (same shape as the
+        workflow fire bug fixed in #1129)."""
+        agent = AsyncMock(
+            return_value=SilentRunResult(
+                message="That task is queued behind the one already running.",
+                tool_data={},
+                queued_task_id="task-9",
+            )
+        )
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5:
+            result = await _execute_via_agent(_doc(), "user-1", user_data={"user_id": "user-1"})
+
+        assert result == ""
+        start, end = self._entries()
+        assert start.startswith("▶ ")
+        assert not end.startswith("✓ ")
+        assert "queued" in end and "task-9" in end
+
+    async def test_the_queued_marker_names_the_todo_the_user_and_the_queued_task(self):
+        """Every field of the queued branch, on the values the branch is for. The
+        marker is the only place the user sees that the run did not happen, and the
+        warning is the only place an operator does, so a field silently dropped or
+        blanked from either is the whole finding."""
+        recorded: list[dict[str, str]] = []
+
+        # append_activity_marker's real signature, so an argument the branch stops
+        # passing is a TypeError here rather than a quietly thinner call.
+        async def timeline(todo_id: str, user_id: str, entry: str) -> bool:
+            recorded.append({"todo_id": todo_id, "user_id": user_id, "entry": entry})
+            return True
+
+        agent = AsyncMock(
+            return_value=SilentRunResult(
+                message="That task is queued.", tool_data={}, queued_task_id="task-9"
+            )
+        )
         repo = MagicMock()
         repo.update = AsyncMock()
         with (
             patch(f"{MODULE}.call_agent_silent", agent),
             patch(f"{MODULE}.read_facet", AsyncMock(return_value="")),
-            patch(f"{MODULE}.get_default_model", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.tracked_todo_service.append_activity_marker", timeline),
+            patch(f"{MODULE}.todo_repository", repo),
+            patch(f"{MODULE}._collect_reference_context", AsyncMock(return_value="")),
+            patch(f"{MODULE}.log") as log_mock,
+        ):
+            result = await _execute_via_agent(
+                _doc(id="todo-7"), "user-9", user_data={"user_id": "user-9"}
+            )
+
+        assert result == ""
+        queued = recorded[1]
+        assert queued["todo_id"] == "todo-7"
+        assert queued["user_id"] == "user-9"
+        stamp = queued["entry"].split(" ", 2)[1]
+        assert queued["entry"] == (
+            f"⏸ {stamp} — scheduled run queued behind an in-flight run (task task-9); not run"
+        )
+        # Stamped in UTC: a naive or local timestamp reads as a different moment
+        # to anyone reading the canvas from another timezone.
+        assert datetime.fromisoformat(stamp).utcoffset() == timedelta(0)
+        assert log_mock.warning.call_args.args == ("tracked_todo.agent_dispatch_queued",)
+        assert log_mock.warning.call_args.kwargs == {
+            "todo_id": "todo-7",
+            "queued_task_id": "task-9",
+        }
+
+    async def test_the_start_marker_is_written_before_the_agent_runs(self):
+        """A run that dies inside the agent must still leave evidence."""
+        order: list[str] = []
+        timeline = AsyncMock(side_effect=lambda **kw: order.append("timeline"))
+        agent = AsyncMock(
+            side_effect=lambda **kw: (
+                order.append("agent"),
+                SilentRunResult(message="ok", tool_data={}),
+            )[1]
+        )
+        repo = MagicMock()
+        repo.update = AsyncMock()
+        with (
+            patch(f"{MODULE}.call_agent_silent", agent),
+            patch(f"{MODULE}.read_facet", AsyncMock(return_value="")),
             patch(f"{MODULE}.tracked_todo_service.append_activity_marker", timeline),
             patch(f"{MODULE}.todo_repository", repo),
         ):
@@ -588,15 +665,15 @@ class TestExecuteViaAgent:
         assert order == ["timeline", "agent", "timeline"]
 
     async def test_prompt_and_trigger_context_carry_the_todo_identity(self):
-        agent = AsyncMock(return_value=("ok", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent, notes="## Current State\nblocked")
-        with p1, p2, p3, p4, p5, p6:
+        agent = AsyncMock(return_value=SilentRunResult(message="ok", tool_data={}))
+        p1, p2, p3, p4, p5 = self._patches(agent=agent, notes="## Current State\nblocked")
+        with p1, p2, p3, p4, p5:
             await _execute_via_agent(
                 _doc(description="verify staging"), "user-1", user_data={"user_id": "user-1"}
             )
 
         kwargs = agent.await_args.kwargs
-        assert kwargs["trigger_context"] == {
+        assert kwargs["options"].trigger_context == {
             "trigger_type": "scheduled_todo",
             "todo_id": "todo-1",
             "todo_title": "Check the deploy",
@@ -605,79 +682,55 @@ class TestExecuteViaAgent:
             "suppress_platform_delivery": False,
         }
         assert kwargs["user"] == {"user_id": "user-1"}
-        assert kwargs["user_model_config"] == {"model": "test-model"}
         prompt = kwargs["request"].message
         assert "Execute the following scheduled task: Check the deploy" in prompt
         assert "Details: verify staging" in prompt
         assert "Working notes:\n## Current State\nblocked" in prompt
 
     async def test_each_run_gets_a_fresh_conversation_id(self):
-        agent = AsyncMock(return_value=("ok", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6:
+        agent = AsyncMock(return_value=SilentRunResult(message="ok", tool_data={}))
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5:
             await _execute_via_agent(_doc(), "user-1", user_data={})
             await _execute_via_agent(_doc(), "user-1", user_data={})
 
         first, second = (c.kwargs["conversation_id"] for c in agent.call_args_list)
         assert first != second
 
-    async def test_a_model_config_lookup_failure_does_not_abort_the_run(self):
-        agent = AsyncMock(return_value=("ok", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(
-            agent=agent, model_side_effect=RuntimeError("model registry down")
-        )
-        with p1, p2, p3, p4, p5, p6:
-            result = await _execute_via_agent(_doc(), "user-1", user_data={})
-
-        assert result == "ok"
-        assert agent.await_args.kwargs["user_model_config"] is None
-
     async def test_a_canvas_read_failure_does_not_abort_the_run(self):
-        agent = AsyncMock(return_value=("ok", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(
+        agent = AsyncMock(return_value=SilentRunResult(message="ok", tool_data={}))
+        p1, p2, p3, p4, p5 = self._patches(
             agent=agent, facet_side_effect=RuntimeError("mongo down")
         )
-        with p1, p2, p3, p4, p5, p6:
+        with p1, p2, p3, p4, p5:
             result = await _execute_via_agent(_doc(), "user-1", user_data={})
 
         assert result == "ok"
         assert "Working notes" not in agent.await_args.kwargs["request"].message
         assert "Current deliverable" not in agent.await_args.kwargs["request"].message
 
-    async def test_an_agent_error_string_is_promoted_to_a_raised_failure(self):
-        """call_agent_silent swallows its own errors into the message; the
-        scheduled run must still count as failed so the retry ladder engages."""
-        agent = AsyncMock(return_value=("Error when calling silent agent: boom", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6, pytest.raises(RuntimeError, match="Error when calling"):
-            await _execute_via_agent(_doc(), "user-1", user_data={})
-
-        _start, end = self._entries()
-        assert end.startswith("✗ ")
-        assert "scheduled run failed (RuntimeError)" in end
-
     async def test_an_agent_exception_writes_a_failure_marker_and_propagates(self):
         agent = AsyncMock(side_effect=TimeoutError("llm timeout"))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6, pytest.raises(TimeoutError):
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5, pytest.raises(TimeoutError):
             await _execute_via_agent(_doc(), "user-1", user_data={})
 
         _start, end = self._entries()
         assert "scheduled run failed (TimeoutError)" in end
 
     async def test_an_empty_agent_response_is_not_an_error(self):
-        agent = AsyncMock(return_value=("", {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6:
+        agent = AsyncMock(return_value=SilentRunResult(message="", tool_data={}))
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5:
             result = await _execute_via_agent(_doc(), "user-1", user_data={})
 
         assert result == ""
         assert "summary=''" in self._entries()[1]
 
     async def test_a_long_response_is_truncated_for_the_return_value_and_the_marker(self):
-        agent = AsyncMock(return_value=("x" * 500, {}))
-        p1, p2, p3, p4, p5, p6 = self._patches(agent=agent)
-        with p1, p2, p3, p4, p5, p6:
+        agent = AsyncMock(return_value=SilentRunResult(message="x" * 500, tool_data={}))
+        p1, p2, p3, p4, p5 = self._patches(agent=agent)
+        with p1, p2, p3, p4, p5:
             result = await _execute_via_agent(_doc(), "user-1", user_data={})
 
         assert result == "x" * 200

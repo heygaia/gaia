@@ -75,6 +75,10 @@ const ModelFallbackFrameSchema = z.object({
 const KeepaliveFrameSchema = z.object({ keepalive: z.literal(true) });
 const MainResponseCompleteFrameSchema = z.object({
   main_response_complete: z.literal(true),
+  // The API emits `usage: null` when no metadata was measured
+  // (stream.py: `state.usage_metadata or None`), so the field is nullable
+  // as well as optional.
+  usage: z.record(z.string(), z.unknown()).nullish(),
 });
 const FollowUpActionsFrameSchema = z.object({
   follow_up_actions: z.array(z.string()),
@@ -108,6 +112,18 @@ const ConversationDescriptionFrameSchema = z.object({
 });
 
 /**
+ * End of one assistant message. `discarded` is true when that message turned
+ * out to carry tool calls, which makes the text it streamed a handoff preamble
+ * the consumer must take back rather than keep alongside the real reply.
+ */
+const MessageBoundaryFrameSchema = z.object({
+  message_boundary: z.object({
+    message_id: z.string(),
+    discarded: z.boolean(),
+  }),
+});
+
+/**
  * Identity frame. Both the new-conversation (5 keys, `conversation_description`
  * may be null) and resumed-conversation (3 keys) variants carry the message +
  * stream ids, so those are required and the conversation-level fields optional.
@@ -138,4 +154,5 @@ export const ChatStreamFrameSchema = z.union([
   DesktopToolRequestFrameSchema,
   ConversationInitializedFrameSchema,
   ConversationDescriptionFrameSchema,
+  MessageBoundaryFrameSchema,
 ]);

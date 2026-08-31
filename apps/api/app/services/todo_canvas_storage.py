@@ -6,9 +6,10 @@ and ``log`` — each a field on the todo document itself (``deliverable_content`
 the todos repository — no FUSE mount or JuiceFS required, so tracked todos work
 in every dev mode.
 
-The legacy ``vfs_path`` field on the todo doc is retained as a stable display
-label (``/users/{user_id}/todos/{todo_id}``) but is no longer a real filesystem
-path.
+The legacy ``vfs_path`` field on the todo doc is retained as a stable
+display label (``/workspace/gaia-tasks/{todo_id}``) but is no longer a
+real filesystem path. It never carries the host-side ``/users/<uid>``
+prefix — the LLM only ever sees the sandbox-visible workspace path.
 """
 
 from typing import Any
@@ -20,9 +21,11 @@ from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
 from shared.py.wide_events import log
 
 
-def build_vfs_label(user_id: str, todo_id: str) -> str:
+def build_vfs_label(todo_id: str, *, archived: bool = False) -> str:
     """Stable label used wherever the old VFS path was surfaced for display."""
-    return f"/users/{user_id}/todos/{todo_id}"
+    if archived:
+        return f"/workspace/gaia-tasks/archive/{todo_id}"
+    return f"/workspace/gaia-tasks/{todo_id}"
 
 
 def _facet_field(facet: str) -> str:
@@ -30,7 +33,9 @@ def _facet_field(facet: str) -> str:
     try:
         return FACET_FIELDS[facet]
     except KeyError:
-        raise ValueError(f"Unknown facet {facet!r}; expected one of {sorted(FACET_FIELDS)}")
+        raise ValueError(
+            f"Unknown facet {facet!r}; expected one of {sorted(FACET_FIELDS)}"
+        ) from None
 
 
 async def read_facet(todo_id: str, user_id: str, facet: str) -> str | None:
@@ -68,7 +73,7 @@ async def append_facet(todo_id: str, user_id: str, facet: str, content: str) -> 
     return await write_facet(todo_id, user_id, facet, current + suffix)
 
 
-async def read_artifacts(todo_id: str, user_id: str) -> list[dict] | None:
+async def read_artifacts(todo_id: str, user_id: str) -> list[dict[str, Any]] | None:
     """Read the todo's artifacts list. Returns None only when the todo is missing."""
     doc = await todo_repository.get(todo_id, user_id=user_id)
     if doc is None:

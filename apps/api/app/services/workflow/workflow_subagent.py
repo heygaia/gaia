@@ -12,6 +12,7 @@ The subagent has access to:
 - search_memory: Access user memories
 """
 
+from dataclasses import dataclass
 import json
 from typing import Any, cast
 
@@ -26,17 +27,21 @@ from langgraph.errors import GraphRecursionError
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.types import StreamWriter
 
-from app.agents.core.subagents.base_subagent import SubAgentFactory
-from app.agents.core.subagents.subagent_helpers import create_agent_context_message
+from app.agents.context.assemble import assemble_context
+from app.agents.context.section_context import SectionContext
+from app.agents.context.tiers import AgentTier
+from app.agents.core.subagents.base_subagent import SubAgentFactory, SubAgentToolConfig
 from app.agents.llm.client import init_llm
 from app.agents.prompts.subagent_prompts import WORKFLOW_AGENT_SYSTEM_PROMPT
 from app.agents.tools.workflow_shared_tools import SUBAGENT_WORKFLOW_TOOLS
 from app.constants.llm import WORKFLOW_SUBAGENT_RECURSION_LIMIT
 from app.constants.log_tags import LogTag
-from app.helpers.agent_helpers import build_agent_config
-from app.models.agent_models import AgentUserContext, agent_configurable
+from app.helpers.agent_helpers import AgentIdentity, AgentThread, build_agent_config
+from app.helpers.message_helpers import build_current_time_message
+from app.models.agent_models import AgentConfigurable, AgentUserContext, agent_configurable
 from app.services.workflow.knowledge import build_connected_integrations_hint
 from app.services.workflow.subagent_output import parse_subagent_response
+from app.utils.stream_utils import extract_tool_entries_from_update
 from app.utils.workflow_utils import unknown_integration_ids
 from shared.py.wide_events import log
 
@@ -92,7 +97,7 @@ async def get_workflow_subagent() -> CompiledStateGraph:
     log.info(f"{LogTag.WORKFLOW} Creating workflow subagent graph")
 
     # Register workflow tools in the registry under 'workflow_subagent' space
-    from app.agents.tools.core.registry import get_tool_registry
+    from app.agents.tools.core.registry import CategoryOptions, get_tool_registry
 
     tool_registry = await get_tool_registry()
 
@@ -101,7 +106,7 @@ async def get_workflow_subagent() -> CompiledStateGraph:
         tool_registry._add_category(
             name="workflow_subagent",
             tools=SUBAGENT_WORKFLOW_TOOLS,
-            space="workflow_subagent",
+            options=CategoryOptions(space="workflow_subagent"),
         )
 
     llm = init_llm()
@@ -114,15 +119,27 @@ async def get_workflow_subagent() -> CompiledStateGraph:
         provider="workflow",
         name="workflow_agent",
         llm=llm,
-        tool_space="workflow_subagent",
-        use_direct_tools=True,
-        disable_retrieve_tools=True,
-        include_finish_task=False,
-        authoring_only=True,
+        config=SubAgentToolConfig(
+            tool_space="workflow_subagent",
+            use_direct_tools=True,
+            disable_retrieve_tools=True,
+            include_finish_task=False,
+            authoring_only=True,
+        ),
     )
 
     log.info(f"{LogTag.WORKFLOW} Workflow subagent graph created successfully")
     return _workflow_subagent_graph
+
+
+@dataclass
+class SubagentRunContext:
+    """Per-run knobs for the workflow subagent: who is asking, and how to stream."""
+
+    user_name: str | None = None
+    user_timezone: str | None = None
+    stream_writer: StreamWriter | None = None
+    base_configurable: AgentConfigurable | None = None
 
 
 class WorkflowSubagentRunner:
@@ -138,11 +155,20 @@ class WorkflowSubagentRunner:
         task: str,
         user_id: str,
         thread_id: str,
-        user_name: str | None = None,
-        user_timezone: str | None = None,
-        stream_writer: StreamWriter | None = None,
+        context: SubagentRunContext | None = None,
     ) -> str:
-        """Execute the workflow subagent with streaming, returning the complete response text."""
+        """Execute the workflow subagent with streaming, returning the complete response text.
+
+        ``base_configurable`` is the parent (executor) configurable so the subagent
+        inherits its plan tier, plan-routed model, provider pin, and root_request_id
+        — keeping pro users on the paid model and the budget wall enforced across the
+        whole turn tree, exactly like other handoff subagents.
+        """
+        ctx = context or SubagentRunContext()
+        user_name = ctx.user_name
+        user_timezone = ctx.user_timezone
+        stream_writer = ctx.stream_writer
+
         subagent_graph = await get_workflow_subagent()
 
         # Build config
@@ -155,12 +181,17 @@ class WorkflowSubagentRunner:
             "timezone": user_timezone,
         }
 
-        config = build_agent_config(
-            conversation_id=thread_id,
-            user=user,
-            thread_id=subagent_thread_id,
-            agent_name="workflow_agent",
-            subagent_id="workflow_agent",
+        config = await build_agent_config(
+            identity=AgentIdentity(
+                conversation_id=thread_id,
+                user=user,
+                agent_name="workflow_agent",
+            ),
+            thread=AgentThread(
+                thread_id=subagent_thread_id,
+                subagent_id="workflow_agent",
+                base_configurable=ctx.base_configurable,
+            ),
         )
         configurable = agent_configurable(config)
 
@@ -176,31 +207,42 @@ class WorkflowSubagentRunner:
             additional_kwargs={"visible_to": {"workflow_agent"}},
         )
 
-        context_message = await create_agent_context_message(
-            configurable=configurable,
-            user_id=user_id,
-            query=task,
-            subagent_id=None,  # No subagent_id for skill retrieval
+        assembled = await assemble_context(
+            SectionContext.from_configurable(
+                AgentTier.WORKFLOW_AUTHORING,
+                configurable,
+                query=task,
+                user_id=user_id,
+            )
         )
 
         # Compact ground truth (which integrations THIS user has connected) folded
-        # into the task. It must NOT be a separate SystemMessage: the subagent's
-        # manage_system_prompts_node keeps only the LATEST static system message,
-        # so a second one here would silently evict WORKFLOW_AGENT_SYSTEM_PROMPT and
-        # the model would lose its whole role/rules/output-format prompt.
+        # into the task. It must NOT be a separate SystemMessage: it would occupy
+        # the static slot and evict WORKFLOW_AGENT_SYSTEM_PROMPT, losing the whole
+        # role/rules/output-format prompt.
         hint = await build_connected_integrations_hint(user_id)
         human_message = HumanMessage(
             content=f"{hint}\n\n---\n\nRequest: {task}",
             additional_kwargs={"visible_to": {"workflow_agent"}},
         )
 
+        # An authoring agent that cannot tell today's date cannot resolve "every
+        # Monday" or "starting next week" — the exact things a workflow schedule
+        # is made of. This tier was the only one seeded without a clock.
+        time_message = build_current_time_message(user_timezone=user_timezone)
+
         initial_state: dict[str, Any] = {
-            "messages": [system_message, context_message, human_message],
+            "messages": [
+                system_message,
+                *assembled.messages(),
+                human_message,
+                time_message,
+            ],
             "intent": task,
             "integration_usernames": {},
         }
 
-        log.info(f"{LogTag.WORKFLOW} Executing with task: {task[:100]}...")
+        log.info(f"{LogTag.WORKFLOW} Executing workflow subagent task", task_length=len(task))
 
         # Generate, validate, and correct: if the agent returns invalid json (bad
         # structure or integration_ids that name a non-existent integration), hand the
@@ -224,12 +266,13 @@ class WorkflowSubagentRunner:
                 break
             if attempt == MAX_DRAFT_CORRECTIONS:
                 log.warning(
-                    f"{LogTag.WORKFLOW} Draft still invalid after {attempt} correction(s); "
-                    f"handing off as-is: {correction[:150]}"
+                    f"{LogTag.WORKFLOW} Draft still invalid after corrections; handing off as-is",
+                    corrections=attempt,
+                    correction_length=len(correction),
                 )
                 break
             log.info(
-                f"{LogTag.WORKFLOW} Draft invalid (attempt {attempt + 1}); re-prompting to correct"
+                f"{LogTag.WORKFLOW} Draft invalid; re-prompting to correct", attempt=attempt + 1
             )
             state = {
                 "messages": [
@@ -240,7 +283,10 @@ class WorkflowSubagentRunner:
                 ]
             }
 
-        log.info(f"{LogTag.WORKFLOW} Completed. Response: {len(complete_message)} chars")
+        log.info(
+            f"{LogTag.WORKFLOW} Completed. Response: chars",
+            complete_message_count=len(complete_message),
+        )
         return complete_message or "Task completed"
 
     @staticmethod
@@ -277,6 +323,48 @@ class WorkflowSubagentRunner:
         return message
 
     @staticmethod
+    async def _emit_update_entries(
+        payload: dict[str, Any],
+        stream_writer: StreamWriter | None,
+        emitted_tool_calls: set[str],
+    ) -> None:
+        """Stream tool entries carried in one graph-updates event."""
+        for _node_name, state_update in payload.items():
+            entries = await extract_tool_entries_from_update(
+                state_update=state_update,
+                emitted_tool_calls=emitted_tool_calls,
+            )
+            for _tc_id, tool_entry in entries:
+                if stream_writer:
+                    stream_writer({"tool_data": tool_entry})
+
+    @staticmethod
+    def _consume_message_chunk(
+        payload: tuple[Any, Any],
+        stream_writer: StreamWriter | None,
+        complete_message: str,
+    ) -> str:
+        """Fold one messages-mode event into the running assistant text."""
+        chunk, metadata = payload
+        if metadata.get("silent"):
+            return complete_message
+        if chunk and isinstance(chunk, AIMessageChunk):
+            content = chunk.text() if hasattr(chunk, "text") else str(chunk.content)
+            if content:
+                return complete_message + content
+        elif chunk and isinstance(chunk, ToolMessage):
+            if stream_writer:
+                stream_writer(
+                    {
+                        "tool_output": {
+                            "tool_call_id": chunk.tool_call_id,
+                            "output": chunk.text(),
+                        }
+                    }
+                )
+        return complete_message
+
+    @staticmethod
     async def _stream_turn(
         subagent_graph: CompiledStateGraph,
         state: dict[str, Any],
@@ -304,39 +392,14 @@ class WorkflowSubagentRunner:
                 stream_mode, payload = cast(tuple[str, Any], event)
 
                 if stream_mode == "updates":
-                    for _node_name, state_update in payload.items():
-                        from app.utils.stream_utils import extract_tool_entries_from_update
-
-                        entries = await extract_tool_entries_from_update(
-                            state_update=state_update,
-                            emitted_tool_calls=emitted_tool_calls,
-                        )
-                        for _tc_id, tool_entry in entries:
-                            if stream_writer:
-                                stream_writer({"tool_data": tool_entry})
-                    continue
-
-                if stream_mode == "messages":
-                    chunk, metadata = payload
-                    if metadata.get("silent"):
-                        continue
-                    if chunk and isinstance(chunk, AIMessageChunk):
-                        content = chunk.text() if hasattr(chunk, "text") else str(chunk.content)
-                        if content:
-                            complete_message += content
-                    elif chunk and isinstance(chunk, ToolMessage):
-                        if stream_writer:
-                            stream_writer(
-                                {
-                                    "tool_output": {
-                                        "tool_call_id": chunk.tool_call_id,
-                                        "output": chunk.text(),
-                                    }
-                                }
-                            )
-                    continue
-
-                if stream_mode == "custom" and stream_writer:
+                    await WorkflowSubagentRunner._emit_update_entries(
+                        payload, stream_writer, emitted_tool_calls
+                    )
+                elif stream_mode == "messages":
+                    complete_message = WorkflowSubagentRunner._consume_message_chunk(
+                        payload, stream_writer, complete_message
+                    )
+                elif stream_mode == "custom" and stream_writer:
                     stream_writer(payload)
         except GraphRecursionError:
             return complete_message, True

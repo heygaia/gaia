@@ -62,7 +62,10 @@ async def render_html_to_image(
             else:
                 image = await page.screenshot(full_page=full_page, type="png")
             log.debug(
-                f"{LogTag.TOOL} Rendered HTML to {image_format} ({len(image)} bytes, width={width})"
+                f"{LogTag.TOOL} Rendered HTML to image",
+                image_format=image_format,
+                image_bytes=len(image),
+                width=width,
             )
             return image
         finally:

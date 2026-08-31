@@ -2,48 +2,210 @@ name: Setup Python test environment
 description: >
   Prepare the runner to execute the API pytest suite against live services:
   install Node + pnpm deps (the device-bridge e2e tests drive the real
-  `gaia bridge` CLI via tsx), sync Python deps with uv, and start
+  `gaia bridge` CLI via tsx) when requested, sync Python deps with uv, and start
   PostgreSQL/Redis/MongoDB/ChromaDB/RabbitMQ containers on the local Docker
   daemon. Mirrors the topology of `dagger call test-python` so the suite runs
   identically in CI and in the local Dagger harness.
+
+inputs:
+  services:
+    description: >
+      Start the Postgres/Redis/Mongo/Chroma/RabbitMQ containers and the
+      embedding sidecar. tests/unit + tests/meta pass without any of them
+      (verified: 10,542 passed, 0 errors, no containers), so the unit lane
+      passes "false" and skips ~30-40s of boot plus five containers' RAM.
+    required: false
+    default: "true"
+  node:
+    description: >
+      Install Node + pnpm deps. Only tests/integration/real/test_device_bridge_e2e.py
+      needs them (it drives the real `gaia bridge` CLI via tsx); a lane that
+      does not run that file should pass "false" and skip ~45s warm / minutes cold.
+    required: false
+    default: "true"
+  restore-models:
+    description: >
+      Whether to restore/prefetch the ~1.3GB embedding models. Only jobs that
+      run memory/embedding tests need them; the coverage merge job downloads
+      and pre-uploads 1.3GB it never uses (wasted restore time on every run).
+    required: false
+    default: "true"
 
 runs:
   using: composite
   steps:
     - name: Setup Node.js + pnpm
+      if: inputs.node == 'true'
       uses: ./.github/actions/setup-node-pnpm
 
-    - name: Setup uv
-      uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86 # v5.4.2
-      with:
-        version: "0.8.17"
-        enable-cache: true
+    # One rule for uv on every runner kind (persistent ~/.cache/uv on the box,
+    # actions/cache on GitHub-hosted) — see setup-uv/action.yml for why.
+    - uses: ./.github/actions/setup-uv
+
+    # Container boot (image pull on a cold daemon, then 10-30s of Postgres /
+    # Mongo / RabbitMQ / Chroma readiness) is pure waiting, and uv sync is
+    # mostly I/O — they overlap. Started here, joined after the sync.
+    # test-services.sh decides for itself whether this runner gets the box's
+    # shared set or its own per-job containers, so there is one step here, not
+    # a self-hosted branch and a GitHub-hosted branch that could drift.
+    # On the box that is ONE persistent set per box and a namespace per job
+    # (Postgres database, Redis DB stripe, Mongo database, Chroma collection
+    # suffix, RabbitMQ vhost) keyed by RUNNER_INDEX — measured: prepare 1s,
+    # reset 2s, versus 20-45s to boot five containers per job, and ~0.6 GB of
+    # RAM instead of ~15 GB for six sets, with the memory suite running at
+    # identical speed. GitHub-hosted runners are ephemeral and get their own.
+    - name: Start test services (background)
+      if: inputs.services == 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        # Per-user run dir (same rule as scripts/ci/test-services.sh and the
+        # sidecar script); GitHub-hosted has no RUNNER_LOCAL_CACHE -> /tmp.
+        RUNDIR="${GAIA_CI_RUNDIR:-${RUNNER_LOCAL_CACHE:-/tmp}}"
+        LOG="${RUNDIR}/gaia-test-services-${RUNNER_INDEX:-0}.start.log"
+        nohup bash scripts/ci/test-services.sh up > "$LOG" 2>&1 < /dev/null &
+        echo "$!" > "${RUNDIR}/gaia-test-services-${RUNNER_INDEX:-0}.start.pid"
+        echo "services starting in background (pid $!, log $LOG)"
 
     - name: Sync Python dependencies
       shell: bash
       # --no-build (Sonar S8541) is impossible: pysher ships no wheel in any
       # release. Versions are hash-pinned via --frozen, so sdist builds run
       # the same audited code as every other install path.
-      run: uv sync --frozen --package gaia --group backend --group dev # NOSONAR githubactions:S8541
+      # Self-hosted: .venv persists in the workspace; skip the sync when the
+      # marker the previous sync left still matches (scripts/ci/runner.sh dep-marker
+      # keys it on uv.lock AND the pyproject files, ~10-20s saved).
+      run: |
+        set -euo pipefail
+        MARK="$(bash scripts/ci/runner.sh dep-marker python)"
+        if [ "${RUNNER_ENVIRONMENT:-}" = "self-hosted" ] && [ -f "$MARK" ] && [ -x .venv/bin/python ]; then
+          echo ".venv already synced ($MARK) — skipping uv sync"
+          exit 0
+        fi
+        uv sync --frozen --package gaia --group backend --group dev # NOSONAR githubactions:S8541
+        rm -f .venv/.gaia-synced-* 2>/dev/null || true
+        touch "$MARK"
 
-    - name: Start service containers
-      shell: bash
-      run: bash scripts/ci/start-test-services.sh
-
-    # Single source of truth for the suite's service env — consuming jobs
-    # (test-python, coverage) inherit these instead of duplicating them.
-    - name: Export test-suite service environment
+    # Join the background boot, then claim this lane's namespace and export its
+    # endpoints. `prepare` owns the port arithmetic and the namespace names, so
+    # nothing here may repeat an endpoint: doing so would override the resolved
+    # values with the canonical ports and break every parallel lane.
+    - name: Claim the test-services namespace
+      if: inputs.services == 'true'
       shell: bash
       run: |
+        set -euo pipefail
+        RUNDIR="${GAIA_CI_RUNDIR:-${RUNNER_LOCAL_CACHE:-/tmp}}"  # see the start step above
+        PIDF="${RUNDIR}/gaia-test-services-${RUNNER_INDEX:-0}.start.pid"; LOG="${RUNDIR}/gaia-test-services-${RUNNER_INDEX:-0}.start.log"
+        pid="$(cat "$PIDF")"
+        # `wait` only works on children of this shell; poll the pid instead.
+        while kill -0 "$pid" 2>/dev/null; do sleep 1; done
+        cat "$LOG"
+        bash scripts/ci/test-services.sh prepare "${RUNNER_INDEX:-0}"
+    - name: Export test-suite environment
+      shell: bash
+      run: |
+        # ~1.3 GB of ONNX weights. On an ephemeral GitHub runner they have to
+        # come through actions/cache every run; on the self-hosted box they
+        # persist on local disk, so the transfer is skipped entirely.
+        if [ "$RUNNER_ENVIRONMENT" = "self-hosted" ]; then
+          MODEL_CACHE_DIR="${RUNNER_LOCAL_CACHE:-$HOME/ci-cache}/fastembed"
+        else
+          MODEL_CACHE_DIR=/tmp/fastembed_cache
+        fi
+        mkdir -p "$MODEL_CACHE_DIR"
         {
           echo "ENV=test"
           echo "USE_REAL_SERVICES=1"
-          echo "DATABASE_URL=postgresql://gaia:gaia@localhost:5432/gaia_test" # pragma: allowlist secret
-          echo "POSTGRES_URL=postgresql://gaia:gaia@localhost:5432/gaia_test" # pragma: allowlist secret
-          echo "REDIS_URL=redis://localhost:6379/0"
-          echo "MONGODB_URL=mongodb://gaia:gaia@localhost:27017/gaia_test?authSource=admin" # pragma: allowlist secret
-          echo "MONGO_DB=mongodb://gaia:gaia@localhost:27017/gaia_test?authSource=admin" # pragma: allowlist secret
-          echo "CHROMADB_HOST=localhost"
-          echo "CHROMADB_PORT=8000"
-          echo "RABBITMQ_URL=amqp://guest:guest@localhost/"
+          echo "MODEL_CACHE_DIR=$MODEL_CACHE_DIR"
+          echo "MEMORY_MODEL_CACHE_DIR=$MODEL_CACHE_DIR"
+          # Deliberately NOT setting PYTHONDONTWRITEBYTECODE: on the persistent
+          # self-hosted workspace the .pyc files — and pytest's assertion-rewrite
+          # cache — survive between jobs. With the flag set every xdist worker
+          # recompiled all 13k test modules on every run (profiled: collection
+          # 71s per worker, builtins.compile 16.5s of 77s).
         } >> "$GITHUB_ENV"
+
+    # The memory suite loads ~1.3 GB of ONNX weights (mxbai-embed-large plus the
+    # jina reranker). Downloading them inside pytest made the whole suite
+    # hostage to one network blip: fastembed catches a failed download and
+    # silently falls back to whatever is on disk, so a half-written blob
+    # surfaces minutes later as an opaque onnxruntime NO_SUCHFILE from an
+    # unrelated test instead of the actual transfer error. Fetch them here,
+    # where a failure is loud and names itself, and cache them so the download
+    # happens once per key rather than on every run.
+    - name: Restore embedding models
+      if: inputs.services == 'true' && inputs.restore-models == 'true' && runner.environment != 'self-hosted'
+      id: model-cache
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.MODEL_CACHE_DIR }}
+        key: fastembed-${{ runner.os }}-${{ hashFiles('apps/api/app/constants/memory.py', 'uv.lock') }}
+
+    # On self-hosted this is a no-op after the first run: the models are
+    # already on disk and the loaders return immediately.
+    # Self-hosted has no cache-hit signal (the GH cache steps are skipped
+    # there), so decide from the disk: a populated model dir means nothing
+    # to fetch — and this step loads ~1.4 GB of ONNX into RAM just to check.
+    - name: Check embedding models on disk
+      if: inputs.services == 'true' && inputs.restore-models == 'true'
+      id: models-on-disk
+      shell: bash
+      run: |
+        # The HF cache stores weights under blobs/ and reaches them through
+        # symlinks in snapshots/; `find -size` on a symlink sees the link, not
+        # the file, so the previous check never matched and the prefetch ran —
+        # and re-downloaded over the uplink — on every self-hosted job.
+        if [ -n "$(find -L "$MODEL_CACHE_DIR" -name 'model*.onnx' -size +10M 2>/dev/null | head -n 1)" ]; then
+          echo "present=true" >> "$GITHUB_OUTPUT"; echo "embedding models already on disk"
+        else
+          echo "present=false" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Prefetch embedding models
+      if: inputs.services == 'true' && inputs.restore-models == 'true' && (steps.model-cache.outputs.cache-hit != 'true' && steps.models-on-disk.outputs.present != 'true')
+      shell: bash
+      working-directory: apps/api
+      # Goes through the app's own loaders, so the models, cache dir and ONNX
+      # settings are the ones the suite actually uses — a prefetch that drifted
+      # from them would warm the wrong cache and prove nothing. The environment
+      # is already synced above, so --no-sync makes this a pure run of it and
+      # --no-build is then free (nothing is installed here to build). Attempts are
+      # retried because huggingface_hub resumes a partial blob rather than
+      # restarting the transfer; three consecutive failures is a real outage,
+      # not a blip, and fails the job.
+      run: |
+        for attempt in 1 2 3; do
+          if uv run --frozen --no-sync --no-build python -c '
+        from app.memory.embeddings import _embed_sync, _rerank_sync
+
+        _embed_sync(["warmup"])
+        _rerank_sync("warmup", ["warmup document"])
+        print("embedding + reranker models ready")
+        '; then
+            exit 0
+          fi
+          echo "::warning::model prefetch attempt ${attempt}/3 failed; retrying (resumes the partial download)"
+          sleep $((attempt * 10))
+        done
+        echo "::error::could not fetch the memory embedding models after 3 attempts"
+        exit 1
+
+    # Only reached when the prefetch above succeeded, so a poisoned partial
+    # download is never what gets cached for every later run.
+    - name: Save embedding models
+      if: inputs.services == 'true' && inputs.restore-models == 'true' && (runner.environment != 'self-hosted' && steps.model-cache.outputs.cache-hit != 'true')
+      uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: ${{ env.MODEL_CACHE_DIR }}
+        key: fastembed-${{ runner.os }}-${{ hashFiles('apps/api/app/constants/memory.py', 'uv.lock') }}
+
+    # One shared embedding sidecar for the whole pytest run, started only once
+    # the models are guaranteed on disk (cache hit or prefetch above). Without
+    # it every xdist worker loads ~1.8 GB of ONNX weights itself, serialized
+    # behind a file lock. The workflow owns teardown (embedding-sidecar.sh stop
+    # with if: always()) — composite actions have no post step.
+    - name: Start embedding sidecar
+      if: inputs.services == 'true' && inputs.restore-models == 'true'
+      shell: bash
+      run: bash scripts/ci/embedding-sidecar.sh start

@@ -22,9 +22,9 @@ from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection
 import pytest
 from redis.asyncio import Redis
 
-from tests.helpers import worker_redis_url
+from tests.helpers import worker_mongo_db_name, worker_redis_url
 
-_USE_REAL_SERVICES = os.environ.get("USE_REAL_SERVICES", "1") == "1"
+_USE_REAL_SERVICES = os.environ.get("USE_REAL_SERVICES", "0") == "1"
 
 
 @pytest.fixture(autouse=True)
@@ -32,7 +32,7 @@ def _require_real_services() -> None:
     if not _USE_REAL_SERVICES:
         pytest.skip(
             "repository contract tests require real Mongo + Redis. Set "
-            "USE_REAL_SERVICES=1 (the default) and run both on localhost — "
+            "USE_REAL_SERVICES=1 and run both on localhost — "
             "these tests never mock the database."
         )
 
@@ -63,7 +63,9 @@ async def raw_collection(
         mongodb_url, tz_aware=True, tzinfo=UTC, serverSelectionTimeoutMS=5000
     )
     worker = os.environ.get("PYTEST_XDIST_WORKER", "gw0")
-    coll = client["gaia_test"][f"contract_fixture_{worker}_{uuid.uuid4().hex}"]
+    # Namespaced like every other test database (worker_mongo_db_name) so a
+    # lane sharing one mongod owns — and can drop — everything it creates.
+    coll = client[worker_mongo_db_name()][f"contract_fixture_{worker}_{uuid.uuid4().hex}"]
 
     monkeypatch.setattr("app.db.repositories.base.get_async_collection", lambda _name: coll)
 

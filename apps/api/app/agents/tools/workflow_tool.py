@@ -29,9 +29,9 @@ from app.constants.log_tags import LogTag
 from app.decorators import with_rate_limiting
 from app.models.agent_models import agent_configurable
 from app.models.workflow_models import WorkflowExecutionRequest
-from app.services.workflow import WorkflowService
+from app.services.workflow.service import WorkflowService
 from app.services.workflow.subagent_output import parse_subagent_response
-from app.services.workflow.workflow_subagent import WorkflowSubagentRunner
+from app.services.workflow.workflow_subagent import SubagentRunContext, WorkflowSubagentRunner
 from app.utils.timezone import home_timezone_from_config
 from app.utils.workflow_utils import (
     apply_workflow_edit,
@@ -89,6 +89,15 @@ async def create_workflow(
     change an existing workflow, use edit_workflow instead.
     """
     log.set(tool={"name": "create_workflow", "action": "create"})
+
+    # Validate the input BEFORE touching any run context: a blank request must
+    # return the clean error, not blow up on get_stream_writer outside a graph.
+    if not user_request or not user_request.strip():
+        return error_response(
+            "missing_request",
+            "user_request is required. Pass the user's words describing what workflow they want.",
+        )
+
     writer = get_stream_writer()
 
     try:
@@ -99,11 +108,6 @@ async def create_workflow(
         # default and the subagent's "now".
         user_timezone = home_timezone_from_config(config).value
 
-        if not user_request or not user_request.strip():
-            return error_response(
-                "missing_request",
-                "user_request is required. Pass the user's words describing what workflow they want.",
-            )
         task_description = build_new_workflow_task(user_request.strip())
 
         log.info(f"{LogTag.TOOL} create_workflow: Executing")
@@ -113,14 +117,17 @@ async def create_workflow(
             task=task_description,
             user_id=user_id,
             thread_id=thread_id,
-            user_name=user_name,
-            user_timezone=user_timezone,
-            stream_writer=writer,
+            context=SubagentRunContext(
+                user_name=user_name,
+                user_timezone=user_timezone,
+                stream_writer=writer,
+                base_configurable=agent_configurable(config),
+            ),
         )
 
         # Parse the response
         result = parse_subagent_response(subagent_response)
-        log.info(f"{LogTag.TOOL} create_workflow: Parsed mode={result.mode}")
+        log.info(f"{LogTag.TOOL} create_workflow: parsed mode", mode=result.mode)
 
         if result.mode == "finalized" and result.draft:
             draft = result.draft
@@ -128,7 +135,8 @@ async def create_workflow(
             # Check if we can create directly (simple, unambiguous workflows)
             if can_create_directly(draft):
                 log.info(
-                    f"{LogTag.TOOL} create_workflow: Attempting direct creation for: {draft.title}"
+                    f"{LogTag.TOOL} create_workflow: attempting direct creation",
+                    draft_title=draft.title,
                 )
 
                 # Try to create the workflow directly
@@ -150,7 +158,9 @@ async def create_workflow(
 
             # Stream workflow draft to frontend for user confirmation
             writer(result.draft.to_stream_payload())
-            log.info(f"{LogTag.TOOL} create_workflow: Streamed draft: {result.draft.title}")
+            log.info(
+                f"{LogTag.TOOL} create_workflow: streamed draft", draft_title=result.draft.title
+            )
 
             return success_response(
                 {"status": "draft_sent"},
@@ -173,7 +183,9 @@ async def create_workflow(
         if result.mode == "parse_error":
             # Subagent returned something we couldn't parse.
             # Let the executor know so it can inform the user or retry.
-            log.warning(f"{LogTag.TOOL} create_workflow: Parse error: {result.parse_error}")
+            log.warning(
+                f"{LogTag.TOOL} create_workflow: parse error", parse_error=result.parse_error
+            )
             return error_response(
                 "parse_error",
                 f"Failed to process the workflow assistant's response: {result.parse_error}. "
@@ -186,7 +198,9 @@ async def create_workflow(
         )
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} create_workflow: Exception: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.TOOL} create_workflow: exception", error_type=type(e).__name__, exc_info=True
+        )
         return error_response("subagent_failed", str(e))
 
 
@@ -204,13 +218,22 @@ async def get_workflow(
         if not workflow:
             return error_response("not_found", f"Workflow {workflow_id} not found")
 
+        # mode="json": this payload is plain json.dumps'd twice — as the tool
+        # result handed to the LLM and as the stream-writer SSE frame — so a
+        # native datetime raises TypeError inside the tool and wedges the agent
+        # in a retry loop.
+        workflow_json = workflow.model_dump(mode="json")
         writer = get_stream_writer()
-        writer({"workflow_data": {"action": "get", "workflow": workflow.model_dump()}})
+        writer({"workflow_data": {"action": "get", "workflow": workflow_json}})
 
-        return success_response(workflow.model_dump())
+        return success_response(workflow_json)
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error getting workflow {workflow_id}: {e}")
+        log.error(
+            f"{LogTag.TOOL} Error getting workflow",
+            workflow_id=workflow_id,
+            error_type=type(e).__name__,
+        )
         return error_response("fetch_failed", str(e))
 
 
@@ -240,7 +263,11 @@ async def execute_workflow(
         return success_response(data)
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error executing workflow {workflow_id}: {e}")
+        log.error(
+            f"{LogTag.TOOL} Error executing workflow",
+            workflow_id=workflow_id,
+            error_type=type(e).__name__,
+        )
         return error_response("execution_failed", str(e))
 
 
@@ -264,14 +291,20 @@ async def pause_workflow(
             return error_response("not_found", f"Workflow {workflow_id} not found")
 
         writer = get_stream_writer()
-        writer({"workflow_data": {"action": "paused", "workflow": workflow.model_dump()}})
+        writer(
+            {"workflow_data": {"action": "paused", "workflow": workflow.model_dump(mode="json")}}
+        )
 
         return success_response(
             {"workflow_id": workflow.id, "title": workflow.title, "activated": workflow.activated}
         )
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error pausing workflow {workflow_id}: {e}")
+        log.error(
+            f"{LogTag.TOOL} Error pausing workflow",
+            workflow_id=workflow_id,
+            error_type=type(e).__name__,
+        )
         return error_response("pause_failed", str(e))
 
 
@@ -299,14 +332,20 @@ async def resume_workflow(
             return error_response("not_found", f"Workflow {workflow_id} not found")
 
         writer = get_stream_writer()
-        writer({"workflow_data": {"action": "resumed", "workflow": workflow.model_dump()}})
+        writer(
+            {"workflow_data": {"action": "resumed", "workflow": workflow.model_dump(mode="json")}}
+        )
 
         return success_response(
             {"workflow_id": workflow.id, "title": workflow.title, "activated": workflow.activated}
         )
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error resuming workflow {workflow_id}: {e}")
+        log.error(
+            f"{LogTag.TOOL} Error resuming workflow",
+            workflow_id=workflow_id,
+            error_type=type(e).__name__,
+        )
         return error_response("resume_failed", str(e))
 
 
@@ -316,7 +355,7 @@ async def edit_workflow(
     config: RunnableConfig,
     workflow_id: Annotated[str, "The ID of the workflow to edit"],
     user_request: Annotated[
-        str, "The user's change request in their words. Pass verbatim — do not parse it yourself."
+        str, "The user's change request in their words. Pass verbatim: do not parse it yourself."
     ],
 ) -> dict[str, Any]:
     """Edit an existing workflow's behavior, schedule, or trigger.
@@ -341,7 +380,7 @@ async def edit_workflow(
         if not user_request or not user_request.strip():
             return error_response(
                 "missing_request",
-                "user_request is required — pass the user's change in their words.",
+                "user_request is required: pass the user's change in their words.",
             )
 
         workflow = await WorkflowService.get_workflow(workflow_id, user_id)
@@ -353,13 +392,16 @@ async def edit_workflow(
             task=task_description,
             user_id=user_id,
             thread_id=thread_id,
-            user_name=user_name,
-            user_timezone=user_timezone,
-            stream_writer=writer,
+            context=SubagentRunContext(
+                user_name=user_name,
+                user_timezone=user_timezone,
+                stream_writer=writer,
+                base_configurable=agent_configurable(config),
+            ),
         )
 
         result = parse_subagent_response(subagent_response)
-        log.info(f"{LogTag.TOOL} edit_workflow: Parsed mode={result.mode}")
+        log.info(f"{LogTag.TOOL} edit_workflow: parsed mode", mode=result.mode)
 
         if result.mode == "finalized" and result.draft:
             return await apply_workflow_edit(
@@ -378,7 +420,7 @@ async def edit_workflow(
             )
 
         if result.mode == "parse_error":
-            log.warning(f"{LogTag.TOOL} edit_workflow: Parse error: {result.parse_error}")
+            log.warning(f"{LogTag.TOOL} edit_workflow: parse error", parse_error=result.parse_error)
             return error_response(
                 "parse_error",
                 f"Failed to process the workflow assistant's response: {result.parse_error}. "
@@ -388,7 +430,9 @@ async def edit_workflow(
         return success_response({"status": "completed"}, "Workflow edit completed.")
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} edit_workflow: Exception: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.TOOL} edit_workflow: exception", error_type=type(e).__name__, exc_info=True
+        )
         return error_response("edit_failed", str(e))
 
 

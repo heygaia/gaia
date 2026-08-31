@@ -67,7 +67,12 @@ async def _seed_goal_memory(user_id: str, goal: str) -> None:
             source_type=MemorySourceType.MANUAL,
         )
     except Exception as e:
-        log.warning(f"{LogTag.ONBOARDING} Failed to seed goal memory for user {user_id}: {e}")
+        log.warning(
+            f"{LogTag.ONBOARDING} Failed to seed goal memory",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
 
 
 async def complete_onboarding(
@@ -149,20 +154,26 @@ async def complete_onboarding(
             await enqueue_intelligence_job(user_id)
         except Exception as e:
             log.error(
-                f"{LogTag.ONBOARDING} Enqueue failed, rolling back onboarding state for user {user_id}: {e}",
+                f"{LogTag.ONBOARDING} Enqueue failed, rolling back onboarding state for user",
+                user_id=user_id,
+                error=str(e),
+                error_type=type(e).__name__,
                 exc_info=True,
             )
             try:
                 await user_repository.clear_onboarding(user_id)
             except Exception as rollback_error:
                 log.error(
-                    f"{LogTag.ONBOARDING} Rollback also failed for user {user_id}: {rollback_error}",
+                    f"{LogTag.ONBOARDING} Rollback also failed for user",
+                    user_id=user_id,
+                    error=str(rollback_error),
+                    error_type=type(rollback_error).__name__,
                     exc_info=True,
                 )
             raise HTTPException(
                 status_code=503,
                 detail="Could not start onboarding. Please retry.",
-            )
+            ) from e
 
         background_tasks.add_task(seed_initial_user_data, user_id)
 
@@ -176,17 +187,20 @@ async def complete_onboarding(
         # failure can't fail onboarding; idempotent by system_workflow_key.
         background_tasks.add_task(provision_briefing_workflows, user_id)
 
-        log.info(f"{LogTag.ONBOARDING} Onboarding completed successfully for user {user_id}")
+        log.info(f"{LogTag.ONBOARDING} Onboarding completed successfully for user", user_id=user_id)
         return _serialize_user(updated_user)
 
     except HTTPException:
         raise
     except Exception as e:
         log.error(
-            f"{LogTag.ONBOARDING} Error completing onboarding for user {user_id}: {e!s}",
+            f"{LogTag.ONBOARDING} Error completing onboarding for user",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Failed to complete onboarding")
+        raise HTTPException(status_code=500, detail="Failed to complete onboarding") from e
 
 
 async def submit_onboarding_integrations(
@@ -257,10 +271,13 @@ async def get_user_onboarding_status(user_id: str) -> OnboardingStatusResponse:
         raise
     except Exception as e:
         log.error(
-            f"{LogTag.ONBOARDING} Error getting onboarding status for user {user_id}: {e!s}",
+            f"{LogTag.ONBOARDING} Error getting onboarding status for user",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="An internal error occurred")
+        raise HTTPException(status_code=500, detail="An internal error occurred") from e
 
 
 async def update_onboarding_preferences(
@@ -292,7 +309,8 @@ async def update_onboarding_preferences(
             raise HTTPException(status_code=404, detail="User not found")
 
         log.info(
-            f"{LogTag.ONBOARDING} Onboarding preferences updated successfully for user {user_id}"
+            f"{LogTag.ONBOARDING} Onboarding preferences updated successfully for user",
+            user_id=user_id,
         )
 
         return _serialize_user(updated_user)
@@ -301,10 +319,13 @@ async def update_onboarding_preferences(
         raise
     except Exception as e:
         log.error(
-            f"{LogTag.ONBOARDING} Error updating onboarding preferences for user {user_id}: {e!s}",
+            f"{LogTag.ONBOARDING} Error updating onboarding preferences for user",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Failed to update preferences")
+        raise HTTPException(status_code=500, detail="Failed to update preferences") from e
 
 
 async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
@@ -327,11 +348,15 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
     )
     if isinstance(intelligence_result, Exception):
         log.warning(
-            f"{LogTag.ONBOARDING} reset_onboarding failed to abort intelligence job: {intelligence_result}"
+            f"{LogTag.ONBOARDING} reset_onboarding failed to abort intelligence job",
+            intelligence_result=intelligence_result,
+            user_id=user_id,
         )
     if isinstance(workflows_result, Exception):
         log.warning(
-            f"{LogTag.ONBOARDING} reset_onboarding failed to abort workflows job: {workflows_result}"
+            f"{LogTag.ONBOARDING} reset_onboarding failed to abort workflows job",
+            workflows_result=workflows_result,
+            user_id=user_id,
         )
 
     onboarding = user.onboarding or {}
@@ -348,14 +373,23 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
                 workflows_deleted += 1
         except Exception as e:
             log.warning(
-                f"{LogTag.ONBOARDING} reset_onboarding failed to delete workflow {wf_id}: {e}"
+                f"{LogTag.ONBOARDING} reset_onboarding failed to delete workflow",
+                wf_id=wf_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
             )
 
     todos_deleted = 0
     try:
         todos_deleted = await todo_repository.delete_onboarding_todos(user_id)
     except Exception as e:
-        log.warning(f"{LogTag.ONBOARDING} reset_onboarding failed to delete todos: {e}")
+        log.warning(
+            f"{LogTag.ONBOARDING} reset_onboarding failed to delete todos",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
 
     conversation_deleted = 0
     if first_conversation_id:
@@ -363,14 +397,22 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
             deleted = await conversation_repository.delete(first_conversation_id, user_id=user_id)
             conversation_deleted = int(deleted)
         except Exception as e:
-            log.warning(f"{LogTag.ONBOARDING} reset_onboarding failed to delete conversation: {e}")
+            log.warning(
+                f"{LogTag.ONBOARDING} reset_onboarding failed to delete conversation",
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
 
     demo_conversations_deleted = 0
     try:
         demo_conversations_deleted = await conversation_repository.delete_onboarding_demos(user_id)
     except Exception as e:
         log.warning(
-            f"{LogTag.ONBOARDING} reset_onboarding failed to delete demo conversations: {e}"
+            f"{LogTag.ONBOARDING} reset_onboarding failed to delete demo conversations",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
         )
 
     integrations_disconnected = await _disconnect_user_integrations(user_id)
@@ -387,7 +429,7 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
         memories_cleared=memories_cleared,
     )
     log.set(onboarding={"operation": "reset", **counts.model_dump()})
-    log.info(f"{LogTag.ONBOARDING} Onboarding reset complete for user {user_id}")
+    log.info(f"{LogTag.ONBOARDING} Onboarding reset complete for user", user_id=user_id)
     return counts
 
 
@@ -396,7 +438,12 @@ async def _disconnect_user_integrations(user_id: str) -> int:
         uis = await user_integration_repository.list_for_user(user_id)
         integration_ids = [ui.integration_id for ui in uis]
     except Exception as e:
-        log.warning(f"{LogTag.ONBOARDING} reset_onboarding failed to list user integrations: {e}")
+        log.warning(
+            f"{LogTag.ONBOARDING} reset_onboarding failed to list user integrations",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
         return 0
 
     disconnected = 0
@@ -406,7 +453,11 @@ async def _disconnect_user_integrations(user_id: str) -> int:
             disconnected += 1
         except Exception as e:
             log.warning(
-                f"{LogTag.ONBOARDING} reset_onboarding failed to disconnect {integration_id}: {e}"
+                f"{LogTag.ONBOARDING} reset_onboarding failed to disconnect",
+                integration_id=integration_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
             )
     return disconnected
 
@@ -415,5 +466,10 @@ async def _clear_user_memories(user_id: str) -> int:
     try:
         return await memory_engine.delete_all(user_id)
     except Exception as e:
-        log.warning(f"{LogTag.ONBOARDING} reset_onboarding failed to clear memories: {e}")
+        log.warning(
+            f"{LogTag.ONBOARDING} reset_onboarding failed to clear memories",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
         return 0

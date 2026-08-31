@@ -1,5 +1,8 @@
 """Domain senders for every platform email GAIA delivers."""
 
+from datetime import UTC, datetime, timedelta
+
+from app.config.rate_limits import derive_pro_benefits, get_feature_info
 from app.config.settings import settings
 from app.constants.email import (
     CONTACT_EMAIL,
@@ -11,7 +14,9 @@ from app.constants.email import (
     WHATSAPP_URL,
 )
 from app.constants.log_tags import LogTag
+from app.db.repositories.users import user_repository
 from app.models.support_models import SupportEmailNotification, SupportRequestType
+from app.models.user_models import UserDocument
 from app.services.email.models import EmailMessage
 from app.services.email.providers import get_email_provider
 from app.services.email.providers.base import MarketingContactsProvider
@@ -58,11 +63,20 @@ async def send_support_team_notification(
                         reply_to=notification_data.user_email,
                     )
                 )
-                log.info(f"{LogTag.MAIL} Support notification sent to {support_email}")
+                log.info(f"{LogTag.MAIL} Support notification sent to", support_email=support_email)
             except Exception as e:
-                log.error(f"{LogTag.MAIL} Failed to send support email to {support_email}: {e!s}")
+                log.error(
+                    f"{LogTag.MAIL} Failed to send support email to",
+                    support_email=support_email,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Error sending support team notifications: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Error sending support team notifications",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -91,9 +105,16 @@ async def send_support_to_user_email(
                 html=html_content,
             )
         )
-        log.info(f"{LogTag.MAIL} Confirmation email sent to user {notification_data.user_email}")
+        log.info(
+            f"{LogTag.MAIL} Confirmation email sent to user",
+            user_email=notification_data.user_email,
+        )
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Failed to send confirmation email to user: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Failed to send confirmation email to user",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -117,9 +138,14 @@ async def send_pro_subscription_email(user_name: str, user_email: str) -> None:
                 reply_to=CONTACT_EMAIL,
             )
         )
-        log.info(f"{LogTag.MAIL} Pro subscription welcome email sent to {user_email}")
+        log.info(f"{LogTag.MAIL} Pro subscription welcome email sent to", user_email=user_email)
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Failed to send pro subscription email to {user_email}: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Failed to send pro subscription email to",
+            user_email=user_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -147,9 +173,14 @@ async def send_welcome_email(user_email: str, user_name: str | None = None) -> N
                 reply_to=CONTACT_EMAIL,
             )
         )
-        log.info(f"{LogTag.MAIL} Welcome email sent to {user_email}")
+        log.info(f"{LogTag.MAIL} Welcome email sent to", user_email=user_email)
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Failed to send welcome email to {user_email}: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Failed to send welcome email to",
+            user_email=user_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -162,13 +193,19 @@ async def add_marketing_contact(user_email: str, user_name: str | None = None) -
         provider = get_email_provider()
         if not isinstance(provider, MarketingContactsProvider):
             log.info(
-                f"{LogTag.MAIL} Email provider has no marketing audience; skipping contact {user_email}"
+                f"{LogTag.MAIL} Email provider has no marketing audience; skipping contact",
+                user_email=user_email,
             )
             return
         await provider.add_contact(user_email, user_name)
-        log.info(f"{LogTag.MAIL} Contact added to marketing audience: {user_email}")
+        log.info(f"{LogTag.MAIL} Contact added to marketing audience", user_email=user_email)
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Failed to add marketing contact for {user_email}: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Failed to add marketing contact for",
+            user_email=user_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 async def send_inactive_user_email(
@@ -198,7 +235,161 @@ async def send_inactive_user_email(
                 headers=build_unsubscribe_headers(user_id),
             )
         )
-        log.info(f"{LogTag.MAIL} Inactive user email sent to {user_email}")
+        log.info(f"{LogTag.MAIL} Inactive user email sent to", user_email=user_email)
     except Exception as e:
-        log.error(f"{LogTag.MAIL} Failed to send inactive user email to {user_email}: {e!s}")
+        log.error(
+            f"{LogTag.MAIL} Failed to send inactive user email to",
+            user_email=user_email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
+
+
+async def send_badge_earned_email(
+    user_email: str,
+    user_name: str | None,
+    tier: str,
+    top_label: str,
+) -> None:
+    """Congratulate a user the first time they reach an activity badge tier.
+
+    Send-once semantics live with the caller (``sync_activity_tiers`` promotes
+    monotonically), so this stays a dumb sender like the rest of this module.
+    """
+    html_content = render_email_template(
+        "badge_earned.html",
+        user_name=user_name,
+        tier_name=tier.capitalize(),
+        top_label=top_label,
+        usage_url=f"{settings.FRONTEND_URL}/settings/usage",
+        contact_email=CONTACT_EMAIL,
+    )
+
+    await send_email(
+        EmailMessage(
+            sender=FOUNDER_SENDER,
+            to=[user_email],
+            subject=f"You're in the top {top_label} of GAIA users",
+            html=html_content,
+            reply_to=CONTACT_EMAIL,
+        )
+    )
+    log.info(f"{LogTag.MAIL} Badge earned email sent", tier=tier)
+
+
+#: One limit email of any kind per user per week, shared by both senders.
+LIMIT_EMAIL_WINDOW = timedelta(days=7)
+
+
+async def _limit_email_recipient(user_id: str) -> UserDocument | None:
+    """The user a limit email may go to, or None (missing/no email/weekly dedupe).
+
+    Both limit emails — the interactive upsell and the background
+    workflows-paused note — share this one weekly window via
+    ``last_limit_email_sent``, so a user never gets more than one limit email
+    of any kind in a 7-day span.
+    """
+    user = await user_repository.get(user_id)
+    if user is None or not user.email:
+        log.warning(
+            f"{LogTag.MAIL} Limit email skipped — user not found or no email",
+            user={"id": user_id},
+        )
+        return None
+
+    # One nudge per week: a daily 429 toast is expected UX; a daily email is spam.
+    # The window is CLAIMED, not merely read: both senders share it, and reading
+    # eligibility here then stamping it after the send let two concurrent hits
+    # both pass and both send. The claim is a conditional update, so exactly one
+    # caller wins; the loser returns None and sends nothing.
+    claimed = await user_repository.claim_limit_email_slot(
+        user_id, stale_before=datetime.now(UTC) - LIMIT_EMAIL_WINDOW
+    )
+    if claimed is None:
+        return None
+    return user
+
+
+async def send_limit_reached_email(
+    user_id: str,
+    hit_feature: str,
+) -> bool:
+    """Upsell email when a FREE user hits a usage wall, deduped to 1/week.
+
+    The benefits list is derived live from FEATURE_LIMITS — the same config
+    that enforces the limits — so the email can never promise something the
+    plan doesn't deliver. Returns True if sent, False if skipped (dedupe or
+    missing user/email).
+    """
+    user = await _limit_email_recipient(user_id)
+    if user is None:
+        return False
+
+    feature_title = get_feature_info(hit_feature).title
+    html_content = render_email_template(
+        "limit_reached.html",
+        user_name=user.name,
+        hit_feature_title=feature_title,
+        benefits=derive_pro_benefits(hit_feature),
+        pricing_url=f"{settings.FRONTEND_URL}/pricing",
+        contact_email=CONTACT_EMAIL,
+    )
+
+    try:
+        await send_email(
+            EmailMessage(
+                sender=FOUNDER_SENDER,
+                to=[user.email],
+                subject="You hit your GAIA limit today — here's what Pro unlocks",
+                html=html_content,
+                reply_to=CONTACT_EMAIL,
+            )
+        )
+    except Exception:
+        # The slot was claimed before sending; hand it back so a failed
+        # send does not silence this user for the rest of the week.
+        await user_repository.release_limit_email_slot(user_id, user.last_limit_email_sent)
+        raise
+    log.info(f"{LogTag.MAIL} Limit-reached upsell email sent", user={"id": user_id})
+    return True
+
+
+async def send_workflows_paused_email(user_id: str) -> bool:
+    """Tell a FREE user their background workflows are taking a break today.
+
+    Sent when a workflow run — not a user action — hits the daily usage wall,
+    so the copy explains what happened to the work GAIA does for them in the
+    background instead of claiming they personally hit a limit. Shares the
+    weekly dedupe window with the interactive upsell email. Returns True if
+    sent, False if skipped (dedupe or missing user/email).
+    """
+    user = await _limit_email_recipient(user_id)
+    if user is None:
+        return False
+
+    html_content = render_email_template(
+        "workflows_paused.html",
+        user_name=user.name,
+        workflows_url=f"{settings.FRONTEND_URL}/workflows",
+        pricing_url=f"{settings.FRONTEND_URL}/pricing",
+        contact_email=CONTACT_EMAIL,
+    )
+
+    try:
+        await send_email(
+            EmailMessage(
+                sender=FOUNDER_SENDER,
+                to=[user.email],
+                subject="GAIA is taking a break until tomorrow",
+                html=html_content,
+                reply_to=CONTACT_EMAIL,
+            )
+        )
+    except Exception:
+        # The slot was claimed before sending; hand it back so a failed
+        # send does not silence this user for the rest of the week.
+        await user_repository.release_limit_email_slot(user_id, user.last_limit_email_sent)
+        raise
+    log.info(f"{LogTag.MAIL} Workflows-paused email sent", user={"id": user_id})
+    return True

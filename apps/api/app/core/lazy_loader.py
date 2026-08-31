@@ -110,7 +110,8 @@ class LazyLoader(Generic[T]):
                     # For async functions, we can't auto-initialize during __init__
                     # Log a message and defer initialization to first get() call
                     log.info(
-                        f"{LogTag.STARTUP} Async provider '{self.provider_name}' will be auto-initialized on first access"
+                        f"{LogTag.STARTUP} Async provider will be auto-initialized on first access",
+                        provider_name=self.provider_name,
                     )
                 else:
                     self._initialize_sync()
@@ -120,13 +121,17 @@ class LazyLoader(Generic[T]):
                     # "Auto-initialized" here too would report a broken provider as up.
                     if self.is_initialized():
                         log.info(
-                            f"{LogTag.STARTUP} Auto-initialized provider '{self.provider_name}' at registration time"
+                            f"{LogTag.STARTUP} Auto-initialized provider at registration time",
+                            provider_name=self.provider_name,
                         )
             except Exception as e:
                 if self.strategy == MissingKeyStrategy.ERROR:
                     raise
                 log.warning(
-                    f"{LogTag.STARTUP} Auto-initialization failed for '{self.provider_name}': {e}"
+                    f"{LogTag.STARTUP} Auto-initialization failed for",
+                    provider_name=self.provider_name,
+                    error=str(e),
+                    error_type=type(e).__name__,
                 )
 
     def _check_availability_and_warn(self) -> None:
@@ -172,14 +177,14 @@ class LazyLoader(Generic[T]):
 
         # Quick check without lock for already initialized instances
         if self.is_global_context and self._is_configured:
-            return True  # type: ignore[return-value]
+            return True
         if not self.is_global_context and self._instance is not None:
             return self._instance
 
         with self._lock:
             # Double-check locking pattern
             if self.is_global_context and self._is_configured:
-                return True  # type: ignore[return-value]
+                return True
             if not self.is_global_context and self._instance is not None:
                 return self._instance
 
@@ -189,7 +194,7 @@ class LazyLoader(Generic[T]):
         """Get the provider instance asynchronously. Works for both sync and async loader functions."""
         # Quick check without lock for already initialized instances
         if self.is_global_context and self._is_configured:
-            return True  # type: ignore[return-value]
+            return True
         if not self.is_global_context and self._instance is not None:
             return self._instance
 
@@ -201,7 +206,7 @@ class LazyLoader(Generic[T]):
             async with self._async_lock:
                 # Double-check locking pattern
                 if self.is_global_context and self._is_configured:
-                    return True  # type: ignore[return-value]
+                    return True
                 if not self.is_global_context and self._instance is not None:
                     return self._instance
 
@@ -211,7 +216,7 @@ class LazyLoader(Generic[T]):
             with self._lock:
                 # Double-check locking pattern
                 if self.is_global_context and self._is_configured:
-                    return True  # type: ignore[return-value]
+                    return True
                 if not self.is_global_context and self._instance is not None:
                     return self._instance
 
@@ -240,9 +245,10 @@ class LazyLoader(Generic[T]):
                 self.loader_func()
                 self._is_configured = True
                 log.info(
-                    f"{LogTag.STARTUP} Successfully configured global provider: {self.provider_name}"
+                    f"{LogTag.STARTUP} Successfully configured global provider",
+                    provider_name=self.provider_name,
                 )
-                return True  # type: ignore[return-value]
+                return True
             # For instance-based providers, store and return the instance
             result = self.loader_func()
             if inspect.iscoroutine(result):
@@ -250,12 +256,20 @@ class LazyLoader(Generic[T]):
                     f"Sync initialization called on async loader function for '{self.provider_name}'"
                 )
             self._instance = cast(T, result)
-            log.info(f"{LogTag.STARTUP} Successfully initialized provider: {self.provider_name}")
+            log.info(
+                f"{LogTag.STARTUP} Successfully initialized provider",
+                provider_name=self.provider_name,
+            )
             return self._instance
 
         except Exception as e:
             error_msg = f"Failed to initialize provider '{self.provider_name}': {e!s}"
-            log.error(f"{LogTag.STARTUP} {error_msg}")
+            log.error(
+                f"{LogTag.STARTUP} Failed to initialize provider",
+                provider_name=self.provider_name,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
 
             if self.strategy == MissingKeyStrategy.ERROR:
                 raise ConfigurationError(error_msg) from e
@@ -292,9 +306,10 @@ class LazyLoader(Generic[T]):
                         )
                 self._is_configured = True
                 log.info(
-                    f"{LogTag.STARTUP} Successfully configured global provider: {self.provider_name}"
+                    f"{LogTag.STARTUP} Successfully configured global provider",
+                    provider_name=self.provider_name,
                 )
-                return True  # type: ignore[return-value]
+                return True
             # For instance-based providers, store and return the instance
             if self.is_async:
                 result = self.loader_func()
@@ -311,12 +326,20 @@ class LazyLoader(Generic[T]):
                         f"Unexpected coroutine from sync loader function for '{self.provider_name}'"
                     )
                 self._instance = cast(T, result)
-            log.info(f"{LogTag.STARTUP} Successfully initialized provider: {self.provider_name}")
+            log.info(
+                f"{LogTag.STARTUP} Successfully initialized provider",
+                provider_name=self.provider_name,
+            )
             return self._instance
 
         except Exception as e:
             error_msg = f"Failed to initialize provider '{self.provider_name}': {e!s}"
-            log.error(f"{LogTag.STARTUP} {error_msg}")
+            log.error(
+                f"{LogTag.STARTUP} Failed to initialize provider",
+                provider_name=self.provider_name,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
 
             if self.strategy == MissingKeyStrategy.ERROR:
                 raise ConfigurationError(error_msg) from e
@@ -332,11 +355,7 @@ class LazyLoader(Generic[T]):
 
     def _is_value_missing(self, value: object) -> bool:
         """Check if a value is considered missing/invalid."""
-        if value is None:
-            return True
-        if isinstance(value, str) and value.strip() == "":
-            return True
-        return False
+        return value is None or (isinstance(value, str) and value.strip() == "")
 
     def _handle_missing_values_on_get(self, missing_indices: set[int]) -> Union[T, bool] | None:
         """Handle missing values when get() is called."""
@@ -362,7 +381,7 @@ class LazyLoader(Generic[T]):
 
     def _log_warning(self, message: str) -> None:
         """Log warning message."""
-        log.warning(f"{LogTag.STARTUP} [LazyLoader] {message}")
+        log.warning(f"{LogTag.STARTUP} [LazyLoader]", reason=message)
 
     def is_available(self) -> bool:
         """Check if the provider is available without initializing it."""
@@ -382,34 +401,38 @@ class LazyLoader(Generic[T]):
             return self._is_configured
         return self._instance is not None
 
+    async def areset(self) -> None:
+        """Awaitable reset that takes the async lock, so it cannot race ``aget()``.
+
+        The async initializer holds ``_async_lock`` while ``loader_func`` runs;
+        clearing the fields without that lock lets an in-flight initialization
+        repopulate the instance after the reset, silently undoing it. Await this
+        whenever a loop is already running.
+        """
+        if self._async_lock is None:
+            raise RuntimeError(f"Async lock not initialized for provider '{self.provider_name}'")
+        async with self._async_lock:
+            self._instance = None
+            self._is_configured = False
+
     def reset(self) -> None:
         """Reset the loader (useful for testing)."""
         if self.is_async:
-            # For async loaders, we need to handle the async lock
-            async def _async_reset() -> None:
-                if self._async_lock is None:
-                    raise RuntimeError(
-                        f"Async lock not initialized for provider '{self.provider_name}'"
-                    )
-                async with self._async_lock:
-                    self._instance = None
-                    self._is_configured = False
-
-            # If we're in an async context, this should be awaited
-            # Otherwise, we'll do our best with sync reset
+            # get_running_loop() succeeds only INSIDE a running loop. There,
+            # a plain synchronous clear races any in-flight aget(): the
+            # initializer holds _async_lock and would write _instance right
+            # back after this reset — the reset would silently not happen.
+            # Fail loud and require the awaited API instead.
             try:
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    # We're in an async context, but we can't await here
-                    # Just reset synchronously and hope for the best
-                    self._instance = None
-                    self._is_configured = False
-                else:
-                    loop.run_until_complete(_async_reset())
+                asyncio.get_running_loop()
             except RuntimeError:
-                # No event loop, just reset synchronously
-                self._instance = None
-                self._is_configured = False
+                asyncio.run(self.areset())
+            else:
+                raise RuntimeError(
+                    f"reset() for async provider '{self.provider_name}' called inside a "
+                    "running event loop, where it could be overwritten by an in-flight "
+                    "initialization — await areset() instead, which takes the async lock"
+                )
         else:
             with self._lock:
                 self._instance = None
@@ -457,7 +480,7 @@ class ProviderRegistry:
         """Register a new provider."""
         with self._lock:
             if name in self._providers:
-                log.warning(f"{LogTag.STARTUP} Provider '{name}' is being re-registered")
+                log.warning(f"{LogTag.STARTUP} Provider is being re-registered", name=name)
 
             provider = LazyLoader(
                 loader_func=loader_func,
@@ -514,7 +537,7 @@ class ProviderRegistry:
                     # aget returns None (no raise) for a WARN/SILENT provider that is
                     # unavailable or whose loader failed — don't log success for those.
                     if provider is not None and provider.is_initialized():
-                        log.info(f"{LogTag.STARTUP} Auto-initialized provider '{name}'")
+                        log.info(f"{LogTag.STARTUP} Auto-initialized provider", name=name)
                 except asyncio.CancelledError:
                     # Propagate cancellation so shutdown can stop warmup promptly.
                     raise
@@ -523,10 +546,18 @@ class ProviderRegistry:
                     provider = self._providers.get(name)
                     provider_strategy = provider.strategy if provider else MissingKeyStrategy.WARN
                     if provider_strategy == MissingKeyStrategy.ERROR:
-                        log.error(f"{LogTag.STARTUP} Auto-initialization failed for '{name}': {e}")
+                        log.error(
+                            f"{LogTag.STARTUP} Auto-initialization failed for",
+                            name=name,
+                            error=str(e),
+                            error_type=type(e).__name__,
+                        )
                     else:
                         log.warning(
-                            f"{LogTag.STARTUP} Auto-initialization failed for '{name}': {e}"
+                            f"{LogTag.STARTUP} Auto-initialization failed for",
+                            name=name,
+                            error=str(e),
+                            error_type=type(e).__name__,
                         )
 
         with self._lock:
@@ -535,7 +566,9 @@ class ProviderRegistry:
             return
 
         await asyncio.gather(*[_init_provider(name) for name in names])
-        log.info(f"{LogTag.STARTUP} Completed auto-initialization for {len(names)} providers")
+        log.info(
+            f"{LogTag.STARTUP} Completed auto-initialization for providers", names_count=len(names)
+        )
 
         if strict and errors:
             failed = ", ".join(name for name, _ in errors)
@@ -589,7 +622,12 @@ class ProviderRegistry:
                     raise
                 except Exception as e:
                     errors.append((name, e))
-                    log.error(f"{LogTag.STARTUP} Provider warmup failed for '{name}': {e}")
+                    log.error(
+                        f"{LogTag.STARTUP} Provider warmup failed for",
+                        name=name,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
 
         if not warmup_names:
             if strict and errors:
@@ -601,20 +639,22 @@ class ProviderRegistry:
 
         if errors:
             log.warning(
-                f"{LogTag.STARTUP} Provider warmup completed with {len(errors)} errors "
-                f"({skipped_unavailable} unavailable providers skipped)"
+                f"{LogTag.STARTUP} Provider warmup completed with errors ( unavailable providers skipped)",
+                errors_count=len(errors),
+                skipped_unavailable=skipped_unavailable,
             )
         else:
             log.info(
-                f"{LogTag.STARTUP} Provider warmup completed for {len(warmup_names)} providers "
-                f"({skipped_unavailable} unavailable providers skipped)"
+                f"{LogTag.STARTUP} Provider warmup completed for providers ( unavailable providers skipped)",
+                warmup_names_count=len(warmup_names),
+                skipped_unavailable=skipped_unavailable,
             )
 
         if strict and errors:
             failed = ", ".join(name for name, _ in errors)
             raise RuntimeError(f"Provider warmup failed for: {failed}")
 
-    def get(self, name: str) -> Any | None:
+    def get(self, name: str) -> Any | None:  # noqa: ANN401 -- framework contract
         """Get a provider instance by name synchronously - only works for sync providers.
 
         Returns ``Any`` because the registry is keyed by name, not by type: the
@@ -636,7 +676,7 @@ class ProviderRegistry:
                     self.get(dep)
         return loader.get()
 
-    async def aget(self, name: str) -> Any | None:
+    async def aget(self, name: str) -> Any | None:  # noqa: ANN401 -- framework contract
         """Get a provider instance by name asynchronously - works for both sync and async providers.
 
         Returns ``Any`` for the same reason as :meth:`get`; narrow with ``cast``.
@@ -676,9 +716,16 @@ class ProviderRegistry:
         For testing only: a process-lifetime resource (e.g. an asyncpg engine)
         that gets disposed but not reset here would otherwise be handed back,
         already-closed, to a later test running under a different event loop.
+        Inside a running event loop use :meth:`areset` instead — a sync reset
+        of an async provider there could be overwritten by an in-flight init.
         """
         if name in self._providers:
             self._providers[name].reset()
+
+    async def areset(self, name: str) -> None:
+        """Awaited variant of :meth:`reset` — safe inside a running event loop."""
+        if name in self._providers:
+            await self._providers[name].areset()
 
 
 # Global registry instance

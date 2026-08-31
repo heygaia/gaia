@@ -156,7 +156,7 @@ async def deep_research(
         found_urls = [u["url"] for u in ranked_urls]
         writer(
             {
-                "progress": f"Found {len(ranked_urls)} unique sources — fetching full content...",
+                "progress": f"Found {len(ranked_urls)} unique sources, fetching full content...",
                 "found_urls": found_urls,
             }
         )
@@ -165,7 +165,7 @@ async def deep_research(
             return {
                 "error": (
                     "Search returned no results for the given query. "
-                    "No URLs were found — do not fabricate links. "
+                    "No URLs were found: do not fabricate links. "
                     "Try broadening the search or inform the user that no sources were found."
                 ),
                 "query": query,
@@ -221,12 +221,10 @@ async def deep_research(
                 fetch_counter += 1
                 snippet = url_info.get("snippet", "").strip()
                 if snippet:
-                    log.warning(
-                        f"{LogTag.TOOL} All fetchers failed for {url[:60]}, using search snippet"
-                    )
+                    log.warning(f"{LogTag.TOOL} All fetchers failed, using search snippet", url=url)
                     return {
                         **url_info,
-                        "content": f"[Snippet only — full page unavailable]\n\n{snippet}",
+                        "content": f"[Snippet only: full page unavailable]\n\n{snippet}",
                         "fetch_error": "; ".join(errors),
                     }
                 return {**url_info, "content": None, "fetch_error": "; ".join(errors)}
@@ -264,7 +262,7 @@ async def deep_research(
             "error": None,
             "integrity_note": (
                 "All URLs in `sources` and `authoritative_urls` were returned by real search "
-                "queries. Only cite URLs from this list — never invent or guess URLs."
+                "queries. Only cite URLs from this list; never invent or guess URLs."
             ),
         }
 
@@ -281,5 +279,5 @@ async def deep_research(
         }
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Deep research error: {e}", exc_info=True)
+        log.error(f"{LogTag.TOOL} Deep research error", error_type=type(e).__name__, exc_info=True)
         return {"error": str(e), "query": query, "data": None}

@@ -61,13 +61,28 @@ class WorkflowScheduler(BaseSchedulerService):
         """Get the ARQ job name for workflow processing."""
         return "execute_workflow_by_id"
 
-    def _build_job_args(self, task_id: str) -> tuple[str, dict[str, str]]:
+    def _build_job_args(self, task_id: str, scheduled_at: datetime) -> tuple[str, dict[str, Any]]:
         """Mark scheduler-originated fires so the executor re-arms the next
         occurrence; manual "run now" executions pass their own context and so are
-        never tagged as scheduled."""
-        return (task_id, {"trigger_type": TriggerType.SCHEDULE.value})
+        never tagged as scheduled.
 
-    async def claim_scheduled_for_execution(self, workflow_id: str) -> bool:
+        ``scheduled_for`` pins the occurrence this job was armed for. ARQ has no
+        job cancellation, so after a reschedule the old deferred job still fires;
+        the worker compares the stamp against the workflow's current
+        ``trigger_config.next_run`` and skips the stale fire instead of running
+        the workflow at its original time.
+        """
+        return (
+            task_id,
+            {
+                "trigger_type": TriggerType.SCHEDULE.value,
+                "scheduled_for": int(scheduled_at.timestamp()),
+            },
+        )
+
+    async def claim_scheduled_for_execution(
+        self, workflow_id: str, expected_next_run: datetime | None = None
+    ) -> bool:
         """Atomically claim a live, idle workflow for a fire (SCHEDULED -> EXECUTING).
 
         The claim verifies BOTH axes at once: liveness (`activated=True`) and
@@ -77,13 +92,21 @@ class WorkflowScheduler(BaseSchedulerService):
         - the workflow has been deactivated (`activated=False`) but a deferred ARQ
           job for an earlier-armed occurrence is still in Redis and fires anyway.
 
+        ``expected_next_run`` adds the freshness axis: a fire armed for an
+        occurrence that has since been rescheduled away (the old deferred ARQ job
+        firing after the cron changed) is rejected because
+        ``trigger_config.next_run`` no longer matches. Legacy jobs without a stamp
+        pass None and claim exactly as before.
+
         Keeping liveness (`activated`) and run-state (`status`) as independent fields
         is deliberate: deactivate/reactivate only flips `activated`, so a reactivated
         workflow is still status="scheduled" and immediately claimable — no stale
         status can wedge it. The re-arm at the end of execution returns the row to
         "scheduled" with its next run time.
         """
-        return await workflow_repository.claim_for_execution(workflow_id)
+        return await workflow_repository.claim_for_execution(
+            workflow_id, expected_next_run=expected_next_run
+        )
 
     async def get_task(self, task_id: str, user_id: str | None = None) -> Workflow | None:
         """Get a workflow by ID, or None if not found."""
@@ -92,39 +115,46 @@ class WorkflowScheduler(BaseSchedulerService):
                 return await workflow_repository.get_for_user(task_id, user_id)
             return await workflow_repository.get(task_id)
         except Exception as e:
-            log.error(f"{LogTag.WORKFLOW} Error fetching workflow {task_id}: {e}")
+            log.error(
+                f"{LogTag.WORKFLOW} Error fetching workflow",
+                task_id=task_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
             return None
 
     async def execute_task(self, task: BaseScheduledTask) -> TaskExecutionResult:
         """Execute a workflow task via the BaseSchedulerService interface.
 
-        Workflows are normally executed via ARQ calling execute_workflow_by_id
-        directly (which handles execution tracking); this method is currently
-        unused but kept for BaseSchedulerService compatibility.
+        ARQ jobs call execute_workflow_by_id directly, so nothing reaches this
+        today; the base class requires it, and the one implementation is the
+        real fire. Calling the agent path directly here ran a workflow with no
+        quota check, no execution record and no playbook.
         """
         try:
             workflow: Workflow | None = task if isinstance(task, Workflow) else None
             if not workflow:
                 raise ValueError("Task must be a Workflow instance")
 
-            from app.workers.tasks import execute_workflow_as_chat
+            # Deferred import: breaks circular dependency: worker task modules import this scheduler/service stack
+            from app.workers.tasks import execute_workflow_by_id  # noqa: PLC0415 -- deferred
 
             log.set(workflow={"id": workflow.id, "status": "executing"})
-            log.info(f"{LogTag.WORKFLOW} Executing workflow {workflow.id}")
+            log.info(f"{LogTag.WORKFLOW} Executing workflow", id=workflow.id)
 
             if not workflow.id:
                 raise ValueError("Workflow ID is required for execution")
 
-            # Runs the workflow as a silent chat turn; the completion
-            # notification is sent from the executor delivery path.
-            await execute_workflow_as_chat(workflow, {"user_id": workflow.user_id}, {})
-
-            return TaskExecutionResult(
-                success=True,
-                message="Workflow executed via scheduler",
-            )
+            message = await execute_workflow_by_id({}, workflow.id)
+            return TaskExecutionResult(success=True, message=message)
         except Exception as e:
-            log.error(f"{LogTag.WORKFLOW} Error executing workflow {task.id}: {e}")
+            log.error(
+                f"{LogTag.WORKFLOW} Error executing workflow",
+                id=task.id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return TaskExecutionResult(success=False, message=f"Workflow execution failed: {e!s}")
 
     async def update_task_status(
@@ -160,13 +190,25 @@ class WorkflowScheduler(BaseSchedulerService):
 
             if matched:
                 log.set(workflow={"id": task_id, "status": status.value})
-                log.info(f"{LogTag.WORKFLOW} Updated workflow {task_id} status to {status.value}")
+                log.info(
+                    f"{LogTag.WORKFLOW} Updated workflow status to",
+                    task_id=task_id,
+                    status=status.value,
+                )
                 return True
-            log.warning(f"{LogTag.WORKFLOW} No workflow updated for {task_id}")
+            log.warning(
+                f"{LogTag.WORKFLOW} No workflow updated for", task_id=task_id, user_id=user_id
+            )
             return False
 
         except Exception as e:
-            log.error(f"{LogTag.WORKFLOW} Error updating workflow {task_id}: {e}")
+            log.error(
+                f"{LogTag.WORKFLOW} Error updating workflow",
+                task_id=task_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
             return False
 
     async def get_pending_task(self, current_time: datetime) -> list[BaseScheduledTask]:
@@ -214,12 +256,20 @@ class WorkflowScheduler(BaseSchedulerService):
                     + (f" with repeat '{repeat}'" if repeat else "")
                 )
             else:
-                log.error(f"{LogTag.WORKFLOW} Failed to schedule workflow {workflow_id}")
+                log.error(
+                    f"{LogTag.WORKFLOW} Failed to schedule workflow",
+                    workflow_id=workflow_id,
+                )
 
             return success
 
         except Exception as e:
-            log.error(f"{LogTag.WORKFLOW} Error scheduling workflow {workflow_id}: {e!s}")
+            log.error(
+                f"{LogTag.WORKFLOW} Error scheduling workflow",
+                workflow_id=workflow_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
     async def reschedule_workflow(
@@ -242,7 +292,10 @@ class WorkflowScheduler(BaseSchedulerService):
             )
 
             if not db_success:
-                log.error(f"{LogTag.WORKFLOW} Failed to update workflow {workflow_id} in database")
+                log.error(
+                    f"{LogTag.WORKFLOW} Failed to update workflow in database",
+                    workflow_id=workflow_id,
+                )
                 return False
 
             # Actually reschedule in ARQ queue
@@ -250,17 +303,25 @@ class WorkflowScheduler(BaseSchedulerService):
 
             if arq_success:
                 log.info(
-                    f"{LogTag.WORKFLOW} Rescheduled workflow {workflow_id} for {new_scheduled_at}"
+                    f"{LogTag.WORKFLOW} Rescheduled workflow for",
+                    workflow_id=workflow_id,
+                    new_scheduled_at=new_scheduled_at,
                 )
             else:
                 log.error(
-                    f"{LogTag.WORKFLOW} Failed to reschedule workflow {workflow_id} in ARQ queue"
+                    f"{LogTag.WORKFLOW} Failed to reschedule workflow in ARQ queue",
+                    workflow_id=workflow_id,
                 )
 
             return arq_success
 
         except Exception as e:
-            log.error(f"{LogTag.WORKFLOW} Error rescheduling workflow {workflow_id}: {e!s}")
+            log.error(
+                f"{LogTag.WORKFLOW} Error rescheduling workflow",
+                workflow_id=workflow_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return False
 
     async def reap_stale_executing(self) -> int:
@@ -298,8 +359,10 @@ class WorkflowScheduler(BaseSchedulerService):
                 await self.reschedule_task(workflow_id, next_run)
 
             log.warning(
-                f"{LogTag.WORKFLOW} Reaped workflow {workflow_id} stuck in EXECUTING for {stuck_seconds}s; "
-                f"reset to SCHEDULED (next run {next_run})"
+                f"{LogTag.WORKFLOW} Reaped workflow stuck in EXECUTING; reset to SCHEDULED",
+                workflow_id=workflow_id,
+                stuck_seconds=stuck_seconds,
+                next_run=next_run,
             )
             reaped += 1
 

@@ -254,8 +254,8 @@ def _time24(generated_local: str) -> str:
     hour, minute, ampm = int(match.group(1)), match.group(2), match.group(3).upper()
     if ampm == "AM":
         hour = 0 if hour == 12 else hour
-    else:
-        hour = 12 if hour == 12 else hour + 12
+    elif hour != 12:
+        hour += 12
     return f"{hour:02d}:{minute}"
 
 

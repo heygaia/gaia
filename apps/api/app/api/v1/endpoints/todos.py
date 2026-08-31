@@ -19,6 +19,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
     get_user_id,
     get_user_timezone_from_preferences,
 )
+from app.constants.general import MAX_PAGE_NUMBER
 from app.constants.log_tags import LogTag
 from app.constants.todos import FACET_FIELDS, FACET_NOTES
 from app.db.redis import delete_cache, get_cache, set_cache
@@ -52,6 +53,7 @@ from app.models.todo_models import (
     UpdateProjectRequest,
 )
 from app.models.user_models import AuthenticatedUser
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.payments.payment_service import payment_service
 from app.services.todo_canvas_storage import read_artifacts, read_facet
 from app.services.todos import gaia_todo_lifecycle as lifecycle
@@ -91,7 +93,7 @@ async def get_todo_counts(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"Failed to retrieve counts: {e}",
-        )
+        ) from e
 
 
 # Labels endpoint — dedicated aggregation for most-used labels
@@ -101,12 +103,17 @@ async def get_todo_labels(
     limit: int = 10,
 ) -> list[TodoLabelCount]:
     """Get most-used labels for the current user's todos."""
-    return await todo_repository.top_labels(user_id=user["user_id"], limit=limit)
+    log.set(user={"id": user["user_id"]}, todo={"operation": "list_labels"})
+    labels = await todo_repository.top_labels(user_id=user["user_id"], limit=limit)
+    log.set_ns("todo", result_count=len(labels))
+    return labels
 
 
 # Main Todo CRUD Endpoints
 @router.get("/todos", response_model=TodoListResponse)
 async def list_todos(
+    # Keyword-only: FastAPI binds query parameters by NAME, so the star costs
+    # nothing at the wire and keeps the signature honest about how it is called.
     *,
     # Search parameters
     q: str | None = Query(None, description="Search query"),
@@ -127,7 +134,7 @@ async def list_todos(
     due_today: bool = Query(False, description="Only todos due today"),
     due_this_week: bool = Query(False, description="Only todos due this week"),
     # Pagination
-    page: int = Query(1, ge=1),
+    page: int = Query(1, ge=1, le=MAX_PAGE_NUMBER),
     per_page: int = Query(50, ge=1, le=100),
     # Options
     include_stats: bool = Query(False, description="Include statistics in response"),
@@ -202,15 +209,16 @@ async def list_todos(
 
     try:
         result = await TodoService.list_todos(user["user_id"], params)
-        log.set(todo={"operation": "list", "result_count": len(result.data)})
+        # set_ns: log.set(todo={...}) would clobber the search context set above
+        log.set_ns("todo", result_count=len(result.data))
         return result
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve todos",
-        )
+        ) from e
 
 
 @router.post("/todos", response_model=TodoResponse, status_code=status.HTTP_201_CREATED)
@@ -235,12 +243,122 @@ async def create_todo(
         schedule_classification(created.id, user["user_id"], created.title, created.description)
         return created
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create todo",
-        )
+        ) from e
+
+
+# Bulk Operations
+# These literal ``/todos/bulk`` paths MUST be declared before the parameterized
+# ``/todos/{todo_id}`` routes below: FastAPI matches in declaration order, so if
+# ``PUT/DELETE /todos/{todo_id}`` came first they would capture ``/todos/bulk``
+# with todo_id="bulk" and 500 instead of running the bulk operation.
+@router.put("/todos/bulk", response_model=BulkOperationResponse)
+@tiered_rate_limit("todo_operations")
+async def bulk_update_todos(
+    request: BulkUpdateRequest, user: AuthenticatedUser = Depends(get_current_user)
+) -> BulkOperationResponse:
+    """
+    Bulk update multiple todos with the same changes.
+
+    Example:
+    ```json
+    {
+        "todo_ids": ["id1", "id2", "id3"],
+        "updates": {
+            "completed": true,
+            "priority": "high"
+        }
+    }
+    ```
+    """
+    log.set(
+        user={"id": user["user_id"]},
+        todo={"operation": "bulk_update", "bulk_count": len(request.todo_ids)},
+    )
+    try:
+        result = await TodoService.bulk_update_todos(request, user["user_id"])
+        capture_context_event(AnalyticsEvents.TODO_UPDATED, {"bulk_count": len(request.todo_ids)})
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Bulk update failed",
+        ) from e
+
+
+@router.post("/todos/bulk/move", response_model=BulkOperationResponse)
+@tiered_rate_limit("todo_operations")
+async def bulk_move_todos(
+    request: BulkMoveRequest, user: AuthenticatedUser = Depends(get_current_user)
+) -> BulkOperationResponse:
+    """Move multiple todos to a different project."""
+    log.set(
+        user={"id": user["user_id"]},
+        todo={
+            "operation": "bulk_move",
+            "bulk_count": len(request.todo_ids),
+            "project_id": request.project_id,
+        },
+    )
+    try:
+        return await TodoService.bulk_move_todos(request, user["user_id"])
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Bulk move failed"
+        ) from e
+
+
+@router.delete("/todos/bulk", response_model=BulkOperationResponse)
+@tiered_rate_limit("todo_operations")
+async def bulk_delete_todos(
+    todo_ids: list[str] = Body(..., min_length=1, max_length=100),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> BulkOperationResponse:
+    """Delete multiple todos."""
+    log.set(
+        user={"id": user["user_id"]},
+        todo={"operation": "bulk_delete", "bulk_count": len(todo_ids)},
+    )
+    try:
+        return await TodoService.bulk_delete_todos(todo_ids, user["user_id"])
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Bulk delete failed",
+        ) from e
+
+
+# Special mark complete endpoint for convenience
+@router.post("/todos/bulk/complete", response_model=BulkOperationResponse)
+@tiered_rate_limit("todo_operations")
+async def bulk_complete_todos(
+    todo_ids: list[str] = Body(..., min_length=1, max_length=100),
+    user: AuthenticatedUser = Depends(get_current_user),
+) -> BulkOperationResponse:
+    """Mark multiple todos as completed (convenience endpoint)."""
+    log.set(
+        user={"id": user["user_id"]},
+        todo={"operation": "bulk_complete", "bulk_count": len(todo_ids)},
+    )
+    request = BulkUpdateRequest(
+        todo_ids=todo_ids,
+        updates=TodoUpdateRequest(completed=True),
+    )
+    try:
+        result = await TodoService.bulk_update_todos(request, user["user_id"])
+        capture_context_event(AnalyticsEvents.TODO_TOGGLED, {"bulk_count": len(todo_ids)})
+        return result
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Bulk complete failed",
+        ) from e
 
 
 @router.get("/todos/{todo_id}", response_model=TodoResponse)
@@ -252,12 +370,12 @@ async def get_todo(
     try:
         return await TodoService.get_todo(todo_id, user["user_id"])
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve todo",
-        )
+        ) from e
 
 
 @router.get("/todos/{todo_id}/canvas")
@@ -305,115 +423,6 @@ async def get_todo_artifacts(
     return JSONResponse(content={"artifacts": artifacts})
 
 
-# Bulk Operations
-# These literal ``/todos/bulk`` paths MUST be declared before the parameterized
-# ``/todos/{todo_id}`` routes below: FastAPI matches in declaration order, so if
-# ``PUT/DELETE /todos/{todo_id}`` came first they would capture ``/todos/bulk``
-# with todo_id="bulk" and 500 instead of running the bulk operation.
-@router.put("/todos/bulk", response_model=BulkOperationResponse)
-@tiered_rate_limit("todo_operations")
-async def bulk_update_todos(
-    request: BulkUpdateRequest, user: dict = Depends(get_current_user)
-) -> BulkOperationResponse:
-    """
-    Bulk update multiple todos with the same changes.
-
-    Example:
-    ```json
-    {
-        "todo_ids": ["id1", "id2", "id3"],
-        "updates": {
-            "completed": true,
-            "priority": "high"
-        }
-    }
-    ```
-    """
-    log.set(
-        user={"id": user["user_id"]},
-        todo={
-            "operation": "bulk_update",
-            "bulk_count": len(request.todo_ids) if hasattr(request, "todo_ids") else 0,
-        },
-    )
-    try:
-        return await TodoService.bulk_update_todos(request, user["user_id"])
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bulk update failed",
-        )
-
-
-@router.post("/todos/bulk/move", response_model=BulkOperationResponse)
-@tiered_rate_limit("todo_operations")
-async def bulk_move_todos(
-    request: BulkMoveRequest, user: dict = Depends(get_current_user)
-) -> BulkOperationResponse:
-    """Move multiple todos to a different project."""
-    log.set(
-        user={"id": user["user_id"]},
-        todo={
-            "operation": "bulk_move",
-            "bulk_count": len(request.todo_ids),
-            "project_id": request.project_id,
-        },
-    )
-    try:
-        return await TodoService.bulk_move_todos(request, user["user_id"])
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Bulk move failed"
-        )
-
-
-@router.delete("/todos/bulk", response_model=BulkOperationResponse)
-@tiered_rate_limit("todo_operations")
-async def bulk_delete_todos(
-    todo_ids: list[str] = Body(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
-) -> BulkOperationResponse:
-    """Delete multiple todos."""
-    log.set(
-        user={"id": user["user_id"]},
-        todo={"operation": "bulk_delete", "bulk_count": len(todo_ids)},
-    )
-    try:
-        return await TodoService.bulk_delete_todos(todo_ids, user["user_id"])
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bulk delete failed",
-        )
-
-
-# Special mark complete endpoint for convenience
-@router.post("/todos/bulk/complete", response_model=BulkOperationResponse)
-@tiered_rate_limit("todo_operations")
-async def bulk_complete_todos(
-    todo_ids: list[str] = Body(..., min_length=1, max_length=100),
-    user: dict = Depends(get_current_user),
-) -> BulkOperationResponse:
-    """Mark multiple todos as completed (convenience endpoint)."""
-    log.set(
-        user={"id": user["user_id"]},
-        todo={"operation": "bulk_complete", "bulk_count": len(todo_ids)},
-    )
-    request = BulkUpdateRequest(
-        todo_ids=todo_ids,
-        updates=TodoUpdateRequest(completed=True),
-    )
-    try:
-        return await TodoService.bulk_update_todos(request, user["user_id"])
-    except Exception:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Bulk complete failed",
-        )
-
-
 @router.put("/todos/{todo_id}", response_model=TodoResponse)
 @tiered_rate_limit("todo_operations")
 async def update_todo(
@@ -436,16 +445,22 @@ async def update_todo(
             try:
                 await tracked_todo_service.reschedule_execution(todo_id, updates.scheduled_at)
             except Exception as e:
-                log.warning(f"{LogTag.TODO} Failed to reschedule todo {todo_id} after update: {e}")
+                log.warning(
+                    f"{LogTag.TODO} Failed to reschedule todo after update",
+                    todo_id=todo_id,
+                    user_id=user["user_id"],
+                    error_type=type(e).__name__,
+                    error=str(e),
+                )
 
         return updated_todo
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update todo",
-        )
+        ) from e
 
 
 @router.delete("/todos/{todo_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -456,12 +471,12 @@ async def delete_todo(todo_id: str, user: AuthenticatedUser = Depends(get_curren
     try:
         await TodoService.delete_todo(todo_id, user["user_id"])
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete todo",
-        )
+        ) from e
 
 
 # Workflow Generation Endpoint
@@ -524,14 +539,14 @@ async def generate_workflow(
         )
 
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
     except HTTPException:
         raise
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to generate workflow",
-        )
+        ) from e
 
 
 @router.get("/todos/{todo_id}/workflow-status")
@@ -602,12 +617,12 @@ async def get_workflow_status(
             await set_cache(wf_cache_key, wf_result, ttl=60, model=TodoWorkflowStatusResponse)
         return wf_result
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e)) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to get workflow status",
-        )
+        ) from e
 
 
 # Project Endpoints
@@ -619,11 +634,11 @@ async def list_projects(
     log.set(user={"id": user["user_id"]}, todo={"operation": "list_projects"})
     try:
         return await ProjectService.list_projects(user["user_id"])
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve projects",
-        )
+        ) from e
 
 
 @router.post("/projects", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
@@ -635,11 +650,11 @@ async def create_project(
     log.set(user={"id": user["user_id"]}, todo={"operation": "create_project"})
     try:
         return await ProjectService.create_project(project, user["user_id"])
-    except Exception:
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create project",
-        )
+        ) from e
 
 
 @router.put("/projects/{project_id}", response_model=ProjectResponse)
@@ -664,12 +679,12 @@ async def update_project(
                 else status.HTTP_404_NOT_FOUND
             ),
             detail=str(e),
-        )
-    except Exception:
+        ) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update project",
-        )
+        ) from e
 
 
 @router.delete("/projects/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -692,12 +707,12 @@ async def delete_project(
                 else status.HTTP_404_NOT_FOUND
             ),
             detail=str(e),
-        )
-    except Exception:
+        ) from e
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete project",
-        )
+        ) from e
 
 
 # Subtask Management Endpoints
@@ -724,16 +739,17 @@ async def create_subtask(
         )
 
         if not updated_todo:
-            raise ValueError(f"Todo {todo_id} not found")
-
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo {todo_id} not found"
+            )
         return TodoResponse.from_document(updated_todo)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create subtask",
-        )
+        ) from e
 
 
 @router.put("/todos/{todo_id}/subtasks/{subtask_id}", response_model=TodoResponse)
@@ -760,7 +776,9 @@ async def update_subtask(
         )
 
         if not updated_todo:
-            raise ValueError(f"Todo {todo_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo {todo_id} not found"
+            )
 
         # Verify subtask exists (if no match, the update still succeeds but doesn't modify)
         subtask_found = any(s.id == subtask_id for s in updated_todo.subtasks)
@@ -768,13 +786,13 @@ async def update_subtask(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtask not found")
 
         return TodoResponse.from_document(updated_todo)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update subtask",
-        )
+        ) from e
 
 
 @router.delete("/todos/{todo_id}/subtasks/{subtask_id}", response_model=TodoResponse)
@@ -794,7 +812,9 @@ async def delete_subtask(
         )
 
         if not updated_todo:
-            raise ValueError(f"Todo {todo_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo {todo_id} not found"
+            )
 
         # Verify subtask was actually removed by checking if it still exists in the result
         subtask_still_exists = any(s.id == subtask_id for s in updated_todo.subtasks)
@@ -802,13 +822,13 @@ async def delete_subtask(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Subtask not found")
 
         return TodoResponse.from_document(updated_todo)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to delete subtask",
-        )
+        ) from e
 
 
 @router.post("/todos/{todo_id}/subtasks/{subtask_id}/toggle", response_model=TodoResponse)
@@ -826,7 +846,9 @@ async def toggle_subtask_completion(
         todo = await todo_repository.get(todo_id, user_id=user["user_id"])
 
         if not todo:
-            raise ValueError(f"Todo {todo_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo {todo_id} not found"
+            )
 
         # Find the subtask to get current completion status
         subtask = next((s for s in todo.subtasks if s.id == subtask_id), None)
@@ -844,16 +866,22 @@ async def toggle_subtask_completion(
         )
 
         if not updated_todo:
-            raise ValueError(f"Todo {todo_id} not found")
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND, detail=f"Todo {todo_id} not found"
+            )
 
+        capture_context_event(
+            AnalyticsEvents.TODO_TOGGLED,
+            {"is_subtask": True, "completed": not subtask.completed},
+        )
         return TodoResponse.from_document(updated_todo)
-    except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=str(e))
-    except Exception:
+    except HTTPException:
+        raise
+    except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to toggle subtask",
-        )
+        ) from e
 
 
 # --- GAIA todo lifecycle (assignee model) -----------------------------------
@@ -889,7 +917,7 @@ async def approve_gaia_todo(
             },
         )
     except InvalidTransitionError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return JSONResponse(content={"success": True, "todo_id": todo_id, "execution_status": "queued"})
 
 
@@ -906,7 +934,7 @@ async def dismiss_gaia_todo(
     try:
         await lifecycle.dismiss(todo_id, user_id, reason=reason, channel=channel)
     except InvalidTransitionError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return JSONResponse(
         content={"success": True, "todo_id": todo_id, "execution_status": "dismissed"}
     )
@@ -925,7 +953,7 @@ async def answer_gaia_todo(
     try:
         await lifecycle.answer(todo_id, user_id, answer, channel=channel)
     except InvalidTransitionError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return JSONResponse(content={"success": True, "todo_id": todo_id, "execution_status": "queued"})
 
 
@@ -940,7 +968,7 @@ async def handoff_todo_to_gaia(
     try:
         await lifecycle.handoff(todo_id, user_id)
     except InvalidTransitionError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     return JSONResponse(content={"success": True, "todo_id": todo_id, "execution_status": "queued"})
 
 
@@ -956,7 +984,7 @@ async def retry_gaia_todo(
     try:
         await lifecycle.retry(todo_id, user_id, channel=channel)
     except InvalidTransitionError as e:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e)) from e
     log.set(todo={"execution_status": "queued"})
     return JSONResponse(content={"success": True, "todo_id": todo_id, "execution_status": "queued"})
 

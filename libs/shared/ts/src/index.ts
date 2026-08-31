@@ -4,6 +4,10 @@
  * Shared utilities for GAIA TypeScript/JavaScript applications.
  */
 
+// `./analytics` is intentionally NOT re-exported here. It pulls in
+// `posthog-node` which imports Node-only modules (`path`, `fs`) that
+// Metro/React Native cannot resolve. Bot consumers should import it
+// via the subpath: `import { Analytics } from "@gaia/shared/analytics"`.
 export type {
   AddPublicIntegrationParams,
   AddToWorkspaceParams,
@@ -61,10 +65,7 @@ export type {
   WorkflowTriggerOptionsParams,
   WorkflowUpdateParams,
 } from "./api";
-// `./analytics` is intentionally NOT re-exported here. It pulls in
-// `posthog-node` which imports Node-only modules (`path`, `fs`) that
-// Metro/React Native cannot resolve. Bot consumers should import it
-// via the subpath: `import { Analytics } from "@gaia/shared/analytics"`.
+
 export {
   ApiError,
   buildIntegrationUrl,
@@ -80,120 +81,10 @@ export {
   TODO_ENDPOINTS,
   WORKFLOW_ENDPOINTS,
 } from "./api";
-export type {
-  AuthenticatedSettingsResponse,
-  AuthStatus,
-  BotCommand,
-  BotCommandOption,
-  BotConfig,
-  BotConversation,
-  BotConversationListResponse,
-  BotCreateTodoRequest,
-  BotFileData,
-  BotLogFields,
-  BotLogger,
-  BotSubcommand,
-  BotTodo,
-  BotTodoListResponse,
-  BotUserContext,
-  BotWorkflow,
-  BotWorkflowExecutionRequest,
-  BotWorkflowExecutionResponse,
-  BotWorkflowListResponse,
-  ChatRequest,
-  CommandContext,
-  CommandExecuteParams,
-  IncomingMedia,
-  IntegrationInfo,
-  MediaKind,
-  MediaOutcome,
-  MessageEditor,
-  MessageTarget,
-  NewMessageSender,
-  OutboundAttachment,
-  OutboundMessageEnvelope,
-  PlatformName,
-  RichMessage,
-  RichMessageTarget,
-  SentMessage,
-  SettingsResponse,
-  StreamingOptions,
-  UnauthenticatedSettingsResponse,
-} from "./bots";
-export {
-  allCommands,
-  authCommand,
-  BaseBotAdapter,
-  BOT_MEDIA_LIMITS,
-  BotServer,
-  buildAuthLinkMessage,
-  COMMAND_HELP,
-  chunkResponse,
-  conversationsCommand,
-  convertToDiscordMarkdown,
-  convertToSlackMrkdwn,
-  convertToTelegramHtml,
-  convertToWhatsAppMarkdown,
-  createBotLogger,
-  dispatchTodoSubcommand,
-  dispatchWorkflowSubcommand,
-  escapeHtml,
-  escapeHtmlAttr,
-  extensionForMime,
-  extractSubcommandArgs,
-  formatBotError,
-  formatConversation,
-  formatConversationList,
-  formatTodo,
-  formatTodoList,
-  formatWorkflow,
-  formatWorkflowList,
-  friendlyMediaError,
-  GaiaApiError,
-  GaiaClient,
-  gaiaCommand,
-  getHttpStatus,
-  handleConversationList,
-  handleNewConversation,
-  handleStreamingChat,
-  handleTodoComplete,
-  handleTodoCreate,
-  handleTodoDelete,
-  handleTodoList,
-  handleWorkflowCreate,
-  handleWorkflowDelete,
-  handleWorkflowExecute,
-  handleWorkflowGet,
-  handleWorkflowList,
-  hashLogIdentifier,
-  helpCommand,
-  htmlToPlainText,
-  injectInfisicalSecrets,
-  isTableRow,
-  isTableSeparator,
-  loadConfig,
-  mediaKindFromMime,
-  newCommand,
-  OUTBOUND_FILE_LIMITS,
-  outboundAttachmentSchema,
-  outboundMessageEnvelopeSchema,
-  PLATFORM_LIMITS,
-  PLATFORM_MARKDOWN,
-  parseTextArgs,
-  processBotMedia,
-  renderForPlatform,
-  richMessageToMarkdown,
-  STREAMING_DEFAULTS,
-  sanitizeErrorForLog,
-  settingsCommand,
-  statusCommand,
-  stopCommand,
-  todoCommand,
-  truncateResponse,
-  unlinkCommand,
-  unsupportedMediaMessage,
-  workflowCommand,
-} from "./bots";
+// `./bots` is intentionally NOT re-exported here. It pulls Node-only modules
+// (`node:fs`, `dotenv`) that Metro/React Native cannot resolve. Bot consumers
+// should import via the subpath: `import { allCommands } from "@gaia/shared/bots"`.
+
 export type {
   ApiFileData,
   ApiToolData,
@@ -310,9 +201,12 @@ export {
 } from "./chat";
 export {
   CLI_COMMAND_DESCRIPTIONS,
-  REQUIRED_DOC_COMMANDS,
-  REQUIRED_INSTALL_COMMANDS,
+  CLI_INSTALL_COMMANDS,
 } from "./cli";
+export {
+  USAGE_DANGER_THRESHOLD,
+  USAGE_WARN_THRESHOLD,
+} from "./constants/usage";
 export type {
   DesktopAppIconOption,
   DesktopMediaAccessStatus,
@@ -377,8 +271,22 @@ export {
   WORKFLOW_STATUS_TTL_MS,
   WORKFLOW_WS_EVENTS,
 } from "./todos";
-export { formatToolDueDate, groupEventsByDate } from "./tool-utils";
+export {
+  bucketDate,
+  formatAllDayDate,
+  formatAllDayDateRange,
+  formatDateWithRelative,
+  formatTimedEventDate,
+  formatTimeRange,
+  formatTimeString,
+  formatToolDueDate,
+  getEventDurationText,
+  groupEventsByDate,
+  isDateOnly,
+} from "./tool-utils";
 export type {
+  ActivityDay,
+  BudgetWindow,
   BulkMoveRequest,
   ChannelPlatform,
   ChannelPreferences,
@@ -401,6 +309,7 @@ export type {
   Integration,
   IntegrationAuthType,
   IntegrationCategory,
+  IntegrationConnectionData,
   IntegrationCreator,
   IntegrationManagedBy,
   IntegrationStatusRecord,
@@ -451,13 +360,13 @@ export type {
   TodoLabel,
   TodoListResponse,
   TodoUpdate,
-  TokenUsage,
-  TokenUsagePeriod,
   Tool,
   ToolCategory,
   ToolsByCategoryResponse,
   ToolsListResponse,
   TriggerConfig,
+  UsageActivity,
+  UsageBudget,
   UsagePeriod,
   UsageSummary,
   UserIntegration,
@@ -484,6 +393,7 @@ export {
 export type {
   ContentSegment,
   DueChipTone,
+  IntegrationConnectionState,
   JwtPayload,
   OpenUIActionEventLike,
   OpenUIActionHandlers,
@@ -498,16 +408,21 @@ export type {
   TokenStorage,
 } from "./utils";
 export {
+  CONNECT_ACTION_LABEL,
+  connectionPromptState,
   DEFAULT_SIMILARITY_CONFIG,
   dispatchOpenUIAction,
   extractUrls,
   formatCompactNumber,
   formatCurrency,
   formatDate,
+  formatDateUTC,
   formatDueDate,
   formatDuration,
+  formatFeatureName,
   formatFileSize,
   formatNumber,
+  formatPlanName,
   formatRelativeDate,
   formatRelativeTime,
   formatRunCount,
@@ -518,6 +433,8 @@ export {
   getRelevantThinkingMessage,
   getSimpleTimeGreeting,
   getTriggerLabel,
+  INTEGRATION_STATE_ORDER,
+  integrationConnectionState,
   isOverdue,
   isTokenExpired,
   NEW_MESSAGE_BREAK_TOKEN,
@@ -532,7 +449,6 @@ export {
   parseRelativeDateLabel,
   parseThinkingFromText,
   shouldRefreshToken,
-  splitByBreaksPreservingFences,
   splitMessageByBreaks,
   truncateText,
 } from "./utils";

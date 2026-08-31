@@ -19,14 +19,18 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.agents.llm.client import StructuredCallOptions
+from app.constants.hil import HIL_LLM_TIMEOUT_SECONDS
 from app.services.hil.conversational import (
     UNRELATED_FEEDBACK,
     BatchDecisionResult,
     BatchItemDecision,
     DecisionResult,
+    interpret_batch_decision_message,
+    interpret_decision_message,
     resolve_pending_from_message,
 )
-from app.services.hil.resolution import ApprovalRequestNotFound
+from app.services.hil.resolution import ApprovalRequestNotFoundError
 
 from .conftest import CONVERSATION_ID, USER_ID, make_record
 
@@ -394,7 +398,7 @@ class TestRacingDecisions:
                 BatchItemDecision(index=2, action="approve"),
             ],
         )
-        resolver["resolve"].side_effect = [ApprovalRequestNotFound(), None]
+        resolver["resolve"].side_effect = [ApprovalRequestNotFoundError(), None]
         with pending("Send email", "Post to Slack"):
             action = await resolve_pending_from_message(CONVERSATION_ID, USER_ID, "yes")
 
@@ -403,6 +407,71 @@ class TestRacingDecisions:
 
     async def test_an_already_resolved_single_approval_does_not_raise(self, resolver: dict) -> None:
         resolver["llm"].return_value = DecisionResult(action="approve")
-        resolver["resolve"].side_effect = ApprovalRequestNotFound()
+        resolver["resolve"].side_effect = ApprovalRequestNotFoundError()
         with pending("Send email"):
             assert await resolve_pending_from_message(CONVERSATION_ID, USER_ID, "yes") == "approve"
+
+    async def test_a_forbidden_approval_is_swallowed_the_same_way(self, resolver: dict) -> None:
+        """A decision that lost an ownership race (approval belongs to another
+        user) must read as "already handled", not blow up the chat turn."""
+        from app.services.hil.resolution import ApprovalRequestForbiddenError
+
+        resolver["llm"].return_value = DecisionResult(action="approve")
+        resolver["resolve"].side_effect = ApprovalRequestForbiddenError()
+        with pending("Send email"):
+            assert await resolve_pending_from_message(CONVERSATION_ID, USER_ID, "yes") == "approve"
+
+
+class TestTheClassifierCall:
+    """What the two interpreters hand the LLM boundary. The label is what the
+    call is metered and traced under — the batch and single paths are separate
+    lanes only because their labels differ — and the timeout is what stops a
+    hung provider from holding a chat turn open for the client default."""
+
+    async def test_the_single_approval_call_is_labelled_and_bounded(self) -> None:
+        captured: dict[str, Any] = {}
+
+        async def fake_ainvoke_structured(
+            schema: type[DecisionResult],
+            prompt: Any,
+            *,
+            label: str,
+            config: Any = None,
+            options: StructuredCallOptions | None = None,
+        ) -> DecisionResult:
+            captured.update(schema=schema, label=label, options=options)
+            return DecisionResult(action="approve")
+
+        with patch(f"{MODULE}.ainvoke_structured", fake_ainvoke_structured):
+            result = await interpret_decision_message(
+                "yes", ["Send email — to: bob@example.com"], user_id=USER_ID
+            )
+
+        assert result == DecisionResult(action="approve")
+        assert captured["schema"] is DecisionResult
+        assert captured["label"] == "hil_conversational_resolve"
+        assert captured["options"] == StructuredCallOptions(timeout=HIL_LLM_TIMEOUT_SECONDS)
+
+    async def test_the_batch_call_is_labelled_and_bounded(self) -> None:
+        captured: dict[str, Any] = {}
+
+        async def fake_ainvoke_structured(
+            schema: type[BatchDecisionResult],
+            prompt: Any,
+            *,
+            label: str,
+            config: Any = None,
+            options: StructuredCallOptions | None = None,
+        ) -> BatchDecisionResult:
+            captured.update(schema=schema, label=label, options=options)
+            return BatchDecisionResult(unrelated=False)
+
+        with patch(f"{MODULE}.ainvoke_structured", fake_ainvoke_structured):
+            result = await interpret_batch_decision_message(
+                "yes", ["Send email", "Post to Slack"], user_id=USER_ID
+            )
+
+        assert result == BatchDecisionResult(unrelated=False)
+        assert captured["schema"] is BatchDecisionResult
+        assert captured["label"] == "hil_conversational_resolve_batch"
+        assert captured["options"] == StructuredCallOptions(timeout=HIL_LLM_TIMEOUT_SECONDS)

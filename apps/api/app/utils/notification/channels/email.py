@@ -115,7 +115,12 @@ class EmailChannelAdapter(ChannelAdapter):
                 )
                 response.raise_for_status()
         except httpx.HTTPError as e:
-            log.error(f"{LogTag.NOTIFICATION} Email send failed for user {user_id}: {e}")
+            log.error(
+                f"{LogTag.NOTIFICATION} Email send failed",
+                user_id=user_id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             return self._error(f"email: send failed ({e})")
 
         return self._success()

@@ -14,8 +14,9 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, TypedDict
 from unittest.mock import AsyncMock, MagicMock, patch
+from uuid import uuid4
 
 from langchain_core.messages import (
     AIMessage,
@@ -24,6 +25,8 @@ from langchain_core.messages import (
     SystemMessage,
     ToolMessage,
 )
+from langchain_core.outputs import ChatGeneration, ChatResult
+from langchain_core.tools import BaseTool
 from langgraph.store.memory import InMemoryStore
 from pydantic import PrivateAttr
 
@@ -40,6 +43,9 @@ SELECT_NODE = "select_tools"
 TOOLS_NODE = "tools"
 #: Terminal node for ``finish_task``.
 FINISH_NODE = "finish_task"
+#: Where the completion guard sends a run back for one more pass instead of
+#: letting it end on demonstrably unfinished work.
+NUDGE_NODE = "nudge_continue"
 
 #: The memory engine double a comms graph was built with, so a test can assert
 #: passive ingestion actually ran.
@@ -90,6 +96,11 @@ class GraphRun:
     #: it on the way in and that rewrite never reaches the checkpoint, so this is
     #: the only place a hook's effect is observable.
     prompts: list[list[BaseMessage]] = field(default_factory=list)
+    #: Every node that emitted an update, in order — including nodes whose
+    #: update carried no messages (e.g. ``end_graph_hooks``, whose hooks are
+    #: side-effecting and write no channels). ``nodes()`` covers only the
+    #: message-bearing route.
+    visited: list[str] = field(default_factory=list)
     error: BaseException | None = None
 
     def last_prompt(self) -> list[BaseMessage]:
@@ -187,6 +198,10 @@ class RecordingFakeModel(BindableToolsFakeModel):
     rewrite the message list on its way to the model and that rewrite is
     ephemeral — it never lands in the checkpoint. So the only way to assert on a
     hook's effect is to record the prompt the model actually received.
+
+    ``last_chat_messages`` / ``chat_messages_log`` are the public recording API
+    (LlamaIndex's ``MockLLMWithChatMemoryOfLastCall`` namesake); ``prompts`` is
+    the same log, read by :func:`run_graph`.
     """
 
     _prompts: list[list[BaseMessage]] = PrivateAttr(default_factory=list)
@@ -199,6 +214,16 @@ class RecordingFakeModel(BindableToolsFakeModel):
     @property
     def bound(self) -> list[list[str]]:
         return self._bound
+
+    @property
+    def last_chat_messages(self) -> list[BaseMessage] | None:
+        """The message list of the most recent model call, None before the first."""
+        return self._prompts[-1] if self._prompts else None
+
+    @property
+    def chat_messages_log(self) -> list[list[BaseMessage]]:
+        """Every message list handed to the model, in call order."""
+        return list(self._prompts)
 
     def bind_tools(self, tools: Any, **kwargs: Any) -> RecordingFakeModel:
         """Record what the model was actually handed.
@@ -217,8 +242,38 @@ class RecordingFakeModel(BindableToolsFakeModel):
         return super()._generate(messages, *args, **kwargs)
 
     async def _agenerate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
-        self._prompts.append(list(messages))
-        return super()._generate(messages, *args, **kwargs)
+        # Dispatch through ``self._generate``, not ``super()._generate``: a
+        # subclass overriding the response (e.g. CallAllToolsModel) must see the
+        # override on the async path too, or its script is silently bypassed.
+        return self._generate(messages, *args, **kwargs)
+
+
+#: What a scripted hand-off sends for `call_executor`'s required
+#: `acceptance_criteria`. The e2e suites are about graph wiring, not the tool's
+#: schema — that the field is required at all is pinned in
+#: `tests/unit/agents/test_executor_handoff_brief.py`. Filling it here keeps one
+#: schema change from rewriting fifty scripts by hand.
+SCRIPTED_ACCEPTANCE_CRITERIA = ["scripted e2e hand-off"]
+
+
+#: One scripted tool-call payload, shared by every helper that models the
+#: ``name``/``args``/``id`` triple LangGraph puts on AIMessage.tool_calls.
+class ToolCall(TypedDict):
+    name: str
+    args: dict[str, Any]
+    id: str
+
+
+def call(name: str, args: dict[str, Any] | None = None, call_id: str = "c1") -> ToolCall:
+    """One scripted tool call.
+
+    Lived in four e2e modules as identical copies until `acceptance_criteria`
+    became required and every one of them broke at once.
+    """
+    call_args = dict(args or {})
+    if name == "call_executor" and "acceptance_criteria" not in call_args:
+        call_args["acceptance_criteria"] = list(SCRIPTED_ACCEPTANCE_CRITERIA)
+    return {"name": name, "args": call_args, "id": call_id}
 
 
 def scripted_model(script: Sequence[Any]) -> RecordingFakeModel:
@@ -243,19 +298,72 @@ def scripted_model(script: Sequence[Any]) -> RecordingFakeModel:
             responses.append(AIMessage(content="", tool_calls=list(item)))
         else:
             responses.append(AIMessage(content=str(item)))
-    return RecordingFakeModel(responses=responses)
+    return RecordingFakeModel(responses=responses, profile={"max_input_tokens": 1_000_000})
+
+
+def call_all_tools_response_generator(
+    messages: list[BaseMessage], tools: list[BaseTool]
+) -> AIMessage:
+    """One tool call per bound tool, then a plain completion reply.
+
+    Mirrors LlamaIndex's ``_tool_calling_response_generator``: once any tool
+    result is in the conversation, answer "Tool calls complete." instead of
+    calling again (or the graph would loop forever); otherwise emit one call
+    per tool, filling non-required args from the tool's schema defaults and
+    omitting required ones.
+    """
+    if any(isinstance(message, ToolMessage) for message in messages):
+        return AIMessage(content="Tool calls complete.")
+    if not tools:
+        return AIMessage(content="No tools available.")
+    tool_calls: list[dict[str, Any]] = []
+    for tool in tools:
+        args: dict[str, Any] = {}
+        schema = getattr(tool, "args_schema", None)
+        if schema is not None:
+            for field_name, field_info in schema.model_fields.items():
+                if not field_info.is_required():
+                    args[field_name] = field_info.get_default(call_default_factory=True)
+        tool_calls.append({"name": tool.name, "args": args, "id": f"call-all-{uuid4().hex}"})
+    return AIMessage(content="", tool_calls=tool_calls)
+
+
+class CallAllToolsModel(RecordingFakeModel):
+    """A scripted model that calls EVERY bound tool on its first turn.
+
+    ``responses`` is accepted so construction stays drop-in with
+    :func:`scripted_model`, but never consumed: every call is auto-generated.
+    After the results are back the generator replies "Tool calls complete.",
+    so a run exercises every tool the graph bound and still terminates.
+    """
+
+    _bound_tools: list[BaseTool] = PrivateAttr(default_factory=list)
+
+    def bind_tools(self, tools: Any, **kwargs: Any) -> CallAllToolsModel:
+        super().bind_tools(tools, **kwargs)
+        self._bound_tools = list(tools)
+        return self
+
+    def _generate(self, messages: list[BaseMessage], *args: Any, **kwargs: Any) -> Any:
+        self._prompts.append(list(messages))
+        response = call_all_tools_response_generator(messages, self._bound_tools)
+        return ChatResult(generations=[ChatGeneration(message=response)])
 
 
 @asynccontextmanager
 async def executor_graph(
     script: Sequence[dict[str, Any] | str],
     store: InMemoryStore | None = None,
+    model: RecordingFakeModel | None = None,
 ) -> AsyncIterator[Any]:
     """The REAL executor graph, with only the model and two I/O seams replaced.
 
     Everything the tests assert on is production code: ``create_agent``, the
     real tool registry, the real ``retrieve_tools`` and its binding validation,
     the real middleware stack, the real todo hooks.
+
+    ``model`` swaps in a pre-built recording model (e.g. :class:`CallAllToolsModel`)
+    instead of one scripted from ``script``, which is then ignored.
 
     Two patches only, both narrow:
 
@@ -280,7 +388,7 @@ async def executor_graph(
     if not providers.is_initialized("tool_registry"):
         init_tool_registry()
 
-    llm = scripted_model(script)
+    llm = model if model is not None else scripted_model(script)
     with (
         patch.object(
             _build_graph, "get_tools_store", AsyncMock(return_value=store or InMemoryStore())
@@ -301,6 +409,8 @@ async def executor_graph(
 async def comms_graph(
     script: Sequence[Any],
     store: InMemoryStore | None = None,
+    model: RecordingFakeModel | None = None,
+    checkpointer_manager: Any | None = None,
 ) -> AsyncIterator[Any]:
     """The REAL comms graph, with only the model and the external edges replaced.
 
@@ -309,6 +419,9 @@ async def comms_graph(
     and two end-graph hooks. The end hooks are where the external edges are —
     follow-up generation calls a structured LLM and memory ingestion writes to
     the memory engine — so those are doubled; everything between is real.
+
+    ``model`` swaps in a pre-built recording model (e.g. :class:`CallAllToolsModel`)
+    instead of one scripted from ``script``, which is then ignored.
     """
     from app.agents.core.nodes.follow_up_actions_node import FollowUpActions
 
@@ -324,7 +437,7 @@ async def comms_graph(
     from app.memory.ingestion import RetainedMemory
     from app.models.memory_models import MemoryEntry
 
-    llm = scripted_model(script)
+    llm = model if model is not None else scripted_model(script)
     # Typed to the engine's real return shape, not a bare MagicMock: the memory
     # tools read `.entry.category_path` and `.outcome` off it, so a loose double
     # turns a tool result into an AttributeError string the test then asserts on.
@@ -349,7 +462,11 @@ async def comms_graph(
         patch.object(
             _build_graph, "get_tools_store", AsyncMock(return_value=store or InMemoryStore())
         ),
-        patch.object(_build_graph, "get_checkpointer_manager", AsyncMock(return_value=None)),
+        patch.object(
+            _build_graph,
+            "get_checkpointer_manager",
+            AsyncMock(return_value=checkpointer_manager),
+        ),
         patch(
             f"{node_module}.ainvoke_structured",
             new=AsyncMock(return_value=FollowUpActions(actions=[])),
@@ -366,7 +483,7 @@ async def comms_graph(
         ),
     ):
         async with _build_graph.build_comms_graph(
-            chat_llm=llm, in_memory_checkpointer=True
+            chat_llm=llm, in_memory_checkpointer=checkpointer_manager is None
         ) as graph:
             _SCRIPTED_MODELS[id(graph)] = llm
             _MEMORY_DOUBLES[id(graph)] = memory
@@ -380,6 +497,15 @@ async def comms_graph(
 def memory_engine_of(graph: Any) -> Any:
     """The memory double a comms graph was built with."""
     return _MEMORY_DOUBLES[id(graph)]
+
+
+def scripted_model_of(graph: Any) -> RecordingFakeModel:
+    """The scripted model a graph was built with — prompts, bindings, memory.
+
+    Only valid inside the graph's ``async with`` block: the harness unregisters
+    the model when the graph is torn down.
+    """
+    return _SCRIPTED_MODELS[id(graph)]
 
 
 async def run_graph(
@@ -416,6 +542,8 @@ async def run_graph(
     try:
         async for _mode, payload in graph.astream(initial, stream_mode=["updates"], config=config):
             for node, update in payload.items():
+                if not run.visited or run.visited[-1] != node:
+                    run.visited.append(node)
                 if not isinstance(update, dict):
                     continue
                 if "selected_tool_ids" in update:

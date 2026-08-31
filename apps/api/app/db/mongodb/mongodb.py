@@ -1,8 +1,10 @@
 from datetime import UTC
 from functools import lru_cache
+import os
 import sys
 from typing import Any
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 import pymongo
 from pymongo.server_api import ServerApi
@@ -10,6 +12,15 @@ from pymongo.server_api import ServerApi
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from shared.py.wide_events import log
+
+# The app always uses this database, whatever database `MONGO_DB` names in its
+# path — so anything that has to reach the same data (tests seeding the app's
+# startup preconditions) must resolve it from here rather than from the URL.
+#
+# MONGO_DB_NAME overrides it so several CI lanes can share ONE mongod: the URI's
+# database component is ignored by design (above), so the name is the only
+# namespace available. Unset = "GAIA", the production database.
+MONGO_DATABASE_NAME = os.getenv("MONGO_DB_NAME", "GAIA")
 
 
 class MongoDB:
@@ -50,10 +61,21 @@ class MongoDB:
 
         except Exception as e:
             log.set(db={"connection_status": "error", "backend": "mongodb"})
-            log.error(f"{LogTag.MONGO} An error occurred while connecting to MongoDB: {e}")
+            log.error(
+                f"{LogTag.MONGO} An error occurred while connecting to MongoDB",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             sys.exit(1)
 
     def ping(self) -> None:
+        """Verify connectivity at startup over a throwaway synchronous client.
+
+        Synchronous on purpose: this runs during startup before an event loop
+        owns the Motor client, so it must not borrow one. Failure is logged, not
+        raised — reachability is reported, and the lazy providers that actually
+        need Mongo fail on their own terms.
+        """
         try:
             # Use the same URI that was used to initialize the async client
             sync_client: pymongo.MongoClient[dict[str, Any]] = pymongo.MongoClient(
@@ -62,20 +84,26 @@ class MongoDB:
             sync_client.admin.command("ping")
             sync_client.close()
         except Exception as e:
-            log.error(f"{LogTag.MONGO} Ping failed: {e}")
+            log.error(f"{LogTag.MONGO} Ping failed", error=str(e), error_type=type(e).__name__)
 
     async def _initialize_indexes(self) -> None:
         try:
             log.info(f"{LogTag.MONGO} Initializing all indexes in MongoDB...")
             # Import here to avoid circular import
-            from app.db.mongodb.indexes import create_all_indexes
+            # Deferred import: breaks circular dependency: indexes imports collections, which imports this module
+            from app.db.mongodb.indexes import create_all_indexes  # noqa: PLC0415 -- deferred
 
             await create_all_indexes()
             # await log_index_summary()
         except Exception as e:
-            log.error(f"{LogTag.MONGO} Error while initializing indexes: {e}")
+            log.error(
+                f"{LogTag.MONGO} Error while initializing indexes",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
 
     def get_collection(self, collection_name: str) -> AsyncIOMotorCollection[dict[str, Any]]:
+        """A Motor handle for one collection of the app's database."""
         return self.database.get_collection(collection_name)
 
 
@@ -88,8 +116,15 @@ def init_mongodb() -> MongoDB:
         app (FastAPI): The FastAPI application instance.
     """
     log.info(f"{LogTag.MONGO} Initializing MongoDB...")
-    mongodb_instance = MongoDB(uri=settings.MONGO_DB, db_name="GAIA")
+    mongodb_instance = MongoDB(uri=settings.MONGO_DB, db_name=MONGO_DATABASE_NAME)
     log.info(f"{LogTag.MONGO} Created MongoDB instance")
     mongodb_instance.ping()
     log.info(f"{LogTag.MONGO} Successfully connected to MongoDB.")
     return mongodb_instance
+
+
+def object_id_filter(id_value: str) -> dict[str, ObjectId]:
+    """The ``_id`` filter for a 24-hex string id — the id-codec stays in app/db
+    (repository-boundaries lint), so raw-connection operational scripts never
+    import bson themselves."""
+    return {"_id": ObjectId(id_value)}

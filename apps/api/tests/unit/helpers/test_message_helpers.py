@@ -5,9 +5,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from langchain_core.messages import SystemMessage
 import pytest
 
+from app.constants.agents import PLAYBOOK_FALLBACK_CONTEXT_KEY
+from app.constants.chat import UPLOADED_FILE_INLINE_SUMMARY_MAX_CHARS
 from app.helpers.message_helpers import (
-    _get_gaia_knowledge_section,
-    _get_user_memories_section,
+    _uploaded_file_lines,
     create_system_message,
     format_calendar_event_context,
     format_files_list,
@@ -30,7 +31,7 @@ from app.models.message_models import (
 class TestCreateSystemMessage:
     """The main system prompt must be byte-identical across users/channels so
     implicit LLM caching hits. No `{user_name}` interpolation lives here —
-    dynamic context flows via build_dynamic_context_messages."""
+    per-user context is assembled separately by ``app.agents.context``."""
 
     def test_comms_agent_static_is_per_channel(self) -> None:
         """Different user_name must produce identical content on the same
@@ -60,113 +61,10 @@ class TestCreateSystemMessage:
         assert "{user_name}" not in msg.content
 
     def test_unknown_agent_type_defaults_to_comms(self) -> None:
-        msg = create_system_message(user_name="X", agent_type="unknown")  # type: ignore[arg-type]
+        msg = create_system_message(user_name="X", agent_type="unknown")  # type: ignore[arg-type]  # out-of-Literal value exercises the unknown-agent branch
         comms = create_system_message(agent_type="comms")
         assert isinstance(msg, SystemMessage)
         assert msg.content == comms.content
-
-
-# ---------------------------------------------------------------------------
-# _get_user_memories_section
-# ---------------------------------------------------------------------------
-
-
-class TestGetUserMemoriesSection:
-    @pytest.mark.asyncio
-    async def test_with_memories(self) -> None:
-        mem1 = MagicMock()
-        mem1.content = "User likes coffee"
-        mem2 = MagicMock()
-        mem2.content = "User prefers dark mode"
-        mock_results = MagicMock()
-        mock_results.memories = [mem1, mem2]
-
-        with patch("app.helpers.message_helpers.memory_engine") as mock_svc:
-            mock_svc.recall = AsyncMock(return_value=mock_results)
-            result = await _get_user_memories_section("coffee", "user1")
-
-        assert "User likes coffee" in result
-        assert "User prefers dark mode" in result
-
-    @pytest.mark.asyncio
-    async def test_no_memories(self) -> None:
-        mock_results = MagicMock()
-        mock_results.memories = None
-
-        with patch("app.helpers.message_helpers.memory_engine") as mock_svc:
-            mock_svc.recall = AsyncMock(return_value=mock_results)
-            result = await _get_user_memories_section("query", "user1")
-
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_empty_memories_list(self) -> None:
-        mock_results = MagicMock()
-        mock_results.memories = []
-
-        with patch("app.helpers.message_helpers.memory_engine") as mock_svc:
-            mock_svc.recall = AsyncMock(return_value=mock_results)
-            result = await _get_user_memories_section("q", "u")
-
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_none_results(self) -> None:
-        with patch("app.helpers.message_helpers.memory_engine") as mock_svc:
-            mock_svc.recall = AsyncMock(return_value=None)
-            result = await _get_user_memories_section("q", "u")
-
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_exception_returns_empty(self) -> None:
-        with patch("app.helpers.message_helpers.memory_engine") as mock_svc:
-            mock_svc.recall = AsyncMock(side_effect=RuntimeError("mem fail"))
-            result = await _get_user_memories_section("q", "u")
-
-        assert result == ""
-
-
-# ---------------------------------------------------------------------------
-# _get_gaia_knowledge_section
-# ---------------------------------------------------------------------------
-
-
-class TestGetGaiaKnowledgeSection:
-    @pytest.mark.asyncio
-    async def test_with_results(self) -> None:
-        item = MagicMock()
-        item.content = "Gaia can manage calendar"
-
-        with patch("app.helpers.message_helpers.gaia_knowledge_service") as mock_svc:
-            mock_svc.search_knowledge = AsyncMock(return_value=[item])
-            result = await _get_gaia_knowledge_section("calendar")
-
-        assert "Gaia can manage calendar" in result
-
-    @pytest.mark.asyncio
-    async def test_no_results(self) -> None:
-        with patch("app.helpers.message_helpers.gaia_knowledge_service") as mock_svc:
-            mock_svc.search_knowledge = AsyncMock(return_value=[])
-            result = await _get_gaia_knowledge_section("q")
-
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_none_results(self) -> None:
-        with patch("app.helpers.message_helpers.gaia_knowledge_service") as mock_svc:
-            mock_svc.search_knowledge = AsyncMock(return_value=None)
-            result = await _get_gaia_knowledge_section("q")
-
-        assert result == ""
-
-    @pytest.mark.asyncio
-    async def test_exception_returns_empty(self) -> None:
-        with patch("app.helpers.message_helpers.gaia_knowledge_service") as mock_svc:
-            mock_svc.search_knowledge = AsyncMock(side_effect=RuntimeError("chroma fail"))
-            result = await _get_gaia_knowledge_section("q")
-
-        assert result == ""
 
 
 # ---------------------------------------------------------------------------
@@ -431,8 +329,8 @@ class TestFormatFilesList:
 
     def test_all_files(self) -> None:
         files = [
-            FileData(fileId="f1", url="u1", filename="a.txt"),
-            FileData(fileId="f2", url="u2", filename="b.pdf"),
+            FileData(fileId="f1", url="u1", filename="a.txt", sandbox_path="/mirrored/a.txt"),
+            FileData(fileId="f2", url="u2", filename="b.pdf", sandbox_path="/mirrored/b.pdf"),
         ]
         result = format_files_list(files)
         assert "a.txt" in result
@@ -458,6 +356,302 @@ class TestFormatFilesList:
         assert "a.txt" in result
 
     def test_conversation_id_in_path(self) -> None:
-        files = [FileData(fileId="f1", url="u", filename="a.txt")]
+        files = [FileData(fileId="f1", url="u", filename="a.txt", sandbox_path="/mirrored/a.txt")]
         result = format_files_list(files, conversation_id="conv123")
         assert "/workspace/sessions/conv123/user-uploaded/a.txt" in result
+
+    # The workspace mirror is best-effort — it needs JuiceFS, and `sandbox_path`
+    # is None whenever it was unavailable. Handing the agent a path anyway sent
+    # the executor into read/bash attempts that could only fail; it burned the
+    # recursion limit on a real GAIA .xlsx case doing exactly that.
+
+    def test_omits_the_path_when_the_file_never_reached_the_workspace(self) -> None:
+        files = [FileData(fileId="f1", url="u", filename="a.txt", sandbox_path=None)]
+        result = format_files_list(files, conversation_id="conv123")
+        assert "/workspace/sessions/conv123/user-uploaded/a.txt" not in result
+        assert "a.txt" in result
+        assert "search_uploaded_files" in result
+
+    def test_drops_the_read_bash_guide_when_nothing_is_on_disk(self) -> None:
+        files = [FileData(fileId="f1", url="u", filename="a.txt", description="a summary")]
+        result = format_files_list(files, conversation_id="conv123")
+        assert "read the file at its path" not in result
+        assert "copy into" not in result
+        assert ".summary.md" not in result
+        assert "a summary" in result
+
+    def test_keeps_the_full_guide_when_a_file_is_on_disk(self) -> None:
+        files = [
+            FileData(
+                fileId="f1",
+                url="u",
+                filename="a.txt",
+                description="a summary",
+                sandbox_path="/mirrored/a.txt",
+            )
+        ]
+        result = format_files_list(files, conversation_id="conv123")
+        assert "read the file at its path" in result
+        assert "/workspace/sessions/conv123/user-uploaded/a.txt.summary.md" in result
+
+
+class TestWorkflowExecutionMessageBranches:
+    """The branch choices and bounds inside ``format_workflow_execution_message``.
+
+    The existing tests above assert a title survives into the output, which a
+    great many wrong implementations also satisfy. These pin the decisions: which
+    template is chosen, where the email preview is cut, and whether a partially
+    replayed run's evidence reaches the agent — getting that last one wrong makes
+    the agent redo steps that already had side effects.
+    """
+
+    @staticmethod
+    def _selected() -> SelectedWorkflowData:
+        return SelectedWorkflowData(
+            id="wf_1",
+            title="Morning Brief",
+            description="desc",
+            prompt="do the thing",
+            steps=[{"title": "S1", "category": "c1", "description": "d1"}],
+        )
+
+    @staticmethod
+    def _no_db_workflow():
+        return patch(
+            "app.helpers.message_helpers.WorkflowService.get_workflow",
+            new_callable=AsyncMock,
+            return_value=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_a_gmail_trigger_selects_the_email_template(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "Subj", "message_text": "Body"},
+                    "triggered_at": "2026-08-27T00:00:00Z",
+                },
+            )
+
+        assert "a@b.com" in result
+        assert "Subj" in result
+        assert "2026-08-27T00:00:00Z" in result
+
+    @pytest.mark.asyncio
+    async def test_a_non_gmail_trigger_does_not_select_the_email_template(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={"type": "schedule", "triggered_at": "2026-08-27T00:00:00Z"},
+            )
+
+        assert "a@b.com" not in result
+        assert "Morning Brief" in result
+
+    @pytest.mark.asyncio
+    async def test_a_long_email_body_is_previewed_not_pasted_whole(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "S", "message_text": "x" * 500},
+                },
+            )
+
+        assert "x" * 200 + "..." in result
+        assert "x" * 201 not in result
+
+    @pytest.mark.asyncio
+    async def test_a_short_email_body_is_not_marked_truncated(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "S", "message_text": "short"},
+                },
+            )
+
+        assert "short" in result
+        assert "short..." not in result
+
+    @pytest.mark.asyncio
+    async def test_a_stopped_replay_tells_the_agent_what_already_ran(self) -> None:
+        """Without this the agent repeats steps whose side effects already happened."""
+        note = "<already_ran>sent the digest email</already_ran>"
+
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={PLAYBOOK_FALLBACK_CONTEXT_KEY: note},
+            )
+
+        assert result.endswith(note)
+
+    @pytest.mark.asyncio
+    async def test_the_same_evidence_reaches_an_email_triggered_fallback(self) -> None:
+        note = "<already_ran>archived 3 threads</already_ran>"
+
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "S", "message_text": "m"},
+                    PLAYBOOK_FALLBACK_CONTEXT_KEY: note,
+                },
+            )
+
+        assert result.endswith(note)
+        assert "a@b.com" in result
+
+    @pytest.mark.asyncio
+    async def test_an_ordinary_run_carries_no_replay_evidence(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(self._selected(), user_id="u1")
+
+        assert "already_ran" not in result
+
+    @pytest.mark.asyncio
+    async def test_a_gmail_trigger_missing_every_field_renders_the_stated_defaults(self) -> None:
+        """A Gmail trigger can arrive with an unparsed header or no timestamp. The
+        prompt still has to read as a sentence, so each blank renders its own named
+        placeholder rather than the literal ``None`` a bare ``.get`` would leave."""
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={"type": "gmail", "email_data": {"message_text": ""}},
+            )
+
+        lines = result.splitlines()
+        assert "- From: Unknown" in lines
+        assert "- Subject: No Subject" in lines
+        assert "- Preview: " in lines
+        assert "- Received: Unknown" in lines
+
+    @pytest.mark.asyncio
+    async def test_an_email_body_at_the_preview_limit_is_not_marked_truncated(self) -> None:
+        """Exactly at the bound is a whole body, not a cut one — an ellipsis here
+        tells the agent to go fetch a rest that does not exist."""
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "S", "message_text": "x" * 200},
+                },
+            )
+
+        assert f"- Preview: {'x' * 200}" in result.splitlines()
+
+    @pytest.mark.asyncio
+    async def test_an_email_body_one_char_over_the_limit_is_marked_truncated(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(),
+                user_id="u1",
+                trigger_context={
+                    "type": "gmail",
+                    "email_data": {"sender": "a@b.com", "subject": "S", "message_text": "x" * 201},
+                },
+            )
+
+        assert f"- Preview: {'x' * 200}..." in result.splitlines()
+
+    @pytest.mark.asyncio
+    async def test_a_manual_run_ends_with_the_users_own_message(self) -> None:
+        """The user's words are the last thing the prompt says, so the model reads
+        them as the instruction rather than as one more line of workflow boilerplate."""
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(), user_id="u1", existing_content="Run it now please"
+            )
+
+        assert result.splitlines()[-1] == "Run it now please"
+
+    @pytest.mark.asyncio
+    async def test_a_manual_run_with_no_message_falls_back_to_naming_the_workflow(self) -> None:
+        with self._no_db_workflow():
+            result = await format_workflow_execution_message(
+                self._selected(), user_id="u1", existing_content=""
+            )
+
+        assert result.splitlines()[-1] == "Execute workflow: Morning Brief"
+
+
+# ---------------------------------------------------------------------------
+# _uploaded_file_lines
+# ---------------------------------------------------------------------------
+
+
+class TestUploadedFileLines:
+    """One attachment's rendered lines. ``format_files_list`` only joins these, so
+    the path, the id and the summary bound are all decided here."""
+
+    @staticmethod
+    def _file(**overrides: object) -> FileData:
+        fields: dict[str, object] = {
+            "fileId": "f1",
+            "url": "u",
+            "filename": "a.txt",
+            "sandbox_path": "/mirrored/a.txt",
+        }
+        fields.update(overrides)
+        return FileData(**fields)  # type: ignore[arg-type]  # overrides are typed per-field by FileData
+
+    def test_a_run_with_no_conversation_uses_the_relative_upload_dir(self) -> None:
+        entry = _uploaded_file_lines(self._file(), None, True)
+
+        assert entry == (["- a.txt  (id: f1)  →  `./user-uploaded/a.txt`"], True)
+
+    def test_a_file_that_never_reached_the_workspace_names_the_search_tool(self) -> None:
+        entry = _uploaded_file_lines(self._file(sandbox_path=None), "conv1", True)
+
+        assert entry == (
+            ["- a.txt  (id: f1) — not on disk, use `search_uploaded_files`"],
+            False,
+        )
+
+    def test_a_summary_exactly_at_the_limit_is_kept_whole(self) -> None:
+        summary = "s" * UPLOADED_FILE_INLINE_SUMMARY_MAX_CHARS
+        entry = _uploaded_file_lines(self._file(description=summary), "conv1", True)
+
+        assert entry == (
+            [
+                "- a.txt  (id: f1)  →  `/workspace/sessions/conv1/user-uploaded/a.txt`",
+                f"    summary: {summary}",
+                "    full summary: `/workspace/sessions/conv1/user-uploaded/a.txt.summary.md`",
+            ],
+            True,
+        )
+
+    def test_an_over_long_summary_is_cut_at_the_limit_with_no_dangling_space(self) -> None:
+        """The cut lands mid-sentence, so the character before it is often a space.
+        Leaving it in puts the ellipsis adrift from the last word it belongs to."""
+        body = "s" * (UPLOADED_FILE_INLINE_SUMMARY_MAX_CHARS - 1)
+        entry = _uploaded_file_lines(
+            self._file(description=f"{body} tail-past-the-limit"), "conv1", True
+        )
+
+        assert entry == (
+            [
+                "- a.txt  (id: f1)  →  `/workspace/sessions/conv1/user-uploaded/a.txt`",
+                f"    summary: {body}…",
+                "    full summary: `/workspace/sessions/conv1/user-uploaded/a.txt.summary.md`",
+            ],
+            True,
+        )
+
+    def test_an_unsafe_filename_is_dropped_rather_than_rendered(self) -> None:
+        assert _uploaded_file_lines(self._file(filename=".."), "conv1", True) is None

@@ -39,6 +39,15 @@ class TriggerType(str, Enum):
     INTEGRATION = "integration"
 
 
+class DeactivationReason(str, Enum):
+    """Why a workflow was deactivated by the system, so an automatic resume can tell
+    its own pauses apart from a workflow the user deliberately switched off. A
+    user-initiated deactivation records no reason at all."""
+
+    USER_DORMANT = "user_dormant"
+    INTEGRATION_EXPIRED = "integration_expired"
+
+
 class IntegrationRef(BaseModel):
     """Lightweight integration reference for workflow responses."""
 
@@ -129,9 +138,15 @@ class TriggerConfig(BaseModel):
 
         try:
             schedule_tz = Timezone.parse(user_timezone or self.timezone)
-            return get_next_run_time(self.cron_expression, base_time, schedule_tz)
+            next_run = get_next_run_time(self.cron_expression, base_time, schedule_tz)
+            # Whole seconds only. The scheduler stamps each ARQ job with
+            # ``int(armed_time.timestamp())`` and the stale-fire claim gate pins
+            # ``next_run`` by equality against the reconstructed stamp, so a
+            # sub-second component anywhere would make fresh fires read as
+            # stale. Cron granularity is minutes; drop any stray sub-second.
+            return next_run.replace(microsecond=0) if next_run else None
         except Exception as e:
-            log.error(f"Error calculating next run time: {e}")
+            log.error("Error calculating next run time", error=str(e), error_type=type(e).__name__)
             return None
 
     def update_next_run(
@@ -185,6 +200,16 @@ class Workflow(BaseScheduledTask):
         default="",
         description="Detailed execution instructions for AI. Falls back to description if not set.",
     )
+    icon: str | None = Field(
+        default=None,
+        max_length=64,
+        description="User-chosen icon slug (gaia-icons component name) shown when the workflow has no integration icons.",
+    )
+    icon_color: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9a-fA-F]{6}$",
+        description="Hex color for the user-chosen icon.",
+    )
     steps: list[WorkflowStep] = Field(
         description="List of workflow steps to execute", max_length=10
     )
@@ -196,6 +221,13 @@ class Workflow(BaseScheduledTask):
     activated: bool = Field(
         default=True,
         description="Whether the workflow is activated and can be executed",
+    )
+    deactivated_reason: DeactivationReason | None = Field(
+        default=None,
+        description=(
+            "Why the workflow is not activated. None means the user turned it off "
+            "themselves — only system-paused workflows may be resumed automatically."
+        ),
     )
     notify_on_completion: bool = Field(
         default=True,
@@ -276,7 +308,7 @@ class Workflow(BaseScheduledTask):
         description="Creator info hydrated for public workflow lookups.",
     )
 
-    def __init__(self, **data: Any) -> None:
+    def __init__(self, **data: Any) -> None:  # noqa: ANN401 -- framework contract
         """Initialize workflow with mapping from trigger_config to BaseScheduledTask fields.
 
         ``**data`` stays ``Any``. Measured, don't re-litigate: ``**data: object``
@@ -329,7 +361,7 @@ class Workflow(BaseScheduledTask):
 
     @model_validator(mode="before")
     @classmethod
-    def hydrate_legacy_prompt_and_description(cls, data: Any) -> Any:
+    def hydrate_legacy_prompt_and_description(cls, data: Any) -> Any:  # noqa: ANN401 -- forwards **data into BaseScheduledTask's typed __init__
         """Ensure legacy records still expose prompt and non-null description."""
         if isinstance(data, dict):
             description = data.get("description") or ""
@@ -371,6 +403,14 @@ class CreateWorkflowRequest(BaseModel):
         description="Short optional display description (1-2 sentences)",
     )
     prompt: str = Field(min_length=1, description="Detailed execution instructions for the AI")
+    icon: str | None = Field(
+        default=None, max_length=64, description="User-chosen icon slug (gaia-icons component name)"
+    )
+    icon_color: str | None = Field(
+        default=None,
+        pattern=r"^#[0-9a-fA-F]{6}$",
+        description="Hex color for the user-chosen icon",
+    )
     trigger_config: TriggerConfig = Field(description="Trigger configuration")
     steps: list[WorkflowStep] | None = Field(
         default=None,
@@ -443,6 +483,8 @@ class UpdateWorkflowRequest(BaseModel):
     title: str | None = Field(default=None)
     description: str | None = Field(default=None)
     prompt: str | None = Field(default=None)
+    icon: str | None = Field(default=None, max_length=64)
+    icon_color: str | None = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     steps: list[WorkflowStep] | None = Field(default=None)
     trigger_config: TriggerConfig | None = Field(default=None)
     activated: bool | None = Field(default=None)
@@ -692,6 +734,12 @@ class WorkflowDocument(Workflow, MongoDocument):
     # ``wf_…`` id, so the stored document is non-optional. The repository keys on
     # ``_id`` directly, so no alias is needed here.
     id: str = Field(default_factory=lambda: f"wf_{uuid.uuid4().hex[:12]}")
+    #: How many runs declined to write a playbook for the workflow as it stands,
+    #: and the workflow hash those declines were about. Past
+    #: ``PLAYBOOK_DECLINE_LIMIT`` on the same hash the check brief stops asking;
+    #: an edit to the workflow changes the hash and asks again.
+    playbook_declines: int = 0
+    playbook_declined_hash: str | None = None
 
 
 class WorkflowCreatorInfo(BaseModel):
@@ -735,6 +783,8 @@ class WorkflowUpdate(BaseModel):
     title: str | None = None
     description: str | None = None
     prompt: str | None = None
+    icon: str | None = None
+    icon_color: str | None = None
     steps: list[WorkflowStep] | None = None
     trigger_config: TriggerConfig | None = None
     activated: bool | None = None
@@ -748,3 +798,5 @@ class WorkflowUpdate(BaseModel):
     is_public: bool | None = None
     slug: str | None = None
     created_by: str | None = None
+    playbook_declines: int | None = None
+    playbook_declined_hash: str | None = None

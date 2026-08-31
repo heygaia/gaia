@@ -8,11 +8,14 @@ from langchain_core.language_models.fake_chat_models import (
     FakeMessagesListChatModel,
 )
 from langchain_core.messages import AIMessage
+from langchain_core.runnables import Runnable
 from langchain_core.tools import tool
 from langgraph.graph import END, StateGraph
 from langgraph.prebuilt import ToolNode
 import pytest
 
+from app.agents.llm import client as llm_client
+from app.agents.llm.client import _build_default_llm, _sim_llm, with_llm_retry
 from app.config.settings import settings
 from tests.helpers import create_fake_llm, create_fake_llm_with_tool_calls
 from tests.integration.conftest import SimpleState
@@ -23,14 +26,56 @@ def no_model_fallback():
     """Build the graph with NO default-model fallback available.
 
     ``create_agent`` resolves the fallback once, at build time, from
-    ``get_default_llm()`` — which succeeds whenever ``GOOGLE_API_KEY`` is
-    configured. A test asserting that a provider error *propagates* must
-    therefore pin the key off, or an ambient key (Infisical, a developer's
-    shell, CI secrets) silently makes the fallback available and swallows the
-    error the test exists to catch.
+    ``get_default_llm()``. A test asserting that a provider error *propagates*
+    must therefore pin off whatever key that factory needs, or an ambient key
+    (Infisical, a developer's shell, CI secrets) silently makes the fallback
+    available and swallows the error the test exists to catch.
+
+    Both provider keys are pinned rather than the one the default happens to use
+    today: the default model has already moved providers once, and naming a
+    single key here is what let this fixture keep passing while quietly no
+    longer disabling anything.
+
+    Sim mode is pinned off and the model caches cleared for the same reason —
+    each is a way ``get_default_llm()`` still hands back a model with every
+    provider key unset: sim mode short-circuits to the stub before the key check,
+    and a cached instance built by an earlier test outlives the patch. Either one
+    silently restores the fallback this fixture exists to remove, and the test
+    then passes while asserting nothing.
     """
-    with patch.object(settings, "GOOGLE_API_KEY", None):
+    _build_default_llm.cache_clear()
+    _sim_llm.cache_clear()
+    with (
+        patch.object(settings, "GAIA_SIM_MODE", False),
+        patch.object(settings, "OPENROUTER_API_KEY", None),
+        patch.object(settings, "GOOGLE_API_KEY", None),
+    ):
         yield
+    # Leave no half-built model behind for the next test to inherit.
+    _build_default_llm.cache_clear()
+    _sim_llm.cache_clear()
+
+
+@pytest.fixture
+def single_llm_attempt(monkeypatch: pytest.MonkeyPatch):
+    """Make the graph's LLM call fail fast: one attempt, no retry backoff.
+
+    ``with_llm_retry`` wraps every model call with tenacity exponential jitter
+    (``LLM_RETRY_MAX_ATTEMPTS`` attempts), so a fake model that raises a
+    retryable error (``TimeoutError``, ``ConnectionError``) instantly still
+    costs ~4s of sleeps per wrapped call. Tests asserting that such an error
+    *propagates* do not care how many times it was retried first. The wrapper
+    is looked up by name in ``app.agents.llm.client`` at call time, so patching
+    it there covers ``ainvoke_with_fallback`` and the fallback path alike. Not a
+    ``functools.partial``: ``ainvoke_with_fallback`` passes ``max_attempts=``
+    explicitly, which would override a partial's bound keyword.
+    """
+
+    def _single_attempt(runnable: Runnable, *, max_attempts: int = 1) -> Runnable:
+        del max_attempts  # the caller's budget is exactly what this fixture removes
+        return with_llm_retry(runnable, max_attempts=1)
+
+    monkeypatch.setattr(llm_client, "with_llm_retry", _single_attempt)
 
 
 @pytest.fixture

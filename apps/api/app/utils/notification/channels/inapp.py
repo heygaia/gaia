@@ -57,7 +57,7 @@ class InAppChannelAdapter(ChannelAdapter[InAppPayload]):
     def channel_type(self) -> str:
         return CHANNEL_TYPE_INAPP
 
-    def can_handle(self, notification: NotificationRequest) -> bool:
+    def can_handle(self, notification: NotificationRequest) -> bool:  # noqa: ARG002 -- polymorphic interface; implementations keep the full signature
         """Return True — in-app delivery is always available for any request."""
         # In-app is always deliverable. The orchestrator decides targeting:
         # explicit requests look adapters up by channel_type, and auto-injection
@@ -106,12 +106,13 @@ class InAppChannelAdapter(ChannelAdapter[InAppPayload]):
                     "notification": content,
                 },
             )
-            log.info(
-                f"{LogTag.NOTIFICATION} In-app notification delivered to user {user_id}: {content['title']}"
-            )
+            log.info(f"{LogTag.NOTIFICATION} In-app notification delivered", user_id=user_id)
             return self._success()
         except Exception as e:
             log.error(
-                f"{LogTag.NOTIFICATION} Failed to deliver in-app notification to user {user_id}: {e}"
+                f"{LogTag.NOTIFICATION} Failed to deliver in-app notification to user",
+                user_id=user_id,
+                error=str(e),
+                error_type=type(e).__name__,
             )
             return self._error(str(e))

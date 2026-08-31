@@ -36,6 +36,8 @@ from app.models.notification.request_models import (
     PaginatedNotificationsResponse,
 )
 from app.models.user_models import AuthenticatedUser
+from app.services.account_fs import schedule_account_sync
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.device_token_service import get_device_token_service
 from app.services.notification_service import notification_service
 from app.utils.notification.channel_preferences import fetch_channel_preferences
@@ -116,7 +118,7 @@ async def get_notifications(
     try:
         notifications, notification_count = await asyncio.gather(
             notification_service.get_user_notifications(
-                user_id, status, limit + 1, offset, channel_type
+                user_id, status, limit, offset, channel_type
             ),
             notification_service.get_user_notifications_count(user_id, status, channel_type),
         )
@@ -131,8 +133,13 @@ async def get_notifications(
         )
 
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to get notifications: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to get notifications",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/notifications/preferences/channels", response_model=ChannelPreferences)
@@ -157,8 +164,13 @@ async def get_channel_preferences(
             email=prefs["email"],
         )
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to get channel preferences: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to get channel preferences",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.put("/notifications/preferences/channels", response_model=ChannelPreferences)
@@ -185,8 +197,18 @@ async def update_channel_preferences(
             slack=preferences.slack,
             email=preferences.email,
         )
+        schedule_account_sync(user_id)
 
         prefs = await fetch_channel_preferences(user_id)
+        changed = preferences.model_dump(exclude_unset=True)
+        capture_context_event(
+            AnalyticsEvents.NOTIFICATION_PREFERENCE_UPDATED,
+            {
+                "changed_channel_count": len(changed),
+                "channels_enabled": sorted(c for c, on in changed.items() if on is True),
+                "channels_disabled": sorted(c for c, on in changed.items() if on is False),
+            },
+        )
         log.set(operation="update_channel_preferences", outcome="success")
         return ChannelPreferences(
             telegram=prefs["telegram"],
@@ -196,8 +218,13 @@ async def update_channel_preferences(
             email=prefs["email"],
         )
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to update channel preferences: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to update channel preferences",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/notifications/{notification_id}/actions/{action_id}/execute")
@@ -241,8 +268,14 @@ async def execute_action(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to execute action: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to execute action",
+            user_id=user_id,
+            notification_id=notification_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/notifications/{notification_id}/read")
@@ -282,8 +315,14 @@ async def mark_as_read(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to mark notification as read: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to mark notification as read",
+            user_id=user_id,
+            notification_id=notification_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/notifications/bulk-actions")
@@ -327,8 +366,14 @@ async def bulk_actions(
         )
 
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to perform bulk actions: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to perform bulk actions",
+            user_id=user_id,
+            notification_count=len(notification_ids),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/notifications/register-device", response_model=DeviceTokenResponse)
@@ -384,8 +429,13 @@ async def register_device_token(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to register device token: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to register device token",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/notifications/unregister-device", response_model=DeviceTokenResponse)
@@ -417,8 +467,13 @@ async def unregister_device_token(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to unregister device token: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to unregister device token",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/notifications/{notification_id}")
@@ -453,5 +508,11 @@ async def get_notification(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.NOTIFICATION} Failed to get notification: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        log.error(
+            f"{LogTag.NOTIFICATION} Failed to get notification",
+            user_id=user_id,
+            notification_id=notification_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e

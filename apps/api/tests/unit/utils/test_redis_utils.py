@@ -25,7 +25,6 @@ def _reset_singleton() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestRedisPoolManagerSingleton:
     def test_returns_same_instance(self) -> None:
         a = RedisPoolManager()
@@ -42,7 +41,6 @@ class TestRedisPoolManagerSingleton:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetPool:
     async def test_creates_pool_on_first_call(self) -> None:
         mock_pool = AsyncMock()
@@ -72,7 +70,7 @@ class TestGetPool:
     async def test_returns_cached_pool_on_second_call(self) -> None:
         """If _pool is already set, get_pool returns it immediately."""
         sentinel = AsyncMock()
-        RedisPoolManager._pool = sentinel  # type: ignore[assignment]
+        RedisPoolManager._pool = sentinel
 
         pool = await RedisPoolManager.get_pool()
         assert pool is sentinel

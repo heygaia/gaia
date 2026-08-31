@@ -8,11 +8,12 @@ tracked todos. Follows the same pattern as todo_vector_utils.py.
 from datetime import UTC, datetime
 from typing import Any, TypedDict
 
+from app.constants.chroma import CHROMA_CANVAS_COLLECTION
 from app.constants.log_tags import LogTag
 from app.db.chroma.chromadb import ChromaClient
 from shared.py.wide_events import log
 
-COLLECTION_NAME = "gaia_canvas"
+COLLECTION_NAME = CHROMA_CANVAS_COLLECTION
 
 
 class CanvasSearchMatch(TypedDict):
@@ -55,7 +56,13 @@ async def store_canvas_embedding(
         )
         return True
     except Exception as e:
-        log.error(f"{LogTag.CHROMA} Failed to index canvas for todo {todo_id}: {e}")
+        log.error(
+            f"{LogTag.CHROMA} Failed to index canvas for todo",
+            todo_id=todo_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
         return False
 
 
@@ -101,7 +108,12 @@ async def delete_canvas_embedding(todo_id: str) -> bool:
         await chroma_collection.adelete(ids=[f"canvas_{todo_id}"])
         return True
     except Exception as e:
-        log.error(f"{LogTag.CHROMA} Failed to delete canvas index for todo {todo_id}: {e}")
+        log.error(
+            f"{LogTag.CHROMA} Failed to delete canvas index for todo",
+            todo_id=todo_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return False
 
 
@@ -120,7 +132,10 @@ async def mark_canvas_completed(todo_id: str) -> bool:
         if not existing or not existing["metadatas"]:
             return False
 
-        metadata: dict[str, str | int | float | bool | None] = dict(existing["metadatas"][0])
+        # Value type is inferred from chromadb's own Metadata alias rather than
+        # restated here; chromadb 1.5.x widened it (SparseVector, list values) and a
+        # hand-written union silently goes stale on the next widening.
+        metadata = dict(existing["metadatas"][0])
         metadata["completed"] = True
         metadata["completed_at"] = datetime.now(UTC).isoformat()
 
@@ -173,5 +188,10 @@ async def search_canvas_context(
             )
         return matches
     except Exception as e:
-        log.error(f"{LogTag.CHROMA} Canvas search failed for user {user_id}: {e}")
+        log.error(
+            f"{LogTag.CHROMA} Canvas search failed for user",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return []

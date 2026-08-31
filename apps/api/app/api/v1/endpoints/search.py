@@ -19,6 +19,7 @@ from app.models.search_models import (
     URLRequest,
     URLResponse,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.email_profile_service import fetch_email_profiles
 from app.services.search_service import search_messages
 from app.utils.email_utils import is_email_target
@@ -54,14 +55,24 @@ async def search_messages_endpoint(
     try:
         results = await search_messages(query, user_id)
         result_count = len(results.messages) + len(results.conversations) + len(results.notes)
-        log.set(search={"result_count": result_count})
+        capture_context_event(
+            AnalyticsEvents.SEARCH_PERFORMED,
+            {"mode": "keyword", "query_length": len(query), "result_count": result_count},
+        )
+        # set_ns: log.set(search={...}) would clobber the query context set above
+        log.set_ns("search", result_count=result_count)
         return results
     except Exception as e:
-        log.error(f"Error searching messages: {e!s}")
+        log.error(
+            "Error searching messages",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Search failed",
-        )
+        ) from e
 
 
 def extract_emails(text: str) -> list[str]:
@@ -117,7 +128,9 @@ async def search_email_endpoint(query: str) -> EmailSearchResponse:
 @limiter.limit("100/minute")
 @limiter.limit("500/hour")
 async def fetch_url_metadata_endpoint(
-    request: Request, data: URLRequest, user_id: str = Depends(get_user_id)
+    request: Request,  # noqa: ARG001 -- slowapi requires request in the handler signature
+    data: URLRequest,
+    user_id: str = Depends(get_user_id),
 ) -> MultiURLResponse:
     """
     Fetch metadata for multiple URLs in parallel.
@@ -133,6 +146,7 @@ async def fetch_url_metadata_endpoint(
     Returns:
         MultiURLResponse: The metadata for all URLs.
     """
+    log.set(user={"id": user_id}, search={"mode": "url_metadata"})
     email_targets = [url for url in data.urls if is_email_target(url)]
     web_urls = [url for url in data.urls if url not in email_targets]
 
@@ -152,4 +166,5 @@ async def fetch_url_metadata_endpoint(
         if isinstance(result, URLResponse):
             response_data[url] = result
 
+    log.set_ns("search", result_count=len(response_data))
     return MultiURLResponse(results=response_data)

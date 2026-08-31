@@ -22,6 +22,8 @@ from app.schemas.voice_schemas import (
     VoiceSelectionResponse,
     VoiceTokenResponse,
 )
+from app.services.account_fs import schedule_account_sync
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.voice_service import (
     get_user_voice,
     list_voices,
@@ -98,7 +100,7 @@ async def get_token(
             )
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to generate voice token: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate voice token: {e!s}") from e
 
     log.set(outcome="success")
     return VoiceTokenResponse(
@@ -128,8 +130,13 @@ async def select_voice(
     """Set the user's voice for future voice-mode sessions."""
     log.set(user={"id": user["user_id"]}, operation="select_voice", voice_id=payload.voice_id)
     selected = await set_user_voice(user["user_id"], payload.voice_id)
+    schedule_account_sync(user["user_id"])
     # May differ from the requested id when a library voice was added to the account.
     log.set(selected_voice_id=selected)
+    capture_context_event(
+        AnalyticsEvents.SETTINGS_PREFERENCES_CHANGED,
+        {"setting": "voice", "voice_id": selected},
+    )
     return VoiceSelectionResponse(selected_voice_id=selected)
 
 
@@ -147,4 +154,8 @@ async def star_voice(
         starred=payload.starred,
     )
     starred_ids = await set_voice_star(user["user_id"], voice_id, payload.starred)
+    capture_context_event(
+        AnalyticsEvents.SETTINGS_PREFERENCES_CHANGED,
+        {"setting": "voice_star", "voice_id": voice_id, "is_starred": payload.starred},
+    )
     return StarredVoicesResponse(starred_voice_ids=starred_ids)

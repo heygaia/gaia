@@ -9,7 +9,6 @@ import { EmailPreviewModal } from "@/features/mail/components/EmailPreviewModal"
 import { NotificationConnectBanner } from "@/features/notification/components/NotificationConnectBanner";
 import { NotificationsList } from "@/features/notification/components/NotificationsList";
 import { UnreadCountChip } from "@/features/notification/components/UnreadCountChip";
-import { useAllNotifications } from "@/features/notification/hooks/useAllNotifications";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useHeader } from "@/hooks/layout/useHeader";
 import { toast } from "@/lib/toast";
@@ -37,10 +36,10 @@ export default function NotificationsPage() {
 
   // Get all notifications data
   const {
-    allNotifications,
+    notifications: allNotifications,
     loading: allLoading,
-    refetchAll,
-  } = useAllNotifications({
+    refetch: refetchAll,
+  } = useNotifications({
     limit: 100,
     channel_type: "inapp",
   });

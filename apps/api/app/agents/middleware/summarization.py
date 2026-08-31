@@ -46,7 +46,7 @@ class WorkspaceArchivingSummarizationMiddleware(SummarizationMiddleware):
         keep: ContextSize = ("messages", 15),
         enable_archive: bool = True,
         excluded_tools: set[str] | None = None,
-        **kwargs: Any,
+        **kwargs: Any,  # noqa: ANN401 -- framework contract
     ) -> None:
         super().__init__(model=model, trigger=trigger, keep=keep, **kwargs)
         self.enable_archive = enable_archive
@@ -60,9 +60,12 @@ class WorkspaceArchivingSummarizationMiddleware(SummarizationMiddleware):
             try:
                 archive_path = await self._archive(state)
             except JuiceFSUnavailable as e:
-                log.warning(f"{LogTag.AGENT} Archive skipped (workspace unavailable): {e}")
+                log.warning(
+                    f"{LogTag.AGENT} Archive skipped (workspace unavailable)",
+                    error_type=type(e).__name__,
+                )
             except Exception as e:
-                log.error(f"{LogTag.AGENT} Archive failed: {e}")
+                log.error(f"{LogTag.AGENT} Archive failed", error_type=type(e).__name__)
 
         result = await super().abefore_model(state, runtime)
         if result is not None and archive_path:
@@ -114,7 +117,9 @@ class WorkspaceArchivingSummarizationMiddleware(SummarizationMiddleware):
             content=json.dumps(history, indent=2, default=str),
         )
         log.info(
-            f"{LogTag.AGENT} Archived {len(messages)} messages to {sandbox_path} before summarization"
+            f"{LogTag.AGENT} Archived messages before summarization",
+            message_count=len(messages),
+            sandbox_path=sandbox_path,
         )
         return sandbox_path
 

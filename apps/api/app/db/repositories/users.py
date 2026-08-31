@@ -123,6 +123,22 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             }
         )
 
+    async def find_dormant_since(self, before: datetime) -> list[UserDocument]:
+        """Users with no activity since ``before`` — the dormancy sweep's cohort.
+        ``last_active_at`` missing means the account has never been seen active, so
+        those count as dormant too; without the ``$exists`` arm a `$lt` comparison
+        silently skips them."""
+        return await self._find(
+            {
+                "is_active": {"$ne": False},
+                "$or": [
+                    {"last_active_at": {"$lt": before}},
+                    {"last_active_at": {"$exists": False}},
+                    {"last_active_at": None},
+                ],
+            }
+        )
+
     async def find_nurture_candidates(self, created_since: datetime) -> list[UserDocument]:
         """Recently-signed-up, still-active users — the nurture-sequence cohort.
         Send eligibility (timezone hour, frequency caps, step windows) is decided
@@ -198,7 +214,12 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
                 {"email": email}, {"last_active_at": datetime.now(UTC)}
             )
         except Exception as exc:
-            log.warning(f"{LogTag.API} touch_last_active failed for {email}: {exc}")
+            log.warning(
+                f"{LogTag.API} touch_last_active failed for",
+                email=email,
+                error=str(exc),
+                error_type=type(exc).__name__,
+            )
 
     # ------------------------------------------------------- onboarding writes
 
@@ -543,6 +564,85 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             },
             scope=REPO_GLOBAL_SCOPE,
             return_document=False,
+        )
+
+    async def claim_limit_email_slot(
+        self, user_id: str, *, stale_before: datetime
+    ) -> UserDocument | None:
+        """Take the weekly limit-email slot, or return None if it is already taken.
+
+        Stamping the marker AFTER sending let two concurrent limit hits both read
+        an eligible user and both send — the read and the write straddle a network
+        send, so the window is wide, not theoretical. The claim is one conditional
+        update: only a document whose marker is missing or older than
+        ``stale_before`` matches, so exactly one caller wins and the loser sends
+        nothing.
+
+        Returns the BEFORE image, whose ``last_limit_email_sent`` is the value to
+        put back if the send then fails (see ``release_limit_email_slot``).
+        """
+        return await self._apply_raw_update(
+            {
+                "_id": self._id_value(user_id),
+                "$or": [
+                    {"last_limit_email_sent": None},
+                    {"last_limit_email_sent": {"$lt": stale_before}},
+                ],
+            },
+            {"$set": {"last_limit_email_sent": datetime.now(UTC)}},
+            scope=REPO_GLOBAL_SCOPE,
+            return_document=False,
+        )
+
+    async def release_limit_email_slot(self, user_id: str, previous: datetime | None) -> None:
+        """Put the weekly marker back after a claimed send failed.
+
+        Without this a failed send burns the whole week: the marker says an email
+        went out when none did, and the user hears nothing for seven days.
+        """
+        await self._apply_raw_update(
+            {"_id": self._id_value(user_id)},
+            {"$set": {"last_limit_email_sent": previous}},
+            scope=REPO_GLOBAL_SCOPE,
+            return_document=False,
+        )
+
+    async def record_activity_tier_promotion(
+        self, user_id: str, tier: str, lower_tiers: list[str]
+    ) -> UserDocument | None:
+        """Persist ``tier`` as the user's highest activity badge ever reached;
+        return the updated document only on a FIRST-TIME promotion, else None.
+
+        The guard is monotonic — a stored tier is only ever replaced by one in
+        ``lower_tiers``' complement — so downgrades are silent and re-crossing a
+        boundary can never re-fire. The filtered update is also the idempotency
+        lock: a retried job matches zero documents the second time.
+
+        A ``user_id`` that is not a valid ObjectId (synthetic/dev identities in
+        the rollups) is skipped with a warning rather than failing the sweep —
+        id-encoding concerns stay inside the repository layer.
+        """
+        if not ObjectId.is_valid(user_id):
+            log.warning(
+                "[repository] tier promotion skipped non-ObjectId user_id",
+                user={"id": user_id},
+            )
+            return None
+        return await self._apply_raw_update(
+            {
+                "_id": self._id_value(user_id),
+                "$or": [
+                    {"highest_activity_tier": {"$exists": False}},
+                    {"highest_activity_tier": {"$in": lower_tiers}},
+                ],
+            },
+            {
+                "$set": {
+                    "highest_activity_tier": tier,
+                    "highest_activity_tier_at": datetime.now(UTC),
+                }
+            },
+            scope=REPO_GLOBAL_SCOPE,
         )
 
     async def mark_memory_backfilled(self, user_id: str) -> None:

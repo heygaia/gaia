@@ -5,19 +5,25 @@ This module provides functions to create and configure the FastAPI application.
 """
 
 import secrets
+from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Request, status
+from fastapi import Depends, FastAPI, HTTPException, Request, Response, status
+from fastapi.exception_handlers import (
+    http_exception_handler as default_http_exception_handler,
+)
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, UJSONResponse
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from fastapi.staticfiles import StaticFiles
 from prometheus_fastapi_instrumentator import Instrumentator
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api.v1.endpoints.dev import router as dev_router
 from app.api.v1.endpoints.health import router as health_router
 from app.api.v1.routes import router as api_router
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
+from app.core.lazy_loader import providers
 from app.core.lifespan import lifespan
 from app.core.middleware import configure_middleware
 
@@ -25,7 +31,8 @@ from app.core.middleware import configure_middleware
 # on the default registry at app startup. Without this the storage layer is
 # lazy-imported on first use, and /metrics omits the fs_op_* metadata lines
 # until the first FS-shaped operation runs.
-from app.services.storage import metrics as _fs_metrics  # noqa: F401
+# Imported for router-registration side effects.
+from app.services.storage import metrics as _fs_metrics  # noqa: F401 -- side effects
 from app.utils.errors import AppError
 from shared.py.wide_events import log as wide_log
 
@@ -107,7 +114,8 @@ def create_app() -> FastAPI:
 
     @app.exception_handler(RequestValidationError)
     async def validation_error_handler(
-        request: Request, exc: RequestValidationError
+        request: Request,  # noqa: ARG001 -- Starlette calls exception handlers as handler(conn, exc)
+        exc: RequestValidationError,
     ) -> JSONResponse:
         """Log validation errors with field-level detail and return 422."""
         errors = [
@@ -124,15 +132,71 @@ def create_app() -> FastAPI:
             content={"detail": errors},
         )
 
+    @app.exception_handler(StarletteHTTPException)
+    async def http_exception_handler(request: Request, exc: StarletteHTTPException) -> Response:
+        """Record the failure on the wide event, then defer the response to FastAPI.
+
+        Starlette's ExceptionMiddleware converts an HTTPException into a
+        response INSIDE call_next, so LoggingMiddleware's except path never
+        sees it: every `raise HTTPException(500, ...)` emitted a wide event
+        whose `errors` key was absent entirely. The status said 500 but the
+        event carried no record of what failed, and the exception the handler
+        had caught was nowhere in the telemetry.
+
+        The response is delegated verbatim rather than rebuilt because the
+        default handler is what preserves `exc.headers` (WWW-Authenticate on
+        401, Retry-After on 429) and drops the body for statuses that may not
+        carry one (204/304) — recording a failure must not change what the API
+        returns.
+        """
+        failure: dict[str, Any] = {
+            "status_code": exc.status_code,
+            "detail": exc.detail,
+            "path": request.url.path,
+            "method": request.method,
+        }
+        # Only an explicit `raise ... from e` counts: __context__ is set by any
+        # exception raised inside an except block and is usually unrelated.
+        cause = exc.__cause__
+        if cause is not None:
+            failure["error_type"] = type(cause).__name__
+            failure["error"] = str(cause)
+
+        # Mirrors the status -> level mapping the logging middleware applies.
+        record = wide_log.error if exc.status_code >= 500 else wide_log.warning
+        record("http_exception", **failure)
+
+        return await default_http_exception_handler(request, exc)
+
     @app.exception_handler(Exception)
     async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-        """Catch all unhandled exceptions, log them, and return 500."""
-        wide_log.error(
-            "unhandled_exception",
-            error_type=type(exc).__name__,
-            error_message=str(exc),
-        )
-        wide_log.set(outcome="failed")
+        """Capture uncaught exceptions and return the generic 500 body.
+
+        No wide-event logging happens here: this handler runs in
+        ServerErrorMiddleware, outside the LoggingMiddleware boundary, so those
+        calls would land on an orphan state. The shared PostHog client is
+        initialized during lifespan startup and records the exception centrally.
+        """
+        # Guard like PostHogRequestContextMiddleware: this handler runs even in
+        # apps built without the production lifespan (tests, scripts), where the
+        # provider is never registered — providers.get would raise KeyError and
+        # a raising 500-handler turns the JSON body into a bare Starlette 500.
+        posthog_client = providers.get("posthog") if providers.is_available("posthog") else None
+        if posthog_client is not None:
+            # Attribute explicitly. PostHogRequestContextMiddleware identifies
+            # inside `with new_context():` around call_next, so an exception
+            # propagating out of it unwinds that context before reaching this
+            # handler in ServerErrorMiddleware — every 500 would otherwise land
+            # on a fresh anonymous profile, making crashes unattributable to the
+            # user who hit them. request.state survives because it lives on the
+            # request object, not a contextvar.
+            user = getattr(request.state, "user", None)
+            user_id = user.get("user_id") if user else None
+            if user_id:
+                posthog_client.capture_exception(exc, distinct_id=str(user_id))
+            else:
+                posthog_client.capture_exception(exc)
+
         return JSONResponse(
             status_code=500,
             content={"error": "internal_server_error"},

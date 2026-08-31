@@ -19,16 +19,12 @@ import json
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.models.chat_models import MessageModel
 from app.models.message_models import MessageRequestWithHistory
 from app.services.chat import stream as chat_stream
 from app.services.chat.chunks import process_data_chunk
 from app.services.chat.state import merge_tool_outputs
 from app.services.chat.stream import _persist_turn, _StreamState
-
-pytestmark = pytest.mark.unit
 
 USER = {"user_id": "u1", "email": "u1@test.local"}
 CONV = "conv-1"
@@ -182,3 +178,18 @@ class TestPersistedTurnMatchesTheLiveStream:
         merge_tool_outputs(state.tool_data, state.tool_outputs)
 
         assert "output" not in state.tool_data["tool_data"][0]["data"]
+
+
+class TestArtifactLinksSurviveTheSave:
+    async def test_a_relative_artifact_path_is_absolutized_against_this_conversation(self):
+        """The agent writes ``./artifacts/<name>``, which is right inside the
+        sandbox and a dead link from the browser. The rewrite needs THIS
+        conversation's id — without it the saved message keeps the relative
+        path and every image in the turn renders broken on reload."""
+        state = _StreamState()
+        state.complete_message = "here's the chart: ./artifacts/chart.png"
+
+        bot = await persist(state)
+
+        assert f"/sessions/{CONV}/artifacts/chart.png" in bot.response
+        assert "./artifacts/chart.png" not in bot.response

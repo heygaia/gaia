@@ -107,7 +107,7 @@ async def create_reminder_tool(
         return "Reminder created successfully"
 
     except ValueError as e:
-        log.error(f"{LogTag.TOOL} Validation error: {e}")
+        log.error(f"{LogTag.TOOL} Validation error", error_type=type(e).__name__)
         return {"error": str(e)}
     except Exception as e:
         log.exception(f"{LogTag.TOOL} Exception occurred while creating reminder")
@@ -134,7 +134,9 @@ async def list_user_reminders_tool(
         reminders = await reminder_scheduler.list_user_reminders(
             user_id=user_id, status=status, limit=100, skip=0
         )
-        return [r.model_dump() for r in reminders]
+        # mode="json" ISO-formats datetimes: a python-mode dump keeps native
+        # datetime objects, which are not JSON-safe at the tool boundary.
+        return [r.model_dump(mode="json") for r in reminders]
     except Exception as e:
         log.exception(f"{LogTag.TOOL} Exception occurred while listing reminders")
         return {"error": str(e)}
@@ -157,7 +159,7 @@ async def get_reminder_tool(
 
         reminder = await reminder_scheduler.get_reminder(reminder_id, user_id)
         if reminder:
-            return reminder.model_dump()
+            return reminder.model_dump(mode="json")
         return {"error": "Reminder not found"}
     except Exception as e:
         log.exception(f"{LogTag.TOOL} Exception occurred while getting reminder")
@@ -245,7 +247,11 @@ async def update_reminder_tool(
 
                 update.stop_after = processed_stop_after
             except ValueError as e:
-                log.error(f"{LogTag.TOOL} Invalid stop_after format: {stop_after}, error: {e}")
+                log.error(
+                    f"{LogTag.TOOL} Invalid stop_after format",
+                    stop_after=stop_after,
+                    error_type=type(e).__name__,
+                )
                 return {
                     "error": f"Invalid stop_after format: {stop_after}. Use YYYY-MM-DD HH:MM:SS format."
                 }
@@ -282,7 +288,9 @@ async def search_reminders_tool(
 
         results: list[dict[str, Any]] = []
         for r in reminders:
-            rd = r.model_dump()
+            # mode="json" ISO-formats datetimes — a python-mode dump keeps native
+            # datetime objects that stdlib json.dumps cannot encode (#917).
+            rd = r.model_dump(mode="json")
             if query.lower() in json.dumps(rd).lower():
                 results.append(rd)
 

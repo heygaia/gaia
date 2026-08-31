@@ -5,6 +5,7 @@ from typing import Any, cast
 
 from fastapi import Request, Response
 from fastapi.responses import JSONResponse
+from posthog import identify_context, new_context
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.types import ASGIApp
 from workos import AsyncWorkOSClient
@@ -14,6 +15,7 @@ from app.config.settings import settings
 from app.constants.auth import DEV_USER_HEADER, DEV_USER_MISSING_HINT
 from app.constants.error_codes import NOT_AUTHENTICATED
 from app.constants.log_tags import LogTag
+from app.core.lazy_loader import providers
 from app.core.request_context import set_authenticated_user
 from app.db.repositories.users import user_repository
 from app.models.user_models import AuthenticatedUser, user_to_legacy_dict
@@ -28,6 +30,42 @@ from shared.py.wide_events import log
 def get_current_user(request: Request) -> dict[str, Any] | None:
     """Return the authenticated user dict on ``request.state``, or ``None``."""
     return cast("dict[str, Any] | None", getattr(request.state, "user", None))
+
+
+class PostHogRequestContextMiddleware(BaseHTTPMiddleware):
+    """Bind PostHog identity to the authenticated request context.
+
+    WorkOS authentication runs before this middleware and supplies the stable
+    Mongo user id. Captures and exception autocapture in route handlers then
+    inherit that identity without each call site having to repeat it.
+    """
+
+    async def dispatch(
+        self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
+    ) -> Response:
+        user = getattr(request.state, "user", None)
+        user_id = user.get("user_id") if user else None
+        if not user_id or not providers.is_available("posthog"):
+            return await call_next(request)
+
+        if providers.get("posthog") is None:
+            return await call_next(request)
+
+        # capture_exceptions=False, and it is load-bearing. The context manager
+        # defaults to autocapturing whatever escapes it, through the MODULE-LEVEL
+        # posthog client — which GAIA never configures, because it builds a
+        # Posthog() INSTANCE via the lazy provider instead. The autocapture then
+        # raises ValueError("API key is required") on the way out and REPLACES the
+        # real exception: every authenticated 500 would reach the error handler,
+        # the wide event and Sentry as that same bogus ValueError, with the actual
+        # crash buried two levels down in __context__.
+        #
+        # Nothing is lost by disabling it — unhandled_exception_handler captures
+        # the exception explicitly, with the user attached, so autocapture here
+        # would only double-count what that handler already records.
+        with new_context(capture_exceptions=False):  # pragma: no mutate — None is falsy too
+            identify_context(str(user_id))
+            return await call_next(request)
 
 
 class WorkOSAuthMiddleware(BaseHTTPMiddleware):
@@ -98,7 +136,8 @@ class WorkOSAuthMiddleware(BaseHTTPMiddleware):
         if self.dev_bypass_email:
             log.warning(
                 f"{LogTag.API} DEV AUTH BYPASS ACTIVE — every request is "
-                f"authenticated as {self.dev_bypass_email} (development only)"
+                f"authenticated as the bypass user (development only)",
+                dev_bypass_email=self.dev_bypass_email,
             )
 
     async def dispatch(
@@ -163,7 +202,11 @@ class WorkOSAuthMiddleware(BaseHTTPMiddleware):
                 try:
                     user_data = await user_repository.get(str(agent_info["user_id"]))
                 except Exception as e:
-                    log.error(f"{LogTag.API} Invalid user_id in agent token: {e}")
+                    log.error(
+                        f"{LogTag.API} Invalid user_id in agent token",
+                        error_type=type(e).__name__,
+                        error=str(e),
+                    )
                     user_data = None
                 if user_data is not None:
                     # Same shape as the WorkOS session path — the shared builder
@@ -198,20 +241,24 @@ class WorkOSAuthMiddleware(BaseHTTPMiddleware):
 
         Only reachable when ``DEV_AUTH_BYPASS_EMAIL`` is set in development
         (production refuses to boot with it — see ``get_settings``). The target
-        user is the ``X-Dev-User`` header when present (per-request
-        impersonation, so one server can act as many users), otherwise
-        ``DEV_AUTH_BYPASS_EMAIL``. A target email that doesn't resolve to a Mongo
-        user fails loud with a 401 that names the fix — mint it via the dev
-        router — rather than silently degrading to a generic auth error.
+        user is resolved by ``resolve_dev_bypass_user``: the ``X-Dev-User``
+        header (per-request impersonation, so one server can act as many users),
+        else the ``dev_bypass_user`` cookie (so two browser profiles can act as
+        different users against one instance — how free vs pro get tested side
+        by side), else ``DEV_AUTH_BYPASS_EMAIL``. A target email that doesn't
+        resolve to a Mongo user fails loud with a 401 that names the fix — mint
+        it via the dev router — rather than silently degrading to a generic
+        auth error.
         """
         request.state.user = None
         request.state.authenticated = False
         request.state.new_session = None
 
-        target_email, user_data = await resolve_dev_bypass_user(request.headers)
+        target_email, user_data = await resolve_dev_bypass_user(request.headers, request.cookies)
         if user_data is None:
             log.error(
-                f"{LogTag.API} Dev bypass target {target_email!r} has no Mongo user",
+                f"{LogTag.API} Dev bypass target has no Mongo user",
+                target_email=target_email,
                 dev_impersonated=bool(request.headers.get(DEV_USER_HEADER)),
             )
             return JSONResponse(

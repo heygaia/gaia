@@ -1,13 +1,15 @@
 """Factory for provider-specific sub-agents.
 
 Subagents are standalone graphs with their own checkpointers, invoked via the
-tool-calling pattern like executor_agent. Each runs memory_node as an
-end_graph_hook to learn user memories (IDs, preferences, contacts) per user.
+tool-calling pattern like executor_agent. Passive memory learning is NOT wired
+here — it runs once per comms turn, over the conversation the user actually
+had (see app/agents/core/nodes/memory_node.py).
 """
 
 import asyncio
 from collections.abc import Mapping
-from typing import cast
+from dataclasses import dataclass
+from typing import Any
 
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.tools import BaseTool
@@ -16,14 +18,13 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.core.graph_builder.checkpointer_manager import get_checkpointer_manager
-from app.agents.core.nodes import (
-    manage_system_prompts_node,
-    memory_node,
-)
-from app.agents.core.nodes.adapt_media import adapt_media_node
-from app.agents.core.nodes.filter_messages import filter_messages_node
+from app.agents.core.nodes.pre_model_hooks import worker_pre_model_hooks
 from app.agents.core.subagents.spawn_agent import get_spawn_graph
-from app.agents.middleware import SubagentMiddleware, create_subagent_middleware
+from app.agents.middleware import (
+    SubagentMiddleware,
+    SubagentStackOptions,
+    create_subagent_middleware,
+)
 from app.agents.tools.coding import bash, grep, query_json, read
 from app.agents.tools.core.registry import ToolRegistry, get_tool_registry
 from app.agents.tools.core.store import get_tools_store
@@ -40,8 +41,8 @@ from app.agents.tools.todo_tools import create_todo_pre_model_hook, create_todo_
 from app.agents.tools.webpage_tool import fetch_webpages, web_search_tool
 from app.constants.general import FINISH_TASK_NAME
 from app.constants.log_tags import LogTag
+from app.override.langgraph_bigtool.agent_config import AgentConfig, HookConfig
 from app.override.langgraph_bigtool.create_agent import create_agent
-from app.override.langgraph_bigtool.hooks import HookType
 from shared.py.wide_events import log
 
 
@@ -70,8 +71,8 @@ def resolve_declared_tools(
     missing = [name for name in declared if name not in scoped_tool_dict]
     if missing:
         log.warning(
-            f"{LogTag.AGENT} Subagent '{provider}' declared {kind} tools that do not exist "
-            f"in its resolved tool set; they will NOT be bound. missing={missing}",
+            f"{LogTag.AGENT} Subagent declared tools that do not exist in its resolved "
+            "tool set; they will NOT be bound",
             provider=provider,
             declaration=kind,
             missing_tools=missing,
@@ -80,7 +81,7 @@ def resolve_declared_tools(
     return resolved
 
 
-def _build_scoped_tool_dict(
+def build_scoped_tool_dict(
     tool_registry: ToolRegistry,
     tool_space: str,
     mcp_tools: list[BaseTool] | None,
@@ -142,6 +143,21 @@ def _build_scoped_tool_dict(
     return scoped_tool_dict, initial_tool_ids
 
 
+@dataclass
+class SubAgentToolConfig:
+    """Tool-retrieval and behavior knobs for a spawned provider subagent."""
+
+    tool_space: str = "general"
+    use_direct_tools: bool = False
+    disable_retrieve_tools: bool = False
+    auto_bind_tools: list[str] | None = None
+    extra_initial_tools: list[str] | None = None
+    include_finish_task: bool = True
+    mcp_tools: list[BaseTool] | None = None
+    source_label: str | None = None
+    authoring_only: bool = False
+
+
 class SubAgentFactory:
     """Factory for creating provider-specific sub-agents with specialized tool registries."""
 
@@ -150,16 +166,7 @@ class SubAgentFactory:
         provider: str,
         name: str,
         llm: LanguageModelLike,
-        *,
-        tool_space: str = "general",
-        use_direct_tools: bool = False,
-        disable_retrieve_tools: bool = False,
-        auto_bind_tools: list[str] | None = None,
-        extra_initial_tools: list[str] | None = None,
-        include_finish_task: bool = True,
-        mcp_tools: list[BaseTool] | None = None,
-        source_label: str | None = None,
-        authoring_only: bool = False,
+        config: SubAgentToolConfig | None = None,
     ) -> CompiledStateGraph:
         """
         Creates a specialized sub-agent graph for a specific provider with tool registry.
@@ -187,20 +194,25 @@ class SubAgentFactory:
         Returns:
             Compiled LangGraph agent with tool registry, retrieval, and checkpointer
         """
+        cfg = config or SubAgentToolConfig()
+        tool_space = cfg.tool_space
+        use_direct_tools = cfg.use_direct_tools
         log.set(subagent={"name": name, "provider": provider})
         log.info(
-            f"{LogTag.AGENT} Creating {provider} sub-agent graph using tool space '{tool_space}' with "
-            + ("direct tools binding" if use_direct_tools else "retrieve tools")
+            f"{LogTag.AGENT} Creating sub-agent graph",
+            provider=provider,
+            tool_space=tool_space,
+            direct_tools=use_direct_tools,
         )
 
         store, tool_registry = await asyncio.gather(get_tools_store(), get_tool_registry())
 
-        scoped_tool_dict, initial_tool_ids = _build_scoped_tool_dict(
+        scoped_tool_dict, initial_tool_ids = build_scoped_tool_dict(
             tool_registry=tool_registry,
             tool_space=tool_space,
-            mcp_tools=mcp_tools,
-            include_finish_task=include_finish_task,
-            authoring_only=authoring_only,
+            mcp_tools=cfg.mcp_tools,
+            include_finish_task=cfg.include_finish_task,
+            authoring_only=cfg.authoring_only,
         )
 
         # Get full tool dict so spawned sub-subagents (via spawn_subagent) inherit
@@ -215,10 +227,13 @@ class SubAgentFactory:
         # middleware and the todo (plan_tasks/update_tasks) tools + hook so it
         # cannot drift into executing the workflow it is supposed to describe.
         middleware = create_subagent_middleware(
-            subagent_llm=llm,
-            subagent_registry=full_tool_dict,
-            subagent_tool_space=tool_space,
-            enable_subagent=not authoring_only,
+            agent_name=name,
+            subagent=SubagentStackOptions(
+                enabled=not cfg.authoring_only,
+                llm=llm,
+                registry=full_tool_dict,
+                tool_space=tool_space,
+            ),
         )
 
         subagent_mw = next(
@@ -228,9 +243,11 @@ class SubAgentFactory:
 
         # Create todo tools and register them in the scoped tool registry
         todo_tools: list[BaseTool] = (
-            [] if authoring_only else create_todo_tools(source=provider, source_label=source_label)
+            []
+            if cfg.authoring_only
+            else create_todo_tools(source=provider, source_label=cfg.source_label)
         )
-        todo_hook = None if authoring_only else create_todo_pre_model_hook(source=provider)
+        todo_hook = None if cfg.authoring_only else create_todo_pre_model_hook(source=provider)
         todo_tool_names: list[str] = []
         for todo_tool in todo_tools:
             scoped_tool_dict[todo_tool.name] = todo_tool
@@ -240,23 +257,24 @@ class SubAgentFactory:
             subagent_mw.set_store(store)
             subagent_mw.set_spawn_graph_provider(get_spawn_graph)
 
-        common_kwargs = {
+        common_kwargs: dict[str, Any] = {
             "llm": llm,
             "tool_registry": scoped_tool_dict,  # Use scoped dict instead of global
-            "agent_name": name,
-            "middleware": middleware,
-            "pre_model_hooks": [
-                cast(HookType, filter_messages_node),
-                cast(HookType, adapt_media_node),
-                manage_system_prompts_node,
-                *([todo_hook] if todo_hook is not None else []),
-            ],
-            "end_graph_hooks": [memory_node],
+            "agent_config": AgentConfig(agent_name=name, middleware=middleware),
+            # No memory hook. Extraction runs once per comms turn: a subagent
+            # sees the same thread the comms agent already ingested, so hooking
+            # it here re-extracted one conversation once per subagent per turn,
+            # and it is the tier whose transcripts are raw provider payloads
+            # rather than anything the user said.
+            "hooks_config": HookConfig(
+                pre_model_hooks=worker_pre_model_hooks(todo_hook),
+                end_graph_hooks=[],
+            ),
         }
 
         valid_auto_bind: list[str] | None = (
             resolve_declared_tools(
-                auto_bind_tools, scoped_tool_dict, provider=provider, kind="auto_bind"
+                cfg.auto_bind_tools, scoped_tool_dict, provider=provider, kind="auto_bind"
             )
             or None
         )
@@ -268,14 +286,17 @@ class SubAgentFactory:
         # falling back to read-whole-file + bash. Kept per-integration in config
         # (not branched on provider) so it scales to any subagent that offloads.
         extra_initial = resolve_declared_tools(
-            extra_initial_tools, scoped_tool_dict, provider=provider, kind="extra_initial"
+            cfg.extra_initial_tools, scoped_tool_dict, provider=provider, kind="extra_initial"
         )
         if extra_initial:
             valid_auto_bind = [*(valid_auto_bind or []), *extra_initial]
 
         if valid_auto_bind:
             log.info(
-                f"{LogTag.AGENT} Auto-binding {len(valid_auto_bind)} tools for {provider}: {valid_auto_bind}"
+                f"{LogTag.AGENT} Auto-binding tools",
+                tool_count=len(valid_auto_bind),
+                provider=provider,
+                tool_names=valid_auto_bind,
             )
 
         parent_tool_runtime = build_provider_parent_tool_runtime_config(
@@ -283,8 +304,8 @@ class SubAgentFactory:
             todo_tool_names=todo_tool_names,
             auto_bind_tool_names=valid_auto_bind,
             use_direct_tools=use_direct_tools,
-            disable_retrieve_tools=disable_retrieve_tools,
-            include_finish_task=include_finish_task,
+            disable_retrieve_tools=cfg.disable_retrieve_tools,
+            include_finish_task=cfg.include_finish_task,
         )
         common_kwargs.update(
             build_create_agent_tool_kwargs(
@@ -298,7 +319,7 @@ class SubAgentFactory:
         child_tool_runtime = build_child_tool_runtime_config(
             parent_tool_runtime,
             use_direct_tools=use_direct_tools,
-            disable_retrieve_tools=disable_retrieve_tools,
+            disable_retrieve_tools=cfg.disable_retrieve_tools,
             extra_initial_tool_names=extra_initial,
         )
         spawn_seed_tools = [
@@ -314,21 +335,27 @@ class SubAgentFactory:
                 tool_runtime_config=child_tool_runtime,
             )
 
-        builder = create_agent(**common_kwargs)  # type: ignore[arg-type]
+        builder = create_agent(**common_kwargs)
 
         try:
             checkpointer_manager = await get_checkpointer_manager()
             checkpointer: BaseCheckpointSaver = checkpointer_manager.get_checkpointer()
-            log.debug(f"{LogTag.AGENT} Using PostgreSQL checkpointer for {provider} sub-agent")
+            log.debug(
+                f"{LogTag.AGENT} Using PostgreSQL checkpointer for sub-agent", provider=provider
+            )
         except Exception as e:
             log.warning(
-                f"{LogTag.AGENT} PostgreSQL checkpointer unavailable for {provider} sub-agent: {e}. Using InMemorySaver."
+                f"{LogTag.AGENT} PostgreSQL checkpointer unavailable for sub-agent; using InMemorySaver",
+                provider=provider,
+                error_type=type(e).__name__,
+                error=str(e),
             )
             checkpointer = InMemorySaver()
 
         subagent_graph = builder.compile(store=store, name=name, checkpointer=checkpointer)
 
         log.info(
-            f"{LogTag.AGENT} Successfully created {provider} sub-agent graph with checkpointer"
+            f"{LogTag.AGENT} Successfully created sub-agent graph with checkpointer",
+            provider=provider,
         )
         return subagent_graph

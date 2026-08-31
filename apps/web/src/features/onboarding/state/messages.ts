@@ -17,12 +17,23 @@ import {
   PROCESSING_MSG_NO_GMAIL,
   WORKING_ON_SKIP_REPLY,
 } from "../constants/messages";
-import type { Message } from "../types";
-import type { OnboardingState } from "./types";
+import type { ClarifyAnswer, ClarifyQuestion, Message } from "../types";
+
+/**
+ * The exact slice of onboarding state the transcript derives from, so callers
+ * can memoise on just these fields instead of the whole state object.
+ */
+export interface TranscriptInputs {
+  responses: Record<string, string>;
+  questionIndex: number;
+  clarifyQuestions: ClarifyQuestion[] | null;
+  clarifyAnswers: Record<string, ClarifyAnswer>;
+  clarifySubmitted: boolean;
+}
 
 function appendClarifyTranscript(
   messages: Message[],
-  state: OnboardingState,
+  state: TranscriptInputs,
 ): void {
   if (!state.clarifyQuestions) return;
   messages.push({
@@ -48,8 +59,11 @@ function appendClarifyTranscript(
   }
 }
 
-export function getMessages(state: OnboardingState): Message[] {
-  const messages: Message[] = [];
+// The bot question + user answer pairs for every question asked so far.
+function appendQuestionTranscript(
+  messages: Message[],
+  state: TranscriptInputs,
+): void {
   const { responses, questionIndex } = state;
 
   for (let i = 0; i < Math.min(questionIndex + 1, questions.length); i++) {
@@ -77,59 +91,74 @@ export function getMessages(state: OnboardingState): Message[] {
       });
     }
   }
+}
 
-  if (questionIndex >= questions.length) {
-    const gmail = responses[FIELD_NAMES.GMAIL];
-    const focus = responses[FIELD_NAMES.FOCUS];
+// The focus question, its answer, optional clarify transcript, and the closing
+// processing message — the transcript shown once all questions are answered.
+function appendFinalStage(messages: Message[], state: TranscriptInputs): void {
+  const { responses } = state;
+  const gmail = responses[FIELD_NAMES.GMAIL];
+  const focus = responses[FIELD_NAMES.FOCUS];
 
-    if (gmail === "skipped" && focus == null) {
-      messages.push({
-        id: "focus-q",
-        type: "bot",
-        content: FOCUS_QUESTION,
-      });
-    } else if (focus != null) {
-      const isNoGmail = gmail === "skipped";
-      if (isNoGmail) {
-        messages.push({
-          id: "focus-q",
-          type: "bot",
-          content: FOCUS_QUESTION,
-        });
-      }
-      messages.push({
-        id: `user-focus`,
-        type: "user",
-        content: focus,
-        questionFieldName: FIELD_NAMES.FOCUS,
-      });
+  if (gmail === "skipped" && focus == null) {
+    messages.push({
+      id: "focus-q",
+      type: "bot",
+      content: FOCUS_QUESTION,
+    });
+    return;
+  }
 
-      if (isNoGmail) {
-        appendClarifyTranscript(messages, state);
-      }
+  if (focus == null) {
+    messages.push({
+      id: "processing",
+      type: "bot",
+      content:
+        gmail === "connected" ? PROCESSING_MSG_GMAIL : PROCESSING_MSG_NO_GMAIL,
+    });
+    return;
+  }
 
-      const showProcessing =
-        !isNoGmail || !state.clarifyQuestions || state.clarifySubmitted;
-      if (showProcessing) {
-        messages.push({
-          id: "processing",
-          type: "bot",
-          content:
-            isNoGmail && state.clarifySubmitted
-              ? CLARIFY_PROCESSING_MSG
-              : PROCESSING_MSG_FOCUS,
-        });
-      }
-    } else {
-      messages.push({
-        id: "processing",
-        type: "bot",
-        content:
-          gmail === "connected"
-            ? PROCESSING_MSG_GMAIL
-            : PROCESSING_MSG_NO_GMAIL,
-      });
-    }
+  const isNoGmail = gmail === "skipped";
+  if (isNoGmail) {
+    messages.push({
+      id: "focus-q",
+      type: "bot",
+      content: FOCUS_QUESTION,
+    });
+  }
+  messages.push({
+    id: `user-focus`,
+    type: "user",
+    content: focus,
+    questionFieldName: FIELD_NAMES.FOCUS,
+  });
+
+  if (isNoGmail) {
+    appendClarifyTranscript(messages, state);
+  }
+
+  const showProcessing =
+    !isNoGmail || !state.clarifyQuestions || state.clarifySubmitted;
+  if (showProcessing) {
+    messages.push({
+      id: "processing",
+      type: "bot",
+      content:
+        isNoGmail && state.clarifySubmitted
+          ? CLARIFY_PROCESSING_MSG
+          : PROCESSING_MSG_FOCUS,
+    });
+  }
+}
+
+export function getMessages(state: TranscriptInputs): Message[] {
+  const messages: Message[] = [];
+
+  appendQuestionTranscript(messages, state);
+
+  if (state.questionIndex >= questions.length) {
+    appendFinalStage(messages, state);
   }
 
   return messages;

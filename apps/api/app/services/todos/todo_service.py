@@ -29,6 +29,7 @@ from app.models.todo_models import (
     TodoUpdateRequest,
     UpdateProjectRequest,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.user_todos_fs import schedule_user_todos_sync
 from app.utils.canvas_vector_utils import delete_canvas_embedding
 from app.utils.todo_vector_utils import (
@@ -38,7 +39,7 @@ from app.utils.todo_vector_utils import (
     store_todo_embedding,
     update_todo_embedding,
 )
-from shared.py.wide_events import log
+from shared.py.wide_events import log, spawn_logged_task
 
 
 async def _get_workflow_categories_for_todos(
@@ -103,10 +104,6 @@ def _drop_completion_fields(update: TodoUpdate) -> TodoUpdate:
     return TodoUpdate(**fields)
 
 
-# Module-level set to hold references to background tasks and prevent GC
-_background_tasks: set[asyncio.Task[bool]] = set()
-
-
 class TodoService:
     """Service class for todo operations. Persistence + caching live in the
     todos/projects repositories; this layer holds orchestration only."""
@@ -138,7 +135,7 @@ class TodoService:
     async def create_todo(cls, todo: TodoModel, user_id: str) -> TodoResponse:
         """Create a new todo with automatic inbox assignment."""
         log.set(
-            service="todo_service",
+            component="todo_service",
             operation="create_todo",
             user_id=user_id,
             todo={
@@ -150,6 +147,9 @@ class TodoService:
                 "user_id": user_id,
             },
         )
+        # Whether the caller filed the todo into a project themselves — read
+        # before the Inbox default below makes project_id unconditionally set.
+        project_chosen = todo.project_id is not None
         if not todo.project_id:
             todo.project_id = await cls._get_inbox_id(user_id)
         else:
@@ -181,18 +181,22 @@ class TodoService:
 
         # Queue workflow generation as fire-and-forget (does not block response)
         try:
-            from app.services.workflow.queue_service import WorkflowQueueService
+            # Deferred import: workflow/ARQ enqueue stack loads only when generation is actually queued
+            from app.services.workflow.queue_service import (  # noqa: PLC0415 -- deferred
+                WorkflowQueueService,
+            )
 
-            _task = asyncio.create_task(
+            spawn_logged_task(
+                "todo_workflow_generation",
                 WorkflowQueueService.queue_todo_workflow_generation(
                     todo_id=created.id,
                     user_id=user_id,
                     title=todo.title,
                     description=todo.description or "",
-                )
+                ),
+                user={"id": user_id},
+                todo={"id": created.id},
             )
-            _background_tasks.add(_task)
-            _task.add_done_callback(_background_tasks.discard)
             log.info("todo.workflow_generation_queued", todo_id=created.id, title=todo.title)
         except Exception as e:
             log.warning("todo.workflow_queue_failed", title=todo.title, error=str(e))
@@ -204,12 +208,24 @@ class TodoService:
             log.warning("todo.index_failed", error=str(e))
 
         schedule_user_todos_sync(user_id)
+        capture_event(
+            user_id,
+            AnalyticsEvents.TODO_CREATED,
+            {
+                "priority": created.priority.value,
+                "has_due_date": created.due_date is not None,
+                "has_description": bool(created.description),
+                "labels_count": len(created.labels),
+                "subtasks_count": len(created.subtasks),
+                "has_project": project_chosen,
+            },
+        )
         return TodoResponse.from_document(created)
 
     @classmethod
     async def get_todo(cls, todo_id: str, user_id: str) -> TodoResponse:
         """Get a single todo by ID."""
-        log.set(service="todo_service", operation="get_todo", user_id=user_id, todo_id=todo_id)
+        log.set(component="todo_service", operation="get_todo", user_id=user_id, todo_id=todo_id)
         todo = await todo_repository.get(todo_id, user_id=user_id)
         if not todo:
             raise ValueError(f"Todo {todo_id} not found")
@@ -262,7 +278,7 @@ class TodoService:
     ) -> TodoResponse:
         """Update a todo."""
         log.set(
-            service="todo_service",
+            component="todo_service",
             operation="update_todo",
             user_id=user_id,
             todo={
@@ -292,7 +308,9 @@ class TodoService:
             existing = await todo_repository.get(todo_id, user_id=user_id)
             if existing and existing.vfs_path:
                 try:
-                    from app.services.tracked_todo_service import tracked_todo_service
+                    from app.services.tracked_todo_service import (  # noqa: PLC0415 -- tracked_todo_service imports this module at module level, so a top-level import back would be circular
+                        tracked_todo_service,
+                    )
 
                     await tracked_todo_service.complete_tracked_todo(
                         todo_id, user_id, summary="Completed via UI"
@@ -316,12 +334,38 @@ class TodoService:
             log.warning("todo.index_update_failed", todo_id=todo_id, error=str(e))
 
         schedule_user_todos_sync(user_id)
+        if updates.completed is not None:
+            # Toggle semantics: fires for both completing and un-completing,
+            # tracked or plain.
+            capture_event(
+                user_id,
+                AnalyticsEvents.TODO_TOGGLED,
+                {
+                    "completed": updates.completed,
+                    "todo_id": todo_id,
+                    "priority": updated.priority.value,
+                    "has_due_date": updated.due_date is not None,
+                },
+            )
+        elif update.model_fields_set:
+            capture_event(
+                user_id,
+                AnalyticsEvents.TODO_UPDATED,
+                {
+                    "changed_field_count": len(update.model_fields_set),
+                    "changed_fields": sorted(update.model_fields_set),
+                    "todo_id": todo_id,
+                    "priority": updated.priority.value,
+                    "has_due_date": updated.due_date is not None,
+                    "has_subtasks": bool(updated.subtasks),
+                },
+            )
         return TodoResponse.from_document(updated)
 
     @classmethod
     async def delete_todo(cls, todo_id: str, user_id: str) -> None:
         """Delete a todo."""
-        log.set(service="todo_service", operation="delete_todo", user_id=user_id, todo_id=todo_id)
+        log.set(component="todo_service", operation="delete_todo", user_id=user_id, todo_id=todo_id)
         doc = await todo_repository.get(todo_id, user_id=user_id)
         if not doc:
             raise ValueError(f"Todo {todo_id} not found")
@@ -343,6 +387,7 @@ class TodoService:
             log.warning("todo.index_remove_failed", todo_id=todo_id, error=str(e))
 
         schedule_user_todos_sync(user_id)
+        capture_event(user_id, AnalyticsEvents.TODO_DELETED, {"todo_id": todo_id})
 
     # Bulk Operations
     @classmethod
@@ -394,6 +439,7 @@ class TodoService:
                 except Exception as e:
                     log.warning("todo.index_remove_failed", todo_id=todo.id, error=str(e))
             schedule_user_todos_sync(user_id)
+            capture_event(user_id, AnalyticsEvents.TODO_DELETED, {"count": deleted})
 
         return BulkOperationResponse(
             success=todo_ids[:deleted],
@@ -486,7 +532,7 @@ class ProjectService:
     async def create_project(project: ProjectCreate, user_id: str) -> ProjectResponse:
         """Create a new project."""
         log.set(
-            service="todo_service",
+            component="todo_service",
             operation="create_project",
             user_id=user_id,
             project_name=project.name,
@@ -518,7 +564,7 @@ class ProjectService:
     ) -> ProjectResponse:
         """Update a project."""
         log.set(
-            service="todo_service",
+            component="todo_service",
             operation="update_project",
             user_id=user_id,
             project_id=project_id,
@@ -543,7 +589,7 @@ class ProjectService:
     async def delete_project(project_id: str, user_id: str) -> None:
         """Delete a project and move its todos to inbox."""
         log.set(
-            service="todo_service",
+            component="todo_service",
             operation="delete_project",
             user_id=user_id,
             project_id=project_id,

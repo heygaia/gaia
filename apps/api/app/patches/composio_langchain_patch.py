@@ -30,7 +30,7 @@ def apply() -> None:
                 from functools import reduce
 
                 cast_types = [t.cast(type, ptype) for ptype in valid_types]
-                return reduce(lambda a, b: t.Union[a, b], cast_types)  # type: ignore[arg-type,return-value]
+                return reduce(lambda a, b: t.Union[a, b], cast_types)  # type: ignore[arg-type,return-value]  # composio/langchain boundary typed Any upstream
 
             return original_json_schema_to_pydantic_type(json_schema)
 
@@ -57,15 +57,14 @@ def apply() -> None:
 
         lc_base._handle_validation_error = patched_handle_validation_error
 
-        log.info(
-            f"{LogTag.STARTUP} Applied composio_langchain_patch "
-            "for arrays and tool validation errors"
-        )
+        log.info(f"{LogTag.PATCH} Applied composio_langchain_patch", patch="composio_langchain")
     except Exception as e:
-        # Not print: a monkey-patch that fails to apply changes runtime behaviour
-        # for every Composio tool call, and on stdout that never reaches Loki —
-        # the symptom would surface later as unexplained tool-validation errors.
-        log.error(f"{LogTag.STARTUP} Failed to apply composio langchain patch: {e}")
+        log.error(
+            f"{LogTag.PATCH} Failed to apply composio langchain patch",
+            patch="composio_langchain",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 # Call it directly on importing

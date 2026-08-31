@@ -82,10 +82,7 @@ async def _run_one(
 
 async def _main_async() -> int:
     args = _parse_args()
-    if args.persona == "all":
-        names = list(PERSONAS.keys())
-    else:
-        names = [args.persona]
+    names = list(PERSONAS.keys()) if args.persona == "all" else [args.persona]
 
     results = []
     for name in names:

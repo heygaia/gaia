@@ -15,7 +15,7 @@ import re
 from typing import cast
 from uuid import uuid4
 
-from app.agents.core.agent import call_agent_silent
+from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.agents.prompts.briefing_prompts import (
     build_briefing_voice_prompt,
     build_overnight_work_prompt,
@@ -126,14 +126,16 @@ async def _run_silent(user: dict, clock: UserClock, prompt: str, conversation_ke
     conversation_id = (
         f"briefing-{conversation_key}-{user['user_id']}-{clock.date_str}-{uuid4().hex[:6]}"
     )
-    message, _ = await call_agent_silent(
+    run = await call_agent_silent(
         request=request,
         conversation_id=conversation_id,
         user=cast(AuthenticatedUser, user_data),
-        trigger_context={"execution_mode": "background"},
-        source="briefing",
+        options=AgentRunOptions(
+            trigger_context={"execution_mode": "background"},
+            source="briefing",
+        ),
     )
-    return message
+    return run.message
 
 
 async def _generate_payload(
@@ -529,7 +531,7 @@ async def run_overnight_work(user_id: str) -> None:
     the ``create_tracked_todo`` contract exactly as in any other run. Silent by
     design: no payload, no notification; the 8am briefing narrates what exists.
     """
-    log.set(service="briefing", operation="run_overnight_work", user_id=user_id)
+    log.set(component="briefing", operation="run_overnight_work", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
         raise BriefingGenerationError(f"Cannot run overnight work for unknown user {user_id}")
@@ -572,7 +574,7 @@ async def run_overnight_work(user_id: str) -> None:
 
 async def run_daily_briefing(user_id: str) -> None:
     """Curate, look back, plan, and deliver one daily briefing for the user."""
-    log.set(service="briefing", operation="run_daily_briefing", user_id=user_id)
+    log.set(component="briefing", operation="run_daily_briefing", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
         raise BriefingGenerationError(f"Cannot brief unknown user {user_id}")
@@ -703,7 +705,7 @@ async def run_daily_briefing(user_id: str) -> None:
 
 async def run_weekly_digest(user_id: str) -> None:
     """Zoom out on the week: completed work by assignee, hours saved, streak."""
-    log.set(service="briefing", operation="run_weekly_digest", user_id=user_id)
+    log.set(component="briefing", operation="run_weekly_digest", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
         raise BriefingGenerationError(f"Cannot brief unknown user {user_id}")

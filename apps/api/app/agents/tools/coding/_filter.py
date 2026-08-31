@@ -88,7 +88,7 @@ def _cap(text: str, *, truncated: bool) -> str:
     if truncated or len(text) > MAX_FILTER_OUTPUT_CHARS:
         return (
             text[:MAX_FILTER_OUTPUT_CHARS]
-            + f"\n... [truncated at {MAX_FILTER_OUTPUT_CHARS} chars — narrow your query]"
+            + f"\n... [truncated at {MAX_FILTER_OUTPUT_CHARS} chars: narrow your query]"
         )
     return text
 
@@ -110,7 +110,7 @@ async def run_file_filter(
     """
     try:
         user_id = get_user_id(config)
-        abs_path, rel = canonical_rel(path, session_id=get_session_id(config))
+        _abs_path, rel = canonical_rel(path, session_id=get_session_id(config))
     except ValueError as e:
         return f"Error: {e}"
 
@@ -122,7 +122,12 @@ async def run_file_filter(
         # Either the binary or the file is missing; the message says which.
         return f"Error: {e}"
     except Exception as e:
-        log.error(f"{LogTag.SANDBOX} {error_label} tool failed: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.SANDBOX} coding tool failed",
+            tool_name=error_label,
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
         return f"Error running {error_label}: {e}"
 
 
@@ -142,14 +147,14 @@ async def _run(
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,
         env=_SAFE_ENV,
-        preexec_fn=_apply_child_limits,  # noqa: PLW1509 — setrlimit only (sandboxing), no locks
+        preexec_fn=_apply_child_limits,
     )
     try:
         out, err, truncated = await asyncio.wait_for(
             _read_bounded(proc), timeout=FILTER_TIMEOUT_SECONDS
         )
     except TimeoutError:
-        await _terminate(proc)
+        await _kill_and_reap(proc)
         return f"Error: {error_label} timed out after {FILTER_TIMEOUT_SECONDS}s"
 
     # A truncated run is killed mid-stream (returncode is the kill signal), but we
@@ -175,8 +180,14 @@ async def _read_bounded(proc: asyncio.subprocess.Process) -> tuple[bytes, bytes,
     Reading stdout fully before stderr would deadlock: a child that fills the
     stderr pipe (64 KiB on Linux) blocks on its stderr write and never closes
     stdout, so the stdout read never sees EOF and the call wastes the full
-    timeout. Draining both in parallel — and continuing to drain (discard) stderr
-    past the kept cap — ensures the child can never back-pressure.
+    timeout. Draining both in parallel — and continuing to drain (discard) BOTH
+    pipes past the kept cap — ensures the child can never back-pressure.
+
+    Draining past the cap is what makes the overrun kill safe. asyncio pauses a
+    pipe transport once its buffer passes the high-water mark and only completes
+    ``wait()`` once every pipe has seen EOF, so reaping the child from inside
+    this loop — while stdout sits paused and unread — hangs until the timeout.
+    Signal the child, keep reading to EOF, and let the caller reap it.
     """
     if proc.stdout is None:
         return b"", b"", False
@@ -186,17 +197,20 @@ async def _read_bounded(proc: asyncio.subprocess.Process) -> tuple[bytes, bytes,
         nonlocal truncated
         chunks: list[bytes] = []
         total = 0
-        assert proc.stdout is not None
+        # stdout is always created when the subprocess is spawned with
+        # stdout=PIPE; assert is a dev guard, not a runtime check.
+        assert proc.stdout is not None  # nosec B101
         while True:
             chunk = await proc.stdout.read(_READ_CHUNK)
             if not chunk:
                 break
+            if truncated:
+                continue  # past the cap: discard, but keep draining to EOF
             chunks.append(chunk)
             total += len(chunk)
             if total > _MAX_OUTPUT_BYTES:
                 truncated = True
-                await _terminate(proc)
-                break
+                _kill(proc)
         return b"".join(chunks)[:_MAX_OUTPUT_BYTES]
 
     async def drain_stderr() -> bytes:
@@ -216,8 +230,20 @@ async def _read_bounded(proc: asyncio.subprocess.Process) -> tuple[bytes, bytes,
     return out, err, truncated
 
 
-async def _terminate(proc: asyncio.subprocess.Process) -> None:
+def _kill(proc: asyncio.subprocess.Process) -> None:
+    """Signal the child only. Never awaits, so it is safe to call from a drain."""
     if proc.returncode is None:
         with contextlib.suppress(ProcessLookupError):
             proc.kill()
-            await proc.wait()
+
+
+async def _kill_and_reap(proc: asyncio.subprocess.Process) -> None:
+    """Kill the child and reap it, for callers that are no longer draining it.
+
+    ``communicate()`` rather than ``wait()``: asyncio completes ``wait()`` only
+    once every pipe transport has seen EOF, so a child whose stdout is still
+    buffered would never be reaped. The child is already dead, so what is left to
+    read is bounded by the pipe and the reader's buffer.
+    """
+    _kill(proc)
+    await proc.communicate()

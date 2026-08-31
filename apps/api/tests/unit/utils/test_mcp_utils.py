@@ -35,7 +35,6 @@ def _make_tool(name: str = "test_tool", arun: AsyncMock | None = None) -> BaseTo
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestWrapToolWithNullFilter:
     """Tests for wrap_tool_with_null_filter — filters None kwargs before calling _arun."""
 
@@ -145,7 +144,7 @@ class TestWrapToolWithNullFilter:
         async def async_callback() -> None:
             pass
 
-        wrapped = wrap_tool_with_null_filter(tool, on_connection_error=async_callback)  # type: ignore[arg-type]
+        wrapped = wrap_tool_with_null_filter(tool, on_connection_error=async_callback)  # type: ignore[arg-type]  # stub callback narrows the declared callable signature
         with pytest.raises(TypeError, match="synchronous callable"):
             await wrapped._arun()
 
@@ -207,7 +206,6 @@ class TestWrapToolWithNullFilter:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestWrapToolsWithNullFilter:
     """Tests for wrap_tools_with_null_filter — batch wrapper."""
 
@@ -239,7 +237,6 @@ class TestWrapToolsWithNullFilter:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestConnectionErrorPatterns:
     """Verify the constant tuple is non-empty and contains expected entries."""
 

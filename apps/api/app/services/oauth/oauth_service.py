@@ -34,18 +34,19 @@ from app.services.provider_metadata_service import (
     fetch_and_store_provider_metadata,
 )
 from app.services.system_workflows.provisioner import provision_system_workflows
+from app.services.workflow.dormancy import resume_dormancy_paused_workflows
+from app.services.workflow.integration_pause import (
+    resume_workflows_for_reconnected_integration,
+)
 from app.services.workflow.trigger_service import TriggerService
 from app.services.workspace_sync import schedule_user_provision
 from app.utils.redis_utils import RedisPoolManager
-from shared.py.wide_events import OAuthContext, log
+from app.workers.queue import enqueue_worker_job
+from shared.py.wide_events import OAuthContext, log, spawn_logged_task
 
 # Signup's ESP calls are fire-and-forget; this bounds each one so a hung provider
 # can't leak a task that never finishes.
 SIGNUP_EMAIL_TIMEOUT_SECONDS = 10
-
-# Strong refs to in-flight signup email tasks (asyncio only holds weak refs, so
-# an unreferenced task can be garbage-collected mid-flight).
-_signup_email_tasks: set[asyncio.Task] = set()
 
 
 async def store_user_info(
@@ -93,15 +94,28 @@ async def store_user_info(
 
         await user_repository.update(existing_user.id, UserUpdate(**update_fields))
         if external_side_effects:
+            # A returning user gets back only the workflows the dormancy sweep
+            # paused — never one they switched off themselves (that records no
+            # reason). Fire-and-forget: re-registering triggers must not slow or
+            # fail a login.
+            spawn_logged_task(
+                "resume_dormancy_paused_workflows",
+                resume_dormancy_paused_workflows(existing_user.id),
+            )
             try:
                 track_login(
-                    user_id=email,
+                    user_id=existing_user.id,
                     email=email,
                     name=name,
                     login_method=LOGIN_METHOD_WORKOS,
                 )
             except Exception as e:
-                log.error(f"{LogTag.OAUTH} Failed to track login in PostHog for {email}: {e!s}")
+                log.error(
+                    f"{LogTag.OAUTH} Failed to track login in PostHog for",
+                    email=email,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
         return existing_user.id, False
 
@@ -112,17 +126,22 @@ async def store_user_info(
     if not external_side_effects:
         return created.id, True
 
-    # Track signup event in PostHog (using email as distinct_id for consistency with frontend)
+    # Track signup with the stable Mongo user id as the PostHog distinct id.
     try:
         track_signup(
-            user_id=email,  # PostHog distinct_id - use email for cross-platform consistency
+            user_id=created.id,
             email=email,
             name=name,
             signup_method=LOGIN_METHOD_WORKOS,
         )
-        log.info(f"{LogTag.OAUTH} Signup tracked in PostHog for new user: {email}")
+        log.info(f"{LogTag.OAUTH} Signup tracked in PostHog for new user", email=email)
     except Exception as e:
-        log.error(f"{LogTag.OAUTH} Failed to track signup in PostHog for {email}: {e!s}")
+        log.error(
+            f"{LogTag.OAUTH} Failed to track signup in PostHog for",
+            email=email,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Welcome email + marketing contact are ESP round-trips that signup must not
     # wait on: a slow or unreachable provider used to hang user creation for as
@@ -132,19 +151,30 @@ async def store_user_info(
         try:
             async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
                 await send_welcome_email(email, name)
-            log.info(f"{LogTag.OAUTH} Welcome email sent to new user: {email}")
+            log.info(f"{LogTag.OAUTH} Welcome email sent to new user", user_id=created.id)
         except Exception as e:
-            log.error(f"{LogTag.OAUTH} Failed to send welcome email to {email}: {e!s}")
+            log.error(
+                f"{LogTag.OAUTH} Failed to send welcome email",
+                user_id=created.id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
         try:
             async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
                 await add_marketing_contact(email, name)
-            log.info(f"{LogTag.OAUTH} Contact added to marketing audience for new user: {email}")
+            log.info(
+                f"{LogTag.OAUTH} Contact added to marketing audience for new user",
+                user_id=created.id,
+            )
         except Exception as e:
-            log.error(f"{LogTag.OAUTH} Failed to add marketing contact for {email}: {e!s}")
+            log.error(
+                f"{LogTag.OAUTH} Failed to add marketing contact",
+                user_id=created.id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
 
-    task = asyncio.create_task(_deliver_signup_emails())
-    _signup_email_tasks.add(task)
-    task.add_done_callback(_signup_email_tasks.discard)
+    spawn_logged_task("deliver_signup_emails", _deliver_signup_emails())
 
     # Provision the user's workspace (system files + skills catalog) now, instead
     # of lazily on the first chat turn. Fire-and-forget so signup isn't blocked.
@@ -211,7 +241,12 @@ async def get_all_integrations_status(user_id: str) -> dict[str, bool]:
                     scope in authorized_scopes for scope in required_scopes
                 )
             except Exception as e:
-                log.debug(f"{LogTag.OAUTH} Token not found for {integration.provider}: {e}")
+                log.debug(
+                    f"{LogTag.OAUTH} Token not found for",
+                    provider=integration.provider,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
                 result[integration.id] = False
 
     # Step 2: Batch check Composio integrations not in MongoDB
@@ -222,8 +257,13 @@ async def get_all_integrations_status(user_id: str) -> dict[str, bool]:
             for integration_id, provider in composio_id_to_provider.items():
                 result[integration_id] = status_map.get(provider, False)
         except Exception as e:
-            log.error(f"{LogTag.OAUTH} Error batch checking Composio integrations: {e}")
-            for integration_id in composio_id_to_provider.keys():
+            log.error(
+                f"{LogTag.OAUTH} Error batch checking Composio integrations",
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
+            for integration_id in composio_id_to_provider:
                 result[integration_id] = False
 
     # Include custom integrations from MongoDB that are connected
@@ -253,7 +293,13 @@ async def check_integration_status(integration_id: str, user_id: str) -> bool:
         all_statuses: dict[str, bool] = await get_all_integrations_status(user_id)
         return all_statuses.get(integration_id, False)
     except Exception as e:
-        log.error(f"{LogTag.OAUTH} Error checking integration status for {integration_id}: {e}")
+        log.error(
+            f"{LogTag.OAUTH} Error checking integration status for",
+            integration_id=integration_id,
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
         return False
 
 
@@ -280,7 +326,12 @@ async def check_multiple_integrations_status(
             for integration_id in integration_ids
         }
     except Exception as e:
-        log.error(f"{LogTag.OAUTH} Error checking multiple integrations status: {e}")
+        log.error(
+            f"{LogTag.OAUTH} Error checking multiple integrations status",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
         return dict.fromkeys(integration_ids, False)
 
 
@@ -288,6 +339,7 @@ async def handle_oauth_connection(
     user_id: str,
     integration_config: OAuthIntegration,
     background_tasks: BackgroundTasks,
+    connected_account_id: str | None = None,
 ) -> None:
     """
     Handle successful OAuth connection: setup triggers, update bio status, queue processing.
@@ -296,6 +348,7 @@ async def handle_oauth_connection(
         user_id: The user ID
         integration_config: The integration configuration object
         background_tasks: FastAPI background tasks
+        connected_account_id: Composio's nanoid for the account that just authorized
     """
     log.set(auth={"user_id": user_id, "provider": integration_config.id})
     log.set_ns(
@@ -309,8 +362,10 @@ async def handle_oauth_connection(
     if integration_config.associated_triggers:
         composio_service = get_composio_service()
         log.info(
-            f"{LogTag.OAUTH} Setting up {len(integration_config.associated_triggers)} triggers "
-            f"for user {user_id} and integration {integration_config.id}"
+            f"{LogTag.OAUTH} Setting up triggers for user and integration",
+            associated_triggers_count=len(integration_config.associated_triggers),
+            user_id=user_id,
+            id=integration_config.id,
         )
         background_tasks.add_task(
             composio_service.handle_subscribe_trigger,
@@ -335,13 +390,19 @@ async def handle_oauth_connection(
 
     # Process Gmail emails to memory if this is a Gmail connection
     if integration_config.id == GMAIL_INTEGRATION_ID:
-        log.info(f"{LogTag.OAUTH} Starting Gmail email processing for user {user_id}")
+        log.info(f"{LogTag.OAUTH} Starting Gmail email processing for user", user_id=user_id)
 
         user_doc = None
         try:
             user_doc = await user_repository.get(user_id)
         except Exception as e:
-            log.error(f"{LogTag.OAUTH} Failed to load user_doc for {user_id}: {e}", exc_info=True)
+            log.error(
+                f"{LogTag.OAUTH} Failed to load user_doc for",
+                user_id=user_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                exc_info=True,
+            )
 
         onboarding = (user_doc.onboarding if user_doc else None) or {}
         onboarding_completed = bool(onboarding.get("completed"))
@@ -354,8 +415,9 @@ async def handle_oauth_connection(
                 if current_bio_status in [BioStatus.NO_GMAIL, "no_gmail"]:
                     await user_repository.set_bio_status(user_id, BioStatus.PROCESSING)
                     log.info(
-                        f"{LogTag.OAUTH} Updated bio_status to processing for user {user_id} "
-                        f"(was {current_bio_status})"
+                        f"{LogTag.OAUTH} Updated bio_status to processing",
+                        user_id=user_id,
+                        current_bio_status=current_bio_status,
                     )
                     try:
                         if isinstance(user_id, str) and user_id:
@@ -367,10 +429,18 @@ async def handle_oauth_connection(
                                 },
                             )
                     except Exception as ws_error:
-                        log.warning(f"{LogTag.OAUTH} Failed to send WebSocket update: {ws_error}")
+                        log.warning(
+                            f"{LogTag.OAUTH} Failed to send WebSocket update",
+                            error=str(ws_error),
+                            error_type=type(ws_error).__name__,
+                            user_id=user_id,
+                        )
             except Exception as e:
                 log.error(
-                    f"{LogTag.OAUTH} Error updating bio_status for user {user_id}: {e}",
+                    f"{LogTag.OAUTH} Error updating bio_status for user",
+                    user_id=user_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
                     exc_info=True,
                 )
 
@@ -379,14 +449,20 @@ async def handle_oauth_connection(
         if onboarding_completed:
             try:
                 pool = await RedisPoolManager.get_pool()
-                await pool.enqueue_job("process_gmail_emails_to_memory", user_id)
-                log.info(f"{LogTag.OAUTH} Queued Gmail processing job for user {user_id}")
+                await enqueue_worker_job(pool, "process_gmail_emails_to_memory", user_id)
+                log.info(f"{LogTag.OAUTH} Queued Gmail processing job for user", user_id=user_id)
             except Exception as e:
-                log.error(f"{LogTag.OAUTH} Failed to queue Gmail processing: {e}", exc_info=True)
+                log.error(
+                    f"{LogTag.OAUTH} Failed to queue Gmail processing",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    user_id=user_id,
+                    exc_info=True,
+                )
         else:
             log.info(
-                f"{LogTag.OAUTH} Deferring Gmail->memory ingestion until onboarding pipeline "
-                f"completes for user {user_id}"
+                f"{LogTag.OAUTH} Deferring Gmail->memory ingestion until onboarding pipeline completes for user",
+                user_id=user_id,
             )
 
     # Update user_integrations status in MongoDB. The @CacheInvalidator on
@@ -394,11 +470,27 @@ async def handle_oauth_connection(
     # set (OAUTH_STATUS + tools:user:* + tool_namespaces), so no manual delete here.
     try:
         await update_user_integration_status(
-            user_id, integration_config.id, INTEGRATION_STATUS_CONNECTED
+            user_id,
+            integration_config.id,
+            INTEGRATION_STATUS_CONNECTED,
+            connected_account_id=connected_account_id,
         )
-        log.info(f"{LogTag.OAUTH} Updated user_integrations status for {integration_config.id}")
+        log.info(f"{LogTag.OAUTH} Updated user_integrations status for", id=integration_config.id)
+        # Runs after the status write above, and as a background task, so the
+        # reconnected integration already reads as connected by the time
+        # activate_workflow re-checks the workflow's requirements.
+        background_tasks.add_task(
+            resume_workflows_for_reconnected_integration,
+            user_id,
+            integration_config.id,
+        )
     except Exception as e:
-        log.warning(f"{LogTag.OAUTH} Failed to update user_integrations status: {e}")
+        log.warning(
+            f"{LogTag.OAUTH} Failed to update user_integrations status",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
 
     if integration_config.metadata_config:
         background_tasks.add_task(
@@ -407,7 +499,9 @@ async def handle_oauth_connection(
             integration_id=integration_config.id,
         )
         log.info(
-            f"{LogTag.OAUTH} Queued metadata fetch for user {user_id} and integration {integration_config.id}"
+            f"{LogTag.OAUTH} Queued metadata fetch for user and integration",
+            user_id=user_id,
+            id=integration_config.id,
         )
 
     # Auto-provision system workflows for supported integrations
@@ -419,6 +513,7 @@ async def handle_oauth_connection(
             integration_display_name=integration_config.name,
         )
         log.info(
-            f"{LogTag.OAUTH} Queued system workflow provisioning for user {user_id}, "
-            f"integration {integration_config.id}"
+            f"{LogTag.OAUTH} Queued system workflow provisioning",
+            user_id=user_id,
+            id=integration_config.id,
         )

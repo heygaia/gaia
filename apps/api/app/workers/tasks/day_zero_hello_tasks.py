@@ -14,7 +14,7 @@ import re
 from typing import cast
 from uuid import uuid4
 
-from app.agents.core.agent import call_agent_silent
+from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.agents.prompts.briefing_prompts import build_day_zero_hello_prompt
 from app.db.repositories.users import user_repository
 from app.models.chat_models import ConversationSource
@@ -79,14 +79,16 @@ async def _run_silent(user: dict, prompt: str) -> str:
         "timezone": user.get("timezone"),
     }
     conversation_id = f"dayzero-{user['user_id']}-{uuid4().hex[:6]}"
-    message, _ = await call_agent_silent(
+    run = await call_agent_silent(
         request=request,
         conversation_id=conversation_id,
         user=cast(AuthenticatedUser, user_data),
-        trigger_context={"execution_mode": "background"},
-        source="day_zero_hello",
+        options=AgentRunOptions(
+            trigger_context={"execution_mode": "background"},
+            source="day_zero_hello",
+        ),
     )
-    return message
+    return run.message
 
 
 def _first_name(user: dict) -> str:

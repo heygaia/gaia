@@ -14,6 +14,7 @@ from app.agents.skills.models import (
     _validate_skill_name,
 )
 from app.agents.skills.registry import (
+    SkillInstallRequest,
     disable_skill,
     enable_skill,
     get_skill,
@@ -23,6 +24,7 @@ from app.agents.skills.registry import (
     list_skills,
     uninstall_skill,
 )
+from app.utils.errors import AppError
 
 
 @pytest.fixture
@@ -63,7 +65,6 @@ def sample_doc():
     }
 
 
-@pytest.mark.unit
 class TestSkillNameValidation:
     def test_valid_names(self):
         assert _validate_skill_name("my-skill") == "my-skill"
@@ -103,7 +104,6 @@ class TestSkillNameValidation:
             _validate_skill_name("my.skill")
 
 
-@pytest.mark.unit
 class TestSkillDescriptionValidation:
     def test_valid_description(self):
         assert _validate_skill_description("Does something useful") == "Does something useful"
@@ -117,7 +117,6 @@ class TestSkillDescriptionValidation:
             _validate_skill_description("   ")
 
 
-@pytest.mark.unit
 class TestSkillModel:
     def test_valid_skill(self, sample_skill):
         assert sample_skill.name == "my-skill"
@@ -167,7 +166,6 @@ class TestSkillModel:
             )
 
 
-@pytest.mark.unit
 class TestSkillMetadata:
     def test_valid(self):
         m = SkillMetadata(name="my-skill", description="A skill")
@@ -191,7 +189,6 @@ class TestSkillMetadata:
             SkillMetadata(name="BAD NAME", description="test")
 
 
-@pytest.mark.unit
 class TestSkillSource:
     def test_all_sources(self):
         assert SkillSource.GITHUB.value == "github"
@@ -216,13 +213,25 @@ def _skill(**overrides: object) -> Skill:
     return Skill(**data)
 
 
+def _request(**overrides: object) -> SkillInstallRequest:
+    data: dict = dict(
+        user_id="u1",
+        name="my-skill",
+        description="Does something useful",
+        target="executor",
+        vfs_path="/skills/my-skill",
+        source=SkillSource.INLINE,
+    )
+    data.update(overrides)
+    return SkillInstallRequest(**data)
+
+
 @pytest.fixture
 def mock_skill_repo():
     with patch("app.agents.skills.registry.skill_repository") as repo:
         yield repo
 
 
-@pytest.mark.unit
 class TestSkillRegistryCRUD:
     """The registry delegates to SkillsRepository; mock that seam."""
 
@@ -284,7 +293,6 @@ class TestSkillRegistryCRUD:
         mock_skill_repo.find_by_name.assert_awaited_once_with("u1", "my-skill", "gmail_agent")
 
 
-@pytest.mark.unit
 class TestGetSkillsForAgent:
     """get_skills_for_agent — the cached path, delegating to repo.for_agent."""
 
@@ -317,28 +325,44 @@ class TestGetSkillsForAgent:
         assert result == cached
 
 
-@pytest.mark.unit
 class TestInstallSkill:
     """install_skill — duplicate guard, created Skill shape, return value."""
 
     @pytest.fixture(autouse=True)
     def bypass_cache_invalidation(self):
-        with patch("app.decorators.caching.delete_cache", new_callable=AsyncMock):
-            yield
+        with patch("app.decorators.caching.delete_cache", new_callable=AsyncMock) as delete_mock:
+            yield delete_mock
+
+    async def test_invalidates_user_skill_caches_with_request_user_id(
+        self, mock_skill_repo, bypass_cache_invalidation
+    ):
+        mock_skill_repo.find_by_name = AsyncMock(return_value=None)
+        mock_skill_repo.create = AsyncMock()
+        await install_skill(_request())
+        invalidated = [call.args[0] for call in bypass_cache_invalidation.await_args_list]
+        assert "skills:user:u1:agent:*" in invalidated
+        assert "skills:text:v2:u1:*" in invalidated
+
+    async def test_stamps_install_context_on_wide_event(self, mock_skill_repo):
+        mock_skill_repo.find_by_name = AsyncMock(return_value=None)
+        mock_skill_repo.create = AsyncMock()
+        with patch("app.agents.skills.registry.log") as mock_log:
+            await install_skill(_request(name="my-skill"))
+        mock_log.set.assert_called_once_with(
+            user_id="u1",
+            skill={"operation": "install", "skill_name": "my-skill"},
+        )
+
+    async def test_checks_duplicate_by_user_name_and_target(self, mock_skill_repo):
+        mock_skill_repo.find_by_name = AsyncMock(return_value=None)
+        mock_skill_repo.create = AsyncMock()
+        await install_skill(_request(user_id="u1", name="my-skill", target="gmail_agent"))
+        mock_skill_repo.find_by_name.assert_awaited_once_with("u1", "my-skill", "gmail_agent")
 
     async def test_creates_skill_with_uuid_id(self, mock_skill_repo):
         mock_skill_repo.find_by_name = AsyncMock(return_value=None)
         mock_skill_repo.create = AsyncMock()
-        await install_skill(
-            user_id="u1",
-            name="my-skill",
-            description="Does something useful",
-            target="executor",
-            vfs_path="/skills/my-skill",
-            source=SkillSource.GITHUB,
-            source_url="https://github.com/org/repo",
-            license="MIT",
-        )
+        await install_skill(_request(source=SkillSource.GITHUB))
         mock_skill_repo.create.assert_awaited_once()
         created = mock_skill_repo.create.await_args.args[0]
         assert isinstance(created, Skill)
@@ -350,12 +374,14 @@ class TestInstallSkill:
         mock_skill_repo.find_by_name = AsyncMock(return_value=None)
         mock_skill_repo.create = AsyncMock()
         skill = await install_skill(
-            user_id="u1",
-            name="my-skill",
-            description="Does something useful",
-            target="executor",
-            vfs_path="/skills/my-skill",
-            source=SkillSource.INLINE,
+            SkillInstallRequest(
+                user_id="u1",
+                name="my-skill",
+                description="Does something useful",
+                target="executor",
+                vfs_path="/skills/my-skill",
+                source=SkillSource.INLINE,
+            )
         )
         assert isinstance(skill, Skill)
         assert skill.user_id == "u1" and skill.enabled is True and skill.id
@@ -363,12 +389,12 @@ class TestInstallSkill:
     async def test_raises_on_duplicate(self, mock_skill_repo):
         mock_skill_repo.find_by_name = AsyncMock(return_value=_skill(name="my-skill"))
         mock_skill_repo.create = AsyncMock()
-        with pytest.raises(ValueError, match="already installed"):
-            await install_skill(
-                user_id="u1",
-                name="my-skill",
-                description="Duplicate skill",
-                target="executor",
-                vfs_path="/skills/my-skill",
-                source=SkillSource.INLINE,
-            )
+        with pytest.raises(AppError, match="already installed") as exc_info:
+            await install_skill(_request())
+        assert exc_info.value.status_code == 409
+        assert exc_info.value.why == "Skill names are unique per user and target."
+        assert (
+            exc_info.value.fix
+            == "Uninstall the existing skill first, or install under a different name."
+        )
+        mock_skill_repo.create.assert_not_awaited()

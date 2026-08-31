@@ -89,9 +89,27 @@ const config: KnipConfig = {
 
   // Exclude non-app files from unused file detection
   ignore: [
+    // Python virtualenvs: the repo root is a uv workspace, so any root-level
+    // `uv run` materializes .venv/ here. Vendored site-packages ships thousands
+    // of JS bundles (litellm's Next.js static chunks, cloudinary widgets) that
+    // knip reads as project files; uv self-ignores them via an inner
+    // .gitignore, which knip does not honor.
+    ".venv/**",
+    ".venv311/**",
+
+    // Wide-event conformance emitters: run as subprocesses from
+    // scripts/ci/wide-event-conformance/run.py (python3/pnpm exec tsx), never
+    // imported as modules — so knip reads them as unused files.
+    "scripts/ci/wide-event-conformance/emit_typescript.ts",
+
     // Agent skill templates (not app code, used by Claude Code skill system)
     ".agents/skills/**",
     ".claude/skills/**",
+
+    // "entire" checkpoint tooling: editor-loaded plugins (opencode, pi), never
+    // imported by the workspace.
+    ".opencode/**",
+    ".pi/**",
 
     // Builtin docgen skill templates: .mjs/.typ/.py/.tex files materialized into
     // the agent workspace and executed by the skills' build.sh scripts (e.g.
@@ -166,6 +184,7 @@ const config: KnipConfig = {
   // Binaries provided by monorepo root, mise, Nx, or pnpm scripts (not in each
   // package.json). Includes nx target names invoked as `nx run <target>`.
   ignoreBinaries: [
+    "wrangler",
     "biome",
     "clean",
     "check",
@@ -224,8 +243,13 @@ const config: KnipConfig = {
         // React/ReactDOM are peer deps consumed by all workspaces
         "react",
         "react-dom",
+        // Imported by scripts/ci/lib/bots-facts.mjs (the bots evlog-map AST
+        // scanner). Declared in apps/mobile + apps/web; resolved here via
+        // pnpm workspace hoisting, so knip reads them as unlisted at the root.
+        "@babel/parser",
+        "@babel/traverse",
         // Invoked dynamically as `pnpm exec jscpd` inside
-        // scripts/ci/check-duplication.mjs, so knip can't see the usage.
+        // scripts/ci/checks.mjs duplication, so knip can't see the usage.
         "jscpd",
         // Imported by scripts/openui/generate-prompt.ts (the OpenUI prompt
         // codegen). Declared in apps/web; resolved here via pnpm workspace
@@ -277,8 +301,6 @@ const config: KnipConfig = {
         "@icons",
         // HeroUI ships per-component subpackages pulled in transitively.
         "@heroui/.*",
-        // Workspace package resolved via pnpm workspace, not always traced.
-        "@gaia/shared",
         // Next.js image optimization (implicitly required, no direct import)
         "sharp",
         // Used by SWC compilation (no direct import in source)
@@ -339,7 +361,14 @@ const config: KnipConfig = {
 
     // ── Mobile App ───────────────────────────────────────────────────
     "apps/mobile": {
-      entry: ["metro.config.js", "src/**/*.{ts,tsx}", "app/**/*.{ts,tsx}"],
+      entry: [
+        "metro.config.js",
+        "vitest.config.ts",
+        "src/**/*.{ts,tsx}",
+        "app/**/*.{ts,tsx}",
+      ],
+      // Tests are not live references — see apps/bots note.
+      project: ["**/*.{ts,tsx}", "!src/**/*.test.ts"],
       ignoreDependencies: [
         "metro-minify-terser",
         // Metro/Expo build config deps (used in metro.config.js / app.json).
@@ -364,10 +393,25 @@ const config: KnipConfig = {
       project: ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"],
       ignoreDependencies: [
         "@gaia/bot-discord",
+        "@gaia/bot-imessage",
         "@gaia/bot-slack",
         "@gaia/bot-telegram",
         "@gaia/bot-whatsapp",
+        // Test-only: `vi.mock("amqplib")` in __tests__ must resolve the same
+        // module id the shared OutboundConsumer imports, which under the
+        // isolated linker requires apps/bots to declare it. Tests are excluded
+        // from the reference graph above, so knip cannot see that use.
+        "amqplib",
       ],
+    },
+
+    // ── iMessage bot ─────────────────────────────────────────────────
+    // The Photon SDK's gRPC transport calls import.meta.resolve() on these at
+    // runtime, so they must be installed and shipped even though no source
+    // file imports them. knip cannot see a runtime-only resolve.
+    "apps/bots/imessage": {
+      project: ["**/*.ts", "!**/__tests__/**", "!**/*.test.ts"],
+      ignoreDependencies: ["@grpc/grpc-js", "nice-grpc", "nice-grpc-common"],
     },
 
     // ── CLI Package ──────────────────────────────────────────────────

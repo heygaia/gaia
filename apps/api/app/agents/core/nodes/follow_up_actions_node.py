@@ -10,6 +10,9 @@ from langgraph.store.base import BaseStore
 from langgraph.types import StreamWriter
 from pydantic import BaseModel, Field
 
+from app.agents.core.integration_capabilities import (
+    get_user_integration_capabilities,
+)
 from app.agents.llm.client import ainvoke_structured
 from app.agents.tools.core.registry import get_tool_registry
 from app.constants.general import CALL_EXECUTOR_NAME
@@ -18,9 +21,6 @@ from app.db.repositories.conversations import conversation_repository
 from app.models.agent_models import agent_configurable
 from app.models.stream_events import MainResponseCompleteFrame
 from app.override.langgraph_bigtool.utils import State
-from app.services.integrations.user_integrations import (
-    get_user_integration_capabilities,
-)
 from app.templates.docstrings.follow_up_actions_tool_docs import (
     SUGGEST_FOLLOW_UP_ACTIONS,
 )
@@ -72,7 +72,11 @@ async def generate_follow_up_actions(
     except Exception as e:
         # Dedup context is an enhancement — still generate suggestions without
         # it rather than dropping this turn's chips over a failed lookup.
-        log.debug(f"{LogTag.AGENT} Failed to fetch previously suggested actions: {e}")
+        log.debug(
+            f"{LogTag.AGENT} Failed to fetch previously suggested actions",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         previous_actions = []
 
     # STATIC prompt prefix (the system message) + DYNAMIC per-user/per-turn
@@ -96,7 +100,9 @@ async def generate_follow_up_actions(
                         "memory_message": True,
                     },
                 ),
-                HumanMessage(content=context_text),
+                # The context text already lives in the dynamic-context system
+                # message above — sending it again as the human message was a
+                # pure duplicate (~350 tokens of per-turn uncached weight).
             ],
             label="follow_up_actions",
             config=cast(
@@ -116,11 +122,11 @@ async def generate_follow_up_actions(
         )
         return result.actions or []
     except Exception as e:
-        log.debug(f"{LogTag.AGENT} Follow-up action generation failed: {e}")
+        log.debug(f"{LogTag.AGENT} Follow-up action generation failed", error_type=type(e).__name__)
         return []
 
 
-async def follow_up_actions_node(state: State, config: RunnableConfig, store: BaseStore) -> State:
+async def follow_up_actions_node(state: State, config: RunnableConfig, store: BaseStore) -> State:  # noqa: ARG001 -- execute_hooks() passes state/config/store positionally
     """Analyze conversation context and stream relevant follow-up actions.
 
     Follow-up actions are streamed, not stored in state.
@@ -128,11 +134,12 @@ async def follow_up_actions_node(state: State, config: RunnableConfig, store: Ba
     # Send completion marker as soon as follow-up actions start
     writer = get_stream_writer()
     try:
-        writer(MainResponseCompleteFrame(main_response_complete=True).model_dump())
+        writer(MainResponseCompleteFrame(main_response_complete=True).model_dump(exclude_none=True))
     except Exception as write_error:
         # Stream is closed (user disconnected), no need to continue
         log.debug(
-            f"{LogTag.AGENT} Stream already closed when sending completion marker: {write_error}"
+            f"{LogTag.AGENT} Stream already closed when sending completion marker",
+            error_type=type(write_error).__name__,
         )
         return state
 
@@ -176,7 +183,10 @@ def _safe_write_actions(writer: StreamWriter, actions: list[str]) -> None:
     try:
         writer({"follow_up_actions": actions})
     except Exception as e:
-        log.debug(f"{LogTag.AGENT} Stream closed when sending follow-up actions: {e}")
+        log.debug(
+            f"{LogTag.AGENT} Stream closed when sending follow-up actions",
+            error_type=type(e).__name__,
+        )
 
 
 def _delegated_to_executor(messages: list[AnyMessage]) -> bool:
@@ -200,10 +210,21 @@ def _delegated_to_executor(messages: list[AnyMessage]) -> bool:
     return False
 
 
+# Bounded follow-up context: the one-shot needs the recent exchange, not
+# megabytes. A giant executor result (up to the 64k output cap) previously
+# flowed verbatim into the follow-up request — measured: a 65k-token follow-up
+# after a maxed-out executor turn, ~2% cache hit. Capping the context keeps
+# the suggestion call small (and its shared prefix meaningful). The NEWEST
+# exchange is what follow-ups react to, so the cap keeps the tail.
+_FOLLOW_UP_CONTEXT_MAX_CHARS = 6_000
+
+
 def _pretty_print_messages(messages: list[AnyMessage], ignore_system_messages: bool = True) -> str:
     pretty = ""
     for message in messages:
         if ignore_system_messages and isinstance(message, SystemMessage):
             continue
         pretty += message.pretty_repr()
-    return pretty
+    # No length guard: slicing the tail of a shorter string already returns it
+    # whole, so the branch only added a boundary nothing can observe.
+    return pretty[-_FOLLOW_UP_CONTEXT_MAX_CHARS:]

@@ -44,7 +44,7 @@ from langchain_core.outputs import ChatGenerationChunk
 from langgraph.store.memory import InMemoryStore
 import pytest
 
-from app.agents.core.background import redis_writer
+from app.agents.core.background.redis_writer import STREAM_PUBLISH_TASK_NAME
 from app.agents.core.graph_builder import build_graph as build_graph_module
 from app.agents.core.graph_manager import GraphManager
 from app.agents.core.nodes.follow_up_actions_node import FollowUpActions
@@ -55,10 +55,12 @@ from app.core.lazy_loader import providers
 from app.core.stream_manager import stream_manager
 from app.db.redis import redis_cache
 from app.memory.ingestion import RetainedMemory
+from app.models.chat_models import ToolDataEntry
 from app.models.memory_models import MemoryEntry
 from app.models.message_models import MessageRequestWithHistory
 from app.services.chat import stream as chat_stream
-from tests.e2e._harness.graph_run import RecordingFakeModel, scripted_model
+from app.utils import background_tasks
+from tests.e2e._harness.graph_run import RecordingFakeModel, call, scripted_model
 from tests.e2e._harness.transcript import UNKNOWN, Transcript
 
 pytestmark = pytest.mark.e2e
@@ -97,10 +99,6 @@ async def fake_redis() -> Any:
     redis_cache.redis = original
     await client.flushall()
     await client.connection_pool.disconnect()
-
-
-def call(name: str, args: dict[str, Any], id: str) -> dict[str, Any]:
-    return {"name": name, "args": args, "id": id}
 
 
 class StreamingScriptedModel(RecordingFakeModel):
@@ -181,17 +179,29 @@ class ChainRun:
         return self.transcript.kinds().index(kind)
 
 
+def _tasks_named(*names: str) -> list[asyncio.Task[object]]:
+    """Live background tasks carrying any of ``names``.
+
+    Filtering by name rather than draining the whole keep-alive set: that set
+    also holds work which outlives a single turn, so awaiting all of it would
+    hang here forever instead of failing a test.
+    """
+    wanted = set(names)
+    return [t for t in background_tasks._background_tasks if t.get_name() in wanted]
+
+
 async def _drain_publishes() -> None:
     """Wait out the fire-and-forget XADDs the background writer scheduled.
 
     ``make_redis_stream_writer`` is a *sync* callable — it schedules each publish
-    with ``asyncio.create_task`` and returns. A live subscriber sees those frames
-    whenever they land, but a test that reads the log after the turn must wait
-    for them, or it reads a truncated stream and the assertion is about timing
-    rather than behaviour.
+    through ``spawn_background_task`` and returns. A live subscriber sees those
+    frames whenever they land, but a test that reads the log after the turn must
+    wait for them, or it reads a truncated stream and the assertion is about
+    timing rather than behaviour. Waits on exactly the publish
+    tasks, by name — see :func:`_tasks_named`.
     """
-    while redis_writer._publish_tasks:
-        await asyncio.gather(*list(redis_writer._publish_tasks), return_exceptions=True)
+    while pending := _tasks_named(STREAM_PUBLISH_TASK_NAME):
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 async def run_chain(
@@ -251,7 +261,14 @@ async def run_chain(
         run.attached.append(kwargs)
         return True
 
-    async def _deliver(_run: Any, text: str, result_type: str, _note: str) -> tuple[str, str]:
+    async def _deliver(
+        _run: Any,
+        text: str,
+        result_type: str,
+        _note: str,
+        *,
+        tool_data: list[ToolDataEntry] | None,
+    ) -> tuple[str, str]:
         run.delivered.append((text, result_type))
         return text, "executor-message-1"
 
@@ -359,7 +376,7 @@ async def run_chain(
         # the NEXT test's executor onto its own stream id.
         await redis_cache.delete(f"{EXECUTOR_BUSY_PREFIX}{conversation_id}")
         if subagent is not None:
-            providers.reset(SUBAGENT_AGENT)
+            await providers.areset(SUBAGENT_AGENT)
 
     frames = [chunk async for chunk in stream_manager.subscribe_stream(stream_id)]
     run.transcript = Transcript.from_sse("".join(frames))
@@ -378,8 +395,8 @@ FLOWCHART_ARGS = {"description": "how a delegated turn flows", "direction": "LR"
 
 def executor_flowchart_script() -> list[Any]:
     return [
-        call("retrieve_tools", {"exact_tool_names": ["create_flowchart"]}, id="tc_retrieve"),
-        call("create_flowchart", FLOWCHART_ARGS, id="tc_flow"),
+        call("retrieve_tools", {"exact_tool_names": ["create_flowchart"]}, call_id="tc_retrieve"),
+        call("create_flowchart", FLOWCHART_ARGS, call_id="tc_flow"),
         "Drew the flowchart.",
     ]
 
@@ -391,7 +408,10 @@ class TestCommsToExecutor:
         to reach the user's stream."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -412,7 +432,10 @@ class TestCommsToExecutor:
         """
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -456,13 +479,17 @@ class TestCommsToExecutor:
         card, from the same detached task."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
         assert run.transcript.args("retrieve_tools") == {"exact_tool_names": ["create_flowchart"]}
         assert (
-            run.transcript.result_for("retrieve_tools") == "Available tools: ['create_flowchart']"
+            run.transcript.result_for("retrieve_tools")
+            == "Bound 1 tools, call them directly:\n  - create_flowchart"
         )
 
     async def test_every_card_precedes_its_own_result_across_both_tiers(self) -> None:
@@ -470,7 +497,10 @@ class TestCommsToExecutor:
         cards, each before the result that fills it in."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -487,7 +517,10 @@ class TestCommsToExecutor:
         running. If it ever became blocking the user would stare at nothing."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -500,7 +533,10 @@ class TestCommsToExecutor:
         interleaved into the assistant bubble the user is reading."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -515,7 +551,10 @@ class TestCommsToExecutor:
         the comms cards again would duplicate every card."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -536,7 +575,10 @@ class TestCommsToExecutor:
         card that never finished."""
         run = await run_chain(
             "draw me a flowchart",
-            comms=[call("call_executor", {"task": "draw a flowchart"}, id="tc_exec"), "On it."],
+            comms=[
+                call("call_executor", {"task": "draw a flowchart"}, call_id="tc_exec"),
+                "On it.",
+            ],
             executor=executor_flowchart_script(),
         )
 
@@ -558,16 +600,25 @@ PAGE_URL = "https://docs.gaia.test/executor"
 
 
 def comms_delegating_script(task: str = "explain the executor") -> list[Any]:
-    return [call("call_executor", {"task": task}, id="tc_exec"), "Looking that up."]
+    return [call("call_executor", {"task": task}, call_id="tc_exec"), "Looking that up."]
 
 
 def executor_handoff_script() -> list[Any]:
-    return [call("handoff", HANDOFF_ARGS, id="tc_handoff"), "The executor runs delegated work."]
+    # Three entries for two visible turns: one handoff is below
+    # the real-work gate, so the executor's completion guard spends its
+    # one nudge before letting the plain-text stop through. The script cycles,
+    # so without the repeat the post-nudge turn replays the handoff and the
+    # subagent runs twice.
+    return [
+        call("handoff", HANDOFF_ARGS, call_id="tc_handoff"),
+        "The executor runs delegated work.",
+        "The executor runs delegated work.",
+    ]
 
 
 def subagent_fetch_script() -> list[Any]:
     return [
-        call("fetch_webpages", {"urls": [PAGE_URL]}, id="tc_fetch"),
+        call("fetch_webpages", {"urls": [PAGE_URL]}, call_id="tc_fetch"),
         "GAIA's executor runs delegated work in the background.",
     ]
 

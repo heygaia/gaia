@@ -2,7 +2,6 @@
 
 import { Button } from "@heroui/button";
 import { AiBrain01Icon } from "@icons";
-import { useEffect, useState } from "react";
 
 interface MemoryResult {
   id: string;
@@ -35,76 +34,56 @@ interface MemoryIndicatorProps {
   onOpenModal: () => void;
 }
 
+type MemoryData = NonNullable<MemoryIndicatorProps["memoryData"]>;
+
+function resolveSuccessText(operation?: string, count?: number): string {
+  switch (operation) {
+    case "create":
+      return "Created a memory";
+    case "search":
+      if (count === 0) return "No memories found";
+      if (count === 1) return "Found 1 memory";
+      return `Found ${count} memories`;
+    case "list":
+      return count === 0 ? "No memories" : `Retrieved ${count} memories`;
+    default:
+      return "memory operation completed";
+  }
+}
+
+// Determine what text to display based on memory data, or null when the data
+// does not warrant an indicator.
+function resolveMemoryText(memoryData: MemoryData): string | null {
+  const { type, operation, status, count } = memoryData;
+
+  // Handle new simplified memory_stored type
+  if (type === "memory_stored") return "memory stored";
+  if (status === "success") return resolveSuccessText(operation, count);
+  if (status === "storing") return "Storing memory...";
+  if (status === "searching") return "Searching memories...";
+  if (status === "retrieving") return "Retrieving memories...";
+  return null;
+}
+
 export default function MemoryIndicator({
   memoryData,
   onOpenModal,
 }: MemoryIndicatorProps) {
-  const [displayText, setDisplayText] = useState<string>("");
-  const [showIndicator, setShowIndicator] = useState(false);
-
-  useEffect(() => {
-    // Determine what text to display based on memory data
-    if (memoryData) {
-      const { type, operation, status, count } = memoryData;
-
-      // Handle new simplified memory_stored type
-      if (type === "memory_stored") {
-        setDisplayText("memory stored");
-        setShowIndicator(true);
-      } else if (status === "success") {
-        switch (operation) {
-          case "create":
-            setDisplayText("Created a memory");
-            break;
-          case "search":
-            if (count === 0) {
-              setDisplayText("No memories found");
-            } else if (count === 1) {
-              setDisplayText("Found 1 memory");
-            } else {
-              setDisplayText(`Found ${count} memories`);
-            }
-            break;
-          case "list":
-            if (count === 0) {
-              setDisplayText("No memories");
-            } else {
-              setDisplayText(`Retrieved ${count} memories`);
-            }
-            break;
-          default:
-            setDisplayText("memory operation completed");
-        }
-        setShowIndicator(true);
-      } else if (status === "storing") {
-        setDisplayText("Storing memory...");
-        setShowIndicator(true);
-      } else if (status === "searching") {
-        setDisplayText("Searching memories...");
-        setShowIndicator(true);
-      } else if (status === "retrieving") {
-        setDisplayText("Retrieving memories...");
-        setShowIndicator(true);
-      }
-    }
-  }, [memoryData]);
-
-  if (!showIndicator && !displayText) return null;
+  // Derived during render — memoryData is a message's fixed tool payload, so
+  // there is nothing to keep in state between renders.
+  const displayText = memoryData ? resolveMemoryText(memoryData) : null;
+  if (!displayText) return null;
 
   return (
-    <>
-      {showIndicator && (
-        <Button
-          size="sm"
-          variant="flat"
-          radius="full"
-          className="w-fit text-gray-500"
-          startContent={<AiBrain01Icon className="h-4 w-4" />}
-          onPress={onOpenModal}
-        >
-          {displayText}
-        </Button>
-      )}
-    </>
+    <Button
+      size="sm"
+      variant="flat"
+      radius="full"
+      className="w-fit text-gray-500"
+      startContent={<AiBrain01Icon className="h-4 w-4" />}
+      onPress={onOpenModal}
+    >
+      {displayText}
+    </Button>
   );
 }

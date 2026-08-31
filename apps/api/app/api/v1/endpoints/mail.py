@@ -1,13 +1,14 @@
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, Form, HTTPException
 
-from app.agents.llm.client import ainvoke_structured
+from app.agents.llm.client import ainvoke_structured, metered_config
 from app.agents.prompts.mail_prompts import EMAIL_COMPOSER
 from app.api.v1.dependencies.google_scope_dependencies import (
     require_integration,
     require_integration_user_id,
 )
+from app.constants.log_tags import LogTag
 from app.decorators import tiered_rate_limit
 from app.models.mail_models import (
     ApplyLabelRequest,
@@ -28,6 +29,7 @@ from app.models.mail_models import (
     GmailLabelsResponse,
     GmailMessageResponse,
     GmailMessagesResponse,
+    GmailSearchFilters,
     GmailThreadResponse,
     LabelRequest,
     MarkAsReadResponse,
@@ -35,6 +37,7 @@ from app.models.mail_models import (
     ModifyLabelsResponse,
     MoveToInboxResponse,
     SendDraftResponse,
+    SendEmailForm,
     SendEmailRequest,
     SendEmailResponse,
     SendEmailWithAttachmentsResponse,
@@ -43,12 +46,15 @@ from app.models.mail_models import (
     UnstarEmailsResponse,
     UntrashEmailsResponse,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.mail.email_importance_service import (
     get_bulk_email_importance_summaries as get_bulk_importance_summaries_service,
     get_email_importance_summaries as get_importance_summaries_service,
     get_single_email_importance_summary as get_single_importance_summary_service,
 )
 from app.services.mail.mail_service import (
+    EmailContent,
+    LabelChanges,
     apply_labels,
     archive_messages,
     create_draft,
@@ -72,7 +78,7 @@ from app.services.mail.mail_service import (
     unstar_messages,
     untrash_messages,
     update_draft,
-    update_label,
+    update_label as update_label_service,
 )
 from app.utils.embedding_utils import search_notes_by_similarity
 from app.utils.user_preferences_utils import format_writing_style_for_prompt
@@ -85,6 +91,7 @@ router = APIRouter()
 async def list_labels(
     user_id: str = Depends(require_integration_user_id("gmail")),
 ) -> GmailLabelsResponse:
+    log.set(operation="get_labels")
     try:
         result = await list_labels_service(user_id=user_id)
 
@@ -100,7 +107,7 @@ async def list_labels(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/gmail/messages")
@@ -126,7 +133,7 @@ async def list_messages(
         )
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/gmail/message/{message_id}", summary="Get Gmail Message by ID")
@@ -139,6 +146,7 @@ async def get_email_by_id(
 
     - **message_id**: The ID of the Gmail message to retrieve
     """
+    log.set(operation="get_email", email_id=message_id)
     try:
         # Use the get_email_by_id service function
         result = await get_email_by_id_service(user_id=user_id, message_id=message_id)
@@ -161,22 +169,36 @@ async def get_email_by_id(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+def _build_gmail_query(filters: GmailSearchFilters) -> str:
+    """Translate the advanced-search filters into one Gmail query string."""
+    parts: list[str] = [filters.query] if filters.query else []
+    prefixed = {
+        "from:": filters.sender,
+        "to:": filters.recipient,
+        "subject:": filters.subject,
+        "filename:": filters.attachment_type,
+        "after:": filters.date_from,
+        "before:": filters.date_to,
+        "label:": filters.label,
+    }
+    parts += [f"{prefix}{value}" for prefix, value in prefixed.items() if value]
+    if filters.has_attachment is not None:
+        parts.append("has:attachment" if filters.has_attachment else "-has:attachment")
+    if filters.is_read is not None:
+        parts.append("is:read" if filters.is_read else "is:unread")
+    return " ".join(parts)
 
 
 @router.get("/gmail/search", summary="Advanced search for Gmail messages")
 async def search_emails(
-    *,
-    query: str | None = None,
-    sender: str | None = None,
-    recipient: str | None = None,
-    subject: str | None = None,
-    has_attachment: bool | None = None,
-    attachment_type: str | None = None,
-    date_from: str | None = None,
-    date_to: str | None = None,
-    label: str | None = None,
-    is_read: bool | None = None,
+    # Bound as a dependency, not Query(): FastAPI 0.139 does not flatten
+    # query-models through include_router, so a Query()-bound model 422s every
+    # request expecting a JSON `filters=` param. Depends() binds each field
+    # as its own flattened query param.
+    filters: Annotated[GmailSearchFilters, Depends()],
     max_results: int = 20,
     page_token: str | None = None,
     user_id: str = Depends(require_integration_user_id("gmail")),
@@ -185,51 +207,14 @@ async def search_emails(
     Search Gmail messages with advanced query parameters.
     Note: max_results is capped at 20 to avoid Composio payload size limits.
 
-    - **query**: Free text search query
-    - **sender**: Filter by sender email
-    - **recipient**: Filter by recipient email
-    - **subject**: Filter by subject
-    - **has_attachment**: Filter for messages with attachments
-    - **attachment_type**: Filter by attachment type (e.g., pdf, doc)
-    - **date_from**: Filter messages after this date (YYYY/MM/DD)
-    - **date_to**: Filter messages before this date (YYYY/MM/DD)
-    - **label**: Filter by label
-    - **is_read**: Filter by read/unread status
-    - **max_results**: Maximum number of results to return
-    - **page_token**: Token for pagination
-
     Returns a list of messages matching the search criteria and a next page token if more results are available.
     """
+    log.set(operation="search_emails", user={"id": user_id})
     try:
         # Cap max_results to avoid Composio 413 payload-too-large errors
         max_results = min(max_results, 20)
 
-        # Build Gmail query string from parameters
-        query_parts = []
-
-        if query:
-            query_parts.append(f"{query}")
-        if sender:
-            query_parts.append(f"from:{sender}")
-        if recipient:
-            query_parts.append(f"to:{recipient}")
-        if subject:
-            query_parts.append(f"subject:{subject}")
-        if has_attachment is not None:
-            query_parts.append("has:attachment" if has_attachment else "-has:attachment")
-        if attachment_type:
-            query_parts.append(f"filename:{attachment_type}")
-        if date_from:
-            query_parts.append(f"after:{date_from}")
-        if date_to:
-            query_parts.append(f"before:{date_to}")
-        if label:
-            query_parts.append(f"label:{label}")
-        if is_read is not None:
-            query_parts.append("is:read" if is_read else "is:unread")
-
-        # Combine all query parts
-        gmail_query = " ".join(query_parts)
+        gmail_query = _build_gmail_query(filters)
 
         response = await search_messages(
             user_id=user_id,
@@ -241,13 +226,13 @@ async def search_emails(
         log.set(
             operation="search_emails",
             result_count=len(response.messages),
-            has_attachment=has_attachment,
-            label=label,
+            has_attachment=filters.has_attachment,
+            label=filters.label,
             outcome="success",
         )
         return response
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/mail/ai/compose")
@@ -256,10 +241,12 @@ async def process_email(
     request: EmailRequest,
     current_user: dict[str, Any] = Depends(require_integration("gmail")),
 ) -> ComposedEmailOutput:
+    log.set(mail={"operation": "compose"})
     try:
         user_id = current_user.get("user_id")
         if user_id is None:
             raise HTTPException(status_code=401, detail="User ID is required")
+        log.set(user={"id": str(user_id)})
 
         notes = await search_notes_by_similarity(input_text=request.prompt, user_id=str(user_id))
 
@@ -282,21 +269,22 @@ async def process_email(
             learned_writing_style=learned_style_block,
         )
 
-        return await ainvoke_structured(ComposedEmailOutput, prompt, label="mail_compose")
+        result = await ainvoke_structured(
+            ComposedEmailOutput,
+            prompt,
+            label="mail_compose",
+            config=metered_config(str(user_id)),
+        )
+        capture_context_event(AnalyticsEvents.EMAIL_COMPOSED)
+        return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/gmail/send", summary="Send an email using Gmail API")
 @tiered_rate_limit("mail_actions")
 async def send_email_route(
-    to: str = Form(...),
-    subject: str = Form(...),
-    body: str = Form(...),
-    thread_id: str | None = Form(None),
-    cc: str | None = Form(None),
-    bcc: str | None = Form(None),
-    attachments: list[UploadFile] | None = File(None),
+    form: Annotated[SendEmailForm, Form()],
     user_id: str = Depends(require_integration_user_id("gmail")),
 ) -> SendEmailWithAttachmentsResponse:
     """
@@ -311,21 +299,23 @@ async def send_email_route(
     """
     try:
         # Parse recipients
-        to_list = [email.strip() for email in to.split(",") if email.strip()]
-        cc_list = [email.strip() for email in cc.split(",")] if cc else None
-        bcc_list = [email.strip() for email in bcc.split(",")] if bcc else None
+        to_list = [email.strip() for email in form.to.split(",") if email.strip()]
+        cc_list = [email.strip() for email in form.cc.split(",")] if form.cc else None
+        bcc_list = [email.strip() for email in form.bcc.split(",")] if form.bcc else None
 
         # Send the email using the new async function
         sent_message = await send_email(
             user_id=user_id,
             to=to_list[0],
-            extra_recipients=to_list[1:],
-            subject=subject,
-            body=body,
-            cc_list=cc_list,
-            bcc_list=bcc_list,
-            attachments=attachments,
-            thread_id=thread_id,
+            content=EmailContent(
+                subject=form.subject,
+                body=form.body,
+                extra_recipients=to_list[1:],
+                cc_list=cc_list,
+                bcc_list=bcc_list,
+            ),
+            attachments=form.attachments,
+            thread_id=form.thread_id,
         )
 
         if not sent_message.successful:
@@ -334,26 +324,37 @@ async def send_email_route(
                 detail=sent_message.error or "Failed to send email",
             )
 
+        capture_context_event(
+            AnalyticsEvents.EMAIL_REPLIED if form.thread_id else AnalyticsEvents.EMAIL_SENT,
+            {
+                "has_attachments": bool(form.attachments),
+                "attachment_count": len(form.attachments) if form.attachments else 0,
+            },
+        )
         log.set(
             operation="send_email",
-            thread_id=thread_id,
-            has_attachment=bool(attachments),
-            attachments_count=len(attachments) if attachments else 0,
+            thread_id=form.thread_id,
+            has_attachment=bool(form.attachments),
+            attachments_count=len(form.attachments) if form.attachments else 0,
             outcome="success",
         )
         # Gmail owns the schema of the Composio envelope's ``data``; this is the boundary read.
         return SendEmailWithAttachmentsResponse(
             message_id=(sent_message.data or {}).get("id"),
             status="Email sent successfully",
-            attachments_count=len(attachments) if attachments else 0,
+            attachments_count=len(form.attachments) if form.attachments else 0,
         )
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {e!s}") from e
 
 
-@router.post("/gmail/send-json", summary="Send an email using JSON payload")
+@router.post(
+    "/gmail/send-json",
+    summary="Send an email using JSON payload",
+    responses={500: {"description": "Gmail rejected the send, or the send failed upstream"}},
+)
 @tiered_rate_limit("mail_actions")
 async def send_email_json(
     request: SendEmailRequest,
@@ -373,12 +374,13 @@ async def send_email_json(
         sent_message = await send_email(
             user_id=user_id,
             to=request.to[0],
-            extra_recipients=request.to[1:],
-            subject=request.subject,
-            body=request.body,
-            cc_list=request.cc,
-            bcc_list=request.bcc,
-            attachments=None,
+            content=EmailContent(
+                subject=request.subject,
+                body=request.body,
+                extra_recipients=request.to[1:],
+                cc_list=request.cc,
+                bcc_list=request.bcc,
+            ),
         )
 
         if not sent_message.successful:
@@ -387,6 +389,7 @@ async def send_email_json(
                 detail=sent_message.error or "Failed to send email",
             )
 
+        capture_context_event(AnalyticsEvents.EMAIL_SENT, {"recipient_count": len(request.to)})
         log.set(
             operation="send_email",
             has_attachment=False,
@@ -399,7 +402,7 @@ async def send_email_json(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to send email: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to send email: {e!s}") from e
 
 
 @router.post("/gmail/mark-as-read", summary="Mark emails as read")
@@ -433,7 +436,9 @@ async def mark_as_read(
             status="Messages marked as read",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to mark messages as read: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to mark messages as read: {e!s}"
+        ) from e
 
 
 @router.post("/gmail/mark-as-unread", summary="Mark emails as unread")
@@ -467,7 +472,9 @@ async def mark_as_unread(
             status="Messages marked as unread",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to mark messages as unread: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to mark messages as unread: {e!s}"
+        ) from e
 
 
 @router.post("/gmail/star", summary="Star emails")
@@ -499,7 +506,7 @@ async def star_emails(
             status="Messages starred",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to star messages: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to star messages: {e!s}") from e
 
 
 @router.post("/gmail/unstar", summary="Unstar emails")
@@ -531,7 +538,7 @@ async def unstar_emails(
             status="Messages unstarred",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to unstar messages: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to unstar messages: {e!s}") from e
 
 
 @router.post("/gmail/trash", summary="Move emails to trash")
@@ -563,7 +570,9 @@ async def trash_emails(
             status="Messages moved to trash",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to move messages to trash: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to move messages to trash: {e!s}"
+        ) from e
 
 
 @router.post("/gmail/untrash", summary="Restore emails from trash")
@@ -595,7 +604,9 @@ async def untrash_emails(
             status="Messages restored from trash",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to restore messages from trash: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to restore messages from trash: {e!s}"
+        ) from e
 
 
 @router.post("/gmail/archive", summary="Archive emails")
@@ -627,7 +638,7 @@ async def archive_emails(
             status="Messages archived",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to archive messages: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to archive messages: {e!s}") from e
 
 
 @router.post("/gmail/move-to-inbox", summary="Move emails to inbox")
@@ -660,7 +671,9 @@ async def move_emails_to_inbox(
             status="Messages moved to inbox",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to move messages to inbox: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Failed to move messages to inbox: {e!s}"
+        ) from e
 
 
 @router.get("/gmail/thread/{thread_id}", summary="Get complete email thread")
@@ -691,7 +704,7 @@ async def get_thread(
             thread=thread.as_payload(),
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch email thread: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Failed to fetch email thread: {e!s}") from e
 
 
 @router.post("/gmail/labels", summary="Create a new Gmail label")
@@ -726,7 +739,7 @@ async def create_label_route(
         )
         return GmailLabelResource.model_validate(new_label.as_payload())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.put("/gmail/labels/{label_id}", summary="Update an existing Gmail label")
@@ -750,12 +763,16 @@ async def update_label_route(
     """
     try:
         # Update label using the new async function
-        updated_label = await update_label(
+        updated_label = await update_label_service(
             user_id=user_id,
             label_id=label_id,
-            name=request.name,
-            label_list_visibility=request.label_list_visibility,
-            message_list_visibility=request.message_list_visibility,
+            changes=LabelChanges(
+                name=request.name,
+                label_list_visibility=request.label_list_visibility,
+                message_list_visibility=request.message_list_visibility,
+                background_color=request.background_color,
+                text_color=request.text_color,
+            ),
         )
         log.set(
             operation="update_label",
@@ -764,7 +781,7 @@ async def update_label_route(
         )
         return GmailLabelResource.model_validate(updated_label.as_payload())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.delete("/gmail/labels/{label_id}", summary="Delete a Gmail label")
@@ -779,15 +796,19 @@ async def delete_label_route(
 
     Returns a success message.
     """
+    log.set(operation="delete_label", label=label_id)
     try:
         # Delete label using the new async function
         success = await delete_label(user_id=user_id, label_id=label_id)
         if success:
             log.set(operation="delete_label", label=label_id, outcome="success")
             return GmailDeletionResponse(status="success", message="Label deleted successfully")
+        # Reported as a 200 to the client, so log.error is the only trace this failure leaves.
+        log.error(f"{LogTag.MAIL} Label deletion reported failure", label=label_id)
+        log.set(outcome="failed")
         return GmailDeletionResponse(status="error", message="Failed to delete label")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/gmail/messages/apply-label", summary="Apply labels to messages")
@@ -824,7 +845,7 @@ async def apply_labels_route(
             status="Labels applied successfully",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/gmail/messages/remove-label", summary="Remove labels from messages")
@@ -861,7 +882,7 @@ async def remove_labels_route(
             status="Labels removed successfully",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/gmail/drafts", summary="Create a new draft email")
@@ -904,7 +925,7 @@ async def create_draft_route(
             status="Draft created successfully",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/gmail/drafts", summary="List all draft emails")
@@ -936,7 +957,7 @@ async def list_drafts_route(
         )
         return drafts
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/gmail/drafts/{draft_id}", summary="Get a specific draft email")
@@ -961,7 +982,7 @@ async def get_draft_route(
         )
         return GmailDraftResource.model_validate(draft.as_payload())
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.put("/gmail/drafts/{draft_id}", summary="Update a draft email")
@@ -989,10 +1010,12 @@ async def update_draft_route(
             user_id=user_id,
             draft_id=draft_id,
             to_list=request.to,
-            subject=request.subject,
-            body=request.body,
-            cc_list=request.cc,
-            bcc_list=request.bcc,
+            content=EmailContent(
+                subject=request.subject,
+                body=request.body,
+                cc_list=request.cc,
+                bcc_list=request.bcc,
+            ),
         )
 
         log.set(
@@ -1006,7 +1029,7 @@ async def update_draft_route(
             status="Draft updated successfully",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.delete("/gmail/drafts/{draft_id}", summary="Delete a draft email")
@@ -1021,6 +1044,7 @@ async def delete_draft_route(
 
     Returns a success message.
     """
+    log.set(operation="delete_draft", email_id=draft_id)
     try:
         # Delete draft using the new async function
         success = await delete_draft(user_id=user_id, draft_id=draft_id)
@@ -1028,9 +1052,12 @@ async def delete_draft_route(
         if success:
             log.set(operation="delete_draft", email_id=draft_id, outcome="success")
             return GmailDeletionResponse(status="success", message="Draft deleted successfully")
+        # Reported as a 200 to the client, so log.error is the only trace this failure leaves.
+        log.error(f"{LogTag.MAIL} Draft deletion reported failure", email_id=draft_id)
+        log.set(outcome="failed")
         return GmailDeletionResponse(status="error", message="Failed to delete draft")
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/gmail/drafts/{draft_id}/send", summary="Send a draft email")
@@ -1045,12 +1072,14 @@ async def send_draft_route(
 
     Returns the sent message data.
     """
+    log.set(operation="send_draft", email_id=draft_id)
     try:
         # Send draft using the new async function
         sent_message = await send_draft(user_id=user_id, draft_id=draft_id)
 
         if sent_message.successful:
             thread_id = sent_message.thread_id or ""
+            capture_context_event(AnalyticsEvents.EMAIL_SENT)
             log.set(
                 operation="send_draft",
                 email_id=draft_id,
@@ -1063,12 +1092,13 @@ async def send_draft_route(
                 status="Draft sent successfully",
                 successful=True,
             )
+        log.set(outcome="failed")
         raise HTTPException(
             status_code=500,
             detail=sent_message.error or "Failed to send draft",
         )
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.get("/gmail/importance-summaries", summary="Get email importance summaries")
@@ -1099,7 +1129,9 @@ async def get_email_importance_summaries(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving email summaries: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving email summaries: {e!s}"
+        ) from e
 
 
 @router.get(
@@ -1136,7 +1168,7 @@ async def get_single_email_importance_summary(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving email summary: {e!s}")
+        raise HTTPException(status_code=500, detail=f"Error retrieving email summary: {e!s}") from e
 
 
 @router.post("/gmail/importance-summaries/bulk", summary="Get bulk email importance summaries")
@@ -1165,4 +1197,6 @@ async def get_bulk_email_importance_summaries(
         )
         return result
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving bulk email summaries: {e!s}")
+        raise HTTPException(
+            status_code=500, detail=f"Error retrieving bulk email summaries: {e!s}"
+        ) from e

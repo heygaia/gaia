@@ -8,6 +8,8 @@ from langchain_chroma import Chroma
 from langchain_core.embeddings import Embeddings
 
 from app.config.settings import settings
+from app.constants.chroma import CHROMA_CANVAS_COLLECTION, CHROMA_NOTES_COLLECTION
+from app.constants.files import CHROMA_DOCUMENTS_COLLECTION
 from app.constants.log_tags import LogTag
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from app.db.chroma.noop_telemetry import NOOP_PRODUCT_TELEMETRY_IMPL
@@ -24,7 +26,10 @@ class ChromaClient:
     """
 
     @classmethod
-    async def get_client(cls, request: Request | None = None) -> AsyncClientAPI:
+    async def get_client(
+        cls,
+        request: Request | None = None,
+    ) -> AsyncClientAPI:
         """
         Get the ChromaDB client from the application state or from lazy providers.
 
@@ -46,7 +51,11 @@ class ChromaClient:
             # via init_chromadb_client(), which returns AsyncClientAPI.
             return cast(AsyncClientAPI, client)
         except Exception as e:
-            log.error(f"{LogTag.CHROMA} Failed to get ChromaDB client: {e}")
+            log.error(
+                f"{LogTag.CHROMA} Failed to get ChromaDB client",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             raise RuntimeError("ChromaDB client not initialized") from e
 
     @classmethod
@@ -101,36 +110,37 @@ class ChromaClient:
         # Dynamically register a provider for this collection and auto-initialize it
         async def _loader() -> Chroma:
             log.debug(
-                f"{LogTag.CHROMA} Creating Langchain client for collection '{collection_name}' via provider '{provider_name}'"
+                f"{LogTag.CHROMA} Creating Langchain client for collection via provider",
+                collection_name=collection_name,
+                provider_name=provider_name,
             )
             constructor_client = await providers.aget("chromadb_constructor")
             if not constructor_client:
                 raise RuntimeError("ChromaDB constructor client not initialized")
 
-            # Ensure the collection exists using the synchronous constructor client
-            try:
-                collections = constructor_client.list_collections()  # type: ignore[attr-defined]
-                existing_names = [c.name for c in collections]
-            except Exception:
-                existing_names = []
-
-            if collection_name not in existing_names:
-                if not create_if_not_exists:
-                    raise RuntimeError(f"Collection '{collection_name}' not found")
-                constructor_client.create_collection(  # type: ignore[attr-defined]
+            # Ensure the collection exists using the synchronous constructor client.
+            # get_or_create, not list-then-create: two processes sharing one
+            # Chroma (xdist workers on a CI lane) both see "missing" and the
+            # second create fails with "Collection [...] already exists".
+            if create_if_not_exists:
+                constructor_client.get_or_create_collection(
                     name=collection_name,
                     metadata={"hnsw:space": "cosine"},
                 )
+            else:
+                existing_names = [c.name for c in constructor_client.list_collections()]
+                if collection_name not in existing_names:
+                    raise RuntimeError(f"Collection '{collection_name}' not found")
 
             return Chroma(
                 client=constructor_client,
-                collection_name=collection_name,  # type: ignore[arg-type]
+                collection_name=collection_name,
                 embedding_function=embedding_function,
             )
 
         providers.register(
             name=provider_name,
-            loader_func=_loader,  # type: ignore[arg-type]
+            loader_func=_loader,  # type: ignore[arg-type]  # langchain’s collection-loader callback param is untyped upstream
             required_keys=[settings.CHROMADB_HOST, settings.CHROMADB_PORT],
             strategy=MissingKeyStrategy.ERROR,
             auto_initialize=True,
@@ -169,11 +179,14 @@ async def init_chromadb_client() -> AsyncClientAPI:
     client = await chromadb.AsyncHttpClient(
         host=host,
         port=port,
-        settings=Settings(chroma_product_telemetry_impl=NOOP_PRODUCT_TELEMETRY_IMPL),
+        settings=Settings(
+            chroma_product_telemetry_impl=NOOP_PRODUCT_TELEMETRY_IMPL,
+            chroma_telemetry_impl=NOOP_PRODUCT_TELEMETRY_IMPL,
+        ),
     )
 
     response = await client.heartbeat()
-    log.debug(f"{LogTag.CHROMA} ChromaDB heartbeat response: {response}")
+    log.debug(f"{LogTag.CHROMA} ChromaDB heartbeat response", response=response)
     log.set(
         db={
             "connection_status": "connected",
@@ -182,21 +195,23 @@ async def init_chromadb_client() -> AsyncClientAPI:
             "port": port,
         }
     )
-    log.info(f"{LogTag.CHROMA} Connected to ChromaDB at {host}:{port}")
+    log.info(f"{LogTag.CHROMA} Connected to ChromaDB at", host=host, port=port)
 
-    # Create default collections if they don't exist
-    existing_collections = await client.list_collections()
-    existing_collection_names = [col.name for col in existing_collections]
-    collection_names = ["notes", "documents", "gaia_canvas"]
-
-    # Create collections if they don't exist
-    for collection_name in collection_names:
-        if collection_name not in existing_collection_names:
-            log.debug(f"{LogTag.CHROMA} Creating collection '{collection_name}'")
-            await client.create_collection(name=collection_name, metadata={"hnsw:space": "cosine"})
-            log.debug(f"{LogTag.CHROMA} Collection '{collection_name}' created")
-        else:
-            log.debug(f"{LogTag.CHROMA} Collection '{collection_name}' exists")
+    # Named via the constants so the GAIA_CHROMA_COLLECTION_SUFFIX namespace
+    # applies here too: bootstrapping unsuffixed collections while the app
+    # reads suffixed ones would leave every lane querying an empty collection.
+    # get_or_create, not list-then-create: several processes may bootstrap the
+    # same Chroma at once (xdist workers on a CI lane) and the second create
+    # would fail with "Collection [...] already exists".
+    for collection_name in (
+        CHROMA_NOTES_COLLECTION,
+        CHROMA_DOCUMENTS_COLLECTION,
+        CHROMA_CANVAS_COLLECTION,
+    ):
+        await client.get_or_create_collection(
+            name=collection_name, metadata={"hnsw:space": "cosine"}
+        )
+        log.debug(f"{LogTag.CHROMA} Collection ready", collection_name=collection_name)
 
     return client
 
@@ -224,13 +239,21 @@ def init_chromadb_constructor() -> ClientAPI:
     host: str = settings.CHROMADB_HOST
     port: int = settings.CHROMADB_PORT
 
-    # Initialize ChromaDB client for langchain (telemetry off, see init_chromadb_client)
-    constructor_client = chromadb.Client(
+    # HttpClient, NOT Client: only HttpClient sets chroma_api_impl to the FastAPI
+    # backend. chromadb.Client() keeps the default RustBindingsAPI with
+    # is_persistent=False and never reads chroma_server_host/port, so passing
+    # them in Settings built a process-local in-memory store that silently
+    # answered its own reads while nothing ever reached the server — every
+    # collection written through this client (documents, notes, gaia_canvas)
+    # sat at zero rows on the server while looking healthy in-process.
+    # Telemetry off for the same reason as init_chromadb_client.
+    constructor_client = chromadb.HttpClient(
+        host=host,
+        port=port,
         settings=Settings(
-            chroma_server_host=host,
-            chroma_server_http_port=port,
             chroma_product_telemetry_impl=NOOP_PRODUCT_TELEMETRY_IMPL,
-        )
+            chroma_telemetry_impl=NOOP_PRODUCT_TELEMETRY_IMPL,
+        ),
     )
 
     return constructor_client
@@ -281,5 +304,9 @@ def init_chroma() -> None:
         init_langchain_chroma()
 
     except Exception as e:
-        log.error(f"{LogTag.CHROMA} Error in init_chroma compatibility function: {e}")
+        log.error(
+            f"{LogTag.CHROMA} Error in init_chroma compatibility function",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise RuntimeError(f"ChromaDB connection failed: {e}") from e

@@ -25,6 +25,7 @@ from app.schemas.integrations.responses import (
     SearchIntegrationItem,
     SearchIntegrationsResponse,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.integrations.integration_connection_service import (
     connect_mcp_integration,
 )
@@ -104,8 +105,13 @@ async def get_public_integration(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.INTEGRATION} Error fetching public integration {identifier}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch integration")
+        log.error(
+            f"{LogTag.INTEGRATION} Error fetching public integration",
+            identifier=identifier,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Failed to fetch integration") from e
 
 
 @router.post("/public/{integration_id}/add", response_model=AddIntegrationResponse)
@@ -138,7 +144,9 @@ async def add_public_integration(
                     message="Integration already connected",
                 )
             log.info(
-                f"{LogTag.INTEGRATION} User {user_id} re-attempting connection to {integration_id}"
+                f"{LogTag.INTEGRATION} User re-attempting integration connection",
+                user_id=user_id,
+                integration_id=integration_id,
             )
         else:
             with contextlib.suppress(ValueError):
@@ -150,7 +158,11 @@ async def add_public_integration(
 
             await integration_repository.increment_clone_count(integration_id)
 
-            log.info(f"{LogTag.INTEGRATION} User {user_id} added integration {integration_id}")
+            log.info(
+                f"{LogTag.INTEGRATION} User added integration",
+                user_id=user_id,
+                integration_id=integration_id,
+            )
 
         mcp_config = original.mcp_config
         server_url = mcp_config.server_url if mcp_config else None
@@ -180,6 +192,11 @@ async def add_public_integration(
 
         log.set(integration_name=integration_name)
         log.set(outcome="success")
+        if connect_result.status == "connected":
+            capture_context_event(
+                AnalyticsEvents.INTEGRATION_CONNECTED,
+                {"integration_id": integration_id, "source": "marketplace"},
+            )
         return AddIntegrationResponse(
             integration_id=integration_id,
             name=integration_name,
@@ -193,8 +210,14 @@ async def add_public_integration(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.INTEGRATION} Error adding integration {integration_id}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to add integration")
+        log.error(
+            f"{LogTag.INTEGRATION} Error adding integration",
+            integration_id=integration_id,
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Failed to add integration") from e
 
 
 @router.get("/search", response_model=SearchIntegrationsResponse)
@@ -249,8 +272,12 @@ async def search_integrations(q: str) -> SearchIntegrationsResponse:
         return SearchIntegrationsResponse(integrations=formatted, query=q)
 
     except Exception as e:
-        log.error(f"{LogTag.INTEGRATION} Error searching integrations: {e}")
-        raise HTTPException(status_code=500, detail="Failed to search integrations")
+        log.error(
+            f"{LogTag.INTEGRATION} Error searching integrations",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Failed to search integrations") from e
 
 
 @router.get(
@@ -310,5 +337,10 @@ async def get_related_workflows(
         return PublicWorkflowsResponse(workflows=formatted_workflows, total=total)
 
     except Exception as e:
-        log.error(f"{LogTag.INTEGRATION} Error fetching related workflows for {identifier}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch related workflows")
+        log.error(
+            f"{LogTag.INTEGRATION} Error fetching related workflows",
+            identifier=identifier,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise HTTPException(status_code=500, detail="Failed to fetch related workflows") from e

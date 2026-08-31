@@ -33,7 +33,7 @@ async def latest_desktop_release() -> DesktopReleaseResponse:
     Public (no auth) — the download page links straight to the correct
     platform/arch asset instead of falling back to the GitHub releases list.
     """
-    log.set(desktop_release={"operation": "resolve_latest"})
+    log.set(desktop={"operation": "latest_release"})
     release = await get_latest_desktop_release()
     log.set(desktop_release={"tag": release.tag, "asset_count": len(release.assets)})
     # Cacheable erases the wrapped function's return type; get_latest_desktop_release
@@ -48,8 +48,8 @@ async def desktop_tool_result(
 ) -> DesktopToolResultResponse:
     """Accept a desktop tool result and relay it to the awaiting agent tool.
 
-    ``relay_desktop_result`` raises :class:`DesktopRequestNotFound` (410) or
-    :class:`DesktopRequestForbidden` (403) — both ``AppError`` subclasses that the
+    ``relay_desktop_result`` raises :class:`DesktopRequestNotFoundError` (410) or
+    :class:`DesktopRequestForbiddenError` (403) — both ``AppError`` subclasses that the
     global handler maps to the right status — so late/duplicate or cross-user
     deliveries can't double-resolve a request.
     """

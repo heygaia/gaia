@@ -128,6 +128,21 @@ class ToolOutputPayload(BaseModel):
     subagent_id: str | None = None
 
 
+class MessageBoundaryPayload(BaseModel):
+    """End of one assistant message inside a turn.
+
+    ``discarded`` is true when that message turned out to carry tool calls, which
+    makes any text it streamed a MOMENT-1 preamble ("let me get that set up…")
+    the user must not keep — the real reply arrives as the next message. The
+    frame exists because the wire streams that text BEFORE the tool call, so a
+    live consumer has already shown it by the time we know, and has to retract
+    it rather than leave a duplicate reply on screen.
+    """
+
+    message_id: str
+    discarded: bool
+
+
 class ReasoningPayload(BaseModel):
     """A streamed reasoning ("thinking") delta from the model."""
 
@@ -188,9 +203,15 @@ class ModelFallbackFrame(BaseModel):
 
 
 class MainResponseCompleteFrame(BaseModel):
-    """Marks the primary assistant response as finished."""
+    """Marks the primary assistant response as finished.
+
+    ``usage`` carries the turn's aggregate token usage (per-model input/output/
+    cached counts from the LangChain usage_metadata) — consumed by eval
+    transports for real token accounting; optional and backward-compatible.
+    """
 
     main_response_complete: bool
+    usage: dict[str, Any] | None = None
 
 
 class TodoProgressFrame(BaseModel):

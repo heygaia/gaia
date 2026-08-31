@@ -11,9 +11,11 @@
 
 import { type Channel, type ConsumeMessage, connect } from "amqplib";
 import type { PlatformName } from "../types";
+import { segmentIntoBubbles } from "../utils/bubbles";
 import { renderForPlatform } from "../utils/formatters";
 import { type BotLogger, createBotLogger } from "../utils/logger";
 import { chunkResponse } from "../utils/text";
+import { wideLog, withWideEvent } from "../utils/wide-events";
 import {
   type OutboundAttachment,
   type OutboundMessageEnvelope,
@@ -73,35 +75,62 @@ export class OutboundConsumer {
     this.conn = null;
   }
 
+  /**
+   * Connects, declares the topology and starts consuming — one unit of work,
+   * one canonical event. A bot that never delivers a backend message is almost
+   * always failing here, and a broker that is down at boot retries forever, so
+   * each attempt has to be individually visible (with its outcome and how long
+   * it took) rather than collapsing into a single line at the end.
+   */
   private async connect(): Promise<void> {
     if (this.stopped) return;
+    const queue = OUTBOUND_QUEUES[this.platform];
     try {
-      this.conn = await connect(this.url);
-      this.conn.on("close", () => this.scheduleReconnect());
-      this.conn.on("error", () => undefined); // 'close' drives reconnect
-      this.channel = await this.conn.createChannel();
+      await withWideEvent(
+        "outbound_connect",
+        {
+          platform: this.platform,
+          component: "outbound-consumer",
+          queue,
+        },
+        async () => {
+          this.conn = await connect(this.url);
+          this.conn.on("close", () => this.scheduleReconnect());
+          // 'close' still drives the reconnect — this handler exists to keep the
+          // reason diagnosable (and to stop an unhandled 'error' killing the
+          // process). Without it the only trace of a broker restart, revoked
+          // credentials or heartbeat timeout is a bare `outbound_consumer_reconnecting`.
+          this.conn.on("error", (err) =>
+            this.logger.error(
+              "outbound_consumer_connection_error",
+              undefined,
+              err,
+            ),
+          );
+          this.channel = await this.conn.createChannel();
 
-      const queue = OUTBOUND_QUEUES[this.platform];
-      await this.channel.assertExchange(OUTBOUND_DLX, "direct", {
-        durable: true,
-      });
-      await this.channel.assertQueue(dlqName(queue), { durable: true });
-      await this.channel.bindQueue(
-        dlqName(queue),
-        OUTBOUND_DLX,
-        dlqName(queue),
+          await this.channel.assertExchange(OUTBOUND_DLX, "direct", {
+            durable: true,
+          });
+          await this.channel.assertQueue(dlqName(queue), { durable: true });
+          await this.channel.bindQueue(
+            dlqName(queue),
+            OUTBOUND_DLX,
+            dlqName(queue),
+          );
+          await this.channel.assertQueue(queue, {
+            durable: true,
+            arguments: workQueueArguments(queue),
+          });
+          await this.channel.prefetch(PREFETCH);
+          await this.channel.consume(queue, (msg) => void this.handle(msg));
+
+          this.reconnectDelayMs = RECONNECT_BASE_MS;
+        },
       );
-      await this.channel.assertQueue(queue, {
-        durable: true,
-        arguments: workQueueArguments(queue),
-      });
-      await this.channel.prefetch(PREFETCH);
-      await this.channel.consume(queue, (msg) => void this.handle(msg));
-
-      this.reconnectDelayMs = RECONNECT_BASE_MS;
-      this.logger.info("outbound_consumer_started", { queue });
-    } catch (err) {
-      this.logger.error("outbound_consumer_connect_failed", undefined, err);
+    } catch {
+      // withWideEvent already emitted the failure (outcome=failed, errors[]);
+      // re-logging it here would double every broker outage in Loki.
       this.scheduleReconnect();
     }
   }
@@ -142,7 +171,7 @@ export class OutboundConsumer {
     try {
       action();
     } catch {
-      this.logger.warn("outbound_settle_skipped", {
+      wideLog.warning("outbound_settle_skipped", {
         reason: "channel replaced mid-handle",
       });
     }
@@ -159,27 +188,42 @@ export class OutboundConsumer {
     // platform, add a dedupe check on `env.id` backed by SHARED state (e.g.
     // Redis SETNX with a TTL) here — an in-process cache will not work because
     // duplicates land on a different worker process.
-    const env = this.parseEnvelope(channel, msg);
-    if (!env) return;
+    await withWideEvent(
+      "outbound_message",
+      {
+        platform: this.platform,
+        component: "outbound-consumer",
+        queue: OUTBOUND_QUEUES[this.platform],
+      },
+      async () => {
+        const env = this.parseEnvelope(channel, msg);
+        if (!env) return;
 
-    if (env.attachment) {
-      await this.handleAttachment(
-        channel,
-        msg,
-        env.id,
-        env.destination_id,
-        env.attachment,
-      );
-      return;
-    }
+        wideLog.set({
+          envelope_id: env.id,
+          has_attachment: Boolean(env.attachment),
+        });
 
-    await this.handleText(
-      channel,
-      msg,
-      env.id,
-      env.destination_id,
-      env.text,
-      env.text_parts,
+        if (env.attachment) {
+          await this.handleAttachment(
+            channel,
+            msg,
+            env.id,
+            env.destination_id,
+            env.attachment,
+          );
+          return;
+        }
+
+        await this.handleText(
+          channel,
+          msg,
+          env.id,
+          env.destination_id,
+          env.text,
+          env.text_parts,
+        );
+      },
     );
   }
 
@@ -195,12 +239,15 @@ export class OutboundConsumer {
     try {
       raw = JSON.parse(msg.content.toString());
     } catch {
+      wideLog.warning("outbound_envelope_unparseable", {
+        bytes: msg.content.length,
+      });
       this.settle(channel, () => channel.nack(msg, false, false)); // unparseable → DLQ
       return null;
     }
     const parsed = outboundMessageEnvelopeSchema.safeParse(raw);
     if (!parsed.success) {
-      this.logger.warn("outbound_envelope_invalid", {
+      wideLog.warning("outbound_envelope_invalid", {
         issues: parsed.error.issues.length,
       });
       this.settle(channel, () => channel.nack(msg, false, false)); // schema mismatch → DLQ
@@ -212,7 +259,7 @@ export class OutboundConsumer {
     // topology/routing key drifted (or a misrouted publish). Dead-letter it
     // rather than send through the wrong adapter.
     if (env.platform !== this.platform) {
-      this.logger.warn("outbound_platform_mismatch", {
+      wideLog.warning("outbound_platform_mismatch", {
         expected: this.platform,
         got: env.platform,
       });
@@ -234,13 +281,14 @@ export class OutboundConsumer {
     destinationId: string,
     attachment: OutboundAttachment,
   ): Promise<void> {
+    wideLog.set({ attachment_filename: attachment.filename });
     try {
       await this.deliverFile(destinationId, attachment);
       this.settle(channel, () => channel.ack(msg));
     } catch (err) {
-      this.logger.error(
+      wideLog.error(
         "outbound_file_delivery_failed",
-        { id, redelivered: msg.fields.redelivered },
+        { envelope_id: id, redelivered: msg.fields.redelivered },
         err,
       );
       // Never requeue a file: deliverFile fetches the bytes AND uploads +
@@ -269,6 +317,7 @@ export class OutboundConsumer {
   ): Promise<void> {
     const sources = resolveSources(text, textParts);
     if (sources.length === 0) {
+      wideLog.warning("outbound_envelope_empty", { envelope_id: id });
       this.settle(channel, () => channel.nack(msg, false, false)); // nothing to send → DLQ
       return;
     }
@@ -278,20 +327,26 @@ export class OutboundConsumer {
     const progress = { delivered: 0 };
     try {
       await this.deliverSources(destinationId, sources, progress);
+      wideLog.set({ delivered_count: progress.delivered });
+      // `redelivered` only ever appeared on the error branches, so a duplicate
+      // that succeeded — the exact case the at-least-once queue produces — was
+      // indistinguishable from a first delivery in Loki.
+      wideLog.set({ redelivered: msg.fields.redelivered });
       // Non-empty source text that rendered to nothing on every chunk: don't
       // silently ack it away (the backend recorded it DELIVERED). Dead-letter
       // it so the dropped message is visible for inspection.
       if (progress.delivered === 0) {
-        this.logger.warn("outbound_text_rendered_empty", { id });
+        wideLog.warning("outbound_text_rendered_empty", { envelope_id: id });
         this.settle(channel, () => channel.nack(msg, false, false));
         return;
       }
       this.settle(channel, () => channel.ack(msg));
     } catch (err) {
-      this.logger.error(
+      wideLog.set({ delivered_count: progress.delivered });
+      wideLog.error(
         "outbound_delivery_failed",
         {
-          id,
+          envelope_id: id,
           delivered: progress.delivered,
           redelivered: msg.fields.redelivered,
         },
@@ -308,13 +363,20 @@ export class OutboundConsumer {
   }
 
   /**
-   * Chunk the raw markdown by the platform limit, then render each chunk so
-   * every sent message is valid platform markdown. The renderer is passed into
-   * chunkResponse so chunks are sized by their RENDERED length — otherwise
-   * markdown that expands when rendered (e.g. Telegram tables padded into
-   * <pre> blocks) can overflow the platform's message limit and be rejected.
-   * Increments `progress.delivered` for each non-empty message sent, so the
-   * caller sees the partial count even if a later send throws.
+   * Segment each source into bubbles, chunk them by the platform limit, then
+   * render each chunk so every sent message is valid platform markdown.
+   *
+   * Segmentation happens HERE and not only in the streamer because these
+   * messages never went through it: an executor reply, a reminder or a workflow
+   * result arrives as one blob of agent markdown, sentinels and all, and used
+   * to be sent as one wall with `<NEW_MESSAGE_BREAK>` visible in it.
+   *
+   * The renderer is passed into chunkResponse so chunks are sized by their
+   * RENDERED length — otherwise markdown that expands when rendered (e.g.
+   * Telegram tables padded into <pre> blocks) can overflow the platform's
+   * message limit and be rejected. Increments `progress.delivered` for each
+   * non-empty message sent, so the caller sees the partial count even if a
+   * later send throws.
    */
   private async deliverSources(
     destinationId: string,
@@ -323,22 +385,19 @@ export class OutboundConsumer {
   ): Promise<void> {
     const render = (chunk: string): string =>
       renderForPlatform(chunk, this.platform);
-    const rendered: string[] = [];
-    for (const source of sources) {
-      for (const chunk of chunkResponse(source, this.platform, render)) {
-        const message = render(chunk);
+    // Await each send before the next so the bubbles arrive in the published
+    // order — never fan these out concurrently.
+    const bubbles = sources.flatMap((source) => segmentIntoBubbles(source));
+    for (const bubble of bubbles) {
+      for (const chunk of chunkResponse(bubble, this.platform, render)) {
+        const rendered = render(chunk);
         // A chunk made up solely of strippable markup (e.g. a lone horizontal
         // rule) renders to nothing; platform send APIs reject empty text, so
         // skip it instead of throwing and dead-lettering the whole envelope.
-        if (!message.trim()) continue;
-        rendered.push(message);
+        if (!rendered.trim()) continue;
+        await this.deliver(destinationId, rendered);
+        progress.delivered += 1;
       }
-    }
-    // Await each send before the next so the bubbles arrive in the published
-    // order — never fan these out concurrently.
-    for (const message of rendered) {
-      await this.deliver(destinationId, message);
-      progress.delivered += 1;
     }
   }
 }

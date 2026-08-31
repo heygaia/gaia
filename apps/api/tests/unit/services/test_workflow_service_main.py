@@ -47,6 +47,7 @@ from app.models.workflow_models import (
     GeneratedPromptOutput,
     GeneratedStep,
     GeneratedWorkflow,
+    IntegrationRef,
     PromptTriggerHint,
     TriggerConfig,
     TriggerType,
@@ -109,10 +110,6 @@ def _make_workflow(
     activated: bool = True,
     steps: list | None = None,
     trigger_config: TriggerConfig | None = None,
-    description: str = "Test description",
-    prompt: str = "Execute test workflow",
-    user_id: str = USER_ID,
-    is_todo_workflow: bool = False,
     error_message: str | None = None,
 ) -> Workflow:
     """Build a minimal valid Workflow for testing."""
@@ -122,14 +119,14 @@ def _make_workflow(
         trigger_config = _make_trigger_config()
     return Workflow(
         id=workflow_id,
-        user_id=user_id,
+        user_id=USER_ID,
         title="Test Workflow",
-        description=description,
-        prompt=prompt,
+        description="Test description",
+        prompt="Execute test workflow",
         activated=activated,
         steps=steps,
         trigger_config=trigger_config,
-        is_todo_workflow=is_todo_workflow,
+        is_todo_workflow=False,
         error_message=error_message,
     )
 
@@ -317,6 +314,84 @@ class TestCreateWorkflow:
         assert isinstance(result, Workflow)
         # Should NOT queue generation when steps are provided
         mock_queue.assert_not_awaited()
+
+    @patch(
+        "app.services.workflow.service.compute_missing_integrations",
+        new_callable=AsyncMock,
+        return_value=[],
+    )
+    @patch("app.services.workflow.service.workflow_scheduler")
+    @patch("app.services.workflow.service.ChromaClient")
+    @patch(f"{_REPO}.find_system_workflow", new_callable=AsyncMock)
+    @patch(f"{_REPO}.create", new_callable=AsyncMock)
+    async def test_create_returns_existing_system_workflow_instead_of_duplicate(
+        self, mock_create, mock_find_system, mock_chroma, _mock_scheduler, _mock_missing
+    ):
+        """A system workflow is one-per-user: reaching the same definition from the
+        explore card after the provisioner already made it must hand back that
+        workflow, not create a second copy."""
+        mock_chroma.get_langchain_client = AsyncMock(return_value=MagicMock())
+        already_provisioned = _make_workflow()
+        mock_find_system.return_value = already_provisioned
+
+        request = _make_create_request(
+            steps=[WorkflowStep(id="s1", title="Triage", description="d")]
+        )
+        request.system_workflow_key = "gmail:email_intelligence"
+
+        result = await WorkflowService.create_workflow(request, USER_ID)
+
+        assert result is already_provisioned
+        mock_find_system.assert_awaited_once_with(USER_ID, "gmail:email_intelligence")
+        mock_create.assert_not_awaited()
+
+    @patch(
+        "app.services.workflow.service.compute_missing_integrations",
+        new_callable=AsyncMock,
+    )
+    @patch("app.services.workflow.service.workflow_scheduler")
+    @patch("app.services.workflow.service.ChromaClient")
+    @patch(f"{_REPO}.mark_activated_with_triggers", new_callable=AsyncMock)
+    @patch(f"{_REPO}.create", new_callable=AsyncMock)
+    async def test_create_stays_inactive_when_steps_need_unconnected_integrations(
+        self, _mock_create, mock_activate, mock_chroma, _mock_scheduler, mock_missing
+    ):
+        """Supplied steps skip generation, so the generation-time gate never runs on
+        them. A workflow needing an app the user hasn't connected must still be
+        created switched off rather than firing and failing on its first run."""
+        mock_chroma.get_langchain_client = AsyncMock(return_value=MagicMock())
+        mock_missing.return_value = [IntegrationRef(id="gmail", name="Gmail")]
+
+        request = _make_create_request(
+            steps=[WorkflowStep(id="s1", title="Read inbox", description="d")]
+        )
+        result = await WorkflowService.create_workflow(request, USER_ID)
+
+        assert result.activated is False
+        mock_activate.assert_not_awaited()
+
+    @patch(
+        "app.services.workflow.service.compute_missing_integrations",
+        new_callable=AsyncMock,
+        return_value=[],
+    )
+    @patch("app.services.workflow.service.workflow_scheduler")
+    @patch("app.services.workflow.service.ChromaClient")
+    @patch(f"{_REPO}.mark_activated_with_triggers", new_callable=AsyncMock)
+    @patch(f"{_REPO}.create", new_callable=AsyncMock)
+    async def test_create_activates_when_no_integrations_missing(
+        self, _mock_create, mock_activate, mock_chroma, _mock_scheduler, _mock_missing
+    ):
+        """The counterpart to the above: nothing missing means it still switches on."""
+        mock_chroma.get_langchain_client = AsyncMock(return_value=MagicMock())
+
+        request = _make_create_request(
+            steps=[WorkflowStep(id="s1", title="Remind me", description="d")]
+        )
+        result = await WorkflowService.create_workflow(request, USER_ID)
+
+        assert result.activated is True
+        mock_activate.assert_awaited_once()
 
     @patch(
         "app.services.workflow.service.WorkflowService._generate_workflow_steps",
@@ -567,6 +642,35 @@ class TestListWorkflows:
         assert isinstance(result[0], Workflow)
         # Unpaginated: total is derived from the rows, no separate count query.
         assert total == 1
+
+    @patch(f"{_REPO}.list_for_user", new_callable=AsyncMock)
+    async def test_list_workflows_enriches_integration_requirements(self, mock_list):
+        # A step category mapped to the OAUTH catalog makes the workflow require
+        # that integration. The connection status is resolved in a single call
+        # keyed on the user id (not a broadened default) — pin both the enriched
+        # fields and the exact status-call argument.
+        workflow = _make_workflow(
+            steps=[
+                WorkflowStep(
+                    id="step_0",
+                    title="Send the email",
+                    category="gmail",
+                    description="Draft and send the email",
+                )
+            ]
+        )
+        mock_list.return_value = [_make_workflow_doc(workflow)]
+
+        with patch(
+            "app.services.oauth.oauth_service.get_all_integrations_status",
+            new_callable=AsyncMock,
+        ) as mock_status:
+            mock_status.return_value = {"gmail": True}
+            result, _total = await WorkflowService.list_workflows(USER_ID)
+
+        mock_status.assert_awaited_once_with(USER_ID)
+        assert result[0].required_integrations == [IntegrationRef(id="gmail", name="Gmail")]
+        assert result[0].missing_integrations == []
 
     @patch(f"{_REPO}.list_for_user", new_callable=AsyncMock, return_value=[])
     async def test_list_workflows_empty(self, _mock_list):
@@ -1546,7 +1650,7 @@ class TestGenerateStepsWithLLM:
         )
 
         result = await WorkflowGenerationService.generate_steps_with_llm(
-            "Test prompt", "Test Title"
+            "Test prompt", "Test Title", user_id="test-user"
         )
 
         assert len(result) == 1
@@ -1578,7 +1682,7 @@ class TestGenerateStepsWithLLM:
         mock_structured.side_effect = [OutputParserException("bad output"), generated]
 
         result = await WorkflowGenerationService.generate_steps_with_llm(
-            "Test prompt", "Test Title"
+            "Test prompt", "Test Title", user_id="test-user"
         )
 
         assert len(result) == 1
@@ -1606,7 +1710,9 @@ class TestGenerateStepsWithLLM:
         mock_structured.return_value = GeneratedWorkflow(steps=[])
 
         with pytest.raises(RuntimeError, match="failed"):
-            await WorkflowGenerationService.generate_steps_with_llm("Test prompt", "Test Title")
+            await WorkflowGenerationService.generate_steps_with_llm(
+                "Test prompt", "Test Title", user_id="test-user"
+            )
 
         assert mock_structured.await_count == 2
 
@@ -1632,7 +1738,9 @@ class TestGenerateStepsWithLLM:
         mock_structured.side_effect = RuntimeError("provider down")
 
         with pytest.raises(RuntimeError, match="provider down"):
-            await WorkflowGenerationService.generate_steps_with_llm("Test prompt", "Test Title")
+            await WorkflowGenerationService.generate_steps_with_llm(
+                "Test prompt", "Test Title", user_id="test-user"
+            )
 
         # Called exactly once — the loop does not retry provider errors.
         assert mock_structured.await_count == 1
@@ -1660,7 +1768,7 @@ class TestGenerateStepsWithLLM:
         )
 
         await WorkflowGenerationService.generate_steps_with_llm(
-            "Prompt text", "Title", description="Short description"
+            "Prompt text", "Title", description="Short description", user_id="test-user"
         )
 
         # Verify description was included in the formatted prompt
@@ -1688,7 +1796,9 @@ class TestGenerateStepsWithLLM:
         mock_structured.side_effect = OutputParserException("bad output")
 
         with pytest.raises(RuntimeError, match="failed"):
-            await WorkflowGenerationService.generate_steps_with_llm("Prompt", "Title")
+            await WorkflowGenerationService.generate_steps_with_llm(
+                "Prompt", "Title", user_id="test-user"
+            )
 
         assert mock_structured.await_count == 2
 
@@ -1716,6 +1826,7 @@ class TestGenerateWorkflowPrompt:
         result = await WorkflowGenerationService.generate_workflow_prompt(
             title="Morning Briefing",
             description="Daily summary",
+            user_id="test-user",
         )
 
         assert result["prompt"] == "Step-by-step instructions here"
@@ -1736,7 +1847,9 @@ class TestGenerateWorkflowPrompt:
             trigger_type="manual",
         )
 
-        result = await WorkflowGenerationService.generate_workflow_prompt(title="Task")
+        result = await WorkflowGenerationService.generate_workflow_prompt(
+            title="Task", user_id="test-user"
+        )
 
         assert result["prompt"] == "Manual instructions"
         assert result["suggested_trigger"] is not None
@@ -1755,7 +1868,9 @@ class TestGenerateWorkflowPrompt:
             trigger_type="webhook",  # Not in the valid set
         )
 
-        result = await WorkflowGenerationService.generate_workflow_prompt(title="Task")
+        result = await WorkflowGenerationService.generate_workflow_prompt(
+            title="Task", user_id="test-user"
+        )
 
         assert result["prompt"] == "Instructions"
         assert result["suggested_trigger"] is None
@@ -1772,7 +1887,9 @@ class TestGenerateWorkflowPrompt:
         mock_structured.side_effect = OutputParserException("LLM unavailable")
 
         with pytest.raises(OutputParserException, match="LLM unavailable"):
-            await WorkflowGenerationService.generate_workflow_prompt(title="Test")
+            await WorkflowGenerationService.generate_workflow_prompt(
+                title="Test", user_id="test-user"
+            )
 
 
 # ===========================================================================
@@ -1997,6 +2114,12 @@ class TestWorkflowScheduler:
 
 class TestWorkflowQueueService:
     """Tests for WorkflowQueueService."""
+
+    @pytest.fixture(autouse=True)
+    def _route_enqueue_through_pool(self, route_enqueue_via_pool):
+        """Shared conftest fixture routes the wide-event enqueue wrapper through
+        pool.enqueue_job so the tests' pool mocks stay authoritative."""
+        return
 
     @patch("app.services.workflow.queue_service.RedisPoolManager")
     async def test_queue_generation_success(self, mock_redis):
@@ -2280,10 +2403,16 @@ class TestTriggerService:
         mock_get_handler.return_value = mock_handler
 
         trigger = _make_trigger_config(trigger_type=TriggerType.INTEGRATION)
-        with pytest.raises(TriggerRegistrationError):
+        with pytest.raises(TriggerRegistrationError) as exc_info:
             await TriggerService.register_triggers(
                 USER_ID, WORKFLOW_ID, "trigger", trigger, raise_on_failure=True
             )
+
+        # The wrapper is what the caller sees, so it has to carry the original
+        # failure forward: which trigger, what went wrong, and the cause chain.
+        assert str(exc_info.value) == "Error registering triggers: RuntimeError: API down"
+        assert exc_info.value.trigger_name == "trigger"
+        assert isinstance(exc_info.value.__cause__, RuntimeError)
 
     @patch("app.services.workflow.trigger_service.get_handler_by_name")
     async def test_register_triggers_generic_exception_no_raise(self, mock_get_handler):

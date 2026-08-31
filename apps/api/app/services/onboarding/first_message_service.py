@@ -5,7 +5,7 @@ from typing import cast
 
 from langchain_core.messages import BaseMessage, HumanMessage
 
-from app.agents.llm.client import ainvoke_llm, get_default_llm
+from app.agents.llm.client import ainvoke_llm, get_helper_llm
 from app.agents.prompts.onboarding_prompts import (
     FIRST_MESSAGE_GENERATION_PROMPT_GMAIL,
     FIRST_MESSAGE_GENERATION_PROMPT_NO_GMAIL,
@@ -37,6 +37,7 @@ def default_first_message(name: str) -> str:
 
 
 async def generate_first_message(
+    *,
     user_id: str,
     name: str,
     profession: str,
@@ -45,7 +46,6 @@ async def generate_first_message(
     created_workflows: list[OnboardingWorkflowSummary],
     writing_style: WritingStyleProfile | None,
     has_gmail: bool,
-    *,
     focus: str = "",
     executed_todos: list[OnboardingTodoSummary] | None = None,
     clarify_answers: list[ClarifyAnswerRecord] | None = None,
@@ -103,7 +103,7 @@ async def generate_first_message(
                 todos_executed=todos_executed_text,
             )
 
-        llm = get_default_llm()
+        llm = get_helper_llm()
         t_llm = time.monotonic()
         response = await ainvoke_llm(
             llm, [HumanMessage(content=prompt)], label="onboarding_first_message"

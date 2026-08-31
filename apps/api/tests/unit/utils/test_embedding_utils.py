@@ -8,6 +8,7 @@ from bson import ObjectId
 from langchain_core.documents import Document
 import pytest
 
+from app.constants.chroma import CHROMA_NOTES_COLLECTION
 from app.models.notes_models import NoteDocument
 from app.utils.embedding_utils import (
     search_by_similarity,
@@ -36,7 +37,7 @@ def _make_tool(
         del tool.func
     # By default tools are callable; override when needed
     if not callable_self:
-        tool.__call__ = None  # type: ignore[method-assign, assignment]
+        tool.__call__ = None  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         tool.configure_mock(__call__=None)
     return tool
 
@@ -65,7 +66,6 @@ def mock_chroma_collection() -> AsyncMock:
     return AsyncMock()
 
 
-@pytest.mark.unit
 class TestSearchBySimilarity:
     """Tests for search_by_similarity."""
 
@@ -89,7 +89,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="search query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
             )
 
         assert len(results) == 1
@@ -114,7 +114,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="nothing matches",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
             )
 
         assert results == []
@@ -139,7 +139,7 @@ class TestSearchBySimilarity:
             await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 additional_filters={"conversation_id": "conv1"},
             )
 
@@ -167,7 +167,7 @@ class TestSearchBySimilarity:
             await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
             )
 
         call_kwargs = mock_collection.asimilarity_search_with_score.call_args[1]
@@ -213,7 +213,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 fetch_mongo_details=True,
             )
 
@@ -242,7 +242,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 fetch_mongo_details=False,
             )
 
@@ -266,7 +266,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
             )
 
         assert results == []
@@ -299,7 +299,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 top_k=5,
             )
 
@@ -332,7 +332,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 top_k=3,
             )
 
@@ -364,7 +364,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
             )
 
         assert len(results) == 1
@@ -426,7 +426,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 fetch_mongo_details=True,
             )
 
@@ -471,7 +471,7 @@ class TestSearchBySimilarity:
             results = await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 fetch_mongo_details=True,
             )
 
@@ -494,7 +494,7 @@ class TestSearchBySimilarity:
             await search_by_similarity(
                 input_text="query",
                 user_id="user1",
-                collection_name="notes",
+                collection_name=CHROMA_NOTES_COLLECTION,
                 additional_filters={"tag": "work", "priority": "high"},
             )
 
@@ -512,12 +512,11 @@ class TestSearchBySimilarity:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchNotesBySimilarity:
     """Tests for search_notes_by_similarity wrapper."""
 
     async def test_delegates_to_search_by_similarity(self) -> None:
-        """Calls search_by_similarity with collection='notes' and fetch_mongo_details=True."""
+        """Calls search_by_similarity with collection=CHROMA_NOTES_COLLECTION and fetch_mongo_details=True."""
         expected: list[dict[str, Any]] = [{"id": "n1", "content": "note"}]
 
         with patch(
@@ -533,7 +532,7 @@ class TestSearchNotesBySimilarity:
         mock_search.assert_awaited_once_with(
             input_text="find notes",
             user_id="user1",
-            collection_name="notes",
+            collection_name=CHROMA_NOTES_COLLECTION,
             fetch_mongo_details=True,
         )
         assert result == expected

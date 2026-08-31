@@ -16,6 +16,9 @@ from langgraph.graph.state import CompiledStateGraph
 from app.agents.core.subagents.registry import all_subagents, get_subagent_by_id
 from app.agents.llm.client import init_llm
 from app.agents.tools.core.registry import (
+    CategoryOptions,
+    CategoryRisk,
+    ToolRegistry,
     get_tool_registry,
     integration_destructive_tools,
 )
@@ -28,7 +31,7 @@ from app.models.subagent_models import Subagent
 from app.services.mcp.mcp_client import get_mcp_client
 from shared.py.wide_events import log
 
-from .base_subagent import SubAgentFactory
+from .base_subagent import SubAgentFactory, SubAgentToolConfig
 
 
 class SubagentUnavailableError(Exception):
@@ -42,6 +45,37 @@ class SubagentUnavailableError(Exception):
     def __init__(self, reason: str) -> None:
         super().__init__(reason)
         self.reason = reason
+
+
+async def register_composio_subagent_tools(subagent: Subagent, tool_registry: ToolRegistry) -> None:
+    """Put a Composio subagent's toolkit in the registry, once per process.
+
+    Both the live handoff and a playbook's validator and replay resolve the
+    subagent's tool space from the registry, and the toolkit is only there once
+    something has loaded it. A worker that has never handed off to this
+    subagent has an empty category for it until this runs, which is how a
+    replay three minutes after a worker restart found no GMAIL tool at all.
+
+    ``Subagent`` does not carry composio_config; the OAuth integration does
+    (composio is OAuth-only). The OAuthIntegration validator enforces
+    composio_config when managed_by="composio", so landing here without one
+    means a builtin Subagent declared managed_by="composio" and would silently
+    produce a tool-less agent. Fail loudly instead.
+    """
+    integration = get_integration_by_id(subagent.id)
+    if integration is None or integration.composio_config is None:
+        raise ValueError(
+            f"Composio subagent {subagent.id!r} has no matching OAuth "
+            f"integration with composio_config. managed_by='composio' "
+            f"must correspond to an OAUTH_INTEGRATIONS entry."
+        )
+    config = subagent.config
+    await tool_registry.register_provider_tools(
+        toolkit_name=integration.composio_config.toolkit,
+        space_name=config.tool_space,
+        specific_tools=config.specific_tools,
+        exclude_tools=config.exclude_tools,
+    )
 
 
 async def create_subagent(subagent: Subagent) -> CompiledStateGraph:
@@ -64,7 +98,10 @@ async def create_subagent(subagent: Subagent) -> CompiledStateGraph:
     if subagent.managed_by == "internal":
         # Internal integrations use core tools that are registered at startup
         # No additional setup needed - tools are already in the registry
-        log.info(f"{LogTag.AGENT} Internal integration {subagent.id}: using pre-registered tools")
+        log.info(
+            f"{LogTag.AGENT} Internal integration using pre-registered tools",
+            integration_id=subagent.id,
+        )
 
     # Handle MCP-managed integrations (like DeepWiki)
     elif subagent.managed_by == "mcp" and subagent.mcp_config:
@@ -84,57 +121,47 @@ async def create_subagent(subagent: Subagent) -> CompiledStateGraph:
                 tool_registry._add_category(
                     name=category_name,
                     tools=tools,
-                    space=config.tool_space,
-                    integration_name=subagent.id,
-                    destructive_tools=integration_destructive_tools(subagent.id),
+                    options=CategoryOptions(
+                        space=config.tool_space,
+                        integration_name=subagent.id,
+                    ),
+                    risk=CategoryRisk(destructive_tools=integration_destructive_tools(subagent.id)),
                 )
                 await tool_registry._index_category_tools(category_name)
-                log.info(f"{LogTag.AGENT} Registered {len(tools)} MCP tools for {subagent.id}")
+                log.info(
+                    f"{LogTag.AGENT} Registered MCP tools",
+                    tool_count=len(tools),
+                    integration_id=subagent.id,
+                )
 
-    # Handle Composio-managed integrations
-    # `Subagent` does not carry composio_config; look up the OAuth integration
-    # for this branch (composio is OAuth-only). The OAuthIntegration model
-    # validator enforces composio_config when managed_by="composio", so the
-    # only way to land here without one is a builtin Subagent declaring
-    # managed_by="composio" — which would silently produce a tool-less agent.
-    # Fail loudly instead.
     elif subagent.managed_by == "composio":
-        integration = get_integration_by_id(subagent.id)
-        if integration is None or integration.composio_config is None:
-            raise ValueError(
-                f"Composio subagent {subagent.id!r} has no matching OAuth "
-                f"integration with composio_config. managed_by='composio' "
-                f"must correspond to an OAUTH_INTEGRATIONS entry."
-            )
-        toolkit_name = integration.composio_config.toolkit
-        await tool_registry.register_provider_tools(
-            toolkit_name=toolkit_name,
-            space_name=config.tool_space,
-            specific_tools=config.specific_tools,
-            exclude_tools=config.exclude_tools,
-        )
+        await register_composio_subagent_tools(subagent, tool_registry)
 
     llm = init_llm()
 
     log.set(subagent={"name": config.agent_name, "provider": subagent.provider})
     log.info(
-        f"{LogTag.AGENT} Creating {config.agent_name} on-demand using tool space: {config.tool_space}"
+        f"{LogTag.AGENT} Creating subagent on-demand",
+        agent_name=config.agent_name,
+        tool_space=config.tool_space,
     )
 
     graph = await SubAgentFactory.create_provider_subagent(
         provider=subagent.provider,
         llm=llm,
-        tool_space=config.tool_space,
         name=config.agent_name,
-        use_direct_tools=config.use_direct_tools,
-        disable_retrieve_tools=config.disable_retrieve_tools,
-        auto_bind_tools=config.auto_bind_tools,
-        extra_initial_tools=config.extra_initial_tools,
-        include_finish_task=config.include_finish_task,
-        source_label=subagent.name,
+        config=SubAgentToolConfig(
+            tool_space=config.tool_space,
+            use_direct_tools=config.use_direct_tools,
+            disable_retrieve_tools=config.disable_retrieve_tools,
+            auto_bind_tools=config.auto_bind_tools,
+            extra_initial_tools=config.extra_initial_tools,
+            include_finish_task=config.include_finish_task,
+            source_label=subagent.name,
+        ),
     )
 
-    log.info(f"{LogTag.AGENT} Subagent {config.agent_name} created successfully")
+    log.info(f"{LogTag.AGENT} Subagent created successfully", agent_name=config.agent_name)
     return graph
 
 
@@ -165,7 +192,9 @@ async def _build_user_subagent(integration_id: str, user_id: str) -> CompiledSta
 
     mcp_config = subagent.mcp_config
     if not (subagent.managed_by == "mcp" and mcp_config):
-        log.error(f"{LogTag.AGENT} {integration_id} is not an MCP integration")
+        log.error(
+            f"{LogTag.AGENT} Integration is not an MCP integration", integration_id=integration_id
+        )
         raise SubagentUnavailableError(f"{integration_id} is not an MCP integration")
 
     config = subagent.config
@@ -174,27 +203,35 @@ async def _build_user_subagent(integration_id: str, user_id: str) -> CompiledSta
     if subagent.id in mcp_client._tools:
         tools = mcp_client._tools[subagent.id]
         log.info(
-            f"{LogTag.AGENT} _build_user_subagent: integration={integration_id} user={user_id} "
-            f"using warm MCPClient tools ({len(tools)})"
+            f"{LogTag.AGENT} _build_user_subagent using warm MCPClient tools",
+            integration_id=integration_id,
+            user_id=user_id,
+            tool_count=len(tools),
         )
     else:
         try:
             tools = await mcp_client.connect(subagent.id)
             log.info(
-                f"{LogTag.AGENT} _build_user_subagent: integration={integration_id} user={user_id} "
-                f"cold connect, got {len(tools)} tools"
+                f"{LogTag.AGENT} _build_user_subagent cold connect succeeded",
+                integration_id=integration_id,
+                user_id=user_id,
+                tool_count=len(tools),
             )
         except Exception as e:
             log.error(
-                f"{LogTag.AGENT} _build_user_subagent: integration={integration_id} user={user_id} "
-                f"connect FAILED: {type(e).__name__}: {e}"
+                f"{LogTag.AGENT} _build_user_subagent connect failed",
+                integration_id=integration_id,
+                user_id=user_id,
+                error_type=type(e).__name__,
+                error=str(e),
             )
             raise SubagentUnavailableError(str(e)) from e
 
     if not tools:
         log.error(
-            f"{LogTag.AGENT} _build_user_subagent: integration={integration_id} user={user_id} "
-            f"got 0 tools — cannot create subagent"
+            f"{LogTag.AGENT} _build_user_subagent got no tools — cannot create subagent",
+            integration_id=integration_id,
+            user_id=user_id,
         )
         raise SubagentUnavailableError(f"{integration_id} exposed no usable tools")
 
@@ -202,24 +239,33 @@ async def _build_user_subagent(integration_id: str, user_id: str) -> CompiledSta
 
     log.set(subagent={"name": config.agent_name, "provider": subagent.provider})
     log.info(
-        f"{LogTag.AGENT} Creating {config.agent_name} for user {user_id} using tool space: {config.tool_space}"
+        f"{LogTag.AGENT} Creating user-specific subagent",
+        agent_name=config.agent_name,
+        user_id=user_id,
+        tool_space=config.tool_space,
     )
 
     graph = await SubAgentFactory.create_provider_subagent(
         provider=subagent.provider,
         llm=llm,
-        tool_space=config.tool_space,
         name=config.agent_name,
-        use_direct_tools=config.use_direct_tools,
-        disable_retrieve_tools=config.disable_retrieve_tools,
-        auto_bind_tools=config.auto_bind_tools,
-        extra_initial_tools=config.extra_initial_tools,
-        include_finish_task=config.include_finish_task,
-        mcp_tools=tools,
-        source_label=subagent.name,
+        config=SubAgentToolConfig(
+            tool_space=config.tool_space,
+            use_direct_tools=config.use_direct_tools,
+            disable_retrieve_tools=config.disable_retrieve_tools,
+            auto_bind_tools=config.auto_bind_tools,
+            extra_initial_tools=config.extra_initial_tools,
+            include_finish_task=config.include_finish_task,
+            mcp_tools=tools,
+            source_label=subagent.name,
+        ),
     )
 
-    log.info(f"{LogTag.AGENT} User-specific subagent {config.agent_name} created successfully")
+    log.info(
+        f"{LogTag.AGENT} User-specific subagent created successfully",
+        agent_name=config.agent_name,
+        user_id=user_id,
+    )
     return graph
 
 
@@ -231,7 +277,11 @@ async def _create_custom_mcp_subagent(integration_id: str, user_id: str) -> Comp
     """
     custom_doc = await integration_repository.get(integration_id)
     if not custom_doc:
-        log.error(f"{LogTag.AGENT} Custom integration {integration_id} not found in MongoDB")
+        log.error(
+            f"{LogTag.AGENT} Custom integration not found in MongoDB",
+            integration_id=integration_id,
+            user_id=user_id,
+        )
         raise SubagentUnavailableError(f"Custom integration {integration_id} not found")
 
     server_url = custom_doc.mcp_config.server_url if custom_doc.mcp_config else ""
@@ -245,11 +295,21 @@ async def _create_custom_mcp_subagent(integration_id: str, user_id: str) -> Comp
         try:
             tools = await mcp_client.connect(integration_id)
         except Exception as e:
-            log.error(f"{LogTag.AGENT} Failed to get MCP tools for {integration_id}: {e}")
+            log.error(
+                f"{LogTag.AGENT} Failed to get MCP tools",
+                integration_id=integration_id,
+                user_id=user_id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
             raise SubagentUnavailableError(str(e)) from e
 
     if not tools:
-        log.error(f"{LogTag.AGENT} No tools available for {integration_id}")
+        log.error(
+            f"{LogTag.AGENT} No tools available for custom integration",
+            integration_id=integration_id,
+            user_id=user_id,
+        )
         raise SubagentUnavailableError(f"{integration_id} exposed no usable tools")
 
     llm = init_llm()
@@ -263,22 +323,31 @@ async def _create_custom_mcp_subagent(integration_id: str, user_id: str) -> Comp
     use_direct = 0 < tool_count <= 10
 
     log.info(
-        f"{LogTag.AGENT} Custom MCP {integration_id} has {tool_count} tools — "
-        f"using {'direct binding' if use_direct else 'retrieve_tools'}"
+        f"{LogTag.AGENT} Custom MCP tool binding mode resolved",
+        integration_id=integration_id,
+        tool_count=tool_count,
+        direct_binding=use_direct,
     )
 
     graph = await SubAgentFactory.create_provider_subagent(
         provider=integration_id,
         llm=llm,
-        tool_space=tool_namespace,
         name=agent_name,
-        use_direct_tools=use_direct,
-        disable_retrieve_tools=use_direct,
-        mcp_tools=tools,
-        source_label=custom_doc.name,
+        config=SubAgentToolConfig(
+            tool_space=tool_namespace,
+            use_direct_tools=use_direct,
+            disable_retrieve_tools=use_direct,
+            mcp_tools=tools,
+            source_label=custom_doc.name,
+        ),
     )
 
-    log.info(f"{LogTag.AGENT} Custom MCP subagent {agent_name} created successfully")
+    log.info(
+        f"{LogTag.AGENT} Custom MCP subagent created successfully",
+        agent_name=agent_name,
+        integration_id=integration_id,
+        user_id=user_id,
+    )
     return graph
 
 
@@ -323,8 +392,8 @@ def register_subagent_providers(integration_ids: list[str] | None = None) -> int
             and subagent.mcp_config.requires_auth
         ):
             log.info(
-                f"{LogTag.AGENT} Auth-required MCP subagent {subagent.config.agent_name} "
-                f"will be created on-demand via handoff"
+                f"{LogTag.AGENT} Auth-required MCP subagent will be created on-demand via handoff",
+                agent_name=subagent.config.agent_name,
             )
             continue
 
@@ -335,10 +404,12 @@ def register_subagent_providers(integration_ids: list[str] | None = None) -> int
         # actual return type while satisfying the registry overload.
         providers.register(
             name=agent_name,
-            loader_func=_make_subagent_loader(subagent),  # type: ignore[arg-type]
+            loader_func=_make_subagent_loader(subagent),  # type: ignore[arg-type]  # register()'s TypeVar'd loader signature won't unify against a concrete async callable
             required_keys=[],
         )
         registered_count += 1
 
-    log.info(f"{LogTag.AGENT} Registered {registered_count} subagent lazy providers")
+    log.info(
+        f"{LogTag.AGENT} Registered subagent lazy providers", registered_count=registered_count
+    )
     return registered_count

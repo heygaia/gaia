@@ -22,6 +22,7 @@ from app.models.reminder_models import (
     UpdateReminderRequest,
 )
 from app.models.user_models import AuthenticatedUser
+from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.reminder_service import reminder_scheduler
 from app.utils.cron_utils import (
     calculate_next_occurrences,
@@ -105,16 +106,24 @@ async def create_reminder_endpoint(
         log.set(reminder=_reminder_context("create", reminder))
         log.set(outcome="success")
 
+        capture_context_event(
+            AnalyticsEvents.REMINDER_CREATED, {"is_recurring": bool(reminder.repeat)}
+        )
         return ReminderResponse.model_validate(reminder)
 
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error creating reminder: {e}")
+        log.error(
+            f"{LogTag.API} Error creating reminder",
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to create reminder",
-        )
+        ) from e
 
 
 @router.get("/{reminder_id}", response_model=ReminderResponse)
@@ -162,11 +171,17 @@ async def get_reminder_endpoint(
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error getting reminder {reminder_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error getting reminder",
+            reminder_id=reminder_id,
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to retrieve reminder",
-        )
+        ) from e
 
 
 @router.put("/{reminder_id}", response_model=ReminderResponse)
@@ -232,11 +247,17 @@ async def update_reminder_endpoint(
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error updating reminder {reminder_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error updating reminder",
+            reminder_id=reminder_id,
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update reminder",
-        )
+        ) from e
 
 
 @router.delete("/{reminder_id}", status_code=http_status.HTTP_204_NO_CONTENT)
@@ -273,16 +294,23 @@ async def cancel_reminder_endpoint(
                 detail="Failed to cancel reminder",
             )
 
+        capture_context_event(AnalyticsEvents.REMINDER_DELETED)
         log.set(outcome="success")
 
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error cancelling reminder {reminder_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error cancelling reminder",
+            reminder_id=reminder_id,
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to cancel reminder",
-        )
+        ) from e
 
 
 @router.get("", response_model=list[ReminderResponse])
@@ -337,11 +365,16 @@ async def list_reminders_endpoint(
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error listing reminders for user {user_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error listing reminders",
+            user_id=user_id,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to list reminders",
-        )
+        ) from e
 
 
 @router.post("/{reminder_id}/pause", response_model=ReminderResponse)
@@ -394,11 +427,17 @@ async def pause_reminder_endpoint(
     except HTTPException:
         raise  # let a deliberate 404/4xx from the service through, not masked as 500
     except Exception as e:
-        log.error(f"{LogTag.API} Error pausing reminder {reminder_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error pausing reminder",
+            reminder_id=reminder_id,
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to pause reminder",
-        )
+        ) from e
 
 
 @router.post("/{reminder_id}/resume", response_model=ReminderResponse)
@@ -469,11 +508,17 @@ async def resume_reminder_endpoint(
     except HTTPException:
         raise
     except Exception as e:
-        log.error(f"{LogTag.API} Error resuming reminder {reminder_id}: {e}")
+        log.error(
+            f"{LogTag.API} Error resuming reminder",
+            reminder_id=reminder_id,
+            user_id=user.get("user_id"),
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise HTTPException(
             status_code=http_status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to resume reminder",
-        )
+        ) from e
 
 
 @router.get("/cron/validate")
@@ -481,6 +526,7 @@ async def validate_cron_endpoint(
     expression: str = Query(..., description="Cron expression to validate"),
 ) -> CronValidationResponse:
     """Validate a cron expression and preview its next few run times."""
+    log.set(reminder=ReminderContext(operation="validate_cron"))
     try:
         is_valid = validate_cron_expression(expression)
         if not is_valid:
@@ -494,5 +540,10 @@ async def validate_cron_endpoint(
         )
 
     except Exception as e:
-        log.error(f"{LogTag.API} Error validating cron expression {expression}: {e}")
+        log.error(
+            f"{LogTag.API} Error validating cron expression",
+            expression=expression,
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         return CronValidationResponse(expression=expression, valid=False, error=str(e))

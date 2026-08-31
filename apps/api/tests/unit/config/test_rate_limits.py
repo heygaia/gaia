@@ -32,6 +32,7 @@ from app.config.rate_limits import (
     get_time_window_key,
 )
 from app.models.payment_models import PlanType
+from tests.helpers import effective_limit
 
 # ---------------------------------------------------------------------------
 # Tests: RateLimitPeriod
@@ -135,7 +136,7 @@ class TestTieredRateLimits:
 
     def test_info_is_required(self) -> None:
         with pytest.raises(Exception):
-            TieredRateLimits()  # type: ignore[call-arg]
+            TieredRateLimits()  # type: ignore[call-arg]  # bare construction exercises required-arg validation
 
 
 # ---------------------------------------------------------------------------
@@ -182,6 +183,8 @@ class TestFeatureLimits:
         "integration_publish",
         "integration_clone",
         "gaia_todo_executions",
+        "imessage_registration",
+        "account_platform_connect",
     ]
 
     def test_all_expected_features_present(self) -> None:
@@ -192,6 +195,13 @@ class TestFeatureLimits:
         for feature in FEATURE_LIMITS:
             assert feature in self.EXPECTED_FEATURES, f"Unexpected feature: {feature}"
 
+    def test_imessage_registration_is_pro_gated_and_small(self) -> None:
+        """The iMessage connect throttle: no free access, and a tight paid cap."""
+        limits = FEATURE_LIMITS["imessage_registration"]
+        assert limits.free.day == 0
+        assert limits.free.month == 0
+        assert 0 < limits.pro.day <= 20
+
     def test_all_features_have_valid_structure(self) -> None:
         for key, limits in FEATURE_LIMITS.items():
             assert isinstance(limits, TieredRateLimits), f"{key} is not TieredRateLimits"
@@ -200,14 +210,12 @@ class TestFeatureLimits:
             assert isinstance(limits.info, FeatureInfo), f"{key}.info is not FeatureInfo"
 
     def test_pro_limits_gte_free_limits(self) -> None:
-        """Pro plan should always have limits >= free plan."""
+        """Pro is never more restrictive than Free (0 = unlimited when the tier has access)."""
         for key, limits in FEATURE_LIMITS.items():
-            assert limits.pro.day >= limits.free.day, (
-                f"{key}: pro day ({limits.pro.day}) < free day ({limits.free.day})"
-            )
-            assert limits.pro.month >= limits.free.month, (
-                f"{key}: pro month ({limits.pro.month}) < free month ({limits.free.month})"
-            )
+            for period in ("day", "month"):
+                free = effective_limit(limits.free, period)
+                pro = effective_limit(limits.pro, period)
+                assert pro >= free, f"{key}: pro {period} ({pro}) < free {period} ({free})"
 
     def test_monthly_limits_gte_daily_limits(self) -> None:
         """Monthly limits should be >= daily limits for both tiers."""
@@ -225,9 +233,14 @@ class TestFeatureLimits:
             assert limits.info.description, f"{key} has empty description"
 
     # Features intentionally restricted to paid-only (free limits are 0).
-    PAID_ONLY_FEATURES: ClassVar[set[str]] = {"voice_mode"}
+    PAID_ONLY_FEATURES: ClassVar[set[str]] = {"voice_mode", "imessage_registration"}
     # Features metered monthly-only on free (no daily allowance; each use is felt).
     MONTHLY_ONLY_FREE_FEATURES: ClassVar[set[str]] = {"gaia_todo_executions"}
+
+    # Cost-walled features: no daily message-count wall on free (free.day == 0)
+    # because the rolling daily COST budget is the real wall. The monthly count
+    # survives only as an extreme abuse backstop.
+    COST_WALLED_FEATURES: ClassVar[set[str]] = {"chat_messages"}
 
     def test_free_limits_are_positive(self) -> None:
         """Non-paid-only features should have at least some free tier allowance."""
@@ -240,15 +253,24 @@ class TestFeatureLimits:
                 # Metered monthly-only: no daily allowance, but a real monthly one
                 assert limits.free.day == 0, f"{key}: expected free day == 0 (monthly-only)"
                 assert limits.free.month > 0, f"{key}: expected free month > 0 (monthly-only)"
+            elif key in self.COST_WALLED_FEATURES:
+                # Daily count wall removed — the cost budget gates daily use.
+                # Month stays as an abuse backstop, so free.month must be set.
+                assert limits.free.day == 0, f"{key}: expected free day == 0 (cost-walled)"
+                assert limits.free.month > 0, f"{key}: expected free month backstop"
             else:
                 assert limits.free.day > 0, f"{key}: free day is 0"
                 assert limits.free.month > 0, f"{key}: free month is 0"
 
     def test_specific_chat_messages_limits(self) -> None:
         chat = FEATURE_LIMITS["chat_messages"]
-        assert chat.free.day == 200
-        assert chat.free.month == 5000
-        assert chat.pro.day == 3000
+        # No daily message-count wall on free — the rolling cost budget is the
+        # wall; the monthly count is only an extreme abuse backstop.
+        assert chat.free.day == 0
+        assert chat.free.month == 2000
+        # Pro also has no daily message count (0 = uncapped); only the monthly
+        # abuse backstop.
+        assert chat.pro.day == 0
         assert chat.pro.month == 60000
 
     def test_specific_generate_image_limits(self) -> None:
@@ -260,8 +282,8 @@ class TestFeatureLimits:
 
     def test_specific_deep_research_limits(self) -> None:
         dr = FEATURE_LIMITS["deep_research"]
-        assert dr.free.day == 5
-        assert dr.free.month == 30
+        assert dr.free.day == 1
+        assert dr.free.month == 5
         assert dr.pro.day == 100
         assert dr.pro.month == 2000
 
@@ -348,7 +370,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.DAY)
 
@@ -360,7 +382,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.MONTH)
 
@@ -372,7 +394,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.MONTH)
 
@@ -385,7 +407,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.DAY)
 
@@ -397,7 +419,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.MONTH)
 
@@ -409,7 +431,7 @@ class TestGetResetTime:
 
         with patch("app.config.rate_limits.datetime") as mock_dt:
             mock_dt.now.return_value = fake_now
-            mock_dt.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
+            mock_dt.side_effect = datetime
 
             result = get_reset_time(RateLimitPeriod.DAY)
 
@@ -548,3 +570,12 @@ class TestGetFeatureInfo:
         assert isinstance(result, FeatureInfo)
         assert result.title == ""
         assert result.description == "Usage for "
+
+
+@pytest.mark.unit
+class TestActivityPolicy:
+    def test_trigger_workflow_executions_never_counts_as_activity(self) -> None:
+        """System-driven fires are not user actions: counting them let a user's
+        own automation keep them "active" forever (masking the dormancy sweep)
+        and inflated the activity heatmap with runs nobody performed."""
+        assert FEATURE_LIMITS["trigger_workflow_executions"].counts_as_activity is False

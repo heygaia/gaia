@@ -13,12 +13,17 @@ import { apiService } from "@/lib/api/service";
 import { desktopClientHeaders } from "@/lib/electron/api";
 import { streamLog, streamLogError } from "@/lib/streamLogger";
 import { getBrowserTimezone } from "@/lib/timezone";
+import { toast } from "@/lib/toast";
 import type { SelectedCalendarEventData } from "@/stores/calendarEventSelectionStore";
 import { useComposerStore } from "@/stores/composerStore";
 import type { MessageType } from "@/types/features/convoTypes";
 import type { ArtifactData } from "@/types/features/toolDataTypes";
 import type { WorkflowData } from "@/types/features/workflowTypes";
 import type { FileData } from "@/types/shared/fileTypes";
+import {
+  getErrorMessage,
+  handleRateLimitError,
+} from "@/utils/interceptorUtils";
 
 /** Thrown when the backend rejects a send whose turn_id was already claimed —
  *  the original request is (or was) processing; the retry must not re-run. */
@@ -29,8 +34,19 @@ export class DuplicateTurnError extends Error {
   }
 }
 
+/** Thrown when a send is rejected by a usage wall (429). The rate-limit
+ *  upsell toast is shown at throw time, so downstream failure handling must
+ *  not add a generic error toast on top. */
+export class RateLimitError extends Error {
+  constructor(message?: string) {
+    super(message || "Usage limit reached");
+    this.name = "RateLimitError";
+  }
+}
+
 const HTTP_CONFLICT = 409;
 const HTTP_GONE = 410;
+const HTTP_TOO_MANY_REQUESTS = 429;
 
 export interface ChatStreamRequest {
   inputText: string;
@@ -43,7 +59,9 @@ export interface ChatStreamRequest {
   onMessage: (
     event: EventSourceMessage,
   ) => undefined | string | Promise<undefined | string>;
-  onClose: () => void;
+  /** `sawDone` is false when the connection ended without `[DONE]` — a
+   *  truncated turn, not a finished one. */
+  onClose: (sawDone: boolean) => void;
   onError: (err: Error) => void;
   controller: AbortController;
   fileData: FileData[];
@@ -353,6 +371,16 @@ export const chatApi = {
           if (response.status === HTTP_CONFLICT) {
             throw new DuplicateTurnError();
           }
+          // Usage wall (message count or cost budget exhausted): render the
+          // rate-limit upsell UI here — the axios interceptor never sees this
+          // request — and throw typed so failure handling skips its generic toast.
+          if (response.status === HTTP_TOO_MANY_REQUESTS) {
+            const data: unknown = await response.json().catch(() => undefined);
+            if (!handleRateLimitError(data)) {
+              toast.error("Too many requests. Please try again later.");
+            }
+            throw new RateLimitError(getErrorMessage(data));
+          }
           if (
             !response.ok ||
             !response.headers.get("content-type")?.includes("text/event-stream")
@@ -381,11 +409,18 @@ export const chatApi = {
         }),
 
         onmessage(event) {
+          // Transport-level record of the raw frame, before any parsing or
+          // dispatch can drop it. This and the executor subscription below are
+          // the app's only two SSE readers, so nothing bypasses the recording.
+          streamLog("sse", "frame", {
+            conversationId,
+            detail: { raw: event.data },
+          });
           const errorResult = onMessage(event);
 
           if (event.data === "[DONE]") {
             doneReceived = true;
-            onClose();
+            onClose(true);
             return;
           }
 
@@ -411,7 +446,7 @@ export const chatApi = {
           // Only call onClose if [DONE] didn't already trigger it.
           // Connection drops without [DONE] (e.g. network failure) still need cleanup.
           if (!doneReceived) {
-            onClose();
+            onClose(false);
           }
         },
         onerror: (err) => {
@@ -434,7 +469,7 @@ export const chatApi = {
   subscribeToExecutorStream: async (
     streamId: string,
     onMessage: (event: EventSourceMessage) => void,
-    onClose: () => void,
+    onClose: (sawDone: boolean) => void,
     onError: (err: Error) => void,
     signal: AbortSignal,
     lastEventId?: string,
@@ -455,9 +490,12 @@ export const chatApi = {
         credentials: "include",
         signal,
         onmessage(event) {
+          streamLog("sse", "frame", {
+            detail: { raw: event.data, streamId },
+          });
           if (event.data === "[DONE]") {
             doneReceived = true;
-            onClose();
+            onClose(true);
             return;
           }
           onMessage(event);
@@ -465,7 +503,7 @@ export const chatApi = {
         onclose() {
           streamLog("sse", "connection-closed");
           if (!doneReceived) {
-            onClose();
+            onClose(false);
           }
         },
         onerror(err) {

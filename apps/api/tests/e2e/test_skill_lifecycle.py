@@ -65,6 +65,7 @@ from app.config.settings import settings
 from app.constants.cache import SKILLS_TEXT_CACHE_KEY, USER_SKILLS_CACHE_KEY
 from app.db.repositories.skills import SYSTEM_USER_ID
 from app.services.storage import JuiceFSUnavailable
+from app.utils.errors import AppError
 
 pytestmark = pytest.mark.e2e
 
@@ -352,7 +353,7 @@ class TestInstall:
         _, mongo, _ = stack
         await _install()
 
-        with pytest.raises(ValueError, match="already installed"):
+        with pytest.raises(AppError, match="already installed"):
             await _install()
 
         assert len(await list_skills(USER)) == 1
@@ -621,7 +622,7 @@ class TestUninstall:
         mount, mongo, _ = stack
         skill = await _install()
 
-        assert await uninstall_skill_full(USER, skill.id) is True
+        assert (await uninstall_skill_full(USER, skill.id)) is not None
 
         assert not _skill_dir(mount, "quarterly-report").exists()
         assert await get_skill(USER, skill.id) is None
@@ -656,7 +657,7 @@ class TestUninstall:
         mount, _, _ = stack
         skill = await _install()
 
-        assert await uninstall_skill_full(OTHER_USER, skill.id) is False
+        assert (await uninstall_skill_full(OTHER_USER, skill.id)) is None
 
         assert _skill_md(mount, "quarterly-report").is_file()
         assert await get_skill(USER, skill.id) is not None
@@ -665,7 +666,7 @@ class TestUninstall:
         mount, _, _ = stack
         await _install()
 
-        assert await uninstall_skill_full(USER, "no-such-id") is False
+        assert (await uninstall_skill_full(USER, "no-such-id")) is None
 
         assert _skill_md(mount, "quarterly-report").is_file()
 
@@ -683,7 +684,7 @@ class TestUninstall:
         ):
             result = await uninstall_skill_full(USER, skill.id)
 
-        assert result is True
+        assert result is not None
         assert await get_skill(USER, skill.id) is None
 
     async def test_a_reinstall_after_uninstall_succeeds(self, stack):

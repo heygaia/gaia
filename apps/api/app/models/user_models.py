@@ -326,6 +326,10 @@ class AuthenticatedUser(TypedDict, total=False):
     briefing_channel_priority: list[str] | None
     day_zero_hello: dict[str, Any] | None
     edition_rotations: dict[str, EditionRotation] | None
+    # Usage-limit upsell email dedupe + activity badge tier (usage system).
+    last_limit_email_sent: datetime | None
+    highest_activity_tier: str | None
+    highest_activity_tier_at: datetime | None
     # Nurture email sequence state (workers) — completed_steps + send history.
     nurture: dict[str, Any] | None
 
@@ -405,6 +409,12 @@ class UserDocument(MongoDocument):
     # Edition template rotation per briefing kind (shuffled full cycle; see
     # edition_rotation). Keys: "daily" | "weekly".
     edition_rotations: dict[str, EditionRotation] | None = None
+    # Usage-limit upsell email dedupe (1/week — see send_limit_reached_email).
+    last_limit_email_sent: datetime | None = None
+    # Best activity-badge tier ever reached (monotonic; drives first-time
+    # promotion emails — see usage_activity.sync_activity_tiers).
+    highest_activity_tier: str | None = None
+    highest_activity_tier_at: datetime | None = None
     # Nurture email sequence state (workers): completed_steps + send history.
     nurture: dict[str, Any] | None = None
 

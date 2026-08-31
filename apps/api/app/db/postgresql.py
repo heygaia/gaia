@@ -12,6 +12,7 @@ from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 from sqlalchemy import Connection, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, create_async_engine
 from sqlalchemy.orm import declarative_base
+from sqlalchemy.schema import DDL
 
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
@@ -45,6 +46,7 @@ def _ensure_timestamptz_columns(connection: Connection) -> None:
     Idempotent: columns already ``timestamp with time zone`` (or absent on a
     fresh DB, where create_all already made them correct) are skipped.
     """
+    preparer = connection.dialect.identifier_preparer
     for table, column in _TIMESTAMPTZ_COLUMNS:
         data_type = connection.execute(
             text(
@@ -55,14 +57,58 @@ def _ensure_timestamptz_columns(connection: Connection) -> None:
         ).scalar()
         if data_type is None or data_type == "timestamp with time zone":
             continue
-        # Identifiers come from the _TIMESTAMPTZ_COLUMNS whitelist, not user input.
+        # DDL, not text(): identifiers can never be bind parameters in any
+        # dialect, so this is the construct built for the job. They come from
+        # the _TIMESTAMPTZ_COLUMNS whitelist rather than user input, and the
+        # dialect's preparer quotes them so a reserved word or mixed-case name
+        # stays valid.
+        quoted_table = preparer.quote(table)
+        quoted_column = preparer.quote(column)
         connection.execute(
-            text(  # nosec B608
-                f"ALTER TABLE {table} ALTER COLUMN {column} "
-                f"TYPE timestamptz USING {column} AT TIME ZONE 'UTC'"
+            DDL(
+                f"ALTER TABLE {quoted_table} ALTER COLUMN {quoted_column} "
+                f"TYPE timestamptz USING {quoted_column} AT TIME ZONE 'UTC'"
             )
         )
         log.info(f"{LogTag.STARTUP} Promoted column to timestamptz", table=table, column=column)
+
+
+# Columns added to a table that already exists in production. ``create_all``
+# only CREATEs missing tables, so a new column on an existing one has to be
+# added in place — the same gap ``_ensure_timestamptz_columns`` covers for
+# types. Each entry is (table, column, column definition); the definition must
+# carry a DEFAULT whenever it is NOT NULL, so existing rows stay valid.
+_ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
+    ("memories", "shelf_life", "varchar(20) NOT NULL DEFAULT 'durable'"),
+)
+
+
+def _ensure_added_columns(connection: Connection) -> None:
+    """Add columns declared on a model but missing from an existing table.
+
+    Idempotent — a fresh database already has them from ``create_all``, and a
+    re-run finds them present. Existing rows take the column's DEFAULT, which
+    is why every NOT NULL entry declares one.
+    """
+    preparer = connection.dialect.identifier_preparer
+    for table, column, definition in _ADDED_COLUMNS:
+        exists = connection.execute(
+            text(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = :table AND column_name = :column"
+            ),
+            {"table": table, "column": column},
+        ).scalar()
+        if exists:
+            continue
+        # DDL, not text(): identifiers can never be bind parameters. Table,
+        # column and definition all come from the whitelist above, never input.
+        connection.execute(
+            DDL(
+                f"ALTER TABLE {preparer.quote(table)} ADD COLUMN {preparer.quote(column)} {definition}"
+            )
+        )
+        log.info(f"{LogTag.STARTUP} Added missing column", table=table, column=column)
 
 
 def _adapt_url_for_asyncpg(postgres_url: str) -> tuple[str, dict[str, Any]]:
@@ -85,14 +131,13 @@ def _adapt_url_for_asyncpg(postgres_url: str) -> tuple[str, dict[str, Any]]:
         sslmode = sslmode_values[0].lower()
         # asyncpg's `ssl` kwarg accepts True/False/'require'/etc.
         # 'disable' → no SSL; everything else → require SSL.
-        if sslmode in {"disable", "allow", "prefer"}:
-            connect_args["ssl"] = sslmode != "disable"
-        else:
-            connect_args["ssl"] = True
+        connect_args["ssl"] = sslmode != "disable"
 
     rebuilt_query = urlencode([(k, v) for k, vs in query.items() for v in vs])
-    rebuilt = urlunsplit((parts.scheme, parts.netloc, parts.path, rebuilt_query, parts.fragment))
-    url = rebuilt.replace("postgresql://", "postgresql+asyncpg://", 1)
+    # Replace the scheme structurally — a string replace of "postgresql://"
+    # is both fragile and (for the mutator) an equivalent-mutant generator:
+    # the count argument can never matter because the scheme appears once.
+    url = urlunsplit(parts._replace(scheme="postgresql+asyncpg", query=rebuilt_query))
     return url, connect_args
 
 
@@ -125,6 +170,7 @@ async def init_postgresql_engine() -> AsyncEngine:
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+        await conn.run_sync(_ensure_added_columns)
         await conn.run_sync(_ensure_timestamptz_columns)
 
     log.set(db={"connection_status": "connected", "backend": "postgresql"})
@@ -175,4 +221,8 @@ async def close_postgresql_db() -> None:
             await engine.dispose()
             log.info(f"{LogTag.STARTUP} PostgreSQL connections closed")
     except Exception as e:
-        log.error(f"{LogTag.STARTUP} Error closing PostgreSQL connections: {e}")
+        log.error(
+            f"{LogTag.STARTUP} Error closing PostgreSQL connections",
+            error=str(e),
+            error_type=type(e).__name__,
+        )

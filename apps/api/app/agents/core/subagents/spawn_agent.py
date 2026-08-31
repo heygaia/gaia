@@ -16,7 +16,7 @@ module that composes middleware stacks is also the one that constructs
 
 import asyncio
 from collections.abc import Callable, Mapping, Sequence
-from typing import cast
+from typing import Any
 
 from langchain_core.language_models import LanguageModelLike
 from langchain_core.tools import BaseTool
@@ -25,9 +25,7 @@ from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph.state import CompiledStateGraph
 
 from app.agents.core.graph_builder.checkpointer_manager import get_checkpointer_manager
-from app.agents.core.nodes import manage_system_prompts_node
-from app.agents.core.nodes.adapt_media import adapt_media_node
-from app.agents.core.nodes.filter_messages import filter_messages_node
+from app.agents.core.nodes.pre_model_hooks import worker_pre_model_hooks
 from app.agents.tools.core.store import get_tools_store
 from app.agents.tools.core.tool_runtime_config import (
     ToolRuntimeConfig,
@@ -37,8 +35,8 @@ from app.agents.tools.finish_task_tool import finish_task
 from app.constants.general import FINISH_TASK_NAME, SPAWN_AGENT_NAME
 from app.constants.log_tags import LogTag
 from app.models.agent_models import AnyAgentMiddleware
+from app.override.langgraph_bigtool.agent_config import AgentConfig, HookConfig
 from app.override.langgraph_bigtool.create_agent import create_agent
-from app.override.langgraph_bigtool.hooks import HookType
 from shared.py.wide_events import log
 
 #: What ``_cache_key`` produces: (model identity, tool space, initial tool names,
@@ -107,25 +105,20 @@ async def _build_spawn_graph(
 
     # ``excluded_tool_names`` always contains spawn_subagent (SubagentMiddleware
     # adds it), so a spawned subagent cannot spawn again — the middleware stack
-    # below is built with enable_subagent=False for the same reason.
+    # below is built with SubagentStackOptions(enabled=False) for the same reason.
     scoped_tools: dict[str, BaseTool] = {
         name: tool for name, tool in registry.items() if name not in excluded_tool_names
     }
     scoped_tools[FINISH_TASK_NAME] = finish_task
 
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "llm": llm,
         "tool_registry": scoped_tools,
-        "agent_name": SPAWN_AGENT_NAME,
-        "middleware": middleware_factory(),
+        "agent_config": AgentConfig(agent_name=SPAWN_AGENT_NAME, middleware=middleware_factory()),
         # No todo hook and no memory end-hook: a spawn is a one-shot scratch
         # task, not an agent that owns a task list or learns per-integration
         # facts about the user.
-        "pre_model_hooks": [
-            cast(HookType, filter_messages_node),
-            cast(HookType, adapt_media_node),
-            manage_system_prompts_node,
-        ],
+        "hooks_config": HookConfig(pre_model_hooks=worker_pre_model_hooks()),
     }
     kwargs.update(
         build_create_agent_tool_kwargs(
@@ -135,7 +128,7 @@ async def _build_spawn_graph(
         )
     )
 
-    builder = create_agent(**kwargs)  # type: ignore[arg-type]
+    builder = create_agent(**kwargs)
 
     try:
         checkpointer_manager = await get_checkpointer_manager()
@@ -145,8 +138,10 @@ async def _build_spawn_graph(
         # the decision can arrive hours later in another process. In-memory means
         # such a pause cannot be resumed, so this is a real degradation.
         log.warning(
-            f"{LogTag.AGENT} PostgreSQL checkpointer unavailable for spawned subagents: {e}. "
-            "Using InMemorySaver; HIL pauses inside a spawn will not survive a restart."
+            f"{LogTag.AGENT} PostgreSQL checkpointer unavailable for spawned subagents; "
+            "using InMemorySaver — HIL pauses inside a spawn will not survive a restart",
+            error_type=type(e).__name__,
+            error=str(e),
         )
         checkpointer = InMemorySaver()
 

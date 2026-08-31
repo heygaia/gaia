@@ -49,7 +49,7 @@ class MCPTokenStore:
             except Exception as e:
                 raise ValueError(
                     f"MCP_ENCRYPTION_KEY is not a valid Fernet key (must be 32 url-safe base64-encoded bytes): {e}"
-                )
+                ) from e
         return self._cipher
 
     def _encrypt(self, data: str) -> str:
@@ -87,26 +87,32 @@ class MCPTokenStore:
         """Get decrypted OAuth access token if not expired."""
         cred = await self.get_credential(integration_id)
         if not cred:
-            log.debug(f"{LogTag.MCP} [{integration_id}] No credential record found in DB")
+            log.debug(
+                f"{LogTag.MCP} No credential record found in DB", integration_id=integration_id
+            )
             return None
 
         if not cred.access_token:
-            log.debug(f"{LogTag.MCP} [{integration_id}] Credential exists but no access_token")
+            log.debug(
+                f"{LogTag.MCP} Credential exists but no access_token", integration_id=integration_id
+            )
             return None
 
         if cred.status != MCPCredentialStatus.CONNECTED:
             log.debug(
-                f"{LogTag.MCP} [{integration_id}] Credential status is '{cred.status}', expected 'connected'"
+                f"{LogTag.MCP} Credential status is not 'connected'",
+                integration_id=integration_id,
+                status=cred.status,
             )
             return None
 
         # token_expires_at is a timezone-aware column (DateTime(timezone=True)),
         # so compare against timezone-aware UTC.
         if cred.token_expires_at and cred.token_expires_at < datetime.now(UTC):
-            log.warning(f"{LogTag.MCP} OAuth token expired for {integration_id}")
+            log.warning(f"{LogTag.MCP} OAuth token expired for", integration_id=integration_id)
             return None
 
-        log.debug(f"{LogTag.MCP} [{integration_id}] Returning decrypted OAuth token")
+        log.debug(f"{LogTag.MCP} Returning decrypted OAuth token", integration_id=integration_id)
         return self._decrypt(cred.access_token)
 
     async def get_refresh_token(self, integration_id: str) -> str | None:
@@ -131,7 +137,8 @@ class MCPTokenStore:
             return False
 
         if cred.token_expires_at:
-            from datetime import timedelta
+            # Deferred import: stdlib import kept local to this expiry branch
+            from datetime import timedelta  # noqa: PLC0415 -- stdlib import kept local
 
             return cred.token_expires_at < datetime.now(UTC) + timedelta(seconds=threshold_seconds)
 
@@ -140,7 +147,7 @@ class MCPTokenStore:
         # expired only when mcp-use fails to connect.
         max_age_seconds = 3600
         if cred.connected_at:
-            from datetime import timedelta
+            from datetime import timedelta  # noqa: PLC0415 -- stdlib import kept local
 
             return cred.connected_at < datetime.now(UTC) - timedelta(seconds=max_age_seconds)
 
@@ -178,7 +185,7 @@ class MCPTokenStore:
                 )
                 session.add(cred)
             await session.commit()
-            log.info(f"{LogTag.MCP} Stored bearer token for {integration_id}")
+            log.info(f"{LogTag.MCP} Stored bearer token for", integration_id=integration_id)
 
     async def store_oauth_tokens(
         self,
@@ -223,7 +230,7 @@ class MCPTokenStore:
                 )
                 session.add(cred)
             await session.commit()
-            log.info(f"{LogTag.MCP} Stored OAuth tokens for {integration_id}")
+            log.info(f"{LogTag.MCP} Stored OAuth tokens for", integration_id=integration_id)
 
     async def store_unauthenticated(self, integration_id: str) -> None:
         """Store connection for unauthenticated MCP.
@@ -252,7 +259,8 @@ class MCPTokenStore:
                 session.add(cred)
                 await session.commit()
                 log.info(
-                    f"{LogTag.MCP} Created credential record for unauthenticated {integration_id}"
+                    f"{LogTag.MCP} Created credential record for unauthenticated",
+                    integration_id=integration_id,
                 )
 
     async def create_oauth_state(self, integration_id: str, code_verifier: str) -> str:
@@ -323,7 +331,7 @@ class MCPTokenStore:
             if cred:
                 await session.delete(cred)
                 await session.commit()
-                log.info(f"{LogTag.MCP} Deleted MCP credentials for {integration_id}")
+                log.info(f"{LogTag.MCP} Deleted MCP credentials for", integration_id=integration_id)
 
     async def is_connected(self, integration_id: str) -> bool:
         """Check if user has a connected credential for this integration.
@@ -364,7 +372,7 @@ class MCPTokenStore:
                 cred.client_registration = None
                 session.add(cred)
                 await session.commit()
-                log.info(f"{LogTag.MCP} Deleted DCR client for {integration_id}")
+                log.info(f"{LogTag.MCP} Deleted DCR client for", integration_id=integration_id)
 
     async def store_dcr_client(self, integration_id: str, dcr_data: dict[str, Any]) -> None:
         """Store DCR client registration from dynamic registration.
@@ -395,7 +403,7 @@ class MCPTokenStore:
                 )
                 session.add(cred)
             await session.commit()
-            log.info(f"{LogTag.MCP} Stored DCR client for {integration_id}")
+            log.info(f"{LogTag.MCP} Stored DCR client for", integration_id=integration_id)
 
     async def store_oauth_discovery(self, integration_id: str, discovery: OAuthDiscovery) -> None:
         """
@@ -413,7 +421,7 @@ class MCPTokenStore:
         """
         cache_key = f"{OAUTH_DISCOVERY_PREFIX}:{integration_id}"
         await set_cache(cache_key, discovery.model_dump(mode="json"), ttl=OAUTH_DISCOVERY_TTL)
-        log.info(f"{LogTag.MCP} Cached OAuth discovery for {integration_id}")
+        log.info(f"{LogTag.MCP} Cached OAuth discovery for", integration_id=integration_id)
 
     async def get_oauth_discovery(self, integration_id: str) -> OAuthDiscovery | None:
         """Get cached OAuth discovery data from Redis."""
@@ -434,7 +442,7 @@ class MCPTokenStore:
         """
         cache_key = f"mcp_oauth_nonce:{self.user_id}:{integration_id}"
         await set_cache(cache_key, nonce, ttl=OAUTH_STATE_TTL)
-        log.debug(f"{LogTag.MCP} Stored OIDC nonce for {integration_id}")
+        log.debug(f"{LogTag.MCP} Stored OIDC nonce for", integration_id=integration_id)
 
     async def get_and_delete_oauth_nonce(self, integration_id: str) -> str | None:
         """

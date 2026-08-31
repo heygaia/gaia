@@ -50,6 +50,171 @@ import { NestedMenuTooltip } from "./NestedMenuTooltip";
 
 export type ModalAction = "clear_chats" | "logout";
 
+const ICON_CLASSES = "w-[18px] h-[18px]";
+
+const socialMediaColorMap: Record<string, string> = {
+  discord: "#5865F2",
+  whatsapp: "#25d366",
+};
+
+interface SubmenuControllers {
+  whatsNewMenu: ReturnType<typeof useNestedMenu>;
+  downloadMenu: ReturnType<typeof useNestedMenu>;
+  resourcesMenu: ReturnType<typeof useNestedMenu>;
+  supportMenu: ReturnType<typeof useNestedMenu>;
+}
+
+/** The four submenu flyouts anchored to their settings-menu items. */
+function SettingsSubmenuFlyouts({
+  menus,
+  currentPlatform,
+  desktopPlatforms,
+  onOpenSupportModal,
+  onWhatsNewClosed,
+}: {
+  menus: SubmenuControllers;
+  currentPlatform: PlatformInfo;
+  desktopPlatforms: PlatformInfo[];
+  onOpenSupportModal: (type: string) => void;
+  /** Runs after the What's-new flyout closes so the parent can close itself too. */
+  onWhatsNewClosed: () => void;
+}) {
+  const router = useRouter();
+  const docsLink = getLinkByLabel("Documentation");
+  const githubLink = getLinkByLabel("GitHub");
+
+  const resourcesMenuItems = [
+    {
+      key: "documentation",
+      label: "Documentation",
+      icon: BookBookmark02Icon,
+      action: () =>
+        window.open(docsLink?.href, "_blank", "noopener,noreferrer"),
+    },
+    {
+      key: "release-notes",
+      label: "Release Notes",
+      icon: Layers01Icon,
+      action: () =>
+        window.open(
+          "https://docs.heygaia.io/release-notes",
+          "_blank",
+          "noopener,noreferrer",
+        ),
+    },
+    {
+      key: "blog",
+      label: "Blog",
+      icon: QuillWrite01Icon,
+      action: () => router.push("/blog"),
+    },
+    {
+      key: "roadmap",
+      label: "Roadmap",
+      icon: MapsIcon,
+      action: () =>
+        window.open(
+          "https://gaia.featurebase.app/roadmap",
+          "_blank",
+          "noopener,noreferrer",
+        ),
+    },
+    {
+      key: "opensource",
+      label: "Open Source",
+      icon: Github,
+      action: () =>
+        window.open(githubLink?.href, "_blank", "noopener,noreferrer"),
+    },
+  ];
+
+  const supportMenuItems = [
+    {
+      key: "contact_support",
+      label: "Contact Support",
+      icon: BubbleChatQuestionIcon,
+      action: () => onOpenSupportModal("support"),
+    },
+    {
+      key: "feature_request",
+      label: "Request a Feature",
+      icon: GitPullRequestIcon,
+      action: () => onOpenSupportModal("feature"),
+    },
+  ];
+
+  // Sort platforms with current platform first
+  const sortedPlatforms = [
+    ...desktopPlatforms.filter((p) => p.platform === currentPlatform.platform),
+    ...desktopPlatforms.filter((p) => p.platform !== currentPlatform.platform),
+  ];
+
+  const downloadMenuItems = sortedPlatforms.map((platform: PlatformInfo) => ({
+    key: platform.platform,
+    label: platform.shortName,
+    iconElement: (
+      <div className="relative h-[18px] w-[18px]">
+        <Image
+          src={platform.iconPath}
+          alt={platform.displayName}
+          fill
+          sizes="18px"
+          className="object-contain"
+        />
+      </div>
+    ),
+    action: () => {
+      if (platform.downloadUrl) {
+        window.open(platform.downloadUrl, "_blank", "noopener,noreferrer");
+      } else {
+        router.push("/download");
+      }
+    },
+  }));
+
+  return (
+    <>
+      <NestedMenuTooltip
+        isOpen={menus.whatsNewMenu.isOpen}
+        onOpenChange={menus.whatsNewMenu.setIsOpen}
+        itemRef={menus.whatsNewMenu.itemRef}
+        customContent={
+          <WhatsNewTimelineMenu
+            onClose={() => {
+              menus.whatsNewMenu.setIsOpen(false);
+              onWhatsNewClosed();
+            }}
+          />
+        }
+      />
+
+      <NestedMenuTooltip
+        isOpen={menus.resourcesMenu.isOpen}
+        onOpenChange={menus.resourcesMenu.setIsOpen}
+        itemRef={menus.resourcesMenu.itemRef}
+        menuItems={resourcesMenuItems}
+        iconClasses={ICON_CLASSES}
+      />
+
+      <NestedMenuTooltip
+        isOpen={menus.supportMenu.isOpen}
+        onOpenChange={menus.supportMenu.setIsOpen}
+        itemRef={menus.supportMenu.itemRef}
+        menuItems={supportMenuItems}
+        iconClasses={ICON_CLASSES}
+      />
+
+      <NestedMenuTooltip
+        isOpen={menus.downloadMenu.isOpen}
+        onOpenChange={menus.downloadMenu.setIsOpen}
+        itemRef={menus.downloadMenu.itemRef}
+        menuItems={downloadMenuItems}
+        iconClasses={ICON_CLASSES}
+      />
+    </>
+  );
+}
+
 interface MenuItem {
   key: string;
   label: string;
@@ -79,7 +244,6 @@ export default function SettingsMenu({
   const discordLink = getLinkByLabel("Discord");
   const whatsappLink = getLinkByLabel("WhatsApp");
   const docsLink = getLinkByLabel("Documentation");
-  const githubLink = getLinkByLabel("GitHub");
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [supportModalOpen, setSupportModalOpen] = useState(false);
   const [supportModalType, setSupportModalType] = useState<
@@ -95,98 +259,20 @@ export default function SettingsMenu({
   const supportMenu = useNestedMenu();
   const downloadMenu = useNestedMenu();
 
+  // Maps a submenu item's key to the nested-menu controller driving its flyout.
+  const submenuByKey: Record<string, ReturnType<typeof useNestedMenu>> = {
+    "whats-new": whatsNewMenu,
+    download: downloadMenu,
+    resources: resourcesMenu,
+    support: supportMenu,
+  };
+
   const { currentPlatform, desktopPlatforms } = usePlatformDetection();
   const { openShortcutsModal } = useKeyboardShortcuts();
 
-  const iconClasses = "w-[18px] h-[18px]";
-
-  const resourcesMenuItems = [
-    {
-      key: "documentation",
-      label: "Documentation",
-      icon: BookBookmark02Icon,
-      action: () => window.open(docsLink?.href, "_blank"),
-    },
-    {
-      key: "release-notes",
-      label: "Release Notes",
-      icon: Layers01Icon,
-      action: () =>
-        window.open("https://docs.heygaia.io/release-notes", "_blank"),
-    },
-    {
-      key: "blog",
-      label: "Blog",
-      icon: QuillWrite01Icon,
-      action: () => router.push("/blog"),
-    },
-    {
-      key: "roadmap",
-      label: "Roadmap",
-      icon: MapsIcon,
-      action: () =>
-        window.open("https://gaia.featurebase.app/roadmap", "_blank"),
-    },
-    {
-      key: "opensource",
-      label: "Open Source",
-      icon: Github,
-      action: () => window.open(githubLink?.href, "_blank"),
-    },
-  ];
-
-  const supportMenuItems = [
-    {
-      key: "contact_support",
-      label: "Contact Support",
-      icon: BubbleChatQuestionIcon,
-      action: () => {
-        setSupportModalType("support");
-        setSupportModalOpen(true);
-      },
-    },
-    {
-      key: "feature_request",
-      label: "Request a Feature",
-      icon: GitPullRequestIcon,
-      action: () => {
-        setSupportModalType("feature");
-        setSupportModalOpen(true);
-      },
-    },
-  ];
-
-  // Sort platforms with current platform first
-  const sortedPlatforms = [
-    ...desktopPlatforms.filter((p) => p.platform === currentPlatform.platform),
-    ...desktopPlatforms.filter((p) => p.platform !== currentPlatform.platform),
-  ];
-
-  const downloadMenuItems = sortedPlatforms.map((platform: PlatformInfo) => ({
-    key: platform.platform,
-    label: platform.shortName,
-    iconElement: (
-      <div className="relative h-[18px] w-[18px]">
-        <Image
-          src={platform.iconPath}
-          alt={platform.displayName}
-          fill
-          className="object-contain"
-        />
-      </div>
-    ),
-    action: () => {
-      if (platform.downloadUrl) {
-        window.open(platform.downloadUrl, "_blank");
-      } else {
-        router.push("/download");
-      }
-    },
-  }));
-
-  const socialMediaColorMap: Record<string, string> = {
-    discord: "#5865F2",
-    whatsapp: "#25d366",
+  const openSupportModal = (type: string) => {
+    setSupportModalType(type);
+    setSupportModalOpen(true);
   };
 
   const handleItemAction = (item: MenuItem) => {
@@ -201,7 +287,7 @@ export default function SettingsMenu({
         documentation: docsLink?.href,
       };
       const url = linkMap[item.key];
-      if (url) window.open(url, "_blank");
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     }
   };
 
@@ -210,6 +296,7 @@ export default function SettingsMenu({
       ? []
       : [
           {
+            id: "upgrade",
             title: undefined,
             showDivider: true,
             items: [
@@ -225,11 +312,12 @@ export default function SettingsMenu({
           },
         ]),
     {
+      id: "shortcuts",
       title: undefined,
       showDivider: true,
       items: [
         ...settingsPageItems.filter((item) =>
-          ["memory", "linked-accounts"].includes(item.key),
+          ["memory", "linked-accounts", "usage"].includes(item.key),
         ),
         {
           key: "keyboard_shortcuts",
@@ -240,11 +328,13 @@ export default function SettingsMenu({
       ],
     },
     {
+      id: "community",
       title: "Community",
       showDivider: true,
       items: socialMediaItems,
     },
     {
+      id: "app",
       title: undefined,
       showDivider: false,
       items: [
@@ -307,9 +397,9 @@ export default function SettingsMenu({
       >
         <DropdownTrigger>{children}</DropdownTrigger>
         <DropdownMenu aria-label="Settings Menu" variant="faded">
-          {menuSections.map((section, index) => (
+          {menuSections.map((section) => (
             <DropdownSection
-              key={section.title || `section-${index}`}
+              key={section.id}
               title={section.title}
               showDivider={section.showDivider}
               classNames={{ divider: "bg-zinc-800/60" }}
@@ -321,14 +411,7 @@ export default function SettingsMenu({
 
                 // Handle nested menus (What's new, Download, Resources, Support)
                 if (item.hasSubmenu) {
-                  const menu =
-                    item.key === "whats-new"
-                      ? whatsNewMenu
-                      : item.key === "download"
-                        ? downloadMenu
-                        : item.key === "resources"
-                          ? resourcesMenu
-                          : supportMenu;
+                  const menu = submenuByKey[item.key] ?? supportMenu;
 
                   return (
                     <DropdownItem
@@ -338,7 +421,7 @@ export default function SettingsMenu({
                       onMouseEnter={menu.handleMouseEnter}
                       onMouseLeave={menu.handleMouseLeave}
                       className="text-zinc-400 transition hover:text-white"
-                      startContent={Icon && <Icon className={iconClasses} />}
+                      startContent={Icon && <Icon className={ICON_CLASSES} />}
                       endContent={
                         <div className="flex items-center gap-1.5">
                           {item.badge}
@@ -367,7 +450,9 @@ export default function SettingsMenu({
                     }
                     style={iconColor ? { color: iconColor } : undefined}
                     startContent={
-                      Icon && <Icon className={iconClasses} color={iconColor} />
+                      Icon && (
+                        <Icon className={ICON_CLASSES} color={iconColor} />
+                      )
                     }
                     classNames={item.customClassNames}
                   >
@@ -380,43 +465,15 @@ export default function SettingsMenu({
         </DropdownMenu>
       </Dropdown>
 
-      <NestedMenuTooltip
-        isOpen={whatsNewMenu.isOpen}
-        onOpenChange={whatsNewMenu.setIsOpen}
-        itemRef={whatsNewMenu.itemRef}
-        customContent={
-          <WhatsNewTimelineMenu
-            onClose={() => {
-              whatsNewMenu.setIsOpen(false);
-              setIsMenuOpen(false);
-              onOpenChange?.(false);
-            }}
-          />
-        }
-      />
-
-      <NestedMenuTooltip
-        isOpen={resourcesMenu.isOpen}
-        onOpenChange={resourcesMenu.setIsOpen}
-        itemRef={resourcesMenu.itemRef}
-        menuItems={resourcesMenuItems}
-        iconClasses={iconClasses}
-      />
-
-      <NestedMenuTooltip
-        isOpen={supportMenu.isOpen}
-        onOpenChange={supportMenu.setIsOpen}
-        itemRef={supportMenu.itemRef}
-        menuItems={supportMenuItems}
-        iconClasses={iconClasses}
-      />
-
-      <NestedMenuTooltip
-        isOpen={downloadMenu.isOpen}
-        onOpenChange={downloadMenu.setIsOpen}
-        itemRef={downloadMenu.itemRef}
-        menuItems={downloadMenuItems}
-        iconClasses={iconClasses}
+      <SettingsSubmenuFlyouts
+        menus={{ whatsNewMenu, downloadMenu, resourcesMenu, supportMenu }}
+        currentPlatform={currentPlatform}
+        desktopPlatforms={desktopPlatforms}
+        onOpenSupportModal={openSupportModal}
+        onWhatsNewClosed={() => {
+          setIsMenuOpen(false);
+          onOpenChange?.(false);
+        }}
       />
 
       <ContactSupportModal

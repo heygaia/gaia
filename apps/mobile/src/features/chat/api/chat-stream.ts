@@ -1,4 +1,8 @@
-import type { StreamToolOutput, ToolDataEntry } from "@gaia/shared/chat";
+import type {
+  ChatStreamEvent,
+  StreamToolOutput,
+  ToolDataEntry,
+} from "@gaia/shared/chat";
 import { parseChatStreamEvent } from "@gaia/shared/chat";
 import { createSSEConnection, type SSEEvent } from "@/lib/sse-client";
 import type {
@@ -8,8 +12,20 @@ import type {
   ReplyToMessageData,
 } from "./chat-api";
 
+/** Kill the connection if no events (incl. keepalives) arrive for this long. */
+const STREAM_STALL_TIMEOUT_MS = 45_000;
+
 export interface StreamCallbacks {
-  onChunk: (text: string) => void;
+  /**
+   * Called for EVERY parsed stream event, before the granular callbacks
+   * below. This is how consumers fold events into a TurnAccumulator via
+   * applyStreamEvent (@gaia/shared/chat) — including frames with no granular
+   * callback of their own (reasoning, subagent_start/end, todo_progress).
+   */
+  onStreamEvent?: (event: ChatStreamEvent) => void;
+  /** Called for each response text delta. Optional — accumulator consumers
+   *  derive text from acc.responseText instead. */
+  onChunk?: (text: string) => void;
   onConversationCreated?: (
     conversationId: string,
     userMessageId: string,
@@ -34,6 +50,12 @@ export interface StreamCallbacks {
   onImageData?: (data: ImageData) => void;
   onDone: () => void;
   onError?: (error: Error) => void;
+  /**
+   * The SSE transport closed before the backend sent its done event — the
+   * response is truncated. Consumers should keep the partial text but mark
+   * the turn as failed (retryable), never as complete.
+   */
+  onTransportClosed?: () => void;
 }
 
 export interface ChatStreamRequest {
@@ -46,6 +68,138 @@ export interface ChatStreamRequest {
   toolCategory?: string | null;
   workflowId?: string | null;
   replyToMessage?: ReplyToMessageData | null;
+}
+
+/** Emit a "generating image" progress signal from a raw payload object. */
+function emitGeneratingImage(
+  source: Record<string, unknown>,
+  callbacks: StreamCallbacks,
+): void {
+  if (source.status !== "generating_image") return;
+  callbacks.onProgress?.("Generating image...");
+  callbacks.onImageGenerationStarted?.(
+    typeof source.prompt === "string" ? source.prompt : "",
+  );
+}
+
+/** Emit an image_data callback from a raw payload object, if well-formed. */
+function emitImageData(
+  source: Record<string, unknown>,
+  callbacks: StreamCallbacks,
+): void {
+  if (typeof source.image_data !== "object" || source.image_data === null) {
+    return;
+  }
+  const imageData = source.image_data as {
+    url?: string;
+    prompt?: string;
+    improvedPrompt?: string;
+  };
+  if (typeof imageData.url === "string" && imageData.url) {
+    callbacks.onImageData?.({
+      url: imageData.url,
+      prompt: imageData.prompt ?? "",
+      improvedPrompt: imageData.improvedPrompt,
+    });
+  }
+}
+
+/** Extract progress/image signals from a `tool_calls_data` tool_data entry. */
+function handleToolCallsData(
+  entry: ToolDataEntry,
+  callbacks: StreamCallbacks,
+): void {
+  if (
+    entry.tool_name !== "tool_calls_data" ||
+    typeof entry.data !== "object" ||
+    entry.data === null
+  ) {
+    return;
+  }
+  const data = entry.data as Record<string, unknown>;
+
+  if (typeof data.message === "string") {
+    callbacks.onProgress?.(
+      data.message,
+      typeof data.tool_name === "string" ? data.tool_name : undefined,
+    );
+  }
+
+  emitGeneratingImage(data, callbacks);
+  emitImageData(data, callbacks);
+}
+
+/**
+ * Handle a single parsed stream event.
+ * Returns `true` when the stream is finished (done/error) and processing of
+ * further events in the batch should stop.
+ */
+function handleParsedStreamEvent(
+  parsed: ReturnType<typeof parseChatStreamEvent>[number],
+  callbacks: StreamCallbacks,
+): boolean {
+  // Fold into the consumer's accumulator first — the reducer decides what
+  // each event contributes to message state (it ignores lifecycle frames).
+  callbacks.onStreamEvent?.(parsed);
+  switch (parsed.type) {
+    case "done":
+      callbacks.onDone();
+      return true;
+    case "error":
+      callbacks.onError?.(new Error(parsed.error));
+      return true;
+    case "conversation_initialized":
+      if (parsed.stream_id) {
+        callbacks.onStreamId?.(parsed.stream_id);
+      }
+      if (
+        parsed.conversation_id &&
+        parsed.bot_message_id &&
+        parsed.user_message_id
+      ) {
+        callbacks.onConversationCreated?.(
+          parsed.conversation_id,
+          parsed.user_message_id,
+          parsed.bot_message_id,
+          parsed.conversation_description,
+        );
+      }
+      return false;
+    case "progress":
+      callbacks.onProgress?.(parsed.message, parsed.tool_name);
+      return false;
+    case "tool_data":
+      // Always fire onToolData so callers can persist it.
+      callbacks.onToolData?.(parsed.entry);
+      handleToolCallsData(parsed.entry, callbacks);
+      return false;
+    case "tool_output":
+      // Web parity — the backend emits tool execution results on a
+      // separate event keyed by tool_call_id. Hand it to the caller so
+      // it can merge `output` into the matching tool_data entry
+      // (mergeToolOutputIntoToolData from @gaia/shared/chat).
+      callbacks.onToolOutput?.(parsed.output);
+      return false;
+    case "follow_up_actions":
+      if (parsed.actions.length > 0) {
+        callbacks.onFollowUpActions?.(parsed.actions);
+      }
+      return false;
+    case "response":
+      callbacks.onChunk?.(parsed.chunk);
+      return false;
+    case "unknown":
+      // Legacy image_data/status shape in the raw payload.
+      emitGeneratingImage(parsed.payload, callbacks);
+      emitImageData(parsed.payload, callbacks);
+      return false;
+    default:
+      // keepalive, token_usage, main_response_complete,
+      // conversation_description — intentionally ignored. reasoning,
+      // subagent_start, subagent_end and todo_progress are forwarded via
+      // onStreamEvent above; the turn accumulator owns their state.
+      return false;
+  }
 }
 
 export async function fetchChatStream(
@@ -84,6 +238,18 @@ export async function fetchChatStream(
     messages: formattedMessages,
   };
 
+  // Set once the backend's own done event has been handled. A transport close
+  // after that is normal; one BEFORE it means a truncated response.
+  let sawBackendDone = false;
+
+  const wrappedCallbacks: StreamCallbacks = {
+    ...callbacks,
+    onDone: () => {
+      sawBackendDone = true;
+      callbacks.onDone();
+    },
+  };
+
   return createSSEConnection(
     "/chat-stream",
     {
@@ -92,158 +258,9 @@ export async function fetchChatStream(
         const parsedEvents = parseChatStreamEvent(event.data);
 
         for (const parsed of parsedEvents) {
-          if (parsed.type === "done") {
-            callbacks.onDone();
+          const finished = handleParsedStreamEvent(parsed, wrappedCallbacks);
+          if (finished) {
             return;
-          }
-
-          if (parsed.type === "error") {
-            callbacks.onError?.(new Error(parsed.error));
-            return;
-          }
-
-          if (parsed.type === "keepalive" || parsed.type === "token_usage") {
-            continue;
-          }
-
-          if (parsed.type === "main_response_complete") {
-            continue;
-          }
-
-          if (parsed.type === "conversation_initialized") {
-            if (parsed.stream_id) {
-              callbacks.onStreamId?.(parsed.stream_id);
-            }
-
-            if (
-              parsed.conversation_id &&
-              parsed.bot_message_id &&
-              parsed.user_message_id
-            ) {
-              callbacks.onConversationCreated?.(
-                parsed.conversation_id,
-                parsed.user_message_id,
-                parsed.bot_message_id,
-                parsed.conversation_description,
-              );
-            }
-            continue;
-          }
-
-          if (parsed.type === "conversation_description") {
-            continue;
-          }
-
-          if (parsed.type === "progress") {
-            callbacks.onProgress?.(parsed.message, parsed.tool_name);
-            continue;
-          }
-
-          if (parsed.type === "tool_data") {
-            // Always fire onToolData so callers can persist it.
-            callbacks.onToolData?.(parsed.entry);
-
-            // Extract loading text from tool_calls_data entries (same as web).
-            if (
-              parsed.entry.tool_name === "tool_calls_data" &&
-              typeof parsed.entry.data === "object" &&
-              parsed.entry.data !== null
-            ) {
-              const data = parsed.entry.data as Record<string, unknown>;
-
-              if (typeof data.message === "string") {
-                callbacks.onProgress?.(
-                  data.message,
-                  typeof data.tool_name === "string"
-                    ? data.tool_name
-                    : undefined,
-                );
-              }
-
-              if (data.status === "generating_image") {
-                callbacks.onProgress?.("Generating image...");
-                callbacks.onImageGenerationStarted?.(
-                  typeof data.prompt === "string" ? data.prompt : "",
-                );
-              }
-
-              if (
-                typeof data.image_data === "object" &&
-                data.image_data !== null
-              ) {
-                const imageData = data.image_data as {
-                  url?: string;
-                  prompt?: string;
-                  improvedPrompt?: string;
-                };
-                if (typeof imageData.url === "string" && imageData.url) {
-                  callbacks.onImageData?.({
-                    url: imageData.url,
-                    prompt: imageData.prompt ?? "",
-                    improvedPrompt: imageData.improvedPrompt,
-                  });
-                }
-              }
-            }
-            continue;
-          }
-
-          if (parsed.type === "tool_output") {
-            // Web parity — the backend emits tool execution results on a
-            // separate event keyed by tool_call_id. Hand it to the caller so
-            // it can merge `output` into the matching tool_data entry
-            // (mergeToolOutputIntoToolData from @gaia/shared/chat).
-            callbacks.onToolOutput?.(parsed.output);
-            continue;
-          }
-
-          if (parsed.type === "todo_progress") {
-            continue;
-          }
-
-          if (parsed.type === "follow_up_actions") {
-            if (parsed.actions.length > 0) {
-              callbacks.onFollowUpActions?.(parsed.actions);
-            }
-            continue;
-          }
-
-          if (parsed.type === "response") {
-            callbacks.onChunk(parsed.chunk);
-            continue;
-          }
-
-          // unknown — check for legacy image_data/status shape in the raw payload
-          if (parsed.type === "unknown") {
-            const payload = parsed.payload;
-
-            if (
-              typeof payload.status === "string" &&
-              payload.status === "generating_image"
-            ) {
-              callbacks.onProgress?.("Generating image...");
-              callbacks.onImageGenerationStarted?.(
-                typeof payload.prompt === "string" ? payload.prompt : "",
-              );
-            }
-
-            if (
-              typeof payload.image_data === "object" &&
-              payload.image_data !== null
-            ) {
-              const imageData = payload.image_data as {
-                url?: string;
-                prompt?: string;
-                improvedPrompt?: string;
-              };
-              if (typeof imageData.url === "string" && imageData.url) {
-                callbacks.onImageData?.({
-                  url: imageData.url,
-                  prompt: imageData.prompt ?? "",
-                  improvedPrompt: imageData.improvedPrompt,
-                });
-              }
-            }
           }
         }
       },
@@ -251,9 +268,16 @@ export async function fetchChatStream(
         callbacks.onError?.(error);
       },
       onClose: () => {
-        callbacks.onDone();
+        if (sawBackendDone) return; // already settled via onDone
+        callbacks.onTransportClosed?.();
       },
     },
-    { body },
+    {
+      body,
+      // The backend emits keepalives during long tool runs; complete silence
+      // for this long means the stream is dead. use-chat settles the turn as
+      // an error and keeps the partial text.
+      stallTimeoutMs: STREAM_STALL_TIMEOUT_MS,
+    },
   );
 }

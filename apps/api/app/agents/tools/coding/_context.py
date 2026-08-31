@@ -84,7 +84,7 @@ def canonical_path(path: str, *, session_id: str | None) -> tuple[str, MountRole
         path = posixpath.join(base, path)
     canonical = posixpath.normpath(path)
     if not is_under_workspace(canonical):
-        raise ValueError(f"Path escapes /workspace: {path}")
+        raise ValueError("path must stay inside /workspace")
     role, conv = classify(canonical)
     return canonical, role, conv
 
@@ -158,7 +158,7 @@ def safe_emit(event: dict[str, Any], *, session_id: str | None = None) -> None:
     try:
         writer(event)
     except Exception as e:
-        log.debug(f"Stream writer failed silently: {e}")
+        log.debug("Stream writer failed silently", error_type=type(e).__name__)
 
 
 # Re-exported from the pure workspace.paths module so non-agent callers

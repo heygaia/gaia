@@ -2,8 +2,6 @@
 
 from unittest.mock import patch
 
-import pytest
-
 from app.models.trigger_config import TriggerConfig, WorkflowTriggerSchema
 from app.utils.trigger_utils import (
     get_integration_for_trigger,
@@ -57,11 +55,10 @@ class _FakeIntegration:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetIntegrationForTrigger:
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_match_returns_integration_id(self, mock_integrations: list[object]) -> None:
-        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
             [
                 _FakeIntegration(
                     "googlecalendar",
@@ -73,7 +70,7 @@ class TestGetIntegrationForTrigger:
 
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_no_match_returns_none(self, mock_integrations: list[object]) -> None:
-        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
             [
                 _FakeIntegration(
                     "slack",
@@ -85,12 +82,12 @@ class TestGetIntegrationForTrigger:
 
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_empty_integrations_returns_none(self, mock_integrations: list[object]) -> None:
-        mock_integrations.__iter__ = lambda self: iter([])  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter([])  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
         assert get_integration_for_trigger("anything") is None
 
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_trigger_without_schema_returns_none(self, mock_integrations: list[object]) -> None:
-        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
             [
                 _FakeIntegration(
                     "github",
@@ -103,7 +100,7 @@ class TestGetIntegrationForTrigger:
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_returns_first_matching_integration(self, mock_integrations: list[object]) -> None:
         """When the same slug appears in multiple integrations, the first wins."""
-        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
             [
                 _FakeIntegration(
                     "integration_a",
@@ -119,7 +116,7 @@ class TestGetIntegrationForTrigger:
 
     @patch("app.utils.trigger_utils.OAUTH_INTEGRATIONS")
     def test_integration_with_empty_triggers(self, mock_integrations: list[object]) -> None:
-        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[method-assign, misc, assignment]
+        mock_integrations.__iter__ = lambda self: iter(  # type: ignore[assignment, misc]  # __iter__ grafted onto the mock to fake iteration
             [
                 _FakeIntegration("slack", []),
                 _FakeIntegration(

@@ -32,6 +32,7 @@ export default function NotificationSettings() {
     discord: true,
     whatsapp: true,
     slack: true,
+    imessage: true,
     email: true,
   });
   const [loading, setLoading] = useState(true);

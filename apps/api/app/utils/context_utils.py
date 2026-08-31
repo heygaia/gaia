@@ -43,7 +43,10 @@ def execute_tool(
     Raises:
         Exception: If the tool execution fails.
     """
-    from app.services.composio.composio_service import get_composio_service
+    # Deferred import: heavy Composio SDK service stack loads only when context enrichment executes a tool
+    from app.services.composio.composio_service import (  # noqa: PLC0415 -- deferred
+        get_composio_service,
+    )
 
     log.set(tool_name=tool_name, user_id=user_id)
     composio_service = get_composio_service()
@@ -62,9 +65,16 @@ def execute_tool(
     if output_model:
         try:
             validated = output_model.model_validate(data)
-            return validated.model_dump()
+            # Tool returns cross into text; python-mode keeps native datetimes.
+            return validated.model_dump(mode="json")
         except Exception as e:
-            log.warning(f"{LogTag.AGENT} Schema validation warning for {tool_name}: {e}")
+            log.warning(
+                f"{LogTag.AGENT} Schema validation warning for",
+                tool_name=tool_name,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
             return data
 
     return data
@@ -91,7 +101,13 @@ def fetch_all_providers(
             data = execute_tool(tool_slug, {}, user_id)
             return provider, data
         except Exception as e:
-            log.warning(f"{LogTag.AGENT} Provider {provider} ({tool_slug}) failed: {e}")
+            log.warning(
+                f"{LogTag.AGENT} Provider failed",
+                provider=provider,
+                tool_slug=tool_slug,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return provider, None
 
     results: dict[str, Any] = {}
@@ -99,17 +115,23 @@ def fetch_all_providers(
     # This prevents unbounded thread creation under concurrent agent sessions
     # and isolates context-fetching threads from the default asyncio pool.
     futures = {_CONTEXT_EXECUTOR.submit(fetch_one, p): p for p in providers}
-    for future in futures:
+    for future, submitted_provider in futures.items():
         try:
             provider, data = future.result(timeout=PROVIDER_TIMEOUT_SECONDS)
             if data is not None:
                 results[provider] = data
         except FuturesTimeout:
-            provider = futures[future]
-            log.warning(f"{LogTag.AGENT} Provider {provider} timed out")
+            log.warning(
+                f"{LogTag.AGENT} Provider timed out", provider=submitted_provider, user_id=user_id
+            )
         except Exception as e:
-            provider = futures[future]
-            log.error(f"{LogTag.AGENT} Unexpected error for {provider}: {e}")
+            log.error(
+                f"{LogTag.AGENT} Unexpected error for",
+                provider=submitted_provider,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+            )
     return results
 
 
@@ -134,7 +156,7 @@ async def resolve_providers(
     if requested:
         return [p.lower() for p in requested if p.lower() in provider_tools]
 
-    from app.services.integrations.integration_service import (
+    from app.services.integrations.integration_service import (  # noqa: PLC0415 -- integration-service stack deferred until provider auto-detection actually runs
         get_user_available_tool_namespaces,
     )
 
@@ -142,13 +164,20 @@ async def resolve_providers(
     try:
         connected = await get_user_available_tool_namespaces(user_id)
     except Exception as e:
-        log.warning(f"{LogTag.AGENT} Could not get connected namespaces: {e}")
+        log.warning(
+            f"{LogTag.AGENT} Could not get connected namespaces",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
 
     if connected:
         filtered = [p for p, slug in provider_tools.items() if namespace_fn(slug) in connected]
         if filtered:
             log.info(
-                f"{LogTag.AGENT} Auto-selected {len(filtered)} connected providers: {filtered}"
+                f"{LogTag.AGENT} Auto-selected connected providers",
+                filtered_count=len(filtered),
+                filtered=filtered,
             )
             return filtered
 

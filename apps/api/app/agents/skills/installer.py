@@ -9,6 +9,7 @@ JuiceFS stores body-only content (no frontmatter). Metadata lives in MongoDB
 as flat fields on the Skill document.
 """
 
+from dataclasses import dataclass
 import re
 from typing import cast
 
@@ -21,6 +22,7 @@ from app.agents.skills.parser import (
     validate_skill_content,
 )
 from app.agents.skills.registry import (
+    SkillInstallRequest,
     get_skill,
     get_skill_by_name,
     install_skill,
@@ -168,7 +170,7 @@ async def install_from_github(
     source_url = f"https://github.com/{owner}/{repo}/tree/main/{base_path}"
 
     log.set(user_id=user_id, skill=SkillContext(operation="install"))
-    log.info(f"{LogTag.SKILLS} Fetching from GitHub: {owner}/{repo}/{base_path}")
+    log.info(f"{LogTag.SKILLS} Fetching from GitHub", owner=owner, repo=repo, base_path=base_path)
 
     async with httpx.AsyncClient(timeout=30.0) as client:
         # Fetch the directory contents
@@ -220,10 +222,7 @@ async def install_from_github(
 
         # Download subdirectories and files recursively
         await _download_github_dir(
-            user_id=user_id,
-            skill_name=metadata.name,
-            owner=owner,
-            repo=repo,
+            _GitHubRef(user_id=user_id, skill_name=metadata.name, owner=owner, repo=repo),
             remote_path=base_path,
             contents=contents,
             file_list=file_list,
@@ -236,34 +235,45 @@ async def install_from_github(
     installed = cast(
         Skill,
         await install_skill(
-            user_id=user_id,
-            name=metadata.name,
-            description=metadata.description,
-            target=target,
-            vfs_path=storage_path,
-            source=SkillSource.GITHUB,
-            source_url=source_url,
-            body_content=body,
-            files=file_list,
-            license=metadata.license,
-            compatibility=metadata.compatibility,
-            metadata=metadata.metadata,
-            allowed_tools=metadata.allowed_tools,
+            SkillInstallRequest(
+                user_id=user_id,
+                name=metadata.name,
+                description=metadata.description,
+                target=target,
+                vfs_path=storage_path,
+                source=SkillSource.GITHUB,
+                source_url=source_url,
+                body_content=body,
+                files=file_list,
+                license_name=metadata.license,
+                compatibility=metadata.compatibility,
+                metadata=metadata.metadata,
+                allowed_tools=metadata.allowed_tools,
+            )
         ),
     )
 
     log.info(
-        f"{LogTag.SKILLS} Installed '{metadata.name}' from GitHub "
-        f"({len(file_list)} files, target={target})"
+        f"{LogTag.SKILLS} Installed skill from GitHub",
+        skill_name=metadata.name,
+        file_count=len(file_list),
+        target=target,
     )
     return installed
 
 
+@dataclass
+class _GitHubRef:
+    """Where a skill's files come from and whose workspace they land in."""
+
+    user_id: str
+    skill_name: str
+    owner: str
+    repo: str
+
+
 async def _download_github_dir(
-    user_id: str,
-    skill_name: str,
-    owner: str,
-    repo: str,
+    ref: _GitHubRef,
     remote_path: str,
     contents: list[dict],
     file_list: list[str],
@@ -280,16 +290,15 @@ async def _download_github_dir(
         if entry_type == "file":
             content = await _fetch_file_content(entry["download_url"], client=client)
             relative_path = entry["path"].removeprefix(f"{remote_path}/")
-            await write_skill_file(user_id, skill_name, relative_path, content)
+            await write_skill_file(ref.user_id, ref.skill_name, relative_path, content)
             file_list.append(relative_path)
 
         elif entry_type == "dir":
-            sub_contents = await _fetch_github_contents(owner, repo, entry["path"], client=client)
+            sub_contents = await _fetch_github_contents(
+                ref.owner, ref.repo, entry["path"], client=client
+            )
             await _download_github_dir(
-                user_id=user_id,
-                skill_name=skill_name,
-                owner=owner,
-                repo=repo,
+                ref,
                 remote_path=remote_path,
                 contents=sub_contents,
                 file_list=file_list,
@@ -353,22 +362,24 @@ async def install_from_inline(
     installed = cast(
         Skill,
         await install_skill(
-            user_id=user_id,
-            name=metadata.name,
-            description=metadata.description,
-            target=metadata.target,
-            vfs_path=storage_path,
-            source=SkillSource.INLINE,
-            body_content=body,
-            files=["SKILL.md"],
-            license=metadata.license,
-            compatibility=metadata.compatibility,
-            metadata=metadata.metadata,
-            allowed_tools=metadata.allowed_tools,
+            SkillInstallRequest(
+                user_id=user_id,
+                name=metadata.name,
+                description=metadata.description,
+                target=metadata.target,
+                vfs_path=storage_path,
+                source=SkillSource.INLINE,
+                body_content=body,
+                files=["SKILL.md"],
+                license_name=metadata.license,
+                compatibility=metadata.compatibility,
+                metadata=metadata.metadata,
+                allowed_tools=metadata.allowed_tools,
+            )
         ),
     )
 
-    log.info(f"{LogTag.SKILLS} Created inline skill '{name}' (target={target})")
+    log.info(f"{LogTag.SKILLS} Created inline skill", skill_name=name, target=target)
     return installed
 
 
@@ -445,23 +456,15 @@ async def update_skill_inline(
         ),
     )
 
-    log.info(f"{LogTag.SKILLS} Updated inline skill '{skill.name}' (target={metadata.target})")
+    log.info(f"{LogTag.SKILLS} Updated inline skill", skill_name=skill.name, target=metadata.target)
     return updated
 
 
-async def uninstall_skill_full(user_id: str, skill_id: str) -> bool:
-    """Uninstall a skill: remove from registry AND delete VFS files.
-
-    Args:
-        user_id: Owner user ID
-        skill_id: Skill document ID
-
-    Returns:
-        True if uninstalled, False if not found
-    """
+async def uninstall_skill_full(user_id: str, skill_id: str) -> Skill | None:
+    """Uninstall a skill (registry + VFS files); returns it, or None if not found."""
     skill = await get_skill(user_id, skill_id)
     if not skill:
-        return False
+        return None
 
     log.set(
         user_id=user_id,
@@ -472,11 +475,19 @@ async def uninstall_skill_full(user_id: str, skill_id: str) -> bool:
     try:
         await delete_user_skill(user_id, skill.name)
     except JuiceFSUnavailable as e:
-        log.warning(f"{LogTag.SKILLS} storage cleanup skipped (mount unavailable): {e}")
+        log.warning(
+            f"{LogTag.SKILLS} storage cleanup skipped (mount unavailable)",
+            error_type=type(e).__name__,
+        )
     except Exception as e:
-        log.warning(f"{LogTag.SKILLS} storage cleanup failed for {skill_id}: {e}")
+        log.warning(
+            f"{LogTag.SKILLS} storage cleanup failed",
+            skill_id=skill_id,
+            error_type=type(e).__name__,
+        )
 
     # Remove from registry
     # uninstall_skill is wrapped in @CacheInvalidator, whose __call__ erases the
     # return type to Awaitable[Any]; uninstall_skill itself is annotated -> bool.
-    return cast(bool, await uninstall_skill(user_id, skill_id))
+    removed = cast(bool, await uninstall_skill(user_id, skill_id))
+    return skill if removed else None

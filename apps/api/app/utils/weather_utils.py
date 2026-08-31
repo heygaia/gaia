@@ -191,7 +191,10 @@ async def user_weather(location_name: str | None = None) -> dict[str, Any] | str
 
             cached_weather: dict[str, Any] | None = await get_cache(cache_key)
             if cached_weather:
-                log.debug(f"{LogTag.TOOL} Using cached weather data for location {cached_weather}")
+                log.debug(
+                    f"{LogTag.TOOL} Using cached weather data for location",
+                    cached_weather=cached_weather,
+                )
                 return cached_weather
 
             weather = await prepare_weather_data(
@@ -204,11 +207,17 @@ async def user_weather(location_name: str | None = None) -> dict[str, Any] | str
 
         except Exception as e:
             error_msg = f"Could not find location: {location_name}"
-            log.error(f"{LogTag.TOOL} Error getting location data: {e!s}")
+            log.error(
+                f"{LogTag.TOOL} Error getting location data",
+                error=str(e),
+                error_type=type(e).__name__,
+            )
             return error_msg
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error fetching weather: {e!s}")
+        log.error(
+            f"{LogTag.TOOL} Error fetching weather", error=str(e), error_type=type(e).__name__
+        )
         return f"Failed to fetch weather: {e!s}"
 
 
@@ -249,7 +258,8 @@ def process_forecast_data(forecast_data: dict) -> list[dict]:
         weather_descriptions = [item["weather"][0]["description"] for item in items]
 
         # Use the most frequent condition (simple approach)
-        from collections import Counter
+        # Deferred import: stdlib import kept local to the daily aggregation loop
+        from collections import Counter  # noqa: PLC0415 -- stdlib import kept local to
 
         condition_counter = Counter(weather_conditions)
         description_counter = Counter(weather_descriptions)
@@ -335,5 +345,10 @@ async def geocode_location(location_name: str) -> dict[str, Any]:
         }
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error geocoding location '{location_name}': {e!s}")
-        raise Exception(f"Failed to geocode location: {e!s}")
+        log.error(
+            f"{LogTag.TOOL} Error geocoding location",
+            location_name=location_name,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise Exception(f"Failed to geocode location: {e!s}") from e

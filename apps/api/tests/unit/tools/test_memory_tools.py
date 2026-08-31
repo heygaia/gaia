@@ -42,6 +42,7 @@ from app.constants.memory import (
     MemorySourceType,
     ReconcileOutcome,
 )
+from app.memory.management import MemoryNotFoundError
 from app.memory.retrieval import EpisodeHit
 from app.models.memory_models import (
     MemoryDocument,
@@ -114,7 +115,6 @@ def _payloads(stream: MagicMock) -> list[dict[str, Any]]:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestStreamMemoryData:
     def test_wraps_the_payload_under_the_registry_key(self, stream: MagicMock) -> None:
         _stream_memory_data({"action": "add"})
@@ -138,7 +138,6 @@ class TestStreamMemoryData:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestCap:
     def test_text_at_the_limit_is_untouched(self) -> None:
         text = "x" * 10
@@ -163,7 +162,6 @@ class TestCap:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestEntryPayload:
     def test_serializes_json_mode_with_snake_case_keys(self) -> None:
         entry = MemoryEntry(id="mem-1", content="short", category_path="work/gaia")
@@ -185,7 +183,6 @@ class TestEntryPayload:
         assert len(entry.content) == MEMORY_TOOL_CONTENT_MAX_CHARS + 50
 
 
-@pytest.mark.unit
 class TestEpisodePayload:
     def test_maps_entries_and_summary(self) -> None:
         episode = MemoryEpisode(
@@ -215,7 +212,6 @@ class TestEpisodePayload:
         assert len(payload["summary"]) == MEMORY_TOOL_CONTENT_MAX_CHARS
 
 
-@pytest.mark.unit
 class TestDocumentPayload:
     def test_serializes_the_document_contract(self) -> None:
         assert _document_payload(_make_document()) == {
@@ -242,7 +238,6 @@ class TestDocumentPayload:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestHitsToEpisodePayloads:
     def test_no_hits_produce_no_days(self) -> None:
         assert _hits_to_episode_payloads([]) == []
@@ -302,7 +297,6 @@ class TestHitsToEpisodePayloads:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestFormatEntryLine:
     def test_includes_id_folder_date_and_score(self) -> None:
         entry = MemoryEntry(
@@ -354,7 +348,6 @@ class TestFormatEntryLine:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestResolveDocType:
     @pytest.mark.parametrize("doc_type", list(MemoryDocType))
     def test_every_canonical_enum_value_resolves(self, doc_type: MemoryDocType) -> None:
@@ -381,7 +374,6 @@ class TestResolveDocType:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestModuleWiring:
     def test_every_reconcile_outcome_has_a_frontend_label(self) -> None:
         # add_memory does an unguarded _ADD_OUTCOMES[outcome] lookup: a new
@@ -407,7 +399,6 @@ class TestModuleWiring:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestAddMemory:
     """Tests for the add_memory tool."""
 
@@ -560,7 +551,6 @@ class TestAddMemory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchMemory:
     """Tests for the search_memory tool."""
 
@@ -756,7 +746,6 @@ class TestSearchMemory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateMemory:
     @patch(f"{MODULE}.memory_engine")
     async def test_returns_the_new_version_and_id(
@@ -788,17 +777,19 @@ class TestUpdateMemory:
         assert [memory["id"] for memory in payload["memories"]] == ["mem-2"]
 
     @patch(f"{MODULE}.memory_engine")
-    async def test_unknown_id_returns_a_corrective_error_without_streaming(
+    async def test_an_unknown_id_raises_instead_of_returning_a_readable_error(
         self, mock_engine: MagicMock, stream: MagicMock
     ) -> None:
-        mock_engine.update_memory = AsyncMock(return_value=None)
+        # An error STRING reads back to the model as an ordinary tool result:
+        # it typo'd an id, saw "Error: ... not found", and told the user the
+        # memory had been corrected. Raising is what stops that.
+        mock_engine.update_memory = AsyncMock(side_effect=MemoryNotFoundError("gone"))
 
-        result = await update_memory.coroutine(
-            config=_make_config(), memory_id="gone", new_content="new"
-        )
+        with pytest.raises(MemoryNotFoundError):
+            await update_memory.coroutine(
+                config=_make_config(), memory_id="gone", new_content="new"
+            )
 
-        assert "not found or already superseded" in result
-        assert "search_memory" in result
         stream.assert_not_called()
 
     async def test_missing_user_id_returns_error(self) -> None:
@@ -820,7 +811,6 @@ class TestUpdateMemory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestForgetMemory:
     @patch(f"{MODULE}.memory_engine")
     async def test_confirms_the_id_and_reason(
@@ -881,7 +871,6 @@ class TestForgetMemory:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchJournal:
     @patch(f"{MODULE}.memory_engine")
     async def test_renders_entry_hits_with_their_time(
@@ -969,7 +958,6 @@ class TestSearchJournal:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchConversations:
     @patch(f"{MODULE}.memory_engine")
     async def test_renders_each_passage_with_date_and_score(self, mock_engine: MagicMock) -> None:
@@ -1043,7 +1031,6 @@ class TestSearchConversations:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetJournal:
     @staticmethod
     def _response(episode: MemoryEpisode | None) -> MemoryEpisodesResponse:
@@ -1141,20 +1128,60 @@ class TestGetJournal:
 
         assert result == "No journal entries for 2026-03-12."
 
+    @patch(f"{MODULE}.memory_engine")
+    @patch(f"{MODULE}.local_today", new_callable=AsyncMock)
+    async def test_omitted_date_defaults_to_the_users_local_today(
+        self, mock_local_today: AsyncMock, mock_engine: MagicMock, stream: MagicMock
+    ) -> None:
+        # A UTC+5:30 user asking "what did I do today" at 2am local must read
+        # THEIR today, not UTC's (which is still yesterday for them).
+        mock_local_today.return_value = date_type(2026, 8, 27)
+        mock_engine.get_episodes = AsyncMock(return_value=self._response(None))
+
+        result = await get_journal.coroutine(config=_make_config(), date="")
+
+        mock_local_today.assert_awaited_once_with(FAKE_USER_ID)
+        mock_engine.get_episodes.assert_awaited_once_with(
+            FAKE_USER_ID, date_type(2026, 8, 27), date_type(2026, 8, 27)
+        )
+        assert result == "No journal entries for 2026-08-27."
+
+    @patch(f"{MODULE}.memory_engine")
+    @patch(f"{MODULE}.local_today", new_callable=AsyncMock)
+    async def test_calling_without_a_date_argument_defaults_to_local_today(
+        self, mock_local_today: AsyncMock, mock_engine: MagicMock, stream: MagicMock
+    ) -> None:
+        # The schema default is the empty string, so a model that omits the
+        # argument entirely must land on the local-today path — any other
+        # default would be parsed as a date and bounce with an error.
+        mock_local_today.return_value = date_type(2026, 8, 27)
+        mock_engine.get_episodes = AsyncMock(return_value=self._response(None))
+
+        result = await get_journal.coroutine(config=_make_config())
+
+        mock_local_today.assert_awaited_once_with(FAKE_USER_ID)
+        assert result == "No journal entries for 2026-08-27."
+
     @pytest.mark.parametrize(
-        "bad_date", ["12/03/2026", "March 12", "2026-13-45", "", "2026-03-12T09:30:00"]
+        "bad_date", ["12/03/2026", "March 12", "2026-13-45", "2026-03-12T09:30:00"]
     )
+    @patch(f"{MODULE}.log")
     @patch(f"{MODULE}.memory_engine")
     async def test_unparseable_date_is_rejected_before_any_query(
-        self, mock_engine: MagicMock, bad_date: str
+        self, mock_engine: MagicMock, mock_log: MagicMock, bad_date: str
     ) -> None:
         mock_engine.get_episodes = AsyncMock()
 
         result = await get_journal.coroutine(config=_make_config(), date=bad_date)
 
-        assert f"Error: invalid date '{bad_date}'" in result
-        assert "YYYY-MM-DD" in result
+        # The exact model-facing refusal: the echoed input and the format hint.
+        assert result == f"Error: invalid date '{bad_date}'. Use YYYY-MM-DD."
         mock_engine.get_episodes.assert_not_awaited()
+        # The rejection is a queryable wide-event warning with the offending
+        # input attached — event name and kwargs are the alerting contract.
+        mock_log.warning.assert_called_once_with(
+            "memory_tool_invalid_date", operation="episodes", start=bad_date
+        )
 
     async def test_missing_user_id_returns_error(self) -> None:
         result = await get_journal.coroutine(config=_make_config_no_user(), date="2026-03-12")
@@ -1173,7 +1200,6 @@ class TestGetJournal:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestReadMemoryDocument:
     @patch(f"{MODULE}.memory_engine")
     async def test_returns_the_full_uncapped_content_to_the_agent(
@@ -1268,7 +1294,6 @@ class TestReadMemoryDocument:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateMemoryDocument:
     @patch(f"{MODULE}.memory_engine")
     async def test_reports_the_new_version_and_the_replace_semantics(
@@ -1291,17 +1316,17 @@ class TestUpdateMemoryDocument:
         self, mock_engine: MagicMock, stream: MagicMock
     ) -> None:
         mock_engine.update_document = AsyncMock(
-            return_value=_make_document(doc_type=MemoryDocType.INSIGHTS_MD, version=2)
+            return_value=_make_document(doc_type=MemoryDocType.PEOPLE_MD, version=2)
         )
 
         await update_memory_document.coroutine(
-            config=_make_config(), doc_type="insights", content="# New"
+            config=_make_config(), doc_type="people", content="# New"
         )
 
         payload = _payloads(stream)[0]
         assert payload["action"] == "document"
         assert payload["updated"] is True
-        assert payload["document"]["doc_type"] == "insights_md"
+        assert payload["document"]["doc_type"] == "people_md"
         assert payload["document"]["version"] == 2
 
     @patch(f"{MODULE}.memory_engine")

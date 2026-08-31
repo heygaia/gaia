@@ -52,7 +52,6 @@ async def create_all_indexes() -> None:
             create_payment_indexes(),
             create_processed_webhook_indexes(),
             create_usage_indexes(),
-            create_ai_models_indexes(),
             create_integration_indexes(),
             create_user_integration_indexes(),
             create_integration_instructions_indexes(),
@@ -65,6 +64,8 @@ async def create_all_indexes() -> None:
             create_e2b_sandbox_indexes(),
             create_short_link_indexes(),
             create_hil_approvals_indexes(),
+            create_pending_platform_registration_indexes(),
+            create_playbook_indexes(),
         ]
 
         # Execute all index creation tasks concurrently
@@ -86,7 +87,6 @@ async def create_all_indexes() -> None:
             "payments",
             "processed_webhooks",
             "usage",
-            "ai_models",
             "integrations",
             "user_integrations",
             "integration_instructions",
@@ -99,13 +99,17 @@ async def create_all_indexes() -> None:
             "e2b_sandboxes",
             "short_links",
             "hil_approvals",
+            "pending_platform_registrations",
+            "playbooks",
         ]
 
         index_results = {}
-        for i, (collection_name, result) in enumerate(zip(collection_names, results)):
+        for collection_name, result in zip(collection_names, results):
             if isinstance(result, Exception):
                 log.error(
-                    f"{LogTag.MONGO} Failed to create indexes for {collection_name}: {result!s}"
+                    f"{LogTag.MONGO} Failed to create indexes for collection",
+                    collection_name=collection_name,
+                    result=result,
                 )
                 index_results[collection_name] = f"FAILED: {result!s}"
             else:
@@ -116,18 +120,25 @@ async def create_all_indexes() -> None:
         total = len(index_results)
 
         log.info(
-            f"{LogTag.MONGO} Database index creation completed: {successful}/{total} collections successful"
+            f"{LogTag.MONGO} Database index creation completed",
+            successful=successful,
+            total=total,
         )
 
         # Log any failures
         failed_collections = [name for name, result in index_results.items() if result != "SUCCESS"]
         if failed_collections:
             log.warning(
-                f"{LogTag.MONGO} Failed to create indexes for collections: {failed_collections}"
+                f"{LogTag.MONGO} Failed to create indexes for collections",
+                failed_collections=failed_collections,
             )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Critical error during database index creation: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Critical error during database index creation",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -156,7 +167,9 @@ async def create_user_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating user indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating user indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -178,10 +191,18 @@ async def create_conversation_indexes() -> None:
             conversations_collection.create_index([("user_id", 1), ("messages.message_id", 1)]),
             # For message pinning aggregations
             conversations_collection.create_index([("user_id", 1), ("messages.pinned", 1)]),
+            # For "active since <date>" range queries (e.g. the cost/usage dashboard).
+            # updatedAt is the only activity timestamp stored as a real BSON date —
+            # createdAt is an ISO string and can't be range-queried efficiently.
+            conversations_collection.create_index([("updatedAt", -1)]),
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating conversation indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating conversation indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -259,7 +280,9 @@ async def create_todo_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating todo indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating todo indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -278,7 +301,11 @@ async def create_project_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating project indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating project indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -299,7 +326,9 @@ async def create_note_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating note indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating note indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -320,7 +349,9 @@ async def create_file_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating file indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating file indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -337,7 +368,9 @@ async def create_mail_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating mail indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating mail indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -356,7 +389,11 @@ async def create_calendar_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating calendar indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating calendar indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -379,7 +416,9 @@ async def create_blog_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating blog indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating blog indexes", error=str(e), error_type=type(e).__name__
+        )
         raise
 
 
@@ -400,7 +439,11 @@ async def create_notification_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating notification indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating notification indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -418,7 +461,11 @@ async def create_reminder_indexes() -> None:
             reminders_collection.create_index([("user_id", 1), ("type", 1)]),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating reminder indexes: {e}")
+        log.error(
+            f"{LogTag.MONGO} Error creating reminder indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -513,12 +560,17 @@ async def create_workflow_indexes() -> None:
             )
         except OperationFailure as e:
             log.warning(
-                f"{LogTag.MONGO} Failed to create slug_public_unique_idx: {e}. "
-                "Likely duplicate public slugs in workflows; de-dup and restart."
+                f"{LogTag.MONGO} Failed to create slug_public_unique_idx: . Likely duplicate public slugs in workflows; de-dup and restart.",
+                error=str(e),
+                error_type=type(e).__name__,
             )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating workflow indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating workflow indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -535,7 +587,11 @@ async def create_workflow_execution_indexes() -> None:
             workflow_executions_collection.create_index([("workflow_id", 1), ("status", 1)]),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating workflow execution indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating workflow execution indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -552,7 +608,11 @@ async def create_briefing_indexes() -> None:
             briefings_collection.create_index([("user_id", 1), ("created_at", -1)]),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating briefing indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating briefing indexes",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise
 
 
@@ -566,7 +626,11 @@ async def create_award_indexes() -> None:
             name="user_key_unique",
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating award indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating award indexes",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise
 
 
@@ -601,7 +665,11 @@ async def create_payment_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating payment indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating payment indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -624,23 +692,82 @@ async def create_processed_webhook_indexes() -> None:
             ),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating processed webhook indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating processed webhook indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise
+
+
+async def create_pending_platform_registration_indexes() -> None:
+    """
+    Create indexes for the pending_platform_registrations collection.
+
+    - Unique on (platform, platform_user_id): one account per handle
+    - (user_id, platform): the per-user lookup on connect, link and unlink
+    - created_at: the range scan the abandoned-registration sweep runs
+    """
+    pending_registrations_collection = get_async_collection("pending_platform_registrations")
+    try:
+        await asyncio.gather(
+            pending_registrations_collection.create_index(
+                [("platform", 1), ("platform_user_id", 1)], unique=True
+            ),
+            pending_registrations_collection.create_index([("user_id", 1), ("platform", 1)]),
+            pending_registrations_collection.create_index("created_at"),
+        )
+    except Exception as e:
+        log.error(
+            f"{LogTag.MONGO} Error creating pending platform registration indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise
+
+
+async def create_playbook_indexes() -> None:
+    """Create indexes for the playbooks collection.
+
+    Unique on (workflow_id, user_id): "one active playbook per workflow" is the
+    invariant the replay path rests on, and the repository's upsert relies on
+    the index to reject the loser of two concurrent first authorings. The same
+    index serves the per-run lookup.
+    """
+    playbooks_collection = get_async_collection("playbooks")
+    try:
+        await playbooks_collection.create_index([("workflow_id", 1), ("user_id", 1)], unique=True)
+    except Exception as e:
+        log.error(
+            f"{LogTag.MONGO} Error creating playbook indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
 async def create_usage_indexes() -> None:
     """
-    Create indexes for usage_snapshots collection for optimal query performance.
-    Includes TTL index for automatic cleanup after 90 days.
+    Create indexes for the usage_snapshots and usage_daily collections.
+    Includes TTL index for automatic snapshot cleanup after 90 days.
 
     Query patterns:
     - Find latest usage by user_id (sorted by created_at desc)
     - Find usage history by user_id and date range
+    - Heatmap: per-user trailing-window reads on usage_daily (user_id + date)
+    - Percentile thresholds: cross-user aggregation on usage_daily (date range)
     - Automatic cleanup via TTL index
     """
+    usage_daily_collection = get_async_collection("usage_daily")
     usage_snapshots_collection = get_async_collection("usage_snapshots")
     try:
         await asyncio.gather(
+            # Heatmap upsert key + per-user range reads (unique per user-day)
+            usage_daily_collection.create_index(
+                [("user_id", 1), ("date", 1)], unique=True, name="user_day_unique"
+            ),
+            # Cross-user percentile threshold aggregation ($match on date range)
+            usage_daily_collection.create_index("date", name="daily_date_range"),
             # Primary query: get latest usage by user
             usage_snapshots_collection.create_index(
                 [("user_id", 1), ("created_at", -1)], name="user_latest_usage"
@@ -664,49 +791,18 @@ async def create_usage_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating usage indexes: {e!s}")
-        raise
-
-
-async def create_ai_models_indexes() -> None:
-    """
-    Create indexes for ai_models collection for optimal query performance.
-
-    Query patterns:
-    - Find models by ID (primary lookup)
-    - Find active models by plan availability
-    - Find default models
-    - Pricing lookups
-    """
-    ai_models_collection = get_async_collection("ai_models")
-    try:
-        await asyncio.gather(
-            # Primary model lookup
-            ai_models_collection.create_index("model_id", unique=True),
-            # Active models filtering
-            ai_models_collection.create_index("is_active"),
-            # Default model lookup
-            ai_models_collection.create_index([("is_default", 1), ("is_active", 1)]),
-            # Plan availability queries
-            ai_models_collection.create_index("available_in_plans"),
-            # Combined active + plan queries (most common)
-            ai_models_collection.create_index([("is_active", 1), ("available_in_plans", 1)]),
-            # Pricing queries (for cost calculation)
-            ai_models_collection.create_index(
-                [("model_id", 1), ("is_active", 1)], name="model_pricing_lookup"
-            ),
-            # Provider filtering
-            ai_models_collection.create_index("model_provider"),
-            ai_models_collection.create_index("inference_provider"),
+        log.error(
+            f"{LogTag.MONGO} Error creating usage indexes",
+            error=str(e),
+            error_type=type(e).__name__,
         )
-
-    except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating AI models indexes: {e!s}")
         raise
 
 
 async def _create_index_safe(
-    collection: AsyncIOMotorCollection[dict[str, Any]], keys: IndexKeys, **kwargs: Any
+    collection: AsyncIOMotorCollection[dict[str, Any]],
+    keys: IndexKeys,
+    **kwargs: Any,  # noqa: ANN401 -- contract
 ) -> None:
     """
     Create an index safely, handling IndexOptionsConflict gracefully.
@@ -794,7 +890,11 @@ async def create_integration_indexes() -> None:
         await _backfill_integration_slugs()
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating integration indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating integration indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -812,7 +912,9 @@ async def _backfill_integration_slugs() -> None:
             if not docs:
                 break
 
-            log.info(f"{LogTag.MONGO} Backfilling slugs for {len(docs)} public integrations")
+            log.info(
+                f"{LogTag.MONGO} Backfilling slugs for public integrations", docs_count=len(docs)
+            )
             for doc in docs:
                 slug = await integration_repository.ensure_unique_slug(
                     name=doc.get("name", ""),
@@ -827,10 +929,15 @@ async def _backfill_integration_slugs() -> None:
 
         if total_backfilled:
             log.info(
-                f"{LogTag.MONGO} Slug backfill complete: {total_backfilled} integrations updated"
+                f"{LogTag.MONGO} Slug backfill complete: integrations updated",
+                total_backfilled=total_backfilled,
             )
     except Exception as e:
-        log.warning(f"{LogTag.MONGO} Slug backfill failed (non-fatal): {e}")
+        log.warning(
+            f"{LogTag.MONGO} Slug backfill failed (non-fatal)",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 async def create_user_integration_indexes() -> None:
@@ -873,7 +980,11 @@ async def create_user_integration_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating user integration indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating user integration indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -895,7 +1006,11 @@ async def create_integration_instructions_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating integration instructions indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating integration instructions indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -913,7 +1028,11 @@ async def create_device_token_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating device token indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating device token indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -936,7 +1055,11 @@ async def create_bot_session_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating bot session indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating bot session indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -983,7 +1106,11 @@ async def create_installed_skills_indexes() -> None:
         )
 
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating installed_skills indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating installed_skills indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -1010,7 +1137,11 @@ async def create_hil_approvals_indexes() -> None:
             ),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating hil_approvals indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating hil_approvals indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -1039,7 +1170,11 @@ async def create_e2b_sandbox_indexes() -> None:
             ),
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating e2b sandbox indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating e2b sandbox indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         raise
 
 
@@ -1059,7 +1194,10 @@ async def create_short_link_indexes() -> None:
             {"$expr": {"$lt": [{"$strLenCP": "$slug"}, SLUG_LENGTH]}}
         )
         if legacy.deleted_count:
-            log.info(f"{LogTag.MONGO} Deleted {legacy.deleted_count} legacy per-user short links")
+            log.info(
+                f"{LogTag.MONGO} Deleted legacy per-user short links",
+                deleted_count=legacy.deleted_count,
+            )
         # index (or the collection itself) never existed — nothing to drop
         with suppress(OperationFailure):
             await short_links_collection.drop_index("user_slug_unique")
@@ -1074,5 +1212,9 @@ async def create_short_link_indexes() -> None:
             name="user_target",
         )
     except Exception as e:
-        log.error(f"{LogTag.MONGO} Error creating short link indexes: {e!s}")
+        log.error(
+            f"{LogTag.MONGO} Error creating short link indexes",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         raise

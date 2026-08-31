@@ -77,31 +77,43 @@ class BotAuthMiddleware(BaseHTTPMiddleware):
                     request.state.authenticated = True
                     authenticated = True
             except JWTError as e:
-                log.debug(f"{LogTag.API} Bot JWT rejected, trying API key: {e}")
+                log.debug(
+                    f"{LogTag.API} Bot JWT rejected, trying API key",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
             except Exception as e:
                 # Not a token problem — Redis/Mongo lookups can fail here. Still
                 # falls through to API key auth, but never silently.
-                log.warning(f"{LogTag.API} Bot JWT authentication errored, trying API key: {e}")
+                log.warning(
+                    f"{LogTag.API} Bot JWT authentication errored, trying API key",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
 
-        # 2. Fall back to API key + platform headers
-        if not authenticated:
-            api_key = request.headers.get("X-Bot-API-Key")
-            platform = request.headers.get("X-Bot-Platform")
-            platform_user_id = request.headers.get("X-Bot-Platform-User-Id")
+        # 2. The API key is verified INDEPENDENTLY of the JWT outcome. The two
+        # answer different questions: the key authorises the bot ROUTE
+        # (require_bot_api_key), the JWT identifies the USER. Verifying the key
+        # only when the JWT had failed left every successful fast-path request
+        # with bot_api_key_valid unset, so /bot/* answered 401, the bot threw
+        # its cached session token away and retried with the key — a wasted
+        # round trip on nearly every turn.
+        api_key = request.headers.get("X-Bot-API-Key")
+        platform = request.headers.get("X-Bot-Platform")
+        platform_user_id = request.headers.get("X-Bot-Platform-User-Id")
 
-            if api_key and self._verify_api_key(api_key):
-                if platform and platform_user_id:
-                    user_info = await self._authenticate_platform(platform, platform_user_id)
-                    if user_info:
-                        request.state.user = user_info
-                        request.state.authenticated = True
-                        authenticated = True
+        if api_key and self._verify_api_key(api_key):
+            # Valid key without a user is still a valid bot request — endpoints
+            # like /bot/chat handle the unlinked case themselves.
+            request.state.bot_api_key_valid = True
+            request.state.bot_platform = platform
+            request.state.bot_platform_user_id = platform_user_id
 
-                # Mark as bot-api-key-authenticated even without user
-                # (for endpoints like /bot/chat that handle unlinked users)
-                request.state.bot_api_key_valid = True
-                request.state.bot_platform = platform
-                request.state.bot_platform_user_id = platform_user_id
+            if not authenticated and platform and platform_user_id:
+                user_info = await self._authenticate_platform(platform, platform_user_id)
+                if user_info:
+                    request.state.user = user_info
+                    request.state.authenticated = True
 
         response = await call_next(request)
         return response
@@ -109,9 +121,23 @@ class BotAuthMiddleware(BaseHTTPMiddleware):
     def _verify_api_key(self, api_key: str) -> bool:
         bot_api_key = getattr(settings, "GAIA_BOT_API_KEY", None)
         if not bot_api_key:
+            # The API has no bot key configured at all — every bot request is
+            # silently rejected today. That is exactly the "Authentication
+            # required" dead-end the harness hits when the API was booted
+            # before GAIA_BOT_API_KEY was set. Fail loud instead.
+            log.warning(
+                f"{LogTag.API} Bot API key rejected: GAIA_BOT_API_KEY is not configured",
+                bot_auth_reason="server_key_unset",
+            )
             return False
         # Timing-safe comparison to avoid leaking the key via response-time diffs.
-        return secrets.compare_digest(api_key.encode(), bot_api_key.encode())
+        if not secrets.compare_digest(api_key.encode(), bot_api_key.encode()):
+            log.warning(
+                f"{LogTag.API} Bot API key rejected: X-Bot-API-Key does not match",
+                bot_auth_reason="key_mismatch",
+            )
+            return False
+        return True
 
     async def _authenticate_platform(
         self, platform: str, platform_user_id: str

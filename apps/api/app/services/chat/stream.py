@@ -12,6 +12,7 @@ on completion, even if the client disconnects mid-stream.
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import json
 from typing import Any
@@ -20,7 +21,7 @@ from uuid import uuid4
 from langchain_core.callbacks import UsageMetadataCallbackHandler
 from langgraph.errors import GraphRecursionError
 
-from app.agents.core.agent import call_agent
+from app.agents.core.agent import AgentRunOptions, StreamMessageIds, call_agent
 from app.agents.core.background.executor_capture import (
     await_executor_done,
     drain_executor_tool_data,
@@ -29,6 +30,7 @@ from app.agents.core.background.executor_capture import (
 )
 from app.constants.artifacts import ARTIFACT_FORWARDER_SUBSCRIBE_TIMEOUT
 from app.constants.cache import EXECUTOR_WAIT_TIMEOUT, VOICE_EXECUTOR_RESULT_TIMEOUT_S
+from app.constants.chat import GENERIC_TURN_ERROR, RECURSION_LIMIT_MESSAGE
 from app.constants.hil import HIL_ACK_APPROVED, HIL_ACK_DENIED, HIL_CLASSIFIER_HISTORY_TURNS
 from app.constants.log_tags import LogTag
 from app.core.stream_manager import stream_manager
@@ -41,6 +43,7 @@ from app.models.stream_events import (
     MainResponseCompleteFrame,
 )
 from app.models.user_models import AuthenticatedUser
+from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.chat.artifact_forwarder import forward_artifact_events
 from app.services.chat.chunks import process_data_chunk
 from app.services.chat.persistence import (
@@ -61,8 +64,9 @@ from app.services.platform_message_service import is_bot_platform
 from app.services.storage import flush_fs_metrics
 from app.utils.agent_utils import format_sse_data, format_sse_response
 from app.utils.chat_utils import generate_and_update_description
+from app.utils.message_breaks import strip_partial_message_break
 from app.utils.stream_utils import reconstruct_subagent_groups
-from shared.py.wide_events import ChatContext, log, wide_task
+from shared.py.wide_events import ChatContext, get_trace_id, log, wide_task
 
 
 async def run_chat_stream_background(
@@ -78,8 +82,11 @@ async def run_chat_stream_background(
     completion even if the client disconnects. Frames land in a replayable
     event log, so publish/subscribe timing needs no coordination.
     """
+    # get_trace_id() reads the spawning request's trace_id from this task's
+    # copied context, so the agent-run event joins with its http_request event.
     async with wide_task(
         "chat_stream",
+        trace_id=get_trace_id() or None,
         conversation_id=conversation_id,
         stream_id=stream_id,
     ):
@@ -90,6 +97,20 @@ async def run_chat_stream_background(
             conversation_id=conversation_id,
             source=source,
         )
+
+
+@dataclass(frozen=True)
+class _TurnContext:
+    """What identifies the turn being streamed, plus the collector for its usage.
+
+    Fixed for the whole turn and read by every branch of the consume loop, so it
+    travels as one value rather than four parallel arguments.
+    """
+
+    conversation_id: str
+    stream_id: str
+    source: str | None
+    usage_callback: UsageMetadataCallbackHandler
 
 
 class _StreamState:
@@ -222,10 +243,12 @@ async def _run_chat_stream(
         description_task = await _consume_agent_stream(
             body,
             user,
-            conversation_id,
-            stream_id,
-            source,
-            usage_callback,
+            _TurnContext(
+                conversation_id=conversation_id,
+                stream_id=stream_id,
+                source=source,
+                usage_callback=usage_callback,
+            ),
             description_task,
             state,
         )
@@ -242,8 +265,37 @@ async def _run_chat_stream(
         await _attach_executor_tool_data(stream_id, body, user, conversation_id, state)
 
         await _finalize_description(description_task, stream_id)
+        await stream_manager.publish_chunk(
+            stream_id,
+            format_sse_data(
+                MainResponseCompleteFrame(
+                    main_response_complete=True, usage=state.usage_metadata or None
+                ).model_dump(exclude_none=True)
+            ),
+        )
         await stream_manager.publish_chunk(stream_id, "data: [DONE]\n\n")
         await stream_manager.complete_stream(stream_id)
+
+        # The turn reached a terminal state: capture the milestone. Cancelled
+        # turns finish the same happy path (the driver ends the stream with a
+        # `cancelled` nostream marker), so branch on the flag the loop recorded.
+        if user_id:
+            event_props: dict[str, Any] = {
+                "conversation_id": conversation_id,
+                "voice_mode": body.voice_mode,
+                "is_new_conversation": is_new_conversation,
+            }
+            if source:
+                event_props["source"] = source
+            capture_event(
+                user_id,
+                (
+                    AnalyticsEvents.CHAT_MESSAGE_CANCELLED
+                    if state.is_cancelled
+                    else AnalyticsEvents.CHAT_MESSAGE_COMPLETED
+                ),
+                event_props,
+            )
 
     except Exception as e:  # surface to client + flag the stream
         # Persist the SAME user-facing text we stream (friendly for a recursion
@@ -315,14 +367,19 @@ async def _resolve_pending_approval_turn(
     try:
         history = _recent_history(body.messages)
         action = await resolve_pending_from_message(conversation_id, user_id, message, history)
-    except Exception as e:  # noqa: BLE001 — see below: chat must survive this
+    except Exception as e:  # see below: chat must survive this
         # This lookup sits on the critical path of EVERY chat message, for a feature most
         # users have switched off. If it fails, the only safe degradation is to run the
         # message as a normal turn: an approval the user answered stays pending (the sweep
         # expires it) and the paused run keeps waiting — nothing destructive can run
         # unasked, because the gate is what executes actions, not this. Breaking the whole
         # turn instead would take chat down for everyone over an optional feature.
-        log.error(f"{LogTag.HIL} Pending-approval check failed; running a normal turn: {e}")
+        log.error(
+            f"{LogTag.HIL} Pending-approval check failed; running a normal turn",
+            error=str(e),
+            error_type=type(e).__name__,
+            conversation_id=conversation_id,
+        )
         return False
 
     if action not in ("approve", "deny"):
@@ -334,7 +391,9 @@ async def _resolve_pending_approval_turn(
     await stream_manager.publish_chunk(stream_id, format_sse_response(ack))
     await stream_manager.publish_chunk(
         stream_id,
-        format_sse_data(MainResponseCompleteFrame(main_response_complete=True).model_dump()),
+        format_sse_data(
+            MainResponseCompleteFrame(main_response_complete=True).model_dump(exclude_none=True)
+        ),
     )
     await _persist_turn(stream_id, body, user, conversation_id, state)
     await stream_manager.publish_chunk(stream_id, "data: [DONE]\n\n")
@@ -405,7 +464,11 @@ async def _publish_description_if_ready(
             f"data: {json.dumps(ConversationDescriptionFrame(conversation_description=description).model_dump())}\n\n",
         )
     except Exception as e:  # description is non-critical
-        log.error(f"{LogTag.CHAT} Failed to get conversation description: {e}")
+        log.error(
+            f"{LogTag.CHAT} Failed to get conversation description",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
     return None
 
 
@@ -417,8 +480,8 @@ async def _wait_for_artifact_forwarder(subscribed: asyncio.Event, stream_id: str
         await asyncio.wait_for(subscribed.wait(), timeout=ARTIFACT_FORWARDER_SUBSCRIBE_TIMEOUT)
     except TimeoutError:
         log.warning(
-            f"{LogTag.CHAT} Stream {stream_id} artifact forwarder subscribe timeout, "
-            "seeding uploads anyway"
+            f"{LogTag.CHAT} Stream artifact forwarder subscribe timeout, seeding uploads anyway",
+            stream_id=stream_id,
         )
 
 
@@ -462,10 +525,7 @@ async def _publish_init_chunk(
 async def _consume_agent_stream(
     body: MessageRequestWithHistory,
     user: AuthenticatedUser,
-    conversation_id: str,
-    stream_id: str,
-    source: str | None,
-    usage_callback: UsageMetadataCallbackHandler,
+    turn: _TurnContext,
     description_task: asyncio.Task[str] | None,
     state: _StreamState,
 ) -> asyncio.Task[str] | None:
@@ -474,15 +534,17 @@ async def _consume_agent_stream(
     Returns the (possibly-cleared) ``description_task`` so the orchestrator can
     await whatever's left.
     """
+    stream_id = turn.stream_id
     async for chunk in await call_agent(
         request=body,
         user=user,
-        conversation_id=conversation_id,
-        usage_metadata_callback=usage_callback,
-        stream_id=stream_id,
-        user_message_id=state.user_message_id,
-        bot_message_id=state.bot_message_id,
-        source=source,
+        conversation_id=turn.conversation_id,
+        options=AgentRunOptions(usage_metadata_callback=turn.usage_callback, source=turn.source),
+        ids=StreamMessageIds(
+            stream_id=stream_id,
+            user_message_id=state.user_message_id,
+            bot_message_id=state.bot_message_id,
+        ),
     ):
         # Cancellation is detected and terminated by the inner graph driver
         # (execute_graph_streaming), which owns the checkpoint write that
@@ -492,7 +554,7 @@ async def _consume_agent_stream(
         # a `cancelled` nostream marker within one graph event.
         if not state.is_cancelled and await stream_manager.is_cancelled(stream_id):
             state.is_cancelled = True
-            log.info(f"{LogTag.CHAT} Stream {stream_id} cancelled by user")
+            log.info(f"{LogTag.CHAT} Stream cancelled by user", stream_id=stream_id)
 
         # Skip [DONE] marker — we send it after description generation.
         if chunk == "data: [DONE]\n\n":
@@ -526,7 +588,12 @@ async def _consume_agent_stream(
                     state.follow_up_actions,
                 )
             except Exception as e:  # fall back to passthrough
-                log.error(f"{LogTag.CHAT} Error processing chunk: {e}")
+                log.error(
+                    f"{LogTag.CHAT} Error processing chunk",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    conversation_id=turn.conversation_id,
+                )
                 await stream_manager.publish_chunk(stream_id, chunk)
         else:
             await stream_manager.publish_chunk(stream_id, chunk)
@@ -534,12 +601,16 @@ async def _consume_agent_stream(
 
 
 def _parse_complete_message(chunk: str) -> tuple[str, bool]:
-    """Pull ``(complete_message, cancelled)`` out of a ``nostream: {...}`` marker."""
+    """Pull ``(complete_message, cancelled)`` out of a ``nostream: {...}`` marker.
+
+    A run cut short mid-sentinel leaves a truncated ``<NEW_MESSAGE_B`` on the
+    end; it must never reach the persisted turn, where every reader (web, bots,
+    the next turn's history) would render it as literal text.
+    """
     nostream_json = json.loads(chunk.removeprefix("nostream: "))
     if isinstance(nostream_json, dict):
-        return str(nostream_json.get("complete_message", "")), bool(
-            nostream_json.get("cancelled", False)
-        )
+        message = strip_partial_message_break(str(nostream_json.get("complete_message", "")))
+        return message, bool(nostream_json.get("cancelled", False))
     return "", False
 
 
@@ -548,13 +619,13 @@ def _log_usage_summary(state: _StreamState) -> None:
     event.
 
     Reads ``cache_read`` from the LangChain ``UsageMetadataCallback`` rather
-    than the wide-event ``ContextVar``. ``LLMAccountingMiddleware`` writes
-    ``cached_tokens`` per-step into the wide event from inside a LangGraph
-    node, but those writes happen in a child ``copy_context()`` frame that does
-    not propagate back to the ``wide_task`` block — so the worker rollup would
-    otherwise see ``cached_tokens=null`` even when caching fired. The callback
-    handler runs in the parent context via LangChain's tracer and accumulates
-    correctly across every model call.
+    than the wide-event ``ContextVar``. Not because in-node writes are lost —
+    since the mutable-state fix, ``LLMAccountingMiddleware``'s ``log.set``
+    calls share this task's accumulator and do land on the event — but because
+    the callback is the turn's authoritative usage source: LangChain's tracer
+    feeds it every model call, so the totals here are computed from raw
+    per-call metadata rather than from a field this function is about to
+    overwrite.
     """
     total_input, total_output, total_cached = aggregate_usage_metadata(state.usage_metadata)
     cache_hit_rate = round(total_cached / max(total_input, 1), 4) if total_input else 0.0
@@ -588,7 +659,11 @@ async def _finalize_description(
             f"data: {json.dumps(ConversationDescriptionFrame(conversation_description=description).model_dump())}\n\n",
         )
     except Exception as e:  # description is non-critical
-        log.error(f"{LogTag.CHAT} Failed to get conversation description: {e}")
+        log.error(
+            f"{LogTag.CHAT} Failed to get conversation description",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 async def _handle_stream_error(
@@ -601,16 +676,15 @@ async def _handle_stream_error(
     Order matters: ``set_error`` publishes the ``STREAM_ERROR_SIGNAL`` which
     breaks the subscriber loop, so the error chunk must go on the wire first.
     """
-    log.error(f"{LogTag.CHAT} Background stream error for {stream_id}: {error}")
-    # A recursion-limit stop is an expected degradation, not an infrastructure
-    # failure - never show the raw "Recursion limit of N reached..." internals.
+    log.error(f"{LogTag.CHAT} Background stream error for", stream_id=stream_id, error=error)
     if isinstance(error, GraphRecursionError):
-        user_error = (
-            "I hit my step limit on this one before finishing. "
-            "Ask me to continue and I'll pick up where I left off."
-        )
+        user_error = RECURSION_LIMIT_MESSAGE
     else:
-        user_error = str(error)
+        # str(exc) is genuinely "" for some provider errors, and a blank string is
+        # falsy on the client: no error bubble renders and the turn is filtered out.
+        user_error = str(error).strip() or GENERIC_TURN_ERROR.format(
+            error_type=type(error).__name__
+        )
     await stream_manager.publish_chunk(
         stream_id, f"data: {json.dumps(ErrorFrame(error=user_error).model_dump())}\n\n"
     )
@@ -703,7 +777,12 @@ async def _attach_executor_tool_data(
                 entries=len(executor_td),
             )
     except Exception as e:  # executor tool_data attach is best-effort
-        log.error(f"{LogTag.CHAT} Failed to update bot message tool_data: {e}")
+        log.error(
+            f"{LogTag.CHAT} Failed to update bot message tool_data",
+            error=str(e),
+            error_type=type(e).__name__,
+            conversation_id=conversation_id,
+        )
 
 
 async def _finalize_stream(
@@ -735,7 +814,13 @@ async def _finalize_stream(
             # happy/cancel path, which always runs the attach itself.
             await _attach_executor_tool_data(stream_id, body, user, conversation_id, state)
         except Exception as save_err:  # best-effort fallback save
-            log.error(f"{LogTag.CHAT} Fallback save failed for stream {stream_id}: {save_err}")
+            log.error(
+                f"{LogTag.CHAT} Fallback save failed for stream",
+                stream_id=stream_id,
+                error=str(save_err),
+                error_type=type(save_err).__name__,
+                conversation_id=conversation_id,
+            )
 
     # Teardown must come AFTER the fallback save: the backstop attach drains the
     # session's tool events — tearing down first would leave it nothing to drain.
@@ -755,4 +840,4 @@ async def _finalize_stream(
         # elided so events without FS activity stay clean.
         **({"fs": fs_metrics} if fs_metrics else {}),
     )
-    log.debug(f"{LogTag.CHAT} Background stream {stream_id} completed and saved")
+    log.debug(f"{LogTag.CHAT} Background stream completed and saved", stream_id=stream_id)

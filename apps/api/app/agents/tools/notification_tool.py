@@ -145,7 +145,7 @@ async def get_notifications(
         return {"notifications": serialized}
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error getting notifications: {e!s}")
+        log.error(f"{LogTag.TOOL} Error getting notifications", error_type=type(e).__name__)
         return {"error": str(e), "notifications": []}
 
 
@@ -195,7 +195,7 @@ async def search_notifications(
         return {"notifications": serialized}
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error searching notifications: {e!s}")
+        log.error(f"{LogTag.TOOL} Error searching notifications", error_type=type(e).__name__)
         return {"error": str(e), "notifications": []}
 
 
@@ -220,7 +220,7 @@ async def get_notification_count(
         return {"count": total_count}
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error getting notification count: {e!s}")
+        log.error(f"{LogTag.TOOL} Error getting notification count", error_type=type(e).__name__)
         return {"error": str(e), "count": 0}
 
 
@@ -257,7 +257,7 @@ async def mark_notifications_read(
         return {"success": success}
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error marking notifications as read: {e!s}")
+        log.error(f"{LogTag.TOOL} Error marking notifications as read", error_type=type(e).__name__)
         return {"error": str(e), "success": False}
 
 
@@ -266,16 +266,16 @@ async def mark_notifications_read(
 @with_doc(SEND_NOTIFICATION)
 async def send_notification(
     config: RunnableConfig,
-    message: Annotated[str, "Notification body text — keep it concise and actionable"],
+    message: Annotated[str, "Notification body text: keep it concise and actionable"],
     title: Annotated[
         str,
         "Short, specific title summarizing the update (e.g. 'Reminder', 'Task completed', "
-        "'Build failed'). Always write a meaningful title — never a generic app name.",
+        "'Build failed'). Always write a meaningful title, never a generic app name.",
     ],
     channels: Annotated[
         list[str],
         "Channel names to target ('whatsapp', 'telegram', 'discord', 'slack', 'inapp'). "
-        "REQUIRED — pass exactly the channel(s) the user named. If the user did not name a "
+        "REQUIRED: pass exactly the channel(s) the user named. If the user did not name a "
         "channel, ASK them which channel(s) they want before calling this tool. Never guess "
         "and never broadcast to channels the user did not ask for.",
     ],
@@ -307,7 +307,7 @@ async def send_notification(
         if not channels:
             return {
                 "error": (
-                    "channels is required — specify which channel(s) to notify "
+                    "channels is required: specify which channel(s) to notify "
                     f"({', '.join(ALL_AUTO_INJECTED_CHANNELS)}). If the user did not name a "
                     "channel, ask them which one(s) they want before sending."
                 ),
@@ -372,7 +372,7 @@ async def send_notification(
         return result
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error sending notification: {e!s}")
+        log.error(f"{LogTag.TOOL} Error sending notification", error_type=type(e).__name__)
         return {"error": str(e), "success": False}
 
 
@@ -402,7 +402,9 @@ async def get_notification_preferences(
         }
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error fetching notification preferences: {e!s}")
+        log.error(
+            f"{LogTag.TOOL} Error fetching notification preferences", error_type=type(e).__name__
+        )
         return {"error": str(e), "preferences": {}}
 
 
@@ -440,7 +442,9 @@ async def send_urgent_alert(
             return {"error": "Urgent alerts need a title and a message", "success": False}
 
         user = await user_repository.get(user_id)
-        channels = await resolve_briefing_channels(user_id, user.model_dump() if user else {})
+        channels = await resolve_briefing_channels(
+            user_id, user.model_dump(mode="json") if user else {}
+        )
         result = await notification_service.create_notification(
             NotificationRequest(
                 user_id=user_id,
@@ -470,7 +474,11 @@ async def send_urgent_alert(
             delivered_channels=channels,
         )
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error sending urgent alert: {e!s}")
+        log.error(
+            f"{LogTag.TOOL} Error sending urgent alert",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
         return {"error": str(e), "success": False}
 
 

@@ -14,7 +14,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from pydantic import BaseModel, Field, ValidationError
 
-from app.agents.llm.client import ainvoke_structured
+from app.agents.llm.client import ainvoke_structured_gemini, silent_metered_config
 from app.agents.llm.exceptions import LLM_FALLBACK_EXCEPTIONS, LLMNotConfiguredError
 from app.constants.memory import (
     EXTRACTION_TRANSCRIPT_HEAD_CHARS,
@@ -24,7 +24,9 @@ from app.constants.memory import (
 )
 from app.memory.prompts import (
     CATEGORIZE_SYSTEM_PROMPT,
+    DOCUMENT_VERIFICATION_PROMPT,
     EPISODE_SUMMARY_SYSTEM_PROMPT,
+    EXTRACTION_FOLDER_TREE_BLOCK,
     EXTRACTION_SYSTEM_PROMPT,
     RECONCILE_SYSTEM_PROMPT,
 )
@@ -36,6 +38,7 @@ from app.memory.schemas import (
     FactCategorization,
     ReconcileBatchResult,
     ReconcileDecision,
+    VerifiedDocument,
 )
 from shared.py.wide_events import log
 
@@ -43,16 +46,36 @@ _StructuredT = TypeVar("_StructuredT", bound=BaseModel)
 
 _TRANSCRIPT_TRUNCATION_MARKER = "\n[... transcript truncated ...]\n"
 
+
 # These LLM calls run inside the LangGraph run that spawned them (the
 # add_memory tool, or a background ingestion task that inherited the graph's
 # callback context). Without this marker their structured-output tokens are
 # captured by the chat token stream and rendered as assistant text. ``silent``
 # is the same flag the chat stream consumers use to drop internal-LLM chunks.
-_SILENT_CONFIG: RunnableConfig = {
-    "silent": True,  # top-level flag, matching follow_up_actions_node
-    "metadata": {"silent": True},  # canonical location the messages-stream consumers read
-    "tags": ["memory_internal"],
-}  # type: ignore[typeddict-unknown-key]
+# ``configurable.user_id`` is who this background spend is metered against —
+# see ``ainvoke_structured``; without it the pipeline's real COGS would land in
+# nobody's budget.
+def _silent_config(user_id: str) -> RunnableConfig:
+    config: RunnableConfig = {
+        **silent_metered_config(user_id),
+        "tags": ["memory_internal"],
+    }
+    # The memory family's own sticky-routing chain, per user. On the aux lane
+    # the sticky session is what keeps consecutive extractions landing on the
+    # upstream that already holds this user's transcript prefixes — without it
+    # every call routes independently and the append-only transcript re-sends
+    # cold. Per USER, not per conversation: one upstream then holds all of a
+    # user's memory-call prefixes, and the "-aux" suffix the runnable adds
+    # keeps this chain from ever re-pinning a conversation's.
+    # Indexing, not .get with a default: silent_metered_config always carries a
+    # configurable (it is where the user_id metering lives), and a missing one
+    # here would mean the spend attribution vanished — fail loud, not paper over.
+    config["configurable"] = {
+        **config["configurable"],
+        "session_id": f"memory-{user_id}",
+    }
+    return config
+
 
 # Provider failures and malformed structured output both degrade to None so the
 # memory helper never breaks the chat that spawned it. ``OutputParserException``
@@ -98,15 +121,24 @@ async def _invoke_structured(
     messages: list[BaseMessage],
     *,
     operation: str,
+    user_id: str,
 ) -> _StructuredT | None:
-    """Structured-output call on the default model via the canonical
-    ``ainvoke_structured`` (which owns retry + validation). Returns None on any
-    provider failure (or when no provider is configured) so extraction degrades
-    gracefully and never breaks the chat that spawned it. ``_SILENT_CONFIG``
-    keeps the structured-output tokens out of the chat stream."""
+    """Structured-output call on the memory lane via the canonical
+    ``ainvoke_structured_gemini`` (which owns provider selection, retry +
+    validation, and meters the spend against ``user_id``). Returns None only
+    when NO provider is configured or every one of them failed, so extraction
+    degrades gracefully and never breaks the chat that spawned it. The silent
+    config keeps the structured-output tokens out of the chat stream.
+
+    Prefers direct Gemini on purpose (see ``ainvoke_structured_gemini``): the
+    extraction is a background task that overlaps the graph's next-turn
+    requests, and concurrent requests on the same provider's cache store wipe
+    each other's cached chains mid-read (measured). When Google is not
+    configured, or Gemini is down, the call runs on the aux lane instead —
+    losing the cache isolation, not the memory."""
     try:
-        return await ainvoke_structured(
-            output_model, messages, label=f"memory:{operation}", config=_SILENT_CONFIG
+        return await ainvoke_structured_gemini(
+            output_model, messages, label=f"memory:{operation}", config=_silent_config(user_id)
         )
     except LLMNotConfiguredError as e:
         log.error(
@@ -157,19 +189,47 @@ async def extract_memories(
     journal_section = (
         "\n".join(f"- {line}" for line in journaled_today) if journaled_today else "(empty)"
     )
-    system_prompt = EXTRACTION_SYSTEM_PROMPT.format(
-        current_date=f"{current_date:%A, %d %B %Y}",
-        user_name=user_name,
-        folder_tree=folder_tree or "(no folders yet)",
-        recent_facts=recent_facts_section,
-        journal_today=journal_section,
-        extraction_hints=hints_section,
+    # The system prompt is deliberately user-agnostic: the user's name used to
+    # be formatted into it, so every user needed their own warm copy of the
+    # system+schema prefix and no user's traffic could warm another's
+    # (measured in production: 87% of extraction calls read zero cached
+    # tokens). One universal prompt is the only version an upstream has to
+    # hold; the name rides the volatile tail instead.
+    system_prompt = EXTRACTION_SYSTEM_PROMPT
+    # The volatile context (the user's name, today's date, the journal, the
+    # folder tree, the recently stored facts) rides in a TRAILING message, NOT
+    # inside the system prompt: the memory lane's cache is a byte-prefix
+    # cache, and with these churning inside the system prompt the prefix broke
+    # there and the whole (append-only) transcript re-sent uncached every turn
+    # — measured ~41% hit on the lane.
+    #
+    # WITHIN the tail, order is by churn rate, slowest first, because the tail
+    # is over half of a real extraction call (measured live: the cached prefix
+    # stops at system+transcript, ~47%). The name never changes; the date is
+    # stable all day; the journal only APPENDS during a day; the folder tree
+    # gains a line rarely; the recent-facts window ROLLS on every ingestion
+    # and the hints are per-run. With the rolling window ahead of the journal,
+    # one new fact re-sent the whole journal on every extraction.
+    volatile_context = (
+        f"The user in this transcript (`user:`) is {user_name}. "
+        "Write every fact using this real name.\n"
+        f"Today is {current_date:%A, %d %B %Y}.\n"
+        "## Today's journal so far (do NOT repeat these events, even reworded)\n"
+        f"{journal_section}\n"
+        + EXTRACTION_FOLDER_TREE_BLOCK.format(folder_tree=folder_tree or "(no folders yet)")
+        + f"\n## Recently stored facts (do NOT re-extract these)\n{recent_facts_section}"
+        + hints_section
     )
 
     result = await _invoke_structured(
         ExtractedMemoryBatch,
-        [SystemMessage(content=system_prompt), HumanMessage(content=transcript)],
+        [
+            SystemMessage(content=system_prompt),
+            HumanMessage(content=transcript),
+            HumanMessage(content=volatile_context),
+        ],
         operation="extraction",
+        user_id=user_id,
     )
     if result is None:
         # Memory context (operation/counts) is owned by retain, the orchestrator;
@@ -183,6 +243,7 @@ async def extract_memories(
 async def categorize_fact(
     content: str,
     *,
+    user_id: str,
     folder_tree: str,
     current_date: datetime,
 ) -> FactCategorization | None:
@@ -199,10 +260,11 @@ async def categorize_fact(
         FactCategorization,
         [SystemMessage(content=system_prompt), HumanMessage(content=content)],
         operation="categorize",
+        user_id=user_id,
     )
 
 
-async def summarize_episode_entries(entries: list[str]) -> str | None:
+async def summarize_episode_entries(entries: list[str], *, user_id: str) -> str | None:
     """Summarize one day's journal entries (day-rollover, one LLM call).
 
     Returns None on total LLM failure — the day simply stays unsummarized
@@ -217,11 +279,12 @@ async def summarize_episode_entries(entries: list[str]) -> str | None:
             HumanMessage(content="\n".join(entries)),
         ],
         operation="episode_summary",
+        user_id=user_id,
     )
     return result.summary if result else None
 
 
-async def rewrite_core_document(system_prompt: str, inputs: str) -> str | None:
+async def rewrite_core_document(system_prompt: str, inputs: str, *, user_id: str) -> str | None:
     """Rewrite one core memory document from its inputs (consolidation pass).
 
     Returns None on total LLM failure — the document simply keeps its
@@ -231,8 +294,29 @@ async def rewrite_core_document(system_prompt: str, inputs: str) -> str | None:
         ConsolidatedDocument,
         [SystemMessage(content=system_prompt), HumanMessage(content=inputs)],
         operation="consolidate",
+        user_id=user_id,
     )
     return result.content if result else None
+
+
+async def verify_core_document(
+    content: str, facts: list[str], *, user_id: str
+) -> VerifiedDocument | None:
+    """Strike document lines the source facts do not support (consolidation pass).
+
+    Returns None on total LLM failure — the caller keeps the unverified
+    document rather than losing the rewrite.
+    """
+    fact_lines = "\n".join(f"- {fact}" for fact in facts)
+    return await _invoke_structured(
+        VerifiedDocument,
+        [
+            SystemMessage(content=DOCUMENT_VERIFICATION_PROMPT),
+            HumanMessage(content=f"## Document\n{content}\n\n## Source facts\n{fact_lines}"),
+        ],
+        operation="verify_document",
+        user_id=user_id,
+    )
 
 
 def _format_reconcile_input(pairs: list[tuple[ExtractedFact, list[SimilarMemory]]]) -> str:
@@ -264,6 +348,8 @@ def _all_new_decisions(count: int) -> ReconcileBatchResult:
 
 async def reconcile_facts(
     pairs: list[tuple[ExtractedFact, list[SimilarMemory]]],
+    *,
+    user_id: str,
 ) -> ReconcileBatchResult:
     """Decide how each new fact relates to its similar existing memories.
 
@@ -280,6 +366,7 @@ async def reconcile_facts(
             HumanMessage(content=_format_reconcile_input(pairs)),
         ],
         operation="reconcile",
+        user_id=user_id,
     )
     if result is None:
         log.error(

@@ -7,6 +7,7 @@ real; the only mocked boundaries are the executor graph itself
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from datetime import UTC, datetime
 import json
 import time
 from typing import Any, cast
@@ -17,7 +18,11 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 import pytest
 
-from app.agents.core.background.session import teardown_session, was_executor_spawned
+from app.agents.core.background.session import (
+    queued_without_run,
+    teardown_session,
+    was_executor_spawned,
+)
 from app.agents.tools import executor_tool
 from app.agents.tools.executor_tool import call_executor, cancel_executor, tools
 from app.constants.cache import (
@@ -30,6 +35,9 @@ from app.constants.streaming import WS_EVENT_EXECUTOR_CANCELLED
 from app.core.stream_manager import StreamManager
 from app.core.websocket_manager import websocket_manager
 from app.db.redis import redis_cache
+from app.db.repositories.playbooks import playbook_repository
+from app.models.playbook_models import PlaybookDocument, PlaybookRunStatus, PlaybookStep
+from app.utils import background_tasks
 
 
 def tool_function(tool_obj: BaseTool) -> Callable[..., Awaitable[str]]:
@@ -46,6 +54,29 @@ def tool_function(tool_obj: BaseTool) -> Callable[..., Awaitable[str]]:
 
 run_call_executor = tool_function(call_executor)
 run_cancel_executor = tool_function(cancel_executor)
+
+
+async def call_executor_with(
+    config: RunnableConfig,
+    task: str,
+    acceptance_criteria: list[str] | None = None,
+    **kwargs: Any,
+) -> str:
+    """Call call_executor with the now-required acceptance_criteria provided.
+
+    The tool schema requires acceptance_criteria (never omit); tests that don't
+    care about it pass a generic checklist so they exercise the dispatch path,
+    not the schema default.
+    """
+    if acceptance_criteria is None:
+        acceptance_criteria = []
+    return await run_call_executor(
+        config=config,
+        task=task,
+        acceptance_criteria=acceptance_criteria,
+        **kwargs,
+    )
+
 
 CONVERSATION_ID = "conv-1"
 LOCK_KEY = f"{EXECUTOR_BUSY_PREFIX}{CONVERSATION_ID}"
@@ -118,6 +149,37 @@ def fast_redirect(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(executor_tool, "REDIRECT_CANCEL_POLL_S", 0.01)
 
 
+@pytest.fixture
+def release_lock_on_attempt(
+    monkeypatch: pytest.MonkeyPatch,
+    fake_redis: fakeredis.aioredis.FakeRedis,
+) -> Callable[[int], None]:
+    """Free the busy lock on the N-th ``try_acquire_lock`` call.
+
+    Replaces real-time releaser tasks racing the DETECT/WAIT windows: the
+    redirect poll loop calls ``try_acquire_lock`` exactly once per POLL
+    iteration, so a release tied to the attempt count lands at a fixed
+    ``waited`` value (overall attempt K with the pre-redirect attempt at
+    #1 ⇒ redirect wait (K-2)*POLL) — deterministic by construction.
+    """
+
+    real_acquire = executor_tool.try_acquire_lock
+    state = {"attempt": 0, "release": -1}
+
+    async def wrapped_acquire(lock_key: str, lock_value: str) -> bool:
+        state["attempt"] += 1
+        if state["attempt"] == state["release"]:
+            await fake_redis.delete(lock_key)
+        return await real_acquire(lock_key, lock_value)
+
+    monkeypatch.setattr(executor_tool, "try_acquire_lock", wrapped_acquire)
+
+    def schedule(release_attempt: int) -> None:
+        state["release"] = release_attempt
+
+    return schedule
+
+
 @pytest.fixture(autouse=True)
 def closed_approvals(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     """The HIL boundary (Mongo-backed): which conversations had their approvals closed."""
@@ -140,7 +202,7 @@ class TestCallExecutorDispatch:
     async def test_spawns_executor_and_reports_its_task_id(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        response = await run_call_executor(config=config_for(), task="check my calendar")
+        response = await call_executor_with(config=config_for(), task="check my calendar")
         await drain_background_tasks()
 
         assert len(spawned_runs) == 1
@@ -154,10 +216,21 @@ class TestCallExecutorDispatch:
         assert run.kind.value == "live"
         assert was_executor_spawned("stream-1") is True
 
+    async def test_a_dispatch_with_no_stream_carries_an_empty_stream_id(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """A run with no live client still gets a run identity. The absent stream is
+        the empty string — a placeholder would be treated as a real stream by every
+        session lookup downstream."""
+        await call_executor_with(config=config_for(stream_id=None), task="check my calendar")
+        await drain_background_tasks()
+
+        assert spawned_runs[0]["run"].stream_id == ""
+
     async def test_holds_the_busy_lock_with_its_own_value_and_a_ttl(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        response = await run_call_executor(config=config_for(), task="x")
+        response = await call_executor_with(config=config_for(), task="x")
 
         assert await fake_redis.get(LOCK_KEY) == f"stream-1:{task_id_from(response)}"
         # No TTL would wedge the conversation forever if the worker died mid-run.
@@ -166,17 +239,23 @@ class TestCallExecutorDispatch:
     async def test_background_task_is_kept_alive_then_released(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        await run_call_executor(config=config_for(), task="x")
-        assert len(executor_tool._executor_tasks) == 1  # GC protection while in flight
+        # The registry is process-global — other test files in the same
+        # worker may leave entries behind. Assert the DELTA, not an
+        # absolute count, so the check is order-independent.
+        baseline = set(background_tasks._background_tasks)
+        await call_executor_with(config=config_for(), task="x")
+        assert (
+            len(background_tasks._background_tasks) == len(baseline) + 1
+        )  # GC protection while in flight
 
         await drain_background_tasks()
-        assert executor_tool._executor_tasks == set()
+        assert background_tasks._background_tasks == baseline
 
     async def test_active_todo_binding_reaches_the_executor_without_mutating_comms_config(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
         config = config_for()
-        await run_call_executor(config=config, task="continue todo", active_todo_id="todo-9")
+        await call_executor_with(config=config, task="continue todo", active_todo_id="todo-9")
         await drain_background_tasks()
 
         assert spawned_runs[0]["configurable"]["active_todo_id"] == "todo-9"
@@ -185,7 +264,7 @@ class TestCallExecutorDispatch:
     async def test_without_active_todo_no_binding_is_injected(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        await run_call_executor(config=config_for(), task="generic")
+        await call_executor_with(config=config_for(), task="generic")
         await drain_background_tasks()
 
         assert "active_todo_id" not in spawned_runs[0]["configurable"]
@@ -193,7 +272,7 @@ class TestCallExecutorDispatch:
     async def test_missing_thread_id_refuses_instead_of_running_unanchored(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        response = await run_call_executor(config=RunnableConfig(configurable={}), task="x")
+        response = await call_executor_with(config=RunnableConfig(configurable={}), task="x")
 
         assert response == "Internal error: conversation context unavailable. Please try again."
         assert spawned_runs == []
@@ -202,10 +281,10 @@ class TestCallExecutorDispatch:
     async def test_each_conversation_has_its_own_lock(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
-        await run_call_executor(config=config_for(), task="a")
+        await call_executor_with(config=config_for(), task="a")
         other: RunnableConfig = {"configurable": {"thread_id": "conv-2", "stream_id": "stream-2"}}
 
-        response = await run_call_executor(config=other, task="b")
+        response = await call_executor_with(config=other, task="b")
 
         assert response.startswith("Task accepted")
         await drain_background_tasks()
@@ -221,14 +300,14 @@ class TestCallExecutorLockContention:
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
         """Queuing a same-turn duplicate ran deep research twice for one message."""
-        first = await run_call_executor(config=config_for(), task="research")
+        first = await call_executor_with(config=config_for(), task="research")
         lock_before = await fake_redis.get(LOCK_KEY)
 
-        second = await run_call_executor(config=config_for(), task="research")
+        second = await call_executor_with(config=config_for(), task="research")
         await drain_background_tasks()
 
         assert second == (
-            "That task is already running from this same message — not "
+            "That task is already running from this same message, not "
             "starting it again. The results are on the way."
         )
         assert first.startswith("Task accepted")
@@ -242,9 +321,9 @@ class TestCallExecutorLockContention:
         spawned_runs: list[dict[str, Any]],
         fast_redirect: None,
     ) -> None:
-        await run_call_executor(config=config_for("stream-1"), task="first")
+        await call_executor_with(config=config_for("stream-1"), task="first")
 
-        response = await run_call_executor(
+        response = await call_executor_with(
             config=config_for("stream-2"), task="second", active_todo_id="todo-3"
         )
         await drain_background_tasks()
@@ -266,6 +345,29 @@ class TestCallExecutorLockContention:
         assert items[0]["configurable"]["active_todo_id"] == "todo-3"
         assert await fake_redis.ttl(QUEUE_KEY) == EXECUTOR_QUEUE_TTL
 
+    async def test_a_queued_dispatch_is_recorded_on_its_stream_not_only_in_its_prose(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        fast_redirect: None,
+    ) -> None:
+        """The queue acknowledgement above is written for the comms model.
+
+        A silent caller — a workflow fire — has to know whether work actually
+        STARTED before it writes an execution record, and that string is the
+        wrong thing to ask: it is prose, the model may re-voice it, and it says
+        nothing the caller can trust. The session carries the fact instead.
+        """
+        await call_executor_with(config=config_for("stream-1"), task="first")
+
+        response = await call_executor_with(config=config_for("stream-2"), task="second")
+        await drain_background_tasks()
+
+        assert queued_without_run("stream-2") == task_id_from(response)
+        # The stream that actually ran deferred nothing, and says so.
+        assert was_executor_spawned("stream-1") is True
+        assert queued_without_run("stream-1") is None
+
     async def test_holder_without_a_stream_id_is_never_waited_on(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
@@ -273,7 +375,7 @@ class TestCallExecutorLockContention:
         await fake_redis.set(LOCK_KEY, ":held-task", ex=EXECUTOR_BUSY_TTL)
 
         started = time.monotonic()
-        response = await run_call_executor(config=config_for("stream-2"), task="b")
+        response = await call_executor_with(config=config_for("stream-2"), task="b")
 
         assert response.startswith("I'm already working on a task")
         assert time.monotonic() - started < 0.1
@@ -289,17 +391,16 @@ class TestRedirectAcquire:
         fake_redis: fakeredis.aioredis.FakeRedis,
         spawned_runs: list[dict[str, Any]],
         fast_redirect: None,
+        release_lock_on_attempt: Callable[[int], None],
     ) -> None:
         await fake_redis.set(LOCK_KEY, "old-stream:old-task", ex=EXECUTOR_BUSY_TTL)
         await StreamManager.cancel_stream("old-stream")
 
-        async def release_after_detect_window() -> None:
-            await asyncio.sleep(0.2)  # past DETECT (0.1), inside WAIT (0.5)
-            await fake_redis.delete(LOCK_KEY)
-
-        releaser = asyncio.create_task(release_after_detect_window())
-        response = await run_call_executor(config=config_for("new-stream"), task="do Y")
-        await releaser
+        # Release on the 14th acquire attempt (1 pre-redirect + 13 redirect
+        # polls, waited=0.12): past DETECT (0.1), inside WAIT (0.5) — the
+        # observed cancel must keep the loop polling past the detect window.
+        release_lock_on_attempt(14)
+        response = await call_executor_with(config=config_for("new-stream"), task="do Y")
         await drain_background_tasks()
 
         assert response.startswith("Task accepted")
@@ -312,18 +413,17 @@ class TestRedirectAcquire:
         fake_redis: fakeredis.aioredis.FakeRedis,
         spawned_runs: list[dict[str, Any]],
         fast_redirect: None,
+        release_lock_on_attempt: Callable[[int], None],
     ) -> None:
         """cancel_executor drops the busy key without cancel_stream for blank stream
         ids, so is_cancelled may never flip — acquisition must not be gated on it."""
         await fake_redis.set(LOCK_KEY, "old-stream:old-task", ex=EXECUTOR_BUSY_TTL)
 
-        async def release_inside_detect_window() -> None:
-            await asyncio.sleep(0.05)
-            await fake_redis.delete(LOCK_KEY)
-
-        releaser = asyncio.create_task(release_inside_detect_window())
-        response = await run_call_executor(config=config_for("new-stream"), task="do Y")
-        await releaser
+        # Release on the 3rd acquire attempt (2nd redirect poll, waited=0.01 —
+        # inside DETECT=0.1): no cancel signal ever flips, yet the free lock
+        # must still be taken.
+        release_lock_on_attempt(3)
+        response = await call_executor_with(config=config_for("new-stream"), task="do Y")
         await drain_background_tasks()
 
         assert response.startswith("Task accepted")
@@ -339,7 +439,7 @@ class TestRedirectAcquire:
         await fake_redis.set(LOCK_KEY, "old-stream:old-task", ex=EXECUTOR_BUSY_TTL)
 
         started = time.monotonic()
-        response = await run_call_executor(config=config_for("new-stream"), task="do Y")
+        response = await call_executor_with(config=config_for("new-stream"), task="do Y")
         elapsed = time.monotonic() - started
 
         assert response.startswith("I'm already working on a task")
@@ -356,7 +456,7 @@ class TestRedirectAcquire:
         await StreamManager.cancel_stream("old-stream")
 
         started = time.monotonic()
-        response = await run_call_executor(config=config_for("new-stream"), task="do Y")
+        response = await call_executor_with(config=config_for("new-stream"), task="do Y")
         elapsed = time.monotonic() - started
 
         assert response.startswith("I'm already working on a task")
@@ -376,7 +476,7 @@ class TestRedirectAcquire:
 
         cancel_response, call_response = await asyncio.gather(
             run_cancel_executor(config=config, task_ids=[]),
-            run_call_executor(config=config, task="do Y instead"),
+            call_executor_with(config=config, task="do Y instead"),
         )
         await drain_background_tasks()
 
@@ -401,7 +501,7 @@ class TestCallExecutorFailures:
 
         monkeypatch.setattr(executor_tool, "mark_executor_spawned", explode)
 
-        response = await run_call_executor(config=config_for(), task="x")
+        response = await call_executor_with(config=config_for(), task="x")
 
         assert response == "Error starting task: session registry down"
         assert await fake_redis.get(LOCK_KEY) is None
@@ -422,7 +522,7 @@ class TestCallExecutorFailures:
 
         monkeypatch.setattr(executor_tool, "enqueue_task", explode)
 
-        response = await run_call_executor(config=config_for("stream-2"), task="b")
+        response = await call_executor_with(config=config_for("stream-2"), task="b")
 
         assert response == "Error starting task: redis write failed"
         assert await fake_redis.get(LOCK_KEY) == "stream-1:live-task"
@@ -457,7 +557,7 @@ class TestCancelExecutor:
         monkeypatch.setattr(
             StreamManager,
             "cancel_stream",
-            AsyncMock(side_effect=lambda sid: cancelled_streams.append(sid)),
+            AsyncMock(side_effect=cancelled_streams.append),
         )
         await fake_redis.set(LOCK_KEY, "stream-1:running-task", ex=EXECUTOR_BUSY_TTL)
         await fake_redis.rpush(QUEUE_KEY, json.dumps({"task_id": "q1"}))
@@ -499,7 +599,7 @@ class TestCancelExecutor:
         response = await run_cancel_executor(config=config_for(), task_ids=["q2"])
 
         assert response == (
-            "Cancelled: q2. Currently running task was not in the cancel list — still running."
+            "Cancelled: q2. Currently running task was not in the cancel list, still running."
         )
         assert await fake_redis.get(LOCK_KEY) == "stream-1:running-task"
         cancel_stream.assert_not_awaited()
@@ -692,7 +792,7 @@ class TestCancelWithMalformedQueueItems:
         response = await run_cancel_executor(config=config_for(), task_ids=["q1"])
 
         assert response == (
-            "Cancelled: q1. Currently running task was not in the cancel list — still running."
+            "Cancelled: q1. Currently running task was not in the cancel list, still running."
         )
         assert await fake_redis.get(LOCK_KEY) == "stream-1:running-task"
         assert await fake_redis.lrange(QUEUE_KEY, 0, -1) == ["5"]
@@ -769,3 +869,184 @@ class TestCancelBroadcast:
 
 def test_both_executor_tools_are_exported_for_the_comms_agent() -> None:
     assert [tool.name for tool in tools] == ["call_executor", "cancel_executor"]
+
+
+@pytest.mark.unit
+class TestDispatchThreadsTheTurnsIdentity:
+    """What the comms turn hands the executor about *which* turn it is.
+
+    ``bot_message_id`` is the original live turn's message: a HIL pause resumes
+    onto it rather than minting a rival placeholder, so losing it here is the
+    same user-visible split as losing it in the queue — the client renders a
+    second bubble with its own tool accordion and the first one never finishes.
+    """
+
+    async def test_the_bot_message_id_reaches_the_executor_run(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        await call_executor_with(
+            config=config_for(bot_message_id="bmsg-7"), task="check my calendar"
+        )
+        await drain_background_tasks()
+
+        assert spawned_runs[0]["run"].bot_message_id == "bmsg-7"
+
+    async def test_a_turn_without_one_dispatches_with_none(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """Only a HIL pause sets it; a plain live turn must dispatch cleanly
+        rather than carrying a stale id from the configurable."""
+        await call_executor_with(config=config_for(), task="check my calendar")
+        await drain_background_tasks()
+
+        assert spawned_runs[0]["run"].bot_message_id is None
+
+    async def test_the_users_own_wording_reaches_the_executor(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """The executor's brief carries the verbatim request alongside comms'
+        paraphrase, so a detail comms dropped is still recoverable downstream.
+
+        Sourced from the configurable, so it rides along whatever the comms model
+        did or did not emit — the tool call below passes no verbatim argument
+        because the schema no longer has one.
+        """
+        await call_executor_with(
+            config=config_for(user_request="pls archive the junk mail and flag the offer thing"),
+            task="triage the inbox",
+        )
+        await drain_background_tasks()
+
+        brief = spawned_runs[0]["task"]
+        assert brief.startswith(
+            "Original request (verbatim):\npls archive the junk mail and flag the offer thing"
+        )
+        assert "triage the inbox" in brief
+
+    async def test_identifiers_survive_a_paraphrase_that_mangles_them(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """Regression: a pasted billing table went to the executor with 3 of its 4
+        recipient addresses corrupted by the comms model's rewrite, and no verbatim
+        copy to check against. The brief must still carry the exact bytes even when
+        the model's `task` gets the identifiers wrong."""
+        pasted = (
+            "writetokhair@gmail.com\tFailed\t$30.00\tsub_0Ni7oWIA6kMF0ogWiKC3x\n"
+            "tmunson750@gmail.com\tCancelled\t$30.00\tsub_0NfdUP7ekmLIw59KBtWwa"
+        )
+        await call_executor_with(
+            config=config_for(user_request=pasted),
+            task="email writetokhair@gmail.com and tmndo.send@gmail.com about sub_0Ni7cWqI5",
+        )
+        await drain_background_tasks()
+
+        brief = spawned_runs[0]["task"]
+        assert pasted in brief
+        assert "sub_0NfdUP7ekmLIw59KBtWwa" in brief
+
+
+FALLBACK_NOTE = (
+    "<playbook_fallback>\n"
+    "The playbook for this workflow was replayed first and it stopped partway.\n\n"
+    "These steps ALREADY RAN in this same execution, and their effects are real:\n"
+    "- events (list_events) -> 12 events\n\n"
+    "Do not repeat them. Pick up from where the replay stopped and finish the workflow.\n"
+    "</playbook_fallback>"
+)
+
+
+def _failed_playbook() -> PlaybookDocument:
+    now = datetime.now(UTC)
+    return PlaybookDocument(
+        playbook_id="pb-1",
+        workflow_id="wf-1",
+        user_id="user-1",
+        workflow_hash="h",
+        description="d",
+        steps=[PlaybookStep(id="events", tool="list_events", args={})],
+        synthesize="s",
+        last_run_status=PlaybookRunStatus.FAILED,
+        last_run_reason="stopped at step 2 (send_email)",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.unit
+class TestStoppedReplayRecordReachesTheExecutor:
+    """A workflow fire whose replay stopped partway is finished by the executor.
+
+    The replay's record used to reach only comms, as part of the trigger
+    message, while the executor got the heal brief alone: "do the work properly
+    yourself" with no word that half of it had already happened. The record now
+    rides the configurable, like the verbatim request, and lands in the brief
+    exactly as the worker wrote it.
+    """
+
+    async def test_the_fallback_note_reaches_the_brief_verbatim(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(executor_tool, "get_last_run_brief", AsyncMock(return_value=""))
+        monkeypatch.setattr(
+            playbook_repository, "get_for_workflow", AsyncMock(return_value=_failed_playbook())
+        )
+
+        await call_executor_with(
+            config=config_for(workflow_id="wf-1", playbook_fallback=FALLBACK_NOTE),
+            task="finish the agenda run",
+        )
+        await drain_background_tasks()
+
+        brief = spawned_runs[0]["task"]
+        assert FALLBACK_NOTE in brief
+        assert "stopped at step 2 (send_email)" in brief, "still the heal brief"
+        assert brief.index("finish the agenda run") < brief.index(FALLBACK_NOTE)
+
+    async def test_a_fire_without_a_stopped_replay_carries_no_record(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(executor_tool, "get_last_run_brief", AsyncMock(return_value=""))
+        monkeypatch.setattr(
+            playbook_repository, "get_for_workflow", AsyncMock(return_value=_failed_playbook())
+        )
+
+        await call_executor_with(config=config_for(workflow_id="wf-1"), task="run the agenda")
+        await drain_background_tasks()
+
+        assert "playbook_fallback" not in spawned_runs[0]["task"]
+
+
+@pytest.mark.unit
+class TestDispatchAcknowledgement:
+    """Comms writes its user-facing reply from this string, before the executor
+    has run a single tool. It is the one place where the wording *is* the
+    behaviour: it must not read as completion, and it has to name the approval
+    gate the user may be about to see. Asserted verbatim rather than by
+    substring — a reworded clause that quietly drops "Nothing has run yet" or
+    the approval sentence is exactly the regression that would ship a bot
+    announcing work it has not done.
+    """
+
+    async def test_the_acknowledgement_is_exact(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        response = await call_executor_with(config=config_for(), task="send the email")
+        task_id = task_id_from(response)
+
+        assert response == (
+            f"Task accepted (task_id: {task_id}). Nothing has run yet: this only means the "
+            "work has STARTED. Do not tell the user anything was sent, created, deleted, or "
+            "finished. Risky actions pause for the user's approval first and they see an "
+            "approval card; if that happens the work waits on them, not on you. Acknowledge "
+            "that you are on it, and say the action is waiting for their approval if one is "
+            "pending. This guidance applies ONLY to this acknowledgment. The real result "
+            "arrives later as its own message and supersedes it completely: by then the gate "
+            "is settled, so report what happened and never ask again for an approval the "
+            "user has already given."
+        )

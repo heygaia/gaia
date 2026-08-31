@@ -110,8 +110,8 @@ def _asset_data_uris() -> dict[str, str]:
 
 @lru_cache(maxsize=1)
 def _art_credit() -> str:
-    credits: dict[str, str] = json.loads((_ASSETS_DIR / "credits.json").read_text())
-    return credits.get("ART1", "")
+    art_credits: dict[str, str] = json.loads((_ASSETS_DIR / "credits.json").read_text())
+    return art_credits.get("ART1", "")
 
 
 @lru_cache(maxsize=1)

@@ -13,7 +13,7 @@ from app.constants.log_tags import LogTag
 from shared.py.wide_events import log
 
 
-def to_std_dict(obj: t.Any) -> t.Any:
+def to_std_dict(obj: t.Any) -> t.Any:  # noqa: ANN401 -- framework contract
     """Recursively convert jsonref proxies to standard python dicts/lists"""
     if isinstance(obj, dict):
         return {k: to_std_dict(v) for k, v in obj.items()}
@@ -26,7 +26,7 @@ _original_parse_info: Callable[..., t.Any] | None = None
 _applied = False
 
 
-def _patched_parse_info(self: t.Any) -> t.Any:
+def _patched_parse_info(self: t.Any) -> t.Any:  # noqa: ANN401 -- framework contract
     """Patched version that inlines $ref before storing schema"""
     if _original_parse_info is None:
         raise RuntimeError("composio_custom_tool_schema_patch.apply() was not called")
@@ -49,7 +49,9 @@ def apply() -> None:
         return
 
     try:
-        from composio.core.models.custom_tools import CustomTool
+        from composio.core.models.custom_tools import (  # noqa: PLC0415 -- upstream import stays inside apply() so failures log instead of breaking app import
+            CustomTool,
+        )
 
         # Name-mangled private attribute (CustomTool.__parse_info) isn't a
         # public attribute mypy can resolve on the class; the cast to Any
@@ -59,11 +61,16 @@ def apply() -> None:
         custom_tool_cls._CustomTool__parse_info = _patched_parse_info
 
         _applied = True
-        log.info(f"{LogTag.STARTUP} Applied custom_tool schema inline patch using jsonref")
+        log.info(
+            f"{LogTag.PATCH} Applied custom_tool schema inline patch", patch="custom_tool_schema"
+        )
     except Exception as e:
-        # See composio_langchain_patch: a silently-failed patch is a runtime
-        # behaviour change that has to be visible in structured logs.
-        log.error(f"{LogTag.STARTUP} Failed to apply custom_tool patch: {e}")
+        log.error(
+            f"{LogTag.PATCH} Failed to apply custom_tool patch",
+            patch="custom_tool_schema",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 # Apply patch

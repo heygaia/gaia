@@ -26,6 +26,7 @@ from tests.e2e._harness.graph_run import (
     SELECT_NODE,
     TOOLS_NODE,
     RecordingStore,
+    call,
     executor_graph,
     run_graph,
 )
@@ -37,12 +38,10 @@ pytestmark = pytest.mark.e2e
 RETRIEVABLE = "web_search_tool"
 
 
-def call(name: str, args: dict[str, Any] | None = None, id: str = "c1") -> dict[str, Any]:
-    return {"name": name, "args": args or {}, "id": id}
-
-
-def retrieve(*names: str, id: str = "r1") -> dict[str, Any]:
-    return call("retrieve_tools", {"query": " ".join(names), "exact_tool_names": list(names)}, id)
+def retrieve(*names: str, retrieve_id: str = "r1") -> dict[str, Any]:
+    return call(
+        "retrieve_tools", {"query": " ".join(names), "exact_tool_names": list(names)}, retrieve_id
+    )
 
 
 class TestExactBinding:
@@ -52,7 +51,7 @@ class TestExactBinding:
         async with executor_graph(
             [
                 retrieve(RETRIEVABLE),
-                call(RETRIEVABLE, {"query": "cats"}, id="c1"),
+                call(RETRIEVABLE, {"query": "cats"}, call_id="c1"),
                 "Here is what I found.",
             ]
         ) as graph:
@@ -78,11 +77,19 @@ class TestExactBinding:
         assert store.searches == [], "exact binding performed a semantic search"
 
     async def test_the_selection_is_announced_back_to_the_model(self):
-        """The model only learns what it may call from this ToolMessage."""
+        """The model only learns what it may call from this ToolMessage.
+
+        Asserted verbatim, not by substring: the text is the instruction the
+        model acts on, and "the name appears somewhere in there" would still
+        pass if the surrounding sentence stopped telling it the tools are
+        callable now.
+        """
         async with executor_graph([retrieve(RETRIEVABLE), "ok"]) as graph:
             run = await run_graph(graph, "search the web")
 
-        assert run.results_from(SELECT_NODE) == [f"Available tools: ['{RETRIEVABLE}']"]
+        assert run.results_from(SELECT_NODE) == [
+            f"Bound 1 tools, call them directly:\n  - {RETRIEVABLE}"
+        ]
 
     async def test_several_tools_bind_in_one_retrieval(self):
         async with executor_graph([retrieve(RETRIEVABLE, "get_weather"), "ok"]) as graph:
@@ -96,8 +103,8 @@ class TestExactBinding:
         async with executor_graph(
             [
                 retrieve(RETRIEVABLE),
-                call(RETRIEVABLE, {"query": "first"}, id="c1"),
-                call(RETRIEVABLE, {"query": "second"}, id="c2"),
+                call(RETRIEVABLE, {"query": "first"}, call_id="c1"),
+                call(RETRIEVABLE, {"query": "second"}, call_id="c2"),
                 "Both searches done.",
             ]
         ) as graph:
@@ -201,9 +208,9 @@ class TestUnboundToolHandling:
         must route back to the agent rather than terminate."""
         async with executor_graph(
             [
-                call(RETRIEVABLE, {"query": "cats"}, id="c0"),
+                call(RETRIEVABLE, {"query": "cats"}, call_id="c0"),
                 retrieve(RETRIEVABLE),
-                call(RETRIEVABLE, {"query": "cats"}, id="c1"),
+                call(RETRIEVABLE, {"query": "cats"}, call_id="c1"),
                 "Found it.",
             ]
         ) as graph:
@@ -222,7 +229,9 @@ class TestUnboundToolHandling:
         the retrieval side) will turn this test red and have to be considered
         deliberately. See the plan, §9 A.
         """
-        async with executor_graph([call(RETRIEVABLE, {"query": "cats"}, id="loop")] * 30) as graph:
+        async with executor_graph(
+            [call(RETRIEVABLE, {"query": "cats"}, call_id="loop")] * 30
+        ) as graph:
             run = await run_graph(graph, "search the web", recursion_limit=12)
 
         assert run.error is not None, "the unbound-tool loop terminated on its own"
@@ -259,7 +268,7 @@ class TestScopingAndNaming:
         """The same rewrite on the routing side. Binding it and then rejecting
         the call is the worst of both — the model is told the tool exists and
         cannot use it."""
-        async with executor_graph([call("plan-tasks", {"tasks": []}, id="c1"), "ok"]) as graph:
+        async with executor_graph([call("plan-tasks", {"tasks": []}, call_id="c1"), "ok"]) as graph:
             run = await run_graph(graph, "plan something")
 
         assert REJECT_NODE not in run.nodes()
@@ -273,21 +282,22 @@ class TestUnknownToolNames:
 
         assert run.bound_tools() == []
 
-    async def test_an_unknown_name_is_reported_as_an_empty_selection(self):
-        """The model is told "Available tools: []" and nothing else — the same
-        answer it would get if a semantic search simply found nothing. There is
-        no signal that the name was wrong, so the model cannot correct itself.
-
-        This asserts today's contract, not a good one. ``retrieve_tools`` DOES
-        append corrective guidance for subagent names and out-of-scope names;
-        unknown names are the one case that gets silence. Flagged in the plan
-        as a candidate fix — changing it is a product decision, so this test
-        pins the behaviour rather than pre-empting it.
+    async def test_an_unknown_name_is_named_back_with_a_do_not_retry(self):
+        """An unknown name used to come back as ``Available tools: []`` — the
+        same answer a semantic search that found nothing gives, so the model had
+        no signal the NAME was wrong and would retype it until it ran out of
+        steps. Retrieval now names the rejected tool and points at the query
+        path, which is the only thing that breaks that loop.
         """
         async with executor_graph([retrieve("no_such_tool_xyz"), "gave up"]) as graph:
             run = await run_graph(graph, "do something impossible")
 
-        assert run.results_from(SELECT_NODE) == ["Available tools: []"]
+        assert run.results_from(SELECT_NODE) == [
+            (
+                "Not found, nothing bound: no_such_tool_xyz. Do not retry these names; "
+                "run retrieve_tools(query=...) to find what actually exists."
+            )
+        ]
 
     async def test_a_valid_name_alongside_an_unknown_one_still_binds(self):
         """One bad name must not poison the batch."""
@@ -312,7 +322,7 @@ class TestRetrievalContract:
         non-empty is not enough — "Available tools: []" is non-empty and tells
         the model nothing, so the corrective text that retrieval actually
         produces must survive the trip back."""
-        async with executor_graph([call("retrieve_tools", {}, id="r1"), "ok"]) as graph:
+        async with executor_graph([call("retrieve_tools", {}, call_id="r1"), "ok"]) as graph:
             run = await run_graph(graph, "find me a tool")
 
         assert run.bound_tools() == []

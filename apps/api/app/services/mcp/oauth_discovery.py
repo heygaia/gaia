@@ -57,7 +57,12 @@ async def discover_oauth_config(
     try:
         validate_https_url(server_url)
     except OAuthSecurityError as e:
-        log.warning(f"{LogTag.MCP} Server URL security warning for {integration_id}: {e}")
+        log.warning(
+            f"{LogTag.MCP} Server URL security warning for",
+            integration_id=integration_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     challenge = challenge_data or await extract_auth_challenge(server_url)
     initial_scope = challenge.get("scope")
@@ -95,7 +100,12 @@ async def discover_oauth_config(
         try:
             validate_oauth_endpoints(as_metadata)
         except OAuthSecurityError as e:
-            log.warning(f"{LogTag.MCP} OAuth endpoint security warning: {e}")
+            log.warning(
+                f"{LogTag.MCP} OAuth endpoint security warning",
+                error=str(e),
+                error_type=type(e).__name__,
+                integration_id=integration_id,
+            )
 
         await token_store.store_oauth_discovery(integration_id, discovery)
         return discovery
@@ -114,7 +124,12 @@ async def discover_oauth_config(
         try:
             validate_oauth_endpoints(as_metadata)
         except OAuthSecurityError as e:
-            log.warning(f"{LogTag.MCP} OAuth endpoint security warning: {e}")
+            log.warning(
+                f"{LogTag.MCP} OAuth endpoint security warning",
+                error=str(e),
+                error_type=type(e).__name__,
+                integration_id=integration_id,
+            )
 
         await token_store.store_oauth_discovery(integration_id, discovery)
         return discovery
@@ -124,7 +139,7 @@ async def discover_oauth_config(
             f"OAuth discovery failed for {integration_id}. "
             f"RFC 9728 PRM: {prm_error or 'no authorization_servers'}. "
             f"Direct OAuth (RFC 8414): {direct_error}"
-        )
+        ) from direct_error
 
 
 async def probe_mcp_connection(server_url: str) -> McpProbeResult:

@@ -27,7 +27,6 @@ from app.models.integration_models import (
     ListIntegrationsResult,
     SuggestedIntegration,
 )
-from app.services.connect_link_service import build_connect_link_url
 from app.services.oauth.oauth_service import (
     check_integration_status as check_single_integration_status,
     check_multiple_integrations_status,
@@ -37,7 +36,7 @@ from app.templates.docstrings.integration_tool_docs import (
     CONNECT_INTEGRATION,
     LIST_INTEGRATIONS,
 )
-from app.utils.integration_checker import build_integration_connection_message
+from app.utils.integration_checker import request_integration_connection
 from shared.py.wide_events import log
 
 
@@ -125,7 +124,7 @@ async def list_integrations(
         if search_public_query and search_public_query.strip():
             try:
                 query = search_public_query.strip()
-                log.info(f"{LogTag.TOOL} Searching public integrations with query: {query}")
+                log.info(f"{LogTag.TOOL} Searching public integrations", query=query)
 
                 # Get IDs to exclude (user already has these)
                 existing_ids = {i["id"] for i in connected_list + available_list}
@@ -143,7 +142,11 @@ async def list_integrations(
 
                 for doc in docs:
                     iid = doc.integration_id
-                    log.info(f"{LogTag.TOOL} Found public integration: {iid} - {doc.name}")
+                    log.info(
+                        f"{LogTag.TOOL} Found public integration",
+                        integration_id=iid,
+                        integration_name=doc.name,
+                    )
 
                     suggested_list.append(
                         {
@@ -161,10 +164,16 @@ async def list_integrations(
                         }
                     )
 
-                log.info(f"{LogTag.TOOL} Found {len(suggested_list)} public integrations")
+                log.info(
+                    f"{LogTag.TOOL} Found public integrations",
+                    integration_count=len(suggested_list),
+                )
 
             except Exception as e:
-                log.warning(f"{LogTag.TOOL} Failed to search public integrations: {e}")
+                log.warning(
+                    f"{LogTag.TOOL} Failed to search public integrations",
+                    error_type=type(e).__name__,
+                )
 
         # Stream suggested integrations to frontend (camelCase)
         suggested_for_stream = [
@@ -198,7 +207,7 @@ async def list_integrations(
         }
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error listing integrations: {e}")
+        log.error(f"{LogTag.TOOL} Error listing integrations", error_type=type(e).__name__)
         return f"Error listing integrations: {e!s}"
 
 
@@ -285,21 +294,18 @@ async def connect_integration(
 
         for integration in connections_to_initiate:
             writer({"progress": f"Initiating {integration.name} connection..."})
-
-            integration_data = {
-                "integration_id": integration.id,
-                "message": f"To use {integration.name} features, please connect your account.",
-            }
-
-            writer({"integration_connection_required": integration_data})
-
-            connect_url = await build_connect_link_url(str(user_id), integration.id)
-            results.append(build_integration_connection_message(integration.name, connect_url))
+            results.append(
+                await request_integration_connection(integration.id, integration.name, str(user_id))
+            )
 
         return "\n".join(results) if results else "No integrations to connect."
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error connecting integrations {integration_ids}: {e}")
+        log.error(
+            f"{LogTag.TOOL} Error connecting integrations",
+            integration_ids=integration_ids,
+            error_type=type(e).__name__,
+        )
         return f"Error connecting integrations: {e!s}"
 
 
@@ -346,7 +352,7 @@ async def check_integrations_status(
         return "\n".join(results)
 
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Error checking integration status: {e}")
+        log.error(f"{LogTag.TOOL} Error checking integration status", error_type=type(e).__name__)
         return f"Error checking status: {e!s}"
 
 

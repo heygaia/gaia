@@ -22,12 +22,12 @@ from mcp.types import (
     TextResourceContents,
 )
 from pydantic import AnyUrl
-import pytest
+
+from app.services.analytics_service import AnalyticsEvents
 
 API = "/api/v1/mcp"
 
 
-@pytest.mark.unit
 class TestProxyToolCall:
     """POST /api/v1/mcp/proxy/tool-call"""
 
@@ -35,10 +35,13 @@ class TestProxyToolCall:
         mock_result = CallToolResult(
             content=[TextContent(type="text", text="hello")], isError=False
         )
-        with patch(
-            "app.api.v1.endpoints.mcp_proxy.get_mcp_client",
-            new_callable=AsyncMock,
-        ) as mock_get:
+        with (
+            patch(
+                "app.api.v1.endpoints.mcp_proxy.get_mcp_client",
+                new_callable=AsyncMock,
+            ) as mock_get,
+            patch("app.api.v1.endpoints.mcp_proxy.capture_context_event") as mock_capture,
+        ):
             mock_client = AsyncMock()
             mock_client.call_tool_on_server.return_value = mock_result
             mock_get.return_value = mock_client
@@ -55,13 +58,20 @@ class TestProxyToolCall:
         assert data["content"][0]["type"] == "text"
         assert data["content"][0]["text"] == "hello"
         assert data["is_error"] is False
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.TOOL_USED,
+            {"tool_name": "test_tool", "source": "mcp_app"},
+        )
 
     async def test_tool_call_with_error_flag(self, client: AsyncClient) -> None:
         mock_result = CallToolResult(content=[], isError=True)
-        with patch(
-            "app.api.v1.endpoints.mcp_proxy.get_mcp_client",
-            new_callable=AsyncMock,
-        ) as mock_get:
+        with (
+            patch(
+                "app.api.v1.endpoints.mcp_proxy.get_mcp_client",
+                new_callable=AsyncMock,
+            ) as mock_get,
+            patch("app.api.v1.endpoints.mcp_proxy.capture_context_event") as mock_capture,
+        ):
             mock_client = AsyncMock()
             mock_client.call_tool_on_server.return_value = mock_result
             mock_get.return_value = mock_client
@@ -74,6 +84,10 @@ class TestProxyToolCall:
             )
         assert resp.status_code == 200
         assert resp.json()["is_error"] is True
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.TOOL_USED,
+            {"tool_name": "failing_tool", "source": "mcp_app"},
+        )
 
     async def test_tool_call_service_error(self, client: AsyncClient) -> None:
         with patch(
@@ -108,7 +122,6 @@ class TestProxyToolCall:
         assert resp.status_code == 401
 
 
-@pytest.mark.unit
 class TestProxyResourcesList:
     """POST /api/v1/mcp/proxy/resources/list"""
 
@@ -172,7 +185,6 @@ class TestProxyResourcesList:
         assert resp.status_code == 401
 
 
-@pytest.mark.unit
 class TestProxyResourceTemplatesList:
     """POST /api/v1/mcp/proxy/resources/templates/list"""
 
@@ -239,7 +251,6 @@ class TestProxyResourceTemplatesList:
         assert resp.status_code == 401
 
 
-@pytest.mark.unit
 class TestProxyResourceRead:
     """POST /api/v1/mcp/proxy/resources/read"""
 
@@ -296,7 +307,6 @@ class TestProxyResourceRead:
         assert resp.status_code == 401
 
 
-@pytest.mark.unit
 class TestProxyPromptsList:
     """POST /api/v1/mcp/proxy/prompts/list"""
 

@@ -20,7 +20,7 @@ from app.utils.webpage_fetch import fetch_webpage
 from shared.py.wide_events import log
 
 _NO_URLS_RETRIEVED_MSG = (
-    "Search failed — no URLs were retrieved. Do NOT fabricate any URLs or results."
+    "Search failed: no URLs were retrieved. Do NOT fabricate any URLs or results."
 )
 
 
@@ -28,7 +28,7 @@ _NO_URLS_RETRIEVED_MSG = (
 @with_rate_limiting("webpage_fetch")
 @with_doc(FETCH_WEBPAGES)
 async def fetch_webpages(
-    config: RunnableConfig,
+    config: RunnableConfig,  # noqa: ARG001 -- framework contract
     urls: Annotated[list[str], "List of URLs to fetch content from"],
     # state: Annotated[dict, InjectedState],
 ) -> dict[str, Union[str, Sequence[str]]]:
@@ -84,7 +84,7 @@ async def web_search_tool(
         str,
         "The search query to look up on the web. Be specific and concise for better results.",
     ],
-    config: RunnableConfig,
+    config: RunnableConfig,  # noqa: ARG001 -- framework contract
 ) -> dict[str, Any]:
     log.set(tool={"name": "web_search_tool", "action": "search"})
     start_time = time.time()
@@ -107,7 +107,13 @@ async def web_search_tool(
         elapsed_time = time.time() - start_time
         formatted_text = f"Web search completed in {elapsed_time:.2f} seconds. Found {len(web_results)} web results, {len(image_results)} images, and {len(video_results)} videos."
 
-        log.info(f"{LogTag.TOOL} {formatted_text}")
+        log.info(
+            f"{LogTag.TOOL} Web search completed",
+            duration_seconds=round(elapsed_time, 2),
+            web_result_count=len(web_results),
+            image_count=len(image_results),
+            video_count=len(video_results),
+        )
         writer({"progress": formatted_text})
 
         # Send search data to frontend via writer
@@ -146,7 +152,7 @@ async def web_search_tool(
                 "NEVER invent or fabricate URLs. If no results were found, say so clearly."
             ),
             "instructions": (
-                "Summarise the search results — do not repeat them verbatim. "
+                "Summarise the search results: do not repeat them verbatim. "
                 "Do not show images in markdown. "
                 "Only mention URLs that appear in the search results. "
                 "These results will be shown on the frontend in an appropriate manner."
@@ -154,7 +160,9 @@ async def web_search_tool(
         }
 
     except (TimeoutError, ConnectionError) as e:
-        log.error(f"{LogTag.TOOL} Network error in web search: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.TOOL} Network error in web search", error_type=type(e).__name__, exc_info=True
+        )
         return {
             "formatted_text": "\n\nConnection timed out during web search. Please try again later.",
             "error": str(e),
@@ -162,7 +170,9 @@ async def web_search_tool(
             "integrity_note": _NO_URLS_RETRIEVED_MSG,
         }
     except ValueError as e:
-        log.error(f"{LogTag.TOOL} Value error in web search: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.TOOL} Value error in web search", error_type=type(e).__name__, exc_info=True
+        )
         return {
             "formatted_text": "\n\nInvalid search parameters. Please try a different query.",
             "error": str(e),
@@ -170,7 +180,11 @@ async def web_search_tool(
             "integrity_note": _NO_URLS_RETRIEVED_MSG,
         }
     except Exception as e:
-        log.error(f"{LogTag.TOOL} Unexpected error in web search: {e}", exc_info=True)
+        log.error(
+            f"{LogTag.TOOL} Unexpected error in web search",
+            error_type=type(e).__name__,
+            exc_info=True,
+        )
         return {
             "formatted_text": "\n\nError performing web search. Please try again later.",
             "error": str(e),

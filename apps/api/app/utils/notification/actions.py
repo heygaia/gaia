@@ -64,7 +64,9 @@ class ApiCallActionHandler(ActionHandler):
 
         if api_config is None:
             log.error(
-                f"{LogTag.NOTIFICATION} API call configuration missing for action {action.id} in notification {notification.id}"
+                f"{LogTag.NOTIFICATION} API call configuration missing for action in notification",
+                id=action.id,
+                user_id=user_id,
             )
             return ActionResult(
                 success=False,
@@ -123,7 +125,11 @@ class ApiCallActionHandler(ActionHandler):
 
         except httpx.HTTPError as e:
             log.error(
-                f"{LogTag.NOTIFICATION} API call failed for action {action.id} in notification {notification.id}: {e!s}"
+                f"{LogTag.NOTIFICATION} API call failed for action in notification",
+                id=action.id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
             )
             return ActionResult(
                 success=False,
@@ -132,7 +138,11 @@ class ApiCallActionHandler(ActionHandler):
             )
         except Exception as e:
             log.error(
-                f"{LogTag.NOTIFICATION} Unexpected error during API call for action {action.id} in notification {notification.id}: {e!s}"
+                f"{LogTag.NOTIFICATION} Unexpected error during API call for action in notification",
+                id=action.id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
             )
             return ActionResult(
                 success=False,
@@ -154,15 +164,17 @@ class RedirectActionHandler(ActionHandler):
     async def execute(
         self,
         action: NotificationAction,
-        notification: NotificationRecord,
+        notification: NotificationRecord,  # noqa: ARG002 -- framework contract
         user_id: str,
-        request: Request | None,
+        request: Request | None,  # noqa: ARG002 -- framework contract
     ) -> ActionResult:
         redirect_config = action.config.redirect
 
         if redirect_config is None:
             log.error(
-                f"{LogTag.NOTIFICATION} Redirect configuration missing for action {action.id} in notification {notification.id}"
+                f"{LogTag.NOTIFICATION} Redirect configuration missing for action in notification",
+                id=action.id,
+                user_id=user_id,
             )
             return ActionResult(
                 success=False,
@@ -198,13 +210,15 @@ class ModalActionHandler(ActionHandler):
         action: NotificationAction,
         notification: NotificationRecord,
         user_id: str,
-        request: Request | None,
+        request: Request | None,  # noqa: ARG002 -- framework contract
     ) -> ActionResult:
         modal_config = action.config.modal
 
         if modal_config is None:
             log.error(
-                f"{LogTag.NOTIFICATION} Modal configuration missing for action {action.id} in notification {notification.id}"
+                f"{LogTag.NOTIFICATION} Modal configuration missing for action in notification",
+                id=action.id,
+                user_id=user_id,
             )
             return ActionResult(
                 success=False,

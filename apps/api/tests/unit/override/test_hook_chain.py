@@ -7,10 +7,9 @@ contract assumes the previous ones already ran:
   ``manage_system_prompts_node`` the provider would receive a dangling tool call
   and reject the whole request, so the user's message appears to vanish;
 * ``adapt_media_node`` rewrites media blocks for the model lane;
-* ``manage_system_prompts_node`` collapses each system slot to its latest copy,
-  which only works once the earlier hooks have finished adding theirs;
-* the todo hook re-renders the plan, and must land inside the leading system
-  block so Gemini keeps it.
+* the todo hook re-renders the plan and appends it, marked;
+* ``manage_system_prompts_node`` runs LAST and collapses each system slot to its
+  latest copy, which only works once every earlier hook has added theirs.
 
 Nothing asserted that they run in order. ``test_graph_builder`` checks only
 ``len(pre_model_hooks) == 4``, which any four callables in any order satisfy;
@@ -22,11 +21,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
+from app.override.langgraph_bigtool.agent_config import HookConfig
 from app.override.langgraph_bigtool.hooks import execute_hooks
-
-pytestmark = pytest.mark.unit
 
 
 def _recorder(name: str, calls: list[str]):
@@ -98,7 +94,7 @@ class TestDeclaredChains:
 
         captured: dict[str, Any] = {}
 
-        def _capture(**kwargs: Any) -> Any:
+        def _capture(*args: Any, **kwargs: Any) -> Any:
             captured.update(kwargs)
             return MagicMock(compile=MagicMock(return_value=MagicMock()))
 
@@ -123,7 +119,9 @@ class TestDeclaredChains:
 
     @classmethod
     async def _hooks_for(cls, builder: str) -> list[Any]:
-        return list((await cls._captured(builder))["pre_model_hooks"])
+        captured = await cls._captured(builder)
+        hooks = captured.get("hooks_config") or HookConfig()
+        return list(hooks.pre_model_hooks or [])
 
     async def test_the_executor_filters_before_it_manages_prompts(self):
         """``filter_messages_node`` must run first. After the prompt manager, a
@@ -137,17 +135,21 @@ class TestDeclaredChains:
 
         assert hooks[0] is filter_messages_node
         assert hooks[1] is adapt_media_node
-        assert hooks[2] is manage_system_prompts_node
+        assert hooks.index(filter_messages_node) < hooks.index(manage_system_prompts_node)
 
-    async def test_the_executor_renders_todos_after_the_prompt_manager(self):
-        """The todo hook inserts into the leading system block. Running it before
-        the prompt manager would let that pass strip it as a stale slot."""
+    async def test_the_prompt_manager_runs_last_so_it_can_slot_what_others_added(self):
+        """Every hook that emits a system message — the todo plan, the comms
+        status frame — appends it marked and lets the prompt manager place it.
+        A hook that ran afterwards would have to place its own message, and its
+        position would then depend on which other slots that turn happened to
+        fill, which is how ``todo_context`` used to land in a different position
+        depending on whether a background-executor frame was present."""
         from app.agents.core.nodes.manage_system_prompts import manage_system_prompts_node
 
         hooks = await self._hooks_for("build_executor_graph")
 
         assert len(hooks) == 4
-        assert hooks.index(manage_system_prompts_node) < 3
+        assert hooks[-1] is manage_system_prompts_node
 
     async def test_comms_slots_the_executor_status_before_the_prompt_manager(self):
         """The status frame is a system message that must be slotted, not
@@ -189,7 +191,8 @@ class TestEndGraphHooks:
 
         captured = await TestDeclaredChains._captured("build_comms_graph")
 
-        assert list(captured["end_graph_hooks"]) == [follow_up_actions_node, memory_node]
+        hooks = captured.get("hooks_config") or HookConfig()
+        assert list(hooks.end_graph_hooks or []) == [follow_up_actions_node, memory_node]
 
     async def test_the_executor_has_no_end_graph_hooks(self):
         """The executor's output is not user-facing, so follow-up chips and
@@ -197,4 +200,5 @@ class TestEndGraphHooks:
         long, so the cost would be paid on every delegation."""
         captured = await TestDeclaredChains._captured("build_executor_graph")
 
-        assert not captured.get("end_graph_hooks")
+        hooks = captured.get("hooks_config") or HookConfig()
+        assert not hooks.end_graph_hooks

@@ -28,13 +28,15 @@ from app.agents.llm.client import (
     _get_ordered_providers,
     ainvoke_llm,
     init_llm,
+    register_llm_providers,
 )
 from app.config.model_pricing import (
     DEFAULT_PRICING,
     ModelPricing,
-    calculate_token_cost,
     get_model_pricing,
 )
+from app.config.settings import settings
+from app.constants.llm import DEFAULT_LLM_PROVIDER
 from app.core.lazy_loader import MissingKeyStrategy, ProviderRegistry
 
 
@@ -52,7 +54,8 @@ class TestProviderPriorityOrdering:
     """Verify provider ordering follows PROVIDER_PRIORITY and respects preferences."""
 
     def test_default_priority_order(self) -> None:
-        """Without a preferred provider, ordering follows PROVIDER_PRIORITY (gemini > openrouter)."""
+        """Without a preferred provider, ordering follows PROVIDER_PRIORITY
+        (openrouter > gemini — the default provider leads)."""
         mock_gemini = _make_mock_llm("gemini")
         mock_openrouter = _make_mock_llm("openrouter")
 
@@ -64,8 +67,8 @@ class TestProviderPriorityOrdering:
         ordered = _get_ordered_providers(available, preferred_provider=None, fallback_enabled=True)
 
         assert len(ordered) == 2
-        assert ordered[0]["name"] == "gemini"
-        assert ordered[1]["name"] == "openrouter"
+        assert ordered[0]["name"] == "openrouter"
+        assert ordered[1]["name"] == "gemini"
 
     def test_preferred_provider_goes_first(self) -> None:
         """When a preferred_provider is given and available, it leads the list."""
@@ -152,10 +155,12 @@ class TestProviderInitialization:
         with patch("app.agents.llm.client._get_available_providers", return_value=available):
             init_llm()
 
-        # Primary is gemini, and configurable_alternatives is called with openrouter
-        mock_gemini.configurable_alternatives.assert_called_once()
-        call_kwargs = mock_gemini.configurable_alternatives.call_args[1]
-        assert "openrouter" in call_kwargs
+        # Primary is openrouter (priority 1), and configurable_alternatives is
+        # called on it with gemini as the alternative.
+        mock_openrouter.configurable_alternatives.assert_called_once()
+        call_kwargs = mock_openrouter.configurable_alternatives.call_args[1]
+        assert call_kwargs["default_key"] == "openrouter"
+        assert "gemini" in call_kwargs
 
     def test_init_llm_preferred_provider_openrouter(self) -> None:
         """Requesting openrouter as preferred provider makes it the primary."""
@@ -232,77 +237,19 @@ class TestCreateConfigurableLLM:
 
 @pytest.mark.integration
 class TestModelPricing:
-    """Test model pricing lookup and token cost calculation."""
+    """Pricing resolves from the in-code table — no database involved."""
 
-    async def test_get_model_pricing_returns_default_on_missing_model(self) -> None:
-        """When model_service returns None, DEFAULT_PRICING is used."""
-        with patch(
-            "app.config.model_pricing.get_model_by_id",
-            new_callable=AsyncMock,
-            return_value=None,
-        ):
-            pricing = await get_model_pricing("nonexistent-model")
+    async def test_get_model_pricing_returns_default_on_unknown_model(self) -> None:
+        assert get_model_pricing("nonexistent-model") == DEFAULT_PRICING
 
-        assert pricing == DEFAULT_PRICING
-
-    async def test_get_model_pricing_returns_model_data(self) -> None:
-        """When model_service returns a model with pricing, those values are used."""
-        mock_model = MagicMock()
-        mock_model.pricing_per_1k_input_tokens = 0.005
-        mock_model.pricing_per_1k_output_tokens = 0.015
-        # Explicitly set cached pricing to None so production derives it from
-        # the DEFAULT_CACHED_INPUT_FRACTION (0.25 * input_cost = 0.00125).
-        mock_model.pricing_per_1k_cached_input_tokens = None
-
-        with patch(
-            "app.config.model_pricing.get_model_by_id",
-            new_callable=AsyncMock,
-            return_value=mock_model,
-        ):
-            pricing = await get_model_pricing("gpt-4o")
+    async def test_get_model_pricing_returns_the_tables_rate(self) -> None:
+        pricing = get_model_pricing("gemini-3.1-flash-lite")
 
         assert pricing == ModelPricing(
-            input_cost_per_1k=0.005,
-            output_cost_per_1k=0.015,
-            cached_input_cost_per_1k=0.005 * 0.25,
+            input_cost_per_1k=0.0001,
+            output_cost_per_1k=0.0004,
+            cached_input_cost_per_1k=0.000025,
         )
-
-    async def test_get_model_pricing_handles_exception_gracefully(self) -> None:
-        """On exception from the model service, DEFAULT_PRICING is returned."""
-        with patch(
-            "app.config.model_pricing.get_model_by_id",
-            new_callable=AsyncMock,
-            side_effect=Exception("db error"),
-        ):
-            pricing = await get_model_pricing("gpt-4o")
-
-        assert pricing == DEFAULT_PRICING
-
-    async def test_calculate_token_cost_arithmetic(self) -> None:
-        """Verify token cost calculation is correct for known inputs."""
-        with patch(
-            "app.config.model_pricing.get_model_pricing",
-            new_callable=AsyncMock,
-            return_value=ModelPricing(input_cost_per_1k=0.01, output_cost_per_1k=0.03),
-        ):
-            cost = await calculate_token_cost("test-model", input_tokens=2000, output_tokens=1000)
-
-        assert cost["input_cost"] == 0.02  # 2000/1000 * 0.01
-        assert cost["output_cost"] == 0.03  # 1000/1000 * 0.03
-        assert cost["total_cost"] == 0.05
-
-    async def test_calculate_token_cost_zero_tokens(self) -> None:
-        """Zero tokens should yield zero cost."""
-        with patch(
-            "app.config.model_pricing.get_model_pricing",
-            new_callable=AsyncMock,
-            return_value=DEFAULT_PRICING,
-        ):
-            cost = await calculate_token_cost("test-model", input_tokens=0, output_tokens=0)
-
-        assert cost["input_cost"] == 0.0
-        assert cost["output_cost"] == 0.0
-        assert cost["total_cost"] == 0.0
 
 
 @pytest.mark.integration
@@ -316,9 +263,10 @@ class TestProviderConstants:
                 f"PROVIDER_PRIORITY[{priority}] = '{provider_name}' not found in PROVIDER_MODELS"
             )
 
-    def test_default_priority_is_gemini(self) -> None:
-        """Priority 1 (the default) should be gemini."""
-        assert PROVIDER_PRIORITY[1] == "gemini"
+    def test_default_priority_matches_the_default_provider(self) -> None:
+        """Priority 1 is the provider serving DEFAULT_MODEL_NAME — the fallback
+        chain must start at the lane the app actually defaults to."""
+        assert PROVIDER_PRIORITY[1] == DEFAULT_LLM_PROVIDER == "openrouter"
 
     def test_provider_models_have_expected_keys(self) -> None:
         """PROVIDER_MODELS must contain gemini and openrouter."""
@@ -384,6 +332,42 @@ class TestGetAvailableProviders:
 
 
 @pytest.mark.integration
+class TestProductionProviderRegistration:
+    """Drives the REAL register_llm_providers().
+
+    `_build_registry` above always registers all four slots and varies only the
+    keys, so production's actual state — custom_llm never registered, because it
+    is gated on ENV=development — was unrepresentable, and the KeyError it raised
+    went unseen by every tier.
+    """
+
+    @pytest.mark.regression
+    def test_production_registration_leaves_provider_lookup_working(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        registry = ProviderRegistry()
+        # Registration writes to lazy_loader.providers, the lookup reads
+        # client.providers; both must point at the throwaway or the global
+        # singleton leaks into every later test.
+        monkeypatch.setattr("app.core.lazy_loader.providers", registry)
+        monkeypatch.setattr("app.agents.llm.client.providers", registry)
+        monkeypatch.setattr(settings, "ENV", "production")
+
+        register_llm_providers()
+
+        # Literals rather than LLMProviderKey/LLMProviderName: the regression
+        # gate re-runs this file against the base revision, where those enums
+        # do not exist yet, and an import error there proves nothing.
+        with pytest.raises(KeyError):
+            registry.get("custom_llm")
+
+        # That KeyError went straight out through init_llm and took every agent
+        # graph down. Which providers stay available depends on the ambient keys
+        # (CI has none), so only the never-registered slot is asserted.
+        assert "custom" not in _get_available_providers()
+
+
+@pytest.mark.integration
 class TestAinvokeFallbackRouting:
     """End-to-end routing of ainvoke_llm from a failing primary to the default fallback."""
 
@@ -414,7 +398,10 @@ class TestAinvokeFallbackRouting:
         fallback.ainvoke = AsyncMock(return_value=AIMessage(content="from default model"))
 
         result = await ainvoke_llm(
-            primary, [HumanMessage(content="hi")], fallback=fallback, label="test"
+            primary,
+            [HumanMessage(content="hi")],
+            label="test",
+            fallback=fallback,
         )
 
         assert result.content == "from default model"

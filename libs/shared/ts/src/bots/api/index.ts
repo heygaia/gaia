@@ -16,7 +16,13 @@ import type {
   SettingsResponse,
 } from "../types";
 import { getHttpStatus } from "../utils/logger";
-import { type ApprovalUpdateHandler, streamChat } from "./chat-stream";
+import { wideLog } from "../utils/wide-events";
+import {
+  type ApprovalUpdateHandler,
+  type MessageBoundaryHandler,
+  type NoticeHandler,
+  streamChat,
+} from "./chat-stream";
 import {
   downloadArtifactRequest,
   transcribeAudioRequest,
@@ -100,6 +106,14 @@ export class GaiaClient {
       headers.Authorization = `Bearer ${sessionToken}`;
     }
 
+    // Propagate the active wide-event boundary's trace_id so the backend's
+    // LoggingMiddleware stamps its request event with the same id (it honours
+    // an incoming x-trace-id and echoes it back) — one trace across bot + API.
+    const traceId = wideLog.getTraceId();
+    if (traceId) {
+      headers["x-trace-id"] = traceId;
+    }
+
     return headers;
   }
 
@@ -159,6 +173,8 @@ export class GaiaClient {
     onDone: (fullText: string, conversationId: string) => void | Promise<void>,
     onError: (error: Error) => void | Promise<void>,
     onApprovalUpdate?: ApprovalUpdateHandler,
+    onMessageBoundary?: MessageBoundaryHandler,
+    onNotice?: NoticeHandler,
   ): Promise<string> {
     return streamChat(
       {
@@ -173,6 +189,8 @@ export class GaiaClient {
       onError,
       "/api/v1/bot/chat-stream",
       onApprovalUpdate,
+      onMessageBoundary,
+      onNotice,
     );
   }
 
@@ -470,6 +488,7 @@ export class GaiaClient {
     platform: string,
     platformUserId: string,
     channelId?: string,
+    isDm?: boolean,
   ): Promise<void> {
     return this.request(async () => {
       await this.client.post(
@@ -478,6 +497,7 @@ export class GaiaClient {
           platform,
           platform_user_id: platformUserId,
           channel_id: channelId ?? null,
+          is_dm: isDm ?? false,
         },
         {
           headers: {

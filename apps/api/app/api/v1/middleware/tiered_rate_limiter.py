@@ -1,14 +1,10 @@
 """
-Tiered rate limiting middleware for API endpoints.
+Tiered rate limiting engine.
 
-Enforces daily and monthly rate limits based on user subscription plans.
-Automatically checks both time periods and rejects requests that exceed any limit.
-
-Usage:
-    @tiered_rate_limit("file_analysis", count_tokens=True)
-    async def analyze_file(user: dict = Depends(get_current_user)):
-        # Also validates token usage limits per request
-        return await analyze()
+Provides the ``TieredRateLimiter`` (Redis-backed per-user, per-feature daily and
+monthly counters), the ``tiered_limiter`` singleton, and the 429 exception types.
+The ``@tiered_rate_limit`` endpoint decorator that wraps this engine lives in
+``app.decorators.rate_limiting`` (the canonical home for rate-limit decorators).
 """
 
 import asyncio
@@ -20,6 +16,7 @@ import redis.asyncio as redis
 
 from app.config.rate_limits import (
     FEATURE_LIMITS,
+    RateLimitConfig,
     RateLimitPeriod,
     get_feature_info,
     get_feature_limits,
@@ -27,18 +24,21 @@ from app.config.rate_limits import (
     get_reset_time,
     get_time_window_key,
 )
+from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from app.db.redis import redis_cache
 from app.models.payment_models import PlanType
 from app.models.usage_models import (
-    CreditUsage,
     FeatureUsage,
     UsageInfo,
     UsagePeriod,
     UserUsageSnapshot,
 )
+from app.services.limit_upsell import LimitHitOrigin, current_limit_origin, schedule_limit_upsell
+from app.services.usage_activity import counts_as_activity, record_activity
 from app.services.usage_service import UsageService
-from shared.py.wide_events import log
+from app.utils.background_tasks import spawn_background_task
+from shared.py.wide_events import log, spawn_logged_task
 
 # UsageInfo is imported (not defined here) but re-exported for
 # `app.api.v1.middleware.__init__` — explicit re-export required under
@@ -57,6 +57,8 @@ class RateLimitExceededException(HTTPException):
         feature: str,
         plan_required: str | None = None,
         reset_time: datetime | None = None,
+        message: str | None = None,
+        current_plan: str | None = None,
     ) -> None:
         detail = {
             "error": "rate_limit_exceeded",
@@ -66,12 +68,47 @@ class RateLimitExceededException(HTTPException):
         if plan_required:
             detail["plan_required"] = plan_required
             detail["message"] = (
-                f"{feature} is not available in your current plan. Upgrade to {plan_required.upper()} to access this feature."
+                f"{feature} is not available in your current plan. Upgrade to {plan_required.capitalize()} to access this feature."
             )
         if reset_time:
             detail["reset_time"] = reset_time.isoformat()
+        if message:
+            detail["message"] = message
+        # The user's actual plan travels with the 429 so every surface (chat
+        # toast, workflow-pause notification, bot notice) can suppress the
+        # upgrade pitch for a user who is already on the top tier.
+        if current_plan:
+            detail["current_plan"] = current_plan
+
+        # Kept as attributes so consumers that rewrite ``detail`` (e.g. the
+        # agent-facing exception conversion) can still read the gate and reset.
+        self.plan_required = plan_required
+        self.reset_time = reset_time
 
         super().__init__(status_code=429, detail=detail)
+
+
+class CostBudgetExceededException(RateLimitExceededException):
+    """429 raised when a rolling USD cost budget (not a count limit) binds.
+
+    Same wire shape as the count-limit 429 — the frontend toast / upgrade
+    modal path renders identically — but a distinct type so callers (e.g.
+    the workflow worker) can branch their user-facing copy on the cause.
+    """
+
+    def __init__(
+        self,
+        feature: str,
+        plan_required: str | None = None,
+        reset_time: datetime | None = None,
+        current_plan: str | None = None,
+    ):
+        budget_message = "You've used today's AI usage allowance."
+        if plan_required:
+            budget_message += f" Upgrade to {plan_required.capitalize()} for higher limits."
+        super().__init__(
+            feature, plan_required, reset_time, message=budget_message, current_plan=current_plan
+        )
 
 
 class TieredRateLimiter:
@@ -98,26 +135,46 @@ class TieredRateLimiter:
         user_id: str,
         feature_key: str,
         user_plan: PlanType,
-        credits_used: float = 0.0,
+        origin: LimitHitOrigin | None = None,
     ) -> dict[str, UsageInfo]:
         """Enforce all limits for a feature, then atomically count this use.
 
         Raises ``RateLimitExceededException`` when any window is exhausted or
-        the user's plan has no access to the feature at all.
+        the user's plan has no access to the feature at all. Every exceed for
+        a FREE user also fires the upsell side effects (analytics event +
+        weekly-deduped email) — one seam covering all decorated endpoints and
+        agent tools. ``origin`` selects the email: interactive surfaces get the
+        upsell, background runs (worker-executed workflows) get the
+        workflows-paused note.
         """
-        current_limits = get_limits_for_plan(feature_key, user_plan)
-        usage_info = {}
+        origin = origin or current_limit_origin()
+        # Checked here rather than inside `_check_and_increment` so the bypass
+        # also skips the upsell side effects: a dev run must not fire analytics
+        # or send a user an upgrade email.
+        if settings.DEV_UNLIMITED_RATE_LIMITS:
+            return {}
+        try:
+            return await self._check_and_increment(user_id, feature_key, user_plan)
+        except RateLimitExceededException:
+            schedule_limit_upsell(user_id, feature_key, user_plan, origin)
+            raise
 
-        # Plan gate: a plan with NO limits at all (day and month both 0) has no
-        # access to the feature — the per-period loop below skips 0 limits, so
-        # without this check a fully-zeroed plan would be unlimited instead of
-        # blocked. plan_required is set when a paid plan does have access.
-        if current_limits.day <= 0 and current_limits.month <= 0:
-            paid_limits = get_feature_limits(feature_key).pro
-            paid_has_access = paid_limits.day > 0 or paid_limits.month > 0
-            plan_required = "pro" if (user_plan == PlanType.FREE and paid_has_access) else None
-            raise RateLimitExceededException(feature_key, plan_required)
+    @staticmethod
+    def _plan_required(feature_key: str, user_plan: PlanType) -> str | None:
+        """``"pro"`` when a FREE user needs the paid tier to reach this feature."""
+        paid_limits = get_feature_limits(feature_key).pro
+        paid_has_access = paid_limits.day > 0 or paid_limits.month > 0
+        return "pro" if (user_plan == PlanType.FREE and paid_has_access) else None
 
+    async def _snapshot_usage(
+        self,
+        user_id: str,
+        feature_key: str,
+        user_plan: PlanType,
+        current_limits: RateLimitConfig,
+    ) -> dict[str, UsageInfo]:
+        """Read current counters; raise when any non-zero window is exhausted."""
+        usage_info: dict[str, UsageInfo] = {}
         for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
             limit = getattr(current_limits, period.value)
             if limit <= 0:
@@ -125,31 +182,64 @@ class TieredRateLimiter:
 
             redis_key = self._get_redis_key(user_id, feature_key, period)
             current_usage = await self.redis.get(redis_key)
-            current_usage = int(current_usage) if current_usage else 0
+            used = int(current_usage) if current_usage else 0
             reset_time = get_reset_time(period)
 
-            usage_info[period.value] = UsageInfo(
-                used=current_usage, limit=limit, reset_time=reset_time
+            usage_info[period.value] = UsageInfo(used=used, limit=limit, reset_time=reset_time)
+
+            if used >= limit:
+                # No plan_required: an exhausted window is a spent budget, not a
+                # paywall. Both are only reachable when the CALLER's own limit for
+                # this period is non-zero, and a paywalled period is one whose
+                # limit is zero — so the two can never coincide. The whole-feature
+                # gate in _check_and_increment is where an upsell comes from.
+                raise RateLimitExceededException(
+                    feature_key, reset_time=reset_time, current_plan=user_plan.value
+                )
+        return usage_info
+
+    async def _check_and_increment(
+        self,
+        user_id: str,
+        feature_key: str,
+        user_plan: PlanType,
+    ) -> dict[str, UsageInfo]:
+        current_limits = get_limits_for_plan(feature_key, user_plan)
+        usage_info = {}
+
+        # Plan gate: a plan with NO limits at all (day and month both 0) has no
+        # access to the feature — the per-period loop in _snapshot_usage skips 0
+        # limits, so without this check a fully-zeroed plan would be unlimited
+        # instead of blocked. plan_required is set when a paid plan has access.
+        if current_limits.day <= 0 and current_limits.month <= 0:
+            raise RateLimitExceededException(
+                feature_key,
+                self._plan_required(feature_key, user_plan),
+                current_plan=user_plan.value,
             )
 
-            if current_usage >= limit:
-                free_limits = get_limits_for_plan(feature_key, PlanType.FREE)
-                is_plan_gated = getattr(free_limits, period.value) == 0
-                plan_required = "pro" if (user_plan == PlanType.FREE and is_plan_gated) else None
-                raise RateLimitExceededException(feature_key, plan_required, reset_time)
+        usage_info.update(
+            await self._snapshot_usage(user_id, feature_key, user_plan, current_limits)
+        )
 
-        # Increment usage atomically
+        # Increment usage atomically. Unlimited periods (limit 0) are still
+        # COUNTED — a plain INCR with no enforcement — so usage charts (e.g. a
+        # pro user's day-by-day messages) have data even where no cap applies.
         for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
             limit = getattr(current_limits, period.value)
-            if limit <= 0:
-                continue
 
             redis_key = self._get_redis_key(user_id, feature_key, period)
             ttl = self._get_ttl(period)
 
-            # Use Redis pipeline with WATCH for atomic check-and-increment
             if not self.redis.redis:
                 raise Exception("Redis connection not available")
+
+            if limit <= 0:
+                await self.redis.redis.incr(redis_key)
+                await self.redis.redis.expire(redis_key, ttl)
+                continue
+
+            # Use Redis pipeline with WATCH for atomic check-and-increment
             async with self.redis.redis.pipeline() as pipe:
                 while True:
                     try:
@@ -163,13 +253,12 @@ class TieredRateLimiter:
                         # Double-check limit hasn't been exceeded by concurrent requests
                         if current_val >= limit:
                             await pipe.unwatch()
-                            free_limits = get_limits_for_plan(feature_key, PlanType.FREE)
-                            is_plan_gated = getattr(free_limits, period.value) == 0
-                            plan_required = (
-                                "pro" if (user_plan == PlanType.FREE and is_plan_gated) else None
-                            )
+                            # No plan_required, for the same reason as in
+                            # _snapshot_usage: this branch needs limit > 0.
                             raise RateLimitExceededException(
-                                feature_key, plan_required, get_reset_time(period)
+                                feature_key,
+                                reset_time=get_reset_time(period),
+                                current_plan=user_plan.value,
                             )
 
                         # Execute atomic increment
@@ -184,14 +273,20 @@ class TieredRateLimiter:
                         continue
 
         # Real-time usage sync after rate limit usage
-        asyncio.create_task(
+        spawn_logged_task(
+            "usage_sync",
             self._sync_usage_real_time(
                 user_id=user_id,
                 feature_key=feature_key,
                 user_plan=user_plan,
-                credits_used=credits_used,
-            )
+            ),
+            user={"id": user_id},
+            feature_key=feature_key,
         )
+
+        # Durable daily rollup for the activity heatmap (meaningful actions only).
+        if counts_as_activity(feature_key):
+            spawn_background_task(record_activity(user_id))
 
         return usage_info
 
@@ -200,44 +295,29 @@ class TieredRateLimiter:
         user_id: str,
         feature_key: str,
         user_plan: PlanType,
-        credits_used: float = 0.0,
     ) -> None:
-        """
-        Sync usage data to database in real-time after rate limit usage.
-        Runs asynchronously to avoid blocking the main request.
-        Creates comprehensive snapshot with ALL features that have usage data.
-        Tracks credits used for billing purposes.
+        """Snapshot every feature that has usage, for the usage-history charts.
+
+        Runs as a background task so it never blocks the request.
         """
         try:
-            # Get feature usage
             all_feature_usage = await self._collect_feature_usage(user_id, user_plan)
-
-            # Create credit usage object if credits were used
-            credit_usage_list = []
-            if credits_used > 0:
-                credit_usage = CreditUsage(
-                    credits_used=credits_used,
-                    period=UsagePeriod.MONTH,
-                    reset_time=get_reset_time(RateLimitPeriod.MONTH),
-                )
-                credit_usage_list.append(credit_usage)
-
-            if all_feature_usage or credit_usage_list:
-                # Create and save comprehensive usage snapshot
-
+            if all_feature_usage:
                 snapshot = UserUsageSnapshot(
                     user_id=user_id,
                     plan_type=(user_plan.value if hasattr(user_plan, "value") else str(user_plan)),
                     features=all_feature_usage,
-                    credits=credit_usage_list,  # Add credits to snapshot
                 )
-
                 await UsageService.save_usage_snapshot(snapshot)
 
         except Exception as e:
             # Log error but don't raise - this shouldn't break the main request
             log.error(
-                f"{LogTag.API} Real-time usage sync failed for user {user_id}, feature {feature_key}: {e!s}"
+                f"{LogTag.API} Real-time usage sync failed",
+                user_id=user_id,
+                feature_key=feature_key,
+                error_type=type(e).__name__,
+                error=str(e),
             )
 
     async def _collect_feature_usage(self, user_id: str, user_plan: PlanType) -> list[FeatureUsage]:
@@ -252,9 +332,10 @@ class TieredRateLimiter:
             current_limits = get_limits_for_plan(check_feature_key, user_plan)
 
             for period in [RateLimitPeriod.DAY, RateLimitPeriod.MONTH]:
+                # Unlimited periods (limit 0) are included too — their counters
+                # are still incremented (see _check_and_increment) and feed the
+                # usage charts; zero-usage rows are dropped below either way.
                 limit = getattr(current_limits, period.value)
-                if limit <= 0:
-                    continue
 
                 redis_key = self._get_redis_key(user_id, check_feature_key, period)
                 redis_tasks.append(self.redis.get(redis_key))

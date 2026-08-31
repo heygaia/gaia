@@ -1,6 +1,17 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
+/**
+ * An offer the modal was opened with — the founder's letter, for one. The code
+ * rides along to the Dodo checkout session so it is already applied when the
+ * page loads, and the percentage lets the cards show what the reader will
+ * actually pay.
+ */
+export interface PricingOffer {
+  discountCode: string;
+  discountPercent: number;
+}
+
 interface PricingModalStore {
   open: boolean;
   /**
@@ -9,7 +20,8 @@ interface PricingModalStore {
    * modal's default copy.
    */
   pitch: string | null;
-  openModal: (pitch?: string) => void;
+  offer: PricingOffer | null;
+  openModal: (arg?: string | PricingOffer) => void;
   closeModal: () => void;
 }
 
@@ -18,9 +30,19 @@ export const usePricingModalStore = create<PricingModalStore>()(
     (set) => ({
       open: false,
       pitch: null,
-      openModal: (pitch) =>
-        set({ open: true, pitch: pitch ?? null }, false, "openModal"),
-      closeModal: () => set({ open: false, pitch: null }, false, "closeModal"),
+      offer: null,
+      openModal: (arg) =>
+        set(
+          {
+            open: true,
+            pitch: typeof arg === "string" ? arg : null,
+            offer: typeof arg === "object" ? (arg ?? null) : null,
+          },
+          false,
+          "openModal",
+        ),
+      closeModal: () =>
+        set({ open: false, pitch: null, offer: null }, false, "closeModal"),
     }),
     { name: "pricingModal-store" },
   ),

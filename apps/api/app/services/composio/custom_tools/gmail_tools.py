@@ -17,7 +17,7 @@ import uuid
 from composio import Composio
 from composio.types import ExecuteRequestFn
 from langchain_core.runnables import RunnableConfig
-from langgraph.config import get_config, get_stream_writer
+from langgraph.config import get_stream_writer
 from pydantic import BaseModel, Field
 
 from app.agents.templates.mail_templates import (
@@ -29,7 +29,7 @@ from app.agents.workspace.offload import OffloadInfo
 from app.constants.email import MessageFieldLiteral
 from app.constants.log_tags import LogTag
 from app.constants.offload import OFFLOAD_RESULT_KEY
-from app.models.agent_models import agent_configurable
+from app.models.agent_models import agent_configurable, current_run_config
 from app.models.common_models import GatherContextInput
 from app.models.composio_schemas.gmail import (
     BodyProcessingLiteral,
@@ -105,21 +105,6 @@ def _gmail_proxy(
         body=body,
         query=query,
     )
-
-
-def _current_config() -> RunnableConfig:
-    """The active LangGraph run config, or an empty config outside a run.
-
-    Custom tools execute synchronously inside the LangGraph tool node, so the
-    run's ``configurable`` (home timezone, session id) is reachable through
-    ``get_config()`` — the same way ``linear_tool`` / ``calendar_tool`` read it.
-    Outside a runnable context (e.g. unit tests) it returns an empty config so
-    callers fall back to their UTC / no-offload defaults instead of raising.
-    """
-    try:
-        return get_config()
-    except RuntimeError:
-        return {}
 
 
 def _conversation_id(config: RunnableConfig) -> str | None:
@@ -207,8 +192,8 @@ def _resolve_timeframe(
     if explicit_after_or_before:
         if timeframe is not None:
             log.warning(
-                f"GMAIL_FETCH_MESSAGES: query already has after:/before:, "
-                f"ignoring timeframe={timeframe!r}"
+                "GMAIL_FETCH_MESSAGES: query already has after:/before:, ignoring timeframe",
+                timeframe=timeframe,
             )
         return query or "", default_max
 
@@ -228,7 +213,7 @@ def _effective_max(request: FetchMessagesInput, default_max: int) -> int:
 # =============================================================================
 
 
-class _PartialResult(Exception):
+class _PartialResultError(Exception):
     """Raised internally to short-circuit the pagination loop on error.
 
     Caught at the top of ``FETCH_MESSAGES`` and rendered as a
@@ -324,7 +309,7 @@ def _aggregate_pages(
     Per-message fetches within a page fan out over a bounded thread pool
     (``FETCH_CONCURRENCY``); results keep the page order. Returns
     ``(messages, truncated)`` where messages are full (unprojected) views.
-    Raises ``_PartialResult`` for mid-loop errors, carrying the messages
+    Raises ``_PartialResultError`` for mid-loop errors, carrying the messages
     already aggregated.
     """
     all_messages: list[dict[str, Any]] = []
@@ -392,8 +377,13 @@ def _aggregate_pages(
             # reports `successful: false` instead of masking it as an empty
             # inbox.
             raise
-        log.warning(f"GMAIL_FETCH_MESSAGES: pagination aborted mid-loop: {exc}")
-        raise _PartialResult(reason=str(exc), partial_messages=all_messages) from exc
+        log.warning(
+            "GMAIL_FETCH_MESSAGES: pagination aborted mid-loop",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            user_id=user_id,
+        )
+        raise _PartialResultError(reason=str(exc), partial_messages=all_messages) from exc
 
     return all_messages, truncated
 
@@ -566,6 +556,17 @@ def _format_partial_result(messages: list[dict[str, Any]], *, reason: str) -> di
         "truncated": True,
         "partial": True,
         "error": reason,
+        # Weak models read a partial result, promise the user "still digging",
+        # and end the turn — no work can happen after a turn ends. Spell out the
+        # only honest moves.
+        "note": (
+            "This fetch FAILED partway; the messages above are all that could be "
+            "retrieved. Retrying the same call will hit the same error. Do NOT "
+            "tell the user you are still fetching or that more results are "
+            "coming. Either narrow the query (shorter date range, a filter) and "
+            "call again NOW, or answer with what you have and state plainly that "
+            "the rest failed and why."
+        ),
         "messages": messages,
     }
 
@@ -587,7 +588,7 @@ def _summarize(
     request: FetchMessagesInput,
 ) -> dict[str, Any]:
     """Top-level orchestrator: resolve → paginate → offload-or-inline."""
-    config = _current_config()
+    config = current_run_config()
     tz = home_timezone_from_config(config)
     combined_query, default_max = _resolve_timeframe(request.timeframe, request.query, tz)
     cap = _effective_max(request, default_max)
@@ -596,7 +597,7 @@ def _summarize(
         full_views, truncated = _aggregate_pages(
             user_id, request, combined_query=combined_query, effective_max=cap
         )
-    except _PartialResult as exc:
+    except _PartialResultError as exc:
         return _format_partial_result(
             [project_message_view(view, request.fields) for view in exc.partial_messages],
             reason=exc.reason,
@@ -638,7 +639,9 @@ def _no_session_inline_fallback(
     """
     shown = _count_inline_fit(projected)
     log.warning(
-        f"GMAIL read: no conversation_id for offload; returning {shown}/{len(projected)} inline"
+        "GMAIL read: no conversation_id for offload; returning / inline",
+        shown=shown,
+        projected_count=len(projected),
     )
     _emit_email_card(full_views[:shown])
     result = _format_inline_result(projected[:shown], truncated=truncated or shown < len(projected))
@@ -699,7 +702,7 @@ def _aggregate_threads(
     """Fetch every requested thread over the bounded pool, honoring the total
     message cap. Returns ``(threads, flat_views, truncated)`` where ``threads``
     keeps the per-thread grouping and ``flat_views`` is every message view.
-    Raises ``_PartialResult`` on a mid-fetch error once anything succeeded.
+    Raises ``_PartialResultError`` on a mid-fetch error once anything succeeded.
     """
     needs_full = _thread_needs_full(request)
     cap = min(request.max_messages or MAX_ABSOLUTE_MESSAGES, MAX_ABSOLUTE_MESSAGES)
@@ -727,8 +730,13 @@ def _aggregate_threads(
     except Exception as exc:
         if not flat_views:
             raise
-        log.warning(f"GMAIL_FETCH_THREAD: aborted mid-fetch: {exc}")
-        raise _PartialResult(reason=str(exc), partial_messages=flat_views) from exc
+        log.warning(
+            "GMAIL_FETCH_THREAD: aborted mid-fetch",
+            error=str(exc),
+            error_type=type(exc).__name__,
+            user_id=user_id,
+        )
+        raise _PartialResultError(reason=str(exc), partial_messages=flat_views) from exc
 
     return threads, flat_views, truncated
 
@@ -736,10 +744,10 @@ def _aggregate_threads(
 def _summarize_threads(user_id: str, request: FetchThreadInput) -> dict[str, Any]:
     """Top-level FETCH_THREAD orchestrator: fetch → offload-or-inline, mirroring
     ``_summarize`` (same thresholds, card, offload file, no-session fallback)."""
-    config = _current_config()
+    config = current_run_config()
     try:
         threads, flat_views, truncated = _aggregate_threads(user_id, request)
-    except _PartialResult as exc:
+    except _PartialResultError as exc:
         return _format_partial_result(
             [project_message_view(view, request.fields) for view in exc.partial_messages],
             reason=exc.reason,
@@ -835,7 +843,12 @@ def _batch_modify(
                 }
             )
             log.warning(
-                f"GMAIL batchModify aborted after {modified}/{len(message_ids)} modified: {exc}"
+                "GMAIL batchModify aborted after / modified",
+                modified=modified,
+                message_ids_count=len(message_ids),
+                error=str(exc),
+                error_type=type(exc).__name__,
+                user_id=user_id,
             )
             return {
                 "modified_count": modified,
@@ -1129,8 +1142,9 @@ def register_gmail_custom_tools(composio: Composio) -> list[str]:
 
         if message_ids and not messages:
             log.error(
-                f"{LogTag.COMPOSIO} Gmail contact list: all {len(message_ids)} message fetches failed "
-                f"for user {user_id}"
+                f"{LogTag.COMPOSIO} Gmail contact list: all message fetches failed for user",
+                message_ids_count=len(message_ids),
+                user_id=user_id,
             )
             return {
                 "success": False,
@@ -1210,8 +1224,8 @@ def register_gmail_custom_tools(composio: Composio) -> list[str]:
 
         The canonical thread-read tool. Fetches each ``thread_id`` (batched,
         concurrently) and returns its messages in conversation order, shaped
-        exactly like ``GMAIL_FETCH_MESSAGES`` results — normalized body,
-        attachment metadata, same ``fields``/``body_processing`` contract — so
+        exactly like ``GMAIL_FETCH_MESSAGES`` results: normalized body,
+        attachment metadata, same ``fields``/``body_processing`` contract, so
         there is one read path, not a divergent raw thread view.
 
         Get thread ids from the ``threadId`` on ``GMAIL_FETCH_MESSAGES``
@@ -1333,5 +1347,11 @@ def _fetch_messages_for_contacts(
                 messages.append(full)
         except Exception as exc:
             fetch_failures += 1
-            log.warning(f"{LogTag.COMPOSIO} Gmail message fetch failed for {message_id}: {exc}")
+            log.warning(
+                f"{LogTag.COMPOSIO} Gmail message fetch failed for",
+                message_id=message_id,
+                error=str(exc),
+                error_type=type(exc).__name__,
+                user_id=user_id,
+            )
     return messages, fetch_failures

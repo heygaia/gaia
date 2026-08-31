@@ -28,7 +28,7 @@ from app.templates.docstrings.desktop_tool_docs import (
     TAKE_SCREENSHOT,
     WRITE_CLIPBOARD,
 )
-from app.utils.image_codec import ImageCodec, InlineImage, InvalidImage
+from app.utils.image_codec import ImageCodec, InlineImage, InvalidImageError
 from app.utils.multimodal import text_content_block
 from shared.py.wide_events import log
 
@@ -52,13 +52,17 @@ async def _run_desktop_action(
     configurable = agent_configurable(config)
     source = ConversationSource.coerce(configurable.get("conversation_source"))
     if source is not ConversationSource.DESKTOP:
-        log.warning(f"{LogTag.TOOL} Desktop tool '{tool_name}' refused for source '{source}'")
+        log.warning(
+            f"{LogTag.TOOL} Desktop tool refused for source", tool_name=tool_name, source=source
+        )
         return _NOT_DESKTOP_ERROR
 
     stream_id = configurable.get("stream_id")
     user_id = configurable.get("user_id")
     if not stream_id or not user_id:
-        log.warning(f"{LogTag.TOOL} Desktop tool '{tool_name}' missing stream_id/user_id in config")
+        log.warning(
+            f"{LogTag.TOOL} Desktop tool missing stream_id/user_id in config", tool_name=tool_name
+        )
         return _MISSING_CONTEXT_ERROR
 
     return await request_desktop_action(
@@ -137,7 +141,7 @@ async def take_screenshot(
 
     try:
         image = await ImageCodec.from_base64(image_b64)
-    except InvalidImage as e:
+    except InvalidImageError as e:
         return f"Could not read the captured screen: {e}"
 
     # Persisting the capture is best-effort: the pixels are already captured and
@@ -146,11 +150,11 @@ async def take_screenshot(
     # `read` the path back later.
     try:
         path = await _save_screenshot(config, image)
-        location_note = f"saved to {path} — read that path to look at it again later"
+        location_note = f"saved to {path}, read that path to look at it again later"
     except Exception:
         log.exception(f"{LogTag.TOOL} Failed to persist screenshot to the workspace")
         location_note = (
-            "not saved to the workspace, so it cannot be re-read later — answer from it now"
+            "not saved to the workspace, so it cannot be re-read later, answer from it now"
         )
 
     # The pixels go to the model as-is. A lane that cannot see them gets a text

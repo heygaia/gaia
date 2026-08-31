@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime, timedelta
+import os
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -37,7 +38,10 @@ from langgraph.store.memory import InMemoryStore
 from langgraph.types import Command, interrupt
 import pytest
 
-from app.agents.core.subagents.base_subagent import SubAgentFactory
+from app.agents.context.assemble import AssembledContext
+from app.agents.context.slots import PromptSlot, slot_of
+from app.agents.context.tiers import AgentTier
+from app.agents.core.subagents.base_subagent import SubAgentFactory, SubAgentToolConfig
 from app.agents.core.subagents.handoff_tools import (
     _resolve_subagent,
     handoff,
@@ -48,13 +52,14 @@ from app.agents.core.subagents.registry import all_subagents, get_subagent_by_id
 from app.agents.core.subagents.subagent_runner import (
     SubagentExecutionContext,
     SubagentOutcome,
+    ThreadSeed,
     build_initial_messages,
     execute_subagent_stream,
     interrupt_payload,
 )
 from app.constants.hil import HIL_RESUME_CONFIG_KEY, LANGGRAPH_INTERRUPT_KEY
 from app.models.hil_models import HILApprovalRecord
-from tests.helpers import create_fake_llm
+from tests.helpers import PassthroughFakeLLM, create_fake_llm
 
 HANDOFF_MODULE = "app.agents.core.subagents.handoff_tools"
 BASE_SUBAGENT_MODULE = "app.agents.core.subagents.base_subagent"
@@ -176,9 +181,11 @@ class TestSubAgentCanBeInstantiated:
                 provider="test_provider",
                 name="test_agent",
                 llm=fake_llm,
-                tool_space="test_space",
-                use_direct_tools=True,
-                disable_retrieve_tools=True,
+                config=SubAgentToolConfig(
+                    tool_space="test_space",
+                    use_direct_tools=True,
+                    disable_retrieve_tools=True,
+                ),
             )
 
         assert graph is not None
@@ -258,7 +265,7 @@ class TestSubagentExecutionContext:
 
     def test_context_is_importable(self):
         """SubagentExecutionContext must be importable from subagent_runner."""
-        from app.agents.core.subagents.subagent_runner import (  # noqa: F401
+        from app.agents.core.subagents.subagent_runner import (
             SubagentExecutionContext,
         )
 
@@ -384,9 +391,11 @@ async def real_subagent_seams():
             provider="gmail",
             name="gmail_agent",
             llm=fake_llm,
-            tool_space="gmail_delegated",
-            use_direct_tools=True,
-            disable_retrieve_tools=True,
+            config=SubAgentToolConfig(
+                tool_space="gmail_delegated",
+                use_direct_tools=True,
+                disable_retrieve_tools=True,
+            ),
         )
 
     with (
@@ -407,8 +416,15 @@ async def real_subagent_seams():
         # no active LangGraph runnable context for get_stream_writer() to hook.
         patch(f"{HANDOFF_MODULE}.get_stream_writer", return_value=MagicMock()),
         patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            AsyncMock(return_value=SystemMessage(content="ctx")),
+            "app.agents.core.subagents.subagent_runner.assemble_context",
+            AsyncMock(
+                return_value=AssembledContext(
+                    stable=SystemMessage(
+                        content="ctx", additional_kwargs={"dynamic_context": True}
+                    ),
+                    volatile=None,
+                )
+            ),
         ),
         patch(
             "app.utils.agent_utils.get_tool_registry",
@@ -741,105 +757,82 @@ class TestSubagentRunnerHelpers:
 # ---------------------------------------------------------------------------
 
 
+def _assembled_context():
+    """Stub the assembly step; these tests are about the seeder, not the sections."""
+    return patch(
+        "app.agents.core.subagents.subagent_runner.assemble_context",
+        new_callable=AsyncMock,
+        return_value=AssembledContext(
+            stable=SystemMessage(content="ctx", additional_kwargs={"dynamic_context": True}),
+            volatile=None,
+        ),
+    )
+
+
 @pytest.mark.integration
 class TestBuildInitialMessages:
-    """Verify build_initial_messages produces the expected [system, context, human] list."""
+    """The seed a worker tier hands LangGraph, assembled through the real
+    section registry rather than a stub — the unit tier already pins the shape,
+    so what this adds is that the registry and the seeder agree in situ."""
 
-    async def test_build_initial_messages_returns_four_messages(self) -> None:
-        """build_initial_messages must return exactly 4 messages:
-        system, context, current-time, and human."""
+    async def test_seed_is_in_canonical_slot_order(self) -> None:
         system_msg = SystemMessage(content="You are a Gmail agent.")
-        configurable = {
-            "thread_id": str(uuid4()),
-            "user_id": str(uuid4()),
-            "user_timezone": "Asia/Kolkata",
-        }
 
-        with patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            new=AsyncMock(return_value=SystemMessage(content="Context: time is now.")),
-        ):
+        with _assembled_context():
             messages = await build_initial_messages(
                 system_message=system_msg,
                 agent_name="gmail_agent",
-                configurable=configurable,
                 task="Send an email to John",
-                user_id="user-1",
-                subagent_id="gmail_agent",
-            )
-
-        assert len(messages) == 4
-
-    async def test_build_initial_messages_first_is_system(self):
-        """First message must be the supplied system message."""
-        system_msg = SystemMessage(content="You are a Gmail agent.")
-
-        with patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            new=AsyncMock(return_value=SystemMessage(content="ctx")),
-        ):
-            messages = await build_initial_messages(
-                system_message=system_msg,
-                agent_name="gmail_agent",
-                configurable={},
-                task="Do something",
+                seed=ThreadSeed(
+                    tier=AgentTier.PROVIDER_SUBAGENT,
+                    configurable={
+                        "thread_id": str(uuid4()),
+                        "user_id": str(uuid4()),
+                        "user_timezone": "Asia/Kolkata",
+                    },
+                    user_id="user-1",
+                    subagent_id="gmail_agent",
+                ),
             )
 
         assert messages[0] is system_msg
+        slots = [slot_of(m) for m in messages]
+        assert slots == sorted(slots)
+        assert slots[-1] is PromptSlot.TIME
 
-    async def test_build_initial_messages_last_is_human_with_task(self):
-        """Last message must be a HumanMessage whose content equals the task."""
+    async def test_the_task_reaches_the_agent_as_a_human_turn(self) -> None:
         task = "Schedule a meeting for tomorrow at 10am"
 
-        with patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            new=AsyncMock(return_value=SystemMessage(content="ctx")),
-        ):
+        with _assembled_context():
             messages = await build_initial_messages(
                 system_message=SystemMessage(content="sys"),
                 agent_name="calendar_agent",
-                configurable={},
                 task=task,
+                seed=ThreadSeed(tier=AgentTier.PROVIDER_SUBAGENT, configurable={}),
             )
 
-        last = messages[-1]
-        assert isinstance(last, HumanMessage)
-        assert last.content == task
+        task_msgs = [
+            m for m in messages if m.type == "human" and not m.additional_kwargs.get("time_context")
+        ]
+        assert [m.content for m in task_msgs] == [task]
 
-    async def test_build_initial_messages_uses_retrieval_query_for_context(self):
-        """When retrieval_query is provided it must be passed to
-        create_agent_context_message instead of the raw task."""
+    async def test_retrieval_query_is_what_the_sections_search_on(self) -> None:
+        """The executor injects routing hints into the task text. Retrieving
+        against those searches memory for our own words, not the user's."""
         retrieval_query = "original query without hints"
         enhanced_task = f"{retrieval_query}\n\nDIRECT EXECUTION HINT: ..."
 
-        captured_queries: list[str] = []
-
-        async def capture_context(
-            configurable: dict[str, object],
-            user_id: str | None,
-            query: str,
-            subagent_id: str | None = None,
-            **kwargs: object,
-        ) -> SystemMessage:
-            captured_queries.append(query)
-            return SystemMessage(content="ctx")
-
-        with patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            new=capture_context,
-        ):
+        with _assembled_context() as mock_assemble:
             await build_initial_messages(
                 system_message=SystemMessage(content="sys"),
                 agent_name="executor_agent",
-                configurable={},
                 task=enhanced_task,
-                retrieval_query=retrieval_query,
+                seed=ThreadSeed(
+                    tier=AgentTier.EXECUTOR, configurable={}, retrieval_query=retrieval_query
+                ),
             )
 
-        assert len(captured_queries) == 1
-        assert captured_queries[0] == retrieval_query, (
-            "retrieval_query must be passed to context creation, not enhanced_task"
-        )
+        assert mock_assemble.call_args.args[0].query == retrieval_query
 
 
 # ---------------------------------------------------------------------------
@@ -1246,8 +1239,9 @@ class TestHandoffThreadIsolation:
         captured_thread_ids: list[str] = []
 
         def capture_build_agent_config(**kwargs):
-            captured_thread_ids.append(kwargs.get("thread_id", ""))
-            return {"configurable": {"thread_id": kwargs.get("thread_id", "")}}
+            thread_id = getattr(kwargs.get("thread"), "thread_id", "") or ""
+            captured_thread_ids.append(thread_id)
+            return {"configurable": {"thread_id": thread_id}}
 
         config = {
             "configurable": {
@@ -1328,9 +1322,10 @@ class TestHandoffThreadIsolation:
         parent_thread_id = "fixed-parent-thread-999"
         captured_thread_ids: list[str] = []
 
-        def capture_build(thread_id=None, **kwargs):
-            captured_thread_ids.append(thread_id or "")
-            return {"configurable": {"thread_id": thread_id or ""}}
+        def capture_build(thread=None, **kwargs):
+            thread_id = getattr(thread, "thread_id", "") or ""
+            captured_thread_ids.append(thread_id)
+            return {"configurable": {"thread_id": thread_id}}
 
         with (
             patch(
@@ -1547,7 +1542,7 @@ GATED_TASK = "post the release note to #eng"
 GATED_ANSWER = "release note posted to #eng"
 
 
-class _GatedSubagentLLM:
+class _GatedSubagentLLM(PassthroughFakeLLM):
     """Posts the note, then finishes with the result. Message-driven, never counted.
 
     A HIL resume replays the executor's tool node and shows the model the same
@@ -1557,15 +1552,6 @@ class _GatedSubagentLLM:
 
     def __init__(self) -> None:
         self.invocations = 0
-
-    def with_config(self, **_kwargs: Any) -> _GatedSubagentLLM:
-        return self
-
-    def bind_tools(self, _tools: Any, **_kwargs: Any) -> _GatedSubagentLLM:
-        return self
-
-    def with_retry(self, **_kwargs: Any) -> _GatedSubagentLLM:
-        return self
 
     async def ainvoke(self, messages: Any, **_kwargs: Any) -> AIMessage:
         self.invocations += 1
@@ -1640,9 +1626,11 @@ async def gated_subagent(gated_tool):
             provider="gmail",
             name="gmail_agent",
             llm=llm,
-            tool_space="gmail_delegated",
-            use_direct_tools=True,
-            disable_retrieve_tools=True,
+            config=SubAgentToolConfig(
+                tool_space="gmail_delegated",
+                use_direct_tools=True,
+                disable_retrieve_tools=True,
+            ),
         )
     return SimpleNamespace(graph=graph, llm=llm)
 
@@ -1665,8 +1653,15 @@ def handoff_seams(gated_subagent):
             AsyncMock(return_value=[]),
         ),
         patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            AsyncMock(return_value=SystemMessage(content="ctx")),
+            "app.agents.core.subagents.subagent_runner.assemble_context",
+            AsyncMock(
+                return_value=AssembledContext(
+                    stable=SystemMessage(
+                        content="ctx", additional_kwargs={"dynamic_context": True}
+                    ),
+                    volatile=None,
+                )
+            ),
         ),
         patch(
             "app.utils.agent_utils.get_tool_registry",
@@ -1840,10 +1835,12 @@ async def background_dispatch_seams():
     actual background execution (asyncio.create_task'd, never awaited by the
     caller — mocked so the test verifies dispatch/dedup mechanics, not a real
     subagent run). try_claim_bg_dispatch's real Redis call is intentionally NOT
-    mocked — the durable dedup guard is the point of this test — but the shared
-    redis_cache singleton is a client bound to whichever event loop first
-    touched it, which is a DIFFERENT (closed) loop once other tests in this
-    file have run. Force a fresh client on this test's own loop instead."""
+    mocked — the durable dedup guard is the point of this test — so it needs
+    real Redis: skip before dialing when the run is not opted into real
+    services (same pattern as the pg_checkpointer fixtures).
+    """
+    if os.environ.get("USE_REAL_SERVICES") != "1":
+        pytest.skip("background-dispatch dedup guard needs real Redis (USE_REAL_SERVICES=1)")
     from app.db.redis import redis_cache
 
     redis_cache.redis = None  # next `.client` access lazily reconnects on THIS loop
@@ -1875,19 +1872,26 @@ async def background_dispatch_seams():
             AsyncMock(return_value=[]),
         ),
         patch(
-            "app.agents.core.subagents.subagent_runner.create_agent_context_message",
-            AsyncMock(return_value=SystemMessage(content="ctx")),
+            "app.agents.core.subagents.subagent_runner.assemble_context",
+            AsyncMock(
+                return_value=AssembledContext(
+                    stable=SystemMessage(
+                        content="ctx", additional_kwargs={"dynamic_context": True}
+                    ),
+                    volatile=None,
+                )
+            ),
         ),
         patch(
             "app.utils.agent_utils.get_tool_registry",
             AsyncMock(return_value=SimpleNamespace(get_category_of_tool=lambda _name: "general")),
         ),
         patch(f"{HANDOFF_MODULE}.run_subagent_background", run_bg),
-        patch(f"{HANDOFF_MODULE}.asyncio.create_task", side_effect=_tracking_create_task),
+        patch("app.utils.background_tasks.asyncio.create_task", side_effect=_tracking_create_task),
     ):
         yield run_bg
         # handoff(background=True) fire-and-forgets its subagent task via
-        # asyncio.create_task — drain exactly the task(s) THIS test spawned
+        # spawn_background_task — drain exactly the task(s) THIS test spawned
         # (captured via the wrapper above) so none outlive this test's event
         # loop and raise "Event loop is closed" as an orphaned-task warning.
         pending = [t for t in spawned if not t.done()]

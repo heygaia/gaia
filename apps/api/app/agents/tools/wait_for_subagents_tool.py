@@ -33,6 +33,7 @@ from app.agents.core.background.executor_queue import clear_collection_marker
 from app.agents.core.background.redis_writer import make_redis_stream_writer
 from app.agents.core.background.session import get_pending_subagents
 from app.agents.core.subagents.handoff_tools import resume_parked_subagent
+from app.constants.agents import AgentTag, wrap_agent_payload
 from app.constants.hil import HIL_BATCH_INTERRUPT_TYPE
 from app.constants.log_tags import LogTag
 from app.models.agent_models import AgentConfigurable, agent_configurable
@@ -73,7 +74,7 @@ async def wait_for_subagents(
     conversation_id = str(configurable.get("conversation_id") or "")
 
     if not stream_id:
-        return "No active stream — cannot wait for subagents."
+        return "No active stream: cannot wait for subagents."
 
     if conversation_id:
         # This join IS the collection a queued wake-up would have provided —
@@ -92,9 +93,14 @@ async def wait_for_subagents(
         return "No background subagent results to collect."
 
     log.info(
-        f"{LogTag.TOOL} wait_for_subagents: collected {len(results)} result(s) for stream {stream_id}"
+        f"{LogTag.TOOL} wait_for_subagents: collected results",
+        result_count=len(results),
+        stream_id=stream_id,
     )
-    return "\n\n---\n\n".join(f"[{item['agent']} result]\n{item['message']}" for item in results)
+    return "".join(
+        wrap_agent_payload(AgentTag.SUBAGENT_RESULT, item["message"], agent=item["agent"])
+        for item in results
+    )
 
 
 async def _poll_live_tasks(stream_id: str, timeout: int) -> None:
@@ -109,12 +115,14 @@ async def _poll_live_tasks(stream_id: str, timeout: int) -> None:
     if pending == 0:
         return
     log.info(
-        f"{LogTag.TOOL} wait_for_subagents: waiting for {pending} subagent(s) on stream {stream_id}"
+        f"{LogTag.TOOL} wait_for_subagents: waiting for subagents",
+        pending_count=pending,
+        stream_id=stream_id,
     )
     deadline = asyncio.get_running_loop().time() + timeout
     while get_pending_subagents(stream_id) > 0:
         if asyncio.get_running_loop().time() >= deadline:
-            log.warning(f"{LogTag.TOOL} wait_for_subagents: timed out after {timeout}s")
+            log.warning(f"{LogTag.TOOL} wait_for_subagents: timed out", timeout_seconds=timeout)
             break
         await asyncio.sleep(0.1)
 
@@ -146,7 +154,8 @@ async def _resolve_parked_batch(
 
         pending = [record for record in parked if not record.status.settled]
         log.info(
-            f"{LogTag.HIL} wait_for_subagents pausing executor for {len(pending)} approval(s)",
+            f"{LogTag.HIL} wait_for_subagents pausing executor for approvals",
+            approval_count=len(pending),
             conversation_id=conversation_id,
         )
         # One interrupt per batch — the resume VALUE is irrelevant (decisions are
@@ -189,7 +198,7 @@ async def _collect_subagent(
     agent_name = record.subagent_agent_name or "subagent"
     try:
         outcome = await resume_parked_subagent(record, configurable, writer)
-    except Exception as e:  # noqa: BLE001 — one subagent's failure must not strand the batch
+    except Exception as e:  # one subagent's failure must not strand the batch
         log.error(
             f"{LogTag.HIL} Failed to resume parked subagent",
             approval_id=record.approval_id,

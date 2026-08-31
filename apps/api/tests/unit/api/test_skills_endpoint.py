@@ -18,7 +18,8 @@ from typing import TYPE_CHECKING, Any
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
-import pytest
+
+from app.services.analytics_service import AnalyticsEvents
 
 if TYPE_CHECKING:
     from app.agents.skills.github_discovery import DiscoveredSkill
@@ -46,6 +47,7 @@ _GET_CONNECTED_INTEGRATION_IDS_ENDPOINT = (
     "app.api.v1.endpoints.skills.get_connected_integration_ids"
 )
 _UPDATE_SKILL_INLINE = "app.api.v1.endpoints.skills.update_skill_inline"
+_CAPTURE = "app.api.v1.endpoints.skills.capture_context_event"
 
 
 def _make_skill_mock(**overrides) -> Skill:
@@ -93,7 +95,6 @@ def _make_discovered_skill(**overrides) -> DiscoveredSkill:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestDiscoverSkills:
     """Tests for the discover skills endpoint."""
 
@@ -165,12 +166,11 @@ class TestDiscoverSkills:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestInstallFromGitHub:
     """Tests for the install skill from GitHub endpoint."""
 
     async def test_install_with_skill_path_returns_201(self, client: AsyncClient):
-        mock_skill = _make_skill_mock()
+        mock_skill = _make_skill_mock(target="gmail_agent")
         with (
             patch(
                 "app.api.v1.endpoints.skills.get_skill_targets",
@@ -182,6 +182,7 @@ class TestInstallFromGitHub:
                 new_callable=AsyncMock,
                 return_value=mock_skill,
             ),
+            patch(_CAPTURE) as mock_capture,
         ):
             response = await client.post(
                 INSTALL_GITHUB_URL,
@@ -192,6 +193,10 @@ class TestInstallFromGitHub:
             )
 
         assert response.status_code == 201
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.SKILL_INSTALLED,
+            {"skill_id": "sk_abc123", "target": "gmail_agent", "source": "github"},
+        )
 
     async def test_install_with_skill_name_auto_discovers(self, client: AsyncClient):
         mock_discovered = _make_discovered_skill(path="skills/my-skill")
@@ -308,12 +313,11 @@ class TestInstallFromGitHub:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestInstallInline:
     """Tests for the create inline skill endpoint."""
 
     async def test_create_inline_skill_returns_201(self, client: AsyncClient):
-        mock_skill = _make_skill_mock(source="inline")
+        mock_skill = _make_skill_mock(source="inline", target="gmail_agent")
         with (
             patch(
                 "app.api.v1.endpoints.skills._validate_target",
@@ -324,6 +328,7 @@ class TestInstallInline:
                 new_callable=AsyncMock,
                 return_value=mock_skill,
             ),
+            patch(_CAPTURE) as mock_capture,
         ):
             response = await client.post(
                 INSTALL_INLINE_URL,
@@ -336,6 +341,10 @@ class TestInstallInline:
             )
 
         assert response.status_code == 201
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.SKILL_INSTALLED,
+            {"skill_id": "sk_abc123", "target": "gmail_agent", "source": "inline"},
+        )
 
     async def test_create_inline_skill_missing_name_returns_422(self, client: AsyncClient):
         response = await client.post(
@@ -415,7 +424,6 @@ class TestInstallInline:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListSkills:
     """Tests for the list skills endpoint."""
 
@@ -489,7 +497,6 @@ class TestListSkills:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetSkill:
     """Tests for the get skill by ID endpoint."""
 
@@ -530,7 +537,6 @@ class TestGetSkill:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestEnableSkill:
     """Tests for the enable skill endpoint."""
 
@@ -563,7 +569,6 @@ class TestEnableSkill:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestDisableSkill:
     """Tests for the disable skill endpoint."""
 
@@ -596,25 +601,35 @@ class TestDisableSkill:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUninstallSkill:
     """Tests for the uninstall skill endpoint."""
 
     async def test_uninstall_skill_returns_204(self, client: AsyncClient):
-        with patch(
-            _UNINSTALL_SKILL,
-            new_callable=AsyncMock,
-            return_value=True,
+        with (
+            patch(
+                _UNINSTALL_SKILL,
+                new_callable=AsyncMock,
+                return_value=_make_skill_mock(target="gmail_agent"),
+            ) as mock_uninstall,
+            patch(_CAPTURE) as mock_capture,
         ):
             response = await client.delete(f"{BASE_URL}/sk_abc123")
 
         assert response.status_code == 204
+        # Whose skill and which skill is the whole payload of a destructive
+        # call: a dropped or None argument deletes nothing, or another user's
+        # skill, while the endpoint still answers 204.
+        mock_uninstall.assert_awaited_once_with("507f1f77bcf86cd799439011", "sk_abc123")
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.SKILL_UNINSTALLED,
+            {"skill_id": "sk_abc123", "target": "gmail_agent"},
+        )
 
     async def test_uninstall_skill_not_found_returns_404(self, client: AsyncClient):
         with patch(
             _UNINSTALL_SKILL,
             new_callable=AsyncMock,
-            return_value=False,
+            return_value=None,
         ):
             response = await client.delete(f"{BASE_URL}/sk_nonexistent")
 
@@ -636,7 +651,6 @@ class TestUninstallSkill:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListSkillTargets:
     """Tests for the skill-targets endpoint. Mocks only get_connected_integration_ids
     (the true I/O boundary) so get_skill_targets' own executor+connected-subagent
@@ -688,7 +702,6 @@ class TestListSkillTargets:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListBuiltinSkills:
     """Tests for the builtin-skills endpoint, including the _is_available /
     _group_label branch logic (executor-always-available, integration-backed
@@ -762,7 +775,6 @@ class TestListBuiltinSkills:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateSkill:
     """Tests for the update-skill endpoint, including _validate_target's real
     400-rejection — every prior test that touched this path mocked

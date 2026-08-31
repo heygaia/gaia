@@ -12,8 +12,6 @@ import pytest
 from app.agents.tools.coding._context import canonical_path
 from app.agents.workspace.paths import WORKSPACE_ROOT, session_dir
 
-pytestmark = pytest.mark.unit
-
 
 @pytest.mark.parametrize(
     "escape",
@@ -26,8 +24,18 @@ pytestmark = pytest.mark.unit
     ],
 )
 def test_paths_escaping_workspace_are_rejected(escape: str) -> None:
-    with pytest.raises(ValueError, match="escapes"):
+    # The rejection message deliberately does NOT echo the path back — tool
+    # errors reach the LLM, and the path may carry host-side internals.
+    # Anchored: the exact message is LLM-facing contract, not an implementation
+    # detail — a mutated message still has to fail this test.
+    with pytest.raises(ValueError, match=r"^path must stay inside /workspace$"):
         canonical_path(escape, session_id="c1")
+
+
+def test_rejection_message_does_not_echo_the_path() -> None:
+    with pytest.raises(ValueError) as exc_info:
+        canonical_path("/users/some-uid/todos/x/canvas.md", session_id="c1")
+    assert "/users/some-uid" not in str(exc_info.value)
 
 
 def test_containment_is_workspace_wide_not_session_scoped() -> None:

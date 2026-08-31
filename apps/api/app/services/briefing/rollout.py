@@ -36,7 +36,7 @@ async def provision_existing_user(user_id: str) -> str:
     ``"bootstrap"`` — sparse + no goal, briefings held until a goal arrives or the
     grace window elapses.
     """
-    log.set(service="briefing_rollout", operation="provision_existing_user", user_id=user_id)
+    log.set(component="briefing_rollout", operation="provision_existing_user", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
         log.warning("briefing_rollout.unknown_user", user_id=user_id)

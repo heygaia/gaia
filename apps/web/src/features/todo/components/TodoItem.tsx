@@ -17,7 +17,6 @@ import { memo, useMemo } from "react";
 import { ChevronRight } from "@/components/shared/icons";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { getBrowserTimezone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
 import {
@@ -52,19 +51,32 @@ const priorityColors = {
   [Priority.NONE]: "default",
 } as const;
 
-export const priorityTextColors = {
-  [Priority.HIGH]: "oklch(63.7% 0.237 25.331)",
-  [Priority.MEDIUM]: "oklch(79.5% 0.184 86.047)",
-  [Priority.LOW]: "oklch(62.3% 0.214 259.815)",
-  [Priority.NONE]: "oklch(55.2% 0.016 285.938)",
-} as const;
-
 const priorityRingColors = {
   [Priority.HIGH]: "border-red-500",
   [Priority.MEDIUM]: "border-yellow-500",
   [Priority.LOW]: "border-blue-500",
   [Priority.NONE]: "border-zinc-500",
 } as const;
+
+// Intl.DateTimeFormat is expensive to build; cache one per timezone instead
+// of rebuilding on every call.
+const scheduledLabelFormatters = new Map<string, Intl.DateTimeFormat>();
+
+const getScheduledLabelFormatter = (timeZone: string): Intl.DateTimeFormat => {
+  const cached = scheduledLabelFormatters.get(timeZone);
+  if (cached) return cached;
+  const formatter = new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+    timeZone,
+  });
+  scheduledLabelFormatters.set(timeZone, formatter);
+  return formatter;
+};
 
 const formatScheduledLabel = (
   scheduledAt: string | null | undefined,
@@ -73,16 +85,46 @@ const formatScheduledLabel = (
   if (!scheduledAt) return undefined;
   const resolvedTimezone =
     timezone && timezone.trim() !== "" ? timezone : getBrowserTimezone();
-  return new Intl.DateTimeFormat("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-    hour12: true,
-    timeZone: resolvedTimezone,
-  }).format(new Date(scheduledAt));
+  return getScheduledLabelFormatter(resolvedTimezone).format(
+    new Date(scheduledAt),
+  );
 };
+
+// Fanned-out category icons shown on the right edge of a todo row.
+function WorkflowCategoryIcons({ categories }: { categories: string[] }) {
+  return (
+    <div className="flex min-h-8 items-center -space-x-1.5 self-center">
+      {categories.slice(0, 3).map((category, index) => {
+        const IconComponent = getToolCategoryIcon(category, {
+          width: 22,
+          height: 22,
+        });
+        return IconComponent ? (
+          <div
+            key={category}
+            className="relative flex min-w-7 items-center justify-center"
+            style={{
+              rotate:
+                categories.length > 1
+                  ? index % 2 === 0
+                    ? "8deg"
+                    : "-8deg"
+                  : "0deg",
+              zIndex: index,
+            }}
+          >
+            {IconComponent}
+          </div>
+        ) : null;
+      })}
+      {categories.length > 3 && (
+        <div className="z-0 flex size-[28px] min-h-[28px] min-w-[28px] items-center justify-center rounded-lg bg-zinc-700/60 text-xs text-foreground-500">
+          +{categories.length - 3}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default memo(function TodoItem({
   todo,
@@ -98,13 +140,6 @@ export default memo(function TodoItem({
   const handleToggleComplete = (e: React.ChangeEvent<HTMLInputElement>) => {
     e.stopPropagation();
     const newCompletedState = !todo.completed;
-
-    trackEvent(ANALYTICS_EVENTS.TODOS_TOGGLED, {
-      todo_id: todo.id,
-      completed: newCompletedState,
-      priority: todo.priority,
-      had_due_date: !!todo.due_date,
-    });
 
     onUpdate(todo.id, { completed: newCompletedState });
   };
@@ -149,7 +184,7 @@ export default memo(function TodoItem({
   return (
     <div
       className={cn(
-        "pointer-events-auto relative w-full rounded-xl p-2 pl-3 mb-0 transition-all group",
+        "pointer-events-auto relative w-full rounded-xl p-2 pl-3 mb-0 group",
         isSelected ? "bg-zinc-800/50" : "hover:bg-zinc-800/50",
         todo.completed && "opacity-30",
         className,
@@ -157,32 +192,21 @@ export default memo(function TodoItem({
       style={{ contentVisibility: "auto", containIntrinsicSize: "0 80px" }}
       onMouseEnter={() => onPrefetchWorkflow?.(todo.id)}
     >
-      {/* Stretched-button overlay: the semantic, keyboard-native click target
-          for the whole row; the checkbox/status/chevron stack above it via
-          position:relative. */}
       <button
         type="button"
-        aria-label={`Open ${todo.title}`}
-        className="absolute inset-0 cursor-pointer rounded-xl"
+        aria-label={`Open todo ${todo.title}`}
+        className="absolute inset-0 z-10 rounded-xl"
         onClick={() => onClick?.(todo)}
       />
-      <div className="flex h-full items-start gap-2">
+      <div className="pointer-events-none relative z-20 flex h-full items-start gap-2">
         {/* Active GAIA work leads with its status mark instead of a checkbox:
             one circle, and completion stays with the execution lifecycle. */}
         {hasActiveExecution ? (
-          <div
-            className="relative mt-1 flex size-6 shrink-0 items-center justify-center"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <div className="pointer-events-auto mt-1 flex size-6 shrink-0 items-center justify-center">
             <ExecutionStatusGlyph status={todo.execution_status} size={20} />
           </div>
         ) : (
-          <div
-            className="relative"
-            onClick={(e) => e.stopPropagation()}
-            onKeyDown={(e) => e.stopPropagation()}
-          >
+          <div className="pointer-events-auto">
             <Checkbox
               isSelected={todo.completed}
               onChange={handleToggleComplete}
@@ -190,6 +214,7 @@ export default memo(function TodoItem({
               radius="full"
               classNames={{
                 wrapper: `mt-1 ${todo.completed ? "" : `${priorityRingColors[todo.priority]} border-dashed! border-1 before:border-0! bg-zinc-900`}`,
+                label: "w-[30vw]",
               }}
             />
           </div>
@@ -387,36 +412,7 @@ export default memo(function TodoItem({
 
         {/* Workflow Category Icons */}
         {todo.workflow_categories && todo.workflow_categories.length > 0 && (
-          <div className="flex min-h-8 items-center -space-x-1.5 self-center">
-            {todo.workflow_categories.slice(0, 3).map((category, index) => {
-              const IconComponent = getToolCategoryIcon(category, {
-                width: 22,
-                height: 22,
-              });
-              return IconComponent ? (
-                <div
-                  key={category}
-                  className="relative flex min-w-7 items-center justify-center"
-                  style={{
-                    rotate:
-                      todo.workflow_categories!.length > 1
-                        ? index % 2 === 0
-                          ? "8deg"
-                          : "-8deg"
-                        : "0deg",
-                    zIndex: index,
-                  }}
-                >
-                  {IconComponent}
-                </div>
-              ) : null;
-            })}
-            {todo.workflow_categories.length > 3 && (
-              <div className="z-0 flex size-[28px] min-h-[28px] min-w-[28px] items-center justify-center rounded-lg bg-zinc-700/60 text-xs text-foreground-500">
-                +{todo.workflow_categories.length - 3}
-              </div>
-            )}
-          </div>
+          <WorkflowCategoryIcons categories={todo.workflow_categories} />
         )}
 
         <div

@@ -1,5 +1,6 @@
 import type {
   ApprovalRequestData,
+  RateLimitData as SharedRateLimitData,
   SubagentGroupData as SharedSubagentGroupData,
   ToolCallEntry as SharedToolCallEntry,
 } from "@shared/chat";
@@ -138,22 +139,21 @@ export interface MCPAppData {
 // 3) If you stream or store this tool’s data in messages, no extra typing is required;
 //    the message schema derives from this registry.
 // 4) Optionally, add tests and docs/examples demonstrating the new tool.
-export interface RateLimitData {
-  feature: string;
-  plan_required?: string;
-  reset_time?: string;
-}
 
-// The canonical ToolCallEntry / SubagentGroupData shapes live in @shared/chat
-// (they're what the shared turn accumulator assembles); re-exported here so
-// existing web imports keep one source of truth instead of a drifting copy.
+// The canonical RateLimitData / ToolCallEntry / SubagentGroupData shapes live
+// in @shared/chat (they're what the shared turn accumulator and backend
+// contract define); re-exported here so existing web imports keep one source
+// of truth instead of a drifting copy.
 export {
+  type RateLimitData,
   REASONING_TOOL_NAME,
   type SubagentGroupData,
   type ToolCallEntry,
 } from "@shared/chat";
 
-export const TOOL_REGISTRY = {
+// Not exported: nothing outside this module reads the runtime value — the
+// public surface is the types derived from it below.
+const TOOL_REGISTRY = {
   search_results: null as unknown as SearchResults,
   deep_research_results: null as unknown as DeepResearchResults,
   weather_data: null as unknown as WeatherData,
@@ -185,7 +185,7 @@ export const TOOL_REGISTRY = {
   workflow_created: null as unknown as WorkflowCreatedData,
   mcp_app: null as unknown as MCPAppData,
   todo_progress: null as unknown as TodoProgressData,
-  rate_limit_data: null as unknown as RateLimitData,
+  rate_limit_data: null as unknown as SharedRateLimitData,
   artifact_data: null as unknown as ArtifactData[],
   screenshot_data: null as unknown as ScreenshotData,
   memory_data: null as unknown as MemoryData,
@@ -213,11 +213,7 @@ type ToolsMessageSchema = {
 export const TOOLS_MESSAGE_SCHEMA: ToolsMessageSchema = {
   tool_data: undefined,
 };
-export type ToolsMessageKey = keyof ToolsMessageSchema;
 export type ToolsMessageData = ToolsMessageSchema;
-export const TOOLS_MESSAGE_KEYS = Object.keys(
-  TOOLS_MESSAGE_SCHEMA,
-) as ToolsMessageKey[];
 
 // Tools that should merge multiple calls into one component
 // Add any tool name here - its data will be accumulated into an array

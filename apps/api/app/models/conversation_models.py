@@ -145,6 +145,15 @@ class _SourceRow(BaseModel):
     source: str | None = None
 
 
+class _SystemGeneratedRow(BaseModel):
+    """Projection of a conversation's system-generated flag and why it exists."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    is_system_generated: bool | None = None
+    system_purpose: SystemPurpose | None = None
+
+
 class _ConversationIdRow(BaseModel):
     """Projection of just a conversation id (owner lookups)."""
 

@@ -22,6 +22,7 @@ from app.decorators.caching import CacheInvalidator
 from app.models.files_models import FileDocument, FileUpdate, PageWiseSummary
 from app.models.message_models import FileData as MessageFileData
 from app.schemas.file import FileDeletedResponse
+from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.files.sandbox import mirror_upload, write_summary_sidecar
 from app.services.files.store import (
     delete_from_index,
@@ -69,22 +70,28 @@ def _page_count(page_wise_summary: PageWiseSummary) -> int:
     return 1 if page_wise_summary else 0
 
 
+@dataclass
+class _UploadSummary:
+    """AI summary for one upload: a short description plus per-page details."""
+
+    description: str | None
+    page_wise_summary: PageWiseSummary
+
+
 def _log_upload_context(
     upload: _PreparedUpload,
     conversation_id: str | None,
-    description: str | None,
-    page_wise_summary: PageWiseSummary,
+    summary: _UploadSummary,
 ) -> None:
     log.set(
         file=FileContext(
             operation="upload",
             file_id=upload.file_id,
-            filename=upload.filename,
             content_type=upload.content_type,
             size_bytes=upload.size_bytes,
             conversation_id=conversation_id or "",
-            has_summary=bool(description),
-            page_count=_page_count(page_wise_summary),
+            has_summary=bool(summary.description),
+            page_count=_page_count(summary.page_wise_summary),
         )
     )
 
@@ -94,8 +101,7 @@ def _build_file_metadata(
     *,
     user_id: str,
     url: str,
-    description: str | None,
-    page_wise_summary: PageWiseSummary,
+    summary: _UploadSummary,
     sandbox_path: str | None,
     conversation_id: str | None,
 ) -> FileDocument:
@@ -109,8 +115,8 @@ def _build_file_metadata(
         url=url,
         public_id=upload.public_id,
         user_id=user_id,
-        description=description,
-        page_wise_summary=page_wise_summary,
+        description=summary.description,
+        page_wise_summary=summary.page_wise_summary,
         sandbox_path=sandbox_path,
         conversation_id=conversation_id,
         created_at=now,
@@ -147,8 +153,10 @@ class FileService:
             resource_type=resource_type,
         )
         log.info(
-            f"[files] upload start file_id={upload.file_id} "
-            f"name={upload.filename!r} type={content_type}"
+            "[files] upload start",
+            file_id=upload.file_id,
+            filename=upload.filename,
+            content_type=content_type,
         )
 
         try:
@@ -156,11 +164,15 @@ class FileService:
             blob_url, generated_summary = await asyncio.gather(
                 upload_to_cloudinary(upload.content, resource_type, upload.public_id),
                 generate_file_summary(
-                    file_content=upload.content, content_type=content_type, filename=upload.filename
+                    file_content=upload.content,
+                    content_type=content_type,
+                    filename=upload.filename,
+                    user_id=user_id,
                 ),
             )
             description, page_wise_summary = process_summary(generated_summary)
-            _log_upload_context(upload, conversation_id, description, page_wise_summary)
+            summary = _UploadSummary(description=description, page_wise_summary=page_wise_summary)
+            _log_upload_context(upload, conversation_id, summary)
 
             # 2. Mirror into the session workspace + summary sidecar (best-effort; needs JuiceFS).
             sandbox_path = (
@@ -170,8 +182,7 @@ class FileService:
                     filename=upload.filename,
                     content=upload.content,
                     content_type=content_type,
-                    description=description,
-                    page_wise_summary=page_wise_summary,
+                    summary=summary,
                 )
                 if conversation_id
                 else None
@@ -182,8 +193,7 @@ class FileService:
                 upload,
                 user_id=user_id,
                 url=blob_url,
-                description=description,
-                page_wise_summary=page_wise_summary,
+                summary=summary,
                 sandbox_path=sandbox_path,
                 conversation_id=conversation_id,
             )
@@ -198,14 +208,32 @@ class FileService:
                     conversation_id=conversation_id,
                 ),
             )
-            log.info(f"[files] upload complete file_id={upload.file_id}")
+            log.info("[files] upload complete file_id", file_id=upload.file_id)
+
+            capture_event(
+                user_id,
+                AnalyticsEvents.FILE_UPLOADED,
+                {
+                    "size_bytes": upload.size_bytes,
+                    "resource_type": upload.resource_type,
+                    "content_type": upload.content_type,
+                },
+            )
 
             return metadata
         except HTTPException:
             raise
         except Exception as e:
-            log.error(f"[files] upload failed file_id={upload.file_id}: {e!s}", exc_info=True)
-            raise HTTPException(status_code=500, detail=f"Failed to upload file: {e!s}")
+            log.error(
+                "[files] upload failed file_id",
+                file_id=upload.file_id,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+                conversation_id=conversation_id,
+                exc_info=True,
+            )
+            raise HTTPException(status_code=500, detail=f"Failed to upload file: {e!s}") from e
 
     @staticmethod
     async def get_descriptions(file_ids: list[str], user_id: str) -> dict[str, str]:
@@ -237,6 +265,7 @@ class FileService:
                 filename=document.filename,
                 type=document.type,
                 description=document.description,
+                sandbox_path=document.sandbox_path,
             )
             for document in documents
         ]
@@ -245,14 +274,14 @@ class FileService:
     @CacheInvalidator(key_patterns=[FILES_CACHE_PATTERN])
     async def delete(file_id: str, user_id: str | None) -> FileDeletedResponse:
         """Delete a file from Mongo, Cloudinary, and the vector index."""
-        log.info(f"[files] delete start file_id={file_id}")
+        log.info("[files] delete start file_id", file_id=file_id)
         if user_id is None:
             raise HTTPException(status_code=400, detail="User ID is required")
         log.set(file=FileContext(operation="delete", file_id=file_id))
 
         file_data = await file_repository.get_by_file_id(file_id, user_id)
         if not file_data:
-            log.warning(f"[files] delete: file_id={file_id} not found for user")
+            log.warning("[files] delete: file not found for user", file_id=file_id, user_id=user_id)
             raise HTTPException(status_code=404, detail="File not found")
 
         if not await file_repository.delete_by_file_id(file_id, user_id):
@@ -262,10 +291,14 @@ class FileService:
         if public_id:
             destroy_in_cloudinary(public_id)
         else:
-            log.warning(f"[files] delete: file_id={file_id} has no public_id; skipping blob delete")
+            log.warning(
+                "[files] delete: file has no public_id; skipping blob delete",
+                file_id=file_id,
+                user_id=user_id,
+            )
 
         await delete_from_index(file_id)
-        log.info(f"[files] delete complete file_id={file_id}")
+        log.info("[files] delete complete file_id", file_id=file_id)
 
         return FileDeletedResponse(
             message="File deleted successfully",
@@ -283,7 +316,7 @@ class FileService:
         conversation_id: str | None = None,
     ) -> FileDocument:
         """Update file metadata, regenerating the summary + vector index when new content is given."""
-        log.info(f"[files] update start file_id={file_id}")
+        log.info("[files] update start file_id", file_id=file_id)
         log.set(file=FileContext(operation="update", file_id=file_id))
 
         file_data = await file_repository.get_by_file_id(file_id, user_id)
@@ -306,13 +339,22 @@ class FileService:
                     file_content=file_content,
                     content_type=file_data.type,
                     filename=set_fields.get("filename") or file_data.filename,
+                    user_id=user_id,
                 )
                 description, page_wise_summary = process_summary(generated_summary)
                 set_fields["description"] = description
                 set_fields["page_wise_summary"] = page_wise_summary
             except Exception as e:
-                log.error(f"[files] update: summary regeneration failed: {e!s}", exc_info=True)
-                raise HTTPException(status_code=500, detail=f"Failed to process file: {e!s}")
+                log.error(
+                    "[files] update: summary regeneration failed",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    file_id=file_id,
+                    user_id=user_id,
+                    conversation_id=conversation_id,
+                    exc_info=True,
+                )
+                raise HTTPException(status_code=500, detail=f"Failed to process file: {e!s}") from e
 
         description_updated = "description" in set_fields
         # updated_at is stamped by the repository.
@@ -332,7 +374,7 @@ class FileService:
                 conversation_id=conversation_id,
             )
 
-        log.info(f"[files] update complete file_id={file_id}")
+        log.info("[files] update complete file_id", file_id=file_id)
         return updated_file
 
     @staticmethod
@@ -351,7 +393,11 @@ class FileService:
         if not file_data:
             return
 
-        log.info(f"[files] seeding {len(file_data)} upload(s) into conversation={conversation_id}")
+        log.info(
+            "[files] seeding upload(s) into conversation",
+            file_data_count=len(file_data),
+            conversation_id=conversation_id,
+        )
         async with httpx.AsyncClient(timeout=FILE_SEED_DOWNLOAD_TIMEOUT_SECONDS) as client:
             await asyncio.gather(
                 *(
@@ -367,8 +413,7 @@ class FileService:
         filename: str,
         content: bytes,
         content_type: str,
-        description: str | None,
-        page_wise_summary: PageWiseSummary,
+        summary: _UploadSummary,
     ) -> str | None:
         """Mirror an upload + its summary sidecar into the session workspace (best-effort).
 
@@ -378,7 +423,14 @@ class FileService:
         try:
             safe_filename = safe_upload_filename(filename)
         except ValueError as e:
-            log.warning(f"[files] skipping sandbox mirror, unsafe filename {filename!r}: {e}")
+            log.warning(
+                "[files] skipping sandbox mirror, unsafe filename",
+                filename=filename,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
             return None
 
         sandbox_path = await mirror_upload(
@@ -395,8 +447,8 @@ class FileService:
             summary_md=render_summary_markdown(
                 filename=filename,
                 content_type=content_type,
-                description=description,
-                page_wise_summary=page_wise_summary,
+                description=summary.description,
+                page_wise_summary=summary.page_wise_summary,
             ),
         )
         return sandbox_path
@@ -412,14 +464,26 @@ class FileService:
         try:
             safe_name = safe_upload_filename(file.filename)
         except ValueError:
-            log.warning(f"[files] seed: skipping {file.filename!r}, unsafe after sanitize")
+            log.warning(
+                "[files] seed: skipping file, unsafe after sanitize",
+                filename=file.filename,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
             return
 
         try:
             resp = await client.get(file.url)
             resp.raise_for_status()
         except Exception as e:
-            log.warning(f"[files] seed: download failed for {file.filename!r}: {e}")
+            log.warning(
+                "[files] seed: download failed for",
+                filename=file.filename,
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+                conversation_id=conversation_id,
+            )
             return
 
         await mirror_upload(

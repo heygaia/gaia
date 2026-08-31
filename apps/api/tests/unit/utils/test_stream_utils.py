@@ -3,8 +3,6 @@
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.utils.stream_utils import (
     extract_tool_entries_from_update,
     reconstruct_subagent_groups,
@@ -35,7 +33,6 @@ def _make_plain_message() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestExtractToolEntriesFromUpdate:
     """Tests for extract_tool_entries_from_update."""
 
@@ -46,7 +43,7 @@ class TestExtractToolEntriesFromUpdate:
         assert result == []
 
     async def test_non_dict_input_returns_empty_list(self) -> None:
-        result = await extract_tool_entries_from_update("not a dict", set())  # type: ignore[arg-type]
+        result = await extract_tool_entries_from_update("not a dict", set())
         assert result == []
 
     async def test_dict_without_messages_key_returns_empty(self) -> None:
@@ -294,7 +291,6 @@ class TestExtractToolEntriesFromUpdate:
         assert result[0][0] == "same-id"
 
 
-@pytest.mark.unit
 class TestReconstructSubagentGroups:
     """A persisted subagent group must never read as 'still running'.
 

@@ -138,41 +138,79 @@ class AsyncRedisCommands(Protocol):
     Adding a command here is the cost of using a new one — mypy will name it.
     """
 
-    async def ping(self) -> bool: ...
+    async def ping(self) -> bool:
+        """Liveness probe."""
+        ...
 
-    async def get(self, name: str) -> str | None: ...
+    async def get(self, name: str) -> str | None:
+        """GET — None when the key is absent."""
+        ...
 
     async def set(
         self, name: str, value: str, *, ex: int | None = None, nx: bool = False
-    ) -> bool | None: ...
+    ) -> bool | None:
+        """SET — with ``nx`` returns None when the key already existed."""
+        ...
 
-    async def setex(self, name: str, time: int, value: str) -> bool: ...
+    async def setex(self, name: str, time: int, value: str) -> bool:
+        """SET with a TTL in seconds."""
+        ...
 
-    async def getdel(self, name: str) -> str | None: ...
+    async def getdel(self, name: str) -> str | None:
+        """Atomic GET + DEL — None when the key was absent."""
+        ...
 
-    async def delete(self, *names: str) -> int: ...
+    async def delete(self, *names: str) -> int:
+        """DEL — returns how many of the keys existed."""
+        ...
 
-    async def exists(self, *names: str) -> int: ...
+    async def exists(self, *names: str) -> int:
+        """EXISTS — count of the named keys present."""
+        ...
 
-    async def expire(self, name: str, time: int) -> bool: ...
+    async def expire(self, name: str, time: int) -> bool:
+        """Set a TTL in seconds on an existing key."""
+        ...
 
-    async def keys(self, pattern: str = "*") -> list[str]: ...
+    async def keys(self, pattern: str = "*") -> list[str]:
+        """KEYS — full scan; only for small, bounded keyspaces."""
+        ...
 
-    async def incr(self, name: str, amount: int = 1) -> int: ...
+    async def incr(self, name: str, amount: int = 1) -> int:
+        """INCRBY — returns the value after the increment."""
+        ...
 
-    async def llen(self, name: str) -> int: ...
+    async def llen(self, name: str) -> int:
+        """LLEN — 0 for a missing key."""
+        ...
 
-    async def lpop(self, name: str) -> str | None: ...
+    async def lpop(self, name: str) -> str | None:
+        """LPOP — None when the list is empty or absent."""
+        ...
 
-    async def lrange(self, name: str, start: int, end: int) -> list[str]: ...
+    async def lrange(self, name: str, start: int, end: int) -> list[str]:
+        """LRANGE — inclusive on both ends; -1 is the last element."""
+        ...
 
-    async def rpush(self, name: str, *values: str) -> int: ...
+    async def ltrim(self, name: str, start: int, end: int) -> bool:
+        """LTRIM — keep only [start, end]; negative indexes count from the tail."""
+        ...
 
-    async def hset(self, name: str, *, mapping: Mapping[str, str]) -> int: ...
+    async def rpush(self, name: str, *values: str) -> int:
+        """RPUSH — returns the list length after the push."""
+        ...
 
-    async def hgetall(self, name: str) -> dict[str, str]: ...
+    async def hset(self, name: str, *, mapping: Mapping[str, str]) -> int:
+        """HSET from a mapping — returns how many fields were newly added."""
+        ...
 
-    async def publish(self, channel: str, message: str) -> int: ...
+    async def hgetall(self, name: str) -> dict[str, str]:
+        """HGETALL — empty dict for a missing key."""
+        ...
+
+    async def publish(self, channel: str, message: str) -> int:
+        """PUBLISH — returns the number of subscribers that received it."""
+        ...
 
     async def xadd(
         self,
@@ -181,7 +219,9 @@ class AsyncRedisCommands(Protocol):
         *,
         maxlen: int | None = None,
         approximate: bool = True,
-    ) -> str: ...
+    ) -> str:
+        """XADD — returns the new entry's stream id."""
+        ...
 
     async def xread(
         self,
@@ -189,15 +229,23 @@ class AsyncRedisCommands(Protocol):
         *,
         count: int | None = None,
         block: int | None = None,
-    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]: ...
+    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]:
+        """XREAD — [(stream, [(entry_id, fields)])] for streams with new entries."""
+        ...
 
     # Lua's return type is whatever the script yields — genuinely dynamic, so the
     # caller narrows it (the one call site coerces to bool).
-    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any: ...
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any:
+        """EVAL — runs a Lua script; the caller narrows the dynamic result."""
+        ...
 
-    def pubsub(self) -> PubSub: ...
+    def pubsub(self) -> PubSub:
+        """A pub/sub interface bound to this client."""
+        ...
 
-    def pipeline(self, transaction: bool = True) -> Pipeline: ...
+    def pipeline(self, transaction: bool = True) -> Pipeline:
+        """A command pipeline; ``transaction=True`` wraps it in MULTI/EXEC."""
+        ...
 
 
 def _new_client(redis_url: str) -> AsyncRedisCommands:
@@ -234,7 +282,11 @@ class RedisCache:
                 )
             except Exception as e:
                 log.set(db={"connection_status": "error", "backend": "redis"})
-                log.error(f"{LogTag.STORAGE} Failed to create Redis client: {e}")
+                log.error(
+                    f"{LogTag.STORAGE} Failed to create Redis client",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         else:
             log.warning(f"{LogTag.STORAGE} REDIS_URL is not set. Caching will be disabled.")
 
@@ -250,7 +302,7 @@ class RedisCache:
         if self.redis is None:
             message = "Redis is UNAVAILABLE: REDIS_URL is not configured."
             log.set(db={"connection_status": "unavailable", "backend": "redis"})
-            log.error(f"{LogTag.STORAGE} {message}")
+            log.error(f"{LogTag.STORAGE} Redis is UNAVAILABLE: REDIS_URL is not configured")
             if settings.ENV == "production":
                 raise ConnectionError(message)
             return
@@ -262,7 +314,9 @@ class RedisCache:
         except Exception as e:
             message = f"Redis is UNAVAILABLE: ping failed ({type(e).__name__}: {e})"
             log.set(db={"connection_status": "error", "backend": "redis"})
-            log.error(f"{LogTag.STORAGE} {message}")
+            log.error(
+                f"{LogTag.STORAGE} Redis is UNAVAILABLE: ping failed", error_type=type(e).__name__
+            )
             if settings.ENV == "production":
                 raise ConnectionError(message) from e
 
@@ -366,7 +420,7 @@ class RedisCache:
 
         try:
             await self.redis.delete(key)
-            log.info(f"{LogTag.STORAGE} Cache deleted for key: {key}")
+            log.info(f"{LogTag.STORAGE} Cache deleted for key", key=key)
         except Exception as e:
             log.error(
                 "redis_op_failed",
@@ -488,7 +542,12 @@ async def get_and_delete_cache(key: str, model: type[T] | None = None) -> Any:
             return deserialize_any(value, model)
         return None
     except Exception as e:
-        log.error(f"{LogTag.STORAGE} Error in get_and_delete for key {key}: {e}")
+        log.error(
+            f"{LogTag.STORAGE} Error in get_and_delete for key",
+            key=key,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
         return None
 
 
@@ -517,13 +576,18 @@ async def delete_cache_by_pattern(pattern: str) -> None:
     try:
         keys = await redis_cache.redis.keys(pattern)
         if not keys:
-            log.info(f"{LogTag.STORAGE} No keys found for pattern: {pattern}")
+            log.info(f"{LogTag.STORAGE} No keys found for pattern", pattern=pattern)
             return
         for key in keys:
             await redis_cache.delete(key)
-            log.info(f"{LogTag.STORAGE} Cache deleted for key: {key}")
+            log.info(f"{LogTag.STORAGE} Cache deleted for key", key=key)
     except Exception as e:
-        log.error(f"{LogTag.STORAGE} Error deleting Redis keys by pattern {pattern}: {e}")
+        log.error(
+            f"{LogTag.STORAGE} Error deleting Redis keys by pattern",
+            pattern=pattern,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 # Caching decorators have been moved to app.decorators.caching

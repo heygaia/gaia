@@ -4,8 +4,6 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from app.models.todo_models import Priority, TodoLabelCount, TodoStats
 
 # ---------------------------------------------------------------------------
@@ -28,6 +26,22 @@ _rl_patch.start()
 FAKE_USER_ID = "507f1f77bcf86cd799439011"
 
 MODULE = "app.agents.tools.todo_tool"
+
+
+class _UTCOnlyDateTime(datetime):
+    """datetime stand-in whose ``now(None)`` (local time) reads a different DATE
+    than ``now(UTC)``.
+
+    The todo tools' day boundaries must follow the UTC calendar; this clock turns
+    a non-UTC read into a wrong window the exact-boundary assertions can see,
+    instead of relying on the run machine's timezone differing from UTC.
+    """
+
+    @classmethod
+    def now(cls, tz: datetime | None = None) -> datetime:  # type: ignore[override]  # mirrors datetime.now's optional-tz signature deliberately
+        if tz is None:
+            return cls(2026, 6, 14, 20, 0)  # naive local read: previous day
+        return cls(2026, 6, 15, 2, 0, tzinfo=UTC)
 
 
 def _make_config(user_id: str = FAKE_USER_ID) -> dict[str, Any]:
@@ -96,7 +110,6 @@ def _writer_mock() -> MagicMock:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestCreateTodo:
     """Tests for the create_todo tool."""
 
@@ -228,7 +241,6 @@ class TestCreateTodo:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListTodos:
     """Tests for the list_todos tool."""
 
@@ -331,7 +343,6 @@ class TestListTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateTodo:
     """Tests for the update_todo tool."""
 
@@ -428,7 +439,6 @@ class TestUpdateTodo:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestDeleteTodo:
     """Tests for the delete_todo tool."""
 
@@ -501,7 +511,6 @@ class TestDeleteTodo:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSearchTodos:
     """Tests for the search_todos tool."""
 
@@ -572,7 +581,6 @@ class TestSearchTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestSemanticSearchTodos:
     """Tests for the semantic_search_todos tool."""
 
@@ -628,7 +636,6 @@ class TestSemanticSearchTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetTodoStatistics:
     """Tests for the get_todo_statistics tool."""
 
@@ -671,10 +678,10 @@ class TestGetTodoStatistics:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetTodayTodos:
     """Tests for the get_today_todos tool."""
 
+    @patch(f"{MODULE}.datetime", _UTCOnlyDateTime)
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.get_todos_by_date_range", new_callable=AsyncMock)
     @patch(f"{MODULE}.get_user_id_from_config", return_value=FAKE_USER_ID)
@@ -693,6 +700,14 @@ class TestGetTodayTodos:
 
         assert result["error"] is None
         assert result["count"] == 1
+        # The query window is the full day "now" falls on, as naive datetimes
+        # (datetime.combine keeps time.min/max's null tzinfo) on the UTC clock's
+        # calendar date — pinned exactly against a fake clock so a local-time or
+        # None bound cannot slip through.
+        (user_arg, start, end), _ = mock_service.await_args
+        assert user_arg == FAKE_USER_ID
+        assert start == datetime(2026, 6, 15, 0, 0)
+        assert end == datetime(2026, 6, 15, 23, 59, 59, 999999)
 
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.get_todos_by_date_range", new_callable=AsyncMock)
@@ -718,7 +733,6 @@ class TestGetTodayTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetUpcomingTodos:
     """Tests for the get_upcoming_todos tool."""
 
@@ -769,7 +783,6 @@ class TestGetUpcomingTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestCreateProject:
     """Tests for the create_project tool."""
 
@@ -819,7 +832,6 @@ class TestCreateProject:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestListProjects:
     """Tests for the list_projects tool."""
 
@@ -848,7 +860,6 @@ class TestListProjects:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestDeleteProject:
     """Tests for the delete_project tool."""
 
@@ -911,7 +922,6 @@ class TestDeleteProject:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetTodosByLabel:
     """Tests for the get_todos_by_label tool."""
 
@@ -943,7 +953,6 @@ class TestGetTodosByLabel:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetAllLabels:
     """Tests for the get_all_labels tool."""
 
@@ -987,7 +996,6 @@ class TestGetAllLabels:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestBulkCompleteTodos:
     """Tests for the bulk_complete_todos tool."""
 
@@ -1020,7 +1028,6 @@ class TestBulkCompleteTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestBulkMoveTodos:
     """Tests for the bulk_move_todos tool."""
 
@@ -1053,7 +1060,6 @@ class TestBulkMoveTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestBulkDeleteTodos:
     """Tests for the bulk_delete_todos tool."""
 
@@ -1105,7 +1111,6 @@ class TestBulkDeleteTodos:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestAddSubtask:
     """Tests for the add_subtask tool."""
 
@@ -1163,7 +1168,6 @@ class TestAddSubtask:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateSubtask:
     """Tests for the update_subtask tool."""
 
@@ -1227,7 +1231,6 @@ class TestUpdateSubtask:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestDeleteSubtask:
     """Tests for the delete_subtask tool."""
 
@@ -1288,10 +1291,10 @@ class TestDeleteSubtask:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetTodosSummary:
     """Tests for the get_todos_summary tool."""
 
+    @patch(f"{MODULE}.datetime", _UTCOnlyDateTime)
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.get_all_projects_service", new_callable=AsyncMock)
     @patch(f"{MODULE}.get_all_todos_service", new_callable=AsyncMock)
@@ -1306,9 +1309,8 @@ class TestGetTodosSummary:
         mock_writer_factory: MagicMock,
     ) -> None:
         mock_writer_factory.return_value = _writer_mock()
-        now = datetime.now(UTC)
         todo = _make_todo_response(
-            due_date=now,
+            due_date=datetime(2026, 6, 15, 9, 0, tzinfo=UTC),
             completed=False,
             priority=Priority.HIGH,
             completed_at=None,
@@ -1327,6 +1329,12 @@ class TestGetTodosSummary:
         assert "today" in summary
         assert "stats" in summary
         assert "by_project" in summary
+        # Same day-window contract as get_today_todos, pinned against the same
+        # fake clock: the first gather call fetches today's bounds.
+        (user_arg, start, end), _ = mock_date_range.await_args_list[0]
+        assert user_arg == FAKE_USER_ID
+        assert start == datetime(2026, 6, 15, 0, 0)
+        assert end == datetime(2026, 6, 15, 23, 59, 59, 999999)
 
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.get_user_id_from_config", return_value="")

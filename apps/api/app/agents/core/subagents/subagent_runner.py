@@ -5,7 +5,7 @@ Lives here (rather than in handoff_tools.py) so those modules import from it,
 avoiding a cyclic dependency.
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
@@ -20,6 +20,9 @@ from langchain_core.messages import (
 from langchain_core.runnables import RunnableConfig
 from langgraph.types import Command, StateSnapshot, interrupt
 
+from app.agents.context.assemble import assemble_context
+from app.agents.context.section_context import SectionContext
+from app.agents.context.tiers import AgentTier
 from app.agents.core.background.session import claim_tool_output, note_tool_output_owner
 from app.agents.core.graph_manager import (
     CompiledAgentGraph,
@@ -27,20 +30,17 @@ from app.agents.core.graph_manager import (
     GraphUnavailableError,
 )
 from app.agents.core.subagents.registry import get_subagent_by_id
-from app.agents.core.subagents.subagent_helpers import (
-    create_agent_context_message,
-)
-from app.agents.llm.plan_model import apply_dev_executor_model
+from app.agents.llm.lane import AgentRole, dev_option
 from app.agents.prompts.workflow_prompts import (
     WORKFLOW_AUTO_NOTIFY_SECTION,
     WORKFLOW_SILENT_NOTIFY_SECTION,
 )
-from app.constants.general import FINISH_TASK_NAME
+from app.constants.general import EXECUTOR_THREAD_PREFIX, FINISH_TASK_NAME
 from app.constants.hil import LANGGRAPH_INTERRUPT_KEY
 from app.constants.llm import EXECUTOR_RECURSION_LIMIT
 from app.constants.log_tags import LogTag
 from app.core.stream_manager import stream_manager
-from app.helpers.agent_helpers import build_agent_config
+from app.helpers.agent_helpers import AgentIdentity, AgentLane, AgentThread, build_agent_config
 from app.helpers.message_helpers import (
     build_current_time_message,
     create_system_message,
@@ -108,10 +108,16 @@ class SubagentOutcome:
     ``interrupt`` carries the payload the gate passed to ``interrupt()``. When it
     is set the graph is checkpointed mid-run and ``text`` is meaningless — the
     caller must bubble the pause up rather than treat it as an answer.
+
+    ``run_messages`` are THIS run's tool-bearing messages captured off the
+    stream — the agent node's AIMessages (complete tool_calls) and the
+    ToolMessages answering them. Workflow handoffs render them into the call
+    record the executor transcribes playbook steps from (see ``call_record``).
     """
 
     text: str
     interrupt: dict[str, Any] | None = None
+    run_messages: tuple[AnyMessage, ...] = ()
 
     @property
     def paused(self) -> bool:
@@ -160,88 +166,78 @@ def resume_for_gate(interrupt_payload: dict[str, Any]) -> object:
     return decision
 
 
+# eq/repr stay off: instances are compared and printed by identity (a generated
+# repr would dump the whole message history in `initial_state`), and __hash__ must
+# survive for anything holding a context in a set.
+@dataclass(eq=False, repr=False)
 class SubagentExecutionContext:
     """Container for all data needed to execute a subagent."""
 
-    def __init__(
-        self,
-        subagent_graph: CompiledAgentGraph,
-        agent_name: str,
-        config: AgentRunnableConfig,
-        configurable: AgentConfigurable,
-        integration_id: str,
-        initial_state: dict[str, Any],
-        user_id: str | None = None,
-        stream_id: str | None = None,
-    ) -> None:
-        self.subagent_graph = subagent_graph
-        self.agent_name = agent_name
-        self.config = config
-        self.configurable = configurable
-        self.integration_id = integration_id
-        self.initial_state = initial_state
-        self.user_id = user_id
-        self.stream_id = stream_id
+    subagent_graph: CompiledAgentGraph
+    agent_name: str
+    config: AgentRunnableConfig
+    configurable: AgentConfigurable
+    integration_id: str
+    initial_state: dict[str, Any]
+    user_id: str | None = None
+    stream_id: str | None = None
+
+
+@dataclass(frozen=True)
+class ThreadSeed:
+    """What a worker tier's opening thread is seeded from: the tier, the run's
+    configurable, and the identifiers the context sections retrieve against."""
+
+    tier: AgentTier
+    configurable: AgentConfigurable
+    user_id: str | None = None
+    subagent_id: str | None = None
+    retrieval_query: str | None = None
+    integration_id: str | None = None
 
 
 async def build_initial_messages(
+    *,
     system_message: SystemMessage,
     agent_name: str,
-    configurable: AgentConfigurable,
     task: str,
-    *,
-    user_id: str | None = None,
-    subagent_id: str | None = None,
-    retrieval_query: str | None = None,
-    integration_id: str | None = None,
-    memories_text: str | None = None,
-    skills_text: str | None = None,
-    provider_metadata: dict[str, str] | None = None,
-    include_connected_integrations: bool = False,
+    seed: ThreadSeed,
 ) -> list[AnyMessage]:
-    """Build the [static_prompt, dynamic_context, human_task] triplet.
-
-    The static system prompt is byte-identical across users/channels. The
-    dynamic-context message carries user_name, memories, skills, platform
-    restrictions, and (for provider subagents) service-specific username
-    metadata. ``manage_system_prompts_node`` collapses repeats at run time.
+    """Seed a worker tier's thread, in canonical slot order.
 
     Args:
-        system_message: Pre-built STATIC system message (must not include
-            any per-user or per-time content — keeps the cache prefix stable).
-        agent_name: Name of the agent (for HumanMessage visibility metadata).
-        configurable: Config dict with user_timezone, user_name, etc.
-        task: The task/query to execute (goes into the HumanMessage).
-        user_id: Optional user ID for memory retrieval.
-        subagent_id: Optional subagent ID for skill retrieval.
-        retrieval_query: Query for memory/context retrieval. Defaults to
-            ``task`` but should be set to the original unenhanced task when
-            ``task`` contains injected hints that would pollute semantic
-            search.
-        integration_id: When invoking a provider subagent, the underlying
-            integration ID — used to fetch provider metadata (GitHub login,
-            Gmail address, etc.) for the dynamic-context message.
-        memories_text: Pre-fetched memories section. The parent can fetch in
-            parallel with its own work and pass it down here to avoid the
-            subagent running a duplicate ChromaDB lookup.
-        skills_text: Pre-fetched skills section; same rationale.
-        provider_metadata: Pre-fetched provider metadata dict; same rationale
-            (the handoff path fetches it for task sanitization already).
-        include_connected_integrations: Executor-only; appends the live
-            connected-integrations manifest to the dynamic-context message.
+        system_message: The STATIC system message. Must carry no per-user or
+            per-time content — that is what keeps the cache prefix shared
+            across every user on this tier.
+        tier: Which tier is seeding, which decides the sections it gets.
+        agent_name: Stamped on the human turn as visibility metadata.
+        task: The task text the agent acts on.
+        retrieval_query: What the volatile sections retrieve against. Defaults
+            to ``task``, but callers set it to the original unenhanced task when
+            ``task`` carries injected hints that would pollute semantic search.
+        integration_id: For a provider subagent, the underlying integration id
+            — what provider metadata and custom instructions are looked up by.
     """
+    tier, configurable, user_id, subagent_id, retrieval_query, integration_id = (
+        seed.tier,
+        seed.configurable,
+        seed.user_id,
+        seed.subagent_id,
+        seed.retrieval_query,
+        seed.integration_id,
+    )
+
     log.set(agent_prep={"agent_name": agent_name, "task_length": len(task)})
 
-    context_message = await create_agent_context_message(
-        configurable=configurable,
-        user_id=user_id,
-        query=retrieval_query if retrieval_query is not None else task,
-        subagent_id=subagent_id,
-        integration_id=integration_id,
-        memories_text=memories_text,
-        skills_text=skills_text,
-        provider_metadata=provider_metadata,
-        include_connected_integrations=include_connected_integrations,
+    assembled = await assemble_context(
+        SectionContext.from_configurable(
+            tier,
+            configurable,
+            query=retrieval_query if retrieval_query is not None else task,
+            user_id=user_id,
+            subagent_id=subagent_id,
+            integration_id=integration_id,
+        )
     )
 
     # Current time rides in a HumanMessage so the system_instruction prefix
@@ -253,12 +249,12 @@ async def build_initial_messages(
 
     return [
         system_message,
-        context_message,
-        time_message,
+        *assembled.messages(),
         HumanMessage(
             content=task,
             additional_kwargs={"visible_to": {agent_name}},
         ),
+        time_message,
     ]
 
 
@@ -325,9 +321,11 @@ def _process_messages_payload(
             complete_message += content
 
         # Stream the model's thinking interleaved with tool events, so the
-        # UI can show what it reasoned about between each step. Carries the
-        # subagent_id so the client nests it in the right step (same routing
-        # as tool_data/tool_output). Empty for non-reasoning models.
+        # UI can show what it reasoned about between each step, token by token.
+        # Carries the subagent_id so the client nests it in the right step (same
+        # routing as tool_data/tool_output). Empty for non-reasoning models.
+        # These deltas are per model chunk; the stream writer coalesces them for
+        # the persistence collector (see redis_writer), never for the publish.
         if stream_writer:
             reasoning_delta = _extract_reasoning_delta(chunk)
             if reasoning_delta:
@@ -352,6 +350,110 @@ def _process_messages_payload(
     return complete_message
 
 
+@dataclass
+class _StreamRun:
+    """One drive of ``execute_subagent_stream``: its emitters and its running state.
+
+    Mutable and passed by reference to the per-stream-mode handlers, so the loop
+    keeps a single copy of the state every branch accumulates into.
+    """
+
+    ctx: SubagentExecutionContext
+    stream_writer: StreamWriterCallable | None
+    integration_metadata: IntegrationMetadata | None
+    subagent_id: str | None
+    complete_message: str = ""
+    emitted_tool_calls: set[str] = field(default_factory=set)
+    tool_ran: bool = False
+    pending_approvals: list[dict[str, Any]] = field(default_factory=list)
+    run_messages: list[AnyMessage] = field(default_factory=list)
+
+
+async def _process_updates_payload(run: _StreamRun, payload: dict[str, Any]) -> None:
+    """Handle one "updates"-mode stream event: record a pause, or emit tool_data.
+
+    The run paused. Record the approval and KEEP DRAINING — never break.
+
+    Under durability="exit" the run-exit save is the only checkpoint write
+    there is, and abandoning the generator early skips it: the writes of
+    every task that COMPLETED in the interrupting step are lost, so those
+    tasks re-run on resume. That is how an ungated tool call beside a gated
+    one used to execute twice. Verified in isolation — break + "exit" is the
+    only combination that loses them; either alone is fine.
+    """
+    if LANGGRAPH_INTERRUPT_KEY in payload:
+        # ONE event per paused task, so two gated calls in a message arrive as
+        # two events. Accumulate: the caller stamps re-dispatch context onto
+        # every id here, and an approval left out of that can never be applied.
+        run.pending_approvals.extend(interrupt_values(payload[LANGGRAPH_INTERRUPT_KEY]))
+        log.info(f"{LogTag.HIL} Subagent paused on approval", agent=run.ctx.agent_name)
+        return
+    for node_name, state_update in payload.items():
+        # Only emit tool_data from the LLM ("agent") node.
+        # Pre-model hooks (filter_messages_node, manage_system_prompts_node,
+        # etc.) produce "updates" events containing historical AIMessages
+        # with tool_calls from previous checkpoint runs — emitting those
+        # would replay stale tool cards into the current stream.
+        if node_name != "agent":
+            continue
+        # The agent node's update is the one place this run's complete
+        # tool_calls (exact names + args) appear — "messages" mode only
+        # streams them as partial chunks. Captured for the call record.
+        if isinstance(state_update, dict):
+            run.run_messages.extend(
+                msg for msg in state_update.get("messages", []) if getattr(msg, "tool_calls", None)
+            )
+        # Use shared helper to extract and format tool entries
+        entries = await extract_tool_entries_from_update(
+            state_update=state_update,
+            emitted_tool_calls=run.emitted_tool_calls,
+            integration_metadata=run.integration_metadata,
+        )
+        for tc_id, tool_entry in entries:
+            # Announcing the call is what claims its result: "messages" mode
+            # will replay this ToolMessage into the outer run's stream too.
+            note_tool_output_owner(run.ctx.stream_id or "", tc_id, run.subagent_id)
+            if run.stream_writer:
+                chunk_data: dict[str, Any] = {"tool_data": tool_entry}
+                if run.subagent_id:
+                    chunk_data["tool_data"] = {**tool_entry, "subagent_id": run.subagent_id}
+                run.stream_writer(chunk_data)
+
+
+def _finalize_run(run: _StreamRun) -> SubagentOutcome:
+    """The outcome a drained (or paused) stream produced."""
+    # A pause is not a result: the narration-only heuristic below would misread a
+    # half-finished run as "planning text" and tell the parent to re-issue it.
+    if run.pending_approvals:
+        return SubagentOutcome(
+            text=run.complete_message,
+            interrupt=merge_approvals(run.pending_approvals),
+            run_messages=tuple(run.run_messages),
+        )
+
+    # A subagent that only narrated and never ran a tool didn't do the work — return
+    # an actionable signal so the parent re-issues the handoff instead of treating the
+    # planning text as the result.
+    if not run.tool_ran and not run.emitted_tool_calls and run.complete_message:
+        log.warning("subagent_returned_narration_only", subagent_name=run.ctx.agent_name)
+        final_message = (
+            f"The {run.ctx.agent_name} subagent ended without running any tool; it only "
+            f'produced planning text: "{run.complete_message}". Re-issue the handoff with an '
+            "explicit instruction to perform the action."
+        )
+    else:
+        final_message = run.complete_message or "Task completed"
+    log.set(
+        subagent={
+            "name": run.ctx.agent_name,
+            "provider": run.ctx.integration_id,
+            "response_length": len(final_message),
+            "messages_count": len(run.ctx.initial_state.get("messages", [])),
+        }
+    )
+    return SubagentOutcome(text=final_message, run_messages=tuple(run.run_messages))
+
+
 async def execute_subagent_stream(
     ctx: SubagentExecutionContext,
     stream_writer: StreamWriterCallable | None = None,
@@ -371,10 +473,12 @@ async def execute_subagent_stream(
     outcome carries the approval payload and the caller must bubble it up.
     """
     log.set(subagent={"name": ctx.agent_name, "provider": ctx.integration_id})
-    complete_message = ""
-    emitted_tool_calls: set[str] = set()
-    tool_ran = False
-    pending_approvals: list[dict[str, Any]] = []
+    run = _StreamRun(
+        ctx=ctx,
+        stream_writer=stream_writer,
+        integration_metadata=integration_metadata,
+        subagent_id=subagent_id,
+    )
 
     # Inject the UUID subagent_id into configurable so nested spawn_subagent
     # tool calls can read the correct parent_subagent_id via
@@ -413,7 +517,7 @@ async def execute_subagent_stream(
     ):
         # Check for cancellation
         if ctx.stream_id and await stream_manager.is_cancelled(ctx.stream_id):
-            log.info(f"{LogTag.AGENT} Subagent stream {ctx.stream_id} cancelled by user")
+            log.info(f"{LogTag.AGENT} Subagent stream cancelled by user", stream_id=ctx.stream_id)
             break
 
         # Handle 2-tuple format only (no subgraphs)
@@ -422,86 +526,37 @@ async def execute_subagent_stream(
         # A list `stream_mode` makes astream yield (mode, payload) tuples, which
         # langgraph's own overload return type does not express.
         stream_mode, payload = cast(tuple[str, Any], event)
+        await _consume_stream_event(run, stream_mode, payload)
 
-        if stream_mode == "updates":
-            # The run paused. Record the approval and KEEP DRAINING — never break.
-            #
-            # Under durability="exit" the run-exit save is the only checkpoint write
-            # there is, and abandoning the generator early skips it: the writes of
-            # every task that COMPLETED in the interrupting step are lost, so those
-            # tasks re-run on resume. That is how an ungated tool call beside a gated
-            # one used to execute twice. Verified in isolation — break + "exit" is the
-            # only combination that loses them; either alone is fine.
-            if LANGGRAPH_INTERRUPT_KEY in payload:
-                # ONE event per paused task, so two gated calls in a message arrive as
-                # two events. Accumulate: the caller stamps re-dispatch context onto
-                # every id here, and an approval left out of that can never be applied.
-                pending_approvals.extend(interrupt_values(payload[LANGGRAPH_INTERRUPT_KEY]))
-                log.info(f"{LogTag.HIL} Subagent paused on approval", agent=ctx.agent_name)
-                continue
-            for node_name, state_update in payload.items():
-                # Only emit tool_data from the LLM ("agent") node.
-                # Pre-model hooks (filter_messages_node, manage_system_prompts_node,
-                # etc.) produce "updates" events containing historical AIMessages
-                # with tool_calls from previous checkpoint runs — emitting those
-                # would replay stale tool cards into the current stream.
-                if node_name != "agent":
-                    continue
-                # Use shared helper to extract and format tool entries
-                entries = await extract_tool_entries_from_update(
-                    state_update=state_update,
-                    emitted_tool_calls=emitted_tool_calls,
-                    integration_metadata=integration_metadata,
-                )
-                for tc_id, tool_entry in entries:
-                    # Announcing the call is what claims its result: "messages" mode
-                    # will replay this ToolMessage into the outer run's stream too.
-                    note_tool_output_owner(ctx.stream_id or "", tc_id, subagent_id)
-                    if stream_writer:
-                        chunk_data: dict[str, Any] = {"tool_data": tool_entry}
-                        if subagent_id:
-                            chunk_data["tool_data"] = {**tool_entry, "subagent_id": subagent_id}
-                        stream_writer(chunk_data)
-            continue
+    return _finalize_run(run)
 
-        if stream_mode == "messages":
-            complete_message = _process_messages_payload(
-                payload, complete_message, stream_writer, subagent_id, ctx.stream_id or ""
-            )
-            if isinstance(payload[0], ToolMessage):
-                tool_ran = True
-            continue
 
-        if stream_mode == "custom":
-            if stream_writer:
-                stream_writer(normalize_custom_event(payload))
+async def _consume_stream_event(run: _StreamRun, stream_mode: str, payload: object) -> None:
+    """One (mode, payload) event off the subagent's stream, into the run's state.
 
-    # A pause is not a result: the narration-only heuristic below would misread a
-    # half-finished run as "planning text" and tell the parent to re-issue it.
-    if pending_approvals:
-        return SubagentOutcome(text=complete_message, interrupt=merge_approvals(pending_approvals))
+    The payload's shape is decided by the mode, which is why the driver holds it
+    untyped: each branch narrows it to the shape that mode is documented to carry.
+    """
+    if stream_mode == "updates":
+        await _process_updates_payload(run, cast(dict[str, Any], payload))
+        return
 
-    # A subagent that only narrated and never ran a tool didn't do the work — return
-    # an actionable signal so the parent re-issues the handoff instead of treating the
-    # planning text as the result.
-    if not tool_ran and not emitted_tool_calls and complete_message:
-        log.warning("subagent_returned_narration_only", subagent_name=ctx.agent_name)
-        final_message = (
-            f"The {ctx.agent_name} subagent ended without running any tool — it only "
-            f'produced planning text: "{complete_message}". Re-issue the handoff with an '
-            "explicit instruction to perform the action."
+    if stream_mode == "messages":
+        chunk_and_metadata = cast(tuple[BaseMessage, dict[str, Any]], payload)
+        run.complete_message = _process_messages_payload(
+            chunk_and_metadata,
+            run.complete_message,
+            run.stream_writer,
+            run.subagent_id,
+            run.ctx.stream_id or "",
         )
-    else:
-        final_message = complete_message or "Task completed"
-    log.set(
-        subagent={
-            "name": ctx.agent_name,
-            "provider": ctx.integration_id,
-            "response_length": len(final_message),
-            "messages_count": len(ctx.initial_state.get("messages", [])),
-        }
-    )
-    return SubagentOutcome(text=final_message)
+        if isinstance(chunk_and_metadata[0], ToolMessage):
+            run.tool_ran = True
+            run.run_messages.append(chunk_and_metadata[0])
+        return
+
+    if stream_mode == "custom" and run.stream_writer:
+        run.stream_writer(normalize_custom_event(cast(dict[str, Any], payload)))
 
 
 def _snapshot_messages(snapshot: StateSnapshot) -> list[AnyMessage]:
@@ -623,7 +678,7 @@ def interrupt_payload(raw: object) -> dict[str, Any]:
     message park two tasks in the same step, and the caller stamps re-dispatch context
     onto each id this returns (``executor_runner._record_pause``). Returning only the
     first left the second with no ``resume_item`` at all, so approving it raised
-    ``ApprovalNotResumable`` and the decision could never be applied.
+    ``ApprovalNotResumableError`` and the decision could never be applied.
 
     The first payload's own fields stay at the top level, so callers that read a single
     approval (``resume_for_gate``) are unaffected; ``approval_ids`` is what the batch
@@ -658,6 +713,41 @@ def merge_approvals(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     return {**payloads[0], "approval_ids": ids}
 
 
+def compose_executor_brief(
+    task: str,
+    acceptance_criteria: list[str],
+    *,
+    verbatim_request: str | None = None,
+    last_run: str | None = None,
+    playbook_check: str | None = None,
+) -> str:
+    """Fold the definition-of-done (and verbatim request, previous run) into the brief.
+
+    ``last_run`` is a workflow's previous run, already rendered by
+    ``run_trace.render_last_run`` — the workflow's memory now that its checkpoint
+    threads are dropped before each fire.
+
+    ``playbook_check`` asks the executor, once the work is done, whether the
+    sequence it just ran is worth freezing as a playbook. It rides in the brief
+    rather than in the finished result's narration because ``write_playbook`` is
+    an executor tool and comms cannot reach it. Placed last, after the
+    definition of done, so it reads as the closing instruction it is.
+    """
+    criteria = [c.strip() for c in acceptance_criteria if c and c.strip()]
+    parts: list[str] = []
+    if verbatim_request:
+        parts.append(f"Original request (verbatim):\n{verbatim_request.strip()}")
+    parts.append(task)
+    if last_run:
+        parts.append(last_run.strip())
+    if criteria:
+        lines = "\n".join(f"- {c}" for c in criteria)
+        parts.append(f"Definition of done (every item must be true before you finish):\n{lines}")
+    if playbook_check:
+        parts.append(playbook_check.strip())
+    return "\n\n".join(parts)
+
+
 async def prepare_executor_execution(
     task: str,
     configurable: AgentConfigurable,
@@ -680,7 +770,7 @@ async def prepare_executor_execution(
     # executor (and the subagents it spawns, whose threads are derived from
     # this one) retains its history across call_executor invocations within
     # the same conversation.
-    executor_thread_id = f"executor_{thread_id}"
+    executor_thread_id = f"{EXECUTOR_THREAD_PREFIX}{thread_id}"
 
     # VFS session stays pinned to the conversation thread so files written by
     # one executor call are visible to the next.
@@ -705,22 +795,27 @@ async def prepare_executor_execution(
     }
 
     # Build config
-    config = build_agent_config(
-        conversation_id=thread_id,
-        user=user,
-        thread_id=executor_thread_id,
-        base_configurable=configurable,
-        agent_name="executor_agent",
-        subagent_id="executor_agent",  # Use agent_name as the memory namespace id
-        vfs_session_id=vfs_session_id,
-        recursion_limit=EXECUTOR_RECURSION_LIMIT,
+    config = await build_agent_config(
+        identity=AgentIdentity(
+            conversation_id=thread_id,
+            user=user,
+            agent_name="executor_agent",
+        ),
+        lane=AgentLane(
+            role=AgentRole.EXECUTOR,
+            # DEV-ONLY: the switcher's executor pick, stashed by comms. Present only
+            # in development; otherwise the executor inherits comms's lane.
+            dev_option=dev_option(configurable.get("dev_executor_model")),
+        ),
+        thread=AgentThread(
+            thread_id=executor_thread_id,
+            base_configurable=configurable,
+            subagent_id="executor_agent",  # Use agent_name as the memory namespace id
+            vfs_session_id=vfs_session_id,
+            recursion_limit=EXECUTOR_RECURSION_LIMIT,
+        ),
     )
     new_configurable = agent_configurable(config)
-
-    # DEV-ONLY: if the chat-header selector chose an executor model, pin it here —
-    # after the inherit-from-comms copy, so it overrides the comms model for the
-    # executor (and provider subagents that inherit from it). No-op in production.
-    apply_dev_executor_model(configurable, new_configurable)
 
     # Create system message (executor-specific)
     system_message = create_system_message(
@@ -784,13 +879,13 @@ async def prepare_executor_execution(
     messages = await build_initial_messages(
         system_message=system_message,
         agent_name="executor_agent",
-        configurable=new_configurable,
         task=enhanced_task,
-        user_id=user_id,
-        retrieval_query=task,
-        # Executor is the agent that performs handoffs, so it gets the live
-        # connected-integrations manifest (names + handoff subagent_ids).
-        include_connected_integrations=True,
+        seed=ThreadSeed(
+            tier=AgentTier.EXECUTOR,
+            configurable=new_configurable,
+            user_id=user_id,
+            retrieval_query=task,
+        ),
     )
 
     return SubagentExecutionContext(

@@ -37,7 +37,7 @@ codes — a plain GET coming back 403/422 is the tell, not evidence about the UR
    duplicated. **Do not create a custom branch per PR.** Every PR's images live
    on `pr-assets`, each under its own folder named for the PR
    (`<pr-number>-<topic>/`, e.g. `890-anydoc-parsing/`). The branch already
-   exists and is cut from `develop`; update it in place:
+   exists and is cut from `master`; update it in place:
 
    ```bash
    git fetch origin pr-assets

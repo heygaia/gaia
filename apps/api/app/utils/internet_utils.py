@@ -74,11 +74,11 @@ async def _resolve_and_validate(hostname: str) -> None:
         ip_str = sockaddr[0]
         try:
             ip = ipaddress.ip_address(ip_str)
-        except ValueError:
+        except ValueError as e:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="URL host resolves to an unsupported address.",
-            )
+            ) from e
         if _is_blocked_ip(ip):
             log.warning(
                 f"{LogTag.TOOL} ssrf_blocked",
@@ -252,12 +252,12 @@ async def scrape_url_metadata(url: str) -> URLResponse:
         return _parse_url_metadata(url, response.content[:_MAX_RESPONSE_BYTES])
 
     except (httpx.RequestError, httpx.HTTPStatusError) as exc:
-        log.debug(f"Error fetching URL metadata: {exc}")
+        log.debug("Error fetching URL metadata", error=str(exc), error_type=type(exc).__name__)
     except HTTPException:
         # Redirect chain tripped the SSRF guard — propagate
         raise
     except Exception as exc:
-        log.debug(f"Unexpected error: {exc}")
+        log.debug("Unexpected error", error=str(exc), error_type=type(exc).__name__)
 
     return _empty_metadata(url)
 

@@ -21,11 +21,14 @@ from typing import Any
 from langchain_core.messages import HumanMessage, SystemMessage
 import pytest
 
+from app.constants.llm import COMPLETION_NUDGE_MESSAGE
 from tests.e2e._harness.graph_run import (
     AGENT_NODE,
     FINISH_NODE,
+    NUDGE_NODE,
     REJECT_NODE,
     TOOLS_NODE,
+    call,
     executor_graph,
     run_graph,
 )
@@ -33,12 +36,8 @@ from tests.e2e._harness.graph_run import (
 pytestmark = pytest.mark.e2e
 
 
-def call(name: str, args: dict[str, Any] | None = None, id: str = "c1") -> dict[str, Any]:
-    return {"name": name, "args": args or {}, "id": id}
-
-
-def plan(*contents: str, id: str = "p1") -> dict[str, Any]:
-    return call("plan_tasks", {"tasks": [{"content": c} for c in contents]}, id)
+def plan(*contents: str, plan_id: str = "p1") -> dict[str, Any]:
+    return call("plan_tasks", {"tasks": [{"content": c} for c in contents]}, plan_id)
 
 
 class TestToolsBoundFromTurnOne:
@@ -61,7 +60,7 @@ class TestToolsBoundFromTurnOne:
         ],
     )
     async def test_a_core_tool_needs_no_retrieval(self, tool: str):
-        async with executor_graph([call(tool, {}, id="c1"), "ok"]) as graph:
+        async with executor_graph([call(tool, {}, call_id="c1"), "ok"]) as graph:
             run = await run_graph(graph, "do the thing")
 
         assert REJECT_NODE not in run.nodes(), f"{tool} was treated as unbound"
@@ -78,7 +77,7 @@ class TestToolsBoundFromTurnOne:
         ``initial_tool_ids`` turns this test red; adding an unregistered name
         does not, because the binder skips ids the registry does not know.
         """
-        async with executor_graph([call(tool, {}, id="c1"), "ok"]) as graph:
+        async with executor_graph([call(tool, {}, call_id="c1"), "ok"]) as graph:
             run = await run_graph(graph, "do the thing")
 
         assert REJECT_NODE in run.nodes()
@@ -193,7 +192,7 @@ class TestTodoState:
         async with executor_graph(
             [
                 plan("first", "second"),
-                call("update_tasks", {"updates": [{"content": "third"}]}, id="u1"),
+                call("update_tasks", {"updates": [{"content": "third"}]}, call_id="u1"),
                 "Done.",
             ]
         ) as graph:
@@ -213,7 +212,7 @@ class TestTodoState:
 
     async def test_planning_nothing_leaves_the_channel_empty(self):
         """An empty plan must not crash the tool or fabricate a task."""
-        async with executor_graph([call("plan_tasks", {"tasks": []}, id="p1"), "ok"]) as graph:
+        async with executor_graph([call("plan_tasks", {"tasks": []}, call_id="p1"), "ok"]) as graph:
             run = await run_graph(graph, "nothing to do")
 
         assert run.todos == []
@@ -278,7 +277,7 @@ class TestTermination:
         tool's ``result`` becomes the message the parent reads, not the model's
         trailing prose."""
         async with executor_graph(
-            [call("finish_task", {"result": "Booked for Tuesday."}, id="f1"), "unreachable"]
+            [call("finish_task", {"result": "Booked for Tuesday."}, call_id="f1"), "unreachable"]
         ) as graph:
             run = await run_graph(graph, "book me a table")
 
@@ -312,12 +311,15 @@ class TestTermination:
             run = await run_graph(graph, "a question")
 
         assert run.final_text() == "Here is your answer."
-        assert run.nodes() == [AGENT_NODE]
+        # Zero tool calls on a delegated task is the "one lookup then assert a
+        # conclusion" shape the completion guard exists to catch, so the run
+        # takes its one nudge and then ends in plain text.
+        assert run.nodes() == [AGENT_NODE, NUDGE_NODE, AGENT_NODE]
 
     async def test_finish_task_without_a_result_still_terminates(self):
         """Models omit optional args. A missing ``result`` must yield a usable
         completion message, not an empty one the parent reports as the answer."""
-        async with executor_graph([call("finish_task", {}, id="f1")]) as graph:
+        async with executor_graph([call("finish_task", {}, call_id="f1")]) as graph:
             run = await run_graph(graph, "wrap up")
 
         assert run.results_from(FINISH_NODE) == ["Task completed."]
@@ -330,7 +332,7 @@ class TestRecursionWrapup:
         gets to summarise what it found — injected per call, never persisted, so
         the only place it is observable is the prompt itself."""
         async with executor_graph(
-            [call("plan_tasks", {"tasks": []}, id=f"c{i}") for i in range(30)]
+            [call("plan_tasks", {"tasks": []}, call_id=f"c{i}") for i in range(30)]
         ) as graph:
             run = await run_graph(graph, "a long job", recursion_limit=10)
 
@@ -350,22 +352,70 @@ class TestRecursionWrapup:
         assert "almost out of steps" not in shown.lower()
 
 
+class TestTheCompletionGuardIsPerDelegation:
+    """The executor keeps ONE thread per conversation (``executor_{thread_id}``,
+    ``subagent_runner.prepare_executor_execution``), so every delegation after
+    the first replays a thread that already holds the previous one's messages.
+    A guard that measures the whole thread instead of the current delegation
+    spends itself on delegation one and is never armed again — which is the
+    opposite of what a "did you actually finish?" check is for.
+    """
+
+    async def test_it_fires_again_on_the_next_delegation_of_the_same_thread(self):
+        """Two zero-tool delegations on one thread. Both must be nudged."""
+        async with executor_graph(["An answer."]) as graph:
+            first = await run_graph(graph, "first task", thread_id="one-thread")
+            second = await run_graph(graph, "second task", thread_id="one-thread")
+
+        assert first.nodes() == [AGENT_NODE, NUDGE_NODE, AGENT_NODE]
+        assert second.nodes() == [AGENT_NODE, NUDGE_NODE, AGENT_NODE], (
+            "the guard spent its only nudge on the first delegation"
+        )
+
+    async def test_a_delegation_cannot_inherit_the_previous_one_s_tool_calls(self):
+        """Delegation one does real work; delegation two does none and answers
+        flat. The tool-call floor is about THIS task's depth, so the earlier
+        task's ToolMessages must not satisfy it."""
+        async with executor_graph(
+            [
+                call("retrieve_tools", {"exact_tool_names": ["web_search_tool"]}, call_id="r1"),
+                call("web_search_tool", {"query": "cats"}, call_id="c1"),
+                "Did the work.",
+                "Flat answer.",
+            ]
+        ) as graph:
+            first = await run_graph(graph, "do the research", thread_id="carry-over")
+            second = await run_graph(graph, "quick follow-up", thread_id="carry-over")
+
+        assert NUDGE_NODE not in first.nodes(), "two tool calls clear the floor on their own"
+        assert NUDGE_NODE in second.nodes(), (
+            "the second delegation cleared the floor on the first one's tool calls"
+        )
+
+
 class TestThreadContinuity:
     async def test_a_second_run_on_the_same_thread_sees_the_first(self):
         """The executor thread is derived from the conversation
         (``executor_{thread_id}``) so consecutive delegations share context.
         Losing that makes the executor re-ask for everything it was already told.
         """
-        async with executor_graph(["First answer.", "Second answer."]) as graph:
+        # Two entries per run: the answer, then the retry after the completion
+        # nudge. The script cycles, so one entry each would let run two replay
+        # run one's answer.
+        async with executor_graph(
+            ["First answer.", "First answer.", "Second answer.", "Second answer."]
+        ) as graph:
             await run_graph(graph, "remember: the code is 1234", thread_id="shared")
             second = await run_graph(graph, "what was the code?", thread_id="shared")
 
-        texts = [
-            m.content for m in second.events if isinstance(m.message, HumanMessage) for m in [m]
-        ]
-        del texts
         state = await graph.aget_state({"configurable": {"thread_id": "shared", "user_id": "u-1"}})
-        human = [m for m in state.values["messages"] if isinstance(m, HumanMessage)]
+        # The completion nudge is delivered as a HumanMessage too, so it shows up
+        # here; the user's OWN turns are what this test is about.
+        human = [
+            m
+            for m in state.values["messages"]
+            if isinstance(m, HumanMessage) and str(m.content) != COMPLETION_NUDGE_MESSAGE
+        ]
         assert [str(m.content) for m in human] == [
             "remember: the code is 1234",
             "what was the code?",
@@ -374,12 +424,19 @@ class TestThreadContinuity:
 
     async def test_separate_threads_do_not_share_history(self):
         """Two conversations must not leak into each other."""
-        async with executor_graph(["First answer.", "Second answer."]) as graph:
+        # Two entries per run — see the sibling test.
+        async with executor_graph(
+            ["First answer.", "First answer.", "Second answer.", "Second answer."]
+        ) as graph:
             await run_graph(graph, "conversation one", thread_id="thread-a")
             await run_graph(graph, "conversation two", thread_id="thread-b")
 
         state_b = await graph.aget_state(
             {"configurable": {"thread_id": "thread-b", "user_id": "u-1"}}
         )
-        human = [str(m.content) for m in state_b.values["messages"] if isinstance(m, HumanMessage)]
+        human = [
+            str(m.content)
+            for m in state_b.values["messages"]
+            if isinstance(m, HumanMessage) and str(m.content) != COMPLETION_NUDGE_MESSAGE
+        ]
         assert human == ["conversation two"]

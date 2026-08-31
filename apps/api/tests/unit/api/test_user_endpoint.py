@@ -8,7 +8,6 @@ from typing import get_type_hints
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
-import pytest
 
 from app.models.user_models import (
     AuthenticatedUserResponse,
@@ -16,9 +15,11 @@ from app.models.user_models import (
     OnboardingStatusResponse,
     UserDocument,
 )
+from app.services.analytics_service import AnalyticsEvents
 from app.services.onboarding.onboarding_service import get_user_onboarding_status
 
 USER_BASE = "/api/v1/user"
+FAKE_USER_ID = "507f1f77bcf86cd799439011"
 
 FAKE_USER_UPDATE = {
     "user_id": "507f1f77bcf86cd799439011",
@@ -33,7 +34,6 @@ FAKE_USER_UPDATE = {
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetMe:
     """GET /api/v1/user/me"""
 
@@ -84,7 +84,6 @@ class TestGetMe:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateMe:
     """PATCH /api/v1/user/me"""
 
@@ -94,13 +93,18 @@ class TestUpdateMe:
     )
     async def test_update_me_name(self, mock_update: AsyncMock, client: AsyncClient):
         mock_update.return_value = FAKE_USER_UPDATE
-        response = await client.patch(
-            f"{USER_BASE}/me",
-            data={"name": "Updated User"},
-        )
+        with patch("app.api.v1.endpoints.user.capture_context_event") as mock_capture:
+            response = await client.patch(
+                f"{USER_BASE}/me",
+                data={"name": "Updated User"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["name"] == "Updated User"
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.PROFILE_UPDATED,
+            {"changed_field_count": 1, "has_picture_upload": False},
+        )
 
     @patch(
         "app.api.v1.endpoints.user.update_user_profile",
@@ -111,18 +115,23 @@ class TestUpdateMe:
             **FAKE_USER_UPDATE,
             "picture": "https://img.example.com/a.png",
         }
-        response = await client.patch(
-            f"{USER_BASE}/me",
-            data={"name": "Updated User"},
-            files={
-                "picture": (
-                    "avatar.png",
-                    b"\x89PNG\r\n\x1a\n" + b"\x00" * 100,
-                    "image/png",
-                )
-            },
-        )
+        with patch("app.api.v1.endpoints.user.capture_context_event") as mock_capture:
+            response = await client.patch(
+                f"{USER_BASE}/me",
+                data={"name": "Updated User"},
+                files={
+                    "picture": (
+                        "avatar.png",
+                        b"\x89PNG\r\n\x1a\n" + b"\x00" * 100,
+                        "image/png",
+                    )
+                },
+            )
         assert response.status_code == 200
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.PROFILE_UPDATED,
+            {"changed_field_count": 2, "has_picture_upload": True},
+        )
 
     async def test_update_me_unauthed(self, unauthed_client: AsyncClient):
         response = await unauthed_client.patch(f"{USER_BASE}/me", data={"name": "X"})
@@ -134,7 +143,6 @@ class TestUpdateMe:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateUserName:
     """PATCH /api/v1/user/name"""
 
@@ -144,12 +152,16 @@ class TestUpdateUserName:
     )
     async def test_update_name_success(self, mock_update: AsyncMock, client: AsyncClient):
         mock_update.return_value = FAKE_USER_UPDATE
-        response = await client.patch(
-            f"{USER_BASE}/name",
-            data={"name": "Updated User"},
-        )
+        with patch("app.api.v1.endpoints.user.capture_context_event") as mock_capture:
+            response = await client.patch(
+                f"{USER_BASE}/name",
+                data={"name": "Updated User"},
+            )
         assert response.status_code == 200
         assert response.json()["name"] == "Updated User"
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.PROFILE_UPDATED, {"changed_field_count": 1}
+        )
 
     @patch(
         "app.api.v1.endpoints.user.update_user_profile",
@@ -173,21 +185,28 @@ class TestUpdateUserName:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateTimezone:
     """PATCH /api/v1/user/timezone"""
 
     @patch("app.api.v1.endpoints.user.user_repository.update", new_callable=AsyncMock)
     async def test_update_timezone_success(self, mock_update: AsyncMock, client: AsyncClient):
         mock_update.return_value = UserDocument(timezone="America/New_York")
-        response = await client.patch(
-            f"{USER_BASE}/timezone",
-            data={"timezone": "America/New_York"},
-        )
+        with (
+            patch("app.api.v1.endpoints.user.capture_context_event") as mock_capture,
+            patch("app.api.v1.endpoints.user.schedule_account_sync") as mock_schedule_sync,
+        ):
+            response = await client.patch(
+                f"{USER_BASE}/timezone",
+                data={"timezone": "America/New_York"},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["timezone"] == "America/New_York"
+        mock_schedule_sync.assert_called_once_with(FAKE_USER_ID)
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.PROFILE_UPDATED, {"changed_field_count": 1}
+        )
 
     @patch("app.api.v1.endpoints.user.user_repository.update", new_callable=AsyncMock)
     async def test_update_timezone_utc(self, mock_update: AsyncMock, client: AsyncClient):
@@ -235,7 +254,6 @@ class TestUpdateTimezone:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestGetPublicHoloCard:
     """GET /api/v1/user/holo-card/{card_id}"""
 
@@ -286,21 +304,24 @@ class TestGetPublicHoloCard:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestUpdateHoloCardColors:
     """PATCH /api/v1/user/holo-card/colors"""
 
     @patch("app.api.v1.endpoints.user.user_repository.set_holo_card_colors", new_callable=AsyncMock)
     async def test_update_colors_success(self, mock_set: AsyncMock, client: AsyncClient):
         mock_set.return_value = True
-        response = await client.patch(
-            f"{USER_BASE}/holo-card/colors",
-            data={"overlay_color": "rgba(255,0,0,1)", "overlay_opacity": 50},
-        )
+        with patch("app.api.v1.endpoints.user.capture_context_event") as mock_capture:
+            response = await client.patch(
+                f"{USER_BASE}/holo-card/colors",
+                data={"overlay_color": "rgba(255,0,0,1)", "overlay_opacity": 50},
+            )
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is True
         assert data["overlay_opacity"] == 50
+        mock_capture.assert_called_once_with(
+            AnalyticsEvents.PROFILE_UPDATED, {"changed_field_count": 2}
+        )
 
     @patch("app.api.v1.endpoints.user.user_repository.set_holo_card_colors", new_callable=AsyncMock)
     async def test_update_colors_user_not_found(self, mock_set: AsyncMock, client: AsyncClient):
@@ -337,7 +358,6 @@ class TestUpdateHoloCardColors:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.unit
 class TestLogout:
     """POST /api/v1/user/logout"""
 
@@ -346,13 +366,32 @@ class TestLogout:
         session = MagicMock()
         session.get_logout_url.return_value = "https://auth.example.com/logout"
         mock_workos.user_management.load_sealed_session.return_value = session
-        response = await client.post(
-            f"{USER_BASE}/logout",
-            cookies={"wos_session": "sealed_token"},
-        )
+        client.cookies.set("wos_session", "sealed_token")
+        with patch("app.api.v1.endpoints.user.track_logout") as mock_track:
+            response = await client.post(f"{USER_BASE}/logout")
         assert response.status_code == 200
         data = response.json()
         assert "logout_url" in data
+        mock_track.assert_called_once_with(user_id="507f1f77bcf86cd799439011")
+
+    @patch("app.api.v1.endpoints.user.workos")
+    @patch("app.api.v1.endpoints.user.track_logout", side_effect=RuntimeError("ph down"))
+    async def test_logout_track_failure_is_logged_not_fatal(
+        self, mock_track: MagicMock, mock_workos: MagicMock, client: AsyncClient
+    ):
+        """A PostHog tracking failure must not break the logout flow — it is
+        logged and the redirect still happens."""
+        session = MagicMock()
+        session.get_logout_url.return_value = "https://auth.example.com/logout"
+        mock_workos.user_management.load_sealed_session.return_value = session
+        client.cookies.set("wos_session", "sealed_token")
+        with patch("app.api.v1.endpoints.user.log") as mock_log:
+            response = await client.post(f"{USER_BASE}/logout")
+        assert response.status_code == 200
+        assert "logout_url" in response.json()
+        mock_log.warning.assert_called_once()
+        assert mock_log.warning.call_args.kwargs["error_type"] == "RuntimeError"
+        assert mock_log.warning.call_args.kwargs["error"] == "ph down"
 
     async def test_logout_no_session_cookie(self, client: AsyncClient):
         response = await client.post(f"{USER_BASE}/logout")
@@ -362,17 +401,13 @@ class TestLogout:
     async def test_logout_invalid_session(self, mock_workos: MagicMock, client: AsyncClient):
         # The HTTPException(401) is inside a bare except that re-raises as 500
         mock_workos.user_management.load_sealed_session.return_value = None
-        response = await client.post(
-            f"{USER_BASE}/logout",
-            cookies={"wos_session": "bad_token"},
-        )
+        client.cookies.set("wos_session", "bad_token")
+        response = await client.post(f"{USER_BASE}/logout")
         assert response.status_code == 500
 
     @patch("app.api.v1.endpoints.user.workos")
     async def test_logout_exception(self, mock_workos: MagicMock, client: AsyncClient):
         mock_workos.user_management.load_sealed_session.side_effect = Exception("boom")
-        response = await client.post(
-            f"{USER_BASE}/logout",
-            cookies={"wos_session": "sealed_token"},
-        )
+        client.cookies.set("wos_session", "sealed_token")
+        response = await client.post(f"{USER_BASE}/logout")
         assert response.status_code == 500
