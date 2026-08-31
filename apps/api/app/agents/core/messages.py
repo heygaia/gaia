@@ -30,7 +30,6 @@ from app.utils.user_preferences_utils import onboarding_preferences
 
 async def construct_langchain_messages(
     messages: list[MessageDict],
-    *,
     files_data: list[FileData] | None = None,
     currently_uploaded_file_ids: list[str] | None = None,
     user_id: str | None = None,

@@ -31,6 +31,11 @@ export default function Sidebar() {
       </Suspense>
     );
 
+  // Dashboard - empty sidebar (no chats list)
+  if (pathname.startsWith("/dashboard")) {
+    return null;
+  }
+
   // Integrations - show integrations sidebar
   if (pathname.startsWith("/integrations")) {
     return <IntegrationsSidebar />;

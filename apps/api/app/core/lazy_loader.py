@@ -56,7 +56,6 @@ class LazyLoader(Generic[T]):
     def __init__(
         self,
         loader_func: Union[Callable[[], T], Callable[[], Awaitable[T]]],
-        *,
         required_keys: list[object] | None = None,
         strategy: MissingKeyStrategy = MissingKeyStrategy.ERROR,
         warning_message: str | None = None,
@@ -468,7 +467,6 @@ class ProviderRegistry:
         self,
         name: str,
         loader_func: Union[Callable[[], T], Callable[[], Awaitable[T]]],
-        *,
         required_keys: list[object] | None = None,
         strategy: MissingKeyStrategy = MissingKeyStrategy.WARN,
         warning_message: str | None = None,

@@ -109,7 +109,6 @@ class Cacheable:
 
     def __init__(
         self,
-        *,
         key_pattern: str | None = None,
         key_generator: _KeyGenerator | None = None,
         ttl: int = ONE_YEAR_TTL,

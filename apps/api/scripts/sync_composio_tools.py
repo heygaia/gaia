@@ -368,7 +368,6 @@ def build_unknown_tool_report(
 
 
 def write_markdown_report(
-    *,
     path: Path,
     generated_at: str,
     toolkits: list[str],

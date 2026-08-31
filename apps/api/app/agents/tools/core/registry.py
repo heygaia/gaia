@@ -276,7 +276,6 @@ class ToolRegistry:
     def _add_category(
         self,
         name: str,
-        *,
         tools: Sequence[BaseTool] | None = None,
         core_tools: Sequence[BaseTool] | None = None,
         options: CategoryOptions | None = None,
