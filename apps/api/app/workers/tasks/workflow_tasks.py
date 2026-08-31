@@ -108,6 +108,7 @@ from app.services.workflow.scheduler import WorkflowScheduler, workflow_schedule
 from app.services.workflow.service import WorkflowService
 from app.services.workflow.thread_reset import reset_workflow_threads
 from app.utils.errors import create_error
+from app.utils.occurrence import parse_occurrence_stamp
 from app.utils.timezone import Timezone, format_local_time
 from app.workers.config.worker_settings import WORKER_JOB_TIMEOUT_SECONDS
 from shared.py.wide_events import WorkflowContext, log
@@ -920,35 +921,6 @@ async def _finish_after_replay(
     return conversation_id, [*result.trace, *agent_trace], summary
 
 
-def _parse_scheduled_for(context: dict[str, Any] | None, workflow_id: str) -> "datetime | None":
-    """The occurrence stamp the fire was armed for, or None when unstamped.
-
-    Only a numeric stamp is scheduler provenance: manual "run now" callers
-    control their own context dict, so a hand-typed trigger_type/scheduled_for
-    must be ignored (ungated), not crash fromtimestamp mid-run.
-    """
-    scheduled_for = context.get("scheduled_for") if context else None
-    if isinstance(scheduled_for, bool) or not isinstance(scheduled_for, (int, float)):
-        if scheduled_for is not None:
-            # Present but not a number: a manual caller hand-typing its own
-            # context. Discard loudly — silence here would hide real bugs.
-            log.warning(
-                f"{LogTag.WORKER} Unparseable scheduled_for on scheduled fire; treating as unstamped",
-                workflow_id=workflow_id,
-                scheduled_for=str(scheduled_for)[:32],
-            )
-        return None
-    try:
-        return datetime.fromtimestamp(scheduled_for, tz=UTC)
-    except (ValueError, OverflowError, OSError):
-        log.warning(
-            f"{LogTag.WORKER} Unparseable scheduled_for on scheduled fire; treating as unstamped",
-            workflow_id=workflow_id,
-            scheduled_for=str(scheduled_for)[:32],
-        )
-        return None
-
-
 def _derive_trigger_type(context: dict[str, Any] | None) -> str:
     # An explicit trigger_type always wins; only an ABSENT one falls back — to
     # "integration" when the context carries a webhook payload (trigger fires
@@ -970,9 +942,9 @@ async def _claim_scheduled_fire(
     # of running the workflow at its original time. Jobs enqueued before the
     # stamp existed carry no key and are ungated, so a deploy never strands a
     # schedule.
-    expected_next_run = _parse_scheduled_for(context, workflow_id)
-    claimed = await scheduler.claim_scheduled_for_execution(
-        workflow_id, expected_next_run=expected_next_run
+    expected_next_run = parse_occurrence_stamp((context or {}).get("scheduled_for"), workflow_id)
+    claimed = await scheduler.claim_task_for_execution(
+        workflow_id, expected_occurrence=expected_next_run
     )
     if not claimed:
         log.warning(
@@ -1088,6 +1060,15 @@ async def _run_and_record_success(
 ) -> str:
     conversation_id: str | None
     trace: list[RecordedCall]
+    # Stamp the run's identity onto the task's wide event BEFORE any model call.
+    # It is what the ``llm_calls`` ledger reads to attribute each call to this
+    # execution (``llm_metering._ambient_worker_context``): the execution id
+    # exists only here, never in ``config.configurable``, so without this stamp
+    # every workflow call lands in the ledger with no execution to attribute it
+    # to and "what did this run cost" stays unanswerable. Applies to the replay
+    # path too — a playbook replay that falls back to the agent still spends.
+    log.set(workflow=WorkflowContext(id=workflow_id, execution_id=execution_id))
+
     if workflow.system_workflow_key in _BRIEFING_WORKFLOW_KEYS:
         conversation_id, trace, summary = None, [], await _run_briefing_workflow(workflow)
     else:
