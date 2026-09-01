@@ -21,11 +21,25 @@ from app.models.short_link_models import ShortLink, ShortLinkTarget
 from app.models.todo_models import ExecutionStatus
 from shared.py.wide_events import log
 
-# Slug namespace: lowercase a–z + digits, 8 chars → 36⁸ ≈ 2.8 trillion. The slug
-# is the capability, so it must be unguessable: enumeration is hopeless at this
-# size behind the resolver's rate limit.
-SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
-SLUG_LENGTH = 8
+# Slug namespace: a–z + A–Z + digits, 11 chars → 62¹¹ ≈ 5.2×10¹⁹, about 65 bits.
+# The slug IS the capability — anyone holding one reads that deliverable with no
+# session — so it has to survive guessing, not just casual sharing. Sizing it is
+# a function of how many links are live at once, and the briefing mints one per
+# item with a 30-day TTL, so that count grows with users × items. At 8 chars over
+# a 36-char alphabet (41 bits) a distributed guesser clears the resolver's
+# per-IP rate limit by spreading across hosts and starts landing hits once the
+# live set reaches the millions. 11 chars is ~16 million times harder and still
+# short enough to read in a chat message — the length YouTube uses for the same
+# reason. Lengthening is safe at any time: resolution is an exact-match lookup,
+# so slugs already minted keep working.
+SLUG_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+SLUG_LENGTH = 11
+
+# Pre-capability links were per-user and 3 chars, so they cannot be resolved
+# under the global-unique model and are dropped at index creation. This is
+# deliberately NOT expressed as "shorter than SLUG_LENGTH": that would turn any
+# future lengthening of the mint into a silent mass delete of live links.
+LEGACY_SLUG_MAX_LENGTH = 3
 
 # Links die on their own when the briefing stops re-minting them; every reuse
 # pushes the expiry forward so a live artifact's link keeps working.

@@ -20,7 +20,7 @@ from pymongo.errors import OperationFailure
 from app.constants.log_tags import LogTag
 from app.db.mongodb.collections import get_async_collection
 from app.db.repositories.integrations import integration_repository
-from app.services.short_link_service import SLUG_LENGTH
+from app.services.short_link_service import LEGACY_SLUG_MAX_LENGTH
 from shared.py.wide_events import log
 
 # Mirrors pymongo's private `_IndexKeyHint` (pymongo.operations) — the shape
@@ -1193,7 +1193,7 @@ async def create_short_link_indexes() -> None:
     short_links_collection = get_async_collection("short_links")
     try:
         legacy = await short_links_collection.delete_many(
-            {"$expr": {"$lt": [{"$strLenCP": "$slug"}, SLUG_LENGTH]}}
+            {"$expr": {"$lte": [{"$strLenCP": "$slug"}, LEGACY_SLUG_MAX_LENGTH]}}
         )
         if legacy.deleted_count:
             log.info(
