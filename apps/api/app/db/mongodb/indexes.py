@@ -11,16 +11,14 @@ Index Strategy:
 """
 
 import asyncio
-from contextlib import suppress
 from typing import Any
 
 from motor.motor_asyncio import AsyncIOMotorCollection
-from pymongo.errors import OperationFailure
+from pymongo.errors import DuplicateKeyError, OperationFailure
 
 from app.constants.log_tags import LogTag
 from app.db.mongodb.collections import get_async_collection
 from app.db.repositories.integrations import integration_repository
-from app.services.short_link_service import LEGACY_SLUG_MAX_LENGTH
 from shared.py.wide_events import log
 
 # Mirrors pymongo's private `_IndexKeyHint` (pymongo.operations) — the shape
@@ -1184,25 +1182,17 @@ async def create_short_link_indexes() -> None:
     """Create indexes for the short_links collection.
 
     Slugs are capability URLs: globally unique, so one index enforces the whole
-    namespace and the mint retry loop races against it. Legacy per-user 3-char
-    links predate the capability model (their resolution was auth-gated and is
-    gone); they are derived data the briefing re-mints on its next run, so they
-    are deleted rather than migrated — a global unique index cannot be built
-    over per-user slugs.
+    namespace and the mint retry loop races against it.
+
+    Pre-capability rows were per-user and 3 chars, so two users could hold the
+    same slug and the unique index cannot build over them. Removing them is a
+    destructive migration and lives in ``scripts/migrate_short_link_slugs.py``,
+    not here — a process should not delete rows because it started, and this
+    runs on every deploy and every dev restart. If those rows are still present
+    the index build fails, and this says so rather than quietly fixing it.
     """
     short_links_collection = get_async_collection("short_links")
     try:
-        legacy = await short_links_collection.delete_many(
-            {"$expr": {"$lte": [{"$strLenCP": "$slug"}, LEGACY_SLUG_MAX_LENGTH]}}
-        )
-        if legacy.deleted_count:
-            log.info(
-                f"{LogTag.MONGO} Deleted legacy per-user short links",
-                deleted_count=legacy.deleted_count,
-            )
-        # index (or the collection itself) never existed — nothing to drop
-        with suppress(OperationFailure):
-            await short_links_collection.drop_index("user_slug_unique")
         await short_links_collection.create_index(
             [("slug", 1)],
             unique=True,
@@ -1213,6 +1203,16 @@ async def create_short_link_indexes() -> None:
             [("user_id", 1), ("target_type", 1), ("target_id", 1)],
             name="user_target",
         )
+    except DuplicateKeyError as e:
+        log.error(
+            f"{LogTag.MONGO} slug_unique cannot be built over duplicate slugs — "
+            "pre-capability per-user links are still present. Run "
+            "`uv run python -m scripts.migrate_short_link_slugs --dry-run`, "
+            "review, then re-run without the flag",
+            error_type=type(e).__name__,
+            error=str(e),
+        )
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.MONGO} Error creating short link indexes",
