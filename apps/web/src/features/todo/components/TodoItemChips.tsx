@@ -22,7 +22,7 @@ import { GaiaTodoBadge } from "./shared/GaiaTodoBadge";
 interface TodoItemChipsProps {
   todo: Todo;
   todoProject: Project | undefined;
-  scheduledLabel: string | null;
+  scheduledLabel: string | undefined;
   isToday: boolean;
   isOverdue: boolean;
 }

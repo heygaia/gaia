@@ -77,12 +77,14 @@ export type {
 } from "./skills";
 export type {
   BulkMoveRequest,
+  ExecutionStatus,
   PaginationMeta,
   Project,
   ProjectCreate,
   ProjectUpdate,
   SubTask,
   Todo,
+  TodoAssignee,
   TodoCounts,
   TodoCreate,
   TodoFilters,
