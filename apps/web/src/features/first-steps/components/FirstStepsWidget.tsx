@@ -3,7 +3,12 @@
 import { Button } from "@heroui/button";
 import { Link } from "@heroui/link";
 import { Progress } from "@heroui/progress";
-import { Cancel01Icon, CheckmarkCircle02Icon, CircleIcon } from "@icons";
+import {
+  Cancel01Icon,
+  CheckmarkCircle02Icon,
+  CircleIcon,
+  MinusSignIcon,
+} from "@icons";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
 import NextLink from "next/link";
@@ -40,6 +45,7 @@ export function FirstStepsWidget() {
     completedCount,
     totalCount,
     hideStep,
+    dismiss,
   } = useFirstStepsWidget();
 
   if (!shouldRender) return null;
@@ -85,15 +91,26 @@ export function FirstStepsWidget() {
                     {completedCount}/{totalCount} complete
                   </p>
                 </div>
-                <Button
-                  isIconOnly
-                  size="sm"
-                  variant="light"
-                  aria-label="Minimize checklist"
-                  onPress={() => setExpanded(false)}
-                >
-                  <Cancel01Icon size={16} className="text-zinc-400" />
-                </Button>
+                <div className="flex items-center">
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    aria-label="Minimize checklist"
+                    onPress={() => setExpanded(false)}
+                  >
+                    <MinusSignIcon size={16} className="text-zinc-400" />
+                  </Button>
+                  <Button
+                    isIconOnly
+                    size="sm"
+                    variant="light"
+                    aria-label="Dismiss checklist"
+                    onPress={dismiss}
+                  >
+                    <Cancel01Icon size={16} className="text-zinc-400" />
+                  </Button>
+                </div>
               </div>
 
               <div className="space-y-2">

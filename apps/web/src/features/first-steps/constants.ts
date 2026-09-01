@@ -6,7 +6,11 @@ export interface FirstStepDefinition {
 
 // Ordered activation checklist shown in the FirstStepsWidget. Each step maps to
 // a real signal the backend tracks (a stated goal, an integration, a linked
-// chat platform, the Today view, the first Approve).
+// chat platform, the first Approve).
+// Dismissing the whole widget is recorded as this pseudo-step, which the
+// backend reports back as `dismissed` (it is not a checklist row).
+export const DISMISS_ALL_STEP = "dismissed_all";
+
 export const FIRST_STEPS: FirstStepDefinition[] = [
   { key: "tell_gaia_goal", label: "Tell GAIA your goal", href: "/c" },
   {
@@ -18,11 +22,6 @@ export const FIRST_STEPS: FirstStepDefinition[] = [
     key: "link_platform",
     label: "Link Telegram or WhatsApp",
     href: "/settings/linked-accounts",
-  },
-  {
-    key: "visit_dashboard",
-    label: "Check your Today view",
-    href: "/todos",
   },
   {
     key: "first_approve",

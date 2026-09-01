@@ -19,7 +19,6 @@ from app.utils.analytics import track
 STEP_TELL_GAIA_GOAL = "tell_gaia_goal"
 STEP_CONNECT_INTEGRATION = "connect_integration"
 STEP_LINK_PLATFORM = "link_platform"
-STEP_VISIT_DASHBOARD = "visit_dashboard"
 STEP_FIRST_APPROVE = "first_approve"
 STEP_DISMISSED_ALL = "dismissed_all"
 
@@ -27,7 +26,6 @@ ALL_STEPS: tuple[str, ...] = (
     STEP_TELL_GAIA_GOAL,
     STEP_CONNECT_INTEGRATION,
     STEP_LINK_PLATFORM,
-    STEP_VISIT_DASHBOARD,
     STEP_FIRST_APPROVE,
 )
 _VALID_STEPS: frozenset[str] = frozenset((*ALL_STEPS, STEP_DISMISSED_ALL))

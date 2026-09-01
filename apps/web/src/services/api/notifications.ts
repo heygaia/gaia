@@ -163,24 +163,6 @@ export class NotificationsAPI {
   }
 
   /**
-   * Delete notifications permanently
-   */
-  static async bulkDelete(
-    notificationIds: string[],
-  ): Promise<NotificationResponse> {
-    const bulkRequest: BulkActionRequest = {
-      notification_ids: notificationIds,
-      action: BulkActions.DELETE,
-    };
-
-    const response = await apiauth.post<NotificationResponse>(
-      `${NotificationsAPI.BASE_URL}/bulk-actions`,
-      bulkRequest,
-    );
-    return response.data;
-  }
-
-  /**
    * Get unread notification count
    */
   static async getUnreadCount(): Promise<{ count: number }> {

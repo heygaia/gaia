@@ -5,4 +5,6 @@ export interface FirstStepsResponse {
   hidden_steps: string[];
   // Whether a GAIA proposal has ever existed; gates the "first approve" row.
   has_had_proposal: boolean;
+  // Whether the user dismissed the whole widget for good.
+  dismissed: boolean;
 }

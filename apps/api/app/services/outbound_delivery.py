@@ -179,11 +179,7 @@ async def notify_account_linked(platform: str, user_id: str) -> OutboundResult:
 async def publish_outbound_file(
     platform: ConversationSource,
     user_id: str,
-    conversation_id: str,
-    path: str,
-    filename: str,
-    content_type: str | None = None,
-    caption: str | None = None,
+    attachment: OutboundAttachment,
 ) -> bool:
     """Enqueue a file (artifact) for the bot to deliver to ``user_id``.
 
@@ -200,13 +196,7 @@ async def publish_outbound_file(
     envelope = OutboundMessageEnvelope(
         platform=platform.value,
         destination_id=destination_id,
-        attachment=OutboundAttachment(
-            conversation_id=conversation_id,
-            path=path,
-            filename=filename,
-            content_type=content_type,
-            caption=caption,
-        ),
+        attachment=attachment,
     )
     try:
         await publisher.publish_outbound(queue_name, _serialize(envelope))
@@ -218,6 +208,6 @@ async def publish_outbound_file(
         "outbound_file_published",
         platform=platform.value,
         queue=queue_name,
-        filename=filename,
+        filename=attachment.filename,
     )
     return True

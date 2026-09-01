@@ -40,7 +40,10 @@ from app.utils.notification.email_templates import (
     render_plain_notification_email,
     render_weekly_digest_email,
 )
-from app.utils.notification.unsubscribe import build_unsubscribe_url
+from app.utils.notification.unsubscribe import (
+    build_unsubscribe_headers,
+    build_unsubscribe_url,
+)
 from shared.py.wide_events import log
 
 RESEND_SEND_URL = "https://api.resend.com/emails"
@@ -111,6 +114,7 @@ class EmailChannelAdapter(ChannelAdapter):
                         "to": [email],
                         "subject": subject,
                         "html": html,
+                        "headers": build_unsubscribe_headers(user_id),
                     },
                 )
                 response.raise_for_status()

@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "@/lib/toast";
 import { FIRST_STEPS, type FirstStepDefinition } from "../constants";
+import { useDismissFirstStepsMutation } from "./useDismissFirstStepsMutation";
 import { useFirstStepsQuery } from "./useFirstStepsQuery";
 import { useHideFirstStepMutation } from "./useHideFirstStepMutation";
 
-// Closing the widget minimizes it to the pill; that choice survives reloads.
+// Minimizing the widget to the pill survives reloads; dismissing it for good
+// is recorded server-side instead, so it holds across browsers.
 const COLLAPSED_STORAGE_KEY = "gaia:first-steps:collapsed";
 
 // The "all set up" celebration is a one-time event. The backend keeps reporting
@@ -31,11 +33,13 @@ interface UseFirstStepsWidgetResult {
   completedCount: number;
   totalCount: number;
   hideStep: (stepKey: string) => void;
+  dismiss: () => void;
 }
 
 export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
   const { data, isLoading } = useFirstStepsQuery();
   const hideStepMutation = useHideFirstStepMutation();
+  const dismissMutation = useDismissFirstStepsMutation();
   const [expanded, setExpandedState] = useState(true);
   const hasCelebrated = useRef(false);
 
@@ -56,6 +60,7 @@ export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
   const completedAt = data?.steps ?? {};
   const hiddenSteps = new Set(data?.hidden_steps ?? []);
   const hasHadProposal = data?.has_had_proposal ?? false;
+  const dismissed = data?.dismissed ?? false;
 
   // The first_approve row is uncompletable until GAIA has ever proposed work,
   // so it isn't part of the checklist until then.
@@ -83,10 +88,15 @@ export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
     hideStepMutation.mutate(stepKey);
   };
 
+  const dismiss = () => {
+    dismissMutation.mutate();
+  };
+
   const isReady = !isLoading && Boolean(data);
   // Auto-closes for good once everything is complete (the celebration toast
-  // is the goodbye) — no dismissal path needed beyond minimizing.
-  const shouldRender = isReady && !allComplete && visibleSteps.length > 0;
+  // is the goodbye); dismissing closes it early and permanently.
+  const shouldRender =
+    isReady && !dismissed && !allComplete && visibleSteps.length > 0;
 
   return {
     isReady,
@@ -98,5 +108,6 @@ export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
     completedCount,
     totalCount,
     hideStep,
+    dismiss,
   };
 };

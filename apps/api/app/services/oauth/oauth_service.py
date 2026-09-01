@@ -147,7 +147,7 @@ async def store_user_info(
     # wait on: a slow or unreachable provider used to hang user creation for as
     # long as the HTTP client allowed (observed: 90s+ with no timeout anywhere in
     # the path). Bounded, and failures only log — the account is already created.
-    async def _deliver_signup_emails() -> None:
+    async def _send_welcome() -> None:
         try:
             async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
                 await send_welcome_email(email, name)
@@ -159,6 +159,8 @@ async def store_user_info(
                 error_type=type(e).__name__,
                 error=str(e),
             )
+
+    async def _add_contact() -> None:
         try:
             async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
                 await add_marketing_contact(email, name)
@@ -173,6 +175,9 @@ async def store_user_info(
                 error_type=type(e).__name__,
                 error=str(e),
             )
+
+    async def _deliver_signup_emails() -> None:
+        await asyncio.gather(_send_welcome(), _add_contact(), return_exceptions=True)
 
     spawn_logged_task("deliver_signup_emails", _deliver_signup_emails())
 

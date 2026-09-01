@@ -15,6 +15,8 @@ import re
 from typing import cast
 from uuid import uuid4
 
+from pymongo.errors import PyMongoError
+
 from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.agents.prompts.briefing_prompts import (
     build_briefing_voice_prompt,
@@ -58,7 +60,10 @@ from app.services.briefing.context import UserClock
 from app.services.briefing.edition_rotation import choose_edition_family
 from app.services.briefing.editions import rotation_families
 from app.services.notification_service import notification_service
-from app.services.short_link_service import get_or_create_short_link
+from app.services.short_link_service import (
+    ShortLinkExhaustedError,
+    get_or_create_short_link,
+)
 from app.services.todos import activity
 from app.services.todos.gaia_todo_lifecycle import (
     expire_stale_proposals,
@@ -256,14 +261,36 @@ def _deliverable_size(canvas: str) -> int:
     return len(" ".join(kept))
 
 
+async def _artifact_link(user_id: str, todo_id: str) -> str:
+    """The item's heygaia.link, or ``""`` when minting fails.
+
+    The link is an optional adornment on an item the briefing can describe
+    perfectly well without it, so a Mongo hiccup or an exhausted slug namespace
+    must cost that one item its link — not cost the user the whole briefing.
+    The failure is still surfaced loudly in the run's events.
+    """
+    try:
+        return await get_or_create_short_link(user_id, "todo_canvas", todo_id)
+    except (PyMongoError, ShortLinkExhaustedError) as exc:
+        log.warning(
+            "briefing.short_link_mint_failed",
+            user_id=user_id,
+            todo_id=todo_id,
+            error_type=type(exc).__name__,
+            error=str(exc),
+        )
+        return ""
+
+
 async def _gather_artifacts(
     user_id: str, lanes: list[context.GoalLane]
 ) -> dict[str, _ArtifactFact]:
-    """Per lane item: a concrete summary, an always-minted heygaia.link, and the
-    two signals the voice pass balances on — is the deliverable big, does it need
+    """Per lane item: a concrete summary, a minted heygaia.link, and the two
+    signals the voice pass balances on — is the deliverable big, does it need
     action. The pass always summarises; it appends the link only for big or
     actionable items, never a bare link and never one for a small stated result.
     Minting is idempotent per target, so re-running the brief reuses the slug.
+    An item whose mint fails carries an empty link and is still briefed.
     """
     out: dict[str, _ArtifactFact] = {}
     for lane in lanes:
@@ -287,7 +314,7 @@ async def _gather_artifacts(
             )
             out[todo_id] = _ArtifactFact(
                 snippet=_canvas_snippet(deliverable),
-                link=await get_or_create_short_link(user_id, "todo_canvas", todo_id),
+                link=await _artifact_link(user_id, todo_id),
                 chars=_deliverable_size(deliverable),
                 action=todo_id in action_ids,
             )
@@ -431,7 +458,7 @@ def _build_facts(
         items = _lane_items(lane)
         for it in items:
             art = artifacts.get(it.get("todo_id", ""))
-            if art:
+            if art and art.link:
                 it["link"] = art.link
         if items:
             sections.append(
@@ -461,7 +488,8 @@ def _build_facts(
                 line += f" | artifact holds ~{art.chars} chars"
                 if art.action:
                     line += " | awaiting your action"
-                line += f" | link: {art.link}"
+                if art.link:
+                    line += f" | link: {art.link}"
             fact_lines.append(line)
     if not sections:
         fact_lines.append(
