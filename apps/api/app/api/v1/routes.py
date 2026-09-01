@@ -14,7 +14,6 @@ from app.api.v1.endpoints import (
     calendar,
     chat,
     conversations,
-    dashboard,
     desktop,
     device,
     device_ws,
@@ -80,7 +79,6 @@ router.include_router(file.router, tags=["File"])
 router.include_router(notification.router, tags=["Notification"])
 router.include_router(websocket.router, tags=["WebSocket"])
 router.include_router(webhook_composio.router, tags=["Composio Webhook"])
-router.include_router(dashboard.router, tags=["Dashboard"])
 router.include_router(briefings.router, tags=["Briefings"])
 router.include_router(first_steps.router, tags=["First Steps"])
 router.include_router(todos.router, tags=["Todos"])

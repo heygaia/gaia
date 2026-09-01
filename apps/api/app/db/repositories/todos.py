@@ -555,74 +555,6 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
     # Deliberately uncached (unlike the aggregations above): the dashboard reads
     # live in-flight/needs-you state on every load.
 
-    async def list_needs_you(self, user_id: str, *, limit: int) -> list[TodoDocument]:
-        """Non-goal GAIA todos awaiting the user (proposed or blocked)."""
-        return await self._find(
-            {
-                "user_id": user_id,
-                "completed": False,
-                "kind": {"$ne": "goal"},
-                "execution_status": {
-                    "$in": [ExecutionStatus.PROPOSED.value, ExecutionStatus.NEEDS_YOU.value]
-                },
-                **gaia_assigned_filter(),
-            },
-            sort=[("created_at", -1)],
-            limit=limit,
-        )
-
-    async def list_in_flight(self, user_id: str, *, limit: int) -> list[TodoDocument]:
-        """Non-goal GAIA todos currently executing (queued or running)."""
-        return await self._find(
-            {
-                "user_id": user_id,
-                "completed": False,
-                "kind": {"$ne": "goal"},
-                "execution_status": {
-                    "$in": [ExecutionStatus.QUEUED.value, ExecutionStatus.RUNNING.value]
-                },
-                **gaia_assigned_filter(),
-            },
-            sort=[("scheduled_at", -1)],
-            limit=limit,
-        )
-
-    async def list_suggested_offers(
-        self, user_id: str, *, day_start: datetime, day_end: datetime, limit: int
-    ) -> list[TodoDocument]:
-        """User todos carrying an active GAIA-takeover offer, excluding ones
-        already surfaced by today's due/scheduled view."""
-        return await self._find(
-            {
-                "user_id": user_id,
-                "completed": False,
-                "gaia_offer": {"$nin": [None, ""]},
-                "gaia_offer_dismissed": {"$ne": True},
-                "$nor": [
-                    {"due_date": {"$gte": day_start, "$lt": day_end}},
-                    {"scheduled_at": {"$gte": day_start, "$lt": day_end}},
-                ],
-                **user_assigned_filter(),
-            },
-            sort=[("updated_at", -1)],
-            limit=limit,
-        )
-
-    async def list_due_today(
-        self, user_id: str, *, day_start: datetime, day_end: datetime, limit: int
-    ) -> list[TodoDocument]:
-        """User todos due within [day_start, day_end) — the dashboard's "Your tasks"."""
-        return await self._find(
-            {
-                "user_id": user_id,
-                "completed": False,
-                "due_date": {"$gte": day_start, "$lt": day_end},
-                **user_assigned_filter(),
-            },
-            sort=[("due_date", 1)],
-            limit=limit,
-        )
-
     async def find_oldest_open_proposal(self, user_id: str) -> TodoDocument | None:
         """Oldest still-open, not-yet-nudged proposed GAIA todo — the completion
         nudge's first-choice suggestion (see ``services.todos.completion_nudge``)."""
@@ -655,20 +587,6 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
                 **user_assigned_filter(),
             },
             sort=[("created_at", 1)],
-            limit=limit,
-        )
-
-    async def list_completed_today(
-        self, user_id: str, *, day_start: datetime, day_end: datetime, limit: int
-    ) -> list[TodoDocument]:
-        """Non-goal todos (either assignee) completed within [day_start, day_end)."""
-        return await self._find(
-            {
-                "user_id": user_id,
-                "kind": {"$ne": "goal"},
-                "completed_at": {"$gte": day_start, "$lt": day_end},
-            },
-            sort=[("completed_at", -1)],
             limit=limit,
         )
 
