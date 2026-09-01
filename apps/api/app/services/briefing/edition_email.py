@@ -24,7 +24,7 @@ from app.constants.notifications import (
     NOTIFICATION_KIND_BRIEFING_WEEKLY,
 )
 from app.services.briefing.editions import render_edition, renderer_for
-from app.services.briefing.render import render_html_to_image
+from app.services.briefing.render import ImageRenderOptions, render_html_to_image
 from app.services.upload_service import upload_file_to_cloudinary
 from shared.py.wide_events import log
 
@@ -163,7 +163,8 @@ async def render_edition_email(
         tz_label=tz_label,
     )
     image = await render_html_to_image(
-        edition_html, width=_EDITION_WIDTH, device_scale_factor=_EMAIL_IMAGE_SCALE
+        edition_html,
+        ImageRenderOptions(width=_EDITION_WIDTH, device_scale_factor=_EMAIL_IMAGE_SCALE),
     )
     public_id = f"briefing/editions/{user_id}/{kind}_{payload.get('date', 'latest')}"
     image_url = await asyncio.to_thread(upload_file_to_cloudinary, public_id, file_data=image)
