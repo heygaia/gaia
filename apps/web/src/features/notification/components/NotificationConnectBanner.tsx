@@ -16,6 +16,23 @@ interface NotificationConnectBannerProps {
   variant?: "compact" | "full";
 }
 
+function platformIconStack(size: number) {
+  return (
+    <div className="flex shrink-0 -space-x-2">
+      {NOTIFICATION_PLATFORMS.map((p, index) => (
+        <Image
+          key={p}
+          src={NOTIFICATION_PLATFORM_ICONS[p]}
+          alt={NOTIFICATION_PLATFORM_LABELS[p]}
+          width={size}
+          height={size}
+          className={`${index % 2 === 0 ? "-rotate-12" : "rotate-12"} rounded-md`}
+        />
+      ))}
+    </div>
+  );
+}
+
 export function NotificationConnectBanner({
   variant = "compact",
 }: NotificationConnectBannerProps) {
@@ -49,21 +66,6 @@ export function NotificationConnectBanner({
   );
 
   if (unconnectedPlatforms.length === 0) return null;
-
-  const platformIconStack = (size: number) => (
-    <div className="flex shrink-0 -space-x-2">
-      {NOTIFICATION_PLATFORMS.map((p, index) => (
-        <Image
-          key={p}
-          src={NOTIFICATION_PLATFORM_ICONS[p]}
-          alt={NOTIFICATION_PLATFORM_LABELS[p]}
-          width={size}
-          height={size}
-          className={`${index % 2 === 0 ? "-rotate-12" : "rotate-12"} rounded-md`}
-        />
-      ))}
-    </div>
-  );
 
   if (variant === "compact") {
     return (

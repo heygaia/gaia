@@ -54,7 +54,7 @@ export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
   };
 
   const completedAt = data?.steps ?? {};
-  const hiddenSteps = data?.hidden_steps ?? [];
+  const hiddenSteps = new Set(data?.hidden_steps ?? []);
   const hasHadProposal = data?.has_had_proposal ?? false;
 
   // The first_approve row is uncompletable until GAIA has ever proposed work,
@@ -63,7 +63,7 @@ export const useFirstStepsWidget = (): UseFirstStepsWidgetResult => {
     (step) => step.key !== "first_approve" || hasHadProposal,
   );
   const visibleSteps = applicableSteps.filter(
-    (step) => !hiddenSteps.includes(step.key),
+    (step) => !hiddenSteps.has(step.key),
   );
   const completedCount = applicableSteps.filter(
     (step) => completedAt[step.key],

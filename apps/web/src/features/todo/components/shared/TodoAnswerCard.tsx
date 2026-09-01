@@ -52,6 +52,9 @@ export const TodoAnswerCard: React.FC<TodoAnswerCardProps> = ({
           value={answer}
           onValueChange={setAnswer}
           onKeyDown={(e) => {
+            // Don't submit while an IME composition is active (CJK users
+            // press Enter to confirm candidates).
+            if (e.nativeEvent.isComposing) return;
             if (e.key === "Enter") submit();
           }}
         />

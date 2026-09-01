@@ -11,7 +11,7 @@ import { briefingSchema } from "../promptSpecs";
 // visually identical. This view is a thin adapter: OpenUI props are the same
 // shape as `BriefingPayload`, so they pass straight through.
 
-export function BriefingView(props: z.infer<typeof briefingSchema>) {
+function BriefingView(props: z.infer<typeof briefingSchema>) {
   return <BriefingCard payload={props} defaultCollapsed={false} />;
 }
 

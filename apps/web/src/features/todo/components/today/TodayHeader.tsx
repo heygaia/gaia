@@ -1,7 +1,7 @@
 "use client";
 
 import type React from "react";
-import { Fragment } from "react";
+import { Fragment, useEffect, useState } from "react";
 import type { TodayRuns, TodaySubline } from "@/types/features/todayTypes";
 
 import { formatClockTime } from "../../utils/time";
@@ -41,6 +41,15 @@ export const TodayHeader: React.FC<TodayHeaderProps> = ({
     ? formatClockTime(subline.next_event.time)
     : "";
 
+  // Formatted client-side only, after mount: toLocaleDateString depends on the
+  // viewer's locale, which the server can't know, so formatting during render
+  // would mismatch what the browser hydrates with. The raw date string is the
+  // SSR-safe fallback until the effect swaps in the formatted text.
+  const [kickerDate, setKickerDate] = useState(subline.date);
+  useEffect(() => {
+    setKickerDate(formatKickerDate(subline.date));
+  }, [subline.date]);
+
   // Dot-separated segments: dots sit between present items only, so the last
   // segment never trails a dangling separator.
   const segments: { id: string; node: React.ReactNode }[] = [];
@@ -78,9 +87,7 @@ export const TodayHeader: React.FC<TodayHeaderProps> = ({
 
   return (
     <header className="px-3">
-      <p className="text-[13px] font-medium text-zinc-500">
-        {formatKickerDate(subline.date)}
-      </p>
+      <p className="text-[13px] font-medium text-zinc-500">{kickerDate}</p>
       <h1 className="mt-2 text-[26px] leading-tight font-semibold tracking-tight text-balance text-zinc-100">
         {headline}
       </h1>

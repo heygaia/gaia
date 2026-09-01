@@ -13,7 +13,7 @@ import {
   Tag01Icon,
 } from "@icons";
 import { formatDistanceToNow } from "date-fns";
-import { memo, useMemo } from "react";
+import { memo, type ReactNode, useMemo } from "react";
 import { ChevronRight } from "@/components/shared/icons";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
@@ -350,11 +350,11 @@ export default memo(function TodoItem({
               )}
 
               <div className="flex items-center gap-1">
-                {todo.labels
+                {todo.labels.reduce<ReactNode[]>((chips, label) => {
                   // Internal bookkeeping labels are never shown as chips —
                   // "gaia-tracked" is redundant with the "Created by GAIA" badge.
-                  .filter((label) => !INTERNAL_LABELS.has(label))
-                  .map((label) => (
+                  if (INTERNAL_LABELS.has(label)) return chips;
+                  chips.push(
                     <Chip
                       key={label}
                       size="sm"
@@ -366,8 +366,10 @@ export default memo(function TodoItem({
                       }
                     >
                       {label.charAt(0).toUpperCase() + label.slice(1)}
-                    </Chip>
-                  ))}
+                    </Chip>,
+                  );
+                  return chips;
+                }, [])}
               </div>
 
               {!!todo.priority && todo.priority !== "none" && (

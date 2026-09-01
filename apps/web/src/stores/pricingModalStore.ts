@@ -21,7 +21,18 @@ interface PricingModalStore {
    */
   pitch: string | null;
   offer: PricingOffer | null;
-  openModal: (arg?: string | PricingOffer) => void;
+  /**
+   * `pitch` swaps the modal's subheading; `offer` re-prices the cards and
+   * carries a discount code to checkout. They are independent — a caller may
+   * pass either, both, or neither. Taking one object rather than a positional
+   * union is deliberate: a bare `openModal` handed straight to an `onPress`
+   * receives the press event as its argument, and a positional union would
+   * read that event as an offer.
+   */
+  openModal: (context?: {
+    pitch?: string | null;
+    offer?: PricingOffer | null;
+  }) => void;
   closeModal: () => void;
 }
 
@@ -31,12 +42,12 @@ export const usePricingModalStore = create<PricingModalStore>()(
       open: false,
       pitch: null,
       offer: null,
-      openModal: (arg) =>
+      openModal: (context) =>
         set(
           {
             open: true,
-            pitch: typeof arg === "string" ? arg : null,
-            offer: typeof arg === "object" ? (arg ?? null) : null,
+            pitch: context?.pitch ?? null,
+            offer: context?.offer ?? null,
           },
           false,
           "openModal",

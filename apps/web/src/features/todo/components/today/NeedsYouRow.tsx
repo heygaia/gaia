@@ -156,6 +156,9 @@ export const NeedsYouRow: React.FC<NeedsYouRowProps> = ({ item }) => {
             value={answer}
             onValueChange={setAnswer}
             onKeyDown={(e) => {
+              // Don't submit while an IME composition is active (CJK users
+              // press Enter to confirm candidates).
+              if (e.nativeEvent.isComposing) return;
               if (e.key === "Enter") submitAnswer();
               if (e.key === "Escape") setAnswerOpen(false);
             }}

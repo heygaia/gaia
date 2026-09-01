@@ -309,11 +309,10 @@ export default function UseCaseSection({
   const { integrations } = useIntegrations();
   const { connectedIds, knownIds } = useMemo(
     () => ({
-      connectedIds: new Set(
-        integrations
-          .filter((i) => i.status === "connected")
-          .map((i) => i.id.toLowerCase()),
-      ),
+      connectedIds: integrations.reduce((ids, i) => {
+        if (i.status === "connected") ids.add(i.id.toLowerCase());
+        return ids;
+      }, new Set<string>()),
       knownIds: new Set(integrations.map((i) => i.id.toLowerCase())),
     }),
     [integrations],
@@ -321,9 +320,14 @@ export default function UseCaseSection({
 
   const connectionScore = useCallback(
     (useCase: UseCase): number => {
-      const required = (useCase.integrations || [])
-        .map((id) => id.toLowerCase())
-        .filter((id) => knownIds.has(id));
+      const required = (useCase.integrations || []).reduce<string[]>(
+        (ids, id) => {
+          const lower = id.toLowerCase();
+          if (knownIds.has(lower)) ids.push(lower);
+          return ids;
+        },
+        [],
+      );
       if (required.length === 0) return 1;
       return (
         required.filter((id) => connectedIds.has(id)).length / required.length

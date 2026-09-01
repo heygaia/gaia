@@ -43,7 +43,9 @@ export function useApproveTodo() {
           const quotaError = error.response.data as
             | GaiaExecutionQuotaError
             | undefined;
-          usePricingModalStore.getState().openModal(quotaError?.pitch);
+          usePricingModalStore
+            .getState()
+            .openModal({ pitch: quotaError?.pitch });
           return;
         }
         if (error.response?.status === 409) {

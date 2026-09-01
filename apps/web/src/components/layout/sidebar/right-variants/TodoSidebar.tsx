@@ -2,22 +2,21 @@
 
 import { Button } from "@heroui/button";
 import { Checkbox } from "@heroui/checkbox";
-import { Input, Textarea } from "@heroui/input";
 import { BubbleChatIcon, Delete02Icon } from "@icons";
 import { formatDistanceToNow } from "date-fns";
 import { useRouter } from "next/navigation";
 import type React from "react";
-import { useState } from "react";
 import { SidebarContent, SidebarFooter } from "@/components/ui/sidebar";
 import { useUser } from "@/features/auth/hooks/useUser";
 import { ExecutionStatusLine } from "@/features/todo/components/shared/ExecutionStatusLine";
 import { GaiaOfferBanner } from "@/features/todo/components/shared/GaiaOfferBanner";
 import { GaiaTodoBadge } from "@/features/todo/components/shared/GaiaTodoBadge";
-import { GaiaTodoMeta } from "@/features/todo/components/shared/GaiaTodoMeta";
 import SubtaskManager from "@/features/todo/components/shared/SubtaskManager";
 import { TodoAnswerCard } from "@/features/todo/components/shared/TodoAnswerCard";
+import { TodoDescriptionEditor } from "@/features/todo/components/shared/TodoDescriptionEditor";
 import TodoFieldsRow from "@/features/todo/components/shared/TodoFieldsRow";
 import { TodoProposalActions } from "@/features/todo/components/shared/TodoProposalActions";
+import { TodoTitleEditor } from "@/features/todo/components/shared/TodoTitleEditor";
 import WorkLogSection from "@/features/todo/components/shared/WorkLogSection";
 import WorkflowSection from "@/features/todo/components/WorkflowSection";
 import type {
@@ -43,8 +42,6 @@ export const TodoSidebar: React.FC<TodoSidebarProps> = ({
 }) => {
   const router = useRouter();
   const user = useUser();
-  const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [isEditingDescription, setIsEditingDescription] = useState(false);
 
   const userTimezone = user?.timezone;
 
@@ -61,22 +58,6 @@ export const TodoSidebar: React.FC<TodoSidebarProps> = ({
   const handleSubtasksChange = (subtasks: SubTask[]) => {
     if (!todo) return;
     onUpdate(todo.id, { subtasks });
-  };
-
-  const handleTitleSave = (newTitle: string) => {
-    if (!todo) return;
-    if (newTitle.trim() && newTitle !== todo.title) {
-      onUpdate(todo.id, { title: newTitle.trim() });
-    }
-    setIsEditingTitle(false);
-  };
-
-  const handleDescriptionSave = (newDescription: string) => {
-    if (!todo) return;
-    if (newDescription !== todo.description) {
-      onUpdate(todo.id, { description: newDescription });
-    }
-    setIsEditingDescription(false);
   };
 
   const handleFieldChange = (
@@ -137,61 +118,11 @@ export const TodoSidebar: React.FC<TodoSidebarProps> = ({
                 }}
               />
             )}
-            <div className="flex-1 space-y-3">
-              {/* Editable Title */}
-              {isEditingTitle ? (
-                <Input
-                  defaultValue={todo.title}
-                  onKeyDown={(e) => {
-                    // Don't commit while an IME composition is active (CJK
-                    // users press Enter to confirm candidates).
-                    if (e.nativeEvent.isComposing) return;
-                    if (e.key === "Enter") {
-                      handleTitleSave(e.currentTarget.value);
-                    }
-                    if (e.key === "Escape") {
-                      setIsEditingTitle(false);
-                    }
-                  }}
-                  onBlur={(e) => handleTitleSave(e.target.value)}
-                  autoFocus
-                  classNames={{
-                    input:
-                      "text-2xl font-medium bg-transparent text-zinc-100 placeholder:text-zinc-500",
-                    inputWrapper:
-                      "bg-transparent shadow-none hover:bg-transparent focus:bg-transparent data-[focus=true]:bg-transparent",
-                  }}
-                  variant="underlined"
-                />
-              ) : (
-                <h1
-                  style={{ wordBreak: "break-all" }}
-                  className={`text-2xl leading-tight font-medium ${todo.completed ? "text-zinc-500 line-through" : "text-zinc-100"}`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => setIsEditingTitle(true)}
-                    className="w-full cursor-pointer text-left transition-colors hover:text-zinc-200"
-                  >
-                    {todo.title}
-                  </button>
-                </h1>
-              )}
-              {isGaiaTodo && (
-                <GaiaTodoMeta
-                  // A goal's `serves` restates its own title ("raising a pre-seed
-                  // round" on "Raise a pre-seed round"), so it reads as circular —
-                  // only tasks carry a meaningful "because".
-                  serves={todo.kind === "goal" ? null : todo.serves}
-                  errorMessage={
-                    todo.execution_status === "failed"
-                      ? todo.error_message
-                      : null
-                  }
-                  todoId={todo.id}
-                />
-              )}
-            </div>
+            <TodoTitleEditor
+              todo={todo}
+              isGaiaTodo={isGaiaTodo}
+              onUpdate={onUpdate}
+            />
           </div>
 
           {/* Full-width, out of the checkbox column — same rule as the
@@ -217,39 +148,8 @@ export const TodoSidebar: React.FC<TodoSidebarProps> = ({
           {/* Proposals skip the description (the decision card already shows
               it), and GAIA todos never show the empty "Add a description"
               affordance — their descriptions are agent-written. */}
-          {isProposed ||
-          (isGaiaTodo && !todo.description) ? null : isEditingDescription ? (
-            <Textarea
-              defaultValue={todo.description || ""}
-              onKeyDown={(e) => {
-                if (e.key === "Escape") {
-                  setIsEditingDescription(false);
-                }
-              }}
-              onBlur={(e) => handleDescriptionSave(e.target.value)}
-              placeholder="Add a description..."
-              minRows={4}
-              maxRows={6}
-              autoFocus
-              classNames={{
-                input: "bg-transparent text-zinc-200 placeholder:text-zinc-500",
-                inputWrapper:
-                  "bg-zinc-800/30 hover:bg-zinc-800/50 data-[hover=true]:bg-zinc-800/50 shadow-none",
-              }}
-              variant="flat"
-            />
-          ) : (
-            <p
-              className={`text-sm leading-relaxed ${todo.completed ? "text-zinc-600" : "text-zinc-400"}`}
-            >
-              <button
-                type="button"
-                onClick={() => setIsEditingDescription(true)}
-                className="w-full cursor-pointer text-left transition-colors hover:text-zinc-300"
-              >
-                {todo.description || "Add a description..."}
-              </button>
-            </p>
+          {isProposed || (isGaiaTodo && !todo.description) ? null : (
+            <TodoDescriptionEditor todo={todo} onUpdate={onUpdate} />
           )}
 
           {/* GAIA's canvas.md — a task's work log, or a goal's strategy doc —
