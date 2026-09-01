@@ -16,7 +16,7 @@ from app.agents.core.background.executor_queue import (
     try_acquire_lock,
 )
 from app.agents.core.background.workflow_platform_delivery import (
-    deliver_workflow_result_to_platforms,
+    deliver_result_to_platforms,
 )
 from app.agents.prompts.playbook_prompts import (
     PLAYBOOK_FALLBACK_TEMPLATE,
@@ -760,7 +760,7 @@ async def _notify_replay_finished(
         )
         return
     try:
-        await deliver_workflow_result_to_platforms(
+        await deliver_result_to_platforms(
             user=user,
             user_id=workflow.user_id,
             notification_text=text,
