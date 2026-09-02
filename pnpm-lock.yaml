@@ -37,8 +37,9 @@ overrides:
   esbuild@>=0.27.3 <0.28.1: 0.28.1
   postcss@<8.5.18: 8.5.18
   ip-address@<=10.3.0: 10.3.1
-  fast-uri@>=3.0.0 <3.1.5: 3.1.5
+  fast-uri@>=3.0.0 <3.1.6: 3.1.6
   sharp@<0.35.0: 0.35.0
+  browserslist@<4.28.7: 4.28.7
   brace-expansion@<1.1.18: 1.1.18
   brace-expansion@>=2.0.0 <2.1.4: 2.1.4
   brace-expansion@>=4.0.0 <5.0.9: 5.0.9
@@ -182,6 +183,9 @@ importers:
       spectrum-ts:
         specifier: ^12.7.0
         version: 12.7.0(typescript@7.0.2)
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
       vite:
         specifier: ^7.3.6
         version: 7.3.6(@types/node@26.1.1)(jiti@2.7.0)(less@4.6.4)(lightningcss@1.33.0)(sass-embedded@1.100.0)(sass@1.101.0)(terser@5.49.0)(tsx@4.23.11)(yaml@2.9.0)
@@ -13265,8 +13269,8 @@ packages:
   fast-levenshtein@2.0.6:
     resolution: {integrity: sha512-DCXu6Ifhqcks7TZKY3Hxp3y6qphY5SJZmrWMDrKcERSOXWQdMhU9Ig/PYrzyw/ul9jOIyh0N4M0tbC5hodg8dw==}
 
-  fast-uri@3.1.5:
-    resolution: {integrity: sha512-gHwA1O9LDIcKunMKhObS/HimwtehO1nPUECKAu5TpKgaO19fcWEl4bliWe1jWxVFvIXztJjjQ4L8XQ1EU9f7Jw==}
+  fast-uri@3.1.6:
+    resolution: {integrity: sha512-7Ical1vFEMr0onbVzEDIreM22I4khW+fzyQPwvAFWBp1iwdshSZRsL4jjRvPG9JP1uiqMHRto+YU6R2/CzDz5Q==}
 
   fast-xml-builder@1.2.1:
     resolution: {integrity: sha512-tPb5TTWfgfVx5BNSi2xV0eLr89POeXXn0dXIsCJ9m1narrWxeIyx6je9d7Rce/3NyXLbvuQmLkxq+RuxMWejvw==}
@@ -31935,7 +31939,7 @@ snapshots:
   ajv@8.20.0:
     dependencies:
       fast-deep-equal: 3.1.3
-      fast-uri: 3.1.5
+      fast-uri: 3.1.6
       json-schema-traverse: 1.0.0
       require-from-string: 2.0.2
 
@@ -34932,7 +34936,7 @@ snapshots:
 
   fast-levenshtein@2.0.6: {}
 
-  fast-uri@3.1.5: {}
+  fast-uri@3.1.6: {}
 
   fast-xml-builder@1.2.1:
     dependencies:

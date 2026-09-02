@@ -82,6 +82,7 @@ export type {
   Project,
   ProjectCreate,
   ProjectUpdate,
+  SubscriptionCondition,
   SubTask,
   Todo,
   TodoAssignee,
@@ -91,8 +92,17 @@ export type {
   TodoLabel,
   TodoListResponse,
   TodoUpdate,
+  TriggerSubscription,
 } from "./todo";
-export { Priority, WorkflowStatus } from "./todo";
+export {
+  ConditionMatch,
+  ConditionOperator,
+  Priority,
+  SubscriptionAction,
+  SubscriptionResolution,
+  SubscriptionStatus,
+  WorkflowStatus,
+} from "./todo";
 export type {
   Tool,
   ToolCategory,

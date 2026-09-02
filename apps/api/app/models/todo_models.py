@@ -7,6 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from app.constants.general import MAX_PAGE_NUMBER
 from app.constants.todos import ASSIGNEE_USER
 from app.db.repositories.base import UserScopedDocument
+from app.models.trigger_subscription_models import TriggerSubscription
 from app.models.workflow_models import WorkflowWithIntegrations
 
 # Who owns a todo. Replaces the legacy ``gaia-tracked`` label as the
@@ -241,6 +242,9 @@ class TrackedTodoDraft(BaseModel):
     labels: list[str] | None = None
     initial_deliverable: str | None = None
     initial_notes: str | None = None
+    # The chat this tracked todo was created in, captured so results can be
+    # pushed back into it. None for todos created outside a chat (onboarding/REST).
+    source_conversation_id: str | None = None
     # False when the caller arms its own schedule; internal work otherwise runs
     # immediately instead of waiting for a schedule that never comes.
     auto_execute: bool = True
@@ -282,6 +286,10 @@ class TodoResponse(TodoBase):
     workflow_categories: list[str] = Field(
         default_factory=list,
         description="Tool categories from linked workflow steps for icon display",
+    )
+    trigger_subscriptions: list[TriggerSubscription] = Field(
+        default_factory=list,
+        description="Read-only; subscriptions are written by trigger registration, not by clients",
     )
 
     @classmethod
@@ -624,8 +632,12 @@ class TodoDocument(UserScopedDocument):
     # Verbatim dismissal reason and timestamp — feeds the 3-strike rejection summary.
     dismiss_reason: str | None = None
     dismissed_at: datetime | None = None
+    trigger_subscriptions: list[TriggerSubscription] = Field(default_factory=list)
     # Sender of the email an onboarding-seeded todo was extracted from.
     source_email: str | None = None
+    # The chat that created this tracked todo, captured at creation. None for todos
+    # created outside a chat (onboarding/REST).
+    source_conversation_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -675,6 +687,8 @@ class TodoUpdate(BaseModel):
     approve_instruction: str | None = None
     dismiss_reason: str | None = None
     dismissed_at: datetime | None = None
+    source_conversation_id: str | None = None
+    trigger_subscriptions: list[TriggerSubscription] | None = None
 
 
 class ProjectDocument(UserScopedDocument):

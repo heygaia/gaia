@@ -23,15 +23,29 @@ NEEDS_FOLLOW_UP_LABEL: Final[str] = "needs-follow-up"
 UNTITLED_TODO_TITLE: Final[str] = "Untitled Todo"
 
 # DEPRECATED: legacy discriminator for GAIA-owned todos, fully superseded by the
-# ``assignee`` field. The runtime no longer reads it — only the one-time backfill
-# (scripts/migrate_todo_assignee.py) still references this constant to find and
-# strip the label. Delete both once the backfill has run everywhere.
+# ``assignee`` field. Nothing writes it any more. Two readers remain, both for
+# docs the backfill has not reached yet: the one-time backfill itself
+# (scripts/migrate_todo_assignee.py), and signal_context, which strips the label
+# so it never shows up in rendered agent context. Delete all three once the
+# backfill has run everywhere.
 GAIA_TRACKED_LABEL: Final[str] = "gaia-tracked"
 
 # Bookkeeping label the executor stamps on a todo that has exhausted its retry
 # attempts; the execution loop reads it to skip permanently-failed todos, and the
 # retry transition clears it to let the re-run proceed.
 FAILED_LABEL: Final[str] = "failed"
+
+# Labels that mean "this todo is waiting on something outside GAIA". The
+# maintenance sweep reads them to decide whether an overdue todo is genuinely
+# stuck, and the trigger-subscription paths set and clear them — so they live
+# here rather than inside either consumer.
+WAITING_FOR_REPLY_LABEL: Final[str] = "waiting-for-reply"
+WAITING_FOR_APPROVAL_LABEL: Final[str] = "waiting-for-approval"
+BLOCKING_LABEL: Final[str] = "blocked"
+
+BLOCKING_LABELS: Final[frozenset[str]] = frozenset(
+    {WAITING_FOR_REPLY_LABEL, WAITING_FOR_APPROVAL_LABEL, BLOCKING_LABEL}
+)
 
 # Cap on user-initiated retries of a failed GAIA todo. Distinct from the
 # executor's internal per-run backoff counter (``gaia_retry_count``): this bounds

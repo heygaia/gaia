@@ -37,10 +37,10 @@ from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
 from app.services.todo_canvas_storage import (
     append_facet,
     build_vfs_label,
-    read_facet,
 )
 from app.services.todos import gaia_todo_lifecycle as lifecycle
 from app.services.todos.todo_service import TodoService
+from app.services.triggers.subscription_service import teardown_subscriptions
 from app.utils.analytics import track
 from app.utils.canvas_vector_utils import (
     mark_canvas_completed,
@@ -68,41 +68,6 @@ def _format_due_string(due_date: datetime | None, now: datetime) -> str:
     if days_until < 0:
         return f" OVERDUE({-days_until}d)"
     return f" due({days_until}d)"
-
-
-# Capture everything under the "## Key Details" heading up to the next "## "
-# heading (or end of text). A tempered greedy token — "any char that does not
-# begin a new section" — avoids a reluctant quantifier entirely.
-_KEY_DETAILS_RE = re.compile(r"## Key Details\n((?:(?!\n## ).)*)", re.DOTALL)
-_KEY_DETAILS_MAX_LINES = 5
-
-
-async def _extract_canvas_key_details(doc: TodoDocument, user_id: str) -> str:
-    """Pull the Key Details section text from a tracked todo's notes (empty on miss)."""
-    todo_id = doc.id
-    try:
-        notes = await read_facet(todo_id, user_id, FACET_NOTES)
-    except Exception as e:
-        log.warning(
-            "tracked_todo.notes_read_failed",
-            todo_id=todo_id,
-            error=str(e),
-        )
-        return ""
-    if not notes:
-        return ""
-    match = _KEY_DETAILS_RE.search(notes)
-    return match.group(1).strip() if match else ""
-
-
-def _format_signal_entry(doc: TodoDocument, key_details: str) -> str:
-    """Render one tracked todo as a signal-matching context bullet (+ indented key details)."""
-    labels_str = f" [{', '.join(doc.labels)}]" if doc.labels else ""
-    entry = f'- "{doc.title}"{labels_str} (ID: {doc.id}, vfs: {build_vfs_label(doc.id)})'
-    if key_details:
-        for dl in key_details.split("\n")[:_KEY_DETAILS_MAX_LINES]:
-            entry += f"\n    {dl.strip()}"
-    return entry
 
 
 def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: str | None) -> str:
@@ -245,6 +210,7 @@ class TrackedTodoService:
                 deliverable_content=deliverable_content,
                 notes_content=notes_content,
                 log_content=log_content,
+                source_conversation_id=draft.source_conversation_id,
             ),
         )
 
@@ -319,12 +285,11 @@ class TrackedTodoService:
         # Mark as completed in ChromaDB (keep embedding but mark completed)
         await mark_canvas_completed(todo_id)
 
-        log.info(
-            "tracked_todo.completed",
-            todo_id=todo_id,
-            user_id=user_id,
-            summary=summary,
-        )
+        # A completed todo must stop watching. Teardown lives here rather than at
+        # the callers (tool, sweep, worker) so no completion path can forget it.
+        await teardown_subscriptions(todo_id, user_id, reason="completed")
+
+        log.info("tracked_todo.completed", todo_id=todo_id, user_id=user_id, summary=summary)
         schedule_gaia_tasks_sync(user_id)
         return True
 
@@ -379,25 +344,6 @@ class TrackedTodoService:
         Called by code (not agent) for audit trail. Agent writes to canvas.
         """
         await lifecycle.system_log(todo_id, user_id, event_type, details)
-
-    @staticmethod
-    async def get_signal_matching_context(user_id: str) -> str:
-        """Compact tracked todos summary optimized for signal matching.
-
-        Includes key IDs (thread_ids, email addresses, event_ids) so the
-        agent can match incoming signals to relevant todos.
-        """
-        docs = await todo_repository.list_active_tracked(user_id, limit=15)
-        if not docs:
-            return ""
-
-        lines = [
-            _format_signal_entry(doc, await _extract_canvas_key_details(doc, user_id))
-            for doc in docs
-        ]
-        return "ACTIVE TRACKED TODOS (check if incoming signal relates to any):\n" + "\n".join(
-            lines
-        )
 
     @staticmethod
     async def reindex_canvas(todo_id: str, user_id: str) -> bool:

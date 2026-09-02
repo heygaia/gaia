@@ -48,7 +48,6 @@ from app.workers.tasks.maintenance_sweep_tasks import (
     _register_notification,
     _send_user_dormant_digest,
     _strike_ignored_urgent_alerts,
-    _todo_redirect_action,
     maintenance_sweep_tracked_todos,
 )
 
@@ -314,6 +313,7 @@ class TestHealthCheckExpired:
         assert request.type == NotificationType.WARNING
         assert request.content.title == "Expired: Ship the report"
         assert request.content.body == "Your todo expired and needs a decision."
+        assert request.content.actions[0].label == "View todo"
         assert request.content.actions[0].config.redirect.url == "/todos?todoId=todo-1"
         assert request.metadata == {"todo_id": "todo-1"}
 
@@ -537,20 +537,11 @@ class TestIsUserDaytime:
 
 
 # ---------------------------------------------------------------------------
-# _todo_redirect_action / _send_user_dormant_digest
+# _send_user_dormant_digest
+#
+# The redirect-action tests moved with the helper to
+# tests/unit/services/todos/test_todo_notifications.py.
 # ---------------------------------------------------------------------------
-
-
-class TestTodoRedirectAction:
-    def test_single_todo_deep_links(self):
-        action = _todo_redirect_action("View todo", "todo-9")
-        assert action.label == "View todo"
-        assert action.config.redirect.url == "/todos?todoId=todo-9"
-        assert action.config.redirect.close_notification is True
-
-    def test_digest_lands_on_the_todos_list(self):
-        action = _todo_redirect_action("Review todos", None)
-        assert action.config.redirect.url == "/todos"
 
 
 class TestSendUserDormantDigest:

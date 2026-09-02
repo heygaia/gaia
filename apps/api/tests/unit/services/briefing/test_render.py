@@ -113,7 +113,7 @@ class TestImageRenderOptions:
         options = ImageRenderOptions()
 
         with pytest.raises(FrozenInstanceError):
-            options.width = 500  # type: ignore[misc]
+            options.width = 500  # type: ignore[misc]  # assigning to a frozen field is exactly what this test asserts raises
 
     def test_overrides_are_kept_verbatim(self) -> None:
         options = ImageRenderOptions(
