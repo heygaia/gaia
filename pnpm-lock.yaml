@@ -48,7 +48,6 @@ overrides:
   nanoid@<3.3.18: 3.3.18
   '@smithy/config-resolver@<4.4.0': 4.4.0
   '@tootallnate/once@<3.0.1': 3.0.1
-  browserslist@<4.28.7: 4.28.7
 
 patchedDependencies:
   dmg-builder:
