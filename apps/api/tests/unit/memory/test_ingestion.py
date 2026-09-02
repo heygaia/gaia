@@ -64,29 +64,19 @@ USER = "user-1"
 NOW = datetime(2026, 8, 24, tzinfo=UTC)
 
 
-def make_fact(
-    content: str = "sam likes green tea",
-    *,
-    kind: MemoryKind = MemoryKind.FACT,
-    shelf_life: MemoryShelfLife = MemoryShelfLife.DURABLE,
-    category_path: str = "preferences",
-    importance: float = 0.5,
-    entities: list[ExtractedEntity] | None = None,
-    edges: list[ExtractedEdge] | None = None,
-    occurred_start: datetime | None = None,
-    occurred_end: datetime | None = None,
-) -> ExtractedFact:
-    return ExtractedFact(
-        content=content,
-        kind=kind,
-        shelf_life=shelf_life,
-        category_path=category_path,
-        importance=importance,
-        entities=entities or [],
-        edges=edges or [],
-        occurred_start=occurred_start,
-        occurred_end=occurred_end,
-    )
+def make_fact(content: str = "sam likes green tea", **overrides: Any) -> ExtractedFact:
+    fields: dict[str, Any] = {
+        "kind": MemoryKind.FACT,
+        "shelf_life": MemoryShelfLife.DURABLE,
+        "category_path": "preferences",
+        "importance": 0.5,
+        "occurred_start": None,
+        "occurred_end": None,
+    }
+    fields.update(overrides)
+    fields["entities"] = fields.get("entities") or []
+    fields["edges"] = fields.get("edges") or []
+    return ExtractedFact(content=content, **fields)
 
 
 def make_reconciled(

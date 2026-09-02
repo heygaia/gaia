@@ -251,9 +251,6 @@ class TestMemoryNode:
         assert call_kwargs["user_id"] == "u1"
         assert call_kwargs["messages"] == state["messages"]
         assert call_kwargs["session_id"] == "t1"
-        assert call_kwargs["extraction_prompt"] is None or isinstance(
-            call_kwargs["extraction_prompt"], str
-        )
         assert result is state
 
     @pytest.mark.asyncio
@@ -286,7 +283,6 @@ class TestMemoryNode:
                 ],
                 user_id="u1",
                 session_id="s1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name=None,
             )
@@ -379,7 +375,6 @@ class TestDeltaIngestion:
                 messages=messages,
                 user_id="u1",
                 session_id="t1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name="Sam",
             )
@@ -407,7 +402,6 @@ class TestSystemGeneratedConversations:
                 messages=[HumanMessage(content="Run the daily digest workflow now", id="m1")],
                 user_id="u1",
                 session_id="t1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name="Sam",
                 conversation_id="c1",
@@ -655,12 +649,12 @@ class TestTheIngestionHandoff:
         with (
             patch(f"{NODE}.memory_engine", engine),
             patch(f"{NODE}.redis_cache", fake),
+            patch(f"{NODE}.get_memory_extraction_prompt", return_value=extraction_prompt),
         ):
             await _store_user_memory_background(
                 messages=self._thread() if messages is None else messages,
                 user_id=user_id,
                 session_id=session_id,
-                extraction_prompt=extraction_prompt,
                 subagent_id=subagent_id,
                 user_name=user_name,
             )
@@ -722,7 +716,6 @@ class TestTheIngestionHandoff:
                 messages=messages,
                 user_id="u1",
                 session_id="t1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name=None,
             )
@@ -751,7 +744,6 @@ class TestTheIngestionHandoff:
                 messages=self._thread(),
                 user_id="u1",
                 session_id="t1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name=None,
                 conversation_id="c1",
@@ -779,7 +771,6 @@ class TestTheIngestionHandoff:
                     messages=self._thread(),
                     user_id="u1",
                     session_id="t1",
-                    extraction_prompt=None,
                     subagent_id=None,
                     user_name=None,
                     conversation_id="c1",
@@ -808,7 +799,6 @@ class TestTheIngestionHandoff:
                     messages=messages,
                     user_id="u1",
                     session_id="t1",
-                    extraction_prompt=None,
                     subagent_id=None,
                     user_name=None,
                 )
@@ -855,7 +845,6 @@ class TestTrivialDeltaGate:
                 messages=messages,
                 user_id="u1",
                 session_id="t1",
-                extraction_prompt=None,
                 subagent_id=None,
                 user_name=None,
             )
@@ -891,7 +880,6 @@ class TestTrivialDeltaGate:
                     messages=self._thread(),
                     user_id="u1",
                     session_id="t1",
-                    extraction_prompt=None,
                     subagent_id=None,
                     user_name=None,
                 )
@@ -989,9 +977,10 @@ class TestWhatTheNodeSpawns:
 
         assert spawn.call_args.kwargs["name"] == "user_memory"
 
-    async def test_the_subagent_s_extraction_prompt_reaches_the_task(self) -> None:
-        """The prompt is resolved from subagent_id here and nowhere else — drop
-        it and every integration turn extracts with generic hints."""
+    async def test_the_subagent_id_reaches_the_task(self) -> None:
+        """The task resolves the integration's extraction prompt from this id
+        (see TestTheIngestionHandoff); drop it and every integration turn
+        extracts with generic hints."""
         spawn, store = self._spawn_capture()
         state = {"messages": [HumanMessage(content="my anniversary is October 19")]}
         config = {"configurable": {"user_id": "u1", "thread_id": "t1", "subagent_id": "slack"}}
@@ -999,11 +988,9 @@ class TestWhatTheNodeSpawns:
         with (
             patch(f"{NODE}._store_user_memory_background", new_callable=AsyncMock) as background,
             patch(f"{NODE}.spawn_background_task", spawn),
-            patch(f"{NODE}.get_memory_extraction_prompt", return_value="slack hints"),
         ):
             await memory_node(state, config, store)
 
-        assert background.call_args.kwargs["extraction_prompt"] == "slack hints"
         assert background.call_args.kwargs["subagent_id"] == "slack"
 
     async def test_the_user_name_reaches_the_task(self) -> None:
