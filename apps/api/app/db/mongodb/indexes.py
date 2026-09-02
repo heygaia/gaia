@@ -1209,6 +1209,7 @@ async def create_short_link_indexes() -> None:
             "pre-capability per-user links are still present. Run "
             "`uv run python -m scripts.migrate_short_link_slugs --dry-run`, "
             "review, then re-run without the flag",
+            collection_name="short_links",
             error_type=type(e).__name__,
             error=str(e),
         )

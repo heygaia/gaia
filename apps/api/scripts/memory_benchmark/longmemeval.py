@@ -37,6 +37,7 @@ from app.db.postgresql import init_postgresql_engine
 from app.memory import extraction
 from app.memory.engine import memory_engine
 from app.memory.extraction import _invoke_structured
+from app.memory.ingestion import MemorySource
 from app.memory.mappers import entry_to_note
 
 _DATE_FORMAT = "%Y/%m/%d %H:%M"
@@ -130,7 +131,7 @@ def _parse_date(raw: str) -> datetime:
     return datetime.strptime(cleaned, _DATE_FORMAT).replace(tzinfo=UTC)
 
 
-async def _answer(question: str, question_date: str, memories: list[str]) -> str:
+async def _answer(user_id: str, question: str, question_date: str, memories: list[str]) -> str:
     context = "\n".join(f"- {m}" for m in memories) or "(no memories found)"
     result = await _invoke_structured(
         _Answer,
@@ -173,11 +174,12 @@ async def _answer(question: str, question_date: str, memories: list[str]) -> str
             ),
         ],
         operation="lme_answer",
+        user_id=user_id,
     )
     return result.answer if result else "I don't know"
 
 
-async def _judge(question: str, gold: str, model_answer: str) -> bool:
+async def _judge(user_id: str, question: str, gold: str, model_answer: str) -> bool:
     result = await _invoke_structured(
         _Verdict,
         [
@@ -214,6 +216,7 @@ async def _judge(question: str, gold: str, model_answer: str) -> bool:
             ),
         ],
         operation="lme_judge",
+        user_id=user_id,
     )
     return bool(result and result.correct)
 
@@ -235,7 +238,7 @@ async def _run_question(
             await memory_engine.retain(
                 user_id,
                 messages,
-                source_type=MemorySourceType.CONVERSATION,
+                source=MemorySource(MemorySourceType.CONVERSATION),
                 now=_parse_date(date_raw),
             )
 
@@ -250,8 +253,8 @@ async def _run_question(
             + [f"(journal {hit.date.isoformat()}) {hit.text}" for hit in episode_hits[:12]]
             + [f"(conversation on {date})\n{text}" for date, text, _ in transcript_hits]
         )
-        model_answer = await _answer(item["question"], item["question_date"], notes)
-        correct = await _judge(item["question"], str(item["answer"]), model_answer)
+        model_answer = await _answer(user_id, item["question"], item["question_date"], notes)
+        correct = await _judge(user_id, item["question"], str(item["answer"]), model_answer)
         print(
             f"[{index + 1}/{total}] {'OK ' if correct else 'MISS'} {qtype:26} "
             f"q={item['question'][:48]!r} -> {model_answer[:60]!r} (gold {str(item['answer'])[:40]!r})",
@@ -378,16 +381,20 @@ async def _grade_sample(
     tally = {"done": 0, "correct": 0}
     aborted = {"budget": False, "accuracy": False}
 
+    def _halted() -> bool:
+        # Read fresh each time: another task may trip a ceiling while this one
+        # waits on the semaphore.
+        return meter.exceeded or aborted["budget"] or aborted["accuracy"]
+
     async def _bounded(index: int, item: dict) -> tuple[str, bool, str] | None:
         # Gate at acquire time so once a ceiling is hit no NEW question starts;
         # in-flight ones finish (a few cents / a few questions of overshoot).
-        if meter.exceeded or aborted["accuracy"]:
+        if _halted():
             return None
         async with semaphore:
             if meter.exceeded:
                 aborted["budget"] = True
-                return None
-            if aborted["accuracy"]:
+            if _halted():
                 return None
             outcome = await _run_question(item, index, len(sample), diagnose=args.diagnose)
             tally["done"] += 1
