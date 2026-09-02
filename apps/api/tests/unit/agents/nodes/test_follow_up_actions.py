@@ -1,4 +1,5 @@
 import contextlib
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -39,35 +40,39 @@ def _expected_dynamic_context(tool_names, previous_actions, context_text):
     )
 
 
+@dataclass
 class _NodeSeams:
     """Patches every seam the node reaches through, with per-test defaults.
 
     Arrange only: each test still asserts on ``writes``, ``llm_inputs`` and the
     individual mocks, so nothing here softens what a test pins down.
+
+    A dataclass rather than an explicit ``__init__``: this is a bag of
+    per-test settings, and the generated constructor keeps the seam list
+    extensible without tripping the argument-count ratchet.
     """
 
-    def __init__(
-        self,
-        *,
-        actions: list[str] | None = None,
-        capability_tools: list[str] | None = None,
-        registry_tools: list[str] | None = None,
-        previous_actions: list[str] | None = None,
-        previous_error: Exception | None = None,
-        invoke_error: Exception | None = None,
-        writer: MagicMock | None = None,
-    ) -> None:
+    actions: list[str] | None = None
+    capability_tools: list[str] | None = None
+    registry_tools: list[str] | None = None
+    previous_actions: list[str] | None = None
+    previous_error: Exception | None = None
+    invoke_error: Exception | None = None
+    writer: MagicMock | None = None
+
+    def __post_init__(self) -> None:
         self.writes: list[dict[str, Any]] = []
-        self.writer = writer if writer is not None else MagicMock(side_effect=self.writes.append)
+        if self.writer is None:
+            self.writer = MagicMock(side_effect=self.writes.append)
         self.llm_inputs: list[list[BaseMessage]] = []
-        self.capabilities = AsyncMock(return_value={"tool_names": capability_tools or []})
+        self.capabilities = AsyncMock(return_value={"tool_names": self.capability_tools or []})
         self.registry = MagicMock()
-        self.registry.get_tool_names.return_value = registry_tools or []
+        self.registry.get_tool_names.return_value = self.registry_tools or []
         self.fetch_previous = AsyncMock(
-            return_value=previous_actions or [], side_effect=previous_error
+            return_value=self.previous_actions or [], side_effect=self.previous_error
         )
-        self._actions = list(actions or [])
-        self._invoke_error = invoke_error
+        self._actions = list(self.actions or [])
+        self._invoke_error = self.invoke_error
         self._stack = contextlib.ExitStack()
 
     async def _ainvoke_structured(self, _schema, msgs, *, label=None, config=None):
