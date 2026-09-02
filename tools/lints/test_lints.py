@@ -13,6 +13,7 @@ and asserts on the returned violations.
 
 from __future__ import annotations
 
+from contextlib import AbstractContextManager
 import json
 from pathlib import Path
 import sys
@@ -20,7 +21,7 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import check_plr_complexity
 import no_service_classes
@@ -470,11 +471,10 @@ def test_new_bare_dump_in_allowlisted_function_is_flagged(tmp_path: Path) -> Non
 _EIGHT_ARGS = "a, b, c, d, e, f, g, h"
 
 
-def _ruff_reported(records: list[dict]) -> object:
+def _ruff_reported(records: list[dict]) -> AbstractContextManager[MagicMock]:
     """Stand in for the pinned ruff invocation with a canned JSON result."""
-    return patch.object(
-        check_plr_complexity.subprocess,
-        "run",
+    return patch(
+        "check_plr_complexity.subprocess.run",
         return_value=SimpleNamespace(returncode=1, stdout=json.dumps(records), stderr=""),
     )
 
