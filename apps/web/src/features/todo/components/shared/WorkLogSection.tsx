@@ -82,16 +82,16 @@ const WorkLogSection: React.FC<WorkLogSectionProps> = ({ todoId, isGoal }) => {
                   Couldn't load the {isGoal ? "strategy" : "work log"}.
                 </p>
               </div>
-            ) : content ? (
-              <MarkdownRenderer content={content} className="text-sm" />
-            ) : !isLoading ? (
-              <p className="py-10 text-center text-xs text-zinc-500">
-                {emptyLabel}
-              </p>
-            ) : (
+            ) : isLoading ? (
               <div className="flex justify-center py-10">
                 <Spinner size="sm" color="default" />
               </div>
+            ) : content ? (
+              <MarkdownRenderer content={content} className="text-sm" />
+            ) : (
+              <p className="py-10 text-center text-xs text-zinc-500">
+                {emptyLabel}
+              </p>
             )}
           </ModalBody>
         </ModalContent>

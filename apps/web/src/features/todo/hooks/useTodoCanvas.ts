@@ -2,9 +2,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 
-import { apiService } from "@/lib/api/service";
-
-type TodoFacet = "deliverable" | "notes" | "log";
+import {
+  getTodoCanvas,
+  getTodoFacet,
+  type TodoFacet,
+} from "@/features/todo/api/todoApi";
 
 interface UseTodoCanvasOptions {
   /** Fetch immediately on mount instead of waiting for `fetchContent()` to be called. */
@@ -31,26 +33,24 @@ export function useTodoCanvas(
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
 
-  // Re-fetch if we have neither content nor a prior successful load, so a
-  // failed read can be retried simply by calling fetchContent again.
+  // Always fetch: one hook instance is reused across todo selections (the
+  // sidebar swaps props, not components), so a cached read would keep showing
+  // the previous todo's content. Re-reading on open is also more correct for
+  // GAIA's live working memory, and a failed read retries by itself.
   const fetchContent = useCallback(async () => {
-    if (content !== null) return;
     setIsLoading(true);
     setHasError(false);
     try {
-      const path = facet
-        ? `/todos/${todoId}/facets/${facet}`
-        : `/todos/${todoId}/canvas`;
-      const res = await apiService.get<{ content: string }>(path, {
-        silent: true,
-      });
+      const res = facet
+        ? await getTodoFacet(todoId, facet)
+        : await getTodoCanvas(todoId);
       setContent(res.content);
     } catch {
       setHasError(true);
     } finally {
       setIsLoading(false);
     }
-  }, [todoId, facet, content]);
+  }, [todoId, facet]);
 
   useEffect(() => {
     if (auto) {
