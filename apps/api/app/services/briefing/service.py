@@ -19,6 +19,7 @@ from pymongo.errors import PyMongoError
 
 from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.agents.prompts.briefing_prompts import (
+    VoicePromptBlocks,
     build_briefing_voice_prompt,
     build_overnight_work_prompt,
     build_weekly_digest_prompt,
@@ -438,6 +439,19 @@ def _lane_items(lane: context.GoalLane) -> list[dict]:
 _ROMAN = ["I", "II", "III", "IV", "V", "VI"]
 
 
+def _fact_line(item: dict, art: _ArtifactFact | None) -> str:
+    line = f"- {item['text']}"
+    if art:
+        if art.snippet:
+            line += f" | summary: {art.snippet}"
+        line += f" | artifact holds ~{art.chars} chars"
+        if art.action:
+            line += " | awaiting your action"
+        if art.link:
+            line += f" | link: {art.link}"
+    return line
+
+
 def _build_facts(
     lanes: list[context.GoalLane],
     curation_note: str,
@@ -480,17 +494,7 @@ def _build_facts(
     for sec in sections:
         fact_lines.append(f"[{sec['title']}]")
         for it in sec["items"]:
-            art = artifacts.get(it.get("todo_id", ""))
-            line = f"- {it['text']}"
-            if art:
-                if art.snippet:
-                    line += f" | summary: {art.snippet}"
-                line += f" | artifact holds ~{art.chars} chars"
-                if art.action:
-                    line += " | awaiting your action"
-                if art.link:
-                    line += f" | link: {art.link}"
-            fact_lines.append(line)
+            fact_lines.append(_fact_line(it, artifacts.get(it.get("todo_id", ""))))
     if not sections:
         fact_lines.append(
             "No goal lanes exist and no background work ran. Do not claim anything "
@@ -600,6 +604,69 @@ async def run_overnight_work(user_id: str) -> None:
     log.info("briefing.overnight_complete", user_id=user_id, result_preview=result[:200])
 
 
+async def _wake_or_skip(user_id: str, user: dict) -> dormancy.DormancyState | None:
+    """Dormant loop: wake on a reactivation signal (goal created, user active,
+    any message), otherwise None means skip before any LLM cost. The daily run
+    is the only writer of dormancy state."""
+    dstate = dormancy.state_from_user(user)
+    if not dstate.dormant_since:
+        return dstate
+    if await dormancy.reactivation_signal_since(user_id, dstate.dormant_since):
+        await dormancy.clear_dormancy(user_id)
+        log.info("briefing.dormancy_cleared", user_id=user_id)
+        return dormancy.DormancyState(idle_days=0, date=None, dormant_since=None)
+    log.info("briefing.dormant_skip", user_id=user_id)
+    return None
+
+
+def _user_todos_note(open_count: int, open_titles: list[str]) -> str:
+    if not open_count:
+        return "The user's own todo list is empty."
+    first_few = f" (first few: {'; '.join(open_titles)})" if open_titles else ""
+    return (
+        f"The user's own open todo list holds {open_count} item(s){first_few}"
+        ". Only a count of 0 may be voiced as a clear or empty list."
+    )
+
+
+def _daily_payload(
+    clock: UserClock, voice: dict, sections: list[dict], stats: list[dict], is_winback: bool
+) -> BriefingPayload:
+    return BriefingPayload.model_validate(
+        {
+            "kicker": "THE MORNING BRIEF",
+            "date": clock.date_str,
+            "headline": voice["headline"],
+            "lede": voice["lede"],
+            "stats": stats,
+            "sections": sections,
+            "mood": "winback" if is_winback else voice["mood"],
+            "caption": voice["caption"],
+            "hue": hue_for_day(clock.day_of_year),
+            "bubbles": voice["bubbles"],
+            # Single-string rendering for the in-app body / email fallback.
+            "message": "\n\n".join(voice["bubbles"]),
+        }
+    )
+
+
+async def _publish_daily(
+    user_id: str, user: dict, clock: UserClock, payload: BriefingPayload
+) -> BriefingModel:
+    briefing = await briefing_repository.upsert_briefing(
+        user_id, clock.date_str, BRIEFING_KIND_DAILY, payload
+    )
+    channels = await _deliver(user_id, user, briefing, payload, NOTIFICATION_KIND_BRIEFING_DAILY)
+    await briefing_repository.set_delivered_channels(
+        user_id, clock.date_str, BRIEFING_KIND_DAILY, channels
+    )
+    # The bot's conversation must contain the brief it "sent", so replies like
+    # "yeah send them" land with real context instead of a cold thread.
+    await chat_sync.persist_delivered_brief(user_id, user, _platform_parts(payload), channels)
+    await _clear_bootstrap(user_id, user)
+    return briefing
+
+
 async def run_daily_briefing(user_id: str) -> None:
     """Curate, look back, plan, and deliver one daily briefing for the user."""
     log.set(component="briefing", operation="run_daily_briefing", user_id=user_id)
@@ -609,18 +676,9 @@ async def run_daily_briefing(user_id: str) -> None:
     user["user_id"] = user_id
     clock = context.resolve_clock(user.get("timezone"))
 
-    # Dormant loop: wake on a reactivation signal (goal created, user active,
-    # any message), otherwise skip before any LLM cost. The daily run is the
-    # only writer of dormancy state.
-    dstate = dormancy.state_from_user(user)
-    if dstate.dormant_since:
-        if await dormancy.reactivation_signal_since(user_id, dstate.dormant_since):
-            await dormancy.clear_dormancy(user_id)
-            dstate = dormancy.DormancyState(idle_days=0, date=None, dormant_since=None)
-            log.info("briefing.dormancy_cleared", user_id=user_id)
-        else:
-            log.info("briefing.dormant_skip", user_id=user_id)
-            return
+    dstate = await _wake_or_skip(user_id, user)
+    if dstate is None:
+        return
 
     goal_block, has_goal = await context.format_goal_block(user_id, user)
     if _bootstrap_should_skip(user, has_goal):
@@ -650,15 +708,8 @@ async def run_daily_briefing(user_id: str) -> None:
     lanes = await context.gather_goal_lanes(user_id, since)
     artifacts = await _gather_artifacts(user_id, lanes)
     open_count, open_titles = await context.user_open_todo_summary(user_id)
-    user_todos_note = (
-        f"The user's own open todo list holds {open_count} item(s)"
-        + (f" (first few: {'; '.join(open_titles)})" if open_titles else "")
-        + ". Only a count of 0 may be voiced as a clear or empty list."
-        if open_count
-        else "The user's own todo list is empty."
-    )
     sections, stats, facts_block = _build_facts(
-        lanes, _format_curation(expired), artifacts, user_todos_note
+        lanes, _format_curation(expired), artifacts, _user_todos_note(open_count, open_titles)
     )
 
     # Idle ladder: nothing to advance (no lanes, no goal knowledge) escalates
@@ -669,12 +720,14 @@ async def run_daily_briefing(user_id: str) -> None:
 
     prompt = build_briefing_voice_prompt(
         date_local=clock.date_str,
-        facts_block=facts_block,
-        goal_block=goal_block,
-        lookback_block=lookback_block,
-        replies_block=await chat_sync.format_replies_block(user_id, since),
-        strikes_block=strikes_block or "No blocked proposal kinds.",
-        awards_block=_format_awards(badge_labels),
+        blocks=VoicePromptBlocks(
+            facts=facts_block,
+            goal=goal_block,
+            lookback=lookback_block,
+            replies=await chat_sync.format_replies_block(user_id, since),
+            strikes=strikes_block or "No blocked proposal kinds.",
+            awards=_format_awards(badge_labels),
+        ),
         winback=winback.is_winback and wind_down is None,
         is_first_briefing=is_first,
         wind_down=wind_down,
@@ -682,22 +735,7 @@ async def run_daily_briefing(user_id: str) -> None:
     voice = _parse_voice(
         await _run_silent(user, clock, prompt, conversation_key=BRIEFING_KIND_DAILY)
     )
-    payload = BriefingPayload.model_validate(
-        {
-            "kicker": "THE MORNING BRIEF",
-            "date": clock.date_str,
-            "headline": voice["headline"],
-            "lede": voice["lede"],
-            "stats": stats,
-            "sections": sections,
-            "mood": "winback" if winback.is_winback else voice["mood"],
-            "caption": voice["caption"],
-            "hue": hue_for_day(clock.day_of_year),
-            "bubbles": voice["bubbles"],
-            # Single-string rendering for the in-app body / email fallback.
-            "message": "\n\n".join(voice["bubbles"]),
-        }
-    )
+    payload = _daily_payload(clock, voice, sections, stats, winback.is_winback)
 
     # Daily editions rotate the template library too ("daily fun docs") —
     # independent per-kind state, assigned only after generation succeeds and
@@ -705,18 +743,7 @@ async def run_daily_briefing(user_id: str) -> None:
     payload.template_family = await choose_edition_family(
         user_id, kind=BRIEFING_KIND_DAILY, families=rotation_families()
     )
-
-    briefing = await briefing_repository.upsert_briefing(
-        user_id, clock.date_str, BRIEFING_KIND_DAILY, payload
-    )
-    channels = await _deliver(user_id, user, briefing, payload, NOTIFICATION_KIND_BRIEFING_DAILY)
-    await briefing_repository.set_delivered_channels(
-        user_id, clock.date_str, BRIEFING_KIND_DAILY, channels
-    )
-    # The bot's conversation must contain the brief it "sent", so replies like
-    # "yeah send them" land with real context instead of a cold thread.
-    await chat_sync.persist_delivered_brief(user_id, user, _platform_parts(payload), channels)
-    await _clear_bootstrap(user_id, user)
+    briefing = await _publish_daily(user_id, user, clock, payload)
 
     # The goodbye went out — pause the loop until a reactivation signal.
     if wind_down == dormancy.WIND_DOWN_FINAL:

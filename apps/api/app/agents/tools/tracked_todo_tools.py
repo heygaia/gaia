@@ -5,6 +5,7 @@ Allows GAIA's executor to create tracked todos with VFS canvas
 and search across canvas context via ChromaDB.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Annotated, Any
 
@@ -14,7 +15,13 @@ from langchain_core.tools import tool
 
 from app.constants.todos import ASSIGNEE_GAIA, FACET_FIELDS, FACET_NOTES
 from app.db.repositories.todos import todo_repository
-from app.models.todo_models import Priority, TodoDocument, TodoResponse, TodoUpdate
+from app.models.todo_models import (
+    Priority,
+    TodoDocument,
+    TodoResponse,
+    TodoUpdate,
+    TrackedTodoDraft,
+)
 from app.services.payments.payment_service import payment_service
 from app.services.todo_canvas_storage import append_facet, read_facet, write_facet
 from app.services.todos import gaia_todo_lifecycle as lifecycle
@@ -327,6 +334,49 @@ async def _build_recurrence_update(
     return None
 
 
+@dataclass(frozen=True)
+class _TrackedTodoEdits:
+    """The raw, agent-supplied property edits one update_tracked_todo call carries."""
+
+    labels: list[str] | None
+    due_date: str | None
+    priority: str | None
+    scheduled_at: str | None
+    recurrence: str | None
+    expires_at: str | None
+
+
+async def _collect_update_fields(
+    edits: _TrackedTodoEdits,
+    user_id: str,
+    update_fields: dict[str, Any],
+    notes: list[str],
+) -> str | None:
+    """Validate every supplied edit into ``update_fields``; returns the first error.
+
+    Validation short-circuits so no later work runs (in particular the async
+    ``_get_user_tz`` Mongo lookup inside the recurrence validator) once a field
+    has already failed.
+    """
+    # _build_labels_update can never actually return an error today (there is
+    # no label validation yet) — the check-and-return is kept for the same
+    # shape as every other field below, so adding label validation later
+    # doesn't require restoring this line.
+    if error := _build_labels_update(edits.labels, update_fields):  # pragma: no cover
+        return error
+    if error := _build_clearable_datetime_update(edits.due_date, "due_date", update_fields):
+        return error
+    if error := _build_priority_update(edits.priority, update_fields):
+        return error
+    if error := _build_scheduled_at_update(edits.scheduled_at, update_fields):
+        return error
+    if error := await _build_recurrence_update(
+        edits.recurrence, edits.scheduled_at, user_id, update_fields, notes
+    ):
+        return error
+    return _build_clearable_datetime_update(edits.expires_at, "expires_at", update_fields)
+
+
 def _build_list_detail_parts(doc: TodoDocument, now: datetime) -> list[str]:
     """Build the pipe-separated detail fragments shown on the second line of each todo."""
     parts: list[str] = []
@@ -425,7 +475,7 @@ def _format_create_output(
     out = (
         f"Tracked todo created: {result.id}\n"
         f"Title: {result.title}\n"
-        "Its facets (deliverable / notes / log) are stored on this todo — edit them "
+        "Its facets (deliverable / notes / log) are stored on this todo. Edit them "
         f"ONLY via update_tracked_todo_canvas(todo_id='{result.id}', facet=..., ...), "
         "never with filesystem tools."
     )
@@ -473,7 +523,7 @@ async def create_tracked_todo(
         "'task' (default) or 'goal'. A goal is a long-lived lane (raising a "
         "round, growing users): its canvas is the living strategy the nightly "
         "pass advances. Create a goal ONLY after the user has confirmed it in "
-        "conversation — never silently. Goals skip the in-flight budget but are "
+        "conversation, never silently. Goals skip the in-flight budget but are "
         "capped at 3 active.",
     ] = "task",
     goal_id: Annotated[
@@ -494,7 +544,7 @@ async def create_tracked_todo(
     ] = None,
     initial_notes: Annotated[
         str | None,
-        "Optional initial notes facet content (GAIA's private working memory — "
+        "Optional initial notes facet content (GAIA's private working memory: "
         "plan, key details, current state). If omitted, a template is used.",
     ] = None,
     labels: Annotated[
@@ -592,20 +642,23 @@ async def create_tracked_todo(
 
     try:
         result = await tracked_todo_service.create_tracked_todo(
-            user_id=user_id,
-            title=title,
-            serves=serves,
-            requires_approval=requires_approval,
-            kind=kind,
-            goal_id=goal_id,
-            description=description,
-            initial_deliverable=initial_deliverable,
-            initial_notes=initial_notes,
-            labels=labels,
-            priority=parsed_priority,
-            # A todo with its own schedule/recurrence fires at that time, not now
-            # (the scheduling below arms it); everything else starts immediately.
-            auto_execute=not (parsed_scheduled_at or recurrence),
+            user_id,
+            TrackedTodoDraft(
+                title=title,
+                serves=serves,
+                requires_approval=requires_approval,
+                kind=kind,
+                goal_id=goal_id,
+                description=description,
+                initial_deliverable=initial_deliverable,
+                initial_notes=initial_notes,
+                labels=labels,
+                priority=parsed_priority,
+                # A todo with its own schedule/recurrence fires at that time, not
+                # now (the scheduling below arms it); everything else starts
+                # immediately.
+                auto_execute=not (parsed_scheduled_at or recurrence),
+            ),
         )
     except (TraceabilityError, BudgetExceededError) as e:
         return f"Error: {e}"
@@ -691,9 +744,9 @@ async def update_tracked_todo_canvas(
     facet: Annotated[
         str,
         "Which facet to write: "
-        "'notes' (default) — GAIA's private working memory (plan, key details, current state). "
-        "'deliverable' — the polished, send-ready output the user sees (what Approve releases). "
-        "'log' — the activity/timeline audit trail. "
+        "'notes' (default): GAIA's private working memory (plan, key details, current state). "
+        "'deliverable': the polished, send-ready output the user sees (what Approve releases). "
+        "'log': the activity/timeline audit trail. "
         "Write drafts, decisions, and scratch to 'notes'; write only finished, "
         "user-facing output to 'deliverable'.",
     ] = FACET_NOTES,
@@ -768,7 +821,7 @@ async def complete_tracked_todo(
         todo_id=todo_id, user_id=user_id, summary=summary
     )
     if not success:
-        return f"Error: could not complete tracked todo {todo_id} — not found"
+        return f"Error: could not complete tracked todo {todo_id}: not found"
     return f"Tracked todo {todo_id} completed and archived."
 
 
@@ -836,27 +889,15 @@ async def update_tracked_todo(
 
     update_fields: dict[str, Any] = {}
     notes: list[str] = []
-
-    # Validate each field sequentially with short-circuit so we don't keep doing
-    # work (in particular the async _get_user_tz Mongo lookup inside the
-    # recurrence validator) after an earlier field has already failed.
-    # _build_labels_update can never actually return an error today (there is
-    # no label validation yet) — the check-and-return is kept for the same
-    # shape as every other field below, so adding label validation later
-    # doesn't require restoring this line.
-    if error := _build_labels_update(labels, update_fields):  # pragma: no cover
-        return error
-    if error := _build_clearable_datetime_update(due_date, "due_date", update_fields):
-        return error
-    if error := _build_priority_update(priority, update_fields):
-        return error
-    if error := _build_scheduled_at_update(scheduled_at, update_fields):
-        return error
-    if error := await _build_recurrence_update(
-        recurrence, scheduled_at, user_id, update_fields, notes
-    ):
-        return error
-    if error := _build_clearable_datetime_update(expires_at, "expires_at", update_fields):
+    edits = _TrackedTodoEdits(
+        labels=labels,
+        due_date=due_date,
+        priority=priority,
+        scheduled_at=scheduled_at,
+        recurrence=recurrence,
+        expires_at=expires_at,
+    )
+    if error := await _collect_update_fields(edits, user_id, update_fields, notes):
         return error
 
     if not update_fields and references is None:
@@ -940,7 +981,7 @@ async def approve_todo(
     staged work for execution.
 
     Use ONLY when the user has clearly told you to go ahead in this conversation
-    ("send them", "approve it", "yes, post it") — their words are the approval;
+    ("send them", "approve it", "yes, post it"). Their words are the approval;
     this tool records it and queues the execution. If their go-ahead came with a
     qualification ("send only...", "but change..."), pass it as ``instruction``
     so the run obeys it. Never call it on your own initiative: proposals exist
@@ -969,7 +1010,7 @@ async def dismiss_todo(
     todo_id: Annotated[str, "ID of the proposed todo the user is declining"],
     reason: Annotated[
         str | None,
-        "The user's reason in their own words, when they gave one — it teaches "
+        "The user's reason in their own words, when they gave one. It teaches "
         "what not to propose again.",
     ] = None,
 ) -> str:

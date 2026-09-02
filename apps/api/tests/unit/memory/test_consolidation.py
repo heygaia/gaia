@@ -42,7 +42,11 @@ def make_row(content: str = "sam is vegetarian", importance: float = 0.5) -> Mem
         importance=importance,
     )
     row.id = uuid.uuid4()
+    row.version = 1
+    row.is_latest = True
+    row.is_forgotten = False
     row.created_at = datetime.now(UTC)
+    row.mentioned_at = row.created_at
     return row
 
 
@@ -650,7 +654,7 @@ class TestConsolidationInputs:
 
         assert boundaries.rewrite.await_args.args[1].endswith(
             "## Every fact this document is written from\n"
-            f"- sam is vegetarian (stored {row.created_at:%Y-%m-%d})"
+            f"- sam is vegetarian [mentioned {row.mentioned_at:%Y-%m-%d}]"
         )
 
     async def test_the_owner_is_named_in_the_prompt_the_model_receives(

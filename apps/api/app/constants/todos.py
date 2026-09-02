@@ -18,6 +18,10 @@ ONBOARDING_LABEL: Final[str] = "onboarding"
 # follow-up, so the UI can surface it for attention.
 NEEDS_FOLLOW_UP_LABEL: Final[str] = "needs-follow-up"
 
+# Stand-in shown wherever a todo's title is surfaced but was never set (agent
+# prompts, notifications, digests) — one wording across every surface.
+UNTITLED_TODO_TITLE: Final[str] = "Untitled Todo"
+
 # DEPRECATED: legacy discriminator for GAIA-owned todos, fully superseded by the
 # ``assignee`` field. The runtime no longer reads it — only the one-time backfill
 # (scripts/migrate_todo_assignee.py) still references this constant to find and

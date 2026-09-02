@@ -266,10 +266,7 @@ def _split_time_prefix(text: str) -> tuple[str | None, str | None, str]:
     if not match:
         return None, None, text
     time_str, label = match.group(1), match.group(2)
-    t24 = _time24(time_str)
-    if t24 == time_str:
-        return None, None, text
-    return time_str, t24, label
+    return time_str, _time24(time_str), label
 
 
 def _split_credit(credit: str) -> tuple[str, str]:

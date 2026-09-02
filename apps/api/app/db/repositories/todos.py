@@ -146,10 +146,22 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
         if params.labels:
             query["labels"] = {"$in": params.labels}
 
+        # Last: the due-date clauses deliberately override the completed and
+        # text-search keys set above (an overdue query is a completed=False
+        # query, whatever else was asked for).
+        query.update(self._due_date_clause(params))
+
+        return query
+
+    def _due_date_clause(self, params: TodoSearchParams) -> dict[str, object]:
+        """The due-date half of the list filter — presence, explicit range and
+        the overdue shortcut, in increasing order of precedence."""
+        clause: dict[str, object] = {}
+
         if params.has_due_date is True:
-            query["due_date"] = {"$ne": None}
+            clause["due_date"] = {"$ne": None}
         elif params.has_due_date is False:
-            query["due_date"] = None
+            clause["due_date"] = None
 
         if params.due_date_start or params.due_date_end:
             date_query: dict[str, datetime] = {}
@@ -157,18 +169,18 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
                 date_query["$gte"] = params.due_date_start
             if params.due_date_end:
                 date_query["$lte"] = params.due_date_end
-            query["due_date"] = date_query
+            clause["due_date"] = date_query
 
         if params.overdue is True:
-            query["due_date"] = {"$lt": datetime.now(UTC)}
-            query["completed"] = False
+            clause["due_date"] = {"$lt": datetime.now(UTC)}
+            clause["completed"] = False
         elif params.overdue is False and params.has_due_date is not False:
-            query["$or"] = [
+            clause["$or"] = [
                 {"due_date": None},
                 {"due_date": {"$gte": datetime.now(UTC)}},
             ]
 
-        return query
+        return clause
 
     @cached_query(TodoPage)
     async def list_page(

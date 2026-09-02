@@ -22,7 +22,7 @@ from unittest.mock import AsyncMock, patch
 from langchain_core.messages import BaseMessage
 import pytest
 
-from app.memory.extraction import extract_memories
+from app.memory.extraction import StoredMemoryState, extract_memories
 from app.memory.schemas import ExtractedMemoryBatch
 
 pytestmark = pytest.mark.unit
@@ -49,9 +49,11 @@ async def _messages_for(
             _TRANSCRIPT,
             user_id="u1",
             user_name=user_name,
-            folder_tree=folder_tree,
-            recent_facts=recent_facts or [],
-            journaled_today=journaled_today,
+            stored=StoredMemoryState(
+                folder_tree=folder_tree,
+                recent_facts=recent_facts or [],
+                journaled_today=journaled_today or [],
+            ),
             current_date=_WHEN,
         )
     return invoke.await_args.args[1]
@@ -166,8 +168,7 @@ class TestTheCacheablePrefixSurvivesMemoryGrowth:
                 _TRANSCRIPT,
                 user_id="u1",
                 user_name="Aryan",
-                folder_tree="relationships",
-                recent_facts=[],
+                stored=StoredMemoryState(folder_tree="relationships"),
                 current_date=_WHEN,
             )
 

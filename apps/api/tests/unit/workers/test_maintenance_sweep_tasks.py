@@ -16,6 +16,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agents.core.agent import AgentRunOptions
+from app.constants.notifications import (
+    NOTIFICATION_KIND_URGENT_SIGNAL,
+    URGENT_ALERT_IGNORE_HOURS,
+    URGENT_STRIKE_SWEEP_LIMIT,
+)
+from app.constants.todos import PROPOSAL_REJECTED_MEMORY_CATEGORY
 from app.models.agent_models import SilentRunResult
 from app.models.message_models import MessageRequestWithHistory
 from app.models.notification.notification_models import (
@@ -41,6 +47,7 @@ from app.workers.tasks.maintenance_sweep_tasks import (
     _notify_overdue,
     _register_notification,
     _send_user_dormant_digest,
+    _strike_ignored_urgent_alerts,
     _todo_redirect_action,
     maintenance_sweep_tracked_todos,
 )
@@ -80,7 +87,7 @@ def _sweep_patches(**overrides) -> tuple[MagicMock, dict[str, AsyncMock], list]:
     defaults = {
         "list": [_doc()],
         "daytime": True,
-        "canvas": "",
+        "notes": "",
         "health": "NEEDS_ATTENTION: nothing to do",
     }
     defaults.update(overrides)
@@ -89,25 +96,30 @@ def _sweep_patches(**overrides) -> tuple[MagicMock, dict[str, AsyncMock], list]:
         "list": AsyncMock(return_value=defaults["list"]),
         "get_pool": AsyncMock(return_value=pool),
         "daytime": AsyncMock(return_value=defaults["daytime"]),
-        "canvas": AsyncMock(return_value=defaults["canvas"]),
+        "notes": AsyncMock(return_value=defaults["notes"]),
         "health": AsyncMock(return_value=defaults["health"]),
         "archive": AsyncMock(),
         "schedule": AsyncMock(),
         "system_log": AsyncMock(),
         "add_labels": AsyncMock(),
         "notify": AsyncMock(),
+        "stale_urgent": AsyncMock(return_value=[]),
     }
     patches = [
         patch(f"{MODULE}.todo_repository.list_active_tracked_all_users", mocks["list"]),
         patch(f"{MODULE}.RedisPoolManager.get_pool", mocks["get_pool"]),
         patch(f"{MODULE}._is_user_daytime", mocks["daytime"]),
-        patch(f"{MODULE}._read_canvas", mocks["canvas"]),
+        patch(f"{MODULE}._read_notes", mocks["notes"]),
         patch(f"{MODULE}._call_health_check_agent", mocks["health"]),
         patch(f"{MODULE}.tracked_todo_service.archive_tracked_todo", mocks["archive"]),
         patch(f"{MODULE}.tracked_todo_service.schedule_execution", mocks["schedule"]),
         patch(f"{MODULE}.tracked_todo_service.system_log", mocks["system_log"]),
         patch(f"{MODULE}.todo_repository.add_labels", mocks["add_labels"]),
         patch(f"{MODULE}.notification_service.create_notification", mocks["notify"]),
+        patch(
+            f"{MODULE}.notification_repository.list_stale_unread_by_kind",
+            mocks["stale_urgent"],
+        ),
     ]
     return pool, mocks, patches
 
@@ -267,7 +279,7 @@ class TestHealthCheckExpired:
         pool = _pool()
         archive = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="canvas text")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="notes text")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="ARCHIVE: everything resolved itself"),
@@ -286,7 +298,7 @@ class TestHealthCheckExpired:
         pool = _pool()
         notify = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="NOTIFY: Your todo expired and needs a decision."),
@@ -310,7 +322,7 @@ class TestHealthCheckExpired:
         pool.get = AsyncMock(return_value=b"4")
         notify = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="NOTIFY: still expired"),
@@ -326,7 +338,7 @@ class TestHealthCheckExpired:
         pool = _pool()
         notify = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="NEEDS_ATTENTION: Health check failed"),
@@ -350,7 +362,7 @@ class TestHealthCheckDormant:
         schedule = AsyncMock()
         syslog = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="EXECUTE: send the follow-up email"),
@@ -377,7 +389,7 @@ class TestHealthCheckDormant:
         pool = _pool()
         schedule = AsyncMock()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="NEEDS_ATTENTION: blocked on client sign-off"),
@@ -393,7 +405,7 @@ class TestHealthCheckDormant:
     async def test_agent_failure_is_needs_attention(self):
         pool = _pool()
         with (
-            patch(f"{MODULE}._read_canvas", AsyncMock(return_value="")),
+            patch(f"{MODULE}._read_notes", AsyncMock(return_value="")),
             patch(
                 f"{MODULE}._call_health_check_agent",
                 AsyncMock(return_value="NEEDS_ATTENTION: Health check failed"),
@@ -585,6 +597,78 @@ class TestSendUserDormantDigest:
 
 
 # ---------------------------------------------------------------------------
+# _strike_ignored_urgent_alerts — leniency correction for unread urgent alerts
+# ---------------------------------------------------------------------------
+
+
+def _urgent_record(record_id: str = "notif-1", signal_kind: str | None = "email") -> MagicMock:
+    record = MagicMock()
+    record.id = record_id
+    record.user_id = "user-1"
+    record.original_request.metadata = {"signal_kind": signal_kind} if signal_kind else {}
+    record.original_request.content.title = "Invoice overdue"
+    return record
+
+
+@contextmanager
+def _strike_seams(
+    stale: list[MagicMock], retain: AsyncMock | None = None
+) -> Iterator[tuple[AsyncMock, AsyncMock]]:
+    """Patch the repository + memory seams the strike sweep writes through."""
+    retain = retain or AsyncMock()
+    mark = AsyncMock()
+    with (
+        patch(
+            f"{MODULE}.notification_repository.list_stale_unread_by_kind",
+            AsyncMock(return_value=stale),
+        ) as listed,
+        patch(f"{MODULE}.memory_engine.retain_single", retain),
+        patch(f"{MODULE}.notification_repository.mark_strike_recorded", mark),
+    ):
+        yield retain, mark
+        assert listed.await_args.kwargs["kind"] == NOTIFICATION_KIND_URGENT_SIGNAL
+        assert listed.await_args.kwargs["limit"] == URGENT_STRIKE_SWEEP_LIMIT
+        assert listed.await_args.kwargs["older_than"] == NOW - timedelta(
+            hours=URGENT_ALERT_IGNORE_HOURS
+        )
+
+
+class TestStrikeIgnoredUrgentAlerts:
+    async def test_no_stale_alerts_strikes_nothing(self):
+        with _strike_seams([]) as (retain, mark):
+            assert await _strike_ignored_urgent_alerts(NOW) == 0
+        retain.assert_not_awaited()
+        mark.assert_not_awaited()
+
+    async def test_stale_alert_writes_a_rejection_memory_and_is_struck_once(self):
+        with _strike_seams([_urgent_record()]) as (retain, mark):
+            assert await _strike_ignored_urgent_alerts(NOW) == 1
+
+        text = retain.await_args.args[1]
+        assert "urgent_alert_ignored" in text
+        assert "signal_kind: email" in text
+        assert "Invoice overdue" in text
+        assert retain.await_args.kwargs["category_path"] == PROPOSAL_REJECTED_MEMORY_CATEGORY
+        mark.assert_awaited_once_with("notif-1")
+
+    async def test_missing_signal_kind_falls_back_to_unknown(self):
+        with _strike_seams([_urgent_record(signal_kind=None)]) as (retain, _mark):
+            assert await _strike_ignored_urgent_alerts(NOW) == 1
+
+        assert "signal_kind: unknown" in retain.await_args.args[1]
+
+    async def test_a_failed_memory_write_is_not_counted_and_never_marks_the_strike(self):
+        """Marking the strike on a failed write would lose the signal forever —
+        the notification is only struck once."""
+        retain = AsyncMock(side_effect=[RuntimeError("memory down"), None])
+        stale = [_urgent_record("notif-1"), _urgent_record("notif-2")]
+        with _strike_seams(stale, retain=retain) as (_retain, mark):
+            assert await _strike_ignored_urgent_alerts(NOW) == 1
+
+        mark.assert_awaited_once_with("notif-2")
+
+
+# ---------------------------------------------------------------------------
 # maintenance_sweep_tracked_todos — the cron end to end
 # ---------------------------------------------------------------------------
 
@@ -598,7 +682,8 @@ class TestMaintenanceSweep:
             summary = await maintenance_sweep_tracked_todos({})
 
         assert (
-            summary == "archived:1 notified_expired:0 notified_overdue:0 requeued:0 digest_items:0"
+            summary == "archived:1 notified_expired:0 notified_overdue:0 requeued:0 "
+            "digest_items:0 urgent_strikes:0"
         )
         mocks["archive"].assert_awaited_once()
         pool.set.assert_awaited()
@@ -611,7 +696,8 @@ class TestMaintenanceSweep:
             summary = await maintenance_sweep_tracked_todos({})
 
         assert (
-            summary == "archived:0 notified_expired:0 notified_overdue:0 requeued:0 digest_items:1"
+            summary == "archived:0 notified_expired:0 notified_overdue:0 requeued:0 "
+            "digest_items:1 urgent_strikes:0"
         )
         mocks["notify"].assert_awaited_once()
         request = mocks["notify"].await_args.args[0]
@@ -628,7 +714,8 @@ class TestMaintenanceSweep:
             summary = await maintenance_sweep_tracked_todos({})
 
         assert (
-            summary == "archived:0 notified_expired:0 notified_overdue:0 requeued:0 digest_items:0"
+            summary == "archived:0 notified_expired:0 notified_overdue:0 requeued:0 "
+            "digest_items:0 urgent_strikes:0"
         )
         mocks["health"].assert_not_awaited()
 
@@ -641,11 +728,13 @@ class TestMaintenanceSweep:
             patch(f"{MODULE}._process_overdue", AsyncMock(return_value=4)),
             patch(f"{MODULE}._process_dormant", AsyncMock(return_value=(1, [MagicMock()]))),
             patch(f"{MODULE}._send_dormant_digest", AsyncMock()) as digest,
+            patch(f"{MODULE}._strike_ignored_urgent_alerts", AsyncMock(return_value=5)),
         ):
             summary = await maintenance_sweep_tracked_todos({})
 
-        assert (
-            summary == "archived:3 notified_expired:2 notified_overdue:4 requeued:1 digest_items:1"
+        assert summary == (
+            "archived:3 notified_expired:2 notified_overdue:4 requeued:1 "
+            "digest_items:1 urgent_strikes:5"
         )
         digest.assert_awaited_once()
 

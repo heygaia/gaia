@@ -61,6 +61,7 @@ from app.models.onboarding_models import (
     OnboardingTriggerPayload,
     OnboardingWorkflowSummary,
     PersistedTriageSummary,
+    PersonalizationBundle,
     SocialProfile,
     SocialProfilesReadyPayload,
     StagePayload,
@@ -1077,15 +1078,17 @@ async def _run_holo_card(
         t_save = time.monotonic()
         await save_personalization_data(
             ctx.user_id,
-            house=card_design.house,
-            personality_phrase=phrase,
-            user_bio=user_bio,
-            bio_status=bio_status,
-            workflow_ids=[],
-            account_number=metadata.account_number,
-            member_since=metadata.member_since,
-            overlay_color=card_design.overlay_color,
-            overlay_opacity=card_design.overlay_opacity,
+            PersonalizationBundle(
+                house=card_design.house,
+                personality_phrase=phrase,
+                user_bio=user_bio,
+                bio_status=bio_status,
+                workflow_ids=[],
+                account_number=metadata.account_number,
+                member_since=metadata.member_since,
+                overlay_color=card_design.overlay_color,
+                overlay_opacity=card_design.overlay_opacity,
+            ),
         )
         log.info(
             f"{LogTag.ONBOARDING} holo_card done",

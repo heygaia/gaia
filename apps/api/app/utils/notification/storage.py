@@ -3,6 +3,7 @@ from collections.abc import Mapping
 from app.constants.log_tags import LogTag
 from app.db.repositories.notifications import notification_repository
 from app.models.notification.notification_models import (
+    NotificationFilters,
     NotificationRecord,
     NotificationSourceEnum,
     NotificationStatus,
@@ -49,10 +50,12 @@ class MongoDBNotificationStorage:
         """Get user's notifications with optional filtering"""
         return await notification_repository.list_for_user(
             user_id,
-            status=status,
-            channel_type=channel_type,
-            notification_type=notification_type,
-            source=source,
+            filters=NotificationFilters(
+                status=status,
+                channel_type=channel_type,
+                notification_type=notification_type,
+                source=source,
+            ),
             limit=limit,
             offset=offset,
         )
@@ -65,5 +68,5 @@ class MongoDBNotificationStorage:
     ) -> int:
         """Get count of notifications for a user with optional status filtering"""
         return await notification_repository.count_for_user(
-            user_id, status=status, channel_type=channel_type
+            user_id, filters=NotificationFilters(status=status, channel_type=channel_type)
         )

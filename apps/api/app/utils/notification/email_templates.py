@@ -34,6 +34,9 @@ _GRADIENT_OFFSETS = (-40, -15, 0, 20, 45, 70)
 _GRADIENT_LIGHTNESS = (58, 50, 46, 50, 58, 64)
 
 
+_DEFAULT_HUE = 210
+
+
 def _gradient_stops(hue: int) -> str:
     return ", ".join(
         f"hsl({(hue + offset) % 360}, 70%, {lightness}%)"
@@ -120,7 +123,7 @@ def _sections_block(sections: list[dict[str, Any]]) -> str:
         numeral = escape(
             str(section.get("numeral") or _ROMAN_NUMERALS[min(i, len(_ROMAN_NUMERALS) - 1)])
         )
-        title = escape(str(section.get("title", ""))).upper()
+        title = escape(str(section.get("title", "")).upper())
         items = section.get("items") or []
         item_rows = "".join(
             f'<div style="padding: 8px 0; border-bottom: 1px solid {_BORDER}; font-size: 14px; color: {_TEXT};">'
@@ -188,9 +191,10 @@ def _wrap(body_rows: str) -> str:
 def _render_briefing_email(
     payload: dict[str, Any], default_kicker: str, unsubscribe_url: str
 ) -> str:
+    hue = payload.get("hue")
     rows = (
         _masthead(payload.get("kicker") or default_kicker, str(payload.get("date", "")))
-        + _gradient_band(int(payload.get("hue") or 210))
+        + _gradient_band(int(hue) if hue is not None else _DEFAULT_HUE)
         + _headline_block(str(payload.get("headline", "")), str(payload.get("lede", "")))
         + _stat_row(payload.get("stats") or [])
         + _sections_block(payload.get("sections") or [])

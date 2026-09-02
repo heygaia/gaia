@@ -18,7 +18,13 @@ from arq.connections import ArqRedis
 
 from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.constants.notifications import CHANNEL_TYPE_INAPP, NOTIFICATION_KIND_TODO_DONE
-from app.constants.todos import FACET_DELIVERABLE, FACET_LOG, FACET_NOTES, FAILED_LABEL
+from app.constants.todos import (
+    FACET_DELIVERABLE,
+    FACET_LOG,
+    FACET_NOTES,
+    FAILED_LABEL,
+    UNTITLED_TODO_TITLE,
+)
 from app.db.repositories.todos import todo_repository
 from app.models.message_models import MessageDict, MessageRequestWithHistory
 from app.models.notification.notification_models import (
@@ -99,16 +105,8 @@ async def execute_tracked_todo(_ctx: dict[str, Any], todo_id: str) -> str:
         await pool.delete(lock_key)
 
 
-async def _execute_todo_with_retry(todo_id: str, pool: ArqRedis) -> str:
-    """
-    Fetch the todo document, run the appropriate execution path, and
-    handle retry / recurrence logic on the result.
-    """
-    doc = await todo_repository.get_by_id(todo_id)
-    if not doc:
-        log.warning("tracked_todo.execute_not_found", todo_id=todo_id)
-        return f"not_found:{todo_id}"
-
+def _skip_result(doc: TodoDocument, todo_id: str) -> str | None:
+    """The terminal result for a todo that must not execute now, else None."""
     if doc.completed:
         log.info("tracked_todo.execute_already_completed", todo_id=todo_id)
         return f"completed:{todo_id}"
@@ -128,12 +126,28 @@ async def _execute_todo_with_retry(todo_id: str, pool: ArqRedis) -> str:
         log.info("tracked_todo.execute_marked_failed", todo_id=todo_id)
         return f"skipped:{todo_id} (marked failed)"
 
-    user_id: str = doc.user_id
-    retry_count: int = doc.gaia_retry_count
-
-    if not user_id:
+    if not doc.user_id:
         log.error("tracked_todo.execute_missing_user_id", todo_id=todo_id)
         return f"error:{todo_id} (missing user_id)"
+
+    return None
+
+
+async def _execute_todo_with_retry(todo_id: str, pool: ArqRedis) -> str:
+    """
+    Fetch the todo document, run the appropriate execution path, and
+    handle retry / recurrence logic on the result.
+    """
+    doc = await todo_repository.get_by_id(todo_id)
+    if not doc:
+        log.warning("tracked_todo.execute_not_found", todo_id=todo_id)
+        return f"not_found:{todo_id}"
+
+    if skip_result := _skip_result(doc, todo_id):
+        return skip_result
+
+    user_id: str = doc.user_id
+    retry_count: int = doc.gaia_retry_count
 
     # Single user fetch per run — pattern matches workflow_tasks.py:416–427.
     # Reused for both agent execution (timezone/model config) and the next-run
@@ -384,26 +398,27 @@ _RELEASE_DIRECTIVE = (
 
 
 def _build_execution_prompt(
+    doc: TodoDocument,
     *,
-    title: str,
-    description: str,
     deliverable: str | None,
     notes: str | None,
     reference_context: str,
-    intent: str | None = None,
     log_facet: str | None = None,
-    instruction: str | None = None,
 ) -> str:
     """Assemble the scheduled-run prompt from the todo's facets and context.
 
-    ``intent='release'`` means the user approved this proposal, so the run must
-    PERFORM the outward action from the deliverable instead of doing prep/drafting.
-    For a release, the LOG facet is injected as the send record so a retry sees
-    which recipients already went out — instead of trusting the agent to fetch it.
-    ``instruction`` is the user's verbatim qualification at approval; it overrides
-    the staged content where they conflict.
+    ``execution_intent == 'release'`` means the user approved this proposal, so
+    the run must PERFORM the outward action from the deliverable instead of doing
+    prep/drafting. For a release, the LOG facet is injected as the send record so
+    a retry sees which recipients already went out — instead of trusting the
+    agent to fetch it. The todo's ``approve_instruction`` is the user's verbatim
+    qualification at approval; it overrides the staged content where they
+    conflict.
     """
-    if intent == "release":
+    title = doc.title or UNTITLED_TODO_TITLE
+    description = doc.description or ""
+    instruction = doc.approve_instruction
+    if doc.execution_intent == "release":
         parts = [f"APPROVED ACTION — execute this now: {title}"]
         if description:
             parts.append(f"What was approved: {description}")
@@ -533,16 +548,13 @@ async def _execute_via_agent(
     reference_context = await _collect_reference_context(doc.references, user_id)
 
     # Build prompt
-    title: str = doc.title or "Untitled Todo"
+    title: str = doc.title or UNTITLED_TODO_TITLE
     prompt = _build_execution_prompt(
-        title=title,
-        description=doc.description or "",
+        doc,
         deliverable=deliverable,
         notes=notes,
         reference_context=reference_context,
-        intent=doc.execution_intent,
         log_facet=log_facet,
-        instruction=doc.approve_instruction,
     )
 
     # Generate a fresh conversation_id for each execution to prevent
@@ -734,7 +746,7 @@ async def _mark_todo_failed(todo_id: str, user_id: str, doc: TodoDocument) -> No
     )
     log.info("tracked_todo.marked_failed", todo_id=todo_id)
 
-    title: str = doc.title or "Untitled Todo"
+    title: str = doc.title or UNTITLED_TODO_TITLE
     try:
         await notification_service.create_notification(
             NotificationRequest(

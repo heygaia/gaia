@@ -63,6 +63,7 @@ from app.constants.onboarding import (
 from app.models.onboarding_models import (
     EmailSummary,
     InboxTriageOutput,
+    OnboardingCompletion,
     SocialProfile,
     WritingStyleExampleBlocks,
     WritingStyleOutput,
@@ -155,25 +156,28 @@ class _UserStore:
         )
 
     # -- onboarding lifecycle ---------------------------------------------
-    async def complete_onboarding(self, user_id: str, **fields: Any) -> UserDocument | None:
+    async def complete_onboarding(
+        self, user_id: str, completion: OnboardingCompletion
+    ) -> UserDocument | None:
         doc = self.docs.get(user_id)
         if doc is None or "onboarding" in doc:
             return None
-        if fields.get("name") is not None:
-            doc["name"] = fields["name"]
-        if fields.get("timezone") is not None:
-            doc["timezone"] = fields["timezone"]
+        if completion.name is not None:
+            doc["name"] = completion.name
+        if completion.timezone is not None:
+            doc["timezone"] = completion.timezone
         sub: dict[str, Any] = {
             "completed": True,
             "completed_at": datetime.now(UTC),
-            "phase": fields["phase"],
-            "bio_status": fields["bio_status"],
-            "pipeline_mode": fields["pipeline_mode"],
-            "preferences": fields["preferences"].model_dump(),
+            "phase": completion.phase,
+            "bio_status": completion.bio_status,
+            "pipeline_mode": completion.pipeline_mode,
+            "preferences": completion.preferences.model_dump(),
         }
         for key in ("focus", "clarify_answers", "selected_integrations"):
-            if fields.get(key) is not None:
-                sub[key] = fields[key]
+            value = getattr(completion, key)
+            if value is not None:
+                sub[key] = value
         doc["onboarding"] = sub
         return await self.get(user_id)
 

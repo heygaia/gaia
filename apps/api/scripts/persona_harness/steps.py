@@ -394,14 +394,7 @@ async def set_quota_used(ctx: HarnessContext, *, feature: str, count: int) -> No
     ctx.log(actor="harness", surface=f"redis:{key}", content=f"SET {count}")
 
 
-async def advance_day(ctx: HarnessContext, *, days: int = 1) -> None:
-    """Simulate elapsed time without waiting: shift this user's stored
-    timestamps ``days`` further into the past (Phase-G technique), so the
-    next real-time-anchored run treats today's fixtures/actions as
-    yesterday's. Bumps ``ctx.day`` for the timeline."""
-    user_id = _require_user_id(ctx)
-    delta = timedelta(days=days)
-
+async def _shift_todos(ctx: HarnessContext, user_id: str, delta: timedelta) -> None:
     async for todo in ctx.db.todos.find({"user_id": user_id}):
         todo_updates = {
             key: todo[key] - delta
@@ -411,6 +404,8 @@ async def advance_day(ctx: HarnessContext, *, days: int = 1) -> None:
         if todo_updates:
             await ctx.db.todos.update_one({"_id": todo["_id"]}, {"$set": todo_updates})
 
+
+async def _shift_briefings(ctx: HarnessContext, user_id: str, delta: timedelta) -> None:
     # Oldest-first: `briefings` has a unique {user_id, date, kind} index, and
     # shifting a newer doc onto an older doc's still-unshifted date would
     # transiently collide with it. Shifting the oldest doc out of the way
@@ -427,18 +422,33 @@ async def advance_day(ctx: HarnessContext, *, days: int = 1) -> None:
         if briefing_updates:
             await ctx.db.briefings.update_one({"_id": briefing["_id"]}, {"$set": briefing_updates})
 
+
+async def _shift_dormancy(ctx: HarnessContext, user_id: str, delta: timedelta) -> None:
     user = await ctx.db.users.find_one({"_id": ObjectId(user_id)})
-    if user and isinstance(user.get("briefing_dormancy"), dict):
-        marker = user["briefing_dormancy"]
-        dormancy_updates: dict[str, Any] = {}
-        if isinstance(marker.get("dormant_since"), datetime):
-            dormancy_updates["briefing_dormancy.dormant_since"] = marker["dormant_since"] - delta
-        if isinstance(marker.get("date"), str):
-            shifted = datetime.strptime(marker["date"], "%Y-%m-%d") - delta
-            dormancy_updates["briefing_dormancy.date"] = shifted.strftime("%Y-%m-%d")
-        if dormancy_updates:
-            await ctx.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": dormancy_updates})
-            await _invalidate_user_cache(ctx, user_id)
+    if not (user and isinstance(user.get("briefing_dormancy"), dict)):
+        return
+    marker = user["briefing_dormancy"]
+    dormancy_updates: dict[str, Any] = {}
+    if isinstance(marker.get("dormant_since"), datetime):
+        dormancy_updates["briefing_dormancy.dormant_since"] = marker["dormant_since"] - delta
+    if isinstance(marker.get("date"), str):
+        shifted = datetime.strptime(marker["date"], "%Y-%m-%d") - delta
+        dormancy_updates["briefing_dormancy.date"] = shifted.strftime("%Y-%m-%d")
+    if dormancy_updates:
+        await ctx.db.users.update_one({"_id": ObjectId(user_id)}, {"$set": dormancy_updates})
+        await _invalidate_user_cache(ctx, user_id)
+
+
+async def advance_day(ctx: HarnessContext, *, days: int = 1) -> None:
+    """Simulate elapsed time without waiting: shift this user's stored
+    timestamps ``days`` further into the past (Phase-G technique), so the
+    next real-time-anchored run treats today's fixtures/actions as
+    yesterday's. Bumps ``ctx.day`` for the timeline."""
+    user_id = _require_user_id(ctx)
+    delta = timedelta(days=days)
+    await _shift_todos(ctx, user_id, delta)
+    await _shift_briefings(ctx, user_id, delta)
+    await _shift_dormancy(ctx, user_id, delta)
 
     ctx.day += days
     ctx.log(

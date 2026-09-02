@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.models.notification.notification_models import (
+    NotificationFilters,
     NotificationSourceEnum,
     NotificationStatus,
     NotificationType,
@@ -75,10 +76,12 @@ class TestNotificationStorageDelegation:
         )
         mock_repo.list_for_user.assert_awaited_once_with(
             "user-1",
-            status=NotificationStatus.READ,
-            channel_type="in_app",
-            notification_type=NotificationType.INFO,
-            source=NotificationSourceEnum.AI_AGENT,
+            filters=NotificationFilters(
+                status=NotificationStatus.READ,
+                channel_type="in_app",
+                notification_type=NotificationType.INFO,
+                source=NotificationSourceEnum.AI_AGENT,
+            ),
             limit=10,
             offset=5,
         )
@@ -90,7 +93,8 @@ class TestNotificationStorageDelegation:
         )
         assert result == 7
         mock_repo.count_for_user.assert_awaited_once_with(
-            "user-1", status=NotificationStatus.PENDING, channel_type="in_app"
+            "user-1",
+            filters=NotificationFilters(status=NotificationStatus.PENDING, channel_type="in_app"),
         )
 
 

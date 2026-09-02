@@ -40,7 +40,12 @@ from app.memory.chroma_store import ConversationChunkItem, EpisodeVectorItem, Me
 from app.memory.consolidation import infer_doc_types, render_agenda_document, schedule_consolidation
 from app.memory.context import invalidate_user_memory_caches
 from app.memory.embeddings import embed_batch, embed_query
-from app.memory.extraction import categorize_fact, extract_memories, summarize_episode_entries
+from app.memory.extraction import (
+    StoredMemoryState,
+    categorize_fact,
+    extract_memories,
+    summarize_episode_entries,
+)
 from app.memory.management import forget_memory
 from app.memory.mappers import row_to_entry
 from app.memory.reconciliation import ReconciledFact, reconcile
@@ -317,9 +322,11 @@ async def retain(
         messages,
         user_id=user_id,
         user_name=user_name or _DEFAULT_USER_NAME,
-        folder_tree=_format_folder_tree(folder_tree),
-        recent_facts=recent_facts,
-        journaled_today=journaled_today,
+        stored=StoredMemoryState(
+            folder_tree=_format_folder_tree(folder_tree),
+            recent_facts=recent_facts,
+            journaled_today=journaled_today,
+        ),
         extraction_hints=extraction_hints,
         current_date=local_now,
     )

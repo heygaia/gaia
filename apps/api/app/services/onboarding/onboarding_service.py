@@ -12,6 +12,7 @@ from app.db.repositories.users import user_repository
 from app.memory.engine import memory_engine
 from app.models.onboarding_models import (
     ClarifyAnswerRecord,
+    OnboardingCompletion,
     OnboardingResetCounts,
 )
 from app.models.user_models import (
@@ -122,18 +123,20 @@ async def complete_onboarding(
         # IntegrationSlug type on OnboardingRequest — store as-is.
         updated_user = await user_repository.complete_onboarding(
             user_id,
-            name=onboarding_data.name.strip(),
-            timezone=onboarding_data.timezone.strip() if onboarding_data.timezone else None,
-            phase=OnboardingPhase.PERSONALIZATION_PENDING,
-            bio_status=BioStatus.PENDING,
-            pipeline_mode="split" if onboarding_data.defer_workflows else "full",
-            preferences=preferences,
-            focus=focus,
-            clarify_answers=clarify_answers,
-            selected_integrations=(
-                list(onboarding_data.selected_integrations)
-                if onboarding_data.selected_integrations
-                else None
+            OnboardingCompletion(
+                name=onboarding_data.name.strip(),
+                timezone=onboarding_data.timezone.strip() if onboarding_data.timezone else None,
+                phase=OnboardingPhase.PERSONALIZATION_PENDING,
+                bio_status=BioStatus.PENDING,
+                pipeline_mode="split" if onboarding_data.defer_workflows else "full",
+                preferences=preferences,
+                focus=focus,
+                clarify_answers=clarify_answers,
+                selected_integrations=(
+                    list(onboarding_data.selected_integrations)
+                    if onboarding_data.selected_integrations
+                    else None
+                ),
             ),
         )
 

@@ -22,6 +22,7 @@ from app.models.notification.notification_models import (
     NotificationType,
     NotificationView,
 )
+from app.models.notification.request_models import NotificationQuery
 from app.services.briefing.delivery_channels import resolve_briefing_channels
 from app.services.notification_service import notification_service
 from app.templates.docstrings.notification_tool_docs import (
@@ -126,12 +127,14 @@ async def get_notifications(
 
         # Get notifications with all filters
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            notification_type=notification_type,
-            source=source,
-            limit=limit,
-            offset=offset,
+            user_id,
+            NotificationQuery(
+                status=status,
+                notification_type=notification_type,
+                source=source,
+                limit=limit,
+                offset=offset,
+            ),
         )
 
         # The stream/tool payload must stay JSON-shaped (see ToolData.data), so the
@@ -170,10 +173,7 @@ async def search_notifications(
 
         # Get notifications for searching
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            limit=100,
-            offset=0,
+            user_id, NotificationQuery(status=status, limit=100, offset=0)
         )
 
         # Simple text search
@@ -422,14 +422,14 @@ async def send_urgent_alert(
     signal_kind: Annotated[
         str,
         "Short slug categorizing the signal (e.g. 'meeting_moved', 'payment_failing', "
-        "'deadline_at_risk') — used so repeatedly-ignored kinds stop alerting.",
+        "'deadline_at_risk'), used so repeatedly-ignored kinds stop alerting.",
     ],
 ) -> SentNotificationResult | SendNotificationFailure:
-    """Interrupt the user for a GENUINELY time-critical signal — and nothing else.
+    """Interrupt the user for a GENUINELY time-critical signal, and nothing else.
 
     The bar (strict): waiting for the next morning's brief would cause a missed
     meeting, blown deadline, or lost opportunity. Merely interesting or
-    could-be-useful information NEVER qualifies — it belongs in the brief.
+    could-be-useful information NEVER qualifies; it belongs in the brief.
     There is no count cap; the urgency bar is the gate. Delivers to the user's
     priority chat channel + in-app, same routing as the morning brief.
     """

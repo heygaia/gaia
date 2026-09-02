@@ -20,6 +20,7 @@ from app.constants.todos import (
     FACET_NOTES,
     NEEDS_FOLLOW_UP_LABEL,
     PROPOSAL_REJECTED_MEMORY_CATEGORY,
+    UNTITLED_TODO_TITLE,
 )
 from app.db.repositories.notifications import notification_repository
 from app.db.repositories.todos import todo_repository
@@ -66,7 +67,6 @@ DAYTIME_START_HOUR = 9
 DAYTIME_END_HOUR = 21
 
 BLOCKING_LABELS = {"waiting-for-reply", "waiting-for-approval", "blocked"}
-UNTITLED_TODO_TITLE = "Untitled Todo"
 
 # What a tier's health check decided, so the caller's counter branches are checked.
 ExpiredOutcome = Literal["archived", "notified", "muted"]

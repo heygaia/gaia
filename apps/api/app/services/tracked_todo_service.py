@@ -27,11 +27,11 @@ from app.constants.todos import (
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import (
     ExecutionStatus,
-    Priority,
     TodoDocument,
     TodoModel,
     TodoResponse,
     TodoUpdate,
+    TrackedTodoDraft,
 )
 from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
 from app.services.todo_canvas_storage import (
@@ -98,7 +98,7 @@ async def _extract_canvas_key_details(doc: TodoDocument, user_id: str) -> str:
 def _format_signal_entry(doc: TodoDocument, key_details: str) -> str:
     """Render one tracked todo as a signal-matching context bullet (+ indented key details)."""
     labels_str = f" [{', '.join(doc.labels)}]" if doc.labels else ""
-    entry = f'- "{doc.title}"{labels_str} (ID: {doc.id}, vfs: {doc.vfs_path or ""})'
+    entry = f'- "{doc.title}"{labels_str} (ID: {doc.id}, vfs: {build_vfs_label(doc.id)})'
     if key_details:
         for dl in key_details.split("\n")[:_KEY_DETAILS_MAX_LINES]:
             entry += f"\n    {dl.strip()}"
@@ -124,7 +124,7 @@ def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: 
     return (
         f'  {prefix}"{doc.title}"{labels_str}{_format_due_string(doc.due_date, now)}'
         f" — {age_days}d old, updated {last_update}d ago"
-        f"{state_str} | ID: {todo_id} | VFS: {doc.vfs_path or 'none'}"
+        f"{state_str} | ID: {todo_id} | VFS: {build_vfs_label(todo_id)}"
     )
 
 
@@ -158,23 +158,7 @@ class TrackedTodoService:
     """
 
     @staticmethod
-    async def create_tracked_todo(
-        user_id: str,
-        title: str,
-        serves: str,
-        *,
-        requires_approval: bool,
-        kind: str = "task",
-        goal_id: str | None = None,
-        description: str | None = None,
-        project_id: str | None = None,
-        due_date: datetime | None = None,
-        priority: Priority = Priority.NONE,
-        labels: list[str] | None = None,
-        initial_deliverable: str | None = None,
-        initial_notes: str | None = None,
-        auto_execute: bool = True,
-    ) -> TodoResponse:
+    async def create_tracked_todo(user_id: str, draft: TrackedTodoDraft) -> TodoResponse:
         """Create a GAIA-assigned todo with facet content and ChromaDB indexing.
 
         Creation is gated (the junk-todo fix): ``serves`` must trace the todo to
@@ -183,8 +167,10 @@ class TrackedTodoService:
         ``requires_approval`` (outward-facing) → ``proposed``; internal-only →
         ``queued``.
         """
+        title = draft.title
+        initial_deliverable = draft.initial_deliverable
         serves, entry_status = await lifecycle.gate_creation(
-            user_id, serves, requires_approval, title=title, kind=kind
+            user_id, draft.serves, draft.requires_approval, title=title, kind=draft.kind
         )
         # The staging invariant behind every Approve button: a proposal releases
         # exactly the content in its DELIVERABLE facet, so it cannot be created
@@ -213,21 +199,21 @@ class TrackedTodoService:
 
         # `assignee == "gaia"` is the discriminator now, so we no longer stamp
         # the `gaia-tracked` label (it was redundant and showed as a stray chip).
-        all_labels = list(labels or [])
+        all_labels = list(draft.labels or [])
 
         # Create the todo
         todo = TodoModel(
             title=title,
-            description=description,
-            project_id=project_id,
-            due_date=due_date,
-            priority=priority,
+            description=draft.description,
+            project_id=draft.project_id,
+            due_date=draft.due_date,
+            priority=draft.priority,
             labels=all_labels,
             assignee=ASSIGNEE_GAIA,
             execution_status=entry_status,
             serves=serves,
-            kind="goal" if kind == "goal" else "task",
-            goal_id=goal_id,
+            kind="goal" if draft.kind == "goal" else "task",
+            goal_id=draft.goal_id,
         )
         result = await TodoService.create_todo(todo, user_id)
         todo_id = result.id
@@ -242,7 +228,7 @@ class TrackedTodoService:
         # unless the caller supplied a head start.
         vfs_path = build_vfs_label(todo_id)
         deliverable_content = initial_deliverable or DELIVERABLE_TEMPLATE.format(title=title)
-        notes_content = initial_notes or NOTES_TEMPLATE.format(title=title)
+        notes_content = draft.initial_notes or NOTES_TEMPLATE.format(title=title)
         now = datetime.now(UTC)
         log_content = (
             f"# System Log: {title}\n\n"
@@ -284,7 +270,7 @@ class TrackedTodoService:
         schedule_gaia_tasks_sync(user_id)
         if entry_status == ExecutionStatus.PROPOSED:
             track(user_id, "todo_proposed", {"todo_id": todo_id, "serves": serves})
-        elif entry_status is ExecutionStatus.QUEUED and auto_execute:
+        elif entry_status is ExecutionStatus.QUEUED and draft.auto_execute:
             # The approval rule's other half: internal work executes without
             # permission — immediately, not only when a schedule happens to be
             # attached. Callers arming their own schedule pass auto_execute=False.

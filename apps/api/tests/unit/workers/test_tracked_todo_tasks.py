@@ -492,15 +492,21 @@ class TestCollectReferenceContext:
 class TestBuildExecutionPrompt:
     def test_title_only(self):
         prompt = _build_execution_prompt(
-            title="Ship it", description="", notes=None, deliverable=None, reference_context=""
+            _doc(title="Ship it"), notes=None, deliverable=None, reference_context=""
         )
         # The task line always leads; the authoring directive follows.
         assert prompt.startswith("Execute the following scheduled task: Ship it")
 
+    def test_an_untitled_todo_still_names_the_task(self):
+        prompt = _build_execution_prompt(
+            _doc(title=""), notes=None, deliverable=None, reference_context=""
+        )
+
+        assert prompt.startswith("Execute the following scheduled task: Untitled Todo")
+
     def test_all_sections_appear_in_order(self):
         prompt = _build_execution_prompt(
-            title="Ship it",
-            description="the release",
+            _doc(title="Ship it", description="the release"),
             notes="## Current State\nblocked",
             deliverable=None,
             reference_context="past stuff",
@@ -515,9 +521,48 @@ class TestBuildExecutionPrompt:
         assert sections[0] == "Execute the following scheduled task: Ship it"
         assert "Current deliverable" not in prompt
 
+    def test_a_release_run_is_told_to_perform_the_approved_action(self):
+        """An approved proposal must PERFORM the outward action, not draft it
+        again — the release prompt carries the staged content verbatim."""
+        prompt = _build_execution_prompt(
+            _doc(title="Send the invoices", execution_intent="release"),
+            notes="scratch notes",
+            deliverable="Hi Bob, the invoice is attached.",
+            reference_context="",
+        )
+
+        assert prompt.startswith("APPROVED ACTION")
+        assert "Hi Bob, the invoice is attached." in prompt
+        assert "Execute the following scheduled task" not in prompt
+
+    def test_a_release_run_sees_the_send_record_so_a_retry_never_double_sends(self):
+        prompt = _build_execution_prompt(
+            _doc(title="Send the invoices", execution_intent="release"),
+            notes=None,
+            deliverable="the draft",
+            reference_context="",
+            log_facet="sent to bob@example.com",
+        )
+
+        assert "sent to bob@example.com" in prompt
+
+    def test_an_approval_instruction_is_carried_into_the_release_prompt(self):
+        prompt = _build_execution_prompt(
+            _doc(
+                title="Send the invoices",
+                execution_intent="release",
+                approve_instruction="only send the Sequoia one",
+            ),
+            notes=None,
+            deliverable="the draft",
+            reference_context="",
+        )
+
+        assert "only send the Sequoia one" in prompt
+
     def test_empty_canvas_string_is_omitted_not_rendered_as_an_empty_header(self):
         prompt = _build_execution_prompt(
-            title="Ship it", description="", notes="", deliverable="", reference_context=""
+            _doc(title="Ship it"), notes="", deliverable="", reference_context=""
         )
         assert "Working notes" not in prompt
         assert "Current deliverable" not in prompt

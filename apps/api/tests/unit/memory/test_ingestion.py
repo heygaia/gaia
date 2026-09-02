@@ -1321,9 +1321,9 @@ class TestRetain:
         )
         kwargs = boundaries.extract_memories.await_args.kwargs
         assert kwargs["user_name"] == "Sam"
-        assert kwargs["folder_tree"] == "- work (4)"
-        assert kwargs["recent_facts"] == ["sam likes tea"]
-        assert kwargs["journaled_today"] == ["already journaled"]
+        assert kwargs["stored"].folder_tree == "- work (4)"
+        assert kwargs["stored"].recent_facts == ["sam likes tea"]
+        assert kwargs["stored"].journaled_today == ["already journaled"]
         assert kwargs["extraction_hints"] == "focus on preferences"
 
     async def test_anonymous_caller_gets_the_default_user_name(
@@ -1343,7 +1343,7 @@ class TestRetain:
         await retain(
             USER, [{"role": "user", "content": "hi"}], source_type=MemorySourceType.CONVERSATION
         )
-        assert boundaries.extract_memories.await_args.kwargs["journaled_today"] == []
+        assert boundaries.extract_memories.await_args.kwargs["stored"].journaled_today == []
 
     async def test_explicit_now_drives_every_timestamp(self, boundaries: Boundaries) -> None:
         replay = datetime(2019, 7, 4, 8, 15, tzinfo=UTC)

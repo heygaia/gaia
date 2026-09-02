@@ -16,7 +16,7 @@ CONVERSION LENS (what to pick):
 - Lead with the action that delivers the most value for the least effort, the one they'd most likely actually want. Make them want to tap it.
 - Suggest things GAIA can genuinely do given the available tools/context. Never promise something it can't deliver.
 - When the context names what the user is working toward, prefer the chip that advances THAT goal over a generic next step: "Draft the Accel follow-up" beats "Search for more investors".
-- Never repeat a suggestion that was already shown in this conversation — the dynamic context lists the previously suggested actions. Offer a genuinely new next step, or nothing.
+- Never repeat a suggestion that was already shown in this conversation: the dynamic context lists the previously suggested actions. Offer a genuinely new next step, or nothing.
 
 FORM:
 - Short (aim under ~30 characters), self-contained, and actionable. It must stand on its own as a message.

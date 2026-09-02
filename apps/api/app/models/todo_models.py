@@ -1,9 +1,10 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import Enum
 from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.constants.general import MAX_PAGE_NUMBER
 from app.constants.todos import ASSIGNEE_USER
 from app.db.repositories.base import UserScopedDocument
 from app.models.workflow_models import WorkflowWithIntegrations
@@ -218,6 +219,33 @@ class TodoModel(TodoBase):
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
+class TrackedTodoDraft(BaseModel):
+    """Everything the GAIA-todo creation gate needs to stage one tracked todo.
+
+    ``serves`` is the traceability the gate rejects an empty value for, and
+    ``requires_approval`` is the approval rule (outward-facing work enters
+    ``proposed``, internal work enters ``queued``).
+    """
+
+    model_config = ConfigDict(from_attributes=True)
+
+    title: str
+    serves: str
+    requires_approval: bool
+    kind: str = "task"
+    goal_id: str | None = None
+    description: str | None = None
+    project_id: str | None = None
+    due_date: datetime | None = None
+    priority: Priority = Priority.NONE
+    labels: list[str] | None = None
+    initial_deliverable: str | None = None
+    initial_notes: str | None = None
+    # False when the caller arms its own schedule; internal work otherwise runs
+    # immediately instead of waiting for a schedule that never comes.
+    auto_execute: bool = True
+
+
 # For updating todos - all fields optional
 class TodoUpdateRequest(BaseModel):
     """Model for updating todos - all fields optional for partial updates"""
@@ -391,6 +419,70 @@ class TodoSearchParams(BaseModel):
     page: int = Field(default=1, ge=1)
     per_page: int = Field(default=50, ge=1, le=100)
     include_stats: bool = Field(default=False)
+
+
+class TodoListQuery(BaseModel):
+    """Query string of ``GET /todos`` — the wire shape, before the ``due_today`` /
+    ``due_this_week`` shortcuts are resolved into an explicit due-date window."""
+
+    q: str | None = Field(default=None, description="Search query")
+    mode: SearchMode = Field(
+        default=SearchMode.HYBRID, description="Search mode: text, semantic, or hybrid"
+    )
+    project_id: str | None = None
+    completed: bool | None = None
+    priority: Priority | None = None
+    has_due_date: bool | None = None
+    overdue: bool | None = None
+    labels: list[str] | None = None
+    due_after: datetime | None = Field(default=None, description="Due date after this date")
+    due_before: datetime | None = Field(default=None, description="Due date before this date")
+    due_today: bool = Field(default=False, description="Only todos due today")
+    due_this_week: bool = Field(default=False, description="Only todos due this week")
+    page: int = Field(default=1, ge=1, le=MAX_PAGE_NUMBER)
+    per_page: int = Field(default=50, ge=1, le=100)
+    include_stats: bool = Field(default=False, description="Include statistics in response")
+
+    def applied_filters(self) -> list[str]:
+        """Names of the filters the caller actually set — a wide-event field."""
+        applied = [
+            ("query", bool(self.q)),
+            ("project", bool(self.project_id)),
+            ("completed", self.completed is not None),
+            ("priority", bool(self.priority)),
+            ("labels", bool(self.labels)),
+            ("due_today", self.due_today),
+            ("due_this_week", self.due_this_week),
+            ("date_range", bool(self.due_after or self.due_before)),
+        ]
+        return [name for name, is_set in applied if is_set]
+
+    def to_search_params(self) -> TodoSearchParams:
+        """The service-facing params, with the day/week shortcuts resolved."""
+        due_after, due_before = self.due_after, self.due_before
+        if self.due_today:
+            today = datetime.now(UTC).date()
+            due_after = datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+            due_before = datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+        elif self.due_this_week:
+            now = datetime.now(UTC)
+            due_after = now
+            due_before = now + timedelta(days=7)
+        return TodoSearchParams(
+            q=self.q,
+            mode=self.mode,
+            project_id=self.project_id,
+            completed=self.completed,
+            priority=self.priority,
+            has_due_date=self.has_due_date,
+            overdue=self.overdue,
+            due_date_start=due_after,
+            due_date_end=due_before,
+            labels=self.labels,
+            page=self.page,
+            per_page=self.per_page,
+            include_stats=self.include_stats,
+        )
 
 
 # Bulk operations

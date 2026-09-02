@@ -15,6 +15,7 @@ from app.models.todo_models import (
     BulkOperationResponse,
     BulkUpdateRequest,
     PaginationMeta,
+    SearchMode,
     SubTask,
     TodoDocument,
     TodoListResponse,
@@ -78,6 +79,31 @@ class TestListTodos:
         assert body["data"] == []
         assert body["meta"]["page"] == 1
         assert list_todos.await_args.args[0] == "507f1f77bcf86cd799439011"
+
+    async def test_query_params_bind_into_search_params(self, client: AsyncClient) -> None:
+        """Repeated ``labels`` and the ``due_today`` shortcut must survive the hop
+        from the query string into the service's TodoSearchParams."""
+        with patch(
+            f"{TODOS_ENDPOINT}.TodoService.list_todos",
+            new_callable=AsyncMock,
+            return_value=_empty_list_response(),
+        ) as list_todos:
+            resp = await client.get(
+                "/api/v1/todos?labels=work&labels=urgent&due_today=true&mode=text&per_page=7"
+            )
+
+        assert resp.status_code == 200
+        params = list_todos.await_args.args[1]
+        assert params.labels == ["work", "urgent"]
+        assert params.mode == SearchMode.TEXT
+        assert params.per_page == 7
+        today = datetime.now(UTC).date()
+        assert params.due_date_start == datetime.combine(today, datetime.min.time()).replace(
+            tzinfo=UTC
+        )
+        assert params.due_date_end == datetime.combine(today, datetime.max.time()).replace(
+            tzinfo=UTC
+        )
 
 
 class TestTodoAnalytics:

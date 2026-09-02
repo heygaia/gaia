@@ -90,9 +90,9 @@ When you cannot decide between durable and state, choose **state**.
 - Preferences: food and dietary choices, communication style, favorite tools, brands, formats, likes and dislikes.
 - Life and work context: where they live and work, projects they are building, teams, goals, health context, big changes.
 - Goals, aspirations, and their stakes: what {user_name} is trying to achieve, by WHEN, and WHY ("wants to close a $2M seed by October to hire two engineers", "training for the Berlin half-marathon on Sept 27"). Put the target date in occurred_start so recall can reason about how close it is. These are among the highest-importance facts you extract.
-- Changes and corrections to things already true: when {user_name} says an amount, status, or plan CHANGED ("now I'm pre-approved for $400k" after an earlier $350k, "the meeting moved to Thursday", "I switched to the night shift"), always extract the NEW fact — it replaces the old one. Never drop a changed value just because the old one exists; the latest must be captured or recall returns the stale answer.
+- Changes and corrections to things already true: when {user_name} says an amount, status, or plan CHANGED ("now I'm pre-approved for $400k" after an earlier $350k, "the meeting moved to Thursday", "I switched to the night shift"), always extract the NEW fact, since it replaces the old one. Never drop a changed value just because the old one exists; the latest must be captured or recall returns the stale answer.
 - Commitments and deadlines: things {user_name} promised, things owed to them, upcoming obligations.
-- Identity mappings for {user_name} and the people they actually know: {user_name}'s own emails, usernames, handles, and account/service IDs, and the contact details of their real contacts (a teammate, a friend, a client they work with) — "{user_name}'s GitHub handle is ..." or "{user_name}'s Google Cloud billing account is ..." is gold. Do NOT capture the email or handle of a STRANGER who merely appears in the inbox (a customer, lead, sales rep, support requester, anyone who just emailed in) — see the relationships rule.
+- Identity mappings for {user_name} and the people they actually know: {user_name}'s own emails, usernames, handles, and account/service IDs, and the contact details of their real contacts (a teammate, a friend, a client they work with): "{user_name}'s GitHub handle is ..." or "{user_name}'s Google Cloud billing account is ..." is gold. Do NOT capture the email or handle of a STRANGER who merely appears in the inbox (a customer, lead, sales rep, support requester, anyone who just emailed in); see the relationships rule.
 - Routines and habits: recurring schedules, rituals, working patterns.
 - Experiences: meaningful events that happened, such as trips, milestones, decisions.
 - Specifics the user mentions using, owning, buying, or doing: product and service names, brands, models, stores, amounts, locations visited. If the user says they made a playlist on a streaming service, the SERVICE NAME is a fact worth keeping: "which X did I use/buy/visit" must be answerable weeks later.
@@ -198,7 +198,7 @@ _CONSOLIDATION_SHARED_RULES = """## Rules
 5. Be concise: short bullets, concrete names and dates. Keep the whole document under {max_chars} characters.
 6. Resolve conflicts in favor of the newest input (the world changed).
 7. Stay in your lane: every fact has exactly ONE home document. Respect the
-   ownership rules above — repeating a fact that belongs to another document
+   ownership rules above; repeating a fact that belongs to another document
    is a containment failure, not thoroughness.
 8. Facts carry [occurred YYYY-MM-DD] and [mentioned YYYY-MM-DD] annotations:
    use occurred dates to judge whether an item is upcoming, due, or past, and

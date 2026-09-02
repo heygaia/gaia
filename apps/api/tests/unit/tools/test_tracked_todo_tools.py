@@ -755,8 +755,8 @@ class TestScheduleExecutionAfterCreate:
 
 
 class TestFormatCreateOutput:
-    def test_the_summary_routes_canvas_edits_away_from_filesystem_tools(self) -> None:
-        """The canvas lives on the todo, not on disk. Without this line the model
+    def test_the_summary_routes_facet_edits_away_from_filesystem_tools(self) -> None:
+        """The facets live on the todo, not on disk. Without this line the model
         reaches for the file tools, edits nothing the todo can see, and reports
         success — so the sentence is the guardrail, pinned verbatim."""
         now = datetime.now(UTC)
@@ -765,8 +765,9 @@ class TestFormatCreateOutput:
         out = _format_create_output(result, None, None, [])
 
         assert (
-            "Canvas + activity log are stored on this todo. Edit them ONLY via "
-            "update_tracked_todo_canvas(todo_id='t1', ...), never with filesystem tools."
+            "Its facets (deliverable / notes / log) are stored on this todo. Edit them "
+            "ONLY via update_tracked_todo_canvas(todo_id='t1', facet=..., ...), "
+            "never with filesystem tools."
         ) in out
 
 

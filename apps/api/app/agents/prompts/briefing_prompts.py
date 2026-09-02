@@ -8,6 +8,8 @@ proposes work with the ``create_tracked_todo`` tool, then emits exactly one
 ``BriefingPayload`` JSON object as its entire final message.
 """
 
+from dataclasses import dataclass
+
 # The exact output contract, shared by daily and weekly so the parser sees one
 # shape. ``hue`` is set deterministically in code post-run, so the model leaves
 # it at 0. Kept as a single block so the two prompts never drift.
@@ -196,15 +198,22 @@ string; use commas, periods, or parentheses.
 """.strip()
 
 
+@dataclass(frozen=True)
+class VoicePromptBlocks:
+    """The code-built context blocks the voice pass narrates, never alters."""
+
+    facts: str
+    goal: str
+    lookback: str
+    replies: str
+    strikes: str
+    awards: str
+
+
 def build_briefing_voice_prompt(
     *,
     date_local: str,
-    facts_block: str,
-    goal_block: str,
-    lookback_block: str,
-    replies_block: str,
-    strikes_block: str,
-    awards_block: str,
+    blocks: VoicePromptBlocks,
     winback: bool,
     is_first_briefing: bool,
     wind_down: str | None = None,
@@ -260,22 +269,22 @@ def build_briefing_voice_prompt(
     return f"""You are GAIA voicing this user's daily briefing for {date_local}.
 
 ## TODAY'S FACTS (final: voice them, never alter them)
-{facts_block}
+{blocks.facts}
 
 ## YESTERDAY (context for tone, not new facts)
-{lookback_block}
+{blocks.lookback}
 
 ## WHAT THE USER SAID SINCE THE LAST BRIEF (their bot-chat replies; continuity, not new facts)
-{replies_block}
+{blocks.replies}
 Weigh these when choosing the lead and the ask: never re-ask what a reply already
 answered, and acknowledge a redirect only when today's facts show the work
 actually changed in response.
 
 ## DO-NOT-PROPOSE CONTEXT
-{strikes_block}
-{awards_block}
+{blocks.strikes}
+{blocks.awards}
 ## WHAT I ALREADY KNOW ABOUT THEIR GOALS (memory, not confirmed lanes)
-{goal_block}
+{blocks.goal}
 {winback_note}{first_note}{wind_down_note}
 If no goal lane exists but the goal knowledge above names something specific, the
 whole brief is one short honest message plus ONE confirming question that quotes

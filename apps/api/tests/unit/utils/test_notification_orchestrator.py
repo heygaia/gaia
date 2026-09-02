@@ -22,6 +22,7 @@ from app.models.notification.notification_models import (
     NotificationType,
     RedirectConfig,
 )
+from app.models.notification.request_models import NotificationQuery
 from app.utils.notification.orchestrator import NotificationOrchestrator
 
 # ---------------------------------------------------------------------------
@@ -822,7 +823,7 @@ class TestGetNotifications:
         storage.get_user_notifications.return_value = records
         orch = NotificationOrchestrator(storage=storage)
 
-        results = await orch.get_user_notifications("user-1")
+        results = await orch.get_user_notifications("user-1", NotificationQuery())
 
         assert len(results) == 2
         assert results[0].id == "n-1"
@@ -836,12 +837,14 @@ class TestGetNotifications:
 
         await orch.get_user_notifications(
             "user-1",
-            status=NotificationStatus.DELIVERED,
-            limit=10,
-            offset=5,
-            channel_type="inapp",
-            notification_type=NotificationType.WARNING,
-            source=NotificationSourceEnum.AI_REMINDER,
+            NotificationQuery(
+                status=NotificationStatus.DELIVERED,
+                limit=10,
+                offset=5,
+                channel_type="inapp",
+                notification_type=NotificationType.WARNING,
+                source=NotificationSourceEnum.AI_REMINDER,
+            ),
         )
 
         storage.get_user_notifications.assert_awaited_once_with(
