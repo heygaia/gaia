@@ -405,15 +405,7 @@ class NotificationOrchestrator:
         self, user_id: str, query: NotificationQuery
     ) -> list[NotificationView]:
         """Get a user's notifications with optional filtering and pagination."""
-        notifications = await self.storage.get_user_notifications(
-            user_id,
-            query.status,
-            query.limit,
-            query.offset,
-            query.channel_type,
-            query.notification_type,
-            query.source,
-        )
+        notifications = await self.storage.get_user_notifications(user_id, query)
         return [self._serialize_notification(n) for n in notifications]
 
     async def get_notification(self, notification_id: str, user_id: str) -> NotificationView | None:

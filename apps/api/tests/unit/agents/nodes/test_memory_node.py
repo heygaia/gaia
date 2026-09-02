@@ -20,6 +20,7 @@ from app.constants.memory import (
     MEMORY_INGEST_MARK_TTL,
     MemorySourceType,
 )
+from app.memory.ingestion import MemorySource
 from app.utils.multimodal import extract_text_content
 from tests.helpers import WideEventRecorder
 
@@ -674,8 +675,7 @@ class TestTheIngestionHandoff:
         calls["retain"].assert_awaited_once()
         args, kwargs = calls["retain"].await_args
         assert args[0] == "u1"
-        assert kwargs["source_id"] == "t1"
-        assert kwargs["source_type"] == MemorySourceType.CONVERSATION
+        assert kwargs["source"] == MemorySource(MemorySourceType.CONVERSATION, "t1")
 
     async def test_the_integration_hints_and_user_name_ride_along(self) -> None:
         """The hints are why a Slack turn yields Slack ids. Dropped, extraction

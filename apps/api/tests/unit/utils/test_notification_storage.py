@@ -16,6 +16,7 @@ from app.models.notification.notification_models import (
     NotificationStatus,
     NotificationType,
 )
+from app.models.notification.request_models import NotificationQuery
 from app.utils.notification.channel_preferences import (
     fetch_channel_preferences,
     normalize_channel_preferences,
@@ -64,9 +65,8 @@ class TestNotificationStorageDelegation:
             "notif-1", status="read", read_at="2024-01-01T00:00:00Z"
         )
 
-    async def test_list_forwards_all_filters(self, storage, mock_repo):
-        await storage.get_user_notifications(
-            "user-1",
+    async def test_list_forwards_the_query_as_filters(self, storage, mock_repo):
+        query = NotificationQuery(
             status=NotificationStatus.READ,
             limit=10,
             offset=5,
@@ -74,16 +74,9 @@ class TestNotificationStorageDelegation:
             notification_type=NotificationType.INFO,
             source=NotificationSourceEnum.AI_AGENT,
         )
+        await storage.get_user_notifications("user-1", query)
         mock_repo.list_for_user.assert_awaited_once_with(
-            "user-1",
-            filters=NotificationFilters(
-                status=NotificationStatus.READ,
-                channel_type="in_app",
-                notification_type=NotificationType.INFO,
-                source=NotificationSourceEnum.AI_AGENT,
-            ),
-            limit=10,
-            offset=5,
+            "user-1", filters=query, limit=10, offset=5
         )
 
     async def test_count_forwards_filters(self, storage, mock_repo):

@@ -38,6 +38,7 @@ from app.constants.memory import (
 from app.db.redis import redis_cache
 from app.db.repositories.conversations import conversation_repository
 from app.memory.engine import memory_engine
+from app.memory.ingestion import MemorySource
 from app.models.agent_models import agent_configurable
 from app.override.langgraph_bigtool.utils import State
 from app.utils.background_tasks import spawn_background_task
@@ -263,8 +264,7 @@ async def _store_user_memory_background(
             await memory_engine.retain(
                 user_id,
                 formatted,
-                source_type=MemorySourceType.CONVERSATION,
-                source_id=session_id,
+                source=MemorySource(MemorySourceType.CONVERSATION, session_id),
                 extraction_hints=extraction_prompt,
                 user_name=user_name,
             )
