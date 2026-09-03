@@ -137,30 +137,30 @@ class TrackedTodoService:
         serves, entry_status = await lifecycle.gate_creation(
             user_id, draft.serves, draft.requires_approval, title=title, kind=draft.kind
         )
-        # The staging invariant behind every Approve button: a proposal releases
-        # exactly the content in its DELIVERABLE facet, so it cannot be created
-        # without it. Prep work happens first (internal todo), and the run that
-        # finishes the prep creates the proposal carrying the deliverable.
-        if entry_status is ExecutionStatus.PROPOSED and not (initial_deliverable or "").strip():
-            raise lifecycle.TraceabilityError(
-                "A proposal must carry its staged work: pass `initial_deliverable` "
-                "with the exact content approving will release (drafts, list, post). "
-                "If the content does not exist yet, create the internal prep todo "
-                "first and stage this proposal when the prep run finishes."
-            )
-        # A proposal releases its deliverable verbatim, so template placeholders
-        # would be sent literally ("Hi [Name], …"). Reject unfilled tokens at the
-        # gate so the run must fill them with real values (or do the prep first).
-        if entry_status is ExecutionStatus.PROPOSED and _has_unfilled_placeholders(
-            initial_deliverable or ""
-        ):
-            raise lifecycle.TraceabilityError(
-                "A proposal cannot ship template placeholders: the staged "
-                "deliverable still has unfilled tokens like [Name] or [industry], so "
-                "approving would release literal brackets. Fill every placeholder "
-                "with the real value before staging — if you don't have it yet, do "
-                "the prep to get it first."
-            )
+        staged_deliverable = (initial_deliverable or "").strip()
+        if entry_status is ExecutionStatus.PROPOSED:
+            # The staging invariant behind every Approve button: a proposal
+            # releases exactly the content in its DELIVERABLE facet, so it cannot
+            # be created without it. Prep work happens first (internal todo), and
+            # the run that finishes the prep creates the proposal carrying it.
+            if not staged_deliverable:
+                raise lifecycle.TraceabilityError(
+                    "A proposal must carry its staged work: pass `initial_deliverable` "
+                    "with the exact content approving will release (drafts, list, post). "
+                    "If the content does not exist yet, create the internal prep todo "
+                    "first and stage this proposal when the prep run finishes."
+                )
+            # A proposal releases its deliverable verbatim, so template placeholders
+            # would be sent literally ("Hi [Name], …"). Reject unfilled tokens at the
+            # gate so the run must fill them with real values (or do the prep first).
+            if _has_unfilled_placeholders(staged_deliverable):
+                raise lifecycle.TraceabilityError(
+                    "A proposal cannot ship template placeholders: the staged "
+                    "deliverable still has unfilled tokens like [Name] or [industry], so "
+                    "approving would release literal brackets. Fill every placeholder "
+                    "with the real value before staging — if you don't have it yet, do "
+                    "the prep to get it first."
+                )
 
         # `assignee == "gaia"` is the discriminator now, so we no longer stamp
         # the `gaia-tracked` label (it was redundant and showed as a stray chip).
@@ -359,7 +359,12 @@ class TrackedTodoService:
         allow_canvas_fallback = doc.execution_status == ExecutionStatus.PROPOSED
         raw = doc.model_dump()
         content = _embedding_text(
-            facet_from_doc(raw, FACET_NOTES, allow_canvas_fallback=allow_canvas_fallback),
+            # `notes` always falls back to the legacy canvas — facet_from_doc
+            # returns before it ever reads the flag — so no value passed here is
+            # observable. Only the deliverable read below is gated by it.
+            facet_from_doc(  # pragma: no mutate
+                raw, FACET_NOTES, allow_canvas_fallback=allow_canvas_fallback
+            ),
             facet_from_doc(raw, FACET_DELIVERABLE, allow_canvas_fallback=allow_canvas_fallback),
         )
         if not content:

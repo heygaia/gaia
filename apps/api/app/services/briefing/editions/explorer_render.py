@@ -140,7 +140,9 @@ def render_explorer_edition(
     skin_seed: str,
     edition_no: int,
     generated_local: str,
-    tz_label: str = "",
+    # The default is unobservable — the parameter is deleted before its first
+    # read (see below), so no value of it can reach the document.
+    tz_label: str = "",  # pragma: no mutate
 ) -> str:
     """Render a briefing payload through one vendored explorer family.
 

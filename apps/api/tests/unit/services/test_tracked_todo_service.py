@@ -207,6 +207,35 @@ class TestCreateTrackedTodo:
         todo_model: TodoModel = mock_deps.create.call_args.args[0]
         assert todo_model.labels == ["work", "finance"]
 
+    async def test_the_gate_sees_the_draft_verbatim(self, mock_repo, mock_deps):
+        """The gate decides traceability, budgets and entry state — a draft field
+        that never reaches it is a rule silently not applied."""
+        mock_deps.create.return_value = _todo_response()
+
+        await _create(kind="goal")
+
+        mock_deps.gate.assert_awaited_once_with(
+            USER_ID, SERVES, False, title="Prepare Q3 report", kind="goal"
+        )
+
+    async def test_a_goal_draft_creates_a_goal_lane(self, mock_repo, mock_deps):
+        """Goals are exempt from the in-flight budget and skip the day timeline,
+        so a goal draft landing as a task changes which rules apply to it."""
+        mock_deps.create.return_value = _todo_response()
+
+        await _create(kind="goal")
+
+        todo_model: TodoModel = mock_deps.create.call_args.args[0]
+        assert todo_model.kind == "goal"
+
+    async def test_any_other_kind_creates_a_task(self, mock_repo, mock_deps):
+        mock_deps.create.return_value = _todo_response()
+
+        await _create(kind="task")
+
+        todo_model: TodoModel = mock_deps.create.call_args.args[0]
+        assert todo_model.kind == "task"
+
     async def test_budget_is_re_enforced_after_the_insert(self, mock_repo, mock_deps):
         mock_deps.create.return_value = _todo_response()
 
@@ -229,8 +258,14 @@ class TestCreateTrackedTodo:
 
         await _create()
 
-        mock_deps.schedule.assert_awaited_once()
-        assert mock_deps.schedule.await_args.args[0] == TODO_ID
+        # The stamped scheduled_at and the enqueued run must be the same instant,
+        # for the same todo — a mismatch shows the user a time nothing fires at.
+        schedule_write = mock_repo.update.await_args_list[1]
+        assert schedule_write.args[0] == TODO_ID
+        assert schedule_write.kwargs["user_id"] == USER_ID
+        scheduled_at = schedule_write.kwargs["update"].scheduled_at
+        assert scheduled_at is not None
+        mock_deps.schedule.assert_awaited_once_with(TODO_ID, scheduled_at)
 
     async def test_auto_execute_false_leaves_the_schedule_to_the_caller(self, mock_repo, mock_deps):
         mock_deps.create.return_value = _todo_response()
@@ -244,20 +279,39 @@ class TestCreateProposalStagingInvariant:
     """Approving a proposal releases its deliverable verbatim, so the gate
     rejects a proposal that has no finished content to release."""
 
-    async def test_proposal_without_a_deliverable_is_rejected(self, mock_repo, mock_deps):
+    @pytest.mark.parametrize("deliverable", [None, "", "   \n  "])
+    async def test_proposal_without_a_deliverable_is_rejected(
+        self, mock_repo, mock_deps, deliverable
+    ):
+        """Whitespace is not staged work either — the gate strips before judging."""
         mock_deps.gate.return_value = (SERVES, ExecutionStatus.PROPOSED)
 
-        with pytest.raises(TraceabilityError, match="initial_deliverable"):
-            await _create(requires_approval=True)
+        with pytest.raises(TraceabilityError) as excinfo:
+            await _create(requires_approval=True, initial_deliverable=deliverable)
 
+        # The message is the agent's only instruction on how to recover, so its
+        # wording is a contract, not decoration.
+        assert str(excinfo.value) == (
+            "A proposal must carry its staged work: pass `initial_deliverable` "
+            "with the exact content approving will release (drafts, list, post). "
+            "If the content does not exist yet, create the internal prep todo "
+            "first and stage this proposal when the prep run finishes."
+        )
         mock_deps.create.assert_not_awaited()
 
     async def test_proposal_with_unfilled_placeholders_is_rejected(self, mock_repo, mock_deps):
         mock_deps.gate.return_value = (SERVES, ExecutionStatus.PROPOSED)
 
-        with pytest.raises(TraceabilityError, match="placeholders"):
+        with pytest.raises(TraceabilityError) as excinfo:
             await _create(requires_approval=True, initial_deliverable="Hi [Name], we should talk.")
 
+        assert str(excinfo.value) == (
+            "A proposal cannot ship template placeholders: the staged "
+            "deliverable still has unfilled tokens like [Name] or [industry], so "
+            "approving would release literal brackets. Fill every placeholder "
+            "with the real value before staging — if you don't have it yet, do "
+            "the prep to get it first."
+        )
         mock_deps.create.assert_not_awaited()
 
     async def test_markdown_links_and_checkboxes_are_not_placeholders(self, mock_repo, mock_deps):
@@ -278,8 +332,11 @@ class TestCreateProposalStagingInvariant:
         await _create(requires_approval=True, initial_deliverable="Ready to send.")
 
         mock_deps.schedule.assert_not_awaited()
-        mock_deps.track.assert_called_once()
-        assert mock_deps.track.call_args.args[1] == "todo_proposed"
+        # Approve rate is derived from this event, so it has to be attributed to
+        # the right user and carry the traceability the gate accepted.
+        mock_deps.track.assert_called_once_with(
+            USER_ID, "todo_proposed", {"todo_id": TODO_ID, "serves": SERVES}
+        )
 
 
 class TestCompleteTrackedTodo:
@@ -360,6 +417,14 @@ class TestGetActiveTrackedSummary:
     async def test_empty_string_without_docs(self, mock_repo, mock_deps):
         assert await TrackedTodoService.get_active_tracked_summary(USER_ID) == ""
 
+    async def test_reads_this_user_within_the_context_budget(self, mock_repo, mock_deps):
+        """The summary is injected into every prompt, so the row cap is a token
+        budget — and both reads must be scoped to the calling user."""
+        await TrackedTodoService.get_active_tracked_summary(USER_ID)
+
+        mock_repo.list_active_gaia_for_summary.assert_awaited_once_with(USER_ID, limit=15)
+        mock_deps.strikes.assert_awaited_once_with(USER_ID)
+
     async def test_strikes_are_surfaced_even_with_no_active_todos(self, mock_repo, mock_deps):
         mock_deps.strikes.return_value = "Rejected work: outreach (3x, BLOCKED)"
 
@@ -404,9 +469,43 @@ class TestGetActiveTrackedSummary:
         assert f"VFS: {WORKSPACE_LABEL}" in lines[1]
         assert "d old" in lines[1]
 
+    async def test_multiple_labels_render_as_one_comma_separated_chip_list(
+        self, mock_repo, mock_deps
+    ):
+        mock_repo.list_active_gaia_for_summary.return_value = [
+            _todo_doc(labels=["work", "finance", "q3"])
+        ]
+
+        summary = await TrackedTodoService.get_active_tracked_summary(USER_ID)
+
+        assert '"Prepare Q3 report" [work, finance, q3] —' in summary.split("\n")[1]
+
+    async def test_a_bare_todo_renders_without_empty_label_or_state_sections(
+        self, mock_repo, mock_deps
+    ):
+        """A todo with no labels and no execution status must render the plain
+        line — an empty section leaking a stray marker costs prompt tokens and
+        teaches the agent a state that does not exist."""
+        now = datetime.now(UTC)
+        mock_repo.list_active_gaia_for_summary.return_value = [
+            _todo_doc(
+                labels=[],
+                execution_status=None,
+                created_at=now - timedelta(days=2),
+                updated_at=now,
+            )
+        ]
+
+        summary = await TrackedTodoService.get_active_tracked_summary(USER_ID)
+
+        assert summary.split("\n")[1] == (
+            '  "Prepare Q3 report" — 2d old, updated 0d ago'
+            f" | ID: {TODO_ID} | VFS: {WORKSPACE_LABEL}"
+        )
+
     async def test_a_blocked_todo_shows_the_question_it_is_waiting_on(self, mock_repo, mock_deps):
         """A chat reply like "yes, use the second one" is only actionable if the
-        agent can see which question it answers."""
+        agent can see which question it answers — and which state it answers in."""
         mock_repo.list_active_gaia_for_summary.return_value = [
             _todo_doc(
                 execution_status=ExecutionStatus.NEEDS_YOU,
@@ -416,7 +515,24 @@ class TestGetActiveTrackedSummary:
 
         summary = await TrackedTodoService.get_active_tracked_summary(USER_ID)
 
-        assert 'waiting on user: "Which vendor should I book?"' in summary
+        assert ' | state: needs_you | waiting on user: "Which vendor should I book?"' in summary
+
+    async def test_a_stale_blocker_question_is_not_shown_once_the_todo_is_unblocked(
+        self, mock_repo, mock_deps
+    ):
+        """The question survives on the doc after it is answered; only the
+        NEEDS_YOU state means the agent is actually waiting on a reply."""
+        mock_repo.list_active_gaia_for_summary.return_value = [
+            _todo_doc(
+                execution_status=ExecutionStatus.QUEUED,
+                blocker_question="Which vendor should I book?",
+            )
+        ]
+
+        summary = await TrackedTodoService.get_active_tracked_summary(USER_ID)
+
+        assert "waiting on user" not in summary
+        assert " | state: queued |" in summary
 
     async def test_active_todo_pinned_with_star(self, mock_repo, mock_deps):
         docs = [
@@ -467,6 +583,23 @@ class TestAppendActivityMarker:
 
         assert await TrackedTodoService.append_activity_marker(TODO_ID, USER_ID, "step") is False
 
+    async def test_a_swallowed_write_failure_still_names_itself_and_its_cause(
+        self, mock_repo, mock_deps
+    ):
+        """This is the one path that returns False instead of raising, so the
+        warning is the only trace of a lost paper trail — it has to carry the
+        todo and the real error, not a placeholder."""
+        mock_deps.append.side_effect = RuntimeError("mongo down")
+
+        with patch(f"{_MOD}.log") as mock_log:
+            await TrackedTodoService.append_activity_marker(TODO_ID, USER_ID, "step")
+
+        mock_log.warning.assert_called_once_with(
+            "tracked_todo.activity_marker_write_failed",
+            todo_id=TODO_ID,
+            error="mongo down",
+        )
+
 
 class TestSystemLog:
     async def test_delegates_to_the_lifecycle_audit_writer(self, mock_repo, mock_deps):
@@ -499,8 +632,53 @@ class TestReindexCanvas:
         assert kwargs["user_id"] == USER_ID
         assert kwargs["title"] == "Prepare Q3 report"
         assert kwargs["labels"] == ["work"]
-        assert "thread: abc123" in kwargs["content"]
-        assert "the report" in kwargs["content"]
+        assert kwargs["content"] == (
+            "# Prepare Q3 report\n\n## Key Details\nthread: abc123\n\n\n## Output\nthe report"
+        )
+
+    async def test_a_blank_facet_is_left_out_of_the_embedding(self, mock_repo, mock_deps):
+        """A whitespace-only facet carries no signal — indexing it would prepend
+        blank lines to every embedding for that todo."""
+        mock_repo.get.return_value = _todo_doc(
+            notes_content="   \n  ", deliverable_content="## Output\nthe report"
+        )
+        mock_deps.update_emb.return_value = True
+
+        await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID)
+
+        assert mock_deps.update_emb.call_args.kwargs["content"] == "## Output\nthe report"
+
+    async def test_a_legacy_proposal_indexes_its_canvas_as_both_facets(self, mock_repo, mock_deps):
+        """Pre-facet proposals stored their staged content in canvas_content; the
+        deliverable fallback is what keeps them searchable until the backfill."""
+        mock_repo.get.return_value = _todo_doc(
+            notes_content=None,
+            deliverable_content=None,
+            canvas_content="legacy body",
+            execution_status=ExecutionStatus.PROPOSED,
+        )
+        mock_deps.update_emb.return_value = True
+
+        await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID)
+
+        assert mock_deps.update_emb.call_args.kwargs["content"] == "legacy body\n\nlegacy body"
+
+    async def test_a_non_proposal_never_reads_the_legacy_canvas_as_a_deliverable(
+        self, mock_repo, mock_deps
+    ):
+        """Only a proposal's old canvas was staged output; for anything else it
+        was working memory, so it indexes as notes alone."""
+        mock_repo.get.return_value = _todo_doc(
+            notes_content=None,
+            deliverable_content=None,
+            canvas_content="legacy body",
+            execution_status=ExecutionStatus.QUEUED,
+        )
+        mock_deps.update_emb.return_value = True
+
+        await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID)
+
+        assert mock_deps.update_emb.call_args.kwargs["content"] == "legacy body"
 
     async def test_the_log_facet_is_never_indexed(self, mock_repo, mock_deps):
         mock_repo.get.return_value = _todo_doc(log_content="## 2026 [CREATED]\n- audit line\n")

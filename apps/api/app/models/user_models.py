@@ -259,10 +259,14 @@ class EditionRotation(BaseModel):
     family the NEXT edition will use. A cycle whose family set no longer matches
     the registry is discarded and reshuffled (see edition_rotation). Stored
     per kind (``daily``/``weekly``) on the user doc.
+
+    Both fields are required: a rotation missing either one describes no
+    position in any cycle, so defaulting them would only ever hand
+    ``advance_rotation`` a state it has to throw away.
     """
 
-    cycle: list[str] = Field(default_factory=list)
-    index: int = 0
+    cycle: list[str]
+    index: int
 
 
 class AuthenticatedUser(TypedDict, total=False):

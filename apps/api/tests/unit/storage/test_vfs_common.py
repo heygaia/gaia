@@ -14,6 +14,7 @@ part worth testing.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -185,6 +186,20 @@ def test_the_same_bodies_and_meta_hash_identically() -> None:
     first = hash_bodies_with_meta(["c", "l"], meta)
     second = hash_bodies_with_meta(["c", "l"], meta)
     assert first == second
+
+
+def test_the_body_hash_is_the_sha256_of_nul_framed_bodies_and_canonical_meta() -> None:
+    # The digest is not internal state — it is written into a marker file that
+    # outlives the release, and the framing byte is what keeps ["ab", ""] and
+    # ["a", "b"] apart. NUL is the one byte a facet body can never carry, so any
+    # other framing is forgeable by the agent's own text; changing it at all
+    # invalidates every marker on disk and rewrites every user's tree.
+    meta: dict[str, Any] = {"title": "t"}
+    expected = hashlib.sha256(
+        b"c\x00l\x00" + json.dumps(meta, sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+    assert hash_bodies_with_meta(["c", "l"], meta) == expected
 
 
 def test_a_metadata_only_edit_still_changes_the_body_hash() -> None:

@@ -189,8 +189,9 @@ def _render_section(section: dict) -> str:
 def _render_item(item: dict) -> str:
     """Render a single section item with its marker and artifact hint."""
     text = escape(str(item.get("text", "")))
-    kind = str(item.get("kind", "note"))
-    marker, tone = _MARKERS.get(kind, ("", ""))
+    # An unknown or absent kind renders like a note: no marker, no tone.
+    kind = str(item.get("kind"))
+    marker, tone = _MARKERS.get(kind, _MARKERS["note"])
 
     marker_html = f'<span class="marker {tone}">{escape(marker)}</span>' if marker else ""
     hint_html = f'<span class="open">{_ARTIFACT_HINT}</span>' if item.get("link") else ""

@@ -291,9 +291,17 @@ def _decision_verb(text: str) -> tuple[str, str]:
     return "Review", text
 
 
+def _item_kind(item: dict) -> str:
+    """An item's ``kind`` as a key for the two lookup tables below."""
+    # No default on purpose: an absent kind stringifies to "None", which misses
+    # both _KIND_TAGS and _KIND_TO_BUCKET and so lands on their "" / "today"
+    # fallbacks - exactly where an explicit "note" default landed.
+    return str(item.get("kind"))
+
+
 def _map_today_item(item: dict) -> ExplorerTodayItem:
     text = str(item.get("text", ""))
-    kind = str(item.get("kind", "note"))
+    kind = _item_kind(item)
     time_str, t24, label = _split_time_prefix(text)
     return {
         "time": time_str,
@@ -306,7 +314,7 @@ def _map_today_item(item: dict) -> ExplorerTodayItem:
 
 def _map_overnight_item(item: dict) -> ExplorerOvernightItem:
     text = str(item.get("text", ""))
-    kind = str(item.get("kind", "note"))
+    kind = _item_kind(item)
     _, t24, label = _split_time_prefix(text)
     return {"t24": t24, "label": label, "note": None, "tag": _KIND_TAGS.get(kind, "")}
 
@@ -336,8 +344,7 @@ def _bucket_sections(
             position_buckets[index].extend(items)
             continue
         for item in items:
-            kind = str(item.get("kind", "note"))
-            target = _KIND_TO_BUCKET.get(kind, "today")
+            target = _KIND_TO_BUCKET.get(_item_kind(item), "today")
             {"today": raw_today, "overnight": raw_overnight, "decisions": raw_decisions}[
                 target
             ].append(item)
@@ -350,7 +357,11 @@ def _bucket_sections(
 
 def _match_stat(stats: list[dict], *keywords: str) -> object:
     for stat in stats:
-        label = str(stat.get("label", "")).lower()
+        # No default on purpose: a label-less stat stringifies to "none", which
+        # matches nothing so long as no keyword _build_stats passes is a
+        # substring of "none" (today: done/you/gaia/mail/focus). Keep that true
+        # when adding one, or give this a "" default back.
+        label = str(stat.get("label")).lower()
         if any(keyword in label for keyword in keywords):
             return stat.get("value")
     return None
@@ -372,6 +383,7 @@ def _build_stats(stats: list[dict]) -> ExplorerStats:
         "done": _stat_int(stats, "done"),
         "you": _stat_int(stats, "you"),
         "gaia": _stat_int(stats, "gaia"),
-        "mail": _stat_int(stats, "mail", "email"),
+        # "mail" already covers "email"/"e-mail" labels - it is a substring of both.
+        "mail": _stat_int(stats, "mail"),
         "focus": str(focus_raw) if focus_raw is not None else "0h",
     }

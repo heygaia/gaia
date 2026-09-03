@@ -399,6 +399,49 @@ class TestItemMapping:
         assert content["today"][0]["t24"] is None
         assert content["today"][0]["label"] == "Lunch with the team"
 
+    def test_overnight_item_with_no_text_becomes_an_empty_label(self) -> None:
+        content = _build(
+            _payload(
+                sections=[
+                    {"numeral": "I", "title": "Today", "items": []},
+                    {"numeral": "II", "title": "Overnight", "items": [{"kind": "gaia"}]},
+                ]
+            )
+        )["content"]
+
+        assert content["overnight"][0] == {
+            "t24": None,
+            "label": "",
+            "note": None,
+            "tag": "DONE",
+        }
+
+    @pytest.mark.parametrize(
+        ("kind", "tag"),
+        [
+            ("gaia", "DONE"),
+            ("lookback", "DONE"),
+            ("proposal", "APPROVAL"),
+            ("note", ""),
+            ("unknown-kind", ""),
+        ],
+    )
+    def test_overnight_kind_condenses_to_the_templates_caps_tag(self, kind: str, tag: str) -> None:
+        content = _build(
+            _payload(
+                sections=[
+                    {"numeral": "I", "title": "Today", "items": []},
+                    {
+                        "numeral": "II",
+                        "title": "Overnight",
+                        "items": [_item("a thing", kind)],
+                    },
+                ]
+            )
+        )["content"]
+
+        assert content["overnight"][0]["tag"] == tag
+
     def test_overnight_rows_keep_t24_but_carry_no_display_time_field(self) -> None:
         content = _build(
             _payload(
@@ -433,6 +476,8 @@ class TestDecisionVerbs:
             ("Send — the invoice", "Send", "the invoice"),
             ("Approve", "Approve", ""),
             ("Ponder the roadmap", "Review", "Ponder the roadmap"),
+            ("ApproveX the SOW", "Review", "ApproveX the SOW"),
+            ("Approve X-ray budget", "Approve", "X-ray budget"),
             ("", "Review", ""),
             ("   ", "Review", "   "),
         ],
@@ -449,6 +494,19 @@ class TestDecisionVerbs:
         )["content"]
 
         assert content["decisions"][0] == {"verb": verb, "label": label, "note": None}
+
+    def test_decision_item_with_no_text_becomes_an_empty_label(self) -> None:
+        content = _build(
+            _payload(
+                sections=[
+                    {"numeral": "I", "title": "Today", "items": []},
+                    {"numeral": "II", "title": "Overnight", "items": []},
+                    {"numeral": "III", "title": "Decisions", "items": [{"kind": "you"}]},
+                ]
+            )
+        )["content"]
+
+        assert content["decisions"][0] == {"verb": "Review", "label": "", "note": None}
 
 
 @pytest.mark.unit
@@ -468,7 +526,7 @@ class TestStats:
 
         assert content["stats"] == {"done": 7, "you": 3, "gaia": 12, "mail": 41, "focus": "4h 20m"}
 
-    def test_email_is_an_alias_for_the_mail_stat(self) -> None:
+    def test_an_email_label_counts_as_the_mail_stat(self) -> None:
         content = _build(_payload(stats=[{"value": "9", "label": "Email triaged"}]))["content"]
 
         assert content["stats"]["mail"] == 9

@@ -15,7 +15,11 @@ FONTS_DIR = Path(__file__).parent / "fonts"
 
 def font_face(family: str, filename: str, weight: int) -> str:
     """Build one ``@font-face`` rule with the woff2 embedded as a data URI."""
-    encoded = base64.b64encode((FONTS_DIR / filename).read_bytes()).decode("ascii")
+    # codecs.lookup normalises the codec name, so "ascii" and "ASCII" select the
+    # same decoder — that mutation is unobservable, hence the pragma.
+    encoded = base64.b64encode((FONTS_DIR / filename).read_bytes()).decode(  # pragma: no mutate
+        "ascii"
+    )
     return (
         f"@font-face{{font-family:'{family}';font-style:normal;"
         f"font-weight:{weight};font-display:block;"

@@ -57,7 +57,9 @@ def _public_app_url() -> str:
     return url
 
 
-def _edition_no(iso_date: str) -> int:
+def _edition_no(iso_date: str | None) -> int:
+    if not iso_date:
+        return 1
     try:
         return (date_cls.fromisoformat(iso_date) - _EDITION_EPOCH).days + 1
     except ValueError:
@@ -151,7 +153,7 @@ async def render_edition_email(
     base64 ``data:`` images, and a hosted URL has no size ceiling. Raises on any
     render/upload failure so the caller can fall back to the plain HTML template.
     """
-    edition_no = _edition_no(payload.get("date", ""))
+    edition_no = _edition_no(payload.get("date"))
     # Weekly editions carry a rotation-assigned template family; the classic
     # edition (and every daily/legacy payload) renders via render_edition.
     family_renderer = renderer_for(payload.get("template_family"))
@@ -164,7 +166,13 @@ async def render_edition_email(
     )
     image = await render_html_to_image(
         edition_html,
-        ImageRenderOptions(width=_EDITION_WIDTH, device_scale_factor=_EMAIL_IMAGE_SCALE),
+        # ImageRenderOptions already defaults to this width and scale, so
+        # dropping either keyword builds an identical object — equivalent
+        # mutants. Stated anyway: the email's dimensions are this module's
+        # decision, not render.py's.
+        ImageRenderOptions(  # pragma: no mutate
+            width=_EDITION_WIDTH, device_scale_factor=_EMAIL_IMAGE_SCALE
+        ),
     )
     public_id = f"briefing/editions/{user_id}/{kind}_{payload.get('date', 'latest')}"
     image_url = await asyncio.to_thread(upload_file_to_cloudinary, public_id, file_data=image)

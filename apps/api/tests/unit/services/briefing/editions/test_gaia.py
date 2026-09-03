@@ -32,7 +32,7 @@ def _payload(**overrides: Any) -> dict[str, Any]:
 def _render(payload: dict[str, Any] | None = None, **overrides: Any) -> str:
     kwargs: dict[str, Any] = {"edition_no": 12, "generated_local": "6:02 AM"}
     kwargs.update(overrides)
-    return render_edition(payload or _payload(), **kwargs)
+    return render_edition(_payload() if payload is None else payload, **kwargs)
 
 
 @pytest.mark.unit
@@ -135,11 +135,13 @@ class TestHero:
         html = _render(_payload(lede=""))
 
         assert 'class="lede"' not in html
+        assert '<h1 class="headline">A quiet Sunday</h1>\n      \n    </section>' in html
 
     def test_empty_kicker_omits_the_kicker_div(self) -> None:
         html = _render(_payload(kicker=""))
 
         assert 'class="kicker"' not in html
+        assert '<span class="wordmark">GAIA</span>\n        \n      </div>' in html
 
     def test_kicker_is_rendered_and_escaped(self) -> None:
         html = _render(_payload(kicker="Weekly & digest"))
@@ -150,6 +152,7 @@ class TestHero:
         html = _render(_payload(caption=""))
 
         assert '<footer class="colophon">' not in html
+        assert html.endswith("</div>\n\n    \n  </div>\n</main>\n</body>\n</html>")
 
     def test_caption_is_rendered_as_the_colophon(self) -> None:
         html = _render()
@@ -163,6 +166,7 @@ class TestStats:
         html = _render(_payload(stats=[]))
 
         assert '<div class="stats">' not in html
+        assert '</section>\n\n    \n\n    <div class="sections">' in html
 
     def test_each_stat_renders_value_then_label(self) -> None:
         html = _render(
@@ -245,6 +249,7 @@ class TestSections:
 
         assert 'class="section-head"' not in html
         assert "Today" not in html
+        assert '<div class="sections">\n\n    </div>' in html
 
     def test_sections_render_in_payload_order(self) -> None:
         html = _render(
@@ -259,6 +264,24 @@ class TestSections:
         assert html.index('<span class="s-title">First</span>') < html.index(
             '<span class="s-title">Second</span>'
         )
+
+    def test_adjacent_sections_are_separated_by_a_single_newline(self) -> None:
+        html = _render(
+            _payload(
+                sections=[
+                    {"numeral": "I", "title": "First", "items": [{"text": "a", "kind": "note"}]},
+                    {"numeral": "II", "title": "Second", "items": [{"text": "b", "kind": "note"}]},
+                ]
+            )
+        )
+
+        assert '      </section>\n      <section class="section">' in html
+
+    def test_section_missing_its_numeral_and_title_renders_them_empty(self) -> None:
+        html = _render(_payload(sections=[{"items": [{"text": "a", "kind": "note"}]}]))
+
+        assert '<span class="numeral"></span>' in html
+        assert '<span class="s-title"></span>' in html
 
     def test_section_numeral_and_title_are_escaped(self) -> None:
         html = _render(
@@ -398,3 +421,46 @@ class TestItemMarkers:
         )
 
         assert html.index(">first<") < html.index(">second<")
+
+    def test_adjacent_items_are_separated_by_a_single_newline(self) -> None:
+        html = _render(
+            _payload(
+                sections=[
+                    {
+                        "numeral": "I",
+                        "title": "T",
+                        "items": [
+                            {"text": "first", "kind": "note"},
+                            {"text": "second", "kind": "note"},
+                        ],
+                    }
+                ]
+            )
+        )
+
+        assert '</p>\n          <p class="item">' in html
+
+    def test_item_missing_its_text_renders_an_empty_text_span(self) -> None:
+        html = _render(_payload(sections=[{"numeral": "I", "title": "T", "items": [{}]}]))
+
+        assert '<p class="item"><span class="i-text"></span></p>' in html
+
+
+@pytest.mark.unit
+class TestMissingPayloadKeys:
+    """A payload with a key absent renders the slot empty — never ``"None"``."""
+
+    def test_missing_headline_renders_an_empty_headline(self) -> None:
+        assert '<h1 class="headline"></h1>' in _render({})
+
+    def test_missing_kicker_lede_and_caption_render_no_element_at_all(self) -> None:
+        html = _render({})
+
+        assert 'class="kicker"' not in html
+        assert 'class="lede"' not in html
+        assert 'class="colophon"' not in html
+
+    def test_missing_date_drops_the_dateline_segment_rather_than_filling_it(self) -> None:
+        html = _render({})
+
+        assert '<div class="dateline">Edition 12 &middot; Generated 6:02 AM</div>' in html

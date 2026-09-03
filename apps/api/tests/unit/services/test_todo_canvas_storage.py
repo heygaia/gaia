@@ -9,7 +9,7 @@ repository confirms the update matched.
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import DEFAULT, AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -42,11 +42,26 @@ def _todo_doc(**overrides: object) -> TodoDocument:
     return TodoDocument(**data)
 
 
+def _scoped_to_the_owner(todo_id: str, *, user_id: str, **_: object) -> object:
+    """Match no document unless the call carries both real ids.
+
+    Every repository call here is scoped by ``(todo_id, user_id)`` — that pair
+    is the tenancy boundary, and a call that drops or swaps either half reads
+    or writes somebody else's todo. A mock that answers regardless of its
+    arguments cannot tell the difference, so the fake enforces the scope and
+    every "it worked" assertion below doubles as proof the ids were passed
+    through untouched.
+    """
+    if todo_id != TODO_ID or user_id != USER_ID:
+        return None
+    return DEFAULT
+
+
 @pytest.fixture
 def mock_repo():
     with patch(f"{_MOD}.todo_repository") as m:
-        m.get = AsyncMock(return_value=None)
-        m.update = AsyncMock(return_value=None)
+        m.get = AsyncMock(return_value=None, side_effect=_scoped_to_the_owner)
+        m.update = AsyncMock(return_value=None, side_effect=_scoped_to_the_owner)
         yield m
 
 
@@ -181,6 +196,17 @@ class TestWriteFacet:
 class TestAppendFacet:
     async def test_false_for_missing_todo(self, mock_repo):
         assert await append_facet(TODO_ID, USER_ID, FACET_NOTES, "entry") is False
+
+    async def test_the_missing_todo_warning_names_the_todo_and_the_facet(self, mock_repo):
+        # The append returns False and writes nothing. The warning is the only
+        # record that a facet write was dropped, so without both ids on it the
+        # loss cannot be traced back to a todo.
+        with patch(f"{_MOD}.log") as mock_log:
+            assert await append_facet(TODO_ID, USER_ID, FACET_NOTES, "entry") is False
+
+        mock_log.warning.assert_called_once_with(
+            "todo_facet.append_missing_todo", todo_id=TODO_ID, facet=FACET_NOTES
+        )
 
     async def test_appends_with_newline_separator(self, mock_repo, mock_sync):
         mock_repo.get.return_value = _todo_doc(notes_content="existing")

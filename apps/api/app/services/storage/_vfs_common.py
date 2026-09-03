@@ -103,7 +103,9 @@ def hash_bodies_with_meta(bodies: list[str], meta: dict[str, Any]) -> str:
     """
     h = hashlib.sha256()
     for body in bodies:
-        h.update(body.encode("utf-8"))
+        # ``"UTF-8"`` is the same codec as ``"utf-8"`` once the registry normalizes
+        # the name, so that mutation is unkillable by construction.
+        h.update(body.encode("utf-8"))  # pragma: no mutate
         h.update(b"\x00")
     h.update(json.dumps(meta, sort_keys=True, default=str).encode("utf-8"))
     return h.hexdigest()

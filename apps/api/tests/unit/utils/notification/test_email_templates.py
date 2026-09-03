@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
 from app.utils.notification.email_templates import (
     render_daily_brief_email,
     render_plain_notification_email,
@@ -203,6 +205,16 @@ class TestBriefingGradientBand:
             " hsl(70, 70%, 64%));" in html
         )
 
+    def test_a_stop_is_never_silently_dropped_when_the_tables_disagree(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            "app.utils.notification.email_templates._GRADIENT_OFFSETS", (-40, -15, 0)
+        )
+
+        with pytest.raises(ValueError, match="zip"):
+            render_daily_brief_email({"hue": 210}, "https://u")
+
     def test_string_hue_is_coerced_to_int(self) -> None:
         assert render_daily_brief_email({"hue": "350"}, "https://u") == render_daily_brief_email(
             {"hue": 350}, "https://u"
@@ -300,6 +312,18 @@ class TestBriefingStatRow:
         assert "&lt;d&gt;" in html
         assert "<v>" not in html
 
+    def test_cells_sit_directly_next_to_each_other(self) -> None:
+        html = render_daily_brief_email(
+            {"stats": [{"value": 1, "label": "a"}, {"value": 2, "label": "b"}]}, "https://u"
+        )
+
+        assert (
+            "        </td>\n"
+            "        \n"
+            '        <td style="padding: 16px 20px; border: 1px solid #262626;'
+            ' text-align: center;">\n' in html
+        )
+
     def test_every_stat_gets_its_own_cell(self) -> None:
         html = render_daily_brief_email(
             {"stats": [{"value": i, "label": "l"} for i in range(4)]}, "https://u"
@@ -323,6 +347,19 @@ class TestBriefingSections:
 
         assert "\n            I. AGENDA\n" in html
         assert "\n            II. MAIL\n" in html
+
+    def test_section_blocks_sit_directly_next_to_each_other(self) -> None:
+        html = render_daily_brief_email(
+            {"sections": [{"title": "one", "items": []}, {"title": "two", "items": []}]},
+            "https://u",
+        )
+
+        assert '        </div>\n        \n        <div style="margin-top: 28px;">\n' in html
+
+    def test_section_without_a_title_renders_the_numeral_alone(self) -> None:
+        html = render_daily_brief_email({"sections": [{"items": []}]}, "https://u")
+
+        assert "\n            I. \n" in html
 
     def test_explicit_numeral_overrides_the_positional_one(self) -> None:
         html = render_daily_brief_email(
@@ -420,11 +457,59 @@ class TestBriefingDocumentShape:
         ]
         assert order == sorted(order)
 
-    def test_empty_payload_renders_only_masthead_gradient_headline_footer(self) -> None:
+    def test_empty_payload_document_is_exactly_this(self) -> None:
+        """An absent block contributes nothing at all — not a stray character.
+
+        Every optional block returns "" when its payload key is missing, and
+        the required ones fall back to empty text nodes. Pinning the whole
+        document is the only assertion that proves both.
+        """
         html = render_daily_brief_email({}, "https://u")
 
-        # 1 wrapper row + masthead + gradient + headline + footer.
-        assert html.count("<tr>") == 5
+        assert html == (
+            _DOC_OPEN + "            \n"
+            "    <tr>\n"
+            f'      <td style="padding: 32px 40px 0; font-family: {_SANS};">\n'
+            '        <div style="font-size: 11px; letter-spacing: 3px;'
+            ' text-transform: uppercase; color: #a1a1aa;">\n'
+            "          Daily Brief\n"
+            "        </div>\n"
+            '        <div style="font-size: 12px; color: #a1a1aa; margin-top: 4px;"></div>\n'
+            "      </td>\n"
+            "    </tr>\n"
+            "    \n"
+            "    <tr>\n"
+            '      <td style="padding: 16px 40px 0;">\n'
+            '        <div style="height: 6px; border-radius: 3px; background:'
+            " linear-gradient(90deg, hsl(170, 70%, 58%), hsl(195, 70%, 50%),"
+            " hsl(210, 70%, 46%), hsl(230, 70%, 50%), hsl(255, 70%, 58%),"
+            ' hsl(280, 70%, 64%));"></div>\n'
+            "      </td>\n"
+            "    </tr>\n"
+            "    \n"
+            "    <tr>\n"
+            f'      <td style="padding: 24px 40px 0; font-family: {_SANS};">\n'
+            f'        <div style="font-family: {_SERIF}; font-style: italic;'
+            ' font-size: 28px; line-height: 1.25; color: #f4f4f5;">\n'
+            "          \n"
+            "        </div>\n"
+            '        <div style="font-size: 15px; line-height: 1.6; color: #a1a1aa;'
+            ' margin-top: 12px;">\n'
+            "          \n"
+            "        </div>\n"
+            "      </td>\n"
+            "    </tr>\n"
+            "    \n"
+            "    <tr>\n"
+            f'      <td style="padding: 32px 40px 40px; font-family: {_SANS};'
+            " font-size: 11px; color: #a1a1aa; border-top: 1px solid #262626;"
+            ' margin-top: 24px;">\n'
+            '        GAIA &middot; <a href="https://u" style="color: #a1a1aa;">'
+            "Unsubscribe from these emails</a>\n"
+            "      </td>\n"
+            "    </tr>\n"
+            "    \n" + _DOC_CLOSE
+        )
 
     def test_rich_payload_adds_the_stat_section_and_caption_rows(self) -> None:
         html = render_daily_brief_email(_rich_payload(), _UNSUB)

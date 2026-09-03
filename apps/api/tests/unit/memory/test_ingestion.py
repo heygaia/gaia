@@ -26,6 +26,7 @@ from app.constants.memory import (
     EPISODE_ENTRY_DEDUPE_RATIO,
     FREE_MEMORY_CAP_COUNT_SAFETY_MARGIN,
     FREE_MEMORY_FACT_LIMIT,
+    RECENT_FACTS_LIMIT,
     RECONCILE_SIMILARITY_THRESHOLD,
     STATE_FACT_TTL_DAYS,
     TRANSCRIPT_CHUNK_MAX_CHARS,
@@ -1305,6 +1306,89 @@ class TestRetain:
         assert result.new == 1
         assert result.updated == 1
 
+    async def test_prior_context_is_read_for_the_ingesting_user(
+        self, boundaries: Boundaries
+    ) -> None:
+        """Every stored-state read is scoped to the user being ingested for.
+
+        A read that loses the user id (or its limit) does not fail -- it just
+        feeds another user's folders and facts, or an unbounded slice of them,
+        into the extraction prompt.
+        """
+        boundaries.extract_memories.return_value = ExtractedMemoryBatch()
+        await retain(
+            USER,
+            [{"role": "user", "content": "hi"}],
+            source=MemorySource(MemorySourceType.CONVERSATION),
+            now=datetime(2026, 3, 5, 9, 30, tzinfo=UTC),
+        )
+        boundaries.get_folder_tree.assert_awaited_once_with(USER)
+        assert boundaries.get_recent_facts.await_args.args == (USER,)
+        assert boundaries.get_recent_facts.await_args.kwargs == {"limit": RECENT_FACTS_LIMIT}
+        boundaries.get_episode.assert_awaited_once_with(USER, date_type(2026, 3, 5))
+
+    async def test_journal_entry_without_text_reads_as_an_empty_line(
+        self, boundaries: Boundaries
+    ) -> None:
+        # A stored entry missing its text key must degrade to "" -- a None in
+        # journaled_today reaches the extraction prompt rendered as "None".
+        boundaries.get_episode.return_value = make_episode(entries=[{"time": "09:00"}])
+        boundaries.extract_memories.return_value = ExtractedMemoryBatch()
+        await retain(
+            USER,
+            [{"role": "user", "content": "hi"}],
+            source=MemorySource(MemorySourceType.CONVERSATION),
+        )
+        assert boundaries.extract_memories.await_args.kwargs["stored"].journaled_today == [""]
+
+    async def test_every_apply_count_is_reported_on_the_result(
+        self, boundaries: Boundaries
+    ) -> None:
+        """retain() reports what apply actually did, count for count.
+
+        A count dropped between apply and the result is silent: the caller and
+        the wide event both read an ingestion that did less than it did.
+        """
+        sam, berlin = uuid.uuid4(), uuid.uuid4()
+        boundaries.upsert_entities.return_value = {"sam carter": sam, "berlin": berlin}
+        boundaries.insert_edges.side_effect = lambda _user, edges, _record_id: len(edges)
+        boundaries.supersede_memory.return_value = make_row()
+        linked = make_fact(
+            "sam lives in berlin",
+            entities=[
+                ExtractedEntity(name="Sam Carter", entity_type="person"),
+                ExtractedEntity(name="Berlin", entity_type="place"),
+            ],
+            edges=[ExtractedEdge(source="Sam Carter", relationship="lives_in", target="Berlin")],
+        )
+        revised, dup_a, dup_b = make_fact("b"), make_fact("c"), make_fact("d")
+        boundaries.extract_memories.return_value = ExtractedMemoryBatch(
+            facts=[linked, revised, dup_a, dup_b]
+        )
+        boundaries.reconcile.return_value = [
+            make_reconciled(linked, embedding=[1.0]),
+            make_reconciled(
+                revised, ReconcileOutcome.EXTENDS, embedding=[2.0], target_memory_id="old"
+            ),
+            make_reconciled(dup_a, ReconcileOutcome.DUPLICATE, embedding=[3.0]),
+            make_reconciled(dup_b, ReconcileOutcome.DUPLICATE, embedding=[4.0]),
+        ]
+        result = await retain(
+            USER,
+            [{"role": "user", "content": "hi"}],
+            source=MemorySource(MemorySourceType.CONVERSATION),
+        )
+        assert result == RetainResult(
+            facts_extracted=4,
+            new=1,
+            updated=0,
+            extended=1,
+            duplicates=2,
+            entities_linked=2,
+            edges_added=1,
+            episode_entries=0,
+        )
+
     async def test_extraction_receives_the_prior_context(self, boundaries: Boundaries) -> None:
         boundaries.get_folder_tree.return_value = [("work", 4)]
         boundaries.get_recent_facts.return_value = ["sam likes tea"]
@@ -2067,6 +2151,27 @@ class TestRetainFreePlanCap:
         boundaries.reconcile.side_effect = lambda _user, facts, embeddings: [
             make_reconciled(fact, embedding=embedding) for fact, embedding in zip(facts, embeddings)
         ]
+
+    async def test_the_cap_is_evaluated_for_the_ingesting_user(
+        self, boundaries: Boundaries
+    ) -> None:
+        # Every lookup the cap makes has to name the user it is capping: a cap
+        # resolved for nobody reads as an uncapped (or wrongly capped) plan.
+        self._two_new_facts(boundaries)
+        cached_live = FREE_MEMORY_FACT_LIMIT - (1 + FREE_MEMORY_CAP_COUNT_SAFETY_MARGIN)
+        counted, cached, seed, adjust, count = self._free_plan(
+            cached_live=cached_live, counted_live=FREE_MEMORY_FACT_LIMIT - 1
+        )
+        with counted as plan_mock, cached as cached_mock, seed, adjust, count as count_mock:
+            await retain(
+                USER,
+                [{"role": "user", "content": "hi"}],
+                source=MemorySource(MemorySourceType.CONVERSATION),
+            )
+
+        plan_mock.assert_awaited_once_with(USER)
+        cached_mock.assert_awaited_once_with(USER)
+        count_mock.assert_awaited_once_with(USER)
 
     async def test_a_batch_that_clears_the_safety_margin_skips_the_count(
         self, boundaries: Boundaries

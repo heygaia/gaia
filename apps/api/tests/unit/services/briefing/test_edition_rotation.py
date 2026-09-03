@@ -9,13 +9,37 @@ invariants hold for every seed, so they are exact, not probabilistic.
 """
 
 import random
+from typing import Any
 
 import pytest
 
 from app.models.user_models import EditionRotation
-from app.services.briefing.edition_rotation import advance_rotation
+from app.services.briefing import edition_rotation
+from app.services.briefing.edition_rotation import advance_rotation, choose_edition_family
 
 FAMILIES_3 = ["alpha", "beta", "gamma"]
+
+
+class ScriptedRandom(random.Random):
+    """A ``random.Random`` whose shuffle order and swap slot are fixed.
+
+    The boundary rule ("never open a cycle on the family the previous one
+    closed on") is only observable when the shuffle actually lands that family
+    first — with a seeded RNG that happens by luck, so a test relying on it
+    passes just as well with the avoid-first swap deleted. Scripting the order
+    forces the collision on every run.
+    """
+
+    def __init__(self, order: list[str], swap_slot: int = 1) -> None:
+        super().__init__()
+        self.order = order
+        self.swap_slot = swap_slot
+
+    def shuffle(self, x: Any) -> None:
+        x[:] = list(self.order)
+
+    def randrange(self, *args: Any, **kwargs: Any) -> int:
+        return self.swap_slot
 
 
 @pytest.mark.unit
@@ -128,9 +152,87 @@ class TestCorruptState:
         assert 0 <= next_state.index < len(next_state.cycle)
         assert sorted(next_state.cycle) == sorted(FAMILIES_3)
 
+    def test_index_equal_to_the_cycle_length_is_out_of_range_too(self) -> None:
+        # The off-by-one boundary: index=3 addresses no element of a 3-element
+        # cycle, so it must reshuffle. Accepting it would index past the end.
+        state = EditionRotation(cycle=FAMILIES_3, index=3)
+        rng = random.Random(11)
+
+        family, next_state = advance_rotation(state, FAMILIES_3, rng)
+
+        assert family in FAMILIES_3
+        assert next_state.index == 1
+        assert sorted(next_state.cycle) == sorted(FAMILIES_3)
+
+
+@pytest.mark.unit
+class TestBoundaryRuleOnADiscardedCycle:
+    def test_the_discarded_cycles_last_family_never_opens_the_new_one(self) -> None:
+        # The stale cycle closed on "beta"; the registry has since changed, so
+        # it is discarded. The scripted shuffle deliberately puts "beta" first
+        # in the replacement, and the avoid-first swap must move it to slot 1.
+        state = EditionRotation(cycle=["delta", "alpha", "beta"], index=0)
+        rng = ScriptedRandom(order=["beta", "gamma", "alpha"], swap_slot=1)
+
+        family, next_state = advance_rotation(state, FAMILIES_3, rng)
+
+        assert next_state.cycle == ["gamma", "beta", "alpha"]
+        assert family == "gamma"
+        assert next_state.index == 1
+
+
+class FakeUserRepo:
+    """``user_repository`` narrowed to the rotation accessors, real signatures
+    kept so a call that drops or reorders an argument raises here."""
+
+    def __init__(self, stored: dict[tuple[str, str], EditionRotation] | None = None) -> None:
+        self.stored = stored or {}
+        self.saved: list[tuple[str, str, EditionRotation]] = []
+
+    async def get_edition_rotation(self, user_id: str, kind: str) -> EditionRotation | None:
+        return self.stored.get((user_id, kind))
+
+    async def set_edition_rotation(self, user_id: str, kind: str, state: EditionRotation) -> None:
+        self.saved.append((user_id, kind, state))
+
+
+@pytest.mark.unit
+class TestChooseEditionFamily:
+    """The persisted half: read this user's rotation for this kind, advance it,
+    write it back. Nothing here reshuffles a cycle that is still running."""
+
+    async def test_an_in_progress_cycle_is_continued_and_advanced_in_place(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = FakeUserRepo({("user-1", "weekly"): EditionRotation(cycle=FAMILIES_3, index=1)})
+        monkeypatch.setattr(edition_rotation, "user_repository", repo)
+
+        family = await choose_edition_family("user-1", kind="weekly", families=FAMILIES_3)
+
+        assert family == "beta"
+        assert repo.saved == [("user-1", "weekly", EditionRotation(cycle=FAMILIES_3, index=2))]
+
+    async def test_a_user_with_no_rotation_yet_gets_a_fresh_cycle_persisted(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        repo = FakeUserRepo()
+        monkeypatch.setattr(edition_rotation, "user_repository", repo)
+
+        family = await choose_edition_family("user-1", kind="daily", families=FAMILIES_3)
+
+        saved_user_id, saved_kind, saved_state = repo.saved[0]
+        assert (saved_user_id, saved_kind) == ("user-1", "daily")
+        assert sorted(saved_state.cycle) == sorted(FAMILIES_3)
+        # The family just handed out is the one the new cycle opened on, and
+        # the stored index already points past it.
+        assert saved_state.cycle[0] == family
+        assert saved_state.index == 1
+
 
 @pytest.mark.unit
 class TestEmptyFamilies:
     def test_raises_value_error(self) -> None:
-        with pytest.raises(ValueError, match="at least one family"):
+        with pytest.raises(ValueError) as excinfo:
             advance_rotation(None, [], random.Random(0))
+
+        assert str(excinfo.value) == "edition rotation requires at least one family"

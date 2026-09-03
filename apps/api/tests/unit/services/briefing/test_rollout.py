@@ -11,6 +11,7 @@ from tests.factories import make_user
 
 from app.services.briefing import context, rollout
 from app.services.briefing.rollout import provision_existing_user
+from shared.py.wide_events import log, log_context
 
 USER_ID = "user-abc"
 
@@ -46,6 +47,7 @@ class FakeUserRepo:
 class Harness:
     def __init__(self) -> None:
         self.user: dict[str, Any] | None = make_user(user_id=USER_ID)
+        self.lookups: list[str] = []
         self.has_goal = True
         self.goal_calls: list[tuple[str, dict[str, Any]]] = []
         self.provisioned: list[str] = []
@@ -60,6 +62,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
     h = Harness()
 
     async def fake_get_user_by_id(user_id: str) -> dict[str, Any] | None:
+        h.lookups.append(user_id)
         return h.user
 
     async def fake_provision(user_id: str) -> list[Any]:
@@ -101,6 +104,7 @@ class TestNormalPath:
         harness.has_goal = True
 
         assert await provision_existing_user(USER_ID) == "normal"
+        assert harness.lookups == [USER_ID]
         assert harness.provisioned == [USER_ID]
         assert harness.users.bootstrap_calls == []
         assert harness.tracked == [(USER_ID, "briefing_provisioned", {"path": "normal"})]
@@ -165,3 +169,29 @@ class TestBootstrapPath:
 
         assert harness.integrations.calls == [USER_ID]
         assert harness.todos.calls == [USER_ID]
+
+
+@pytest.mark.unit
+class TestWideEvent:
+    """The rollout runs from a script and a worker, so its wide event is the
+    only place an operator can see which user took which path."""
+
+    async def test_stamps_the_component_operation_and_user(self, harness: Harness) -> None:
+        async with log_context("briefing_rollout_test"):
+            await provision_existing_user(USER_ID)
+            event = dict(log.get())
+
+        assert event["component"] == "briefing_rollout"
+        assert event["operation"] == "provision_existing_user"
+        assert event["user_id"] == USER_ID
+
+    async def test_an_unknown_user_is_warned_with_the_id_that_was_missing(
+        self, harness: Harness
+    ) -> None:
+        harness.user = None
+
+        async with log_context("briefing_rollout_test"):
+            assert await provision_existing_user(USER_ID) == "skipped"
+            event = dict(log.get())
+
+        assert event["warnings"] == [{"msg": "briefing_rollout.unknown_user", "user_id": USER_ID}]

@@ -13,6 +13,7 @@ failure injection; these functions take a ``Path`` and touch no network or DB.
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -198,6 +199,42 @@ def test_a_removed_artifact_never_lingers_in_its_folder(tmp_path: Path) -> None:
 
     folder = tmp_path / gtv.GAIA_TASKS_DIRNAME / "research-00000001"
     assert not (folder / "artifacts").exists()
+
+
+def test_an_artifact_with_empty_content_projects_an_empty_file_not_a_placeholder(
+    tmp_path: Path,
+) -> None:
+    # An artifact gets named before it is filled, so an empty body is a normal
+    # state. Anything substituted for it is text the agent reads back as the
+    # artifact's real content.
+    docs = [task(ID_A, "Research", artifacts=[{"name": "draft", "content": ""}])]
+
+    materialize_gaia_tasks(tmp_path, docs, GUIDE)
+
+    assert (
+        tmp_path / gtv.GAIA_TASKS_DIRNAME / "research-00000001" / "artifacts" / "draft.md"
+    ).read_text() == ""
+
+
+def test_an_artifacts_dir_that_could_not_be_removed_does_not_abort_the_sync(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # `_force_remove` swallows OSError, so a failed rmtree on the network mount
+    # leaves the artifacts dir standing. Rebuilding the subtree has to survive
+    # that: the alternative is a task whose whole folder stops syncing because
+    # one directory refused to go.
+    materialize_gaia_tasks(
+        tmp_path, [task(ID_A, "Research", artifacts=[{"name": "first", "content": "v1"}])], GUIDE
+    )
+    monkeypatch.setattr(gtv, "remove_tree", lambda path: None)
+
+    materialize_gaia_tasks(
+        tmp_path, [task(ID_A, "Research", artifacts=[{"name": "second", "content": "v2"}])], GUIDE
+    )
+
+    assert (
+        tmp_path / gtv.GAIA_TASKS_DIRNAME / "research-00000001" / "artifacts" / "second.md"
+    ).read_text() == "v2"
 
 
 def test_projected_bodies_are_read_only_so_a_raw_edit_cannot_silently_desync_them(
@@ -458,6 +495,41 @@ def test_the_signature_reflects_every_facet_and_the_meta(tmp_path: Path) -> None
     assert per_doc_signature(base) == per_doc_signature(
         task(ID_A, "Alpha", deliverable="D", notes="N", log="L")
     )
+
+
+def test_reordering_an_artifacts_keys_is_not_a_change_worth_rewriting_the_folder_for(
+    tmp_path: Path,
+) -> None:
+    # The signature is what keeps a steady-state sync at zero I/O. Hashing the
+    # artifacts as written rather than canonically makes a document whose fields
+    # come back in another order look edited, and every folder is rewritten on
+    # the network mount on every turn.
+    ordered = task(ID_A, "Alpha", artifacts=[{"name": "a", "content": "v1", "kind": "markdown"}])
+    reordered = task(ID_A, "Alpha", artifacts=[{"kind": "markdown", "content": "v1", "name": "a"}])
+    assert materialize_gaia_tasks(tmp_path, [ordered], GUIDE) == 1
+
+    assert materialize_gaia_tasks(tmp_path, [reordered], GUIDE) == 0
+    assert per_doc_signature(ordered) == per_doc_signature(reordered)
+
+
+def test_an_artifact_value_json_cannot_encode_natively_is_hashed_not_raised_on(
+    tmp_path: Path,
+) -> None:
+    # ``artifacts`` is ``list[dict[str, Any]]`` and the sibling meta payload
+    # already carries datetimes. The hash gate has to be total: raising here
+    # fails the user's whole projection, not one artifact.
+    docs = [
+        task(
+            ID_A,
+            "Alpha",
+            artifacts=[{"name": "a", "content": "v", "generated_at": datetime(2026, 1, 1)}],
+        )
+    ]
+
+    assert materialize_gaia_tasks(tmp_path, docs, GUIDE) == 1
+    assert (
+        tmp_path / gtv.GAIA_TASKS_DIRNAME / "alpha-00000001" / "artifacts" / "a.md"
+    ).read_text() == "v"
 
 
 # ── hostile titles: user-supplied, straight into a path ──────────────

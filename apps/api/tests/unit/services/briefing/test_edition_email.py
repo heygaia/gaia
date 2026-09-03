@@ -23,6 +23,55 @@ IMAGE_URL = "https://cdn.example.com/edition.png"
 UNSUBSCRIBE_URL = "https://heygaia.io/unsubscribe?t=abc"
 FRONTEND_URL = "https://app.example.com"
 
+# The strip is what an image-blocked inbox actually shows, so its markup is
+# pinned verbatim — a dropped tag, a changed colour or a lost HTML entity is a
+# regression the reader of the mail would see, and only exact text catches it.
+_SANS = "Inter,-apple-system,Helvetica,Arial,sans-serif"
+_STRIP_OPEN = (
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+    'style="max-width:640px;margin:0 auto;background:#000000;">'
+    '<tr><td align="center" style="padding:24px 24px 8px 24px;">'
+    f'<a href="{FRONTEND_URL}" style="display:inline-block;background:#00bbff;'
+    f"color:#000000;text-decoration:none;font:600 15px/1.2 {_SANS};"
+    'padding:13px 30px;border-radius:10px;">'
+    "Open today&#39;s brief in GAIA</a></td></tr>"
+)
+_STRIP_CLOSE = (
+    '<tr><td align="center" style="padding:20px 24px 28px 24px;">'
+    f'<div style="font:400 11px/1.5 {_SANS};color:#a1a1aa;">'
+    "You&#39;re getting this because GAIA works your day. "
+    f'<a href="{UNSUBSCRIBE_URL}" style="color:#a1a1aa;">Unsubscribe</a>.'
+    "</div></td></tr></table>"
+)
+_REVIEW_LINK_STYLE = 'style="color:#00bbff;text-decoration:none;font-weight:600;">Review</a></div>'
+EXPECTED_STRIP_WITHOUT_ACTIONS = _STRIP_OPEN + _STRIP_CLOSE
+EXPECTED_STRIP_WITH_ACTIONS = (
+    _STRIP_OPEN
+    + '<tr><td style="padding:8px 32px 4px 32px;">'
+    + f'<div style="font:600 12px/1.4 {_SANS};color:#a1a1aa;'
+    + 'border-top:1px solid #27272a;padding-top:14px;">Waiting on your call</div>'
+    + f'<div style="margin:7px 0;font:400 13px/1.5 {_SANS};color:#f4f4f5;">'
+    + "Pay &lt;Acme&gt; &amp; co &nbsp;"
+    + f'<a href="{FRONTEND_URL}/todos/1" '
+    + _REVIEW_LINK_STYLE
+    + f'<div style="margin:7px 0;font:400 13px/1.5 {_SANS};color:#f4f4f5;">'
+    + " &nbsp;"
+    + f'<a href="{FRONTEND_URL}/todos/2" '
+    + _REVIEW_LINK_STYLE
+    + "</td></tr>"
+    + _STRIP_CLOSE
+)
+EXPECTED_EMAIL_WITHOUT_ACTIONS = (
+    '<div style="margin:0;padding:0;background:#000000;">'
+    '<table role="presentation" width="100%" cellpadding="0" cellspacing="0" '
+    'style="background:#000000;">'
+    '<tr><td align="center" style="padding:0;">'
+    f'<a href="{FRONTEND_URL}" style="text-decoration:none;">'
+    f'<img src="{IMAGE_URL}" alt="Your Friday — Three things need you." width="640" '
+    'style="display:block;width:100%;max-width:640px;height:auto;border:0;" /></a>'
+    "</td></tr></table>" + EXPECTED_STRIP_WITHOUT_ACTIONS + "</div>"
+)
+
 
 def make_payload(**overrides: Any) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -46,7 +95,7 @@ class Harness:
         self.render_calls: list[dict[str, Any]] = []
         self.image_calls: list[dict[str, Any]] = []
         self.upload_calls: list[dict[str, Any]] = []
-        self.family_renderer: Any = None
+        self.family_renderers: dict[str | None, Any] = {}
         self.render_error: Exception | None = None
         self.upload_error: Exception | None = None
 
@@ -60,7 +109,7 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
         return "<edition>classic</edition>"
 
     def fake_renderer_for(family: str | None) -> Any:
-        return h.family_renderer
+        return h.family_renderers.get(family)
 
     async def fake_render_html_to_image(html: str, options: Any) -> bytes:
         h.image_calls.append({"html": html, "options": options})
@@ -120,7 +169,7 @@ class TestEditionRendering:
             seen.append({"payload": payload, **kwargs})
             return "<edition>family</edition>"
 
-        harness.family_renderer = family
+        harness.family_renderers["dispatch"] = family
 
         await render(make_payload(template_family="dispatch"))
 
@@ -128,6 +177,17 @@ class TestEditionRendering:
         assert len(seen) == 1
         assert seen[0]["edition_no"] == 10
         assert harness.image_calls[0]["html"] == "<edition>family</edition>"
+
+    async def test_locale_labels_default_to_empty_strings(self, harness: Harness) -> None:
+        await render_edition_email(
+            make_payload(),
+            kind=NOTIFICATION_KIND_BRIEFING_DAILY,
+            user_id=USER_ID,
+            unsubscribe_url=UNSUBSCRIBE_URL,
+        )
+
+        assert harness.render_calls[0]["generated_local"] == ""
+        assert harness.render_calls[0]["tz_label"] == ""
 
     async def test_edition_epoch_makes_the_first_of_january_2026_edition_one(
         self, harness: Harness
@@ -186,10 +246,8 @@ class TestImageAndUpload:
             f"briefing/editions/{USER_ID}/briefing_daily_latest"
         )
 
-    async def test_hosted_url_is_the_image_source(self, harness: Harness) -> None:
-        html = await render(make_payload())
-
-        assert f'src="{IMAGE_URL}"' in html
+    async def test_email_body_markup_is_exactly_this(self, harness: Harness) -> None:
+        assert await render(make_payload()) == EXPECTED_EMAIL_WITHOUT_ACTIONS
 
     async def test_image_url_is_html_escaped(self, harness: Harness) -> None:
         harness.image_url = "https://cdn.example.com/a.png?x=1&y=2"
@@ -237,6 +295,21 @@ class TestAltText:
 
         assert 'alt="Your GAIA brief"' in html
 
+    async def test_alt_falls_back_when_the_payload_has_no_lede_key(self, harness: Harness) -> None:
+        payload = make_payload(headline="Big day")
+        del payload["lede"]
+
+        html = await render(payload)
+
+        assert 'alt="Big day"' in html
+
+    async def test_alt_trims_only_the_separator_never_the_headlines_own_letters(
+        self, harness: Harness
+    ) -> None:
+        html = await render(make_payload(headline="Reply to MAX", lede=""))
+
+        assert 'alt="Reply to MAX"' in html
+
     async def test_alt_is_escaped(self, harness: Harness) -> None:
         html = await render(make_payload(headline="R&D <b>", lede=""))
 
@@ -245,13 +318,22 @@ class TestAltText:
 
 @pytest.mark.unit
 class TestActionStrip:
-    async def test_primary_cta_and_unsubscribe_are_always_present(self, harness: Harness) -> None:
-        html = await render(make_payload())
+    def test_strip_markup_without_actions_is_exactly_this(self, harness: Harness) -> None:
+        assert edition_email._action_strip(make_payload(), UNSUBSCRIBE_URL) == (
+            EXPECTED_STRIP_WITHOUT_ACTIONS
+        )
 
-        assert f'href="{FRONTEND_URL}"' in html
-        assert "Open today&#39;s brief in GAIA" in html
-        assert f'href="{UNSUBSCRIBE_URL}"' in html
-        assert "Unsubscribe" in html
+    def test_strip_markup_with_actions_is_exactly_this(self, harness: Harness) -> None:
+        payload = make_payload(
+            sections=[
+                {"items": [make_item("proposal", "  Pay <Acme> & co  ", "todos/1")]},
+                {"items": [make_item("update", "FYI"), {"kind": "needs_you", "link": "/todos/2"}]},
+            ]
+        )
+
+        assert edition_email._action_strip(payload, UNSUBSCRIBE_URL) == (
+            EXPECTED_STRIP_WITH_ACTIONS
+        )
 
     async def test_no_action_items_means_no_waiting_block(self, harness: Harness) -> None:
         html = await render(make_payload(sections=[{"items": [make_item("update", "FYI only")]}]))
@@ -296,17 +378,6 @@ class TestActionStrip:
         assert "Second" in html
         assert html.count("Review</a>") == 2
 
-    async def test_absolute_links_are_left_alone(self, harness: Harness) -> None:
-        html = await render(
-            make_payload(
-                sections=[
-                    {"items": [make_item("proposal", "Open Notion", "https://notion.so/page")]}
-                ]
-            )
-        )
-
-        assert 'href="https://notion.so/page"' in html
-
     async def test_item_without_a_link_falls_back_to_the_app_home(self, harness: Harness) -> None:
         html = await render(
             make_payload(sections=[{"items": [make_item("proposal", "Approve it", None)]}])
@@ -343,7 +414,70 @@ class TestActionStrip:
 
 
 @pytest.mark.unit
+class TestActionItems:
+    def test_a_payload_with_no_sections_key_yields_no_actions(self) -> None:
+        assert edition_email._action_items({}) == []
+
+    def test_only_proposal_and_needs_you_items_are_actions(self) -> None:
+        proposal = make_item("proposal", "Send it", "todos/1")
+        needs_you = make_item("needs_you", "Answer Sam", "todos/2")
+        payload = make_payload(
+            sections=[
+                {"items": [proposal, make_item("update", "FYI")]},
+                {"items": [make_item("note", "Nice"), needs_you]},
+            ]
+        )
+
+        assert edition_email._action_items(payload) == [proposal, needs_you]
+
+
+@pytest.mark.unit
+class TestResolveLink:
+    @pytest.mark.parametrize(
+        ("link", "expected"),
+        [
+            (None, None),
+            ("", None),
+            ("https://notion.so/page", "https://notion.so/page"),
+            # Absolute is a scheme check, not a "starts with https" one — a
+            # plain-http deep link must not be pasted onto the app origin.
+            ("http://notion.so/page", "http://notion.so/page"),
+            ("todos/1", f"{FRONTEND_URL}/todos/1"),
+            ("/todos/1", f"{FRONTEND_URL}/todos/1"),
+            ("//todos/1", f"{FRONTEND_URL}/todos/1"),
+            # lstrip takes a character SET: only slashes may be removed, never
+            # the first letters of the path itself.
+            ("Xero/invoices", f"{FRONTEND_URL}/Xero/invoices"),
+        ],
+    )
+    def test_links_resolve_against_the_app_origin(
+        self, harness: Harness, link: str | None, expected: str | None
+    ) -> None:
+        assert edition_email._resolve_link(link) == expected
+
+
+@pytest.mark.unit
 class TestPublicAppUrl:
+    @pytest.mark.parametrize(
+        ("frontend_url", "expected"),
+        [
+            ("https://app.example.com", "https://app.example.com"),
+            ("https://app.example.com/", "https://app.example.com"),
+            # rstrip takes a character SET: only slashes may be removed.
+            ("https://app.example.com/BOX", "https://app.example.com/BOX"),
+            ("http://localhost:3000", "https://heygaia.io"),
+            ("http://127.0.0.1:3000", "https://heygaia.io"),
+            ("", "https://heygaia.io"),
+            (None, "https://heygaia.io"),
+        ],
+    )
+    def test_the_link_origin_is_never_a_dev_host(
+        self, monkeypatch: pytest.MonkeyPatch, frontend_url: str | None, expected: str
+    ) -> None:
+        monkeypatch.setattr(edition_email, "settings", SimpleNamespace(FRONTEND_URL=frontend_url))
+
+        assert edition_email._public_app_url() == expected
+
     @pytest.mark.parametrize("frontend_url", ["http://localhost:3000", "http://127.0.0.1:3000", ""])
     async def test_dev_origins_fall_back_to_the_public_app(
         self, harness: Harness, monkeypatch: pytest.MonkeyPatch, frontend_url: str

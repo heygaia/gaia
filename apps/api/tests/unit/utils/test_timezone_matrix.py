@@ -286,3 +286,24 @@ class TestBriefingClockAcrossExtremeZones:
             assert day_start_utc(kiri, 0) == datetime(2026, 6, 15, 10, 0, tzinfo=UTC)
             # One day back: local midnight 2026-06-15+14:00 = 2026-06-14T10:00Z.
             assert day_start_utc(kiri, 1) == datetime(2026, 6, 14, 10, 0, tzinfo=UTC)
+
+    def test_day_start_is_expressed_in_utc_not_the_machine_local_zone(self) -> None:
+        # `is UTC`, not `== UTC`: converting to the machine's own zone instead
+        # of UTC yields the same instant, and on a UTC-configured CI runner it
+        # also compares equal. Only identity separates "converted to UTC" from
+        # "converted to wherever this box happens to be".
+        with freeze_time(self.FROZEN):
+            kiri = resolve_clock("Pacific/Kiritimati")
+            assert day_start_utc(kiri, 0).tzinfo is UTC
+
+    def test_a_user_with_no_timezone_gets_a_utc_clock(self) -> None:
+        # Most users never set one, so this is the common path, not an edge.
+        # The key is asserted, not just the offset: an unknown fallback key
+        # raises ZoneInfoNotFoundError on every briefing run, and a lowercase
+        # "utc" resolves to a second, differently-keyed zone object.
+        with freeze_time(self.FROZEN):
+            clock = resolve_clock(None)
+
+        assert clock.tz.key == "UTC"
+        assert clock.date_str == "2026-06-15"
+        assert clock.day_of_year == 166

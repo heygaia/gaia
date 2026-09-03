@@ -260,7 +260,7 @@ def _write_artifacts(folder: Path, artifacts: list[dict[str, Any]]) -> None:
     remove_tree(artifacts_dir)
     if not artifacts:
         return
-    artifacts_dir.mkdir(parents=True, exist_ok=True)
+    artifacts_dir.mkdir(exist_ok=True)
     for index, artifact in enumerate(artifacts):
         stem = slugify(artifact.get("name")) or f"artifact-{index}"
         write_readonly_body(artifacts_dir / f"{stem}.md", artifact.get("content") or "")

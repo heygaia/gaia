@@ -7,16 +7,45 @@ and the failure path — not on the rastered pixels, which need a real browser
 and belong to the render pipeline's own tier.
 """
 
+from collections.abc import Iterator
 import json
+from pathlib import Path
 import re
 from typing import Any
 
 import pytest
 
+from app.services.briefing.editions import explorer_render
 from app.services.briefing.editions.explorer_render import (
+    _art_credit,
+    _asset_data_uris,
+    _font_faces_css,
+    _module_sources,
     explorer_family_ids,
     render_explorer_edition,
 )
+
+# Every loader is @lru_cache(maxsize=1) over a file read, and the cache outlives
+# the test that fills it — without this each test would assert against whatever
+# an earlier test happened to load, and a broken loader would only ever be seen
+# by the first test to call it.
+_CACHED_LOADERS = (
+    _module_sources,
+    explorer_family_ids,
+    _asset_data_uris,
+    _art_credit,
+    _font_faces_css,
+)
+
+
+@pytest.fixture(autouse=True)
+def _clear_loader_caches() -> Iterator[None]:
+    for loader in _CACHED_LOADERS:
+        loader.cache_clear()
+    yield
+    for loader in _CACHED_LOADERS:
+        loader.cache_clear()
+
 
 EXPECTED_FAMILIES = (
     "band",
@@ -147,6 +176,14 @@ class TestDocumentShell:
         html = _render()
 
         assert html.count("EXPLORER.register({") == 20
+        assert len(_module_sources()) == 10
+
+    def test_each_module_gets_its_own_script_tag_on_its_own_line(self) -> None:
+        html = _render()
+
+        # 10 modules => 9 joins between them, plus the shim before and the
+        # bootstrap after — anything else means the modules ran together.
+        assert html.count("</script>\n<script>") == 11
 
     def test_deterministic_rng_shim_is_inlined(self) -> None:
         html = _render()
@@ -162,6 +199,9 @@ class TestDocumentShell:
         assert html.count("font-family:'Playfair Display'") == 3
         assert html.count("font-style:italic") == 1
         assert "src:url(data:font/woff2;base64," in html
+        # The rules are concatenated with nothing between them, so each one
+        # butts straight against the next.
+        assert html.count("format('woff2');}@font-face{") == 4
 
 
 @pytest.mark.unit
@@ -213,6 +253,22 @@ class TestEmbeddedLiterals:
 
         assert shim_match is not None
         assert json.loads(shim_match.group(1)) == _embedded_const(html, "ed")["assets"]
+
+
+@pytest.mark.unit
+class TestArtCredit:
+    def test_credit_is_the_art1_entry_of_the_vendored_credits_file(self) -> None:
+        assert _art_credit() == "Wheat Field with Cypresses — Vincent van Gogh"
+
+    def test_a_credits_file_without_art1_degrades_to_an_empty_credit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # An empty string, never None: build_ed splits the credit on an em dash,
+        # so a None here would crash the render instead of dropping the caption.
+        (tmp_path / "credits.json").write_text(json.dumps({"STAMP_ROME": "A statue — Someone"}))
+        monkeypatch.setattr(explorer_render, "_ASSETS_DIR", tmp_path)
+
+        assert _art_credit() == ""
 
 
 @pytest.mark.unit
