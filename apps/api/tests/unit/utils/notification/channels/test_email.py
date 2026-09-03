@@ -57,7 +57,9 @@ _BRIEF_PAYLOAD: dict[str, Any] = {
 def esp_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     """A fully configured ESP with a fixed unsubscribe secret, so the signed
     token in the outgoing headers is deterministic."""
-    monkeypatch.setattr(settings, "RESEND_API_KEY", "re_test_key")
+    # Deliberately not shaped like a real Resend key (`re_...`): secret scanning
+    # flags the vendor prefix, and the value here only has to round-trip.
+    monkeypatch.setattr(settings, "RESEND_API_KEY", "unit-test-esp-key")
     monkeypatch.setattr(settings, "EMAIL_UNSUBSCRIBE_SECRET", "test-unsub-secret")
     monkeypatch.setattr(settings, "EMAIL_FROM", "brief@heygaia.io")
     monkeypatch.setattr(settings, "HOST", "https://api.test")
@@ -275,7 +277,7 @@ class TestDeliverRequestShape:
 
         await EmailChannelAdapter().deliver(_content(), _USER_ID)
 
-        assert route.calls.last.request.headers["Authorization"] == "Bearer re_test_key"
+        assert route.calls.last.request.headers["Authorization"] == "Bearer unit-test-esp-key"
 
     @respx.mock
     async def test_unsubscribe_headers_are_per_user(self) -> None:

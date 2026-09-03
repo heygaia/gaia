@@ -171,9 +171,10 @@ async def search_notifications(
         if not query.strip():
             return {"error": "Search query cannot be empty", "notifications": []}
 
-        # Get notifications for searching
+        # Newest 100, narrowed in process below. The paging window starts at the
+        # model's default offset.
         notifications = await notification_service.get_user_notifications(
-            user_id, NotificationQuery(status=status, limit=100, offset=0)
+            user_id, NotificationQuery(status=status, limit=100)
         )
 
         # Simple text search

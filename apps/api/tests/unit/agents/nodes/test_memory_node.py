@@ -501,6 +501,18 @@ class TestTheFencedTranscript:
 
         assert formatted[0]["content"] == "x" * MAX_TOOL_OUTPUT_SIZE + "... [truncated]"
 
+    def test_a_tool_output_exactly_at_the_cap_is_handed_over_whole(self) -> None:
+        """The cap is exclusive. Truncating at exactly the limit appends a
+        "[truncated]" marker to a complete result, so the extractor is told
+        material was withheld when none was — and the last character of every
+        boundary-length tool output is silently replaced by the marker."""
+        whole = "x" * MAX_TOOL_OUTPUT_SIZE
+        formatted = _format_messages_for_user_memory(
+            [ToolMessage(content=whole, tool_call_id="tc1", id="m1")]
+        )
+
+        assert formatted == [{"role": "tool", "content": whole}]
+
 
 @pytest.mark.unit
 class TestTheHighWaterMarkRead:
@@ -649,7 +661,9 @@ class TestTheIngestionHandoff:
         with (
             patch(f"{NODE}.memory_engine", engine),
             patch(f"{NODE}.redis_cache", fake),
-            patch(f"{NODE}.get_memory_extraction_prompt", return_value=extraction_prompt),
+            patch(
+                f"{NODE}.get_memory_extraction_prompt", return_value=extraction_prompt
+            ) as prompt_for,
         ):
             await _store_user_memory_background(
                 messages=self._thread() if messages is None else messages,
@@ -658,7 +672,7 @@ class TestTheIngestionHandoff:
                 subagent_id=subagent_id,
                 user_name=user_name,
             )
-        return {"retain": engine.retain, "redis": fake.client}
+        return {"retain": engine.retain, "redis": fake.client, "prompt_for": prompt_for}
 
     async def test_the_extraction_is_billed_to_the_user_and_thread_it_came_from(self) -> None:
         """user_id keys the memory rows AND the mark; session_id is the memory's
@@ -679,6 +693,25 @@ class TestTheIngestionHandoff:
         _, kwargs = calls["retain"].await_args
         assert kwargs["extraction_hints"] == "pull out slack ids"
         assert kwargs["user_name"] == "Sam"
+
+    async def test_the_hints_are_looked_up_under_this_runs_own_integration(self) -> None:
+        """The prompt is chosen BY subagent id. Looked up under the wrong id —
+        or under None — a GitHub turn is mined with Slack's hints (or generic
+        ones) and still reports a successful extraction."""
+        calls = await self._run(subagent_id="github", extraction_prompt="pull out repo ids")
+
+        calls["prompt_for"].assert_called_once_with("github")
+        _, kwargs = calls["retain"].await_args
+        assert kwargs["extraction_hints"] == "pull out repo ids"
+
+    async def test_a_run_with_no_integration_looks_up_nothing_and_sends_no_hints(self) -> None:
+        """Plain chat has no integration prompt to fetch: asking for one under a
+        None id is a lookup the registry never has to answer."""
+        calls = await self._run(subagent_id=None)
+
+        calls["prompt_for"].assert_not_called()
+        _, kwargs = calls["retain"].await_args
+        assert kwargs["extraction_hints"] is None
 
     async def test_the_transcript_handed_over_is_the_formatted_one(self) -> None:
         calls = await self._run()

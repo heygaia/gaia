@@ -515,10 +515,11 @@ def _uncapped_pro_day_bullet(feature_key: str) -> dict[str, str] | None:
     The strongest non-gated pitch, but the multiplier ranking can't reach these
     (it divides by pro.day). Covers both free-capped-daily features and
     cost-walled ones (chat: day 0 on both tiers), so a wall on any feature
-    still advertises e.g. unlimited chat messages.
+    still advertises e.g. unlimited chat messages. A feature free cannot touch
+    at all needs no guard here: _free_pro_delta already returns None for it.
     """
     limits = FEATURE_LIMITS[feature_key]
-    if limits.pro.day <= 0 and (limits.free.day > 0 or _is_cost_walled(limits)):
+    if limits.pro.day <= 0:
         return _free_pro_delta(feature_key)
     return None
 

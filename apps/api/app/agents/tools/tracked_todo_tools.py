@@ -53,7 +53,6 @@ from app.utils.timezone import Timezone, is_valid_timezone
 from shared.py.wide_events import log, spawn_logged_task
 
 _RECURRENCE_SHORTCUTS = {"daily", "weekly", "every_4h", "every_1h"}
-_UTC_OFFSET = "+00:00"
 _ERR_NO_USER_ID = "Error: user_id not found in config"
 
 
@@ -93,7 +92,7 @@ def _is_cron_expression(recurrence: str) -> bool:
 def _parse_iso_future_datetime(iso_str: str, field_name: str) -> tuple[datetime | None, str | None]:
     """Parse an ISO datetime; require it to be in the future. Returns (parsed, error)."""
     try:
-        parsed = datetime.fromisoformat(iso_str.replace("Z", _UTC_OFFSET))
+        parsed = datetime.fromisoformat(iso_str)
     except ValueError:
         return None, f"Error: invalid {field_name} format '{iso_str}'."
     if parsed.tzinfo is None:
@@ -178,9 +177,7 @@ async def _persist_scheduling_fields(
         update_kwargs["recurrence"] = recurrence
     if expires_at:
         try:
-            update_kwargs["expires_at"] = datetime.fromisoformat(
-                expires_at.replace("Z", _UTC_OFFSET)
-            )
+            update_kwargs["expires_at"] = datetime.fromisoformat(expires_at)
         except ValueError:
             return f"Error: invalid expires_at format '{expires_at}'."
     await todo_repository.update(todo_id, user_id=user_id, update=TodoUpdate(**update_kwargs))
@@ -248,7 +245,7 @@ def _build_clearable_datetime_update(
         update_fields[field_name] = None
         return None
     try:
-        update_fields[field_name] = datetime.fromisoformat(value.replace("Z", _UTC_OFFSET))
+        update_fields[field_name] = datetime.fromisoformat(value)
     except ValueError:
         return f"Error: invalid {field_name} format '{value}'."
     return None
@@ -275,7 +272,7 @@ def _build_scheduled_at_update(
         update_fields["scheduled_at"] = None
         return None
     try:
-        parsed_at = datetime.fromisoformat(scheduled_at.replace("Z", _UTC_OFFSET))
+        parsed_at = datetime.fromisoformat(scheduled_at)
     except ValueError:
         return f"Error: invalid scheduled_at format '{scheduled_at}'."
     if parsed_at.tzinfo is None:
@@ -501,7 +498,10 @@ def _patch_canvas_section(current: str, section: str, content: str) -> str:
     content = _strip_redundant_heading(content, section)
     heading = f"## {section}"
     head_end: int | None = None
-    search_start = 0
+    # `str.find(sub, None)` behaves exactly like `str.find(sub, 0)`, and every
+    # later pass reassigns this to an int, so swapping the initial 0 for None is
+    # a provably-equivalent mutation with no test that could tell the two apart.
+    search_start = 0  # pragma: no mutate
     while True:
         pos = current.find(heading, search_start)
         if pos == -1:
@@ -853,7 +853,12 @@ async def update_tracked_todo_canvas(
         await append_facet(todo_id, user_id, facet, content)
     else:  # section
         current = await read_facet(todo_id, user_id, facet) or ""
-        patched = _patch_canvas_section(current, section or "", content)
+        # Reaching here means mode == "section", and the guard above already
+        # returned for a section mode with no name — so `section` is a non-empty
+        # str and the fallback is unreachable. It exists only to narrow
+        # `str | None`, which makes mutating it provably equivalent.
+        section_name = section or ""  # pragma: no mutate
+        patched = _patch_canvas_section(current, section_name, content)
         await write_facet(todo_id, user_id, facet, patched)
 
     spawn_logged_task(
