@@ -703,6 +703,14 @@ def _world_patches(users: _UserStore, stages: _StageSink, externals: _Externals)
             f"{svc}.intelligence_service.provision_system_workflows",
             partial(_provision, externals),
         ),
+        # Both entry points, or the test is a race: connecting Gmail provisions
+        # the same system workflows through oauth_service, and whichever path
+        # runs first would otherwise create them via the recorded WorkflowService
+        # and inflate workflows_created.
+        patch(
+            "app.services.oauth.oauth_service.provision_system_workflows",
+            partial(_provision, externals),
+        ),
         patch(
             f"{svc}.post_onboarding_service.seed_onboarding_todo",
             partial(_seed_user_data, externals),
