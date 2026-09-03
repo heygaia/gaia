@@ -228,6 +228,15 @@ async def _execute_todo_with_retry(
         await lifecycle.mark_execution_status(todo_id, user_id, ExecutionStatus.RUNNING)
         run_summary = await _run_execution(doc, user_id, user_data=user_data, origin=origin)
 
+        if run_summary is None:
+            # None means nothing ran: the agent dispatch was queued behind an
+            # in-flight run. A workflow that dispatched returns "" instead, so
+            # it still falls through and gets its scheduling advanced. The run
+            # holding the lock owns this todo's next state; completing or
+            # re-arming it here records work that never happened.
+            log.info("tracked_todo.execute_queued_behind_run", todo_id=todo_id)
+            return f"queued:{todo_id}"
+
         # Resolve the post-run state. The agent may have completed the todo
         # mid-run (DONE), or turned it into a proposal awaiting approval, or hit
         # a blocker (needs_you) — leave those. Otherwise: a recurring todo
@@ -372,7 +381,12 @@ async def _run_execution(
             workflow_id=workflow_id,
             todo_id=doc.id,
         )
-        return None
+        # Dispatched successfully, with no summary text of its own. Distinct
+        # from None, which this contract reserves for "nothing ran" — the
+        # caller skips the post-run state machine on None, and a workflow that
+        # reported success still needs its recurrence and scheduled_at advanced
+        # or the safety net re-queues it on every scan, forever.
+        return ""
     return await _execute_via_agent(doc, user_id, user_data=user_data, origin=origin)
 
 
@@ -682,7 +696,7 @@ async def _execute_via_agent(
     *,
     user_data: AuthenticatedUser,
     origin: TriggerOrigin | None = None,
-) -> str:
+) -> str | None:
     """
     Execute the todo using call_agent_silent directly (no workflow needed).
 
@@ -693,9 +707,13 @@ async def _execute_via_agent(
     # Read the notes + deliverable facets from the todo's Mongo-backed fields.
     # A release run also reads the LOG facet: it holds the per-recipient send
     # record so a retry never double-sends a recipient that already went out.
-    notes: str | None = None
-    deliverable: str | None = None
-    log_facet: str | None = None
+    #
+    # These three defaults are only ever read for truthiness, so "" behaves
+    # exactly like None and mutating between them is unobservable — hence the
+    # pragmas, which must stay on the statement line to be honoured.
+    notes: str | None = None  # pragma: no mutate
+    deliverable: str | None = None  # pragma: no mutate
+    log_facet: str | None = None  # pragma: no mutate
     is_release = doc.execution_intent == "release"
     try:
         notes = await read_facet(todo_id, user_id, FACET_NOTES)
@@ -802,7 +820,11 @@ async def _execute_via_agent(
                 f"(task {run.queued_task_id}); not run"
             ),
         )
-        return ""
+        # None means "did not run" — the one value the caller treats as such.
+        # An empty string would be indistinguishable from a finished run that
+        # said nothing (and is what a dispatched workflow returns), so the
+        # caller would mark this todo complete.
+        return None
     complete_message = run.message
     tool_data = run.tool_data
 

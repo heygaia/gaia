@@ -11,9 +11,10 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import httpx
+from itsdangerous import URLSafeSerializer
 import pytest
 import respx
 
@@ -33,19 +34,38 @@ from app.models.notification.notification_models import (
     NotificationType,
 )
 from app.models.user_models import UserDocument
+from app.utils.email_utils import normalize_email
 from app.utils.notification import email_templates
 from app.utils.notification.channels import email as email_module
 from app.utils.notification.channels.email import RESEND_SEND_URL, EmailChannelAdapter
+from app.utils.notification.unsubscribe import _SALT
+from tests.helpers import captured_wide_event
 
 _USER_ID = "user-1"
-_UNSUB_URL = (
-    "https://api.test/api/v1/notifications/unsubscribe"
-    "?token=InVzZXItMSI.aUXl0frGW2EVfSTNQWe_FIYMVjY"
-)
-_UNSUB_HEADERS = {
-    "List-Unsubscribe": f"<{_UNSUB_URL}>",
-    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
-}
+_UNSUB_SECRET = "test-unsub-secret"
+_API_HOST = "https://api.test"
+
+
+def _expected_unsubscribe_url(user_id: str) -> str:
+    """The link the adapter must sign for this user.
+
+    Signed here with the same serializer the production helper uses rather
+    than pasted as a literal, so the assertion proves the two agree — and so
+    the file carries no string shaped like a live credential.
+    """
+    token = URLSafeSerializer(_UNSUB_SECRET, salt=_SALT).dumps(user_id)
+    return f"{_API_HOST}/api/v1/notifications/unsubscribe?token={token}"
+
+
+def _expected_unsubscribe_headers(user_id: str) -> dict[str, str]:
+    return {
+        "List-Unsubscribe": f"<{_expected_unsubscribe_url(user_id)}>",
+        "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+    }
+
+
+_UNSUB_URL = _expected_unsubscribe_url(_USER_ID)
+_UNSUB_HEADERS = _expected_unsubscribe_headers(_USER_ID)
 _BRIEF_PAYLOAD: dict[str, Any] = {
     "headline": "Three things today",
     "lede": "A calm morning.",
@@ -60,9 +80,9 @@ def esp_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     # Deliberately not shaped like a real Resend key (`re_...`): secret scanning
     # flags the vendor prefix, and the value here only has to round-trip.
     monkeypatch.setattr(settings, "RESEND_API_KEY", "unit-test-esp-key")
-    monkeypatch.setattr(settings, "EMAIL_UNSUBSCRIBE_SECRET", "test-unsub-secret")
+    monkeypatch.setattr(settings, "EMAIL_UNSUBSCRIBE_SECRET", _UNSUB_SECRET)
     monkeypatch.setattr(settings, "EMAIL_FROM", "brief@heygaia.io")
-    monkeypatch.setattr(settings, "HOST", "https://api.test")
+    monkeypatch.setattr(settings, "HOST", _API_HOST)
 
 
 @pytest.fixture(autouse=True)
@@ -70,6 +90,15 @@ def user_on_file(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
     getter = AsyncMock(return_value=UserDocument(id=_USER_ID, email="Test.User@Example.COM"))
     monkeypatch.setattr(user_repository, "get", getter)
     return getter
+
+
+@pytest.fixture
+def failed_edition_render(monkeypatch: pytest.MonkeyPatch) -> AsyncMock:
+    """The edition renderer blows up, so ``deliver`` degrades to the HTML
+    template. Its message is the one the wide event has to carry."""
+    renderer = AsyncMock(side_effect=RuntimeError("browser died"))
+    monkeypatch.setattr(email_module, "render_edition_email", renderer)
+    return renderer
 
 
 def _content(
@@ -235,6 +264,24 @@ class TestDeliverSkips:
         assert status.error_message == "email: no email address on file"
         assert not route.called
 
+    @respx.mock
+    async def test_a_missing_address_is_never_replaced_by_a_placeholder(
+        self, user_on_file: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A stand-in address would mail somebody else's inbox a stranger's
+        brief, so the empty string — which normalizes to nothing — is the only
+        acceptable fallback for a user with no address."""
+        user_on_file.return_value = UserDocument(id=_USER_ID, email=None)
+        normalizer = MagicMock(side_effect=normalize_email)
+        monkeypatch.setattr(email_module, "normalize_email", normalizer)
+        route = _mock_send()
+
+        status = await EmailChannelAdapter().deliver(_content(), _USER_ID)
+
+        normalizer.assert_called_once_with("")
+        assert status.skipped is True
+        assert not route.called
+
     async def test_reads_the_user_by_id(self, user_on_file: AsyncMock) -> None:
         with respx.mock:
             _mock_send()
@@ -277,7 +324,26 @@ class TestDeliverRequestShape:
 
         await EmailChannelAdapter().deliver(_content(), _USER_ID)
 
-        assert route.calls.last.request.headers["Authorization"] == "Bearer unit-test-esp-key"
+        # The raw list, not the case-insensitive lookup: it is the literal
+        # bytes Resend receives, so it pins the header name as well as the key.
+        assert (
+            b"Authorization",
+            b"Bearer unit-test-esp-key",
+        ) in route.calls.last.request.headers.raw
+
+    @respx.mock
+    async def test_the_send_is_bounded_by_a_ten_second_timeout(self) -> None:
+        """An unbounded POST parks a notification worker on a hung ESP."""
+        route = _mock_send()
+
+        await EmailChannelAdapter().deliver(_content(), _USER_ID)
+
+        assert route.calls.last.request.extensions["timeout"] == {
+            "connect": 10.0,
+            "read": 10.0,
+            "write": 10.0,
+            "pool": 10.0,
+        }
 
     @respx.mock
     async def test_unsubscribe_headers_are_per_user(self) -> None:
@@ -286,10 +352,7 @@ class TestDeliverRequestShape:
         await EmailChannelAdapter().deliver(_content(), "another-user")
 
         headers = _sent_body(route)["headers"]
-        assert headers["List-Unsubscribe-Post"] == "List-Unsubscribe=One-Click"
-        assert headers["List-Unsubscribe"].startswith(
-            "<https://api.test/api/v1/notifications/unsubscribe?token="
-        )
+        assert headers == _expected_unsubscribe_headers("another-user")
         assert headers["List-Unsubscribe"] != _UNSUB_HEADERS["List-Unsubscribe"]
 
     @respx.mock
@@ -397,13 +460,8 @@ class TestDeliverBriefings:
 
     @respx.mock
     async def test_edition_render_failure_degrades_to_the_daily_template(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, failed_edition_render: AsyncMock
     ) -> None:
-        monkeypatch.setattr(
-            email_module,
-            "render_edition_email",
-            AsyncMock(side_effect=RuntimeError("browser died")),
-        )
         route = _mock_send()
 
         status = await EmailChannelAdapter().deliver(
@@ -417,22 +475,54 @@ class TestDeliverBriefings:
 
     @respx.mock
     async def test_edition_render_failure_degrades_to_the_weekly_template(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, failed_edition_render: AsyncMock
     ) -> None:
-        monkeypatch.setattr(
-            email_module,
-            "render_edition_email",
-            AsyncMock(side_effect=RuntimeError("browser died")),
-        )
         route = _mock_send()
 
         await EmailChannelAdapter().deliver(
             _content(kind=NOTIFICATION_KIND_BRIEFING_WEEKLY, payload=_BRIEF_PAYLOAD), _USER_ID
         )
 
-        assert _sent_body(route)["html"] == email_templates.render_weekly_digest_email(
+        body = _sent_body(route)
+        assert body["html"] == email_templates.render_weekly_digest_email(
             _BRIEF_PAYLOAD, _UNSUB_URL
         )
+        assert body["subject"] == "Three things today"
+
+    @respx.mock
+    async def test_weekly_fallback_subject_falls_back_to_the_title(
+        self, failed_edition_render: AsyncMock
+    ) -> None:
+        route = _mock_send()
+
+        await EmailChannelAdapter().deliver(
+            _content(kind=NOTIFICATION_KIND_BRIEFING_WEEKLY, payload={"lede": "no headline here"}),
+            _USER_ID,
+        )
+
+        assert _sent_body(route)["subject"] == "Reminder"
+
+    async def test_edition_render_failure_is_recorded_on_the_wide_event(
+        self, failed_edition_render: AsyncMock
+    ) -> None:
+        """Degrading is only defensible because the failure stays observable —
+        so the warning's message and every field it carries are pinned."""
+        with respx.mock:
+            _mock_send()
+            async with captured_wide_event() as event:
+                await EmailChannelAdapter().deliver(
+                    _content(kind=NOTIFICATION_KIND_BRIEFING_WEEKLY, payload=_BRIEF_PAYLOAD),
+                    _USER_ID,
+                )
+
+        assert event["warnings"] == [
+            {
+                "msg": "[NOTIFICATION] Edition render failed, using plain template",
+                "user_id": _USER_ID,
+                "kind": NOTIFICATION_KIND_BRIEFING_WEEKLY,
+                "error": "browser died",
+            }
+        ]
 
     @respx.mock
     async def test_briefing_without_a_payload_never_calls_the_renderer(
@@ -453,11 +543,8 @@ class TestDeliverBriefings:
 
     @respx.mock
     async def test_daily_and_weekly_fallbacks_use_different_templates(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, failed_edition_render: AsyncMock
     ) -> None:
-        monkeypatch.setattr(
-            email_module, "render_edition_email", AsyncMock(side_effect=RuntimeError("x"))
-        )
         route = _mock_send()
 
         await EmailChannelAdapter().deliver(
@@ -512,6 +599,23 @@ class TestDeliverFailures:
         assert status.status == NotificationStatus.FAILED
         assert status.skipped is False
         assert status.error_message == "email: send failed (no route to host)"
+
+    async def test_send_failure_is_recorded_on_the_wide_event(self) -> None:
+        """The status the caller gets carries only a message; the event is where
+        the failure is queryable, so every field it carries is pinned."""
+        with respx.mock:
+            respx.post(RESEND_SEND_URL).mock(side_effect=httpx.ConnectError("no route to host"))
+            async with captured_wide_event() as event:
+                await EmailChannelAdapter().deliver(_content(), _USER_ID)
+
+        assert event["errors"] == [
+            {
+                "msg": "[NOTIFICATION] Email send failed",
+                "user_id": _USER_ID,
+                "error_type": "ConnectError",
+                "error": "no route to host",
+            }
+        ]
 
     @respx.mock
     async def test_timeout_is_a_failure(self) -> None:

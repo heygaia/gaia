@@ -16,12 +16,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from app.agents.core.agent import AgentRunOptions
+from app.constants.memory import MemorySourceType
 from app.constants.notifications import (
     NOTIFICATION_KIND_URGENT_SIGNAL,
     URGENT_ALERT_IGNORE_HOURS,
     URGENT_STRIKE_SWEEP_LIMIT,
 )
-from app.constants.todos import PROPOSAL_REJECTED_MEMORY_CATEGORY
+from app.constants.todos import FACET_NOTES, PROPOSAL_REJECTED_MEMORY_CATEGORY
 from app.models.agent_models import SilentRunResult
 from app.models.message_models import MessageRequestWithHistory
 from app.models.notification.notification_models import (
@@ -32,6 +33,7 @@ from app.models.todo_models import TodoDocument
 from app.models.user_models import AuthenticatedUser
 from app.workers.tasks.maintenance_sweep_tasks import (
     DORMANT_DAYS,
+    MAX_HEALTH_CHECKS_PER_USER,
     NOTIFICATION_BACKOFF_DAYS,
     NOTIFICATION_MUTE_DAYS,
     SECONDS_PER_DAY,
@@ -45,6 +47,10 @@ from app.workers.tasks.maintenance_sweep_tasks import (
     _is_dormant,
     _is_user_daytime,
     _notify_overdue,
+    _process_dormant,
+    _process_expired,
+    _process_overdue,
+    _read_notes,
     _register_notification,
     _send_user_dormant_digest,
     _strike_ignored_urgent_alerts,
@@ -131,6 +137,18 @@ def _sweep(**overrides) -> Iterator[tuple[MagicMock, dict[str, AsyncMock]]]:
         for p in patches:
             stack.enter_context(p)
         yield pool, mocks
+
+
+@contextmanager
+def _health_seams(response: str, notes: str = "") -> Iterator[tuple[AsyncMock, AsyncMock]]:
+    """Patch the two seams a health check reads through; yields ``(notes, agent)``."""
+    notes_mock = AsyncMock(return_value=notes)
+    agent_mock = AsyncMock(return_value=response)
+    with (
+        patch(f"{MODULE}._read_notes", notes_mock),
+        patch(f"{MODULE}._call_health_check_agent", agent_mock),
+    ):
+        yield notes_mock, agent_mock
 
 
 # ---------------------------------------------------------------------------
@@ -267,6 +285,170 @@ class TestClassifyTrackedTodos:
         expired, overdue, dormant = await self._classify(pool, [])
         assert (expired, overdue, dormant) == ([], [], [])
 
+    async def test_the_scan_reads_a_bounded_page_of_tracked_todos(self):
+        """The 200-doc page is what keeps one sweep from walking every user's
+        backlog; an unbounded read turns a cron into a full-table scan."""
+        listed = AsyncMock(return_value=[])
+        with patch(f"{MODULE}.todo_repository.list_active_tracked_all_users", listed):
+            await _classify_tracked_todos(_pool(), NOW)
+
+        listed.assert_awaited_once_with(limit=200)
+
+    async def test_a_deadline_landing_exactly_on_now_has_already_passed(self):
+        """``<= now``, not ``< now``: a todo whose deadline is this instant is
+        expired/overdue now, not on the next sweep an hour later."""
+        pool = _pool()
+        todos = [
+            _doc(id="exp", expires_at=NOW, updated_at=NOW),
+            _doc(id="due", due_date=NOW, updated_at=NOW),
+        ]
+        expired, overdue, _dormant = await self._classify(pool, todos)
+
+        assert [t.id for t in expired] == ["exp"]
+        assert [t.id for t in overdue] == ["due"]
+
+
+# ---------------------------------------------------------------------------
+# _process_expired / _process_overdue / _process_dormant — per-tier fan-out
+# ---------------------------------------------------------------------------
+
+
+class TestProcessExpired:
+    async def test_the_quiet_hours_gate_is_asked_about_the_todo_s_own_owner(self):
+        daytime = AsyncMock(return_value=False)
+        cache: dict[str, bool] = {}
+        health = AsyncMock()
+        with (
+            patch(f"{MODULE}._is_user_daytime", daytime),
+            patch(f"{MODULE}._health_check_expired", health),
+        ):
+            counts = await _process_expired([_doc(user_id="owner-9")], _pool(), NOW, {}, cache)
+
+        assert counts == (0, 0)
+        daytime.assert_awaited_once_with("owner-9", NOW, cache)
+        health.assert_not_awaited()
+
+    async def test_archived_and_notified_are_counted_apart_and_muted_counts_for_neither(self):
+        used: dict[str, int] = {}
+        health = AsyncMock(side_effect=["archived", "notified", "muted"])
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._health_check_expired", health),
+        ):
+            counts = await _process_expired(
+                [_doc(id="a"), _doc(id="b"), _doc(id="c")], _pool(), NOW, used, {}
+            )
+
+        assert counts == (1, 1)
+        assert used == {"user-1": 3}
+
+    async def test_a_user_at_the_health_check_budget_is_skipped(self):
+        health = AsyncMock()
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._health_check_expired", health),
+        ):
+            counts = await _process_expired(
+                [_doc()], _pool(), NOW, {"user-1": MAX_HEALTH_CHECKS_PER_USER}, {}
+            )
+
+        assert counts == (0, 0)
+        health.assert_not_awaited()
+
+
+class TestProcessOverdue:
+    async def test_each_overdue_todo_is_notified_with_the_sweep_s_pool(self):
+        notify = AsyncMock(return_value=True)
+        daytime = AsyncMock(return_value=True)
+        cache: dict[str, bool] = {}
+        pool = _pool()
+        doc = _doc(user_id="owner-2")
+        with (
+            patch(f"{MODULE}._is_user_daytime", daytime),
+            patch(f"{MODULE}._notify_overdue", notify),
+        ):
+            assert await _process_overdue([doc], pool, NOW, cache) == 1
+
+        notify.assert_awaited_once_with(doc, pool)
+        daytime.assert_awaited_once_with("owner-2", NOW, cache)
+
+    async def test_a_muted_overdue_todo_is_not_counted(self):
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._notify_overdue", AsyncMock(return_value=False)),
+        ):
+            assert await _process_overdue([_doc()], _pool(), NOW, {}) == 0
+
+    async def test_night_time_defers_the_notification_entirely(self):
+        notify = AsyncMock()
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=False)),
+            patch(f"{MODULE}._notify_overdue", notify),
+        ):
+            assert await _process_overdue([_doc()], _pool(), NOW, {}) == 0
+
+        notify.assert_not_awaited()
+
+
+class TestProcessDormant:
+    async def test_a_requeued_todo_is_counted_and_kept_out_of_the_digest(self):
+        health = AsyncMock(return_value="requeued")
+        daytime = AsyncMock(return_value=True)
+        used: dict[str, int] = {}
+        cache: dict[str, bool] = {}
+        pool = _pool()
+        doc = _doc()
+        with (
+            patch(f"{MODULE}._is_user_daytime", daytime),
+            patch(f"{MODULE}._health_check_dormant", health),
+        ):
+            requeued, needs_attention = await _process_dormant([doc], pool, NOW, used, cache)
+
+        assert (requeued, needs_attention) == (1, [])
+        health.assert_awaited_once_with(doc, pool)
+        daytime.assert_awaited_once_with("user-1", NOW, cache)
+        assert used == {"user-1": 1}
+
+    async def test_a_todo_past_the_health_check_budget_still_reaches_the_digest(self):
+        """No agent call left for it, but it is exactly the todo a human needs
+        to see — dropping it would silently shrink the digest."""
+        health = AsyncMock()
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._health_check_dormant", health),
+        ):
+            requeued, needs_attention = await _process_dormant(
+                [_doc()], _pool(), NOW, {"user-1": MAX_HEALTH_CHECKS_PER_USER}, {}
+            )
+
+        assert requeued == 0
+        assert [t.id for t in needs_attention] == ["todo-1"]
+        health.assert_not_awaited()
+
+    async def test_the_backoff_is_registered_against_the_todo_before_the_digest(self):
+        register = AsyncMock(return_value=True)
+        pool = _pool()
+        doc = _doc(id="dor-7")
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._health_check_dormant", AsyncMock(return_value="needs_attention")),
+            patch(f"{MODULE}._register_notification", register),
+        ):
+            requeued, needs_attention = await _process_dormant([doc], pool, NOW, {}, {})
+
+        assert (requeued, needs_attention) == (0, [doc])
+        register.assert_awaited_once_with(pool, "dor-7")
+
+    async def test_a_muted_dormant_todo_is_dropped_from_the_digest(self):
+        with (
+            patch(f"{MODULE}._is_user_daytime", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._health_check_dormant", AsyncMock(return_value="needs_attention")),
+            patch(f"{MODULE}._register_notification", AsyncMock(return_value=False)),
+        ):
+            requeued, needs_attention = await _process_dormant([_doc()], _pool(), NOW, {}, {})
+
+        assert (requeued, needs_attention) == (0, [])
+
 
 # ---------------------------------------------------------------------------
 # _health_check_expired — archive / notify / mute
@@ -350,6 +532,29 @@ class TestHealthCheckExpired:
         assert outcome == "notified"
         assert notify.await_args.args[0].content.body == "NEEDS_ATTENTION: Health check failed"
 
+    async def test_the_prompt_carries_the_title_and_the_notes_facet(self):
+        """The notes facet is GAIA's working memory for the todo — without it in
+        the prompt the agent decides archive-or-notify on the title alone."""
+        doc = _doc(title="Ship the report")
+        with (
+            _health_seams("ARCHIVE: done", notes="waiting on legal sign-off") as (notes, agent),
+            patch(f"{MODULE}.tracked_todo_service.archive_tracked_todo", AsyncMock()),
+        ):
+            await _health_check_expired(doc, _pool())
+
+        notes.assert_awaited_once_with(doc)
+        assert agent.await_args.args == (
+            "todo-1",
+            "user-1",
+            "A tracked todo has expired.\n"
+            "Title: Ship the report\n"
+            "Notes:\nwaiting on legal sign-off\n\n"
+            "Did this expire cleanly (i.e. no further action is needed)? "
+            "Respond with exactly one of:\n"
+            "ARCHIVE: <brief reason>\n"
+            "NOTIFY: <message to send to the user>",
+        )
+
 
 # ---------------------------------------------------------------------------
 # _health_check_dormant — requeue / needs attention
@@ -414,6 +619,72 @@ class TestHealthCheckDormant:
             outcome = await _health_check_dormant(_doc(), pool)
         assert outcome == "needs_attention"
 
+    async def test_the_prompt_carries_the_idle_days_title_and_notes(self):
+        """Idle days and the notes facet are what let the agent tell a
+        forgotten todo from one that is simply waiting."""
+        doc = _doc(title="Chase the invoice", updated_at=datetime.now(UTC) - timedelta(days=9))
+        with _health_seams("NEEDS_ATTENTION: still stuck", notes="chased twice") as (notes, agent):
+            await _health_check_dormant(doc, _pool())
+
+        notes.assert_awaited_once_with(doc)
+        assert agent.await_args.args == (
+            "todo-1",
+            "user-1",
+            "A tracked todo has been dormant for 9 days.\n"
+            "Title: Chase the invoice\n"
+            "Notes:\nchased twice\n\n"
+            "Is there a clear, concrete next action that can be taken right now? "
+            "Respond with exactly one of:\n"
+            "EXECUTE: <specific action to perform immediately>\n"
+            "NEEDS_ATTENTION: <brief summary of why this needs human review>",
+        )
+
+    async def test_an_untitled_todo_falls_back_in_the_prompt(self):
+        with _health_seams("NEEDS_ATTENTION: no title") as (_notes, agent):
+            await _health_check_dormant(_doc(title=""), _pool())
+
+        assert "Title: Untitled Todo\n" in agent.await_args.args[2]
+
+
+# ---------------------------------------------------------------------------
+# _read_notes — the working-memory facet the health checks reason over
+# ---------------------------------------------------------------------------
+
+
+class TestReadNotes:
+    async def test_reads_the_notes_facet_of_the_todo(self):
+        read = AsyncMock(return_value="what GAIA knows so far")
+        with patch(f"{MODULE}.read_facet", read):
+            assert await _read_notes(_doc()) == "what GAIA knows so far"
+
+        read.assert_awaited_once_with("todo-1", "user-1", FACET_NOTES)
+
+    async def test_an_empty_facet_is_an_empty_string(self):
+        with patch(f"{MODULE}.read_facet", AsyncMock(return_value=None)):
+            assert await _read_notes(_doc()) == ""
+
+    async def test_a_todo_without_an_owner_is_never_read(self):
+        read = AsyncMock()
+        with patch(f"{MODULE}.read_facet", read):
+            assert await _read_notes(_doc(user_id="")) == ""
+
+        read.assert_not_awaited()
+
+    async def test_a_failed_read_degrades_to_empty_notes_and_names_the_todo(self):
+        """The health check still runs on a failed facet read, so the log line is
+        the only place the operator learns the agent decided without context."""
+        with (
+            patch(f"{MODULE}.read_facet", AsyncMock(side_effect=RuntimeError("mongo down"))),
+            patch(f"{MODULE}.log") as log,
+        ):
+            assert await _read_notes(_doc()) == ""
+
+        log.warning.assert_called_once_with(
+            "maintenance_sweep.notes_read_failed",
+            todo_id="todo-1",
+            error="mongo down",
+        )
+
 
 # ---------------------------------------------------------------------------
 # _notify_overdue
@@ -466,6 +737,7 @@ class TestRegisterNotification:
         pool = _pool()
         assert await _register_notification(pool, "todo-1") is True
 
+        pool.get.assert_awaited_once_with("gaia_maintenance_strikes:todo-1")
         calls = [(c.args, c.kwargs) for c in pool.set.await_args_list]
         assert (
             ("gaia_maintenance_strikes:todo-1", "1"),
@@ -635,12 +907,41 @@ class TestStrikeIgnoredUrgentAlerts:
         with _strike_seams([_urgent_record()]) as (retain, mark):
             assert await _strike_ignored_urgent_alerts(NOW) == 1
 
-        text = retain.await_args.args[1]
-        assert "urgent_alert_ignored" in text
-        assert "signal_kind: email" in text
-        assert "Invoice overdue" in text
-        assert retain.await_args.kwargs["category_path"] == PROPOSAL_REJECTED_MEMORY_CATEGORY
+        assert retain.await_args.args == (
+            "user-1",
+            "urgent_alert_ignored | signal_kind: email | title: Invoice overdue",
+        )
+        assert retain.await_args.kwargs == {
+            "category_path": PROPOSAL_REJECTED_MEMORY_CATEGORY,
+            "source_type": MemorySourceType.MANUAL,
+        }
         mark.assert_awaited_once_with("notif-1")
+
+    async def test_every_stale_alert_is_struck_and_counted(self):
+        """The count is the sweep's only report of how much leniency drift it
+        corrected; collapsing it to one loses every alert after the first."""
+        stale = [_urgent_record("notif-1"), _urgent_record("notif-2"), _urgent_record("notif-3")]
+        with _strike_seams(stale) as (_retain, mark):
+            assert await _strike_ignored_urgent_alerts(NOW) == 3
+
+        assert [c.args[0] for c in mark.await_args_list] == ["notif-1", "notif-2", "notif-3"]
+
+    async def test_a_failed_memory_write_names_the_notification_and_the_error(self):
+        """The strike is skipped silently otherwise — the warning is the only
+        record of an urgent signal whose correction never landed."""
+        retain = AsyncMock(side_effect=RuntimeError("memory down"))
+        with (
+            _strike_seams([_urgent_record()], retain=retain) as (_retain, mark),
+            patch(f"{MODULE}.log") as log,
+        ):
+            assert await _strike_ignored_urgent_alerts(NOW) == 0
+
+        mark.assert_not_awaited()
+        log.warning.assert_called_once_with(
+            "maintenance_sweep.urgent_strike_memory_failed",
+            notification_id="notif-1",
+            error="memory down",
+        )
 
     async def test_missing_signal_kind_falls_back_to_unknown(self):
         with _strike_seams([_urgent_record(signal_kind=None)]) as (retain, _mark):
@@ -788,6 +1089,14 @@ class TestHealthCheckAgentCall:
             "trigger_type": "maintenance_health_check",
             "todo_id": "todo-7",
         }
+
+        # The human turn must live in `messages` under the "user" role — a run
+        # with no recognised human message fails before the check ever happens.
+        request = captured["request"]
+        assert isinstance(request, MessageRequestWithHistory)
+        assert request.message == "is this todo alive?"
+        assert request.messages == [{"role": "user", "content": "is this todo alive?"}]
+        assert captured["user"] == {"name": "User", "user_id": "user-3"}
 
     async def test_a_queued_dispatch_is_logged_with_the_todo_and_task_ids(self) -> None:
         # The queued verdict is deliberately vague ("not run"), so the log line is
