@@ -20,7 +20,7 @@ from app.constants.cache import (
     UPGRADE_LINK_CACHE_TTL,
 )
 from app.constants.log_tags import LogTag
-from app.constants.payments import PAYMENT_HISTORY_LIMIT
+from app.constants.payments import DODO_TEST_MODE_BILLING_COUNTRY, PAYMENT_HISTORY_LIMIT
 from app.db.redis import redis_cache
 from app.db.repositories.checkout_sessions import checkout_session_repository
 from app.db.repositories.plans import plan_repository
@@ -197,6 +197,9 @@ class DodoPaymentService:
             if discount_code:
                 # Pre-apply a known discount (customer can still edit it on the page)
                 params["discount_code"] = discount_code
+            if settings.ENV != "production":
+                # Test mode: land on the rail Dodo's documented test cards work on.
+                params["billing_address"] = {"country": DODO_TEST_MODE_BILLING_COUNTRY}
 
             # The Dodo SDK's client is synchronous — run it off the event loop so a
             # slow HTTP round-trip doesn't stall other requests.

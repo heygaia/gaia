@@ -38,6 +38,7 @@ from app.models.webhook_models import (
     DodoWebhookProcessingResult,
 )
 from app.services.analytics_service import AnalyticsEvents, SubscriptionPlan
+from app.services.payments import payment_service as payment_service_module
 from app.services.payments.payment_service import DodoPaymentService
 from app.services.payments.payment_webhook_service import PaymentWebhookService
 from app.services.payments.subscription_activation import send_welcome_email_safely
@@ -807,6 +808,39 @@ class TestCreateSubscription:
 
         call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
         assert call_kwargs["discount_code"] == "SAVE20"
+
+    async def test_outside_production_the_billing_country_is_prefilled_for_test_cards(
+        self,
+        payment_service,
+        mock_users_collection,
+        mock_subscription_repository,
+        mock_plan_repository,
+        mock_dodo_client,
+    ):
+        """Dodo's documented test card is a US Visa; on the Indian rail it is
+        declined, so a developer could not pay with the card the docs name."""
+        _set_user(mock_users_collection, SAMPLE_USER_DOC)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        checkout_response = MagicMock()
+        checkout_response.session_id = "sess_003"
+        checkout_response.checkout_url = "https://checkout.dodo.dev/sess_003"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=checkout_response)
+        mock_plan_repository.list_plans = AsyncMock(return_value=[])
+
+        with patch.object(payment_service_module.settings, "ENV", "development"):
+            await payment_service.create_subscription(
+                user_id=FAKE_USER_ID, product_id="prod_abc123"
+            )
+        assert mock_dodo_client.checkout_sessions.create.call_args[1]["billing_address"] == {
+            "country": "US"
+        }
+
+        with patch.object(payment_service_module.settings, "ENV", "production"):
+            await payment_service.create_subscription(
+                user_id=FAKE_USER_ID, product_id="prod_abc123"
+            )
+        assert "billing_address" not in mock_dodo_client.checkout_sessions.create.call_args[1]
 
     async def test_return_url_follows_the_requested_path(
         self,
