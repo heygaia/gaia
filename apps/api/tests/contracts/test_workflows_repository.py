@@ -23,6 +23,7 @@ from app.db.repositories.workflows import (
 )
 from app.models.scheduler_models import ScheduledTaskStatus
 from app.models.workflow_models import (
+    DeactivationReason,
     TriggerConfig,
     TriggerType,
     WorkflowDocument,
@@ -118,6 +119,29 @@ class TestWorkflowsOwnedCrud:
         # cross-user update is a no-op
         assert await repo.update_for_user(created.id, "attacker", WorkflowUpdate(title="X")) is None
         assert (await repo.get(created.id)).title == "New"
+
+    async def test_deactivate_records_the_blockers_in_the_same_write(self, repo):
+        """A pause on integrations a run found missing carries them with it;
+        a plain deactivation leaves whatever list was there alone."""
+        created = await repo.create(_workflow(user_id="owner"))
+
+        paused = await repo.deactivate(
+            created.id,
+            "owner",
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github", "slack"],
+        )
+        assert paused is not None
+        assert paused.activated is False
+        assert paused.deactivated_reason is DeactivationReason.INTEGRATION_NEVER_CONNECTED
+        assert paused.blocked_on_integrations == ["github", "slack"]
+        assert (await repo.get(created.id)).blocked_on_integrations == ["github", "slack"]
+
+        plain = await repo.deactivate(created.id, "owner")
+        assert plain is not None
+        assert plain.deactivated_reason is None
+        assert plain.blocked_on_integrations == ["github", "slack"]
+        assert await repo.deactivate(created.id, "attacker") is None
 
     async def test_delete_for_user_scoped(self, repo):
         created = await repo.create(_workflow(user_id="owner"))

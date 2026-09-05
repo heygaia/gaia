@@ -309,6 +309,37 @@ class TestPlaybooksRepository:
         assert await repo.delete_for_workflow(WORKFLOW_ID, "attacker") is False
         assert await repo.get_for_workflow(WORKFLOW_ID, USER_ID) == created
 
+    async def test_delete_revision_removes_only_the_body_it_was_told(self, repo) -> None:
+        """A heal rewrites in place and bumps the revision; a discard decided
+        against the old body must find nothing and leave the new one alone."""
+        created = await repo.create(make_doc())
+        rewritten = await repo.upsert_for_workflow(
+            make_doc(description="rewritten", steps=created.steps)
+        )
+        assert rewritten.revision == created.revision + 1
+
+        stale = await repo.delete_revision(
+            WORKFLOW_ID, USER_ID, playbook_id=created.playbook_id, revision=created.revision
+        )
+        assert stale is False
+        assert await repo.get_for_workflow(WORKFLOW_ID, USER_ID) == rewritten
+
+        current = await repo.delete_revision(
+            WORKFLOW_ID, USER_ID, playbook_id=rewritten.playbook_id, revision=rewritten.revision
+        )
+        assert current is True
+        assert await repo.get_for_workflow(WORKFLOW_ID, USER_ID) is None
+
+    async def test_delete_revision_cannot_reach_another_user(self, repo) -> None:
+        created = await repo.create(make_doc())
+        assert (
+            await repo.delete_revision(
+                WORKFLOW_ID, "attacker", playbook_id=created.playbook_id, revision=created.revision
+            )
+            is False
+        )
+        assert await repo.get_for_workflow(WORKFLOW_ID, USER_ID) == created
+
     async def test_empty_update_raises_empty_update_error(self, repo) -> None:
         created = await repo.create(make_doc())
         with pytest.raises(EmptyUpdateError):
