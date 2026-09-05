@@ -186,6 +186,30 @@ class TestGetAllIntegrationsStatus:
         )
         mock_user_integration_repo.list_for_user.assert_awaited_once_with("user123", limit=100)
 
+    async def test_a_provider_composio_does_not_report_is_not_connected(
+        self,
+        mock_user_integration_repo,
+        mock_composio_service,
+        mock_token_repository,
+    ):
+        """A provider missing from the batch answer reads as not connected, never
+        as unknown: every requested integration gets a boolean."""
+        mock_composio_service.check_connection_status = AsyncMock(return_value={})
+
+        integration = MagicMock()
+        integration.id = "twitter"
+        integration.available = True
+        integration.managed_by = "composio"
+        integration.provider = "twitter"
+
+        with patch(
+            "app.services.integrations.integration_status.OAUTH_INTEGRATIONS",
+            [integration],
+        ):
+            result = await get_all_integrations_status("user123")
+
+        assert result == {"twitter": False}
+
     async def test_composio_batch_check_failure_returns_false(
         self,
         mock_user_integration_repo,
