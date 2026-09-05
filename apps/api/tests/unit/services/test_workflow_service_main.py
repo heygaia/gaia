@@ -629,7 +629,7 @@ class TestListWorkflows:
     @pytest.fixture(autouse=True)
     def mock_integrations_status(self):
         with patch(
-            "app.services.oauth.oauth_service.get_all_integrations_status",
+            "app.services.workflow.service.get_all_integrations_status",
             new_callable=AsyncMock,
             return_value={},
         ):
@@ -664,7 +664,7 @@ class TestListWorkflows:
         mock_list.return_value = [_make_workflow_doc(workflow)]
 
         with patch(
-            "app.services.oauth.oauth_service.get_all_integrations_status",
+            "app.services.workflow.service.get_all_integrations_status",
             new_callable=AsyncMock,
         ) as mock_status:
             mock_status.return_value = {"gmail": True}

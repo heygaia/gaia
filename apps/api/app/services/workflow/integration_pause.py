@@ -95,12 +95,13 @@ async def pause_workflow_for_missing_integrations(
         )
         return []
 
+    # One write: a pause on record without its blockers could never be resumed,
+    # since nothing but this list says what the run found missing.
     await WorkflowService.deactivate_workflow(
-        workflow_id, user_id, reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED
-    )
-    # After the deactivation, which owns `activated`/`deactivated_reason`.
-    await workflow_repository.update_for_user(
-        workflow_id, user_id, WorkflowUpdate(blocked_on_integrations=confirmed)
+        workflow_id,
+        user_id,
+        reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+        blocked_on_integrations=confirmed,
     )
     log.info(
         f"{LogTag.WORKFLOW} Paused workflow — a run found integrations never connected",
@@ -161,6 +162,22 @@ async def resume_workflows_for_reconnected_integration(user_id: str, integration
     ):
         for workflow in await workflow_repository.find_paused_for_reason(user_id, reason):
             if not _wants_integration(workflow, integration_id, reason):
+                continue
+            # The stored blockers are what the run found, beyond the declared
+            # steps that activate_workflow checks: with one of several back, the
+            # rest still block, and the list is trimmed to what is still missing.
+            still_missing = await confirm_disconnected(user_id, workflow.blocked_on_integrations)
+            if still_missing:
+                await workflow_repository.update_for_user(
+                    workflow.id, user_id, WorkflowUpdate(blocked_on_integrations=still_missing)
+                )
+                log.info(
+                    f"{LogTag.WORKFLOW} Workflow left paused — still blocked on other integrations",
+                    workflow_id=workflow.id,
+                    user_id=user_id,
+                    integration_id=integration_id,
+                    still_missing=still_missing,
+                )
                 continue
             try:
                 await WorkflowService.activate_workflow(workflow.id, user_id)

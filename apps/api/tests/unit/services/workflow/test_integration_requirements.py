@@ -12,7 +12,7 @@ import pytest
 from app.services.workflow.integration_requirements import confirm_disconnected
 
 MODULE = "app.services.workflow.integration_requirements"
-STATUS_TARGET = "app.services.oauth.oauth_service.get_all_integrations_status"
+STATUS_TARGET = f"{MODULE}.get_all_integrations_status"
 USER_ID = "507f1f77bcf86cd799439011"
 
 

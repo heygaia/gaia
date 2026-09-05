@@ -428,13 +428,17 @@ class TestPauseForMissingIntegrations:
 
         # The claim is checked for THIS user: the run proposes, the status disposes.
         confirm.assert_awaited_once_with(USER_ID, ["github"])
+        # The resume side cannot re-derive the blockers: a workflow is paused on
+        # what a run actually found, not on what its declared steps claim to
+        # need. They ride the pause itself, in one write: a pause on record
+        # without them could never be resumed.
         service.deactivate_workflow.assert_awaited_once_with(
-            "wf-1", USER_ID, reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED
+            "wf-1",
+            USER_ID,
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github"],
         )
-        # The resume side cannot re-derive this: a workflow is paused on what a
-        # run actually found, not on what its declared steps claim to need.
-        assert repo.update_for_user.await_args.args[:2] == ("wf-1", USER_ID)
-        assert repo.update_for_user.await_args.args[2].blocked_on_integrations == ["github"]
+        repo.update_for_user.assert_not_awaited()
 
     async def test_an_unconfirmed_claim_changes_nothing(self) -> None:
         with (
@@ -466,6 +470,7 @@ class TestResumeAfterABlockedRun:
             patch(f"{MODULE}.workflow_repository") as repo,
             # The declared steps do NOT mention github — only the run knew.
             patch(f"{MODULE}.compute_required_integrations", return_value=set()),
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(return_value=[])),
             patch(f"{MODULE}.WorkflowService") as service,
         ):
             repo.find_paused_for_reason = AsyncMock(side_effect=_find)
@@ -494,6 +499,7 @@ class TestResumeAfterABlockedRun:
         with (
             patch(f"{MODULE}.workflow_repository") as repo,
             patch(f"{MODULE}.compute_required_integrations", return_value=set()),
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(return_value=[])),
             patch(f"{MODULE}.WorkflowService") as service,
         ):
             repo.find_paused_for_reason = AsyncMock(side_effect=_find)
@@ -507,6 +513,31 @@ class TestResumeAfterABlockedRun:
             ("wf-2", USER_ID),
         ]
 
+    async def test_it_stays_paused_while_another_stored_blocker_is_still_missing(self) -> None:
+        """activate_workflow checks the declared steps only; the stored blockers
+        are what the run found. With one of two back, the other still blocks,
+        and the record is trimmed to it so the next reconnect is judged on it."""
+        blocked = _workflow("wf-1", "PR digest")
+        blocked.blocked_on_integrations = ["github", "slack"]
+
+        async def _find(_user_id: str, reason: DeactivationReason) -> list[MagicMock]:
+            return [blocked] if reason is DeactivationReason.INTEGRATION_NEVER_CONNECTED else []
+
+        with (
+            patch(f"{MODULE}.workflow_repository") as repo,
+            patch(f"{MODULE}.compute_required_integrations", return_value=set()),
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(return_value=["slack"])) as confirm,
+            patch(f"{MODULE}.WorkflowService") as service,
+        ):
+            repo.find_paused_for_reason = AsyncMock(side_effect=_find)
+            repo.update_for_user = AsyncMock()
+            service.activate_workflow = AsyncMock()
+            assert await resume_workflows_for_reconnected_integration(USER_ID, "github") == 0
+        confirm.assert_awaited_once_with(USER_ID, ["github", "slack"])
+        service.activate_workflow.assert_not_awaited()
+        assert repo.update_for_user.await_args.args[:2] == ("wf-1", USER_ID)
+        assert repo.update_for_user.await_args.args[2].blocked_on_integrations == ["slack"]
+
     async def test_it_leaves_alone_a_blocked_workflow_that_wanted_something_else(self) -> None:
         blocked = _workflow("wf-1", "PR digest")
         blocked.blocked_on_integrations = ["github"]
@@ -517,6 +548,7 @@ class TestResumeAfterABlockedRun:
         with (
             patch(f"{MODULE}.workflow_repository") as repo,
             patch(f"{MODULE}.compute_required_integrations", return_value=set()),
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(return_value=[])),
             patch(f"{MODULE}.WorkflowService") as service,
         ):
             repo.find_paused_for_reason = AsyncMock(side_effect=_find)

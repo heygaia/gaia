@@ -493,24 +493,30 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         )
 
     async def deactivate(
-        self, workflow_id: str, user_id: str, *, reason: DeactivationReason | None = None
+        self,
+        workflow_id: str,
+        user_id: str,
+        *,
+        reason: DeactivationReason | None = None,
+        blocked_on_integrations: list[str] | None = None,
     ) -> WorkflowDocument | None:
         """Deactivate the user's workflow (disable its trigger and clear Composio
         ids). Liveness is governed by ``activated``; a deferred fire is rejected by
         the claim gate. ``reason`` marks a system pause so an automatic resume can
         tell it apart from a user switching the workflow off (which passes none).
+        ``blocked_on_integrations`` is written in the same operation as the pause
+        it explains: a pause on record with no blockers could never be resumed.
         Returns the after state, or ``None`` when not found."""
+        fields: dict[str, object] = {
+            "activated": False,
+            "trigger_config.enabled": False,
+            "trigger_config.composio_trigger_ids": [],
+            "deactivated_reason": reason.value if reason else None,
+        }
+        if blocked_on_integrations is not None:
+            fields["blocked_on_integrations"] = blocked_on_integrations
         return await self._apply_raw_update(
-            {"_id": workflow_id, "user_id": user_id},
-            {
-                "$set": {
-                    "activated": False,
-                    "trigger_config.enabled": False,
-                    "trigger_config.composio_trigger_ids": [],
-                    "deactivated_reason": reason.value if reason else None,
-                }
-            },
-            scope=REPO_GLOBAL_SCOPE,
+            {"_id": workflow_id, "user_id": user_id}, {"$set": fields}, scope=REPO_GLOBAL_SCOPE
         )
 
     async def mark_activated_with_triggers(

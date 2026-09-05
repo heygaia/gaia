@@ -11,6 +11,7 @@ from app.models.workflow_models import (
     TriggerType,
     WorkflowStep,
 )
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.utils.trigger_utils import get_integration_for_trigger
 
 
@@ -90,8 +91,6 @@ async def compute_missing_integrations(
     """Return IntegrationRef objects for required integrations not yet connected."""
     if not required:
         return []
-    # Deferred to avoid circular import: oauth_service → provisioner → service → here
-    from app.services.oauth.oauth_service import get_all_integrations_status
 
     status_map = await get_all_integrations_status(user_id)
     return build_integration_refs(required, status_map)[1]
@@ -112,8 +111,6 @@ async def confirm_disconnected(user_id: str, integration_ids: Sequence[str]) -> 
     """
     if not integration_ids:
         return []
-    # Deferred to avoid circular import: oauth_service → provisioner → service → here
-    from app.services.oauth.oauth_service import get_all_integrations_status
 
     status_map = await get_all_integrations_status(user_id)
     return [
@@ -133,8 +130,6 @@ async def compute_integration_refs(
     required = compute_required_integrations(steps, trigger_config)
     if not required:
         return [], []
-    # Deferred to avoid circular import: oauth_service → provisioner → service → here
-    from app.services.oauth.oauth_service import get_all_integrations_status
 
     status_map = await get_all_integrations_status(user_id)
     return build_integration_refs(required, status_map)
