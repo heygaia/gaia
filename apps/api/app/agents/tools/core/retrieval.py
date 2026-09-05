@@ -43,9 +43,9 @@ from app.override.langgraph_bigtool.utils import RetrieveToolsResult
 from app.services.integrations.integration_service import (
     get_user_available_tool_namespaces,
 )
-from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.integrations.user_integrations import get_user_integrations
 from app.services.mcp.mcp_client import get_mcp_client
+from app.services.oauth.oauth_service import get_all_integrations_status
 from app.utils.mcp_utils import canonical_tool_name_map
 from shared.py.wide_events import log
 

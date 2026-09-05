@@ -19,6 +19,7 @@ from app.constants.integrations import (
 from app.constants.log_tags import LogTag
 from app.db.repositories.user_integrations import user_integration_repository
 from app.decorators.caching import Cacheable
+from app.models.oauth_models import OAuthIntegration
 from app.services.composio.composio_service import get_composio_service
 from shared.py.wide_events import OAuthContext, log
 
@@ -70,41 +71,13 @@ async def get_all_integrations_status(user_id: str) -> dict[str, bool]:
             composio_providers.append(integration.provider)
             composio_id_to_provider[integration.id] = integration.provider
         elif integration.managed_by == MANAGED_BY_SELF:
-            # Check self-managed integrations (Google) via PostgreSQL tokens
-            try:
-                token = await token_repository.get_token(
-                    user_id, integration.provider, renew_if_expired=True
-                )
-                authorized_scopes = str(token.get("scope", "")).split()
-                required_scopes = get_integration_scopes(integration.id)
-                result[integration.id] = all(
-                    scope in authorized_scopes for scope in required_scopes
-                )
-            except Exception as e:
-                log.debug(
-                    f"{LogTag.OAUTH} Token not found for",
-                    provider=integration.provider,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-                result[integration.id] = False
+            result[integration.id] = await _self_managed_connected(user_id, integration)
 
     # Step 2: Batch check Composio integrations not in MongoDB
     if composio_providers:
-        try:
-            composio_service = get_composio_service()
-            status_map = await composio_service.check_connection_status(composio_providers, user_id)
-            for integration_id, provider in composio_id_to_provider.items():
-                result[integration_id] = status_map.get(provider, False)
-        except Exception as e:
-            log.error(
-                f"{LogTag.OAUTH} Error batch checking Composio integrations",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=user_id,
-            )
-            for integration_id in composio_id_to_provider:
-                result[integration_id] = False
+        result.update(
+            await _composio_connected(user_id, composio_providers, composio_id_to_provider)
+        )
 
     # Include custom integrations from MongoDB that are connected
     for integration_id, is_connected in mongo_status.items():
@@ -113,3 +86,43 @@ async def get_all_integrations_status(user_id: str) -> dict[str, bool]:
 
     log.set(oauth=OAuthContext(operation="status"), result_count=len(result))
     return result
+
+
+async def _self_managed_connected(user_id: str, integration: OAuthIntegration) -> bool:
+    """A self-managed (Google) integration is connected when its stored token
+    carries every scope the integration needs; no token reads as not connected."""
+    try:
+        token = await token_repository.get_token(
+            user_id, integration.provider, renew_if_expired=True
+        )
+    except Exception as e:
+        log.debug(
+            f"{LogTag.OAUTH} Token not found for",
+            provider=integration.provider,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return False
+    authorized_scopes = str(token.get("scope", "")).split()
+    return all(scope in authorized_scopes for scope in get_integration_scopes(integration.id))
+
+
+async def _composio_connected(
+    user_id: str, providers: list[str], id_to_provider: dict[str, str]
+) -> dict[str, bool]:
+    """One batched Composio status check for the integrations Mongo does not
+    know; a failed check reads every one of them as not connected."""
+    try:
+        status_map = await get_composio_service().check_connection_status(providers, user_id)
+    except Exception as e:
+        log.error(
+            f"{LogTag.OAUTH} Error batch checking Composio integrations",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
+        return dict.fromkeys(id_to_provider, False)
+    return {
+        integration_id: status_map.get(provider, False)
+        for integration_id, provider in id_to_provider.items()
+    }

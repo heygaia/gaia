@@ -14,7 +14,12 @@ from app.models.user_models import BioStatus, UserDocument, UserUpdate
 from app.services.analytics_service import track_login, track_signup
 from app.services.composio.composio_service import get_composio_service
 from app.services.email import add_marketing_contact, send_welcome_email
-from app.services.integrations.integration_status import get_all_integrations_status
+
+# Re-exported on purpose: the reader lives below this module now, and its
+# callers here keep importing it from the OAuth surface they already know.
+from app.services.integrations.integration_status import (
+    get_all_integrations_status as get_all_integrations_status,  # noqa: PLC0414 -- re-export
+)
 from app.services.integrations.user_integration_status import (
     update_user_integration_status,
 )
