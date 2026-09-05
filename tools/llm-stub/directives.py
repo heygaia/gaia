@@ -39,6 +39,10 @@ Limitations (documented, not silently handled):
 - A single script should target one agent level. Mixing comms-only tools
   (``add_memory``/``search_memory``) with executor tools in one script is not
   supported, because forwarding replays the full script to the executor.
+- A quoted copy of a script (the previous run's task, escaped inside a JSON
+  string) is recognised by its escaped args and skipped to the end of that
+  string. A quoted directive with NO args that is not preceded by one with
+  args looks exactly like a live one and is executed.
 """
 
 from __future__ import annotations
