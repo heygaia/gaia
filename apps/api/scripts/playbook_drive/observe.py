@@ -120,7 +120,12 @@ class Store:
             return
         key = f"{EXECUTOR_BUSY_PREFIX}{conversation_id}"
         deadline = time.monotonic() + limit
-        while time.monotonic() < deadline and self.redis.exists(key):
+        while self.redis.exists(key):
+            if time.monotonic() >= deadline:
+                raise TimeoutError(
+                    f"executor lock {key} still held after {limit}s; a fire now would be "
+                    "recorded as skipped, not as a scenario result"
+                )
             time.sleep(3)
 
     def reset_rate_limits(self, user_id: str) -> int:
@@ -224,21 +229,24 @@ def _observe(
         workflow=store.workflow(workflow_id),
     )
     for event in log.events_since(position, workflow_id):
-        playbook = event.get("playbook")
-        if isinstance(playbook, dict):
-            if mode := playbook.get("mode"):
-                observation.modes.append(str(mode))
-            if reason := playbook.get("reason"):
-                observation.reasons.append(str(reason))
-            if isinstance(playbook.get("for_each"), dict):
-                observation.for_each.append(ForEachCount.model_validate(playbook["for_each"]))
-        if str(event.get("message", "")).endswith("Playbook discarded"):
-            observation.discards.append(str(event.get("reason")))
-        for warning in event.get("warnings") or []:
-            observation.warnings.append(_message(warning))
-        for error in event.get("errors") or []:
-            observation.errors.append(_message(error))
+        _read_playbook_event(observation, event)
+        observation.warnings.extend(_message(w) for w in event.get("warnings") or [])
+        observation.errors.extend(_message(e) for e in event.get("errors") or [])
     return observation
+
+
+def _read_playbook_event(observation: Observation, event: dict[str, Any]) -> None:
+    """What the playbook lifecycle said in one wide event, onto the observation."""
+    playbook = event.get("playbook")
+    if isinstance(playbook, dict):
+        if mode := playbook.get("mode"):
+            observation.modes.append(str(mode))
+        if reason := playbook.get("reason"):
+            observation.reasons.append(str(reason))
+        if isinstance(playbook.get("for_each"), dict):
+            observation.for_each.append(ForEachCount.model_validate(playbook["for_each"]))
+    if str(event.get("message", "")).endswith("Playbook discarded"):
+        observation.discards.append(str(event.get("reason")))
 
 
 def _message(entry: object) -> str:

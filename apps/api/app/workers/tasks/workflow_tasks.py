@@ -611,9 +611,13 @@ async def _discard_playbook(
     **details: object,
 ) -> None:
     """Drop a playbook the worker has given up on, saying why. Never raises: the
-    fire still runs on the agent, and a failed delete only costs the next check."""
+    fire still runs on the agent, and a failed delete only costs the next check.
+    Scoped to the revision the verdict was about: a body rewritten in the
+    meantime is a different decision and stays."""
     try:
-        await playbook_repository.delete_for_workflow(workflow_id, user_id)
+        removed = await playbook_repository.delete_revision(
+            workflow_id, user_id, playbook_id=playbook.playbook_id, revision=playbook.revision
+        )
     except Exception as e:
         log.warning(
             f"{LogTag.WORKER} Playbook delete failed; it stays on file for now",
@@ -621,6 +625,15 @@ async def _discard_playbook(
             playbook_id=playbook.playbook_id,
             reason=reason,
             error_type=type(e).__name__,
+        )
+        return
+    if not removed:
+        log.info(
+            f"{LogTag.WORKER} Playbook already replaced; the discard stands down",
+            workflow_id=workflow_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+            reason=reason.value,
         )
         return
     log.warning(

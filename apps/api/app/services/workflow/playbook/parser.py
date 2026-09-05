@@ -504,6 +504,13 @@ _UNRESOLVED = object()
 ASK_PICK = object()
 
 
+@dataclass(frozen=True, slots=True)
+class _Elements:
+    """The elements a ``for_each`` will run over, as the authoring run saw them."""
+
+    items: tuple[object, ...]
+
+
 def _check_step_reference(token: str, path: str, where: str, walk: _Walk) -> object:
     """Resolve one ``$steps`` reference against what that step returned in this run.
 
@@ -639,15 +646,20 @@ def _check_item_placeholder(
                     ),
                 )
             )
-    elif sample is not NO_ITEM:
-        # Checked against a real element of the source, the way the replay
-        # will read it. Seen live: $item.todo_id over elements carrying id.
-        try:
-            resolve_item(token, path, sample)
-        except PlaceholderError as error:
-            walk.issues.append(
-                PlaybookIssue(where=where, problem=error.message + _shape_hint(sample))
-            )
+    elif isinstance(sample, _Elements):
+        # Checked against every element the loop can reach, the way the replay
+        # will read each one. Seen live: $item.todo_id over elements carrying
+        # id; and a field the first element has but a later one lacks would
+        # stop the loop after the earlier calls already ran.
+        for index, element in enumerate(sample.items):
+            try:
+                resolve_item(token, path, element)
+            except PlaceholderError as error:
+                at = f" (element {index})" if index else ""
+                walk.issues.append(
+                    PlaybookIssue(where=where, problem=error.message + at + _shape_hint(element))
+                )
+                return
 
 
 def _check_step_placeholder(match: re.Match[str], where: str, walk: _Walk) -> object:
@@ -720,7 +732,7 @@ def _check_for_each_source(step: ForEachStep, path: str, walk: _Walk) -> object:
     if resolved is _UNRESOLVED:
         return NO_ITEM
     if isinstance(resolved, list):
-        return resolved[0] if resolved else NO_ITEM
+        return _Elements(tuple(resolved[: step.max_items])) if resolved else NO_ITEM
     result = walk.step_results[match.group("path").removeprefix(".").partition(".")[0]]
     walk.issues.append(
         PlaybookIssue(

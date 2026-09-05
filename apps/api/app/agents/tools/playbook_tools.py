@@ -113,6 +113,26 @@ def _answered_calls(state: Mapping[str, Any] | None) -> list[tuple[str, dict[str
     return calls
 
 
+def _invoked_call_names(state: Mapping[str, Any] | None) -> list[str]:
+    """Every tool the run has called so far, answered or still in flight.
+
+    The quiet-day check reads this rather than the answered record: a model
+    can issue ``create_todo`` and the decline in one parallel batch, and the
+    create has no answer yet when the decline is judged.
+    """
+    if state is None:
+        return []
+    messages = state.get("messages")
+    if not isinstance(messages, list):
+        return []
+    return [
+        str(call.get("name") or "")
+        for message in messages
+        for call in getattr(message, "tool_calls", None) or []
+        if call.get("name")
+    ]
+
+
 def _answers_by_call_id(messages: list[object]) -> dict[str, object]:
     """Each tool message's parsed answer, keyed by the call it answers."""
     answers: dict[str, object] = {}
@@ -535,7 +555,7 @@ async def _record_decline(
     if kind is DeclineKind.NO_WORK_TODAY:
         # The claim is checked against the run's own record, not taken on
         # trust: a run that made a doing-call had work to freeze.
-        worked = [name for name, _args, _answer in _answered_calls(state) if is_work_call(name)]
+        worked = [name for name in _invoked_call_names(state) if is_work_call(name)]
         if worked:
             return error_response(
                 "work_happened",

@@ -596,6 +596,23 @@ class TestTheScopeAndShapeOfEveryRawWrite:
 
 
 @pytest.mark.unit
+class TestDeleteRevision:
+    async def test_the_delete_is_keyed_on_the_revision_it_judged(
+        self, repo: PlaybooksRepository, collection: MagicMock
+    ) -> None:
+        """A heal rewrites in place and bumps the revision; a discard decided
+        against the old body must not take the replacement with it."""
+        collection.delete_one = AsyncMock(return_value=MagicMock(deleted_count=0))
+        removed = await repo.delete_revision(WORKFLOW_ID, USER_ID, playbook_id="pb_1", revision=3)
+        assert removed is False
+        filter_ = collection.delete_one.await_args.args[0]
+        assert filter_["workflow_id"] == WORKFLOW_ID
+        assert filter_["user_id"] == USER_ID
+        assert filter_["revision"] == 3
+        assert "pb_1" in filter_.values()
+
+
+@pytest.mark.unit
 class TestTheWriteIsTheTransition:
     """``_outcome_update`` splits the lifecycle transition into the part that
     depends on the stored state and the part that does not. Applying the write

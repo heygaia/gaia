@@ -38,6 +38,7 @@ from app.agents.core.background.session import (
     RunKind,
     create_session,
     get_session,
+    mark_executor_failed,
     mark_executor_spawned,
 )
 from app.agents.core.nodes import executor_status
@@ -141,6 +142,28 @@ class TestTheDoneSignalCarriesTheOutcome:
         assert session.done_event.is_set()
         assert session.executor_failed is False
         assert session.executor_failure is None
+
+
+class TestAnAbandonedExecutorIsNotDelivered:
+    """The silent path waited, gave up, closed the fire as failed and tore the
+    session down. The executor's own finalize, when it finally comes, must not
+    answer that closed turn or queue work on it; the lock it holds is still owed."""
+
+    async def test_a_result_after_the_waiter_gave_up_releases_the_lock_and_nothing_else(
+        self, boundaries
+    ) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+        mark_executor_failed("s1", "the executor did not finish within 1500s")
+
+        with patch.object(
+            er, "_queue_collection_if_uncollected", new_callable=AsyncMock
+        ) as collect:
+            await er._finalize_executor_run(_run(RunKind.LIVE), TASK, "late result", "final")
+
+        boundaries.deliver.assert_not_awaited()
+        collect.assert_not_awaited()
+        boundaries.release.assert_awaited_once()
 
 
 class TestCancelledRouting:

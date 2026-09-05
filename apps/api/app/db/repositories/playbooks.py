@@ -183,6 +183,22 @@ class PlaybooksRepository(MongoRepository[PlaybookDocument, PlaybookUpdate]):
             return False
         return await self.delete(existing.playbook_id)
 
+    async def delete_revision(
+        self, workflow_id: str, user_id: str, *, playbook_id: str, revision: int
+    ) -> bool:
+        """Drop one body the worker has given up on, and only that body.
+
+        Keyed on the revision as well as the id: a heal run rewrites in place
+        and bumps the revision, so a discard decided against the old body must
+        not take the replacement with it. ``False`` when that body is already
+        gone, replaced or not.
+        """
+        return await self._remove(
+            playbook_id,
+            REPO_GLOBAL_SCOPE,
+            {"workflow_id": workflow_id, "user_id": user_id, "revision": revision},
+        )
+
 
 def _outcome_update(
     outcome: PlaybookRunOutcome, *, grow_streak: bool

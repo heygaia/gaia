@@ -18,6 +18,7 @@ cross-process guard for multi-worker deployments.
 """
 
 import asyncio
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -234,9 +235,11 @@ _sessions: dict[str, StreamSession] = {}
 
 
 def create_session(stream_id: str, kind: RunKind) -> StreamSession:
-    """Create (or replace) the session for a stream."""
+    """Create (or replace) the session for a stream. A new session is a new
+    run: whatever a previous waiter gave up on under this id is forgotten."""
     session = StreamSession(stream_id=stream_id, kind=kind)
     _sessions[stream_id] = session
+    _abandoned.pop(stream_id, None)
     return session
 
 
@@ -268,6 +271,12 @@ def teardown_session(stream_id: str) -> None:
 
 
 # ── Executor lifecycle helpers ───────────────────────────────────────
+
+#: Streams whose waiter gave up on the executor, newest last. Bounded because
+#: nothing else ever forgets a stream id; a finalize for one of these skips
+#: delivery instead of answering a run that was already closed as failed.
+_ABANDONED_REMEMBERED = 1024
+_abandoned: OrderedDict[str, None] = OrderedDict()
 
 
 def mark_executor_spawned(stream_id: str) -> None:
@@ -307,11 +316,24 @@ def signal_executor_done(
 
 
 def mark_executor_failed(stream_id: str, reason: str) -> None:
-    """Record that the executor failed without finishing (the waiter gave up)."""
+    """Record that the executor failed without finishing (the waiter gave up).
+
+    The stream is also marked abandoned, outside the session: the waiter tears
+    the session down right after, and the executor's own finalize, whenever it
+    comes, has to find out that nobody is listening any more.
+    """
     session = _sessions.get(stream_id)
     if session is not None:
         session.executor_failed = True
         session.executor_failure = reason
+    _abandoned[stream_id] = None
+    while len(_abandoned) > _ABANDONED_REMEMBERED:
+        _abandoned.popitem(last=False)
+
+
+def executor_abandoned(stream_id: str) -> bool:
+    """Whether the run that waited on this executor gave up on it."""
+    return stream_id in _abandoned
 
 
 def executor_failed(stream_id: str) -> bool:

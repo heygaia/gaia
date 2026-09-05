@@ -19,6 +19,7 @@ from app.agents.core.background.session import (
     claim_tool_output,
     create_session,
     decrement_pending_subagents,
+    executor_abandoned,
     executor_failed,
     executor_failure,
     get_or_create_session,
@@ -26,6 +27,7 @@ from app.agents.core.background.session import (
     get_session,
     has_bg_integration,
     increment_pending_subagents,
+    mark_executor_failed,
     mark_executor_queued,
     mark_executor_spawned,
     note_tool_output_owner,
@@ -355,6 +357,19 @@ def test_a_plain_done_signal_is_not_a_failure() -> None:
 
     assert executor_failed(stream_id) is False
     assert executor_failure(stream_id) is None
+
+
+@pytest.mark.unit
+def test_a_waiter_that_gave_up_leaves_the_stream_marked_abandoned_past_teardown() -> None:
+    stream_id = f"s_{uuid4().hex}"
+    get_or_create_session(stream_id)
+    assert executor_abandoned(stream_id) is False
+
+    mark_executor_failed(stream_id, "the executor did not finish within 1500s")
+    teardown_session(stream_id)
+
+    assert executor_abandoned(stream_id) is True
+    assert executor_abandoned(f"s_{uuid4().hex}") is False
 
 
 @pytest.mark.unit

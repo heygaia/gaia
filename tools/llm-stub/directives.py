@@ -114,9 +114,25 @@ def parse_directives(text: str) -> list[Directive]:
             directive, pos = _scan_say(text, opener.end())
         else:
             directive, pos = _scan_tool(text, opener.end())
-        if directive is not None:
-            directives.append(directive)
+        if directive is None:
+            # A quoted copy of a script: everything to the end of the JSON string
+            # it sits in is that copy, the say and any bare directives included.
+            pos = _end_of_quoted_string(text, pos)
+            continue
+        directives.append(directive)
     return directives
+
+
+def _end_of_quoted_string(text: str, pos: int) -> int:
+    """Index just past the unescaped quote that closes the JSON string ``pos`` is in."""
+    while pos < len(text):
+        if text[pos] == "\\":
+            pos += 2
+            continue
+        if text[pos] == '"':
+            return pos + 1
+        pos += 1
+    return pos
 
 
 def _skip_space(text: str, pos: int) -> int:

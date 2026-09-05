@@ -3003,6 +3003,47 @@ result_brief: x
             )
         ]
 
+    async def test_a_field_a_later_element_lacks_is_refused_naming_that_element(self) -> None:
+        """The first element having the field is not enough: the loop would run
+        the earlier calls and stop on the element without it."""
+        body = _body(
+            """
+description: x
+steps:
+  - id: events
+    tool: list_events
+    args:
+      calendar_id: primary
+  - id: mail
+    tool: send_email
+    for_each: $steps.events.items
+    max_items: 5
+    args:
+      to: $item.email
+      subject: hi
+result_brief: x
+"""
+        )
+        results = [
+            RecordedResult(
+                tool_name="list_events",
+                args={"calendar_id": "primary"},
+                result={"items": [{"id": 1, "email": "a@b.com"}, {"id": 2, "title": "1:1"}]},
+            ),
+            RecordedResult(
+                tool_name="send_email", args={"to": "a@b.com", "subject": "hi"}, result="sent"
+            ),
+        ]
+        with patch(f"{MODULE}.get_tool_registry", return_value=_registry()):
+            result = await validate_playbook(body, USER_ID, results)
+        assert [(issue.where, issue.problem) for issue in result.issues] == [
+            (
+                "steps[1].args.to",
+                "$item.email is not in the current for_each element (element 1); its result "
+                "has keys: id, title",
+            )
+        ]
+
     async def test_an_item_field_the_elements_do_have_is_accepted(self) -> None:
         body = _body(
             """

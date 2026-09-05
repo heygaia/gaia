@@ -92,6 +92,16 @@ def test_parse_ordered_multi_directive():
     ]
 
 
+def test_a_quoted_script_is_text_to_the_end_of_its_string():
+    """The previous run's recorded task quotes its own script back, escaped:
+    the tool, the say and any bare directive inside that string are text."""
+    quoted = (
+        'earlier: "[[tool:create_todo {\\"title\\": \\"sim\\"}]] [[tool:list_todos]] '
+        '[[say:old]]" then [[say:new]]'
+    )
+    assert parse_directives(quoted) == [SayDirective(text="new")]
+
+
 def test_parse_malformed_json_raises():
     with pytest.raises(DirectiveError) as exc:
         parse_directives('[[tool:create_reminder {"when": tomorrow}]]')

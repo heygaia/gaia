@@ -17,6 +17,7 @@ import argparse
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import datetime
+import math
 from pathlib import Path
 import sys
 import time
@@ -159,13 +160,59 @@ def _cost(store: Store, user_id: str, since: datetime) -> float:
     return float(sum(row.get("cost_usd") or 0.0 for row in rows))
 
 
+def _lifecycle(observation: Observation) -> str:
+    playbook = observation.playbook
+    if playbook is None:
+        return "-"
+    return (
+        f"{playbook.last_run_status} r{playbook.revision} "
+        f"s{playbook.suspect_streak} h{playbook.heal_attempts}"
+    )
+
+
+def _paused(observation: Observation) -> str:
+    workflow = observation.workflow
+    if workflow.activated:
+        return ""
+    return f"paused:{','.join(workflow.blocked_on_integrations) or workflow.deactivated_reason}"
+
+
+def _row(
+    shape: Shape, fire: int, observation: Observation, store: Store, user_id: str, started: float
+) -> Row:
+    return Row(
+        shape=shape.key,
+        fire=fire,
+        status=observation.execution.status,
+        mode="/".join(dict.fromkeys(observation.modes)) or "-",
+        decision=_decision(observation, store) or "-",
+        playbook=_playbook(observation),
+        lifecycle=_lifecycle(observation),
+        declines=observation.workflow.playbook_declines,
+        paused=_paused(observation),
+        cost_usd=_cost(store, user_id, observation.execution.started_at),
+        seconds=time.monotonic() - started,
+    )
+
+
 def run_shape(
-    shape: Shape, client: GaiaClient, store: Store, log: WorkerLog, user_id: str
+    shape: Shape,
+    client: GaiaClient,
+    store: Store,
+    log: WorkerLog,
+    user_id: str,
+    *,
+    budget_usd: float,
 ) -> list[Row]:
+    """Fire the shape until its fires run out, the workflow pauses, or the budget
+    (what is left of it) is spent; every fire is one row."""
     print(f"{time.strftime('%H:%M:%S')} {shape.key} {shape.title}", flush=True)
     rows: list[Row] = []
     workflow = None
     for index in range(shape.fires):
+        if sum(row.cost_usd for row in rows) >= budget_usd:
+            print(f"  budget reached before fire {index + 1}; stopping", flush=True)
+            break
         if index in shape.before:
             shape.before[index](client)
         if workflow is None:
@@ -177,28 +224,7 @@ def run_shape(
         except (TimeoutError, RuntimeError) as error:
             print(f"  fire {index + 1}: {error}", flush=True)
             break
-        lifecycle = "-"
-        if observation.playbook is not None:
-            playbook = observation.playbook
-            lifecycle = (
-                f"{playbook.last_run_status} r{playbook.revision} "
-                f"s{playbook.suspect_streak} h{playbook.heal_attempts}"
-            )
-        row = Row(
-            shape=shape.key,
-            fire=index + 1,
-            status=observation.execution.status,
-            mode="/".join(dict.fromkeys(observation.modes)) or "-",
-            decision=_decision(observation, store) or "-",
-            playbook=_playbook(observation),
-            lifecycle=lifecycle,
-            declines=observation.workflow.playbook_declines,
-            paused=""
-            if observation.workflow.activated
-            else f"paused:{','.join(observation.workflow.blocked_on_integrations) or observation.workflow.deactivated_reason}",
-            cost_usd=_cost(store, user_id, observation.execution.started_at),
-            seconds=time.monotonic() - started,
-        )
+        row = _row(shape, index + 1, observation, store, user_id, started)
         rows.append(row)
         print(
             f"  fire {row.fire}: {row.status} mode={row.mode} decision={row.decision} "
@@ -211,13 +237,23 @@ def run_shape(
     return rows
 
 
+def _budget(text: str) -> float:
+    """A finite, non-negative dollar amount; ``nan`` would pass every comparison."""
+    value = float(text)
+    if not math.isfinite(value) or value < 0:
+        raise argparse.ArgumentTypeError(
+            f"budget must be a finite, non-negative amount, not {text!r}"
+        )
+    return value
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api", default=DEFAULT_API)
     parser.add_argument("--user", default=DEFAULT_USER)
     parser.add_argument("--worker-log", type=Path, required=True)
     parser.add_argument("--only", nargs="*", default=[], metavar="KEY")
-    parser.add_argument("--budget-usd", type=float, default=1.5)
+    parser.add_argument("--budget-usd", type=_budget, default=1.5)
     args = parser.parse_args(argv)
 
     client = GaiaClient(args.api, args.user)
@@ -234,7 +270,9 @@ def main(argv: list[str] | None = None) -> int:
                 f"budget of ${args.budget_usd:.2f} reached before {shape.key}; stopping", flush=True
             )
             break
-        shape_rows = run_shape(shape, client, store, log, user.id)
+        shape_rows = run_shape(
+            shape, client, store, log, user.id, budget_usd=args.budget_usd - spent
+        )
         rows.extend(shape_rows)
         spent += sum(row.cost_usd for row in shape_rows)
 

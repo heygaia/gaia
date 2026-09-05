@@ -1926,6 +1926,37 @@ class TestOneDecisionPerRun:
         }
         assert workflows.workflow.playbook_declines == 0
 
+    async def test_a_doing_call_still_in_flight_is_work_too(
+        self, store: _FakePlaybookStore
+    ) -> None:
+        """A model can issue create_todo and the decline in one parallel batch;
+        the create has no answer yet when the decline is judged, and it is
+        work all the same."""
+        workflows = _FakeWorkflowStore()
+        in_flight = AIMessage(
+            content="",
+            tool_calls=[
+                {"id": "c1", "name": "create_todo", "args": {"title": "x"}, "type": "tool_call"},
+                {"id": "d1", "name": "decline_playbook", "args": {}, "type": "tool_call"},
+            ],
+        )
+        with (
+            patch(f"{TOOLS_MODULE}.playbook_repository", store),
+            patch(f"{TOOLS_MODULE}.workflow_repository", workflows),
+        ):
+            result = await decline_playbook.ainvoke(
+                {
+                    "kind": "no_work_today",
+                    "reason": "nothing to do",
+                    "state": {"messages": [in_flight]},
+                },
+                config=_config(),
+            )
+
+        assert result["error"] == "work_happened"
+        assert result["message"].startswith("This run called create_todo, so the work happened")
+        assert workflows.workflow.playbook_declines == 0
+
     async def test_a_quiet_day_is_not_a_verdict(self, store: _FakePlaybookStore) -> None:
         """Nothing to act on means the calls that do the work never happened;
         counting that would spend a seasonal workflow's chances on empty days."""
