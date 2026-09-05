@@ -10,6 +10,11 @@ let isSubscriptionStatusUnknown = false;
 let checkoutPhase = "idle";
 let hasEverSubscribed: boolean | undefined;
 
+let pathname = "/c";
+vi.mock("@/i18n/navigation", () => ({
+  usePathname: () => pathname,
+}));
+
 vi.mock("@/lib/analytics", () => ({
   ANALYTICS_EVENTS: {
     SUBSCRIPTION_CHECKOUT_STARTED: "subscription:checkout_started",
@@ -195,12 +200,32 @@ describe("PaywallModal", () => {
     expect(screen.getByText("GAIA is paid only")).not.toBeNull();
   });
 
-  it("shows the 7-day cancellation line next to the CTA", async () => {
+  it("carries no refund or tax footnote under the CTA", async () => {
     usePaywallModalStore.getState().openModal();
     render(<PaywallModal />);
 
     await screen.findByRole("dialog");
-    expect(screen.getByText(/Cancel within 7 days\./)).not.toBeNull();
+    expect(screen.queryByText(/Cancel within/)).toBeNull();
+    expect(screen.queryByText(/taxes/i)).toBeNull();
+  });
+
+  it("does not label the feature list with the plan name", async () => {
+    usePaywallModalStore.getState().openModal();
+    render(<PaywallModal />);
+
+    await screen.findByRole("dialog");
+    expect(screen.queryByText("Pro")).toBeNull();
+  });
+
+  it("renders nothing on the onboarding route, where the wizard owns payment", () => {
+    pathname = "/onboarding";
+    try {
+      usePaywallModalStore.getState().openModal();
+      render(<PaywallModal />);
+      expect(screen.queryByRole("dialog")).toBeNull();
+    } finally {
+      pathname = "/c";
+    }
   });
 
   it("replaces the CTA with a confirming state once the overlay closes", async () => {

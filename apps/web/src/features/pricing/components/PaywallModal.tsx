@@ -6,14 +6,11 @@ import { Tag01Icon } from "@icons";
 import { useEffect } from "react";
 import { RaisedButton } from "@/components/ui/raised-button";
 import { useLogout } from "@/features/auth/hooks/useLogout";
+import { usePathname } from "@/i18n/navigation";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { usePaywallModalStore } from "@/stores/paywallModalStore";
 
-import {
-  paywallCopyFor,
-  REFUND_WINDOW_COPY,
-  TAX_NOTE_COPY,
-} from "../constants";
+import { paywallCopyFor } from "../constants";
 import { useDodoPayments } from "../hooks/useDodoPayments";
 import { useIsPaid } from "../hooks/useIsPaid";
 import { usePricing } from "../hooks/usePricing";
@@ -23,6 +20,7 @@ import { PlanFeature } from "./PlanFeature";
 
 export function PaywallModal() {
   const { open, offer, dismissible, closeModal } = usePaywallModalStore();
+  const pathname = usePathname();
   const { plans } = usePricing();
   const { logout } = useLogout();
   const { openCheckoutOverlay, checkoutPhase } = useDodoPayments();
@@ -69,8 +67,13 @@ export function PaywallModal() {
     void openCheckoutOverlay("monthly", { source: "paywall_modal" });
   };
 
+  // The wizard owns payment on its own stage; a 402 from a background request
+  // there must not stack this modal on top of it.
+  if (pathname === "/onboarding") return null;
+
   return (
     <Modal
+      size="xl"
       isOpen={open}
       onOpenChange={(isOpen) => {
         if (!isOpen) closeModal();
@@ -104,8 +107,7 @@ export function PaywallModal() {
           )}
 
           {proPlan && (
-            <div className="flex flex-col gap-3 rounded-2xl bg-zinc-800/50 p-5">
-              <span className="text-lg font-semibold">{proPlan.name}</span>
+            <div className="rounded-2xl bg-zinc-800/50 p-5">
               <div className="flex flex-col gap-2">
                 {proPlan.features.map((feature) => (
                   <div
@@ -123,21 +125,16 @@ export function PaywallModal() {
           {isConfirming ? (
             <CheckoutConfirming isLate={checkoutPhase === "timeout"} />
           ) : (
-            <>
-              <RaisedButton
-                className="w-full text-black!"
-                color="#00bbff"
-                onClick={handleSubscribe}
-                disabled={checkoutPhase !== "idle"}
-              >
-                {checkoutPhase === "idle"
-                  ? copy.subscribeCta
-                  : "Opening checkout..."}
-              </RaisedButton>
-              <p className="mt-2 text-center text-xs font-light text-zinc-500">
-                {REFUND_WINDOW_COPY} {TAX_NOTE_COPY}
-              </p>
-            </>
+            <RaisedButton
+              className="w-full text-black!"
+              color="#00bbff"
+              onClick={handleSubscribe}
+              disabled={checkoutPhase !== "idle"}
+            >
+              {checkoutPhase === "idle"
+                ? copy.subscribeCta
+                : "Opening checkout..."}
+            </RaisedButton>
           )}
 
           {!dismissible && (

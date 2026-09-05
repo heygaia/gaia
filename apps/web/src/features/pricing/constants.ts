@@ -52,19 +52,6 @@ export const DODO_CHECKOUT_MODE: "test" | "live" =
         ? "live"
         : "test";
 
-/**
- * The refund promise, shown wherever a subscription is bought. Refunds are
- * handled by email within the window — deliberately no "automatic" or
- * "instant" claim, because nothing automates it.
- */
-export const REFUND_WINDOW_COPY = "Cancel within 7 days.";
-
-/**
- * Dodo charges in the buyer's local currency and adds their local tax on top
- * of the USD list price, so the card never shows the final amount.
- */
-export const TAX_NOTE_COPY = "Local taxes may apply.";
-
 /** Enterprise is quoted, not sold self-serve: the card carries a contact CTA
  * where Pro carries checkout, with a sub-line in each slot Pro fills so the
  * two cards stay level. */
