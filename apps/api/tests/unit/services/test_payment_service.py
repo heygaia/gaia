@@ -809,7 +809,7 @@ class TestCreateSubscription:
         call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
         assert call_kwargs["discount_code"] == "SAVE20"
 
-    async def test_outside_production_the_billing_country_is_prefilled_for_test_cards(
+    async def test_outside_production_everything_but_the_card_is_prefilled(
         self,
         payment_service,
         mock_users_collection,
@@ -832,15 +832,25 @@ class TestCreateSubscription:
             await payment_service.create_subscription(
                 user_id=FAKE_USER_ID, product_id="prod_abc123"
             )
-        assert mock_dodo_client.checkout_sessions.create.call_args[1]["billing_address"] == {
-            "country": "US"
+        dev_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert dev_kwargs["billing_address"] == {
+            "country": "US",
+            "street": "548 Market St",
+            "city": "San Francisco",
+            "state": "CA",
+            "zipcode": "94104",
         }
+        assert dev_kwargs["customer"]["phone_number"] == "+14155550123"
+        assert dev_kwargs["show_saved_payment_methods"] is True
 
         with patch.object(payment_service_module.settings, "ENV", "production"):
             await payment_service.create_subscription(
                 user_id=FAKE_USER_ID, product_id="prod_abc123"
             )
-        assert "billing_address" not in mock_dodo_client.checkout_sessions.create.call_args[1]
+        prod_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert "billing_address" not in prod_kwargs
+        assert "phone_number" not in prod_kwargs["customer"]
+        assert "show_saved_payment_methods" not in prod_kwargs
 
     async def test_return_url_follows_the_requested_path(
         self,
