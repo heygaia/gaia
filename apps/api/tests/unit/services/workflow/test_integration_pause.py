@@ -538,6 +538,31 @@ class TestResumeAfterABlockedRun:
         assert repo.update_for_user.await_args.args[:2] == ("wf-1", USER_ID)
         assert repo.update_for_user.await_args.args[2].blocked_on_integrations == ["slack"]
 
+    async def test_one_still_blocked_workflow_does_not_stop_the_rest_from_resuming(self) -> None:
+        first, second = _workflow("wf-1", "PR digest"), _workflow("wf-2", "Issue digest")
+        first.blocked_on_integrations = ["github", "slack"]
+        second.blocked_on_integrations = ["github"]
+
+        async def _find(_user_id: str, reason: DeactivationReason) -> list[MagicMock]:
+            if reason is DeactivationReason.INTEGRATION_NEVER_CONNECTED:
+                return [first, second]
+            return []
+
+        async def _still_missing(_user_id: str, blockers: list[str]) -> list[str]:
+            return ["slack"] if "slack" in blockers else []
+
+        with (
+            patch(f"{MODULE}.workflow_repository") as repo,
+            patch(f"{MODULE}.compute_required_integrations", return_value=set()),
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(side_effect=_still_missing)),
+            patch(f"{MODULE}.WorkflowService") as service,
+        ):
+            repo.find_paused_for_reason = AsyncMock(side_effect=_find)
+            repo.update_for_user = AsyncMock()
+            service.activate_workflow = AsyncMock()
+            assert await resume_workflows_for_reconnected_integration(USER_ID, "github") == 1
+        service.activate_workflow.assert_awaited_once_with("wf-2", USER_ID)
+
     async def test_it_leaves_alone_a_blocked_workflow_that_wanted_something_else(self) -> None:
         blocked = _workflow("wf-1", "PR digest")
         blocked.blocked_on_integrations = ["github"]

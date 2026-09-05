@@ -611,6 +611,21 @@ class TestDeleteRevision:
         assert filter_["revision"] == 3
         assert "pb_1" in filter_.values()
 
+    async def test_a_removed_body_leaves_the_global_scope_cache(
+        self, repo: PlaybooksRepository, collection: MagicMock
+    ) -> None:
+        collection.delete_one = AsyncMock(return_value=MagicMock(deleted_count=1))
+        with (
+            patch.object(repo, "_cache_evict", new_callable=AsyncMock) as evict,
+            patch.object(repo, "_invalidate", new_callable=AsyncMock) as invalidate,
+        ):
+            assert (
+                await repo.delete_revision(WORKFLOW_ID, USER_ID, playbook_id="pb_1", revision=3)
+                is True
+            )
+        evict.assert_awaited_once_with(REPO_GLOBAL_SCOPE, "pb_1")
+        invalidate.assert_awaited_once_with(REPO_GLOBAL_SCOPE)
+
 
 @pytest.mark.unit
 class TestTheWriteIsTheTransition:

@@ -18,7 +18,7 @@ cross-process guard for multi-worker deployments.
 """
 
 import asyncio
-from collections import OrderedDict
+from collections import deque
 from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
@@ -239,7 +239,8 @@ def create_session(stream_id: str, kind: RunKind) -> StreamSession:
     run: whatever a previous waiter gave up on under this id is forgotten."""
     session = StreamSession(stream_id=stream_id, kind=kind)
     _sessions[stream_id] = session
-    _abandoned.pop(stream_id, None)
+    if stream_id in _abandoned:
+        _abandoned.remove(stream_id)
     return session
 
 
@@ -272,11 +273,11 @@ def teardown_session(stream_id: str) -> None:
 
 # ── Executor lifecycle helpers ───────────────────────────────────────
 
-#: Streams whose waiter gave up on the executor, newest last. Bounded because
+#: Streams whose waiter gave up on the executor, oldest first. Bounded because
 #: nothing else ever forgets a stream id; a finalize for one of these skips
 #: delivery instead of answering a run that was already closed as failed.
 _ABANDONED_REMEMBERED = 1024
-_abandoned: OrderedDict[str, None] = OrderedDict()
+_abandoned: deque[str] = deque(maxlen=_ABANDONED_REMEMBERED)
 
 
 def mark_executor_spawned(stream_id: str) -> None:
@@ -326,9 +327,7 @@ def mark_executor_failed(stream_id: str, reason: str) -> None:
     if session is not None:
         session.executor_failed = True
         session.executor_failure = reason
-    _abandoned[stream_id] = None
-    while len(_abandoned) > _ABANDONED_REMEMBERED:
-        _abandoned.popitem(last=False)
+    _abandoned.append(stream_id)
 
 
 def executor_abandoned(stream_id: str) -> bool:

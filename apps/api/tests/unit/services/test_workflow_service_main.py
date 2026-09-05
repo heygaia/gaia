@@ -46,6 +46,7 @@ from app.db.repositories.workflows import UNSET
 from app.models.scheduler_models import ScheduledTaskStatus
 from app.models.workflow_models import (
     CreateWorkflowRequest,
+    DeactivationReason,
     GeneratedPromptOutput,
     GeneratedStep,
     GeneratedWorkflow,
@@ -1272,6 +1273,35 @@ class TestDeactivateWorkflow:
 
         result = await WorkflowService.deactivate_workflow(WORKFLOW_ID, USER_ID)
         assert result is not None
+        mock_deactivate.assert_awaited_once_with(
+            WORKFLOW_ID, USER_ID, reason=None, blocked_on_integrations=None
+        )
+
+    @patch(
+        "app.services.workflow.service.WorkflowService.get_workflow",
+        new_callable=AsyncMock,
+    )
+    @patch(f"{_REPO}.deactivate", new_callable=AsyncMock)
+    async def test_a_system_pause_hands_its_reason_and_blockers_to_the_one_write(
+        self, mock_deactivate, mock_get
+    ):
+        wf = _make_workflow(activated=True)
+        mock_get.side_effect = [wf, _make_workflow(activated=False)]
+        mock_deactivate.return_value = _make_workflow_doc(_make_workflow(activated=False))
+
+        await WorkflowService.deactivate_workflow(
+            WORKFLOW_ID,
+            USER_ID,
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github"],
+        )
+
+        mock_deactivate.assert_awaited_once_with(
+            WORKFLOW_ID,
+            USER_ID,
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github"],
+        )
 
     @patch(
         "app.services.workflow.service.WorkflowService.get_workflow",

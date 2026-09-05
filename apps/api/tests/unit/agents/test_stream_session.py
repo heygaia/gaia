@@ -373,6 +373,24 @@ def test_a_waiter_that_gave_up_leaves_the_stream_marked_abandoned_past_teardown(
 
 
 @pytest.mark.unit
+def test_the_abandoned_record_forgets_the_oldest_stream_past_its_bound() -> None:
+    ids = [f"s_{uuid4().hex}" for _ in range(sess._ABANDONED_REMEMBERED + 1)]
+    for stream_id in ids:
+        mark_executor_failed(stream_id, "gave up")
+
+    assert executor_abandoned(ids[0]) is False
+    assert all(executor_abandoned(stream_id) for stream_id in ids[1:])
+
+
+@pytest.mark.unit
+def test_a_new_session_for_the_same_stream_is_not_abandoned() -> None:
+    stream_id = f"s_{uuid4().hex}"
+    mark_executor_failed(stream_id, "gave up")
+    create_session(stream_id, RunKind.LIVE)
+    assert executor_abandoned(stream_id) is False
+
+
+@pytest.mark.unit
 def test_a_stream_with_no_session_has_no_executor_failure() -> None:
     assert executor_failed("never-registered") is False
     assert executor_failure("never-registered") is None

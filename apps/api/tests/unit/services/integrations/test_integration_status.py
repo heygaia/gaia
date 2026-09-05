@@ -4,8 +4,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.constants.log_tags import LogTag
 from app.models.integration_models import UserIntegrationDocument
 from app.services.integrations.integration_status import get_all_integrations_status
+from shared.py.wide_events import OAuthContext
 
 pytestmark = pytest.mark.unit
 
@@ -178,7 +180,11 @@ class TestGetAllIntegrationsStatus:
             result = await get_all_integrations_status("user123")
 
         assert result["twitter"] is True
-        mock_composio_service.check_connection_status.assert_awaited_once()
+        # Batched by provider, for this user.
+        mock_composio_service.check_connection_status.assert_awaited_once_with(
+            ["twitter"], "user123"
+        )
+        mock_user_integration_repo.list_for_user.assert_awaited_once_with("user123", limit=100)
 
     async def test_composio_batch_check_failure_returns_false(
         self,
@@ -197,13 +203,23 @@ class TestGetAllIntegrationsStatus:
         integration.managed_by = "composio"
         integration.provider = "twitter"
 
-        with patch(
-            "app.services.integrations.integration_status.OAUTH_INTEGRATIONS",
-            [integration],
+        with (
+            patch(
+                "app.services.integrations.integration_status.OAUTH_INTEGRATIONS",
+                [integration],
+            ),
+            patch("app.services.integrations.integration_status.log") as log,
         ):
             result = await get_all_integrations_status("user123")
 
         assert result["twitter"] is False
+        log.error.assert_called_once_with(
+            f"{LogTag.OAUTH} Error batch checking Composio integrations",
+            error="Composio API error",
+            error_type="Exception",
+            user_id="user123",
+        )
+        log.set.assert_called_once_with(oauth=OAuthContext(operation="status"), result_count=1)
 
     async def test_self_managed_integration_with_valid_token(
         self,
@@ -235,11 +251,45 @@ class TestGetAllIntegrationsStatus:
                     "https://www.googleapis.com/auth/calendar.events",
                     "https://www.googleapis.com/auth/calendar.readonly",
                 ],
-            ),
+            ) as scopes,
         ):
             result = await get_all_integrations_status("user123")
 
         assert result["googlecalendar"] is True
+        # The token is read for this user's Google account and renewed if stale,
+        # and the scopes it must carry are the integration's own.
+        mock_token_repository.get_token.assert_awaited_once_with(
+            "user123", "google", renew_if_expired=True
+        )
+        scopes.assert_called_once_with("googlecalendar")
+
+    async def test_a_token_without_any_scope_grants_nothing(
+        self,
+        mock_user_integration_repo,
+        mock_composio_service,
+        mock_token_repository,
+    ):
+        mock_token_repository.get_token = AsyncMock(return_value={})
+
+        integration = MagicMock()
+        integration.id = "googlecalendar"
+        integration.available = True
+        integration.managed_by = "self"
+        integration.provider = "google"
+
+        with (
+            patch(
+                "app.services.integrations.integration_status.OAUTH_INTEGRATIONS",
+                [integration],
+            ),
+            patch(
+                "app.services.integrations.integration_status.get_integration_scopes",
+                return_value=["https://www.googleapis.com/auth/calendar.events"],
+            ),
+        ):
+            result = await get_all_integrations_status("user123")
+
+        assert result["googlecalendar"] is False
 
     async def test_self_managed_integration_with_missing_scopes(
         self,

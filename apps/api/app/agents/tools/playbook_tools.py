@@ -126,7 +126,7 @@ def _invoked_call_names(state: Mapping[str, Any] | None) -> list[str]:
     if not isinstance(messages, list):
         return []
     return [
-        str(call.get("name") or "")
+        str(call["name"])
         for message in messages
         for call in getattr(message, "tool_calls", None) or []
         if call.get("name")

@@ -103,7 +103,8 @@ async def _self_managed_connected(user_id: str, integration: OAuthIntegration) -
             error_type=type(e).__name__,
         )
         return False
-    authorized_scopes = str(token.get("scope", "")).split()
+    granted = token.get("scope")
+    authorized_scopes = str(granted).split() if granted else []
     return all(scope in authorized_scopes for scope in get_integration_scopes(integration.id))
 
 

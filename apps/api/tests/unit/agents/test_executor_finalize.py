@@ -44,6 +44,7 @@ from app.agents.core.background.session import (
 from app.agents.core.nodes import executor_status
 from app.constants.agents import AgentTag, wrap_agent_payload
 from app.constants.cache import EXECUTOR_BUSY_PREFIX
+from app.constants.log_tags import LogTag
 from app.models.chat_models import SourceCategory
 from shared.py.wide_events import log, log_context
 
@@ -156,14 +157,33 @@ class TestAnAbandonedExecutorIsNotDelivered:
         create_session("s1", RunKind.LIVE)
         mark_executor_failed("s1", "the executor did not finish within 1500s")
 
-        with patch.object(
-            er, "_queue_collection_if_uncollected", new_callable=AsyncMock
-        ) as collect:
+        with (
+            patch.object(er, "_queue_collection_if_uncollected", new_callable=AsyncMock) as collect,
+            patch.object(er, "log") as log,
+        ):
             await er._finalize_executor_run(_run(RunKind.LIVE), TASK, "late result", "final")
 
         boundaries.deliver.assert_not_awaited()
         collect.assert_not_awaited()
         boundaries.release.assert_awaited_once()
+        log.warning.assert_any_call(
+            f"{LogTag.AGENT} Executor finished after its waiter gave up; result not delivered",
+            stream_id="s1",
+            task_id="task-1",
+            result_type="final",
+        )
+
+    async def test_a_run_nobody_gave_up_on_queues_its_uncollected_work(self, boundaries) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+        run = _run(RunKind.LIVE)
+
+        with patch.object(
+            er, "_queue_collection_if_uncollected", new_callable=AsyncMock
+        ) as collect:
+            await er._finalize_executor_run(run, TASK, "done", "final")
+
+        collect.assert_awaited_once_with(run, TASK)
 
 
 class TestCancelledRouting:
