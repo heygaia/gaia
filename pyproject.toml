@@ -344,6 +344,7 @@ unfixable = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
+"apps/api/app/agents/tools/todo_tool.py" = ["PLR0913"]  # @tool args are the model-facing tool schema, not reducible complexity (same as tracked_todo_tools.py below)
 "apps/api/app/agents/tools/tracked_todo_tools.py" = ["PLR0913"]  # @tool args are the model-facing tool schema, not reducible complexity; PLR0911/0912 stay enforced (update_tracked_todo was refactored to satisfy them)
 "apps/api/app/services/analytics_service.py" = ["PLR0913"]  # track_subscription_event predates this change; the triggers feature only adds event enum members to this file
 "apps/api/app/services/oauth/oauth_service.py" = ["PLR0912", "PLR0915"]  # handle_oauth_connection and get_all_integrations_status predate this change; the triggers feature only adds a reconnect resync hook here
@@ -706,6 +707,11 @@ ignore-nested-functions = true
 ignore-nested-classes = true
 fail-under = 80
 exclude = [
+  # Tool docstrings are applied at import time by @with_doc from
+  # app/templates/docstrings/, so the source has none for interrogate to see.
+  # Basename form on purpose: scripts/ci/changes.sh only honours segment or
+  # basename patterns when it scopes a PR scan.
+  "**/todo_tool.py",
   "**/tests",
   "**/tests/**",
   "**/conftest.py",

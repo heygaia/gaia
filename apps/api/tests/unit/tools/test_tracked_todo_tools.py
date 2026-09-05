@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
+from pydantic import ValidationError
 import pytest
 
 from app.agents.tools.tracked_todo_tools import (
@@ -314,17 +315,11 @@ class TestBuildPriorityUpdate:
         assert _build_priority_update(None, fields) is None
         assert fields == {}
 
-    @pytest.mark.parametrize("value", ["high", "medium", "low", "none"])
+    @pytest.mark.parametrize("value", list(Priority))
     def test_valid_priority_values(self, value):
         fields: dict[str, object] = {}
         assert _build_priority_update(value, fields) is None
-        assert fields["priority"] == value
-
-    def test_invalid_priority_rejected(self):
-        fields: dict[str, object] = {}
-        error = _build_priority_update("urgent", fields)
-        assert "invalid priority" in error
-        assert fields == {}
+        assert fields["priority"] == value.value
 
 
 class TestBuildLabelsUpdate:
@@ -602,7 +597,7 @@ class TestUpdateTrackedTodoValidation:
             return_value=None,
         ):
             result = await update_tracked_todo.coroutine(
-                config=_config(), todo_id="missing", priority="high"
+                config=_config(), todo_id="missing", priority=Priority.HIGH
             )
         assert "not found" in result
 
@@ -617,11 +612,19 @@ class TestUpdateTrackedTodoValidation:
         assert "invalid due_date format" in result
         mock_get.assert_not_awaited()
 
-    async def test_invalid_priority_error_propagates_through_the_tool(self):
-        result = await update_tracked_todo.coroutine(
-            config=_config(), todo_id="t1", priority="urgent"
-        )
-        assert "invalid priority" in result
+    @pytest.mark.regression
+    def test_priority_is_an_enum_in_the_schema(self):
+        # A str-typed priority let the model guess synonyms ("normal", "urgent")
+        # that only failed inside the tool; the schema now closes the set.
+        schema = update_tracked_todo.tool_call_schema.model_json_schema()
+        assert schema["$defs"]["Priority"]["enum"] == [p.value for p in Priority]
+
+    @pytest.mark.regression
+    async def test_unknown_priority_is_refused_before_the_tool_runs(self):
+        with pytest.raises(ValidationError):
+            await update_tracked_todo.ainvoke(
+                {"todo_id": "t1", "priority": "urgent"}, config=_config()
+            )
 
     async def test_invalid_scheduled_at_error_propagates_through_the_tool(self):
         result = await update_tracked_todo.coroutine(
@@ -662,11 +665,24 @@ class TestCreateTrackedTodoValidation:
         )
         assert "user_id not found" in result
 
-    async def test_invalid_priority_returns_error(self):
-        result = await create_tracked_todo.coroutine(
-            config=_config(), title="t", serves="s", requires_approval=False, priority="urgent"
-        )
-        assert "invalid priority" in result
+    @pytest.mark.regression
+    def test_priority_is_an_enum_in_the_schema(self):
+        schema = create_tracked_todo.tool_call_schema.model_json_schema()
+        assert schema["$defs"]["Priority"]["enum"] == [p.value for p in Priority]
+
+    @pytest.mark.regression
+    async def test_unknown_priority_is_refused_before_the_tool_runs(self):
+        with pytest.raises(ValidationError) as exc_info:
+            await create_tracked_todo.ainvoke(
+                {
+                    "title": "t",
+                    "serves": "s",
+                    "requires_approval": False,
+                    "priority": "urgent",
+                },
+                config=_config(),
+            )
+        assert [e["loc"] for e in exc_info.value.errors()] == [("priority",)]
 
     async def test_shortcut_recurrence_without_scheduled_at_returns_error(self):
         result = await create_tracked_todo.coroutine(
@@ -1228,7 +1244,7 @@ class TestUpdateTrackedTodoSuccess:
             ) as mock_update,
         ):
             result = await update_tracked_todo.coroutine(
-                config=_config(), todo_id="t1", priority="high"
+                config=_config(), todo_id="t1", priority=Priority.HIGH
             )
         mock_update.assert_awaited_once_with(
             "t1", user_id="user-1", update=TodoUpdate(priority=Priority.HIGH)
@@ -1311,7 +1327,7 @@ class TestUpdateTrackedTodoSuccess:
             result = await update_tracked_todo.coroutine(
                 config=_config(),
                 todo_id="t1",
-                priority="high",
+                priority=Priority.HIGH,
                 references=["t2", "t3"],
             )
         mock_add_refs.assert_awaited_once_with("t1", user_id="user-1", references=["t2", "t3"])
@@ -1387,7 +1403,7 @@ class TestUpdateTrackedTodoSuccess:
             ),
         ):
             result = await update_tracked_todo.coroutine(
-                config=_config(), todo_id="t1", priority="high"
+                config=_config(), todo_id="t1", priority=Priority.HIGH
             )
         assert "not found" in result
 
