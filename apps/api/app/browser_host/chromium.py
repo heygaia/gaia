@@ -37,6 +37,7 @@ from playwright.sync_api import StorageState, StorageStateCookie, sync_playwrigh
 
 from app.browser_host.memory import memory_usage_mb
 from app.browser_host.metrics import ProcessSampler, SessionMetrics
+from app.browser_host.obscura_launch import obscura_serve_argv
 from app.config.settings import settings
 from app.constants.browser import (
     BROWSER_VIEWPORT_HEIGHT,
@@ -744,17 +745,7 @@ class ChromiumHost:
         name (never ephemeral, so we can poll for it), stealthed, and permitted
         to reach the private network the host allowlist otherwise fronts.
         """
-        obscura_bin = settings.OBSCURA_BIN
-        if not obscura_bin:
-            raise RuntimeError("BROWSER_ENGINE=obscura requires OBSCURA_BIN to be set")
-        return [
-            obscura_bin,
-            "serve",
-            "--port",
-            str(settings.OBSCURA_PORT),
-            "--stealth",
-            "--allow-private-network",
-        ]
+        return obscura_serve_argv(settings.OBSCURA_PORT)
 
     async def _await_cdp_ready(self) -> str:
         if settings.BROWSER_ENGINE is BrowserEngine.OBSCURA:

@@ -16,12 +16,12 @@ CRAWL4AI_WAIT_UNTIL = "domcontentloaded"
 
 # Process-wide cap on concurrent headless-browser instances.
 #
-# crawl4ai launches a Chromium per ``AsyncWebCrawler`` context; with the worker
-# running up to ``max_jobs`` crawl jobs (each profile crawl opening its own
-# crawler per URL), unbounded concurrency means dozens of Chromium processes at
-# 150–400 MB each — the dominant worker memory spike. Override via the
-# ``CRAWL4AI_MAX_BROWSERS`` env var. Minimum 1; 0/negative would deadlock all
-# crawler access.
+# On Chromium each crawler is its own browser process (150–400 MB); on Obscura
+# they are contexts on one shared engine (far lighter). Either way, with the
+# worker running up to ``max_jobs`` crawl jobs — each opening a crawler per URL —
+# unbounded concurrency is the dominant worker memory spike, so this caps it.
+# Override via the ``CRAWL4AI_MAX_BROWSERS`` env var. Minimum 1; 0/negative would
+# deadlock all crawler access.
 CRAWL4AI_DEFAULT_MAX_BROWSERS = 2
 CRAWL4AI_MIN_MAX_BROWSERS = 1
 

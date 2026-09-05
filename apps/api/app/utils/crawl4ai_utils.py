@@ -10,10 +10,12 @@ from crawl4ai.content_filter_strategy import BM25ContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 
 from app.config.settings import settings
+from app.constants.browser import BrowserEngine
 from app.constants.log_tags import LogTag
 from app.constants.search import CRAWL4AI_CLOSE_TIMEOUT_SECONDS, CRAWL4AI_WAIT_UNTIL
 from app.utils.background_tasks import spawn_background_task
 from app.utils.concurrency import loop_bound_semaphore
+from app.utils.crawl_obscura import ensure_crawl_obscura
 from shared.py.wide_events import log
 
 # Tags that are almost never primary content; dropped before markdown conversion.
@@ -78,6 +80,30 @@ def _build_run_config(
     return CrawlerRunConfig(**kwargs)
 
 
+def _is_obscura() -> bool:
+    """Whether the configured browser engine is Obscura (vs the Chromium fallback)."""
+    return settings.BROWSER_ENGINE is BrowserEngine.OBSCURA
+
+
+async def _build_browser_config() -> BrowserConfig:
+    """The crawl4ai browser config for the active engine.
+
+    Obscura: connect over CDP to the dedicated crawl Obscura (one shared process,
+    started on demand). ``cdp_cleanup_on_close=False`` so a crawler's teardown
+    never closes the shared engine out from under a concurrent crawl. Chromium:
+    launch a dedicated Playwright browser as before.
+    """
+    if _is_obscura():
+        return BrowserConfig(
+            browser_mode="cdp",
+            cdp_url=await ensure_crawl_obscura(),
+            headless=True,
+            verbose=False,
+            cdp_cleanup_on_close=False,
+        )
+    return BrowserConfig(headless=True, browser_mode="dedicated", verbose=False)
+
+
 # Shared semaphore binding for the process-wide browser concurrency cap. The
 # limit itself is sourced from ``settings.CRAWL4AI_MAX_BROWSERS`` (env-driven,
 # already clamped to a safe minimum); see ``constants/search.py`` for context
@@ -119,7 +145,7 @@ async def managed_crawler(
     no longer interrupt the browser teardown; ``app.utils.browser_reaper`` is
     the backstop for anything that still slips through.
     """
-    crawler = AsyncWebCrawler(config=config or BrowserConfig(headless=True, verbose=False))
+    crawler = AsyncWebCrawler(config=config or await _build_browser_config())
     try:
         await crawler.start()
     except BaseException:
@@ -253,7 +279,7 @@ async def _recover_with_single_url_crawls(
         content_query=content_query,
         thorough=thorough,
     )
-    browser_config = BrowserConfig(headless=True, browser_mode="dedicated", verbose=False)
+    browser_config = await _build_browser_config()
 
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}
@@ -301,6 +327,66 @@ async def _recover_with_single_url_crawls(
     return contents, errors
 
 
+async def _batch_fetch_per_url(
+    urls: Sequence[str],
+    *,
+    run_config: CrawlerRunConfig,
+    page_timeout_ms: int,
+    total_timeout_seconds: float,
+    semaphore_count: int,
+    context_name: str,
+    max_content_chars: int | None,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Fetch each URL with its own crawler+context, concurrently (the Obscura path).
+
+    One crawler per URL — each gets an isolated Obscura context, which Obscura
+    drives concurrently, unlike ``arun_many``'s shared-context multi-page mode.
+    Concurrency is bounded by ``semaphore_count`` and the process-wide browser
+    cap; each URL by a page-derived timeout; the whole batch by
+    ``total_timeout_seconds``, after which any URL not yet done is marked
+    timed-out (results already collected are kept — never all-or-nothing).
+    """
+    per_url_timeout = max(10.0, min(total_timeout_seconds, page_timeout_ms / 1000 + 10.0))
+    sem = asyncio.Semaphore(max(1, semaphore_count))
+    contents: dict[str, str] = {}
+    errors: dict[str, str] = {}
+
+    async def fetch(url: str) -> None:
+        async with sem, get_browser_semaphore():
+            try:
+                config = await _build_browser_config()
+                async with managed_crawler(config, context_name=context_name) as crawler:
+                    result = await asyncio.wait_for(
+                        crawler.arun(url=url, config=run_config), timeout=per_url_timeout
+                    )
+            except TimeoutError:
+                errors[url] = f"{context_name} timed out after {per_url_timeout:.0f}s"
+                return
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                errors[url] = f"{context_name} error: {e}"
+                return
+            content, error = _extract_content_or_error(
+                result=result, context_name=context_name, max_content_chars=max_content_chars
+            )
+            if content is not None:
+                contents[url] = content
+            elif error is not None:
+                errors[url] = error
+
+    tasks = [asyncio.ensure_future(fetch(url)) for url in urls]
+    try:
+        await asyncio.wait_for(asyncio.gather(*tasks), timeout=total_timeout_seconds)
+    except TimeoutError:
+        for task in tasks:
+            task.cancel()
+        for url in urls:
+            if url not in contents and url not in errors:
+                errors[url] = f"{context_name} batch timed out after {total_timeout_seconds:.0f}s"
+    return contents, errors
+
+
 async def batch_fetch_with_crawl4ai(
     urls: Sequence[str],
     *,
@@ -312,12 +398,14 @@ async def batch_fetch_with_crawl4ai(
     content_query: str | None = None,
     thorough: bool = False,
 ) -> tuple[dict[str, str], dict[str, str]]:
-    """Fetch multiple URLs with a single crawl4ai crawler via arun_many.
+    """Fetch multiple URLs with crawl4ai.
 
-    Pass ``content_query`` to rank each page's content by relevance to a topic
-    (BM25) instead of returning the full raw markdown — used by deep research.
-    Pass ``thorough`` to scroll + settle + handle overlays for richer single-page
-    captures (see ``_build_run_config``).
+    Chromium runs them through one crawler's ``arun_many``; Obscura fans out to
+    one crawler+context per URL (``arun_many``'s shared-context multi-page mode
+    breaks on Obscura — see ``_batch_fetch_per_url``). Pass ``content_query`` to
+    rank each page's content by relevance to a topic (BM25) instead of returning
+    the full raw markdown — used by deep research. Pass ``thorough`` to scroll +
+    settle + handle overlays for richer single-page captures.
     """
     if not urls:
         return {}, {}
@@ -328,7 +416,23 @@ async def batch_fetch_with_crawl4ai(
         content_query=content_query,
         thorough=thorough,
     )
-    browser_config = BrowserConfig(headless=True, browser_mode="dedicated", verbose=False)
+
+    # Obscura can't serve crawl4ai's ``arun_many`` (concurrent pages in one shared
+    # context break its per-page evaluation); it drives concurrent *contexts*
+    # cleanly, so fan out to one crawler per URL instead. Verified: arun_many
+    # fails 3/4 URLs on Obscura, per-URL crawlers succeed 4/4.
+    if _is_obscura():
+        return await _batch_fetch_per_url(
+            urls,
+            run_config=run_config,
+            page_timeout_ms=page_timeout_ms,
+            total_timeout_seconds=total_timeout_seconds,
+            semaphore_count=semaphore_count,
+            context_name=context_name,
+            max_content_chars=max_content_chars,
+        )
+
+    browser_config = await _build_browser_config()
 
     try:
         async with (

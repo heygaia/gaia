@@ -346,6 +346,12 @@ class CommonSettings(BaseAppSettings):
     # Port Obscura's CDP server binds. Fixed (not ephemeral) because Obscura only
     # publishes its /json/version — and thus its ws endpoint — at a port we name.
     OBSCURA_PORT: int = 9222
+    # Base port for the dedicated Obscura the crawl4ai engine drives (deep
+    # research / page fetch). Distinct from OBSCURA_PORT so the crawl engine and
+    # interactive host never collide; the manager probes upward from here if the
+    # base is taken. In the high range on purpose — the common debug ports
+    # (9222/9223) collide with a developer's local Chrome.
+    OBSCURA_CRAWL_PORT: int = 39222
 
     # Fernet key (32 url-safe base64 bytes) encrypting each user's saved browser
     # login (storage_state) at rest in Mongo. Infisical-provided in production;
