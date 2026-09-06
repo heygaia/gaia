@@ -39,7 +39,7 @@ from app.models.workflow_models import (
     WorkflowStatusResponse,
 )
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
-from app.services.oauth.oauth_service import get_all_integrations_status
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.system_workflows.provisioner import reset_system_workflow_to_default
 from app.services.workflow.execution_service import (
     get_workflow_executions as get_executions,
