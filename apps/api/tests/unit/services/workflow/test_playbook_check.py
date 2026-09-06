@@ -24,17 +24,20 @@ from app.agents.prompts.playbook_prompts import (
     PLAYBOOK_HEAL_ALREADY_RAN,
     PLAYBOOK_HEAL_BRIEF,
     PLAYBOOK_HEAL_NO_REASON,
+    PLAYBOOK_NARRATION_PROMPT,
     PLAYBOOK_SUSPECT_FALLBACK_TEMPLATE,
 )
 from app.agents.tools.playbook_tools import write_playbook
 from app.constants.agents import PLAYBOOK_CHECK_TAG, PLAYBOOK_DECLINE_LIMIT
 from app.constants.log_tags import LogTag
 from app.models.playbook_models import (
+    DeclineKind,
+    HandoffStep,
     PlaybookDocument,
     PlaybookRunOutcome,
     PlaybookRunStatus,
-    PlaybookStep,
     PlaybookStepInput,
+    ToolStep,
 )
 from app.models.workflow_execution_models import RecordedCall
 from app.models.workflow_models import TriggerConfig, TriggerType, WorkflowDocument
@@ -81,8 +84,8 @@ def _playbook(status: PlaybookRunStatus, reason: str | None = None) -> PlaybookD
         user_id=USER_ID,
         workflow_hash="h",
         description="d",
-        steps=[PlaybookStep(id="s1", tool="create_todo", args={})],
-        synthesize="s",
+        steps=[ToolStep(id="s1", tool="create_todo", args={})],
+        result_brief="s",
         last_run_status=status,
         last_run_reason=reason,
         created_at=now,
@@ -425,14 +428,59 @@ def test_the_check_names_both_decision_tools_so_the_executor_can_act():
 def test_the_check_asks_whether_every_frozen_call_actually_returned_the_data():
     # Regression: a playbook froze a call that came back empty, because the
     # agent had reasoned around the gap and the sequence still "worked". The
-    # sixth question makes an empty, errored or partial result a reason to fix
-    # the args or decline, and the decision rule has to read against it.
-    assert "6." in PLAYBOOK_CHECK_BRIEF
-    assert "these six" in PLAYBOOK_CHECK_BRIEF
+    # last question makes an empty, errored or partial result a reason to fix
+    # the args or decline, and the decision rule has to read against it. The
+    # numbering moved when the old ask question was dropped, so the rule and the
+    # question it names have to be re-pinned together.
+    assert "5." in PLAYBOOK_CHECK_BRIEF
+    assert "these five" in PLAYBOOK_CHECK_BRIEF
     assert "came back empty, with an error, or partial" in PLAYBOOK_CHECK_BRIEF
-    assert "If 5 and 6 are both yes, call write_playbook" in PLAYBOOK_CHECK_BRIEF
-    assert "If either 5 or 6 is no, call decline_playbook" in PLAYBOOK_CHECK_BRIEF
+    assert "If 4 and 5 are both yes, call write_playbook" in PLAYBOOK_CHECK_BRIEF
+    assert "If either 4 or 5 is no, call decline_playbook" in PLAYBOOK_CHECK_BRIEF
     assert "exactly one of write_playbook or decline_playbook" in PLAYBOOK_CHECK_BRIEF
+    # Six questions would mean the deleted ask question came back.
+    assert "6." not in PLAYBOOK_CHECK_BRIEF
+
+
+def test_the_narration_is_told_the_result_is_final_text_written_once():
+    """Seen on a live replay: the narration wrote a draft, then "hmm, the brief
+    is strict about exactly 3 bullets. Let me redo:", then the rewrite — all
+    inside the ``result`` field, which is delivered to the user verbatim. The
+    structured output cannot separate a draft from the answer, so the prompt
+    has to forbid the draft. If this fails, that self-talk ships again."""
+    rendered = PLAYBOOK_NARRATION_PROMPT.format(
+        description="d", completed="c", asks="none", result_brief="three bullets"
+    )
+    assert "written once" in rendered
+    assert "Never a draft followed by a rewrite" in rendered
+    assert "hand back only the final version" in rendered
+
+
+def test_the_check_teaches_the_inline_ask_slot_and_no_ask_section():
+    """The slot is only reachable if the placeholder question names it.
+
+    An ask used to be a top-level table, and five of the eight ever written in
+    production were referenced by no step at all — declared, filled by a model
+    call, thrown away. If this fails, the brief is either teaching the dead
+    section again or has stopped teaching the slot, and the model has nowhere to
+    put a value it genuinely cannot freeze.
+    """
+    assert '{"$ask":' in PLAYBOOK_CHECK_BRIEF
+    assert "cannot be frozen or built from" in PLAYBOOK_CHECK_BRIEF
+    assert "synthesize" not in PLAYBOOK_CHECK_BRIEF
+    assert "ask entry" not in PLAYBOOK_CHECK_BRIEF
+
+
+def test_the_check_shows_a_literal_example_of_the_shape_it_asks_for():
+    """Prose about the shape is what the schema already says; the example is
+    what shows a handoff carrying its child, a slot sitting inside an argument,
+    and the result_brief at the end. If it goes missing the model is back to
+    inferring the layout from a sentence, which is how the 63% rejection rate
+    happened."""
+    assert "result_brief:" in PLAYBOOK_CHECK_BRIEF
+    assert "GMAIL_FETCH_MESSAGES" in PLAYBOOK_CHECK_BRIEF
+    assert "handoff: gmail" in PLAYBOOK_CHECK_BRIEF
+    assert "tool: web_search_tool" in PLAYBOOK_CHECK_BRIEF
 
 
 def test_the_heal_brief_names_the_tools_the_executor_needs():
@@ -488,7 +536,7 @@ def test_the_tools_own_schema_carries_the_step_shape():
     """
     schema = write_playbook.tool_call_schema.model_json_schema()
 
-    assert {"description", "steps", "synthesize", "ask"} <= set(schema["properties"])
+    assert {"description", "steps", "result_brief"} == set(schema["properties"])
     # The workflow is resolved from the run's config server-side. Exposing it as
     # an argument is what let a live run hallucinate "inbox-triage" as an id.
     assert "workflow_id" not in schema["properties"]
@@ -502,7 +550,13 @@ def test_the_tools_own_schema_carries_the_step_shape():
     # no self-$ref for a provider to mishandle.
     assert "steps" not in child["properties"]
 
-    with pytest.raises(ValidationError, match="goal"):
+    # A key the schema never asked for is dropped, not refused: the shape rule
+    # is the only thing worth failing a write over.
+    step_input = PlaybookStepInput.model_validate(
+        {"id": "agenda", "tool": "list_events", "goal": "read the events"}
+    )
+    assert not hasattr(step_input, "goal")
+    with pytest.raises(ValidationError, match="exactly one of"):
         PlaybookStepInput.model_validate({"id": "agenda", "goal": "read the events"})
 
 
@@ -529,12 +583,12 @@ REFUSED = "Error: ValidationError: 1 validation error for write_playbook"
 def _frozen(*tools: str, handoff: str | None = None) -> PlaybookDocument:
     if handoff:
         steps = [
-            PlaybookStep(
-                id="h", handoff=handoff, steps=[PlaybookStep(id=t, tool=t, args={}) for t in tools]
+            HandoffStep(
+                id="h", handoff=handoff, steps=[ToolStep(id=t, tool=t, args={}) for t in tools]
             )
         ]
     else:
-        steps = [PlaybookStep(id=t, tool=t, args={}) for t in tools]
+        steps = [ToolStep(id=t, tool=t, args={}) for t in tools]
     return PlaybookDocument(
         playbook_id="pb_1",
         workflow_id=WORKFLOW_ID,
@@ -542,7 +596,7 @@ def _frozen(*tools: str, handoff: str | None = None) -> PlaybookDocument:
         workflow_hash="h",
         description="triage",
         steps=steps,
-        synthesize="say",
+        result_brief="say",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
     )
@@ -765,3 +819,55 @@ class TestDistrustFreshPlaybook:
         assert reason is None
         get.assert_not_awaited()
         record.assert_not_awaited()
+
+
+def test_the_check_brief_makes_the_agent_write_the_sequence_before_judging():
+    """The false declines this closes all had the same shape: the agent judged
+    from memory of the run, saw that the arguments had differed, and called that
+    a changing sequence. Writing the placeholder list first means the variation
+    is already handled by the time question 4 is asked.
+    """
+    write_step = PLAYBOOK_CHECK_BRIEF.index("WRITE THE SEQUENCE OUT")
+    judge_step = PLAYBOOK_CHECK_BRIEF.index("Now look at the list from question 2")
+    assert write_step < judge_step, "the list has to be written before it is judged"
+    assert "even if you expect to decline" in PLAYBOOK_CHECK_BRIEF, (
+        "an agent that skips the list when it has already decided keeps judging from memory"
+    )
+    assert "Changing data is NEVER a reason" in PLAYBOOK_CHECK_BRIEF
+    assert "If you cannot point to one such call by name" in PLAYBOOK_CHECK_BRIEF
+
+
+def test_the_check_brief_names_every_decline_kind_the_tool_accepts():
+    """A kind the brief does not mention is one the agent will not reach for, and
+    the blocked_* kinds are the ones that stop a workflow burning a run a day."""
+    for kind in DeclineKind:
+        assert kind.value in PLAYBOOK_CHECK_BRIEF, f"{kind.value} is unreachable from the brief"
+    assert "branch_on naming the ONE call" in PLAYBOOK_CHECK_BRIEF
+    assert 'no kind for "the arguments were different"' in PLAYBOOK_CHECK_BRIEF
+
+
+def test_a_write_tools_own_record_is_not_an_empty_result() -> None:
+    """The prod bug: create_todo answers with the todo it just made, whose
+    ``labels`` is [] when the caller passed none. largest_list_len looks past
+    the top level, so that read as "returned no items" and marked the playbook
+    suspect. Four of the eight suspects in production were this, and each cost a
+    full agentic heal run.
+    """
+    playbook = _frozen("create_todo")
+    record = '{"successful": true, "data": {"todo": {"labels": [], "title": "Buy milk"}}}'
+
+    assert frozen_on_empty(playbook, [_call("create_todo", record)]) is None
+
+
+def test_a_fetch_that_found_nothing_is_still_suspect() -> None:
+    """The check must keep firing where it matters, including the commonest
+    shape of all: a fetch whose result only the narration reads. An earlier fix
+    scoped this to steps another step referenced, which let exactly that shape
+    through."""
+    playbook = _frozen("GMAIL_FETCH_MESSAGES")
+    nothing = '{"successful": true, "data": {"messages": []}}'
+
+    reason = frozen_on_empty(playbook, [_call("GMAIL_FETCH_MESSAGES", nothing)])
+
+    assert reason is not None
+    assert "GMAIL_FETCH_MESSAGES" in reason
