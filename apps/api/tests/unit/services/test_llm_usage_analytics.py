@@ -103,28 +103,63 @@ def test_an_unmapped_label_is_unattributed_rather_than_guessed() -> None:
     assert feature_for_label("some_helper_added_next_year") is AIFeature.UNATTRIBUTED
 
 
+_METERED_CALLS = {"ainvoke_llm", "ainvoke_structured", "ainvoke_structured_gemini"}
+
+
+def _label_taking_functions(trees: dict[object, object]) -> set[str]:
+    """Functions that forward their own ``label`` argument into a metered call.
+
+    Three call sites pass a variable or an f-string rather than a literal
+    (``describe_image``, the playbook runner's helper, and memory's
+    ``f"memory:{operation}"``). Scanning only literal ``label=`` at the metered
+    call would silently skip whatever their callers pass, which is exactly where
+    a new unmapped label would hide.
+    """
+    import ast
+
+    forwarding: set[str] = set()
+    for tree in trees.values():
+        for fn in ast.walk(tree):  # type: ignore[arg-type]
+            if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
+                continue
+            params = {a.arg for a in fn.args.args} | {a.arg for a in fn.args.kwonlyargs}
+            if "label" not in params:
+                continue
+            for node in ast.walk(fn):
+                if not isinstance(node, ast.Call):
+                    continue
+                if getattr(node.func, "id", "") not in _METERED_CALLS:
+                    continue
+                for kw in node.keywords:
+                    if kw.arg == "label" and isinstance(kw.value, ast.Name):
+                        forwarding.add(fn.name)
+    return forwarding
+
+
 def test_every_label_the_codebase_passes_has_a_feature() -> None:
     """The table is the taxonomy; a helper added without an entry books to
-    UNATTRIBUTED. This walks the real call sites so that gap fails here rather
-    than showing up as a mystery bucket on the cost dashboard."""
+    UNATTRIBUTED. This walks the real call sites — including the ones that reach
+    a metered call through a forwarding helper — so the gap fails here rather
+    than showing up as a mystery slice on the cost dashboard."""
     import ast
     from pathlib import Path
 
     app = Path(__file__).resolve().parents[3] / "app"
-    unmapped: set[str] = set()
+    trees: dict[object, object] = {}
     for path in app.rglob("*.py"):
         try:
-            tree = ast.parse(path.read_text())
+            trees[path] = ast.parse(path.read_text())
         except SyntaxError:
             continue
-        for node in ast.walk(tree):
+
+    targets = _METERED_CALLS | _label_taking_functions(trees)
+    unmapped: set[str] = set()
+    for tree in trees.values():
+        for node in ast.walk(tree):  # type: ignore[arg-type]
             if not isinstance(node, ast.Call):
                 continue
-            if getattr(node.func, "id", "") not in {
-                "ainvoke_llm",
-                "ainvoke_structured",
-                "ainvoke_structured_gemini",
-            }:
+            name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
+            if name not in targets:
                 continue
             for kw in node.keywords:
                 if kw.arg == "label" and isinstance(kw.value, ast.Constant):
