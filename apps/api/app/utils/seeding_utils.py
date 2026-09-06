@@ -86,13 +86,15 @@ async def seed_first_conversation(user_id: str, composed: FirstConversation) -> 
         user_dict: AuthenticatedUser = {"user_id": user_id}
         await create_conversation_service(conversation, user_dict)
 
-        # Two bot messages: the web groups consecutive bot messages like
-        # iMessage, the first one's buttons render under its own bubbles, and
-        # the chips ride the question.
+        # Three bot messages, grouped by the web like iMessage. A message's
+        # cards render ABOVE its bubbles, so the buttons get a message of their
+        # own between the routines and the question, and the chips ride the
+        # question.
         messages = [
+            MessageModel(type="bot", response=NEW_MESSAGE_BREAKER.join(composed.opening)),
             MessageModel(
                 type="bot",
-                response=NEW_MESSAGE_BREAKER.join(composed.opening),
+                response="",
                 tool_data=[cast(ToolDataEntry, composed.connect_tool_data())],
             ),
             MessageModel(

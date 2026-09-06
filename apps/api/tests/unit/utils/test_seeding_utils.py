@@ -34,12 +34,12 @@ def _composed() -> FirstConversation:
 
 @pytest.mark.unit
 class TestSeedFirstConversation:
-    async def test_seeds_two_messages_buttons_under_the_opening_chips_under_the_question(
+    async def test_seeds_three_messages_buttons_between_the_opening_and_the_question(
         self,
     ) -> None:
         composed = _composed()
         create = AsyncMock()
-        append = AsyncMock(return_value=["m1", "m2"])
+        append = AsyncMock(return_value=["m1", "m2", "m3"])
 
         with (
             patch(f"{MODULE}.create_conversation_service", create),
@@ -56,16 +56,19 @@ class TestSeedFirstConversation:
         assert conversation.conversation_id == conversation_id
 
         messages = append.await_args.kwargs["messages"]
-        assert len(messages) == 2
+        assert len(messages) == 3
         assert all(m.type == "bot" for m in messages)
 
-        opening, question = messages
+        opening, buttons, question = messages
         assert opening.response == NEW_MESSAGE_BREAKER.join(composed.opening)
         assert split_message_bubbles(opening.response) == composed.opening
-        # The buttons ride the opening, so they render under the routines
-        # bubble and never under the question.
-        assert opening.tool_data == [composed.connect_tool_data()]
+        assert opening.tool_data is None
         assert opening.follow_up_actions is None
+        # Cards render above a message's bubbles, so the buttons live in a
+        # message of their own: under the routines, above the question.
+        assert buttons.response == ""
+        assert buttons.tool_data == [composed.connect_tool_data()]
+        assert buttons.follow_up_actions is None
 
         assert question.response == composed.question
         assert question.tool_data is None
