@@ -27,7 +27,8 @@ class TestNextSendAt:
 
     def test_the_result_is_a_utc_instant(self) -> None:
         got = next_send_at("Asia/Kolkata", _local("Asia/Kolkata", 2026, 9, 7, 6, 30))
-        assert got.tzinfo == UTC
+        # Identity, not equality: a same-offset stand-in for UTC is not UTC.
+        assert got.tzinfo is UTC
         assert got == datetime(2026, 9, 7, 2, 30, tzinfo=UTC)
 
     def test_dst_end_keeps_eight_on_the_wall_clock(self) -> None:
@@ -61,7 +62,7 @@ class TestNextSendAt:
         assert next_send_at("UTC", now, hour=18) == datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
 
     def test_a_naive_now_is_refused(self) -> None:
-        with pytest.raises(ValueError, match="aware"):
+        with pytest.raises(ValueError, match="^next_send_at needs an aware datetime$"):
             next_send_at("UTC", datetime(2026, 9, 7, 9, 0))
 
     def test_the_default_hour_is_eight(self) -> None:

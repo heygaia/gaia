@@ -27,9 +27,8 @@ def next_send_at(timezone_raw: str | None, now: datetime, hour: int = SEND_HOUR_
     local_now = now.astimezone(tz)
     candidate = local_now.replace(hour=hour, minute=0, second=0, microsecond=0)
     if candidate <= local_now:
-        # Advance one calendar day in local time, then re-pin the wall clock so a
-        # DST change between the two days cannot shift the hour.
-        candidate = (candidate + timedelta(days=1)).replace(
-            hour=hour, minute=0, second=0, microsecond=0
-        )
+        # Aware-datetime arithmetic is wall-clock arithmetic: adding a day keeps
+        # 08:00 on the clock and zoneinfo recomputes the offset, so a DST change
+        # between the two days moves the UTC instant, not the local hour.
+        candidate = candidate + timedelta(days=1)
     return candidate.astimezone(UTC)
