@@ -656,3 +656,23 @@ class TestPhantomClaims:
 
         assert len(handler.requests) == 1
         assert response.result[0].id == "m1"
+
+    async def test_re_voicing_an_executor_result_may_say_it_is_done(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        """MOMENT 3: the result arrived as a HumanMessage from the executor, so
+        "it's set" describes finished work and is not a phantom."""
+        from app.agents.context.slots import BACKGROUND_EXECUTOR_NAME
+
+        handler = _ScriptedHandler(_draft("Done, the Monday summary is set up.", "m1"))
+        messages = [
+            HumanMessage(content="every monday summarise my PRs"),
+            HumanMessage(
+                content="<executor_result>created</executor_result>", name=BACKGROUND_EXECUTOR_NAME
+            ),
+        ]
+
+        response = await StyleGuardMiddleware().awrap_model_call(_request(messages), handler)
+
+        assert len(handler.requests) == 1
+        assert response.result[0].id == "m1"

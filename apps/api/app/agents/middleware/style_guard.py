@@ -39,6 +39,7 @@ from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
 from langgraph.config import get_stream_writer
 
+from app.agents.context.slots import BACKGROUND_EXECUTOR_NAME
 from app.agents.evals.ai_isms import (
     AiIsmScore,
     phantom_claim_snippets,
@@ -98,8 +99,15 @@ def _fired_detectors(score: AiIsmScore, phantom: dict[str, list[str]] | None = N
 
 def _answers_the_user_directly(request: ModelRequest) -> bool:
     """True when the draft follows the user's own message with no tool result in
-    between: the one case where "doing it now" and "the card above" are false."""
-    return bool(request.messages) and isinstance(request.messages[-1], HumanMessage)
+    between: the one case where "doing it now" and "the card above" are false.
+
+    An executor result arrives as a HumanMessage too (see ``comms_narrator``),
+    but that turn re-voices finished work, so "it's set" there is true.
+    """
+    if not request.messages:
+        return False
+    last = request.messages[-1]
+    return isinstance(last, HumanMessage) and last.name != BACKGROUND_EXECUTOR_NAME
 
 
 class StyleGuardMiddleware(AgentMiddleware):
