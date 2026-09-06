@@ -18,7 +18,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 import pytest
 
@@ -618,3 +618,41 @@ class TestCorrectionNoteVocabulary:
         from app.constants.style_guard import STYLE_GUARD_RULES
 
         assert set(STYLE_GUARD_RULES) == set(VIOLATION_FIELDS)
+
+
+PHANTOM_DRAFT = "Sending the Acme nudge now. Tap the card above once it lands."
+
+
+@pytest.mark.unit
+class TestPhantomClaims:
+    async def test_a_claim_straight_after_the_user_is_rewritten_and_the_note_names_it(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        handler = _ScriptedHandler(_draft(PHANTOM_DRAFT, "m1"), _draft(CLEAN_REWRITE, "m2"))
+
+        response = await StyleGuardMiddleware().awrap_model_call(
+            _request([HumanMessage(content="ok send it")]), handler
+        )
+
+        assert len(handler.requests) == 2
+        assert response.result[0].text == CLEAN_REWRITE
+        note = handler.requests[1].messages[-1].text
+        assert "an action claimed" in note
+        assert "a card or link that is not in this reply" in note
+        assert "Sending the Acme nudge now" in note
+
+    async def test_the_same_words_after_a_tool_result_are_an_honest_acknowledgement(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        """MOMENT 2: the executor accepted the task, so "sending it now" is true."""
+        handler = _ScriptedHandler(_draft("Sending the Acme nudge now.", "m1"))
+        messages = [
+            HumanMessage(content="ok send it"),
+            AIMessage(content="", tool_calls=[{"name": "call_executor", "args": {}, "id": "c1"}]),
+            ToolMessage(content="Task accepted", tool_call_id="c1"),
+        ]
+
+        response = await StyleGuardMiddleware().awrap_model_call(_request(messages), handler)
+
+        assert len(handler.requests) == 1
+        assert response.result[0].id == "m1"
