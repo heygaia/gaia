@@ -12,13 +12,18 @@ share it.
 from collections.abc import Mapping
 
 from app.constants.notifications import DEFAULT_CHAT_CHANNEL_PRIORITY
+from app.db.repositories.users import user_repository
+from app.models.chat_channel_models import CHAT_CHANNEL_VALUES
+from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.platform_link_service import PlatformLinkService
 from app.utils.notification.channel_preferences import fetch_channel_preferences
 
 #: The chat platforms a priority list may contain. A stored document that names
 #: anything else (hand-edited, or a platform we dropped) can never route a
 #: message somewhere unsupported because every entry is filtered through this.
-VALID_CHAT_PLATFORMS: frozenset[str] = frozenset(DEFAULT_CHAT_CHANNEL_PRIORITY)
+#: Every bot platform, not just the ones in the default order — a user who puts
+#: iMessage first has chosen a platform GAIA can genuinely text on.
+VALID_CHAT_PLATFORMS: frozenset[str] = CHAT_CHANNEL_VALUES
 
 
 def resolve_channel_priority(stored: list[str] | None) -> list[str]:
@@ -55,3 +60,19 @@ async def resolve_chat_channel(user_id: str, stored_priority: list[str] | None) 
     linked = await PlatformLinkService.get_linked_platforms(user_id)
     preferences = await fetch_channel_preferences(user_id)
     return pick_chat_channel(resolve_channel_priority(stored_priority), linked, preferences)
+
+
+async def get_chat_channel_priority(user_id: str) -> list[str]:
+    """The order the settings UI shows: the user's own, or the default."""
+    user = await user_repository.get(user_id)
+    return resolve_channel_priority(user.chat_channel_priority if user else None)
+
+
+async def set_chat_channel_priority(user_id: str, priority: list[str]) -> None:
+    """Store a new order and report the change (platform names only, no content)."""
+    await user_repository.set_chat_channel_priority(user_id, priority)
+    capture_event(
+        user_id,
+        AnalyticsEvents.SETTINGS_CHAT_CHANNEL_PRIORITY_UPDATED,
+        {"first": priority[0], "count": len(priority)},
+    )

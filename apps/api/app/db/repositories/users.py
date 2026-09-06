@@ -468,6 +468,15 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             return_document=False,
         )
 
+    async def set_chat_channel_priority(self, user_id: str, priority: list[str]) -> None:
+        """Store the order a proactive message picks its ONE chat platform from."""
+        await self._apply_raw_update(
+            {"_id": self._id_value(user_id)},
+            {"$set": {"chat_channel_priority": priority}},
+            scope=REPO_GLOBAL_SCOPE,
+            return_document=False,
+        )
+
     async def set_bio_status(self, user_id: str, bio_status: BioStatus) -> None:
         """Update the onboarding bio-generation status (e.g. back to processing on a
         post-onboarding Gmail reconnect)."""
