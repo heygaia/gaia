@@ -19,6 +19,7 @@ Usage (from apps/api/, with the worktree API already running):
 
 import argparse
 import asyncio
+import json
 import os
 from pathlib import Path
 import sys
@@ -384,15 +385,34 @@ def _report(rows: list[GradedJourney]) -> None:
         print()
 
 
-async def run(api_url: str, only: str | None) -> None:
-    journeys = JOURNEYS
-    if only:
-        keys = [k.strip() for k in only.split(",") if k.strip()]
-        journeys = [j for j in journeys if any(k in j.slug for k in keys)]
-    rows: list[GradedJourney] = []
-    for journey in journeys:
-        print(f"... {journey.slug}", flush=True)
-        rows.append(await _run_journey(api_url, journey))
+RAW_DIR = Path("/tmp")
+
+
+def _save_raw(rows: list[GradedJourney]) -> Path:
+    """Transcripts survive a judge outage: judging is the step most likely to
+    die on credits, and the turns are the expensive part."""
+    path = RAW_DIR / f"journeys-{RUN_ID}.json"
+    path.write_text(json.dumps([r.model_dump(mode="json") for r in rows], indent=1))
+    return path
+
+
+def _load_raw(path: Path) -> list[GradedJourney]:
+    return [GradedJourney.model_validate(r) for r in json.loads(path.read_text())]
+
+
+async def run(api_url: str, only: str | None, judge_only: Path | None) -> None:
+    if judge_only:
+        rows = _load_raw(judge_only)
+    else:
+        journeys = JOURNEYS
+        if only:
+            keys = [k.strip() for k in only.split(",") if k.strip()]
+            journeys = [j for j in journeys if any(k in j.slug for k in keys)]
+        rows = []
+        for journey in journeys:
+            print(f"... {journey.slug}", flush=True)
+            rows.append(await _run_journey(api_url, journey))
+        print(f"raw transcripts: {_save_raw(rows)}", flush=True)
     for row in rows:
         for t in row.turns[1:]:
             t.verdict = await _judge_turn(
@@ -406,8 +426,15 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--api-url", default=DEFAULT_API_URL)
     parser.add_argument("--only", default=None, help="Comma-separated substrings of journey slugs.")
+    parser.add_argument(
+        "--judge-only",
+        default=None,
+        help="Skip the API; judge the raw transcripts saved by an earlier run (path).",
+    )
     args = parser.parse_args()
-    await run(args.api_url.rstrip("/"), args.only)
+    await run(
+        args.api_url.rstrip("/"), args.only, Path(args.judge_only) if args.judge_only else None
+    )
 
 
 if __name__ == "__main__":
