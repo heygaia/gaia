@@ -7,8 +7,9 @@ is absent — that precondition lives with the read rather than at the call site
 so no caller can forget it.
 """
 
+from collections.abc import Iterator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from tests._harness.context_sources import knowledge, memory
@@ -251,8 +252,79 @@ class TestGaiaKnowledgeBlock:
         ]
 
 
+def _tool(name: str) -> MagicMock:
+    tool = MagicMock()
+    tool.name = name
+    return tool
+
+
 @pytest.mark.unit
 class TestConnectedIntegrationsManifest:
+    @pytest.fixture(autouse=True)
+    def no_tools_by_default(self) -> Iterator[AsyncMock]:
+        """The rows below pin the bare shape; the tool summary has its own tests."""
+        with patch(
+            "app.agents.context.fetchers.get_integration_tool_list", AsyncMock(return_value=[])
+        ) as lister:
+            yield lister
+
+    async def test_a_row_names_what_the_connection_is_for(
+        self, no_tools_by_default: AsyncMock
+    ) -> None:
+        """ "GitHub (github)" tells the model nothing it can act on; the count and a
+        sample of humanised tool names is what turns a connection into "I can
+        open issues and review PRs for you"."""
+        no_tools_by_default.return_value = [
+            _tool("GITHUB_CREATE_AN_ISSUE"),
+            _tool("GITHUB_LIST_PULL_REQUESTS"),
+            _tool("GITHUB_GET_A_COMMIT"),
+        ]
+        with patch(
+            "app.agents.context.fetchers.get_connected_integrations_named",
+            AsyncMock(return_value=[{"id": "github", "name": "GitHub"}]),
+        ):
+            manifest = await build_connected_integrations_manifest("u1", header="HEADER:")
+
+        assert manifest == (
+            "HEADER:\n- GitHub (github): 3 tools, e.g. create an issue, list pull requests, "
+            "get a commit"
+        )
+        no_tools_by_default.assert_awaited_once_with("github")
+
+    async def test_the_sample_is_capped_but_the_count_is_not(
+        self, no_tools_by_default: AsyncMock
+    ) -> None:
+        no_tools_by_default.return_value = [_tool(f"GITHUB_ACTION_{i}") for i in range(12)]
+        with patch(
+            "app.agents.context.fetchers.get_connected_integrations_named",
+            AsyncMock(return_value=[{"id": "github", "name": "GitHub"}]),
+        ):
+            manifest = await build_connected_integrations_manifest("u1", header="HEADER:")
+
+        assert manifest == (
+            "HEADER:\n- GitHub (github): 12 tools, e.g. action 0, action 1, action 2, action 3, action 4"
+        )
+
+    async def test_a_tool_listing_failure_keeps_the_bare_row_and_is_logged(
+        self, no_tools_by_default: AsyncMock
+    ) -> None:
+        no_tools_by_default.side_effect = RuntimeError("registry cold")
+        with (
+            patch(
+                "app.agents.context.fetchers.get_connected_integrations_named",
+                AsyncMock(return_value=[{"id": "github", "name": "GitHub"}]),
+            ),
+            patch("app.agents.context.fetchers.log") as mock_log,
+        ):
+            manifest = await build_connected_integrations_manifest("u1", header="HEADER:")
+
+        assert manifest == "HEADER:\n- GitHub (github)"
+        assert mock_log.warning.call_args.kwargs == {
+            "integration_id": "github",
+            "error": "registry cold",
+            "error_type": "RuntimeError",
+        }
+
     async def test_one_line_per_integration_with_its_handoff_id(self) -> None:
         with patch(
             "app.agents.context.fetchers.get_connected_integrations_named",

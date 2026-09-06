@@ -26,6 +26,7 @@ from app.agents.context.text import (
 from app.agents.prompts.new_user_prompts import build_new_user_guidance
 from app.agents.workspace.paths import session_dir
 from app.constants.cache import TRACKED_TODOS_SUMMARY_CACHE_KEY, TRACKED_TODOS_SUMMARY_CACHE_TTL
+from app.constants.tool_labels import humanize_tool_name
 from app.db.repositories.conversations import conversation_repository
 from app.db.repositories.todos import todo_repository
 from app.decorators.caching import Cacheable
@@ -37,6 +38,7 @@ from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.gaia_knowledge_service import gaia_knowledge_service
 from app.services.integrations.user_integrations import get_connected_integrations_named
 from app.services.onboarding.first_question import seeded_chips
+from app.services.tools.tools_service import get_integration_tool_list
 from app.services.tracked_todo_service import tracked_todo_service
 from app.utils.artifact_utils import artifact_url_base
 from shared.py.wide_events import log
@@ -382,5 +384,39 @@ async def build_connected_integrations_manifest(user_id: str, header: str) -> st
     lines = [header, *_builtin_overlap_lines(connected)]
     for item in connected:
         iid, name = item["id"], item["name"]
-        lines.append(f"- {name} ({iid})" if name and name != iid else f"- {iid}")
+        row = f"- {name} ({iid})" if name and name != iid else f"- {iid}"
+        lines.append(f"{row}{await _tool_summary(iid)}")
     return "\n".join(lines)
+
+
+#: How many tool names a manifest row shows. Enough for the model to see what an
+#: integration is for ("create issue, list pull requests, ..."), few enough that
+#: ten connected integrations stay a screen, not a catalogue.
+MANIFEST_TOOL_SAMPLE_SIZE = 5
+
+
+async def _tool_summary(integration_id: str) -> str:
+    """ ": N tools, e.g. a, b, c" for a connected integration, or "" when it has none.
+
+    Read from the registry (the same catalogue ``retrieve_tools`` searches), so
+    the model knows what a connection is FOR without anyone writing prose per
+    integration. A listing failure keeps the bare row: the connection is real
+    even when its tool list is not readable right now.
+    """
+    try:
+        tools = await get_integration_tool_list(integration_id)
+    except Exception as e:
+        log.warning(
+            "Could not list tools for a connected integration; manifest row stays bare",
+            integration_id=integration_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        return ""
+    if not tools:
+        return ""
+    sample = ", ".join(
+        humanize_tool_name(tool.name, integration_id).lower()
+        for tool in tools[:MANIFEST_TOOL_SAMPLE_SIZE]
+    )
+    return f": {len(tools)} tools, e.g. {sample}"
