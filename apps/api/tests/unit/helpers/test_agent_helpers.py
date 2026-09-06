@@ -16,6 +16,7 @@ from app.helpers.agent_helpers import (
     AgentTracing,
     AgentTurn,
     _accumulate_silent_custom_event,
+    _build_agent_callbacks,
     _collect_silent_tool_entries,
     _hold_silent_chunk,
     _record_interruption_quietly,
@@ -1383,6 +1384,43 @@ DEV_OPTION = {
     "model_kwargs": None,
     "reasoning": False,
 }
+
+
+class TestPostHogHandlerProperties:
+    """What `_build_agent_callbacks` does with its arguments, not just that it
+    got them. $ai_generation is the event PostHog already emits for every agent
+    call; if it stops carrying these three, every attribution chart built on it
+    silently loses its breakdown while still rendering."""
+
+    def _handler_properties(self, agent_name: str, source: str | None, workflow_id: str | None):
+        client = MagicMock()
+        with (
+            patch("app.helpers.agent_helpers.providers") as mock_providers,
+            patch("app.helpers.agent_helpers.PostHogCallbackHandler") as handler,
+        ):
+            mock_providers.is_available.return_value = True
+            mock_providers.get.return_value = client
+            _build_agent_callbacks("conv-1", FAKE_USER, agent_name, source, workflow_id, None)
+        return handler.call_args.kwargs["properties"]
+
+    def test_a_chat_turn_carries_its_feature_and_surface(self):
+        props = self._handler_properties("comms_agent", "web", None)
+        assert props["conversation_id"] == "conv-1"
+        assert props["agent_name"] == "comms_agent"
+        assert props["feature"] == "chat"
+        assert props["surface"] == "ui"
+
+    def test_a_workflow_run_carries_its_workflow_id(self):
+        props = self._handler_properties("executor_agent", None, "wf-brief")
+        assert props["feature"] == "workflow"
+        assert props["workflow_id"] == "wf-brief"
+        assert props["surface"] == "bg"
+
+    def test_a_subagent_is_integration_spend(self):
+        assert self._handler_properties("gmail_agent", "web", None)["feature"] == "integration"
+
+    def test_a_bot_turn_reports_the_bot_surface(self):
+        assert self._handler_properties("comms_agent", "discord", None)["surface"] == "bot"
 
 
 class TestBuildAgentConfigCallbackWiring:

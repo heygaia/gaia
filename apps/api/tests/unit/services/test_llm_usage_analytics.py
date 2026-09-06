@@ -210,6 +210,39 @@ def test_a_call_with_no_user_is_skipped_not_left_anonymous(posthog: Any) -> None
     posthog.capture.assert_not_called()
 
 
+def test_the_skip_says_which_call_it_dropped(posthog: Any) -> None:
+    """Skipping quietly would make unattributed background spend indistinguishable
+    from spend that never happened. The warning is the only trace it leaves."""
+    with patch("app.services.llm_usage_analytics.log") as mock_log:
+        _capture(user_id=None, label="memory:extract", model_name=DEFAULT_MODEL_NAME)
+
+    mock_log.warning.assert_called_once_with(
+        "llm_call_unattributed", label="memory:extract", model=DEFAULT_MODEL_NAME
+    )
+
+
+def test_an_unmapped_label_raises_an_error_line_naming_itself(posthog: Any) -> None:
+    """UNATTRIBUTED is a bucket, not an answer. The error line is what turns a
+    forgotten LABEL_FEATURES entry into something greppable rather than a
+    mystery slice on the cost dashboard."""
+    with patch("app.services.llm_usage_analytics.log") as mock_log:
+        _capture(label="helper_added_without_a_table_entry")
+
+    mock_log.error.assert_called_once_with(
+        "llm_call_unmapped_label",
+        label="helper_added_without_a_table_entry",
+        model=DEFAULT_MODEL_NAME,
+    )
+    assert _captured(posthog)["properties"]["feature"] == "unattributed"
+
+
+def test_a_mapped_label_logs_no_error(posthog: Any) -> None:
+    with patch("app.services.llm_usage_analytics.log") as mock_log:
+        _capture(label="memory:extract")
+
+    mock_log.error.assert_not_called()
+
+
 def test_a_priced_model_is_not_flagged_as_estimated(posthog: Any) -> None:
     _capture(model_name=DEFAULT_MODEL_NAME)
     assert _captured(posthog)["properties"]["cost_estimated"] is False
