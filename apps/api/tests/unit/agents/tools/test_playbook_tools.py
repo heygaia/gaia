@@ -1681,6 +1681,8 @@ class TestBlockedDeclines:
         pause, and a claim it does not support is refused so the model names
         the integration it actually needed."""
         workflows = _FakeWorkflowStore()
+        # Two handoffs to gmail and one answer in between: the answered message
+        # carries no tool calls, and the target is listed once.
         handed_off = AIMessage(
             content="",
             tool_calls=[
@@ -1689,35 +1691,65 @@ class TestBlockedDeclines:
                     "name": "handoff",
                     "args": {"subagent_id": "gmail", "task": "read the inbox"},
                     "type": "tool_call",
-                }
+                },
+                {
+                    "id": "h2",
+                    "name": "handoff",
+                    "args": {"subagent_id": "gmail", "task": "read it again"},
+                    "type": "tool_call",
+                },
             ],
         )
+        answered = ToolMessage(content="12 threads", tool_call_id="h1")
         with (
             patch(f"{TOOLS_MODULE}.playbook_repository", store),
             patch(f"{TOOLS_MODULE}.workflow_repository", workflows),
             patch(
-                PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=[], unrelated=["slack"]))
+                PAUSE_TARGET,
+                AsyncMock(return_value=PauseOutcome(paused=[], unrelated=["slack", "notion"])),
             ) as pause,
+        ):
+            result = await decline_playbook.ainvoke(
+                {
+                    "kind": "blocked_missing_integration",
+                    "integrations": ["slack", "notion"],
+                    "reason": "neither is connected",
+                    "state": {"messages": [handed_off, answered]},
+                },
+                config=_config(),
+            )
+        pause.assert_awaited_once_with(
+            WORKFLOW_ID, USER_ID, ["slack", "notion"], used_by_run=["gmail"]
+        )
+        assert result == {
+            "success": False,
+            "error": "integration_not_in_run",
+            "message": "slack, notion are not part of this workflow's steps and this run never "
+            "handed off there. Name the integration the run actually needed, or decline with "
+            "the kind that says why the sequence cannot hold.",
+        }
+        assert workflows.workflow.playbook_declines == 0
+        assert workflows.workflow.activated is True
+
+    async def test_one_unrelated_integration_is_named_in_the_singular(
+        self, store: _FakePlaybookStore
+    ) -> None:
+        with (
+            patch(f"{TOOLS_MODULE}.playbook_repository", store),
+            patch(f"{TOOLS_MODULE}.workflow_repository", _FakeWorkflowStore()),
+            patch(
+                PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=[], unrelated=["slack"]))
+            ),
         ):
             result = await decline_playbook.ainvoke(
                 {
                     "kind": "blocked_missing_integration",
                     "integrations": ["slack"],
                     "reason": "Slack is not connected",
-                    "state": {"messages": [handed_off]},
                 },
                 config=_config(),
             )
-        pause.assert_awaited_once_with(WORKFLOW_ID, USER_ID, ["slack"], used_by_run=["gmail"])
-        assert result == {
-            "success": False,
-            "error": "integration_not_in_run",
-            "message": "slack is not part of this workflow's steps and this run never handed "
-            "off there. Name the integration the run actually needed, or decline with the "
-            "kind that says why the sequence cannot hold.",
-        }
-        assert workflows.workflow.playbook_declines == 0
-        assert workflows.workflow.activated is True
+        assert result["message"].startswith("slack is not part of this workflow's steps")
 
     async def test_a_claim_that_does_not_check_out_pauses_nothing(
         self, store: _FakePlaybookStore

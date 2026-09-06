@@ -481,6 +481,37 @@ class TestPauseForMissingIntegrations:
         confirm.assert_not_awaited()
         service.deactivate_workflow.assert_not_awaited()
 
+    async def test_the_evidence_is_this_users_workflow_and_its_own_steps(self) -> None:
+        workflow = _workflow("wf-1", "Digest")
+        with (
+            patch(f"{MODULE}.workflow_repository") as repo,
+            patch(f"{MODULE}.compute_required_integrations", return_value={"gmail"}) as required,
+            patch(f"{MODULE}.WorkflowService") as service,
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock(return_value=["gmail"])),
+        ):
+            repo.get_for_user = AsyncMock(return_value=workflow)
+            service.deactivate_workflow = AsyncMock()
+            await pause_workflow_for_missing_integrations(
+                "wf-1", USER_ID, ["gmail", "gmail"], used_by_run=[]
+            )
+        repo.get_for_user.assert_awaited_once_with("wf-1", USER_ID)
+        required.assert_called_once_with(workflow.steps, workflow.trigger_config)
+
+    async def test_a_workflow_that_is_gone_pauses_nothing_and_names_the_claim(self) -> None:
+        with (
+            patch(f"{MODULE}.workflow_repository") as repo,
+            patch(f"{MODULE}.WorkflowService") as service,
+            patch(f"{MODULE}.confirm_disconnected", AsyncMock()) as confirm,
+        ):
+            repo.get_for_user = AsyncMock(return_value=None)
+            service.deactivate_workflow = AsyncMock()
+            outcome = await pause_workflow_for_missing_integrations(
+                "wf-1", USER_ID, ["github", "github", "slack"], used_by_run=["github"]
+            )
+        assert outcome == PauseOutcome(paused=[], unrelated=["github", "slack"])
+        confirm.assert_not_awaited()
+        service.deactivate_workflow.assert_not_awaited()
+
     async def test_a_handoff_this_run_made_is_evidence_enough(self) -> None:
         """The declared steps can be wrong; a run that handed off to GitHub and
         came back blocked on it was blocked on it."""

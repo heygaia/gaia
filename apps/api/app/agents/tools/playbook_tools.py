@@ -126,12 +126,12 @@ def _handoff_targets(state: Mapping[str, Any] | None) -> list[str]:
     if not isinstance(messages, list):
         return []
     targets = [
-        str((call.get("args") or {}).get("subagent_id") or "")
+        (call.get("args") or {}).get("subagent_id")
         for message in messages
         for call in getattr(message, "tool_calls", None) or []
         if call.get("name") == "handoff"
     ]
-    return list(dict.fromkeys(target for target in targets if target))
+    return [str(target) for target in dict.fromkeys(targets) if target]
 
 
 def _invoked_call_names(state: Mapping[str, Any] | None) -> list[str]:
