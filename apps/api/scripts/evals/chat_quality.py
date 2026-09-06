@@ -231,6 +231,12 @@ async def _send_turn(
                 continue
             if not isinstance(frame, dict):
                 continue
+            # The style guard retracts a draft it is about to rewrite; the web
+            # and the bots drop the text on this frame, so the harness must too
+            # or every rewrite reads as the reply pasted twice.
+            boundary = frame.get("message_boundary")
+            if isinstance(boundary, dict) and boundary.get("discarded"):
+                chunks.clear()
             if isinstance(frame.get("response"), str):
                 chunks.append(frame["response"])
             tools.extend(_frame_tool_names(frame))

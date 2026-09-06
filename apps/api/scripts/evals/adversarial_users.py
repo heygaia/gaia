@@ -531,6 +531,11 @@ async def _send_turn(
             if not isinstance(frame, dict):
                 continue
             kinds.extend(k for k in frame if frame[k] is not None)
+            # A discarded boundary is the style guard retracting its draft; the
+            # real clients drop that text, so the harness does too.
+            boundary = frame.get("message_boundary")
+            if isinstance(boundary, dict) and boundary.get("discarded"):
+                chunks.clear()
             if isinstance(frame.get("response"), str):
                 chunks.append(frame["response"])
             tools.extend(_frame_tool_names(frame))
