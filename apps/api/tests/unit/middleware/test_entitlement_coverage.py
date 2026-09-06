@@ -18,7 +18,11 @@ import pytest
 from starlette.middleware.base import BaseHTTPMiddleware
 
 from app.api.v1.middleware.entitlement import EntitlementMiddleware
-from app.api.v1.middleware.entitlement_allowlist import FREE_PATH_PREFIXES, is_free_path
+from app.api.v1.middleware.entitlement_allowlist import (
+    FREE_EXACT_PATHS,
+    FREE_PATH_PREFIXES,
+    is_free_path,
+)
 from app.decorators.entitlements import SubscriptionRequiredException
 from app.models.payment_models import PlanType
 from tests.conftest import FAKE_USER, _create_test_app
@@ -148,6 +152,8 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
     free = sorted({path for _, path in _routes(gated_app) if is_free_path(path)})
 
     assert free == [
+        "/",
+        "/api/v1/",
         "/api/v1/blogs",
         "/api/v1/blogs/count",
         "/api/v1/blogs/slug",
@@ -167,6 +173,8 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
         "/api/v1/device/servers",
         "/api/v1/device/token",
         "/api/v1/integrations/connect-link",
+        "/api/v1/mcp/oauth/callback",
+        "/api/v1/notifications/unregister-device",
         "/api/v1/notifications/unsubscribe",
         "/api/v1/oauth/client-metadata.json",
         "/api/v1/oauth/composio/callback",
@@ -200,6 +208,8 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
         "/api/v1/support/requests",
         "/api/v1/support/requests/my",
         "/api/v1/support/requests/with-attachments",
+        "/api/v1/user/holo-card/card_id",
+        "/api/v1/user/holo-card/colors",
         "/api/v1/user/logout",
         "/api/v1/user/me",
         "/api/v1/user/name",
@@ -395,3 +405,13 @@ def test_allowlist_entries_are_absolute_paths() -> None:
     """A relative or empty entry would match everything and disable the paywall."""
     assert all(prefix.startswith("/") for prefix in FREE_PATH_PREFIXES)
     assert len(set(FREE_PATH_PREFIXES)) == len(FREE_PATH_PREFIXES)
+    assert all(path.startswith("/") for path in FREE_EXACT_PATHS)
+    assert not any(path.startswith(FREE_PATH_PREFIXES) for path in FREE_EXACT_PATHS)
+
+
+@pytest.mark.parametrize("path", sorted(FREE_EXACT_PATHS))
+def test_exact_free_path_does_not_free_its_subtree(path: str) -> None:
+    """``/`` and ``/api/v1/`` are liveness aliases; as prefixes they would free everything."""
+    assert is_free_path(path)
+    assert not is_free_path(path + "api/v1/paid")
+    assert not is_free_path(path + "paid")

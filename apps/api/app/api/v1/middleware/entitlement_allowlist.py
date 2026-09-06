@@ -7,10 +7,16 @@ are enumerated here and nowhere else. A second copy of this list would drift and
 silently open a paid surface, which is the exact bug the middleware exists to
 prevent.
 
-Matching is a plain ``startswith`` on ``request.url.path``, so an entry gates a
+Matching is a plain ``startswith`` on ``request.url.path``, so an entry frees a
 whole subtree. Keep entries as specific as the surface actually needs: every
-extra character is a route that can never be monetised.
+extra character is a route that can never be monetised. The two liveness
+aliases that are themselves prefixes of everything live in ``FREE_EXACT_PATHS``
+and are matched whole.
 """
+
+# The health router also answers on these two; as prefixes they would free every
+# path in the app, so they are compared for equality.
+FREE_EXACT_PATHS: frozenset[str] = frozenset({"/", "/api/v1/"})
 
 # Ordered roughly by "why is this free": infrastructure, auth, payment, public,
 # self-authenticating callbacks. Each entry carries the reason it must stay open.
@@ -31,6 +37,8 @@ FREE_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/user/me",  # GET (session bootstrap) + PATCH (profile)
     "/api/v1/user/name",  # profile chores: no spend, and the wall shows the name
     "/api/v1/user/timezone",  # the wall and receipts render in the user's zone
+    "/api/v1/user/holo-card",  # public card lookup by id, plus the owner's colour
+    #                             pick: a profile chore like name and timezone
     "/api/v1/user/logout",  # a lapsed user must be able to leave
     "/api/v1/oauth",  # login redirects + provider callbacks (no session yet)
     "/api/v1/dev/",  # dev-only identity router; mounted only in development
@@ -55,6 +63,10 @@ FREE_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/webhook",  # Composio provider webhook, signature-authenticated
     "/api/v1/platform-auth",  # Discord/Slack OAuth callbacks, no session
     "/api/v1/notifications/unsubscribe",  # HMAC-signed one-click unsubscribe
+    "/api/v1/notifications/unregister-device",  # logout must always drop the push
+    #                                              token, or a lapsed user keeps
+    #                                              getting pushed after signing out
+    "/api/v1/mcp/oauth/callback",  # MCP provider callback, authenticated by state
     "/api/v1/integrations/connect-link",  # login-free single-use connect code
     "/api/v1/device/pair/start",  # device daemon pairing — authenticates with
     "/api/v1/device/pair/poll",  # the pairing code, not a user session
@@ -65,4 +77,4 @@ FREE_PATH_PREFIXES: tuple[str, ...] = (
 
 def is_free_path(path: str) -> bool:
     """Whether ``path`` is exempt from the paid-only gate."""
-    return path.startswith(FREE_PATH_PREFIXES)
+    return path in FREE_EXACT_PATHS or path.startswith(FREE_PATH_PREFIXES)
