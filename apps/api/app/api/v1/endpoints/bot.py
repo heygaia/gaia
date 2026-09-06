@@ -23,6 +23,7 @@ from app.decorators import (
     require_active_subscription,
     tiered_rate_limit,
 )
+from app.models.activation_models import ActivationSequenceState
 from app.models.bot_models import (
     BotAuthStatusResponse,
     BotChatRequest,
@@ -655,7 +656,7 @@ async def bot_chat_stream(request: Request, body: BotChatRequest) -> StreamingRe
         log.set(outcome="activation_opt_out")
         return _notice_only_stream(STOP_ACKNOWLEDGEMENT)
 
-    await record_reply(user_id)
+    record_reply(user_id, ActivationSequenceState.of(user.get("activation_sequence")))
 
     await _charge_bot_turn(user_id, body)
 

@@ -322,6 +322,9 @@ class TestBuildCommsGraph:
             assert kwargs["tools_config"].initial_tool_ids == [
                 "call_executor",
                 "cancel_executor",
+                "find_integration",
+                "search_public_workflows",
+                "show_connect_card",
                 *[memory_tool.name for memory_tool in memory_tools.tools],
             ]
 

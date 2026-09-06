@@ -644,7 +644,7 @@ async def connect_gmail() -> None:
 def submit_body(**overrides: Any) -> dict[str, Any]:
     return {
         "profession": "Lawyer",
-        "needs": ["inbox", "briefings"],
+        "needs": ["inbox", "calendar"],
         "timezone": "UTC",
         **overrides,
     }
@@ -706,7 +706,7 @@ class TestSubmittingTheFormIsCompletion:
         assert response.status_code == 200
         onboarding = users.onboarding_of(USER_ID)
         assert onboarding["preferences"]["profession"] == "Lawyer"
-        assert onboarding["preferences"]["needs"] == ["inbox", "briefings"]
+        assert onboarding["preferences"]["needs"] == ["inbox", "calendar"]
         assert users.docs[USER_ID]["timezone"] == "Europe/London"
 
     async def test_a_replayed_submit_returns_the_stored_user_unchanged(

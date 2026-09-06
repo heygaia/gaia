@@ -7,7 +7,6 @@ message was worth something.
 
 from datetime import UTC, datetime, timedelta
 
-from app.db.repositories.users import user_repository
 from app.models.activation_models import ActivationSequenceState
 from app.services.analytics_service import AnalyticsEvents, capture_event
 
@@ -15,16 +14,13 @@ from app.services.analytics_service import AnalyticsEvents, capture_event
 REPLY_WINDOW_HOURS = 24
 
 
-async def record_reply(user_id: str) -> None:
+def record_reply(user_id: str, state: ActivationSequenceState) -> None:
     """Count this inbound bot message as a reply, when it answers a recent day.
 
     Joined to the day it answers so the funnel reads per day rather than as one
-    undifferentiated "someone replied at some point".
+    undifferentiated "someone replied at some point". ``state`` comes off the
+    user the caller already holds; this never reads the database itself.
     """
-    user = await user_repository.get(user_id)
-    if user is None:
-        return
-    state = ActivationSequenceState.of(user.activation_sequence)
     if state.last_sent_at is None or not state.messages:
         return
     age = datetime.now(UTC) - state.last_sent_at.astimezone(UTC)

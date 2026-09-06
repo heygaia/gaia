@@ -59,8 +59,8 @@ def _prefs(
 #: model, so the expected value is written by hand rather than derived.
 DEFAULT_BLOCK = (
     "- Their job, as they answered it: founder\n"
-    "- I'm drowning in email\n"
-    "- my week is back-to-back meetings"
+    "- In their words: my inbox is out of control\n"
+    "- In their words: I walk into meetings cold"
 )
 
 
@@ -83,8 +83,8 @@ class TestAnswersBlock:
 
         assert block == (
             "- Their job, as they answered it: Bakery owner\n"
-            "- my week is back-to-back meetings\n"
-            "- I'm drowning in email\n"
+            "- In their words: I walk into meetings cold\n"
+            "- In their words: my inbox is out of control\n"
             '- In their own words: "chasing invoices"\n'
             "- They already text you on telegram"
         )
@@ -98,13 +98,13 @@ class TestAnswersBlock:
         the model write a question about being an "other"."""
         block = _answers_block(_prefs(profession=profession, needs=[OnboardingNeed.INBOX]), None)
 
-        assert block == "- I'm drowning in email"
+        assert block == "- In their words: my inbox is out of control"
 
     @pytest.mark.parametrize("profession", [None])
     def test_an_unanswered_job_is_left_out(self, profession: str | None) -> None:
         block = _answers_block(_prefs(profession=profession, needs=[OnboardingNeed.INBOX]), None)
 
-        assert block == "- I'm drowning in email"
+        assert block == "- In their words: my inbox is out of control"
 
     def test_a_platform_alone_still_renders_its_line(self) -> None:
         block = _answers_block(_prefs(profession=None, needs=[]), "whatsapp")
@@ -384,7 +384,7 @@ class TestComposeFirstQuestionBudget:
             await compose_first_question(_prefs(), None)
 
         assert QUESTION_TIMEOUT_SECONDS == 20.0
-        assert LIVE_QUESTION_TIMEOUT_SECONDS == 2.0
+        assert LIVE_QUESTION_TIMEOUT_SECONDS == 6.0
         assert invoke.await_args.kwargs["options"].timeout == 20.0
 
 
@@ -551,8 +551,8 @@ class TestResolveBranches:
         compose.assert_not_awaited()
         assert getter.await_args.args == (first_question_cache_key("u1", _prefs()), FirstQuestion)
 
-    async def test_a_miss_gets_one_live_attempt_on_the_two_second_ceiling(self) -> None:
-        """The user is watching a spinner: past two seconds the static line is
+    async def test_a_miss_gets_one_live_attempt_on_the_six_second_ceiling(self) -> None:
+        """The user is watching a spinner: past six seconds the static line is
         the better product, so this is a last chance rather than a real
         attempt."""
         written = FirstQuestion(chips=GOOD_CHIPS)
@@ -569,7 +569,7 @@ class TestResolveBranches:
             "user_id": "u1",
             "timeout_seconds": LIVE_QUESTION_TIMEOUT_SECONDS,
         }
-        assert LIVE_QUESTION_TIMEOUT_SECONDS == 2.0
+        assert LIVE_QUESTION_TIMEOUT_SECONDS == 6.0
 
     async def test_a_miss_whose_live_call_misses_too_is_the_static_line(self) -> None:
         compose = AsyncMock(return_value=None)

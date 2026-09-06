@@ -100,20 +100,20 @@ describe("Q2 multi-select", () => {
     const state = apply(
       initialState,
       { type: "toggleNeed", value: "inbox" },
-      { type: "toggleNeed", value: "todos" },
+      { type: "toggleNeed", value: "reminders" },
       { type: "toggleNeed", value: "inbox" },
     );
-    expect(state.selectedNeeds).toEqual(["todos"]);
+    expect(state.selectedNeeds).toEqual(["reminders"]);
   });
 
   it("serializes needs as backend OnboardingNeed values", () => {
     const state = apply(
       initialState,
-      { type: "toggleNeed", value: "automation" },
-      { type: "toggleNeed", value: "memory" },
+      { type: "toggleNeed", value: "grunt_work" },
+      { type: "toggleNeed", value: "tools" },
     );
     // Order is selection order, and every value is a known option.
-    expect(state.selectedNeeds).toEqual(["automation", "memory"]);
+    expect(state.selectedNeeds).toEqual(["grunt_work", "tools"]);
     for (const need of state.selectedNeeds) {
       expect(needOptions.some((o) => o.value === need)).toBe(true);
     }
@@ -134,17 +134,14 @@ describe("Q2 multi-select", () => {
     }
   });
 
-  it("offers seven backend needs and never the catch-all", () => {
-    // `reach` stays in the backend enum for users who picked it before the
-    // platform step took it over; it is no longer a chip.
+  it("offers the six shared pains and never the catch-all", () => {
     expect(needOptions.map((o) => o.value)).toEqual([
       "inbox",
       "calendar",
-      "briefings",
-      "todos",
-      "memory",
-      "research",
-      "automation",
+      "mornings",
+      "reminders",
+      "grunt_work",
+      "tools",
     ]);
     expect(needOptions.some((o) => o.value === OTHER_NEED_OPTION.value)).toBe(
       false,
@@ -171,7 +168,7 @@ describe("transcript", () => {
     });
     const contents = messages.map((m) => m.content);
     expect(contents).toContain("Founder / CEO");
-    expect(contents).toContain("Drowning in email");
+    expect(contents).toContain("Inbox out of control");
   });
 
   it("acknowledges the job in Q2's opener and appends the typed need", () => {
@@ -182,7 +179,7 @@ describe("transcript", () => {
       otherNeed: "chasing invoices",
     }).map((m) => m.content);
     expect(contents.some((c) => c.startsWith("Founder, got it."))).toBe(true);
-    expect(contents).toContain("Drowning in email, chasing invoices");
+    expect(contents).toContain("Inbox out of control, chasing invoices");
   });
 
   it("does not render the Q2 answer before it is submitted", () => {
@@ -197,6 +194,6 @@ describe("transcript", () => {
       selectedNeeds: state.selectedNeeds,
       otherNeed: "",
     }).map((m) => m.content);
-    expect(contents).not.toContain("Drowning in email");
+    expect(contents).not.toContain("Inbox out of control");
   });
 });

@@ -374,7 +374,7 @@ class TestProjectionBodies:
                         "preferences": {
                             "response_style": "brief",
                             "profession": "Founder",
-                            "needs": ["inbox", "briefings"],
+                            "needs": ["inbox", "calendar"],
                         }
                     },
                 )
@@ -384,7 +384,7 @@ class TestProjectionBodies:
                 "response_style": "brief",
                 "timezone": "Asia/Kolkata",
                 "profession": "Founder",
-                "needs": ["inbox", "briefings"],
+                "needs": ["inbox", "calendar"],
             }
 
     async def test_preferences_reject_a_need_outside_the_allowed_keys(self, sources) -> None:

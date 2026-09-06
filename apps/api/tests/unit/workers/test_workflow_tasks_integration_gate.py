@@ -91,7 +91,9 @@ class TestADisconnectedIntegrationPausesTheWorkflow:
         )
 
         assert "not connected" in result
-        assert deactivate.await_args.kwargs["reason"] == DeactivationReason.INTEGRATION_EXPIRED
+        assert (
+            deactivate.await_args.kwargs["reason"] == DeactivationReason.INTEGRATION_NEVER_CONNECTED
+        )
         # No run, so no spend and no agent turn to nag from.
         budget.assert_not_awaited()
 

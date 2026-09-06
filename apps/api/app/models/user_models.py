@@ -340,6 +340,8 @@ class AuthenticatedUser(TypedDict, total=False):
     provider_metadata: dict[str, Any] | None
     hil_preferences: dict[str, Any] | None
     notification_channel_prefs: dict[str, Any] | None
+    chat_channel_priority: list[str] | None
+    activation_sequence: dict[str, Any] | None
     platform_links: dict[str, Any] | None
     platform_links_connected_at: dict[str, Any] | None
     starred_voice_ids: list[str] | None

@@ -102,12 +102,12 @@ describe("Q2 needs chips", () => {
   it("is multi-select and keeps every pick pressed", () => {
     const seen = renderComposer(atQ2);
 
-    fireEvent.click(chip("Drowning in email"));
-    fireEvent.click(chip("Follow-ups slip through"));
+    fireEvent.click(chip("Inbox out of control"));
+    fireEvent.click(chip("Things I keep forgetting"));
 
-    expect(seen.state.selectedNeeds).toEqual(["inbox", "todos"]);
-    expect(pressedState("Drowning in email")).toBe("true");
-    expect(pressedState("Follow-ups slip through")).toBe("true");
+    expect(seen.state.selectedNeeds).toEqual(["inbox", "reminders"]);
+    expect(pressedState("Inbox out of control")).toBe("true");
+    expect(pressedState("Things I keep forgetting")).toBe("true");
   });
 
   it("blocks Continue until at least one need is picked", () => {
@@ -115,7 +115,7 @@ describe("Q2 needs chips", () => {
 
     expect(continueButton().disabled).toBe(true);
 
-    fireEvent.click(chip("Research eats my evenings"));
+    fireEvent.click(chip("Grunt work every week"));
     expect(continueButton().disabled).toBe(false);
 
     fireEvent.click(continueButton());

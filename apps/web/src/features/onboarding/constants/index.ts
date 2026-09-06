@@ -36,7 +36,7 @@ export const needOptions: NeedOption[] = [
  * are `professionOptions` values; mirrors `ROLE_NEEDS` on the API, which
  * rejects a role need sent with a different profession.
  */
-export const roleNeedOptions: Record<string, NeedOption[]> = {
+const roleNeedOptions: Record<string, NeedOption[]> = {
   founder: [
     { value: "founder_team_updates", label: "Team updates I chase" },
     { value: "founder_competitors", label: "Competitors I never track" },
