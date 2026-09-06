@@ -18,6 +18,10 @@ from app.config.settings import settings
 from app.constants.auth import WOS_SESSION_COOKIE
 from app.constants.log_tags import LogTag
 from app.db.repositories.users import user_repository
+from app.models.activation_models import (
+    ActivationSequenceResponse,
+    ActivationSequenceUpdate,
+)
 from app.models.user_models import (
     AuthenticatedUser,
     AuthenticatedUserResponse,
@@ -29,6 +33,7 @@ from app.models.user_models import (
     UserUpdateResponse,
 )
 from app.services.account_fs import schedule_account_sync
+from app.services.activation.opt_out import set_opted_out
 from app.services.analytics_service import AnalyticsEvents, capture_context_event, track_logout
 from app.services.onboarding.onboarding_service import get_user_onboarding_status
 from app.services.user_service import update_user_profile
@@ -404,3 +409,19 @@ async def logout(
             error=str(e),
         )
         raise HTTPException(status_code=500, detail="Logout failed") from e
+
+
+@router.patch("/activation-sequence", response_model=ActivationSequenceResponse)
+async def update_activation_sequence(
+    body: ActivationSequenceUpdate,
+    user_id: str = Depends(get_user_id),
+) -> ActivationSequenceResponse:
+    """Turn the first-days activation messages on or off.
+
+    The same switch the bot's "stop" reply flips, so the settings toggle and the
+    reply can never disagree about whether GAIA is still texting them.
+    """
+    log.set(user={"id": user_id}, operation="update_activation_sequence")
+    await set_opted_out(user_id, body.opted_out, source="settings")
+    log.audit("activation sequence updated", actor=user_id, opted_out=body.opted_out)
+    return ActivationSequenceResponse(opted_out=body.opted_out)

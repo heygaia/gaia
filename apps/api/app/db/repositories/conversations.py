@@ -512,6 +512,32 @@ class ConversationRepository(UserScopedRepository[ConversationDocument, Conversa
             ConversationMessageHit,
         )
 
+    async def list_messages_since(
+        self, user_id: str, since: datetime, *, limit: int
+    ) -> list[ConversationMessageHit]:
+        """The user's messages across every conversation since ``since``, oldest first.
+
+        What actually happened, for a run that has to write about it. Bounded by
+        ``limit`` because this feeds a prompt, not a report — a heavy day would
+        otherwise push the onboarding answers out of the model's attention.
+
+        ``messages.date`` is an ISO-8601 string (this module's timestamp
+        contract: conversation ``updatedAt`` is a BSON date, embedded message
+        dates are strings), so the bound is compared as a string. That sorts in
+        time order, so it is a real comparison rather than a workaround.
+        """
+        return await self._aggregate(
+            [
+                {"$match": {"user_id": user_id, "is_system_generated": {"$ne": True}}},
+                {"$unwind": "$messages"},
+                {"$match": {"messages.date": {"$gte": since.isoformat()}}},
+                {"$sort": {"messages.date": 1}},
+                {"$limit": limit},
+                {"$project": {"_id": 0, "conversation_id": 1, "message": "$messages"}},
+            ],
+            ConversationMessageHit,
+        )
+
     async def search(self, user_id: str, *, pattern: str) -> ConversationSearchResults:
         """Regex search across message responses and conversation descriptions.
         ``pattern`` is treated as a literal — the caller passes an escaped query."""
