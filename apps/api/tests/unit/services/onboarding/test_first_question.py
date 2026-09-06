@@ -626,3 +626,27 @@ class TestSeededChips:
             error="redis down",
             error_type="ConnectionError",
         )
+
+
+class TestFallbackWarning:
+    async def test_a_double_miss_is_a_warning_naming_the_user_and_the_outcome(self) -> None:
+        with (
+            patch(f"{MODULE}.redis_cache.get", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.compose_first_question", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.log") as log,
+        ):
+            assert await resolve_first_question("u1", _prefs(), None) is None
+
+        log.warning.assert_called_once()
+        assert log.warning.call_args.kwargs == {"user_id": "u1", "outcome": "fallback"}
+
+    async def test_a_live_hit_is_not_a_warning(self) -> None:
+        written = FirstQuestion(chips=GOOD_CHIPS)
+        with (
+            patch(f"{MODULE}.redis_cache.get", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.compose_first_question", AsyncMock(return_value=written)),
+            patch(f"{MODULE}.log") as log,
+        ):
+            assert await resolve_first_question("u1", _prefs(), None) is written
+
+        log.warning.assert_not_called()

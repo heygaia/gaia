@@ -180,9 +180,7 @@ def playbook_for_message(need: OnboardingNeed) -> str:
         integration = get_integration_by_id(integration_id)
         return f"a {integration.name if integration else integration_id} connect link"
 
-    return _CARD_CALL.sub(_link, NEED_PLAYBOOKS[need]).replace(
-        "a connect link for it", "a connect link for it"
-    )
+    return _CARD_CALL.sub(_link, NEED_PLAYBOOKS[need])
 
 
 #: The one worked example of the whole move, in the register we want: a real

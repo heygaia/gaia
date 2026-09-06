@@ -12,7 +12,7 @@ import aio_pika
 from aio_pika.exceptions import ChannelPreconditionFailed
 import pytest
 
-from app.constants.outbound import OUTBOUND_DLX, OUTBOUND_QUEUES, dlq_name
+from app.constants.outbound import OUTBOUND_DLX, OUTBOUND_QUEUES, dlq_name, work_queue_arguments
 from app.db import rabbitmq
 from app.db.rabbitmq import RabbitMQPublisher
 
@@ -282,3 +282,47 @@ class TestAmqpAwaitsAreBounded:
         assert time.monotonic() - started < 1.0
         # A timed-out declare must not be recorded as done.
         assert pub._outbound_topology_declared is False
+
+
+@pytest.mark.asyncio
+class TestTopologyArgumentsMatchTheConsumer:
+    """Every declaration argument is a contract with the bot consumer: a durable
+    flag or a routing key that drifts is PRECONDITION_FAILED at startup."""
+
+    async def test_each_queue_and_binding_is_declared_exactly(self, connected_publisher) -> None:
+        pub, channel = connected_publisher
+        dlx = MagicMock()
+        channel.declare_exchange = AsyncMock(return_value=dlx)
+        queue_mock = MagicMock(bind=AsyncMock())
+        channel.declare_queue = AsyncMock(return_value=queue_mock)
+
+        await pub.declare_outbound_topology()
+
+        for queue in OUTBOUND_QUEUES.values():
+            channel.declare_queue.assert_any_await(dlq_name(queue), durable=True)
+            channel.declare_queue.assert_any_await(
+                queue, durable=True, arguments=work_queue_arguments(queue)
+            )
+            queue_mock.bind.assert_any_await(dlx, routing_key=dlq_name(queue))
+        assert channel.declare_queue.await_count == 2 * len(OUTBOUND_QUEUES)
+        assert pub._outbound_topology_declared is True
+
+    async def test_no_channel_after_connecting_is_a_named_failure(self) -> None:
+        pub = RabbitMQPublisher("amqp://test")
+        pub.ensure_connected = AsyncMock()  # type: ignore[method-assign] -- the seam under test is what follows it
+
+        with pytest.raises(RuntimeError, match="^Failed to establish RabbitMQ connection$"):
+            await pub.declare_outbound_topology()
+
+        assert pub._outbound_topology_declared is False
+
+    async def test_connect_dials_the_configured_url(self, monkeypatch) -> None:
+        pub = RabbitMQPublisher("amqp://broker.example/vhost")
+        connection = MagicMock(is_closed=False)
+        connection.channel = AsyncMock(return_value=MagicMock(is_closed=False))
+        connect_robust = AsyncMock(return_value=connection)
+        monkeypatch.setattr(aio_pika, "connect_robust", connect_robust)
+
+        await pub.connect()
+
+        assert connect_robust.await_args.args == ("amqp://broker.example/vhost",)

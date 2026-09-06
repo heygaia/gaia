@@ -710,3 +710,37 @@ class TestPhantomClaims:
 
         assert len(handler.requests) == 1
         assert response.result[0].id == "m1"
+
+
+@pytest.mark.unit
+class TestPhantomClaimsOnTheWideEvent:
+    async def test_gaias_own_earlier_text_is_not_work_done(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        """A follow-on bubble after GAIA's own text reply still answers the user
+        directly: no tool ran in between, so a claimed action is still false."""
+        handler = _ScriptedHandler(_draft(PHANTOM_DRAFT, "m1"), _draft(CLEAN_REWRITE, "m2"))
+        messages = [
+            HumanMessage(content="ok send it"),
+            AIMessage(content="Sure."),
+            build_current_time_message(),
+        ]
+
+        response = await StyleGuardMiddleware().awrap_model_call(_request(messages), handler)
+
+        assert len(handler.requests) == 2
+        assert response.result[0].text == CLEAN_REWRITE
+
+    async def test_the_phantom_detectors_are_named_on_the_wide_event(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        handler = _ScriptedHandler(_draft(PHANTOM_DRAFT, "m1"), _draft(CLEAN_REWRITE, "m2"))
+
+        with patch("app.agents.middleware.style_guard.log") as logger:
+            await StyleGuardMiddleware().awrap_model_call(
+                _request([HumanMessage(content="ok send it")]), handler
+            )
+
+        fields = logger.set_ns.call_args.kwargs
+        assert "claimed_action" in fields["detectors"]
+        assert "phantom_card" in fields["detectors"]

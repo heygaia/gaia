@@ -6,42 +6,55 @@ from httpx import AsyncClient
 import pytest
 
 API = "/api/v1"
+USER_ID = "507f1f77bcf86cd799439011"
+MODULE = "app.api.v1.endpoints.user"
 
 
 @pytest.mark.unit
 class TestGetChatChannelPriority:
     async def test_returns_the_resolved_order(self, client: AsyncClient) -> None:
-        with patch(
-            "app.api.v1.endpoints.user.get_chat_channel_priority",
-            new_callable=AsyncMock,
-            return_value=["slack", "telegram"],
+        with (
+            patch(
+                f"{MODULE}.get_chat_channel_priority",
+                new_callable=AsyncMock,
+                return_value=["slack", "telegram"],
+            ) as read,
+            patch(f"{MODULE}.log") as log,
         ):
             resp = await client.get(f"{API}/user/chat-channel-priority")
         assert resp.status_code == 200
         assert resp.json() == {"priority": ["slack", "telegram"]}
+        read.assert_awaited_once_with(USER_ID)
+        log.set.assert_any_call(user={"id": USER_ID}, operation="read_chat_channel_priority")
 
 
 @pytest.mark.unit
 class TestUpdateChatChannelPriority:
     async def test_persists_and_echoes_the_order(self, client: AsyncClient) -> None:
-        with patch(
-            "app.api.v1.endpoints.user.set_chat_channel_priority",
-            new_callable=AsyncMock,
-        ) as save:
+        with (
+            patch(f"{MODULE}.set_chat_channel_priority", new_callable=AsyncMock) as save,
+            patch(f"{MODULE}.log") as log,
+        ):
             resp = await client.patch(
                 f"{API}/user/chat-channel-priority",
                 json={"priority": ["discord", "telegram"]},
             )
         assert resp.status_code == 200
         assert resp.json() == {"priority": ["discord", "telegram"]}
-        save.assert_awaited_once()
-        assert save.await_args.args[1] == ["discord", "telegram"]
+        save.assert_awaited_once_with(USER_ID, ["discord", "telegram"])
+        log.set.assert_any_call(user={"id": USER_ID}, operation="update_chat_channel_priority")
+        log.audit.assert_called_once_with(
+            "chat channel priority updated", actor=USER_ID, priority=["discord", "telegram"]
+        )
 
     async def test_rejects_an_unknown_platform(self, client: AsyncClient) -> None:
         resp = await client.patch(
-            f"{API}/user/chat-channel-priority", json={"priority": ["telegram", "carrier-pigeon"]}
+            f"{API}/user/chat-channel-priority",
+            json={"priority": ["sms", "telegram", "carrier-pigeon", "sms"]},
         )
         assert resp.status_code == 422
+        # Named, sorted, once each: the UI shows this string to the user.
+        assert "unsupported chat platforms: carrier-pigeon, sms" in resp.text
 
     async def test_rejects_a_non_bot_platform(self, client: AsyncClient) -> None:
         resp = await client.patch(f"{API}/user/chat-channel-priority", json={"priority": ["web"]})
@@ -68,11 +81,12 @@ class TestUpdateChatChannelPriority:
 @pytest.mark.unit
 class TestReadActivationSequence:
     async def test_reports_the_current_opt_out(self, client: AsyncClient) -> None:
-        with patch(
-            "app.api.v1.endpoints.user.get_opted_out",
-            new_callable=AsyncMock,
-            return_value=True,
+        with (
+            patch(f"{MODULE}.get_opted_out", new_callable=AsyncMock, return_value=True) as read,
+            patch(f"{MODULE}.log") as log,
         ):
             resp = await client.get(f"{API}/user/activation-sequence")
         assert resp.status_code == 200
         assert resp.json() == {"opted_out": True}
+        read.assert_awaited_once_with(USER_ID)
+        log.set.assert_any_call(user={"id": USER_ID}, operation="read_activation_sequence")

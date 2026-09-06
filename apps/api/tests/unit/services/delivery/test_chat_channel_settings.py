@@ -27,8 +27,9 @@ class TestGetChatChannelPriority:
             "app.services.delivery.chat_channel.user_repository.get",
             new_callable=AsyncMock,
             return_value=_user(["slack", "telegram"]),
-        ):
+        ) as read:
             assert await get_chat_channel_priority(USER_ID) == ["slack", "telegram"]
+        read.assert_awaited_once_with(USER_ID)
 
     async def test_falls_back_to_the_default_when_unset(self):
         with patch(
@@ -60,6 +61,7 @@ class TestSetChatChannelPriority:
             await set_chat_channel_priority(USER_ID, ["discord", "slack"])
 
         save.assert_awaited_once_with(USER_ID, ["discord", "slack"])
+        assert capture.call_args.args[0] == USER_ID
         event = capture.call_args.args[1]
         properties = capture.call_args.args[2]
         assert event == "settings:chat_channel_priority_updated"

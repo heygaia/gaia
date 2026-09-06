@@ -854,3 +854,23 @@ class TestCompileKwargs:
 
             call_kwargs = deps["builder"].compile.call_args.kwargs
             assert isinstance(call_kwargs["checkpointer"], InMemorySaver)
+
+
+class TestCommsToolRegistry:
+    async def test_the_discovery_tools_are_registered_under_their_own_names(self):
+        with ExitStack() as stack:
+            deps = _apply_patches(stack)
+            from app.agents.core.graph_builder.build_graph import build_comms_graph
+            from app.agents.tools.discovery_tools import (
+                find_integration,
+                search_public_workflows,
+                show_connect_card,
+            )
+
+            async with build_comms_graph(chat_llm=deps["llm"], in_memory_checkpointer=True) as _:
+                pass
+
+            registry = deps["mocks"][f"{_MOD}.create_agent"].call_args.args[1]
+            assert registry["find_integration"] is find_integration
+            assert registry["search_public_workflows"] is search_public_workflows
+            assert registry["show_connect_card"] is show_connect_card

@@ -11,6 +11,8 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.agents.tools.discovery_tools import (
+    MAX_DISCOVERY_RESULTS,
+    _one_line,
     find_integration,
     search_public_workflows,
     show_connect_card,
@@ -144,6 +146,105 @@ class TestFindIntegration:
             result = await find_integration.ainvoke({"query": "gmail"}, _CONFIG)
 
         assert "composio down" in result["error"]
+
+    async def test_the_result_is_exactly_what_the_model_reads(self) -> None:
+        """Every key is read by the model or by show_connect_card; a renamed or
+        dropped one is a silent blank in the reply."""
+        crm = _community("hubspot", "HubSpot", "  Sales \n  CRM   for teams ")
+        with _catalogue(connected={"gmail": True}, community=[crm]):
+            result = await find_integration.ainvoke({"query": "email"}, _CONFIG)
+
+        assert result == {
+            "integrations": [
+                {
+                    "id": "gmail",
+                    "name": "Gmail",
+                    "description": "Read and send email from your inbox",
+                    "connected": True,
+                    "source": "platform",
+                },
+                {
+                    "id": "hubspot",
+                    "name": "HubSpot",
+                    "description": "Sales CRM for teams",
+                    "connected": False,
+                    "source": "community",
+                },
+            ],
+            "query": "email",
+        }
+
+    async def test_the_status_lookup_covers_every_available_integration_for_this_user(
+        self,
+    ) -> None:
+        status = AsyncMock(return_value={})
+        with (
+            _catalogue(),
+            patch("app.agents.tools.discovery_tools.check_multiple_integrations_status", status),
+        ):
+            await find_integration.ainvoke({"query": "notion"}, _CONFIG)
+
+        status.assert_awaited_once_with(["gmail", "notion", "linear"], _USER)
+
+    async def test_the_marketplace_is_asked_with_the_users_query_and_the_cap(self) -> None:
+        with _catalogue() as search:
+            await find_integration.ainvoke({"query": "notion"}, _CONFIG)
+
+        search.assert_awaited_once_with(search="notion", limit=MAX_DISCOVERY_RESULTS)
+
+    async def test_a_full_page_of_platform_hits_skips_the_marketplace(self) -> None:
+        """Exactly the cap: the marketplace can add nothing, so it is not asked."""
+        crms = [
+            _integration(f"crm{n}", f"CRM {n}", "customer crm")
+            for n in range(MAX_DISCOVERY_RESULTS)
+        ]
+        with (
+            _catalogue() as search,
+            patch("app.agents.tools.discovery_tools.OAUTH_INTEGRATIONS", crms),
+        ):
+            result = await find_integration.ainvoke({"query": "crm"}, _CONFIG)
+
+        search.assert_not_awaited()
+        assert [m["id"] for m in result["integrations"]] == [f"crm{n}" for n in range(5)]
+
+    async def test_one_short_of_the_cap_still_asks_the_marketplace(self) -> None:
+        crms = [
+            _integration(f"crm{n}", f"CRM {n}", "customer crm")
+            for n in range(MAX_DISCOVERY_RESULTS - 1)
+        ]
+        with (
+            _catalogue() as search,
+            patch("app.agents.tools.discovery_tools.OAUTH_INTEGRATIONS", crms),
+        ):
+            await find_integration.ainvoke({"query": "crm"}, _CONFIG)
+
+        search.assert_awaited_once()
+
+    async def test_the_missing_user_error_is_exactly_the_shape_the_model_reads(self) -> None:
+        with _catalogue():
+            result = await find_integration.ainvoke({"query": "notion"}, {"configurable": {}})
+
+        assert result == {"error": "User ID not found in configuration.", "query": "notion"}
+
+    async def test_the_wide_event_names_the_tool_and_counts_the_capped_results(self) -> None:
+        many = [_community(f"c{n}", f"C{n}", "desc") for n in range(20)]
+        with _catalogue(community=many), patch("app.agents.tools.discovery_tools.log") as log:
+            await find_integration.ainvoke({"query": "notion"}, _CONFIG)
+
+        log.set.assert_any_call(tool={"name": "find_integration", "action": "search"})
+        log.set_ns.assert_called_once_with("tool", result_count=MAX_DISCOVERY_RESULTS)
+
+
+class TestOneLine:
+    def test_none_is_empty(self) -> None:
+        assert _one_line(None) == ""
+
+    def test_whitespace_runs_and_newlines_collapse_to_single_spaces(self) -> None:
+        assert _one_line("  Pages,\n  databases   and notes ") == "Pages, databases and notes"
+
+    def test_a_paragraph_is_cut_at_exactly_160_characters(self) -> None:
+        text = "x" * 200
+        assert _one_line(text) == "x" * 160
 
 
 def _workflow(title: str, description: str, **extra: Any) -> dict[str, Any]:

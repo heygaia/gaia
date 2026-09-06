@@ -16,6 +16,7 @@ from app.models.user_models import UserDocument
 from app.services.activation.context import RunContext
 from app.services.activation.copy import ActivationCopyError
 from app.services.activation.policy import Direction, Facts, PromptBlocks, SkipReason
+from app.services.analytics_service import AnalyticsEvents
 from app.services.outbound_delivery import OutboundResult
 from app.workers.tasks import activation_tasks
 
@@ -39,13 +40,13 @@ def _facts(**overrides: object) -> Facts:
     return Facts(**base)  # type: ignore[arg-type] -- a dict of the dataclass's own fields
 
 
-def _context(**overrides: object) -> RunContext:
+def _context(platform: str | None = "telegram", **overrides: object) -> RunContext:
     from app.models.activation_models import ActivationSequenceState
 
     return RunContext(
         facts=_facts(**overrides),
         state=ActivationSequenceState(),
-        platform="telegram",
+        platform=platform,
         blocks=PromptBlocks(
             who="Role: founder",
             integrations="Connected: Gmail",
@@ -53,6 +54,15 @@ def _context(**overrides: object) -> RunContext:
             already_sent="Nothing yet.",
         ),
     )
+
+
+class _Clock:
+    """``datetime`` as the task sees it, pinned so every timestamp it passes on is NOW."""
+
+    @staticmethod
+    def now(tz: object = None) -> datetime:
+        assert tz is UTC
+        return NOW
 
 
 @pytest.fixture
@@ -86,8 +96,11 @@ def seams(user: UserDocument):
         patch.object(activation_tasks, "capture_event") as capture,
         patch.object(activation_tasks, "_claim", AsyncMock(return_value=True)) as claim,
         patch.object(activation_tasks, "_release", AsyncMock()) as release,
+        patch.object(activation_tasks, "datetime", _Clock),
+        patch.object(activation_tasks, "log") as log,
     ):
         yield {
+            "log": log,
             "record": record,
             "draft": draft,
             "publish": publish,
@@ -224,3 +237,97 @@ class TestCopyFailure:
         seams["publish"].assert_not_awaited()
         seams["record"].assert_not_awaited()
         assert seams["enqueue"].await_args.args[1] == 2
+
+
+class TestWhatTheTaskPassesOn:
+    """Every argument the task hands to a seam, exactly: a dropped or swapped one
+    sends the wrong day, to the wrong user, at the wrong time."""
+
+    async def test_the_run_is_stamped_on_the_wide_event(self, seams) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["log"].set.assert_any_call(user_id=USER_ID, user={"id": USER_ID}, activation_day=1)
+        seams["log"].set.assert_any_call(direction=Direction.HANDOVER, platform="telegram")
+
+    async def test_the_user_is_read_and_gathered_at_the_pinned_now(self, seams, user) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        activation_tasks.user_repository.get.assert_awaited_once_with(USER_ID)
+        activation_tasks.context.gather.assert_awaited_once_with(user, NOW)
+
+    async def test_tomorrow_is_scheduled_for_this_user_in_their_timezone_from_now(
+        self, seams
+    ) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["enqueue"].assert_awaited_once_with(USER_ID, 2, "UTC", NOW)
+
+    async def test_an_active_day_reschedules_the_same_day_with_the_same_arguments(
+        self, seams
+    ) -> None:
+        activation_tasks.context.gather = AsyncMock(
+            return_value=_context(user_messaged_last_24h=True)
+        )
+
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["enqueue"].assert_awaited_once_with(USER_ID, 1, "UTC", NOW)
+
+    async def test_the_sent_event_carries_day_platform_and_direction(self, seams) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["capture"].assert_called_once_with(
+            USER_ID,
+            AnalyticsEvents.ACTIVATION_DAY_SENT,
+            {"day": 1, "platform": "telegram", "direction": Direction.HANDOVER},
+        )
+
+    async def test_an_unknown_user_is_skipped_under_their_own_id_and_day(self, seams) -> None:
+        activation_tasks.user_repository.get = AsyncMock(return_value=None)
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 3)
+
+        assert result == f"skip {USER_ID} day 3: unknown_user"
+        seams["capture"].assert_called_once_with(
+            USER_ID, AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 3, "reason": "unknown_user"}
+        )
+
+    async def test_a_stop_reason_is_skipped_under_the_users_id_and_day(self, seams) -> None:
+        activation_tasks.context.gather = AsyncMock(return_value=_context(opted_out=True))
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 2)
+
+        assert result == f"skip {USER_ID} day 2: {SkipReason.OPTED_OUT}"
+        seams["capture"].assert_called_once_with(
+            USER_ID,
+            AnalyticsEvents.ACTIVATION_DAY_SKIPPED,
+            {"day": 2, "reason": SkipReason.OPTED_OUT},
+        )
+
+    async def test_a_platform_gaia_cannot_message_is_a_named_skip(self, seams) -> None:
+        activation_tasks.context.gather = AsyncMock(return_value=_context(platform="pager"))
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        assert result == f"skip {USER_ID} day 1: unsupported_platform"
+        seams["capture"].assert_called_once_with(
+            USER_ID,
+            AnalyticsEvents.ACTIVATION_DAY_SKIPPED,
+            {"day": 1, "reason": "unsupported_platform"},
+        )
+        seams["claim"].assert_not_awaited()
+
+
+class TestSkip:
+    def test_the_reason_lands_on_the_event_the_analytics_and_the_return(self) -> None:
+        with (
+            patch.object(activation_tasks, "log") as log,
+            patch.object(activation_tasks, "capture_event") as capture,
+        ):
+            result = activation_tasks._skip("u1", 4, "copy_failed")
+
+        assert result == "skip u1 day 4: copy_failed"
+        log.set.assert_called_once_with(skipped="copy_failed")
+        capture.assert_called_once_with(
+            "u1", AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 4, "reason": "copy_failed"}
+        )

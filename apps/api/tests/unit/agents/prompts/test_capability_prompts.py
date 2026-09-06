@@ -4,14 +4,17 @@ agent says GAIA can do is exactly what the product ships."""
 import pytest
 
 from app.agents.prompts.capability_prompts import (
+    _TODOS,
     CAPABILITY_SECTION_HEADER,
+    _channels_line,
     _describe_cron,
     _describe_trigger,
     _describe_workflow,
+    _integrations_line,
     build_capability_block,
 )
 from app.agents.prompts.comms_prompts import COMMS_AGENT_PROMPT
-from app.config.oauth_config import get_integration_by_id
+from app.config.oauth_config import OAUTH_INTEGRATIONS, get_integration_by_id
 from app.models.workflow_models import (
     CreateWorkflowRequest,
     TriggerConfig,
@@ -197,3 +200,38 @@ class TestGeneratedFacts:
         block = build_capability_block()
         assert "\u2014" not in block
         assert "\u2013" not in block
+
+
+class TestGeneratedLines:
+    """The two registry-derived sentences, read by the model verbatim."""
+
+    def test_the_integrations_line_counts_by_category_most_common_first(self) -> None:
+        line = _integrations_line()
+
+        head, _, tail = line.partition("). ")
+        assert head.startswith(
+            f"INTEGRATIONS: {len(OAUTH_INTEGRATIONS)} services the user can connect ("
+        )
+        categories = head.split("(", 1)[1].split(", ")
+        counts = [int(entry.split(" ", 1)[0]) for entry in categories]
+        assert sum(counts) == len(OAUTH_INTEGRATIONS)
+        assert counts == sorted(counts, reverse=True)
+        # Category ids are snake_case in the registry; the model reads words.
+        assert all("_" not in entry for entry in categories)
+        assert tail == (
+            "GAIA can search them for what the user needs and show a connect card in chat. Nothing "
+            "runs on a service before it is connected; once it is, GAIA gets that service's tools, "
+            "and the built-in workflows below switch on by themselves."
+        )
+
+    def test_the_channels_line_names_every_bot_platform_in_display_order(self) -> None:
+        assert _channels_line() == (
+            "CHANNELS: the user can text GAIA on Discord, Slack, Telegram, WhatsApp, iMessage as "
+            "well as the web app. A linked platform receives workflow results, reminders and briefs "
+            "there, so nothing waits for them to open a tab."
+        )
+
+    def test_sections_are_separated_by_one_blank_line_under_the_header(self) -> None:
+        block = build_capability_block()
+
+        assert block.startswith(f"{CAPABILITY_SECTION_HEADER}\n\n{_TODOS}\n\n")
