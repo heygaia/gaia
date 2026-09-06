@@ -187,6 +187,11 @@ EXECUTOR_QUEUE_TTL = ONE_HOUR_TTL  # Tasks expire if not picked up within 1 hour
 # whatever tool events were collected. Matches the busy lock TTL — the executor
 # cannot outlive its lock, so waiting longer would be pointless.
 EXECUTOR_WAIT_TIMEOUT = THIRTY_MINUTES_TTL
+#: How long a background (workflow) turn waits for the executor it dispatched.
+#: Shorter than the worker's job timeout on purpose: a wait as long as the job
+#: means the job is cut first, mid-bookkeeping, and the fire is never closed
+#: out. Seen live: an executor that stopped mid-run left a record 'running'.
+BACKGROUND_EXECUTOR_WAIT_TIMEOUT = 25 * 60
 # ElevenLabs voice lists (account + shared library) cached for the voice picker.
 ELEVENLABS_VOICES_CACHE_KEY = "voice:elevenlabs_voices"
 ELEVENLABS_SHARED_VOICES_CACHE_KEY = "voice:elevenlabs_shared_voices"
@@ -206,3 +211,6 @@ COST_BUDGET_NOTIFIED_KEY = "cost_budget_notified:{user_id}:{window}"
 # room for a wizard someone walked away from.
 FIRST_QUESTION_CACHE_PREFIX = "onboarding:first_question:"
 FIRST_QUESTION_CACHE_TTL = 2 * ONE_HOUR_TTL
+#: Prefix of the tiered rate limiter's per-user counters: ``{prefix}:{user_id}:{feature}:{period}:{window}``.
+#: Named so a dev tool can clear one user's counters without knowing the rest of the key.
+RATE_LIMIT_KEY_PREFIX = "rate_limit"

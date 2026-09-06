@@ -19,11 +19,11 @@ from app.schemas.integrations.responses import (
 )
 from app.services.integrations.integration_connection_service import build_integrations_config
 from app.services.integrations.integration_resolver import IntegrationResolver
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.integrations.user_integrations import (
     check_user_has_integration,
     get_user_integrations,
 )
-from app.services.oauth.oauth_service import get_all_integrations_status
 from app.services.tools.tools_service import get_integration_tool_list, get_tool_categories
 from app.utils.errors import create_error
 from shared.py.wide_events import log

@@ -383,7 +383,6 @@ unfixable = [
 "apps/api/app/patches/composio_langchain_patch.py" = ["ANN401", "PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
 "apps/api/app/services/composio/composio_service.py" = ["PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
 "apps/api/app/services/composio/proxy_client.py" = ["ANN401", "PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
-"apps/api/app/services/workflow/integration_requirements.py" = ["PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
 "apps/api/app/services/workflow/trigger_search.py" = ["PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
 "apps/api/app/services/workflow/workflow_subagent.py" = ["PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
 "apps/api/app/utils/agent_utils.py" = ["PLC0415"]  # lazy imports on untested error/background paths; inline noqas trip the diff-coverage gate
