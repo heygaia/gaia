@@ -39,6 +39,10 @@ Limitations (documented, not silently handled):
 - A single script should target one agent level. Mixing comms-only tools
   (``add_memory``/``search_memory``) with executor tools in one script is not
   supported, because forwarding replays the full script to the executor.
+- A quoted copy of a script (the previous run's task, escaped inside a JSON
+  string) is recognised by its escaped args and skipped to the end of that
+  string. A quoted directive with NO args that is not preceded by one with
+  args looks exactly like a live one and is executed.
 """
 
 from __future__ import annotations
@@ -107,15 +111,32 @@ def parse_directives(text: str) -> list[Directive]:
     of those args and never starts a directive of its own.
     """
     directives: list[Directive] = []
-    directive: Directive
+    directive: Directive | None
     pos = 0
     while (opener := _DIRECTIVE_OPEN_RE.search(text, pos)) is not None:
         if opener.group(1) == "say":
             directive, pos = _scan_say(text, opener.end())
         else:
             directive, pos = _scan_tool(text, opener.end())
+        if directive is None:
+            # A quoted copy of a script: everything to the end of the JSON string
+            # it sits in is that copy, the say and any bare directives included.
+            pos = _end_of_quoted_string(text, pos)
+            continue
         directives.append(directive)
     return directives
+
+
+def _end_of_quoted_string(text: str, pos: int) -> int:
+    """Index just past the unescaped quote that closes the JSON string ``pos`` is in."""
+    while pos < len(text):
+        if text[pos] == "\\":
+            pos += 2
+            continue
+        if text[pos] == '"':
+            return pos + 1
+        pos += 1
+    return pos
 
 
 def _skip_space(text: str, pos: int) -> int:
@@ -132,8 +153,19 @@ def _scan_say(text: str, start: int) -> tuple[SayDirective, int]:
     return SayDirective(text=text[start:end].strip()), end + len(_CLOSE)
 
 
-def _scan_tool(text: str, start: int) -> tuple[ToolDirective, int]:
-    """Tool args end where their JSON value ends, not at the first ``]]``."""
+#: How a directive looks once it has been embedded in a JSON string: its quotes
+#: escaped. GAIA renders the previous run's recorded tool calls, the scripted
+#: task text included, into the next run's context, so a run after the first
+#: sees its own script quoted back this way. Nobody authors args as ``{\"``.
+_QUOTED_ARGS_OPEN = '{\\"'
+
+
+def _scan_tool(text: str, start: int) -> tuple[ToolDirective | None, int]:
+    """Tool args end where their JSON value ends, not at the first ``]]``.
+
+    ``None`` when the opener is a quoted copy of a directive rather than one:
+    the scan resumes after the opener, and the copy stays plain text.
+    """
     cursor = start
     while cursor < len(text) and not text[cursor].isspace() and not text.startswith(_CLOSE, cursor):
         cursor += 1
@@ -144,6 +176,8 @@ def _scan_tool(text: str, start: int) -> tuple[ToolDirective, int]:
     cursor = _skip_space(text, cursor)
     if text.startswith(_CLOSE, cursor):
         return ToolDirective(name=name, args={}), cursor + len(_CLOSE)
+    if text.startswith(_QUOTED_ARGS_OPEN, cursor):
+        return None, cursor
 
     try:
         args, cursor = _JSON_DECODER.raw_decode(text, cursor)

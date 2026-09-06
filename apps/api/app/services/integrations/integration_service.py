@@ -20,7 +20,7 @@ from app.schemas.integrations.responses import (
     IntegrationTool,
 )
 from app.services.integrations.integration_resolver import IntegrationResolver
-from app.services.oauth.oauth_service import get_all_integrations_status
+from app.services.integrations.integration_status import get_all_integrations_status
 
 
 @Cacheable(key_pattern="tool_namespaces:{user_id}", ttl=ONE_DAY_TTL)

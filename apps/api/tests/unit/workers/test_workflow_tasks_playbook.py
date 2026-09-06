@@ -23,6 +23,7 @@ from app.agents.prompts.playbook_prompts import (
 from app.constants.agents import (
     PLAYBOOK_FALLBACK_CONTEXT_KEY,
     PLAYBOOK_HEAL_ATTEMPT_LIMIT,
+    PLAYBOOK_REPLAYED_CALLS_KEY,
     PLAYBOOK_SUSPECT_STREAK_LIMIT,
     AgentTag,
     wrap_agent_payload,
@@ -33,7 +34,7 @@ from app.models.playbook_models import (
     PlaybookDocument,
     PlaybookRunOutcome,
     PlaybookRunStatus,
-    PlaybookStep,
+    ToolStep,
 )
 from app.models.workflow_execution_models import RecordedCall
 from app.models.workflow_models import (
@@ -109,7 +110,7 @@ def _playbook(workflow: Workflow, *, stale: bool = False) -> PlaybookDocument:
             "a-different-workflow" if stale else workflow_hash(workflow.prompt, workflow.steps)
         ),
         description="Mail the day's agenda",
-        steps=[PlaybookStep(id="events", tool="list_events", args={})],
+        steps=[ToolStep(id="events", tool="list_events", args={})],
         result_brief="Say what happened.",
         created_at=datetime.now(UTC),
         updated_at=datetime.now(UTC),
@@ -131,7 +132,7 @@ class _Harness:
         self.get_for_workflow = AsyncMock(return_value=None)
         self.record_run_outcome = AsyncMock(return_value=None)
         self.increment_heal_attempts = AsyncMock(return_value=None)
-        self.delete_for_workflow = AsyncMock(return_value=True)
+        self.delete_revision = AsyncMock(return_value=True)
         self.update_workflow = AsyncMock(return_value=None)
         self.add_messages = AsyncMock()
         self.platform_delivery = AsyncMock()
@@ -173,8 +174,8 @@ class _Harness:
                 self.record_run_outcome,
             ),
             patch(
-                f"{MODULE}.playbook_repository.delete_for_workflow",
-                self.delete_for_workflow,
+                f"{MODULE}.playbook_repository.delete_revision",
+                self.delete_revision,
             ),
             patch(
                 f"{MODULE}.playbook_repository.increment_heal_attempts",
@@ -325,7 +326,7 @@ async def test_a_successful_replay_records_success() -> None:
         revision=0,
     )
     assert harness.delivered_text() == "done", "a trusted result is delivered as it is"
-    harness.delete_for_workflow.assert_not_awaited()
+    harness.delete_revision.assert_not_awaited()
 
 
 async def test_a_stopped_replay_records_failure_and_falls_back_to_the_agent() -> None:
@@ -466,6 +467,34 @@ async def test_a_failed_outcome_write_after_a_replay_still_records_its_calls() -
     harness.chat.assert_not_awaited()
 
 
+async def test_a_discard_that_finds_the_body_already_replaced_stands_down() -> None:
+    """The delete is keyed on the revision the verdict was about; when it
+    matched nothing, a heal rewrote the body in between, and that body is a
+    different decision the fire leaves alone."""
+    workflow = _workflow()
+    harness = _Harness(workflow)
+    playbook = _playbook(workflow)
+    harness.get_for_workflow = AsyncMock(return_value=playbook)
+    harness.playbook_run = AsyncMock(return_value=_suspect_replay("empty again"))
+    harness.record_run_outcome = AsyncMock(
+        return_value=_recorded(playbook, PLAYBOOK_SUSPECT_STREAK_LIMIT)
+    )
+    harness.delete_revision = AsyncMock(return_value=False)
+
+    await _fire(harness)
+
+    harness.delete_revision.assert_awaited_once()
+    discarded = [c for c in harness.log.warning.call_args_list if "Playbook discarded" in c.args[0]]
+    assert discarded == []
+    harness.log.info.assert_any_call(
+        f"{LogTag.WORKER} Playbook already replaced; the discard stands down",
+        workflow_id=workflow.id,
+        playbook_id=playbook.playbook_id,
+        revision=playbook.revision,
+        reason="suspect_streak_exhausted",
+    )
+
+
 def _suspect_replay(
     reason: str, *, source: Literal["record", "narration"] = "record"
 ) -> tuple[str, PlaybookRunResult]:
@@ -599,7 +628,12 @@ class TestSuspectReplay:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_awaited_once_with(workflow.id, workflow.user_id)
+        harness.delete_revision.assert_awaited_once_with(
+            workflow.id,
+            workflow.user_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+        )
         harness.chat.assert_awaited_once()
         warnings = [
             call
@@ -611,6 +645,45 @@ class TestSuspectReplay:
         assert kwargs["workflow_id"] == workflow.id
         assert kwargs["playbook_id"] == playbook.playbook_id
         assert kwargs["suspect_reason"] == self.REASON
+
+    async def test_a_failed_replay_that_spends_the_last_heal_attempt_deletes_the_playbook(
+        self,
+    ) -> None:
+        """Seen live: a body whose $ask no model could fill was rewritten by the
+        agent finishing each failed fire, so at the next fire it was NOT_RUN and
+        the pre-heal check never saw its attempts; it reached three with no end.
+        The outcome just recorded is where the count is judged."""
+        workflow = _workflow()
+        harness = _Harness(workflow)
+        playbook = _playbook(workflow)
+        harness.get_for_workflow = AsyncMock(return_value=playbook)
+        harness.playbook_run = AsyncMock(return_value=_stopped_replay())
+        harness.record_run_outcome = AsyncMock(
+            return_value=playbook.model_copy(
+                update={
+                    "last_run_status": PlaybookRunStatus.FAILED,
+                    "heal_attempts": PLAYBOOK_HEAL_ATTEMPT_LIMIT,
+                }
+            )
+        )
+
+        await _fire(harness)
+
+        harness.delete_revision.assert_awaited_once_with(
+            workflow.id,
+            workflow.user_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+        )
+        harness.chat.assert_awaited_once()
+        harness.log.warning.assert_any_call(
+            f"{LogTag.WORKER} Playbook discarded",
+            workflow_id=workflow.id,
+            playbook_id=playbook.playbook_id,
+            reason="heal_attempts_exhausted",
+            heal_attempts=PLAYBOOK_HEAL_ATTEMPT_LIMIT,
+            failure="Playbook stopped at step 2 (send_email): boom.",
+        )
 
     async def test_a_streak_below_the_limit_keeps_the_playbook(self) -> None:
         workflow = _workflow()
@@ -624,7 +697,7 @@ class TestSuspectReplay:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
         harness.chat.assert_awaited_once()
 
     async def test_the_wide_event_names_the_outcome_and_reason(self) -> None:
@@ -1013,7 +1086,12 @@ class TestStalePlaybookIsDiscarded:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_awaited_once_with(workflow.id, workflow.user_id)
+        harness.delete_revision.assert_awaited_once_with(
+            workflow.id,
+            workflow.user_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+        )
         harness.chat.assert_awaited_once()
         harness.playbook_run.assert_not_awaited()
         warnings = [
@@ -1028,7 +1106,7 @@ class TestStalePlaybookIsDiscarded:
         workflow = _workflow()
         harness = _Harness(workflow)
         harness.get_for_workflow = AsyncMock(return_value=_playbook(workflow, stale=True))
-        harness.delete_for_workflow = AsyncMock(side_effect=RuntimeError("mongo away"))
+        harness.delete_revision = AsyncMock(side_effect=RuntimeError("mongo away"))
 
         result = await _fire(harness)
 
@@ -1082,7 +1160,7 @@ class TestHealAttemptsAreBounded:
             playbook_id=playbook.playbook_id,
             revision=playbook.revision,
         )
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
         event = harness.playbook_event()
         assert event["reason"] == "heal"
         assert event["heal_attempts"] == 0
@@ -1106,7 +1184,7 @@ class TestHealAttemptsAreBounded:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
         harness.chat.assert_awaited_once()
         assert harness.playbook_event()["reason"] == "heal"
 
@@ -1122,7 +1200,12 @@ class TestHealAttemptsAreBounded:
 
         harness.increment_heal_attempts.assert_not_awaited()
 
-        harness.delete_for_workflow.assert_awaited_once_with(workflow.id, workflow.user_id)
+        harness.delete_revision.assert_awaited_once_with(
+            workflow.id,
+            workflow.user_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+        )
         harness.chat.assert_awaited_once()
         harness.playbook_run.assert_not_awaited()
         event = harness.playbook_event()
@@ -1149,7 +1232,7 @@ class TestHealAttemptsAreBounded:
         await _fire(harness)
 
         harness.chat.assert_awaited_once()
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1230,7 +1313,7 @@ class TestOutcomeIsScopedToTheReplayedRevision:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
         harness.chat.assert_awaited_once()
         harness.add_messages.assert_not_awaited()
         warnings = [
@@ -1411,7 +1494,7 @@ class TestReplayHoldsTheConversationLock:
         await _fire(harness)
 
         harness.record_run_outcome.assert_not_awaited()
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
 
     async def test_a_held_lock_is_visible_on_the_wide_event_with_the_holder(
         self,
@@ -1469,7 +1552,15 @@ class TestAFreshPlaybookIsAuditedAgainstItsOwnRun:
         workflow = _workflow()
         harness = _Harness(workflow)
         written = _playbook(workflow).model_copy(
-            update={"steps": [PlaybookStep(id="mail", tool="GMAIL_FETCH_MESSAGES", args={})]}
+            # The reader is what makes the emptiness matter: frozen_on_empty
+            # only inspects a step whose result something later addresses, so a
+            # write tool's incidental empty field cannot mark a playbook suspect.
+            update={
+                "steps": [
+                    ToolStep(id="mail", tool="GMAIL_FETCH_MESSAGES", args={}),
+                    ToolStep(id="reply", tool="GMAIL_SEND", args={"body": "$steps.mail.messages"}),
+                ]
+            }
         )
         harness.chat = AsyncMock(
             return_value=(
@@ -1537,7 +1628,7 @@ class TestReviewFixes:
             update={
                 "last_run_status": PlaybookRunStatus.NOT_RUN,
                 "revision": distrusted.revision + 1,
-                "steps": [PlaybookStep(id="mail", tool="GMAIL_FETCH_MESSAGES", args={})],
+                "steps": [ToolStep(id="mail", tool="GMAIL_FETCH_MESSAGES", args={})],
             }
         )
         harness.get_for_workflow = AsyncMock(side_effect=[distrusted, rewritten])
@@ -1659,7 +1750,7 @@ class TestOnlyTheRecordsSuspectCountsTowardDeletion:
 
         assert harness.record_run_outcome.await_args.args[2].counts_toward_streak is False
         harness.chat.assert_awaited_once()
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
 
 
 async def _fire_with_context(harness: _Harness, context: dict[str, object]) -> str:
@@ -1777,6 +1868,7 @@ class TestEveryFireIsChargedAndLookedUpForItsOwnOwner:
             f"{LogTag.WORKFLOW} playbook lookup failed; running the workflow agentically",
             workflow_id="wf_1",
             error_type="ConnectionError",
+            error="mongo away",
         )
         assert harness.chat.await_args_list == [call(workflow, AGENT_USER, {})]
         assert harness.summary() == AGENT_RUN_SUMMARY
@@ -1796,7 +1888,8 @@ class TestDiscardingAShortcutSaysWhichOneAndWhy:
 
         await _fire(harness)
 
-        harness.delete_for_workflow.assert_awaited_once_with("wf_1", "u_1")
+        harness.delete_revision.assert_awaited_once()
+        assert harness.delete_revision.await_args.args == ("wf_1", "u_1")
         harness.log.warning.assert_any_call(
             f"{LogTag.WORKER} Playbook discarded",
             workflow_id="wf_1",
@@ -1818,7 +1911,7 @@ class TestDiscardingAShortcutSaysWhichOneAndWhy:
         workflow = _workflow()
         harness = _Harness(workflow)
         harness.get_for_workflow = AsyncMock(return_value=_playbook(workflow, stale=True))
-        harness.delete_for_workflow = AsyncMock(side_effect=ConnectionError("mongo away"))
+        harness.delete_revision = AsyncMock(side_effect=ConnectionError("mongo away"))
 
         await _fire(harness)
 
@@ -2064,15 +2157,27 @@ class TestAnUntrustedReplayHandsOverWithItsRecord:
         harness = _Harness(workflow)
         harness.get_for_workflow = AsyncMock(return_value=_playbook(workflow))
         _, result = _stopped_replay()
+        # A datetime in the args: the note is prompt material, so the calls
+        # travel as JSON values, not as Python objects that render as repr.
+        result.trace[0].args = {"since": datetime(2026, 9, 5, tzinfo=UTC)}
         harness.playbook_run = AsyncMock(return_value=("conv_1", result))
 
         await _fire(harness)
 
+        context = harness.chat.await_args.args[2]
+        assert context[PLAYBOOK_REPLAYED_CALLS_KEY][0]["args"] == {"since": "2026-09-05T00:00:00Z"}
         assert harness.chat.await_args_list == [
             call(
                 workflow,
                 AGENT_USER,
-                {PLAYBOOK_FALLBACK_CONTEXT_KEY: _fallback_note(result)},
+                {
+                    PLAYBOOK_FALLBACK_CONTEXT_KEY: _fallback_note(result),
+                    # The replay's calls travel with the note, structurally, so a
+                    # rewrite may freeze what the replay already ran.
+                    PLAYBOOK_REPLAYED_CALLS_KEY: [
+                        call.model_dump(mode="json") for call in result.trace
+                    ],
+                },
             )
         ]
 
@@ -2377,7 +2482,7 @@ class TestTheDisabledFlagStartsFalseNotUnset:
         await _fire(harness)
 
         assert harness.playbook_event()["disabled"] is False
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
 
 
 def _recurring(workflow: Workflow) -> Workflow:
@@ -2507,7 +2612,7 @@ class TestANarrationFailureIsADeliveredRunNotAFailedOne:
         # would send it to the agent with the heal brief, at full agent cost.
         assert PlaybookRunStatus.SUCCESS not in HEAL_STATUSES
         harness.chat.assert_not_awaited()
-        harness.delete_for_workflow.assert_not_awaited()
+        harness.delete_revision.assert_not_awaited()
         harness.increment_heal_attempts.assert_not_awaited()
 
     async def test_the_user_reads_the_record_of_what_ran(self) -> None:
