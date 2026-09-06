@@ -12,7 +12,11 @@ from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 from app.config.settings import settings
 from app.constants.browser import BrowserEngine
 from app.constants.log_tags import LogTag
-from app.constants.search import CRAWL4AI_CLOSE_TIMEOUT_SECONDS, CRAWL4AI_WAIT_UNTIL
+from app.constants.search import (
+    CRAWL4AI_CLOSE_TIMEOUT_SECONDS,
+    CRAWL4AI_PROCESSING_MARGIN_SECONDS,
+    CRAWL4AI_WAIT_UNTIL,
+)
 from app.utils.background_tasks import spawn_background_task
 from app.utils.concurrency import loop_bound_semaphore
 from app.utils.crawl_obscura import ensure_crawl_obscura
@@ -271,7 +275,10 @@ async def _recover_with_single_url_crawls(
     thorough: bool = False,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Best-effort recovery path after batch timeout to avoid all-or-nothing failures."""
-    recovery_timeout = max(10.0, min(total_timeout_seconds, page_timeout_ms / 1000 + 10.0))
+    recovery_timeout = max(
+        10.0,
+        min(total_timeout_seconds, page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS),
+    )
 
     run_config = _build_run_config(
         page_timeout_ms=page_timeout_ms,
@@ -346,7 +353,10 @@ async def _batch_fetch_per_url(
     ``total_timeout_seconds``, after which any URL not yet done is marked
     timed-out (results already collected are kept — never all-or-nothing).
     """
-    per_url_timeout = max(10.0, min(total_timeout_seconds, page_timeout_ms / 1000 + 10.0))
+    per_url_timeout = max(
+        10.0,
+        min(total_timeout_seconds, page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS),
+    )
     sem = asyncio.Semaphore(max(1, semaphore_count))
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}

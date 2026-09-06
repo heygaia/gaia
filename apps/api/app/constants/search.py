@@ -28,6 +28,12 @@ CRAWL4AI_MIN_MAX_BROWSERS = 1
 # Single-page crawl timeout (used by utility fallbacks)
 CRAWL4AI_SINGLE_TOTAL_TIMEOUT_SECONDS = 35.0
 
+# A per-URL wall budget is crawl4ai's ``page_timeout`` (which bounds navigation
+# only) plus this margin for the post-navigation work — markdown generation, BM25
+# filtering, full-page scroll. Without the margin a heavy page (large DOM -> large
+# markdown) is cut off mid-extraction the moment navigation finishes.
+CRAWL4AI_PROCESSING_MARGIN_SECONDS = 45.0
+
 # Deep research crawl batch settings
 DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS = 120.0
 DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT = 5
