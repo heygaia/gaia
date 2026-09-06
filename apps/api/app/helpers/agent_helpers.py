@@ -382,6 +382,12 @@ class AgentTurn:
     source: str | None = None
     """The channel (web/mobile/whatsapp/...); falls back to "background" when unset."""
 
+    workflow_id: str | None = None
+    """The workflow this fire belongs to, for a TOP-LEVEL workflow run. A child run
+    inherits it from its parent's configurable instead. Needed here because the
+    analytics callbacks are built inside this function, before ``_core_agent_logic``
+    stamps the workflow onto the configurable it just received."""
+
     user_messages: list[str] | None = None
     """The user's own recent turns, verbatim, oldest first (see
     :func:`recent_user_messages`). Set once by comms and inherited (parent-overrides)
@@ -505,12 +511,16 @@ async def build_agent_config(
         turn.writing_style,
     )
 
+    # turn.workflow_id covers the top-level fire; base_configurable covers every
+    # child run that inherits it. Reading only the latter attributed a workflow's
+    # own comms generations to chat, because nothing has stamped it yet.
+    run_workflow_id = turn.workflow_id or (base_configurable or {}).get("workflow_id")
     callbacks = _build_agent_callbacks(
         conversation_id,
         user,
         agent_name,
         source,
-        (base_configurable or {}).get("workflow_id"),
+        run_workflow_id,
         tracing.usage_metadata_callback,
     )
 

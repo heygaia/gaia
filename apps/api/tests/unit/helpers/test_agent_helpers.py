@@ -1411,8 +1411,53 @@ class TestBuildAgentConfigCallbackWiring:
             CONV_ID,
             FAKE_USER,
             "comms_agent",
+            None,
+            None,
             usage_cb,
         )
+
+    @patch("app.helpers.agent_helpers.resolve_lane", new_callable=AsyncMock)
+    @patch("app.helpers.agent_helpers._build_agent_callbacks")
+    async def test_a_top_level_workflow_fire_reaches_the_callbacks(
+        self, mock_build_callbacks, mock_resolve
+    ):
+        """A workflow stamps its id onto the configurable only AFTER this function
+        returns, so reading it from base_configurable alone left the callbacks with
+        None and filed the workflow's own comms spend as chat."""
+        mock_resolve.return_value = (DEV_LANE, None)
+        mock_build_callbacks.return_value = []
+
+        await build_agent_config(
+            identity=AgentIdentity(
+                conversation_id=CONV_ID,
+                user=FAKE_USER,
+                agent_name="comms_agent",
+            ),
+            turn=AgentTurn(source="web", workflow_id="wf-morning-brief"),
+            tracing=AgentTracing(usage_metadata_callback=MagicMock()),
+        )
+
+        assert mock_build_callbacks.call_args.args[4] == "wf-morning-brief"
+
+    @patch("app.helpers.agent_helpers.resolve_lane", new_callable=AsyncMock)
+    @patch("app.helpers.agent_helpers._build_agent_callbacks")
+    async def test_a_child_run_still_inherits_the_workflow_from_its_parent(
+        self, mock_build_callbacks, mock_resolve
+    ):
+        mock_resolve.return_value = (DEV_LANE, None)
+        mock_build_callbacks.return_value = []
+
+        await build_agent_config(
+            identity=AgentIdentity(
+                conversation_id=CONV_ID,
+                user=FAKE_USER,
+                agent_name="executor_agent",
+            ),
+            thread=AgentThread(base_configurable={"workflow_id": "wf-inherited"}),
+            tracing=AgentTracing(usage_metadata_callback=MagicMock()),
+        )
+
+        assert mock_build_callbacks.call_args.args[4] == "wf-inherited"
 
 
 class TestBuildAgentConfigLaneResolution:

@@ -14,8 +14,11 @@ import pytest
 
 from app.constants.llm import DEFAULT_MODEL_NAME
 from app.services.analytics_service import AIFeature, AnalyticsEvents
+from app.services.llm_metering import TokenUsage
 from app.services.llm_usage_analytics import (
+    LABEL_FEATURES,
     capture_auxiliary_llm_call,
+    feature_for_label,
     graph_call_properties,
     llm_feature,
 )
@@ -81,19 +84,93 @@ def test_an_unset_source_reports_background() -> None:
     assert graph_call_properties("executor_agent", None, None)["surface"] == "bg"
 
 
+# --- feature_for_label -------------------------------------------------------- #
+
+
+def test_a_mapped_label_resolves_to_its_feature() -> None:
+    assert feature_for_label("onboarding_clarify") is AIFeature.ONBOARDING
+    assert feature_for_label("workflow_prompt") is AIFeature.WORKFLOW_GENERATION
+
+
+def test_the_runtime_built_memory_label_resolves_by_prefix() -> None:
+    """``f"memory:{operation}"`` cannot be an exact key, so it is the one
+    prefix rule — and every operation must land on MEMORY, not UNATTRIBUTED."""
+    assert feature_for_label("memory:extract") is AIFeature.MEMORY
+    assert feature_for_label("memory:consolidate") is AIFeature.MEMORY
+
+
+def test_an_unmapped_label_is_unattributed_rather_than_guessed() -> None:
+    assert feature_for_label("some_helper_added_next_year") is AIFeature.UNATTRIBUTED
+
+
+def test_every_label_the_codebase_passes_has_a_feature() -> None:
+    """The table is the taxonomy; a helper added without an entry books to
+    UNATTRIBUTED. This walks the real call sites so that gap fails here rather
+    than showing up as a mystery bucket on the cost dashboard."""
+    import ast
+    from pathlib import Path
+
+    app = Path(__file__).resolve().parents[3] / "app"
+    unmapped: set[str] = set()
+    for path in app.rglob("*.py"):
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            if getattr(node.func, "id", "") not in {
+                "ainvoke_llm",
+                "ainvoke_structured",
+                "ainvoke_structured_gemini",
+            }:
+                continue
+            for kw in node.keywords:
+                if kw.arg == "label" and isinstance(kw.value, ast.Constant):
+                    if feature_for_label(kw.value.value) is AIFeature.UNATTRIBUTED:
+                        unmapped.add(kw.value.value)
+
+    assert not unmapped, f"labels with no LABEL_FEATURES entry: {sorted(unmapped)}"
+
+
+def test_the_table_has_no_entry_for_a_label_nothing_passes() -> None:
+    """A stale row is the other half of drift: it makes the taxonomy claim a
+    capability the code no longer has."""
+    import ast
+    from pathlib import Path
+
+    app = Path(__file__).resolve().parents[3] / "app"
+    used: set[str] = set()
+    for path in app.rglob("*.py"):
+        # The table itself lists every key, so counting it would make this
+        # assertion vacuous — a stale row would always look "used".
+        if path.name == "llm_usage_analytics.py":
+            continue
+        try:
+            tree = ast.parse(path.read_text())
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Constant) and isinstance(node.value, str):
+                used.add(node.value)
+
+    assert not (set(LABEL_FEATURES) - used), (
+        f"LABEL_FEATURES rows no call site uses: {sorted(set(LABEL_FEATURES) - used)}"
+    )
+
+
 # --- capture_auxiliary_llm_call ----------------------------------------------- #
 
 
 def _capture(user_id: str | None = "user-1", **overrides: Any) -> None:
     kwargs: dict[str, Any] = {
         "user_id": user_id,
-        "feature": AIFeature.MEMORY,
         "label": "memory:extract",
         "model_name": DEFAULT_MODEL_NAME,
-        "input_tokens": 3000,
-        "output_tokens": 150,
-        "cached_tokens": 400,
-        "reasoning_tokens": 20,
+        "usage": TokenUsage(
+            input_tokens=3000, output_tokens=150, cached_tokens=400, reasoning_tokens=20
+        ),
         "cost_usd": 0.00036,
     }
     capture_auxiliary_llm_call(**{**kwargs, **overrides})

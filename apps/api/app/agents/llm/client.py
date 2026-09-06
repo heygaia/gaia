@@ -68,7 +68,6 @@ from app.constants.llm import (
 from app.constants.log_tags import LogTag
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider, providers
 from app.models.agent_models import agent_configurable
-from app.services.analytics_service import AIFeature
 from app.services.llm_metering import (
     LLMCallContext,
     TokenUsage,
@@ -865,7 +864,6 @@ async def ainvoke_llm(
     fallback: LLMFallback = None,
     config: RunnableConfig | None = None,
     label: str = "model",
-    feature: AIFeature | None = None,
     options: LLMInvokeOptions | None = None,
 ) -> Any:  # noqa: ANN401 -- overrides LangChain Runnable methods typed Any upstream
     """Invoke a runnable: retry transient errors, then fall back to ``fallback`` (if
@@ -971,7 +969,6 @@ async def ainvoke_llm(
                 usage_handler,
                 label,
                 str(user_id) if user_id else None,
-                feature=feature,
                 context=_invoke_context(
                     config,
                     label,
@@ -1236,7 +1233,6 @@ async def _record_auxiliary_usage(
     label: str,
     user_id: str | None,
     *,
-    feature: AIFeature | None,
     context: LLMCallContext,
     facts: ResponseFacts,
 ) -> None:
@@ -1263,15 +1259,6 @@ async def _record_auxiliary_usage(
     # figures, and the rest fall back to the table and to no id. Resolved ONCE,
     # here, so what gets booked, what ``cost_source`` claims and what the ledger
     # names as the serving generation can never disagree with each other.
-    if feature is None:
-        # Every auxiliary call site states a feature; reaching here means one
-        # was added without one, so its spend is unattributable in analytics.
-        log.error(
-            f"{LogTag.AGENT} auxiliary llm call has no AIFeature",
-            llm={"label": label},
-        )
-        feature = AIFeature.UNATTRIBUTED
-
     attributable = len(handler.usage_metadata) == 1
     booked_cost = facts.cost if attributable else None
     booked_generation_id = facts.generation_id if attributable else None
@@ -1349,13 +1336,14 @@ async def _record_auxiliary_usage(
         # this is the sole record of background spend on that side.
         capture_auxiliary_llm_call(
             user_id=user_id,
-            feature=feature,
             label=label,
             model_name=model_name,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            reasoning_tokens=reasoning_tokens,
+            usage=TokenUsage(
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cached_tokens=cached_tokens,
+                reasoning_tokens=reasoning_tokens,
+            ),
             cost_usd=cost,
         )
 
@@ -1432,7 +1420,6 @@ async def ainvoke_structured(
     prompt: LanguageModelInput,
     *,
     label: str,
-    feature: AIFeature,
     config: RunnableConfig | None = None,
     options: StructuredCallOptions = _DEFAULT_STRUCTURED_OPTIONS,
 ) -> _StructuredT:
@@ -1461,7 +1448,6 @@ async def ainvoke_structured(
             prompt,
             config=config,
             label=label,
-            feature=feature,
             options=LLMInvokeOptions(timeout=options.timeout),
         ),
     )
@@ -1478,7 +1464,6 @@ async def ainvoke_structured_gemini(
     prompt: LanguageModelInput,
     *,
     label: str,
-    feature: AIFeature,
     config: RunnableConfig | None = None,
     options: StructuredCallOptions = _DEFAULT_STRUCTURED_OPTIONS,
 ) -> _StructuredT:
@@ -1515,7 +1500,6 @@ async def ainvoke_structured_gemini(
                 schema,
                 prompt,
                 label=label,
-                feature=feature,
                 config=config,
                 options=options,
             )

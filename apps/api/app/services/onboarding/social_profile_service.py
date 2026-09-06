@@ -12,7 +12,6 @@ from app.agents.prompts.onboarding_prompts import SOCIAL_PROFILE_FILTER_PROMPT
 from app.constants.log_tags import LogTag
 from app.db.repositories.users import user_repository
 from app.models.onboarding_models import SocialProfile, SocialProfileFilterOutput
-from app.services.analytics_service import AIFeature
 from shared.py.wide_events import log
 
 # URLs containing these are marketing/newsletter links, not user profiles.
@@ -284,10 +283,7 @@ async def extract_social_profiles_from_emails(
             candidates=candidates_text,
         )
         result: SocialProfileFilterOutput = await ainvoke_llm(
-            structured_llm,
-            [HumanMessage(content=prompt)],
-            label="onboarding_social_profile",
-            feature=AIFeature.ONBOARDING,
+            structured_llm, [HumanMessage(content=prompt)], label="onboarding_social_profile"
         )
 
         url_lookup: dict[tuple[str, str], str] = {

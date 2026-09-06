@@ -74,7 +74,6 @@ from app.constants.llm import (
     UNKNOWN_MODEL_NAME,
 )
 from app.core.lazy_loader import ProviderRegistry
-from app.services.analytics_service import AIFeature
 from app.services.llm_metering import LLMCallContext
 from shared.py.wide_events import log
 from tests.helpers import create_fake_llm
@@ -1025,7 +1024,6 @@ class TestFallbackHandover:
             primary,
             [HumanMessage(content="hi")],
             label="the_judge",
-            feature=AIFeature.MEMORY,
             fallback=fallback,
         )
 
@@ -1119,7 +1117,6 @@ class TestMemoryLaneProviderSelection:
             _Extracted,
             "transcript",
             label="memory:extract",
-            feature=AIFeature.MEMORY,
             config=config,
             options=StructuredCallOptions(temperature=0.4, timeout=9.0),
         )
@@ -1156,9 +1153,7 @@ class TestMemoryLaneProviderSelection:
     ) -> None:
         mock_ainvoke.return_value = _Extracted(fact="from-aux")
 
-        result = await ainvoke_structured_gemini(
-            _Extracted, "transcript", label="memory:extract", feature=AIFeature.MEMORY
-        )
+        result = await ainvoke_structured_gemini(_Extracted, "transcript", label="memory:extract")
 
         assert result.fact == "from-aux"
         assert mock_ainvoke.await_args.kwargs["fallback"] is None
@@ -1182,7 +1177,6 @@ class TestMemoryLaneProviderSelection:
             _Extracted,
             "transcript",
             label="memory:extract",
-            feature=AIFeature.MEMORY,
             config=config,
             options=StructuredCallOptions(temperature=0.4, timeout=9.0),
         )
@@ -1219,7 +1213,6 @@ class TestMemoryLaneProviderSelection:
             _Extracted,
             "transcript",
             label="memory:extract",
-            feature=AIFeature.MEMORY,
             config=config,
             options=StructuredCallOptions(temperature=0.4, timeout=9.0),
         )
@@ -1231,7 +1224,6 @@ class TestMemoryLaneProviderSelection:
         assert mock_structured.await_args.args == (_Extracted, "transcript")
         assert mock_structured.await_args.kwargs == {
             "label": "memory:extract",
-            "feature": AIFeature.MEMORY,
             "config": config,
             "options": StructuredCallOptions(temperature=0.4, timeout=9.0),
         }
@@ -1260,9 +1252,7 @@ class TestMemoryLaneProviderSelection:
         gemini.ainvoke = AsyncMock(return_value=_Extracted(fact="from-gemini"))
         mock_memory_llm.return_value.with_structured_output.return_value = gemini
 
-        result = await ainvoke_structured_gemini(
-            _Extracted, "transcript", label="memory:extract", feature=AIFeature.MEMORY
-        )
+        result = await ainvoke_structured_gemini(_Extracted, "transcript", label="memory:extract")
 
         assert result.fact == "from-gemini"
 
@@ -1371,12 +1361,10 @@ class TestChatbot:
         mock_ainvoke.return_value = AIMessage(content="default response")
 
         messages = [HumanMessage(content="hello")]
-        result = await chatbot(messages, AIFeature.TITLE_GENERATION)
+        result = await chatbot(messages)
 
         mock_get_helper.assert_called_once()
-        mock_ainvoke.assert_called_once_with(
-            mock_model, messages, label="chatbot", feature=AIFeature.TITLE_GENERATION
-        )
+        mock_ainvoke.assert_called_once_with(mock_model, messages, label="chatbot")
         assert result["messages"][0].content == "default response"
 
     @patch("app.agents.llm.chatbot.log")
@@ -1389,7 +1377,7 @@ class TestChatbot:
         mock_get_helper.side_effect = LLMNotConfiguredError("no providers")
 
         with pytest.raises(LLMNotConfiguredError):
-            await chatbot([HumanMessage(content="hello")], AIFeature.TITLE_GENERATION)
+            await chatbot([HumanMessage(content="hello")])
         mock_log.error.assert_called_once()
 
     @patch("app.agents.llm.chatbot.log")
@@ -1402,7 +1390,7 @@ class TestChatbot:
         mock_ainvoke.side_effect = ConnectionError("provider down")
 
         with pytest.raises(ConnectionError):
-            await chatbot([HumanMessage(content="hello")], AIFeature.TITLE_GENERATION)
+            await chatbot([HumanMessage(content="hello")])
         mock_log.error.assert_called_once()
 
     @patch("app.agents.llm.chatbot.log")
@@ -1417,7 +1405,7 @@ class TestChatbot:
         mock_ainvoke.side_effect = RuntimeError("event loop is closed")
 
         with pytest.raises(RuntimeError, match="event loop is closed"):
-            await chatbot([HumanMessage(content="hello")], AIFeature.TITLE_GENERATION)
+            await chatbot([HumanMessage(content="hello")])
         mock_log.error.assert_not_called()
 
 
@@ -1457,7 +1445,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "follow_up_actions",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(generation_id="gen-abc123"),
             )
@@ -1554,7 +1541,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1571,7 +1557,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1585,7 +1570,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1603,7 +1587,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1624,7 +1607,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1648,7 +1630,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1678,7 +1659,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1702,7 +1682,6 @@ class TestRecordAuxiliaryUsage:
                 handler,
                 "memory_extraction",
                 "user-1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(),
             )
@@ -1720,12 +1699,7 @@ class TestRecordAuxiliaryUsage:
 
         with patch("app.agents.llm.client.record_llm_call", new=AsyncMock(return_value=0.5)) as rec:
             await _record_auxiliary_usage(
-                handler,
-                "memory_extraction",
-                None,
-                feature=AIFeature.MEMORY,
-                context=_AUX_CONTEXT,
-                facts=ResponseFacts(),
+                handler, "memory_extraction", None, context=_AUX_CONTEXT, facts=ResponseFacts()
             )
 
         assert rec.call_args.kwargs["user_id"] is None
@@ -1762,7 +1736,6 @@ class TestAuxiliaryMeteringWiring:
                 [HumanMessage(content="hi")],
                 config=RunnableConfig(configurable={"user_id": "user-9"}),
                 label="memory_extraction",
-                feature=AIFeature.MEMORY,
             )
 
         assert rec.call_args.kwargs["user_id"] == "user-9"
@@ -1779,7 +1752,6 @@ class TestAuxiliaryMeteringWiring:
                 [HumanMessage(content="hi")],
                 config=RunnableConfig(),
                 label="memory_extraction",
-                feature=AIFeature.MEMORY,
             )
 
         warned = [w for w in log.get().get("warnings", []) if w.get("llm")]
@@ -1836,7 +1808,6 @@ class TestAinvokeStructured:
                 self._Schema,
                 "what is the answer?",
                 label="the_judge",
-                feature=AIFeature.MEMORY,
                 options=StructuredCallOptions(temperature=0.3),
             )
 
@@ -1861,11 +1832,7 @@ class TestAinvokeStructured:
             ) as mock_invoke,
         ):
             await ainvoke_structured(
-                self._Schema,
-                "prompt",
-                label="memory_extraction",
-                feature=AIFeature.MEMORY,
-                config=config,
+                self._Schema, "prompt", label="memory_extraction", config=config
             )
 
         assert mock_invoke.call_args.kwargs["label"] == "memory_extraction"
@@ -1892,7 +1859,6 @@ class TestAinvokeStructured:
                 self._Schema,
                 prompt,
                 label="classifier",
-                feature=AIFeature.MEMORY,
                 options=StructuredCallOptions(timeout=12.0),
             )
 
@@ -1922,13 +1888,7 @@ class TestAinvokeStructured:
                 new=AsyncMock(return_value=self._Schema(answer="ok")),
             ) as mock_invoke,
         ):
-            await ainvoke_structured(
-                self._Schema,
-                "prompt",
-                label="judge",
-                feature=AIFeature.HIL,
-                config=config,
-            )
+            await ainvoke_structured(self._Schema, "prompt", label="judge", config=config)
 
         assert structured.bind.call_args.kwargs == {"session_id": "conv-1-aux"}
         assert mock_invoke.call_args.args[0] is bound
@@ -2377,7 +2337,6 @@ class TestAuxiliaryCostSource:
                 handler,
                 "memory_extraction",
                 "u1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(cost=0.008),
             )
@@ -2402,7 +2361,6 @@ class TestAuxiliaryCostSource:
                 handler,
                 "memory_extraction",
                 "u1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(cost=0.008),
             )
@@ -2418,12 +2376,7 @@ class TestAuxiliaryCostSource:
             patch("app.agents.llm.client.log") as mock_log,
         ):
             await _record_auxiliary_usage(
-                handler,
-                "memory_extraction",
-                "u1",
-                feature=AIFeature.MEMORY,
-                context=_AUX_CONTEXT,
-                facts=ResponseFacts(),
+                handler, "memory_extraction", "u1", context=_AUX_CONTEXT, facts=ResponseFacts()
             )
 
         assert rec.call_args.kwargs["provider_cost"] is None
@@ -2472,7 +2425,6 @@ class TestAuxiliaryGenerationIdAttribution:
                 handler,
                 "memory:extraction",
                 "u1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(generation_id="gen-its-own"),
             )
@@ -2496,7 +2448,6 @@ class TestAuxiliaryGenerationIdAttribution:
                 handler,
                 "memory:extraction",
                 "u1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(generation_id="gen-one-of-them"),
             )
@@ -2523,7 +2474,6 @@ class TestAuxiliaryGenerationIdAttribution:
                     self._handler(gemini={"input_tokens": 10, "output_tokens": 2}),
                     "memory:extraction",
                     "u1",
-                    feature=AIFeature.MEMORY,
                     context=replace(_AUX_CONTEXT, agent_name="memory:extraction"),
                     facts=ResponseFacts(generation_id="gen-extraction"),
                 ),
@@ -2531,7 +2481,6 @@ class TestAuxiliaryGenerationIdAttribution:
                     self._handler(gemini={"input_tokens": 7, "output_tokens": 3}),
                     "follow_up_actions",
                     "u1",
-                    feature=AIFeature.FOLLOW_UPS,
                     context=replace(_AUX_CONTEXT, agent_name="follow_up_actions"),
                     facts=ResponseFacts(generation_id="gen-followup"),
                 ),
@@ -2781,7 +2730,6 @@ class TestAuxiliaryResponseFacts:
                 handler,
                 "memory:extraction",
                 "u1",
-                feature=AIFeature.MEMORY,
                 context=_AUX_CONTEXT,
                 facts=ResponseFacts(generation_id="gen-1", provider="Baidu", finish_reason="stop"),
             )

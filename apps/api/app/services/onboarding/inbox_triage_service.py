@@ -7,7 +7,6 @@ from app.agents.llm.client import ainvoke_structured, metered_config
 from app.agents.prompts.onboarding_prompts import INBOX_TRIAGE_PROMPT
 from app.constants.log_tags import LogTag
 from app.models.onboarding_models import InboxTriage, InboxTriageOutput
-from app.services.analytics_service import AIFeature
 from shared.py.wide_events import log
 
 _NOISE_SENDERS = (
@@ -88,7 +87,6 @@ async def triage_inbox(
             InboxTriageOutput,
             prompt,
             label="onboarding_inbox_triage",
-            feature=AIFeature.ONBOARDING,
             config=metered_config(user_id),
         )
         llm_duration_s = round(time.monotonic() - t_llm, 2)

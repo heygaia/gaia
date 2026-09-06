@@ -36,7 +36,6 @@ from app.constants.files import (
 )
 from app.constants.log_tags import LogTag
 from app.models.files_models import DocumentPageModel, DocumentSummaryModel
-from app.services.analytics_service import AIFeature
 from app.utils import local_document_parser
 from app.utils.image_codec import ImageCodec, InvalidImageError
 from shared.py.wide_events import log
@@ -170,7 +169,6 @@ class DocumentProcessor:
             inline.mime_type,
             prompt=DOCUMENT_IMAGE_SUMMARY_PROMPT,
             label="file_image_summary",
-            feature=AIFeature.FILE_EXTRACTION,
             user_id=self.user_id,
         )
         return description or _IMAGE_SUMMARY_UNAVAILABLE
@@ -342,7 +340,6 @@ class DocumentProcessor:
                     },
                 ],
                 label="file_text_summary",
-                feature=AIFeature.FILE_EXTRACTION,
                 config=metered_config(self.user_id),
             )
 

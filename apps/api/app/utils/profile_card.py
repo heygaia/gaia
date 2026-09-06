@@ -18,7 +18,6 @@ from app.models.onboarding_models import (
     UserProfileMetadata,
 )
 from app.models.user_models import BioStatus, UserDocument
-from app.services.analytics_service import AIFeature
 from shared.py.wide_events import log
 
 
@@ -191,7 +190,6 @@ async def generate_holo_card_content(
             HoloCardLLMOutput,
             prompt,
             label="holo_card",
-            feature=AIFeature.PROFILE,
             config=metered_config(user_id),
             options=StructuredCallOptions(temperature=1.0),
         )

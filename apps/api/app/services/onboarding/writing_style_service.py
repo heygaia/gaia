@@ -18,7 +18,6 @@ from app.models.onboarding_models import (
     WritingStyleOutput,
     WritingStyleProfile,
 )
-from app.services.analytics_service import AIFeature
 from app.services.mail.mail_service import search_messages
 from shared.py.wide_events import log
 
@@ -103,7 +102,6 @@ async def learn_writing_style(
             WritingStyleOutput,
             prompt,
             label="onboarding_writing_style",
-            feature=AIFeature.ONBOARDING,
             config=metered_config(user_id),
         )
 
@@ -155,7 +153,6 @@ async def regenerate_example_for_style(
             WritingStyleExampleOutput,
             prompt,
             label="onboarding_writing_style_example",
-            feature=AIFeature.ONBOARDING,
             config=metered_config(user_id),
         )
         return result_data.example

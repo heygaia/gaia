@@ -25,7 +25,6 @@ from app.models.onboarding_models import (
     ClarifyQuestion,
     ClarifyQuestionKind,
 )
-from app.services.analytics_service import AIFeature
 from shared.py.wide_events import log
 
 _KINDS: tuple[ClarifyQuestionKind, ...] = ("scope", "blocker", "constraint")
@@ -107,7 +106,6 @@ async def generate_clarify_questions(
             _ClarifyQuestionList,
             prompt,
             label="onboarding_clarify",
-            feature=AIFeature.ONBOARDING,
             config=metered_config(user_id),
         )
 
