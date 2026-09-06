@@ -49,6 +49,16 @@ DEFAULT_CHANNEL_PREFERENCES: dict[str, bool] = {
     CHANNEL_TYPE_EMAIL: True,
 }
 
+# Default order in which a proactive message picks its ONE chat platform. It
+# lands on the first platform in this list that the user has linked and enabled,
+# never on every linked platform (``users.chat_channel_priority`` overrides it).
+DEFAULT_CHAT_CHANNEL_PRIORITY: tuple[str, ...] = (
+    CHANNEL_TYPE_TELEGRAM,
+    CHANNEL_TYPE_WHATSAPP,
+    CHANNEL_TYPE_SLACK,
+    CHANNEL_TYPE_DISCORD,
+)
+
 # In-app route a notification action redirects to. Shared so the memory-backfill
 # and Gmail-personalization notifications can't drift onto different pages.
 MEMORY_SETTINGS_URL = "/settings/memory"

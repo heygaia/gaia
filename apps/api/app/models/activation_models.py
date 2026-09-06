@@ -1,0 +1,69 @@
+"""Shapes the activation sequence writes down and reads back.
+
+One module because the drafted message, the persisted record and the state
+subdoc are the same object at three moments: the model produces
+:class:`ActivationDraft`, the task stamps it into :class:`ActivationMessage`,
+and tomorrow's run reads the list of those back out of
+:class:`ActivationSequenceState` to avoid repeating itself.
+"""
+
+from datetime import datetime
+from typing import Any
+
+from pydantic import BaseModel, Field
+
+from app.services.activation.policy import Direction
+
+#: Bubbles per message. One is the norm; two is the ceiling, because a third
+#: bubble is where a text stops being a text and becomes a newsletter.
+MAX_BUBBLES = 2
+#: Words per bubble. Above this the message gets scrolled past, not read.
+MAX_WORDS_PER_BUBBLE = 60
+
+
+class ActivationDraft(BaseModel):
+    """What the model is asked to return: a text, and the one thing it suggests.
+
+    ``suggestion`` is not shown to the user — it is the same idea in a plain
+    sentence, so the repetition check can compare ideas across days instead of
+    comparing prose that has been deliberately varied.
+    """
+
+    bubbles: list[str] = Field(
+        ..., min_length=1, max_length=MAX_BUBBLES, description="The chat bubbles to send, in order"
+    )
+    suggestion: str = Field(
+        ...,
+        min_length=1,
+        description="The single concrete thing this message suggests, in one plain sentence",
+    )
+
+
+class ActivationMessage(BaseModel):
+    """One delivered day of the sequence, as stored on the user document."""
+
+    day: int
+    direction: Direction
+    platform: str
+    sent_at: datetime
+    bubbles: list[str]
+    suggestion: str
+
+
+class ActivationSequenceState(BaseModel):
+    """The ``users.activation_sequence`` subdoc, read back at the start of a run."""
+
+    day_sent: int = 0
+    last_sent_at: datetime | None = None
+    platform: str | None = None
+    opted_out: bool = False
+    messages: list[ActivationMessage] = Field(default_factory=list)
+
+    @classmethod
+    def of(cls, raw: dict[str, Any] | None) -> "ActivationSequenceState":
+        """The state on a user document, or a fresh one when the field is unset."""
+        return cls.model_validate(raw) if raw else cls()
+
+    def earlier_drafts(self) -> list[tuple[str, str]]:
+        """``(first bubble, suggestion)`` per earlier day, oldest first."""
+        return [(m.bubbles[0] if m.bubbles else "", m.suggestion) for m in self.messages]
