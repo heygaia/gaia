@@ -9,6 +9,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
+from app.constants.general import NEW_MESSAGE_BREAKER
 from app.constants.log_tags import LogTag
 from app.models.user_models import OnboardingPreferences
 from app.services.onboarding.first_conversation import (
@@ -16,6 +17,7 @@ from app.services.onboarding.first_conversation import (
     compose_first_conversation,
     with_starting_jobs,
 )
+from app.utils.message_breaks import split_message_bubbles
 from app.utils.seeding_utils import seed_first_conversation
 
 MODULE = "app.utils.seeding_utils"
@@ -32,7 +34,7 @@ def _composed() -> FirstConversation:
 
 @pytest.mark.unit
 class TestSeedFirstConversation:
-    async def test_seeds_one_message_per_line_with_chips_on_the_last(self) -> None:
+    async def test_seeds_one_message_of_grouped_bubbles_with_the_chips(self) -> None:
         composed = _composed()
         create = AsyncMock()
         append = AsyncMock(return_value=["m1", "m2", "m3", "m4"])
@@ -52,14 +54,15 @@ class TestSeedFirstConversation:
         assert conversation.conversation_id == conversation_id
 
         messages = append.await_args.kwargs["messages"]
-        assert [m.response for m in messages] == composed.lines
+        assert len(messages) == 1
+        assert messages[0].response == NEW_MESSAGE_BREAKER.join(composed.lines)
+        assert split_message_bubbles(messages[0].response) == composed.lines
         assert all(m.type == "bot" for m in messages)
 
         assert all(m.tool_data is None for m in messages)
 
         # The chips hang off the last message only, so they render once.
-        assert messages[-1].follow_up_actions == composed.follow_ups
-        assert [m.follow_up_actions for m in messages[:-1]] == [None] * (len(messages) - 1)
+        assert messages[0].follow_up_actions == composed.follow_ups
 
     async def test_the_messages_are_written_to_that_conversation_for_that_user(self) -> None:
         """The id and owner are what route the write. Sent as None — or dropped —

@@ -1,5 +1,6 @@
 from uuid import uuid4
 
+from app.constants.general import NEW_MESSAGE_BREAKER
 from app.constants.log_tags import LogTag
 from app.db.repositories.conversations import conversation_repository
 from app.models.chat_models import ConversationModel, MessageModel
@@ -65,8 +66,10 @@ async def seed_holo_card_conversation(user_id: str, message: str) -> str | None:
 async def seed_first_conversation(user_id: str, composed: FirstConversation) -> str | None:
     """Seed the "Getting started" conversation GAIA opens with after onboarding.
 
-    One unread conversation, one bot message per composed line (so the web
-    renders them as grouped bubbles), the starting-job chips on the last. Returns the conversation id, or
+    One unread conversation holding ONE bot message whose lines are joined by
+    the message breaker, so the web renders them as grouped bubbles that land one
+    after another with the same choreography every multi-bubble reply gets, and
+    the starting-job chips ride that message. Returns the conversation id, or
     None if seeding failed — a missing welcome must never fail completion.
     """
     log.set(operation="seed_first_conversation", user_id=user_id)
@@ -82,14 +85,12 @@ async def seed_first_conversation(user_id: str, composed: FirstConversation) -> 
         user_dict: AuthenticatedUser = {"user_id": user_id}
         await create_conversation_service(conversation, user_dict)
 
-        last_index = len(composed.lines) - 1
         messages = [
             MessageModel(
                 type="bot",
-                response=line,
-                follow_up_actions=composed.follow_ups if index == last_index else None,
+                response=NEW_MESSAGE_BREAKER.join(composed.lines),
+                follow_up_actions=composed.follow_ups,
             )
-            for index, line in enumerate(composed.lines)
         ]
 
         message_ids = await conversation_repository.append_messages(
