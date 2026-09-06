@@ -1429,6 +1429,61 @@ class TestRecordAuxiliaryUsage:
         handler.usage_metadata = dict(usage_by_model)
         return handler
 
+    async def test_the_analytics_event_gets_this_call_s_user_model_and_cost(self) -> None:
+        """The aux event is the ONLY record of background spend on PostHog's
+        side — the LLM-analytics handler is never attached outside the graph.
+        Any of these arriving null would land the spend on nobody, on no model,
+        or at no cost, and the ledger write next to it would still look fine."""
+        handler = self._handler(gemini={"input_tokens": 100, "output_tokens": 20})
+
+        with (
+            patch("app.agents.llm.client.record_llm_call", new=AsyncMock(return_value=0.25)),
+            patch("app.agents.llm.client.capture_auxiliary_llm_call") as capture,
+        ):
+            await _record_auxiliary_usage(
+                handler,
+                "memory:extract",
+                "u-1",
+                context=_AUX_CONTEXT,
+                facts=ResponseFacts(),
+            )
+
+        kwargs = capture.call_args.kwargs
+        assert kwargs["user_id"] == "u-1"
+        assert kwargs["label"] == "memory:extract"
+        assert kwargs["model_name"] == "gemini"
+        assert kwargs["cost_usd"] == 0.25
+        assert kwargs["usage"] == {
+            "input_tokens": 100,
+            "output_tokens": 20,
+            "cached_tokens": 0,
+            "reasoning_tokens": 0,
+        }
+
+    async def test_the_analytics_event_carries_the_cached_and_reasoning_split(self) -> None:
+        """Cached input is billed at a discount and reasoning is hidden output;
+        dropping either makes the event's cost impossible to re-derive."""
+        handler = self._handler(
+            gemini={
+                "input_tokens": 100,
+                "output_tokens": 20,
+                "input_token_details": {"cache_read": 40},
+                "output_token_details": {"reasoning": 7},
+            }
+        )
+
+        with (
+            patch("app.agents.llm.client.record_llm_call", new=AsyncMock(return_value=0.1)),
+            patch("app.agents.llm.client.capture_auxiliary_llm_call") as capture,
+        ):
+            await _record_auxiliary_usage(
+                handler, "memory:extract", "u-1", context=_AUX_CONTEXT, facts=ResponseFacts()
+            )
+
+        usage = capture.call_args.kwargs["usage"]
+        assert usage["cached_tokens"] == 40
+        assert usage["reasoning_tokens"] == 7
+
     async def test_the_llm_call_event_carries_the_generation_id(self) -> None:
         """The generation id is the only handle on WHICH upstream served a
         call, and structured calls used to lose it (every follow-up and

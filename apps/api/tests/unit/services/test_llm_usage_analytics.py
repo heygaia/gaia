@@ -7,6 +7,8 @@ calls PostHog never sees. The PostHog *client* is mocked, never
 the failure mode that matters, and mocking the helper would hide it.
 """
 
+import ast
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
 
@@ -106,7 +108,7 @@ def test_an_unmapped_label_is_unattributed_rather_than_guessed() -> None:
 _METERED_CALLS = {"ainvoke_llm", "ainvoke_structured", "ainvoke_structured_gemini"}
 
 
-def _label_taking_functions(trees: dict[object, object]) -> set[str]:
+def _label_taking_functions(trees: dict[Path, ast.Module]) -> set[str]:
     """Functions that forward their own ``label`` argument into a metered call.
 
     Three call sites pass a variable or an f-string rather than a literal
@@ -115,11 +117,9 @@ def _label_taking_functions(trees: dict[object, object]) -> set[str]:
     call would silently skip whatever their callers pass, which is exactly where
     a new unmapped label would hide.
     """
-    import ast
-
     forwarding: set[str] = set()
     for tree in trees.values():
-        for fn in ast.walk(tree):  # type: ignore[arg-type]
+        for fn in ast.walk(tree):
             if not isinstance(fn, ast.FunctionDef | ast.AsyncFunctionDef):
                 continue
             params = {a.arg for a in fn.args.args} | {a.arg for a in fn.args.kwonlyargs}
@@ -141,11 +141,8 @@ def test_every_label_the_codebase_passes_has_a_feature() -> None:
     UNATTRIBUTED. This walks the real call sites — including the ones that reach
     a metered call through a forwarding helper — so the gap fails here rather
     than showing up as a mystery slice on the cost dashboard."""
-    import ast
-    from pathlib import Path
-
     app = Path(__file__).resolve().parents[3] / "app"
-    trees: dict[object, object] = {}
+    trees: dict[Path, ast.Module] = {}
     for path in app.rglob("*.py"):
         try:
             trees[path] = ast.parse(path.read_text())
@@ -155,7 +152,7 @@ def test_every_label_the_codebase_passes_has_a_feature() -> None:
     targets = _METERED_CALLS | _label_taking_functions(trees)
     unmapped: set[str] = set()
     for tree in trees.values():
-        for node in ast.walk(tree):  # type: ignore[arg-type]
+        for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
             name = getattr(node.func, "id", "") or getattr(node.func, "attr", "")
@@ -172,9 +169,6 @@ def test_every_label_the_codebase_passes_has_a_feature() -> None:
 def test_the_table_has_no_entry_for_a_label_nothing_passes() -> None:
     """A stale row is the other half of drift: it makes the taxonomy claim a
     capability the code no longer has."""
-    import ast
-    from pathlib import Path
-
     app = Path(__file__).resolve().parents[3] / "app"
     used: set[str] = set()
     for path in app.rglob("*.py"):
