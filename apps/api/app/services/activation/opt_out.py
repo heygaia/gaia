@@ -6,6 +6,7 @@ opted out than the API path.
 """
 
 from app.db.repositories.users import user_repository
+from app.models.activation_models import ActivationSequenceState
 from app.services.analytics_service import AnalyticsEvents, capture_event
 
 #: What the user replies to end the sequence. Whole message only: "stop" inside
@@ -27,3 +28,9 @@ async def set_opted_out(user_id: str, opted_out: bool, *, source: str) -> None:
     capture_event(
         user_id, AnalyticsEvents.ACTIVATION_OPTED_OUT, {"opted_out": opted_out, "source": source}
     )
+
+
+async def get_opted_out(user_id: str) -> bool:
+    """Whether the daily sequence is currently off for this user."""
+    user = await user_repository.get(user_id)
+    return ActivationSequenceState.of(user.activation_sequence if user else None).opted_out

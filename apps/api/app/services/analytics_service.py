@@ -52,6 +52,10 @@ class AnalyticsEvents(StrEnum):
     ACTIVATION_REPLIED = "activation:replied"
     ACTIVATION_OPTED_OUT = "activation:opted_out"
 
+    # Settings. Which platform GAIA texts first — the names of the platforms
+    # and how many are ordered, never anything the user wrote.
+    SETTINGS_CHAT_CHANNEL_PRIORITY_UPDATED = "settings:chat_channel_priority_updated"
+
     # Payments (used by payment webhook processing)
     PAYMENT_SUCCEEDED = "payment:succeeded"
     PAYMENT_FAILED = "payment:failed"
