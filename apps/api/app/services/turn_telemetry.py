@@ -61,13 +61,15 @@ def begin_turn_all(
 
 
 def end_turn_all(
-    handles: TurnHandles,
+    handles: TurnHandles | None,
     *,
     output: str,
     error: Exception | None = None,
     cancelled: bool = False,
 ) -> None:
-    """Close all three scopes with one outcome. Never raises."""
+    """Close all three scopes with one outcome. None handles is a no-op. Never raises."""
+    if handles is None:
+        return
     success = error is None and not cancelled
     trace_error = error if error is not None else (TurnCancelled() if cancelled else None)
     properties: dict[str, str | bool | None] = {

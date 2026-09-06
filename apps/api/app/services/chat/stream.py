@@ -62,7 +62,7 @@ from app.services.files import FileService
 from app.services.hil.conversational import resolve_pending_from_message
 from app.services.platform_message_service import is_bot_platform
 from app.services.storage import flush_fs_metrics
-from app.services.turn_telemetry import begin_turn_all, end_turn_all
+from app.services.turn_telemetry import TurnHandles, begin_turn_all, end_turn_all
 from app.utils.agent_utils import format_sse_data, format_sse_response
 from app.utils.chat_utils import generate_and_update_description
 from app.utils.message_breaks import strip_partial_message_break
@@ -184,6 +184,9 @@ async def _run_chat_stream(
     # are marked so the executor publishes a ``voice_tts`` frame to speak.
     register_executor_capture(stream_id, voice_mode=body.voice_mode)
 
+    # Declared before the try so the except branch below can always close it:
+    # if init or approval handling raises first, there is nothing to close.
+    telemetry: TurnHandles | None = None
     try:
         _set_stream_log_context(body, user_id, conversation_id, stream_id, is_new_conversation)
 

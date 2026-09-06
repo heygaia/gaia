@@ -217,3 +217,27 @@ class TestTurnTelemetry:
 
         published = [call.args[1] for call in sm.publish_chunk.call_args_list]
         assert "data: [DONE]\n\n" in published
+
+    async def test_init_failure_still_surfaces_original_error(self, test_user):
+        """If init raises before telemetry opens, the turn must report the init
+        failure — not an UnboundLocalError from the telemetry close path."""
+        sm = _make_stream_manager_mock()
+        new_body = MessageRequestWithHistory(
+            message="Hello GAIA",
+            messages=[{"role": "user", "content": "Hello GAIA"}],
+            conversation_id=None,
+        )
+        with (
+            patch(
+                "app.services.chat.stream.initialize_new_conversation",
+                new=AsyncMock(side_effect=RuntimeError("mongo down")),
+            ),
+            patch("app.services.chat.stream.end_turn_all") as mock_end_all,
+        ):
+            await _run_turn(sm, new_body, test_user, "new_conv_id", _done_only_stream())
+
+        # Closed with nothing to close — and exactly once, on the error path.
+        mock_end_all.assert_called_once()
+        assert mock_end_all.call_args.args[0] is None
+        published = [call.args[1] for call in sm.publish_chunk.call_args_list]
+        assert any('"error"' in chunk and "mongo down" in chunk for chunk in published)
