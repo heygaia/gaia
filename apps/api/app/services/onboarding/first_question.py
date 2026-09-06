@@ -135,7 +135,7 @@ def _answers_block(preferences: OnboardingPreferences, connected_platform: str |
     if profession and profession.lower() != "other":
         lines.append(f"- Their job, as they answered it: {profession}")
     for need in preferences.needs or []:
-        lines.append(f"- They asked you to {NEED_PHRASES[need]}")
+        lines.append(f"- In their words: {NEED_PHRASES[need]}")
     if preferences.other_need:
         lines.append(f'- In their own words: "{preferences.other_need}"')
     if connected_platform:

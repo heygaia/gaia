@@ -7,7 +7,7 @@ import { NEW_MESSAGE_BREAK_TOKEN } from "@shared/utils";
 
 import {
   FIELD_NAMES,
-  needOptions,
+  needLabel,
   professionOptions,
   questions,
 } from "../constants";
@@ -28,7 +28,7 @@ function answerFor(fieldName: string, state: TranscriptInputs): string | null {
   if (fieldName === FIELD_NAMES.NEEDS) {
     if (state.questionIndex < questions.length) return null;
     const labels = state.selectedNeeds
-      .map((need) => needOptions.find((o) => o.value === need)?.label)
+      .map((need) => needLabel(need))
       .filter((label): label is string => !!label);
     const other = state.otherNeed.trim();
     if (other) labels.push(other);

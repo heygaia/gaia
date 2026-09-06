@@ -23,16 +23,16 @@ class TestComposeFirstMessage:
     def test_founder_with_two_needs(self) -> None:
         assert (
             compose_first_message(
-                _prefs("founder", [OnboardingNeed.INBOX, OnboardingNeed.FOLLOWUPS])
+                _prefs("founder", [OnboardingNeed.INBOX, OnboardingNeed.REMINDERS])
             )
-            == "Hey. I'm a founder. Take over my email and chase my follow-ups. "
+            == "Hey. I'm a founder. My inbox is out of control and I keep forgetting things. "
             "Where do we start?"
         )
 
     def test_single_need_has_no_conjunction(self) -> None:
         assert (
-            compose_first_message(_prefs("engineering", [OnboardingNeed.RESEARCH]))
-            == "Hey. I'm an engineer. Research and brief me. Where do we start?"
+            compose_first_message(_prefs("engineering", [OnboardingNeed.CALENDAR]))
+            == "Hey. I'm an engineer. I walk into meetings cold. Where do we start?"
         )
 
     def test_every_need_reads_as_a_handover(self) -> None:
@@ -47,19 +47,21 @@ class TestComposeFirstMessage:
     def test_selection_order_is_preserved(self) -> None:
         """The user's tap order is the sentence order — not the enum's."""
         assert compose_first_message(
-            _prefs("founder", [OnboardingNeed.FOLLOWUPS, OnboardingNeed.INBOX])
-        ) == ("Hey. I'm a founder. Chase my follow-ups and take over my email. Where do we start?")
+            _prefs("founder", [OnboardingNeed.REMINDERS, OnboardingNeed.INBOX])
+        ) == (
+            "Hey. I'm a founder. I keep forgetting things and my inbox is out of control. Where do we start?"
+        )
 
     def test_other_profession_is_omitted_rather_than_invented(self) -> None:
         assert (
             compose_first_message(_prefs("other", [OnboardingNeed.INBOX]))
-            == "Hey. Take over my email. Where do we start?"
+            == "Hey. My inbox is out of control. Where do we start?"
         )
 
     def test_missing_profession_is_omitted(self) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX]))
-            == "Hey. Take over my email. Where do we start?"
+            == "Hey. My inbox is out of control. Where do we start?"
         )
 
     def test_no_needs_leaves_only_the_greeting(self) -> None:
@@ -75,7 +77,9 @@ class TestComposeFirstMessage:
         """Their words are never bent into the list's grammar."""
         assert compose_first_message(
             _prefs("founder", [OnboardingNeed.INBOX], other_need="chasing invoices")
-        ) == ("Hey. I'm a founder. Take over my email. Also, chasing invoices. Where do we start?")
+        ) == (
+            "Hey. I'm a founder. My inbox is out of control. Also, chasing invoices. Where do we start?"
+        )
 
     def test_typed_need_alone_stands_as_the_sentence(self) -> None:
         assert (
@@ -87,19 +91,19 @@ class TestComposeFirstMessage:
     def test_typed_need_is_not_double_punctuated(self, typed: str) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX], other_need=typed))
-            == "Hey. Take over my email. Also, chasing invoices. Where do we start?"
+            == "Hey. My inbox is out of control. Also, chasing invoices. Where do we start?"
         )
 
     def test_typed_need_keeps_its_last_letter(self) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX], other_need="plan X"))
-            == "Hey. Take over my email. Also, plan X. Where do we start?"
+            == "Hey. My inbox is out of control. Also, plan X. Where do we start?"
         )
 
     def test_blank_typed_need_is_dropped_by_the_model(self) -> None:
         assert (
             compose_first_message(_prefs("founder", [OnboardingNeed.INBOX], other_need="   "))
-            == "Hey. I'm a founder. Take over my email. Where do we start?"
+            == "Hey. I'm a founder. My inbox is out of control. Where do we start?"
         )
 
     @pytest.mark.parametrize(
@@ -146,7 +150,7 @@ class TestComposeFirstMessage:
         assert compose_first_message(_prefs(typed, None)) == expected
 
     def test_output_is_stable_across_calls(self) -> None:
-        prefs = _prefs("founder", [OnboardingNeed.INBOX, OnboardingNeed.FOLLOWUPS])
+        prefs = _prefs("founder", [OnboardingNeed.INBOX, OnboardingNeed.REMINDERS])
         assert compose_first_message(prefs) == compose_first_message(prefs)
 
     def test_every_need_has_a_phrase(self) -> None:

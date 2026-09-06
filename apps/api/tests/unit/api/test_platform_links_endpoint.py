@@ -74,7 +74,8 @@ class TestMintLinkCode:
             completed_at=None,
             phase=None,
             preferences=OnboardingPreferences(
-                profession="founder", needs=[OnboardingNeed.INBOX, OnboardingNeed.FOLLOWUPS]
+                profession="founder",
+                needs=[OnboardingNeed.INBOX, OnboardingNeed.FOUNDER_TEAM_UPDATES],
             ),
             first_message_conversation_id=None,
         )
@@ -126,9 +127,7 @@ class TestMintLinkCode:
 
         assert resp.status_code == 200
         body = resp.json()
-        expected_message = (
-            "Hey. I'm a founder. Take over my email and chase my follow-ups. Where do we start?"
-        )
+        expected_message = "Hey. I'm a founder. My inbox is out of control and I chase my team for updates. Where do we start?"
         assert body["code"] == "CODE123"
         assert body["first_message"] == expected_message
         assert body["handoff_text"] == f"{expected_message} #CODE123"
@@ -166,8 +165,8 @@ class TestMintLinkCode:
         # from it, so a dropped or wrong first message ships an empty opener
         # while the prefix and the trailing code still look right.
         assert links["whatsapp"] == (
-            "https://wa.me/15551234567?text=Hey.%20I%27m%20a%20founder.%20Take%20over%20my%20email"
-            "%20and%20chase%20my%20follow-ups.%20Where%20do%20we%20start%3F%20%23CODE123"
+            "https://wa.me/15551234567?text=Hey.%20I%27m%20a%20founder.%20My%20inbox%20is%20out%20of%20control"
+            "%20and%20I%20chase%20my%20team%20for%20updates.%20Where%20do%20we%20start%3F%20%23CODE123"
         )
 
     @pytest.mark.asyncio

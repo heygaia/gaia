@@ -64,6 +64,7 @@ export function QuestionsReply({ state, dispatch }: QuestionsProps) {
       <m.div {...MOTION_FADE_UP}>
         <OnboardingInput
           mode="needs"
+          profession={state.responses[FIELD_NAMES.PROFESSION] ?? null}
           selectedNeeds={state.selectedNeeds}
           otherNeed={state.otherNeed}
           canContinue={canSubmitNeeds(state)}

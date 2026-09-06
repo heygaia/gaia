@@ -28,7 +28,7 @@ export function DevSkipOnboarding() {
     try {
       const res = await completeOnboarding({
         profession: "engineering",
-        needs: ["inbox", "followups"],
+        needs: ["inbox", "engineering_prs"],
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
       if (res.user) setUser(userInfoToStoreUser(res.user));

@@ -554,7 +554,7 @@ class TestNewUserGuidanceBlock:
     async def test_one_need_alone_is_enough_to_render(self) -> None:
         with self._patch_count(self._count(0)):
             assert await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Founder", "needs": ["automation"]})
+                ctx(user_preferences={"profession": "Founder", "needs": ["grunt_work"]})
             )
 
     async def test_the_typed_need_reaches_the_model_in_their_words(self) -> None:
@@ -631,9 +631,9 @@ class TestNewUserGuidanceBlock:
     async def test_an_unknown_need_is_skipped_rather_than_dropping_the_block(self) -> None:
         with self._patch_count(self._count(1)):
             block = await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Founder", "needs": ["telepathy", "followups"]})
+                ctx(user_preferences={"profession": "Founder", "needs": ["telepathy", "reminders"]})
             )
-        assert NEED_PLAYBOOKS[OnboardingNeed.FOLLOWUPS] in block
+        assert NEED_PLAYBOOKS[OnboardingNeed.REMINDERS] in block
 
     async def test_a_skipped_need_names_itself_in_the_wide_event(self) -> None:
         """Silently dropping a need would look identical to never picking it —
@@ -644,7 +644,7 @@ class TestNewUserGuidanceBlock:
                     ctx(
                         user_preferences={
                             "profession": "Founder",
-                            "needs": ["telepathy", "followups"],
+                            "needs": ["telepathy", "reminders"],
                         }
                     )
                 )
@@ -708,10 +708,10 @@ class TestNewUserGuidanceBlock:
         malformed bullet instead of two instructions."""
         with self._patch_count(self._count(1)):
             block = await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Founder", "needs": ["inbox", "followups"]})
+                ctx(user_preferences={"profession": "Founder", "needs": ["inbox", "reminders"]})
             )
         assert (
-            f"- {NEED_PLAYBOOKS[OnboardingNeed.INBOX]}\n- {NEED_PLAYBOOKS[OnboardingNeed.FOLLOWUPS]}"
+            f"- {NEED_PLAYBOOKS[OnboardingNeed.INBOX]}\n- {NEED_PLAYBOOKS[OnboardingNeed.REMINDERS]}"
             in block
         )
 

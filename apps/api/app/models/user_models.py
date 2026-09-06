@@ -81,17 +81,66 @@ class UpdateTimezoneResponse(BaseModel):
 
 
 class OnboardingNeed(StrEnum):
-    """The jobs the user handed GAIA during onboarding (Q2, up to two picks).
+    """The pains the user handed GAIA during onboarding (Q2, up to two picks).
 
-    Each value is a different kind of work, so two people rarely pick the same
-    pair and the picks carry signal into the first thread and the bot opener.
+    Six are shown to everyone; the rest come in pairs, one pair per Q1 role, and
+    only that role sees its pair (``ROLE_NEEDS``). Each value is a different job
+    GAIA can start on, so the picks carry signal into the first thread, the
+    bot opener and the comms playbooks.
     """
 
+    # Shared
     INBOX = "inbox"
     CALENDAR = "calendar"
-    RESEARCH = "research"
-    FOLLOWUPS = "followups"
-    AUTOMATION = "automation"
+    MORNINGS = "mornings"
+    REMINDERS = "reminders"
+    GRUNT_WORK = "grunt_work"
+    TOOLS = "tools"
+    # Per role
+    FOUNDER_TEAM_UPDATES = "founder_team_updates"
+    FOUNDER_COMPETITORS = "founder_competitors"
+    EXECUTIVE_REPORTS = "executive_reports"
+    EXECUTIVE_DECISIONS = "executive_decisions"
+    SALES_LEADS = "sales_leads"
+    SALES_CALL_RESEARCH = "sales_call_research"
+    PRODUCT_FEEDBACK = "product_feedback"
+    PRODUCT_SPECS = "product_specs"
+    MARKETING_CONTENT = "marketing_content"
+    MARKETING_REPORTS = "marketing_reports"
+    ENGINEERING_PRS = "engineering_prs"
+    ENGINEERING_NOTIFICATIONS = "engineering_notifications"
+    FINANCE_NUMBERS = "finance_numbers"
+    FINANCE_REPORTS = "finance_reports"
+    CREATIVE_REVISIONS = "creative_revisions"
+    CREATIVE_DEADLINES = "creative_deadlines"
+    STUDENT_ASSIGNMENTS = "student_assignments"
+    STUDENT_EXAMS = "student_exams"
+
+
+#: The two role-specific pains each Q1 slug unlocks. Keys are the
+#: ``professionOptions`` values in apps/web onboarding constants; a typed
+#: profession ("other") unlocks none. Mirrored one-for-one by
+#: ``roleNeedOptions`` on the web.
+ROLE_NEEDS: dict[str, tuple[OnboardingNeed, OnboardingNeed]] = {
+    "founder": (OnboardingNeed.FOUNDER_TEAM_UPDATES, OnboardingNeed.FOUNDER_COMPETITORS),
+    "executive": (OnboardingNeed.EXECUTIVE_REPORTS, OnboardingNeed.EXECUTIVE_DECISIONS),
+    "sales": (OnboardingNeed.SALES_LEADS, OnboardingNeed.SALES_CALL_RESEARCH),
+    "product": (OnboardingNeed.PRODUCT_FEEDBACK, OnboardingNeed.PRODUCT_SPECS),
+    "marketing": (OnboardingNeed.MARKETING_CONTENT, OnboardingNeed.MARKETING_REPORTS),
+    "engineering": (OnboardingNeed.ENGINEERING_PRS, OnboardingNeed.ENGINEERING_NOTIFICATIONS),
+    "finance": (OnboardingNeed.FINANCE_NUMBERS, OnboardingNeed.FINANCE_REPORTS),
+    "creative": (OnboardingNeed.CREATIVE_REVISIONS, OnboardingNeed.CREATIVE_DEADLINES),
+    "student": (OnboardingNeed.STUDENT_ASSIGNMENTS, OnboardingNeed.STUDENT_EXAMS),
+}
+
+_NEED_ROLE: dict[OnboardingNeed, str] = {
+    need: role for role, pair in ROLE_NEEDS.items() for need in pair
+}
+
+
+def role_of_need(need: OnboardingNeed) -> str | None:
+    """The Q1 role a need belongs to, or ``None`` for the six everyone sees."""
+    return _NEED_ROLE.get(need)
 
 
 class OnboardingPreferences(BaseModel):
@@ -206,6 +255,16 @@ class OnboardingRequest(BaseModel):
         # first message with nothing to ask about.
         if not self.needs and not self.other_need:
             raise ValueError("Pick at least one need or say it in your own words")
+        return self
+
+    @model_validator(mode="after")
+    def role_needs_match_the_profession(self) -> "OnboardingRequest":
+        # A role pair is only ever shown to its role, so a mismatch is a client
+        # bug or a replayed request, and the playbooks would coach the wrong job.
+        for need in self.needs:
+            role = role_of_need(need)
+            if role is not None and role != self.profession.lower():
+                raise ValueError(f"{need.value} is only offered to {role}")
         return self
 
     @field_validator("timezone")

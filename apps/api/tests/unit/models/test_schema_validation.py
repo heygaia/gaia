@@ -28,10 +28,12 @@ from app.models.message_models import (
 from app.models.user_models import (
     NEEDS_MAX_SELECTION,
     PROFESSION_MAX_LENGTH,
+    ROLE_NEEDS,
     OnboardingNeed,
     OnboardingPreferences,
     OnboardingRequest,
     UserUpdateResponse,
+    role_of_need,
 )
 
 
@@ -212,9 +214,33 @@ class TestOnboardingRequest:
     def test_more_than_the_pick_cap_is_rejected(self) -> None:
         """Q2 is "pick up to two": a third need is a client that skipped the cap."""
         with pytest.raises(ValidationError):
-            OnboardingRequest(profession="Founder", needs=["inbox", "calendar", "research"])
+            OnboardingRequest(profession="Founder", needs=["inbox", "calendar", "mornings"])
         with pytest.raises(ValidationError):
-            OnboardingPreferences(needs=["inbox", "calendar", "research"])
+            OnboardingPreferences(needs=["inbox", "calendar", "mornings"])
+
+    def test_a_role_need_is_accepted_for_its_role(self) -> None:
+        r = OnboardingRequest(profession="student", needs=["student_exams", "inbox"])
+        assert [n.value for n in r.needs] == ["student_exams", "inbox"]
+
+    def test_a_role_need_is_rejected_for_another_role(self) -> None:
+        """The student pair is only ever shown to students; a founder sending it
+        is a replayed or hand-built request, and the playbooks would coach the
+        wrong job."""
+        with pytest.raises(ValidationError, match="only offered to student"):
+            OnboardingRequest(profession="founder", needs=["student_exams"])
+        with pytest.raises(ValidationError, match="only offered to student"):
+            OnboardingRequest(profession="Plumber", needs=["student_exams"])
+
+    def test_every_role_pair_belongs_to_exactly_one_role(self) -> None:
+        seen: list[OnboardingNeed] = []
+        for role, pair in ROLE_NEEDS.items():
+            assert len(pair) == 2
+            for need in pair:
+                assert role_of_need(need) == role
+                seen.append(need)
+        assert len(seen) == len(set(seen))
+        shared = [n for n in OnboardingNeed if role_of_need(n) is None]
+        assert len(shared) == 6
 
     def test_the_pick_cap_is_two(self) -> None:
         assert NEEDS_MAX_SELECTION == 2
@@ -322,8 +348,8 @@ class TestOnboardingRequest:
             OnboardingRequest(profession="Engineer", needs=["world_peace"])
 
     def test_duplicate_needs_deduped_in_order(self):
-        r = OnboardingRequest(profession="Engineer", needs=["followups", "inbox", "followups"])
-        assert [n.value for n in r.needs] == ["followups", "inbox"]
+        r = OnboardingRequest(profession="Engineer", needs=["reminders", "inbox", "reminders"])
+        assert [n.value for n in r.needs] == ["reminders", "inbox"]
 
     def test_a_name_is_not_part_of_the_contract(self):
         """The name is derived from the email server-side; an extra key is ignored."""

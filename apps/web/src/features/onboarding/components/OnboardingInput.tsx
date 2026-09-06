@@ -11,19 +11,24 @@
 
 import { Chip } from "@heroui/chip";
 import { Input } from "@heroui/input";
+import { Tooltip } from "@heroui/tooltip";
+import { SparklesIcon } from "@icons";
 import * as m from "motion/react-m";
 import { memo, useState } from "react";
 
 import {
   isListedProfession,
+  isRoleNeed,
+  NEEDS_HINT,
   NEEDS_MAX_SELECTION,
-  needOptions,
+  needOptionsFor,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
   OTHER_NEED_OPTION,
   OTHER_PROFESSION,
   PROFESSION_MAX_LENGTH,
   professionOptions,
+  ROLE_PHRASES,
 } from "../constants";
 import { EASE_OUT_QUART } from "../constants/motion";
 import { OPTION_STYLE } from "../constants/optionStyle";
@@ -38,6 +43,8 @@ interface ProfessionModeProps {
 
 interface NeedsModeProps {
   mode: "needs";
+  /** The Q1 answer; a listed role unlocks its two personalised chips. */
+  profession: string | null;
   selectedNeeds: string[];
   otherNeed: string;
   canContinue: boolean;
@@ -103,6 +110,7 @@ function ProfessionInput({
 }
 
 function NeedsInput({
+  profession,
   selectedNeeds,
   otherNeed,
   canContinue,
@@ -116,6 +124,11 @@ function NeedsInput({
   const [otherOpen, setOtherOpen] = useState(otherNeed !== "");
   const atCap =
     selectedNeeds.length + (otherOpen ? 1 : 0) >= NEEDS_MAX_SELECTION;
+  const rolePhrase = profession ? ROLE_PHRASES[profession] : undefined;
+  const personalisedNote = (value: string) =>
+    rolePhrase && isRoleNeed(value)
+      ? `Personalised for you, since you're ${rolePhrase}`
+      : null;
 
   const handleSelect = (value: string) => {
     if (value !== OTHER_NEED) {
@@ -130,13 +143,15 @@ function NeedsInput({
     <div className={REPLY_WRAPPER_CLASS}>
       <OptionChips
         label="What do you want off your plate first?"
-        options={[...needOptions, OTHER_NEED_OPTION]}
+        options={[...needOptionsFor(profession), OTHER_NEED_OPTION]}
         isSelected={(value) =>
           value === OTHER_NEED ? otherOpen : selected.has(value)
         }
         isDisabled={() => atCap}
+        personalisedNote={personalisedNote}
         onSelect={handleSelect}
       />
+      <p className="w-full text-right text-xs text-zinc-500">{NEEDS_HINT}</p>
       {otherOpen && (
         <OwnWordsInput
           label="Something else, in your words"
@@ -223,6 +238,8 @@ interface OptionChipsProps {
   isSelected: (value: string) => boolean;
   /** Chips that can no longer be picked (the Q2 cap); selected ones stay live. */
   isDisabled?: (value: string) => boolean;
+  /** Tooltip for chips picked for this person; the chip gets a sparkle. */
+  personalisedNote?: (value: string) => string | null;
   onSelect: (value: string) => void;
 }
 
@@ -233,6 +250,7 @@ function OptionChips({
   options,
   isSelected,
   isDisabled,
+  personalisedNote,
   onSelect,
 }: OptionChipsProps) {
   return (
@@ -245,7 +263,32 @@ function OptionChips({
       {options.map((option, index) => {
         const selected = isSelected(option.value);
         const disabled = !selected && (isDisabled?.(option.value) ?? false);
+        const note = personalisedNote?.(option.value) ?? null;
         const { icon: Icon, tint } = OPTION_STYLE[option.value];
+        const chip = (
+          <Chip
+            as="button"
+            type="button"
+            size="lg"
+            radius="full"
+            variant="flat"
+            aria-pressed={selected}
+            isDisabled={disabled}
+            onClick={() => onSelect(option.value)}
+            // One pastel per option, on the fill, the text and the icon; the
+            // fill goes solid when picked. Founder's call, not a theme override.
+            classNames={{
+              base: `cursor-pointer ${selected ? tint.active : tint.idle}`,
+              content: "font-medium",
+            }}
+            startContent={<Icon className="size-4 shrink-0" />}
+            endContent={
+              note ? <SparklesIcon className="size-3.5 shrink-0" /> : undefined
+            }
+          >
+            {option.label}
+          </Chip>
+        );
         return (
           // Chips arrive one after another, like a reply being typed out, and
           // give a little under the finger when pressed.
@@ -260,25 +303,13 @@ function OptionChips({
               ease: EASE_OUT_QUART,
             }}
           >
-            <Chip
-              as="button"
-              type="button"
-              size="lg"
-              radius="full"
-              variant="flat"
-              aria-pressed={selected}
-              isDisabled={disabled}
-              onClick={() => onSelect(option.value)}
-              // One pastel per option, on the fill, the text and the icon; the
-              // fill goes solid when picked. Founder's call, not a theme override.
-              classNames={{
-                base: `cursor-pointer ${selected ? tint.active : tint.idle}`,
-                content: "font-medium",
-              }}
-              startContent={<Icon className="size-4 shrink-0" />}
-            >
-              {option.label}
-            </Chip>
+            {note ? (
+              <Tooltip content={note} placement="top" delay={200}>
+                {chip}
+              </Tooltip>
+            ) : (
+              chip
+            )}
           </m.div>
         );
       })}

@@ -94,17 +94,17 @@ PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     ),
     (
         "sales + todos",
-        OnboardingPreferences(profession="sales", needs=[OnboardingNeed.FOLLOWUPS]),
+        OnboardingPreferences(profession="sales", needs=[OnboardingNeed.SALES_LEADS]),
         None,
     ),
     (
         "student + research",
-        OnboardingPreferences(profession="student", needs=[OnboardingNeed.RESEARCH]),
+        OnboardingPreferences(profession="student", needs=[OnboardingNeed.REMINDERS]),
         None,
     ),
     (
         "engineer + automation",
-        OnboardingPreferences(profession="engineering", needs=[OnboardingNeed.AUTOMATION]),
+        OnboardingPreferences(profession="engineering", needs=[OnboardingNeed.ENGINEERING_PRS]),
         None,
     ),
     (
@@ -115,7 +115,8 @@ PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     (
         "executive + briefings + memory",
         OnboardingPreferences(
-            profession="executive", needs=[OnboardingNeed.CALENDAR, OnboardingNeed.FOLLOWUPS]
+            profession="executive",
+            needs=[OnboardingNeed.EXECUTIVE_DECISIONS, OnboardingNeed.CALENDAR],
         ),
         None,
     ),
@@ -126,7 +127,7 @@ PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     ),
     (
         "creative + research",
-        OnboardingPreferences(profession="creative", needs=[OnboardingNeed.RESEARCH]),
+        OnboardingPreferences(profession="creative", needs=[OnboardingNeed.REMINDERS]),
         "telegram",
     ),
     (

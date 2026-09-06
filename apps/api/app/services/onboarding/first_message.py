@@ -22,15 +22,35 @@ PROFESSION_PHRASES: dict[str, str] = {
     "student": "a student",
 }
 
-# Q2 chips are jobs the user hands over (needOptions in apps/web onboarding
-# constants), so each phrase is that handover as they would say it. Together
-# they read as one instruction: "Take over my email and chase my follow-ups."
+# Q2 chips are pains in the user's words (needOptions / roleNeedOptions in
+# apps/web onboarding constants), so each phrase is that pain in the first
+# person. Together they read as one sentence: "My inbox is out of control and
+# I keep forgetting things."
 NEED_PHRASES: dict[OnboardingNeed, str] = {
-    OnboardingNeed.INBOX: "take over my email",
-    OnboardingNeed.CALENDAR: "run my calendar",
-    OnboardingNeed.RESEARCH: "research and brief me",
-    OnboardingNeed.FOLLOWUPS: "chase my follow-ups",
-    OnboardingNeed.AUTOMATION: "handle my recurring chores",
+    OnboardingNeed.INBOX: "my inbox is out of control",
+    OnboardingNeed.CALENDAR: "I walk into meetings cold",
+    OnboardingNeed.MORNINGS: "my mornings start behind",
+    OnboardingNeed.REMINDERS: "I keep forgetting things",
+    OnboardingNeed.GRUNT_WORK: "grunt work eats my week",
+    OnboardingNeed.TOOLS: "I juggle too many tools",
+    OnboardingNeed.FOUNDER_TEAM_UPDATES: "I chase my team for updates",
+    OnboardingNeed.FOUNDER_COMPETITORS: "I never track competitors",
+    OnboardingNeed.EXECUTIVE_REPORTS: "I never get to the reports",
+    OnboardingNeed.EXECUTIVE_DECISIONS: "decisions pile up on me",
+    OnboardingNeed.SALES_LEADS: "leads go cold on me",
+    OnboardingNeed.SALES_CALL_RESEARCH: "I research before every call",
+    OnboardingNeed.PRODUCT_FEEDBACK: "feedback is scattered everywhere",
+    OnboardingNeed.PRODUCT_SPECS: "specs take me forever",
+    OnboardingNeed.MARKETING_CONTENT: "content is always behind",
+    OnboardingNeed.MARKETING_REPORTS: "I build reports by hand",
+    OnboardingNeed.ENGINEERING_PRS: "PRs pile up waiting on me",
+    OnboardingNeed.ENGINEERING_NOTIFICATIONS: "I drown in notifications",
+    OnboardingNeed.FINANCE_NUMBERS: "I chase people for numbers",
+    OnboardingNeed.FINANCE_REPORTS: "I build the same report every week",
+    OnboardingNeed.CREATIVE_REVISIONS: "client revisions pile up",
+    OnboardingNeed.CREATIVE_DEADLINES: "deadlines sneak up on me",
+    OnboardingNeed.STUDENT_ASSIGNMENTS: "assignments pile up",
+    OnboardingNeed.STUDENT_EXAMS: "I'm never ready for exams",
 }
 
 

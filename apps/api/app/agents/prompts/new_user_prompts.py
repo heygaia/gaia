@@ -20,29 +20,115 @@ from app.models.user_models import OnboardingNeed
 #: model cannot offer something that does not exist.
 NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     OnboardingNeed.INBOX: (
-        "email: they handed you the inbox. Offer: a Gmail connect link; a daily workflow "
-        "that surfaces only the mail needing them; drafts waiting on the replies they always "
+        "inbox out of control (Gmail). Offer: a Gmail connect link; every morning the inbox "
+        "sorted into needs-them / can-wait / noise; drafts waiting on the replies they always "
         "end up writing."
     ),
     OnboardingNeed.CALENDAR: (
-        "calendar: they handed you their day. Offer: a Google Calendar connect link; a "
-        "morning agenda workflow flagging the meeting needing prep; a reminder before the "
-        "ones they walk into cold."
+        "walking into meetings cold (Calendar, Gmail for context). Offer: a Calendar connect "
+        "link; a brief before each meeting with who is there, the last thread with them and "
+        "what to decide; a reminder before the ones they walk into cold."
     ),
-    OnboardingNeed.RESEARCH: (
-        "research: they want digging done and reported, not links. Offer: to take the next "
-        "question now, no connection needed; a recurring workflow watching a topic and "
-        "reporting weekly; a held list of the questions they keep meaning to get to."
+    OnboardingNeed.MORNINGS: (
+        "mornings start behind (Calendar, Gmail). Offer: one morning message at an hour they "
+        "pick: today's meetings, what is due, what is waiting in mail; connect links for "
+        "whatever it should read."
     ),
-    OnboardingNeed.FOLLOWUPS: (
-        "follow-ups: who owes them a reply and what they promised whom. Offer: a list you "
-        "hold, seeded with the names they give now; a recurring sweep pulling open loops out "
-        "of their mail once Gmail is connected; a nudge when one goes quiet."
+    OnboardingNeed.REMINDERS: (
+        "things they keep forgetting (nothing to connect). Offer: 'remind me' becomes a "
+        "reminder on the spot; a list you hold that they never have to open; a nudge when a "
+        "follow-up goes quiet."
     ),
-    OnboardingNeed.AUTOMATION: (
-        "chores: the same job every day or week. Offer: one named chore turned into a "
-        "scheduled workflow; a reminder for the part only they can do; a second workflow "
-        "once they trust the first."
+    OnboardingNeed.GRUNT_WORK: (
+        "grunt work every week (whatever the task touches). Ask which recurring task, in one "
+        "sentence, then offer: it turned into a scheduled workflow that runs and reports back; "
+        "a reminder for the part only they can do."
+    ),
+    OnboardingNeed.TOOLS: (
+        "too many tools to juggle (Notion, Slack, GitHub, Linear and the rest). Offer: a "
+        "connect link for the one they live in most; doing things in it from chat instead of "
+        "opening it; a second tool once the first feels natural."
+    ),
+    OnboardingNeed.FOUNDER_TEAM_UPDATES: (
+        "chasing the team for updates (Slack). Offer: a Slack connect link; a daily digest of "
+        "what moved across channels, grouped by person or project; the update they owe drafted "
+        "from it."
+    ),
+    OnboardingNeed.FOUNDER_COMPETITORS: (
+        "never tracking competitors (the web). Ask for two or three names, then offer: a weekly "
+        "brief on what each shipped, raised or announced; an alert when one does something big."
+    ),
+    OnboardingNeed.EXECUTIVE_REPORTS: (
+        "reports they never read (Slack, Notion, Docs). Offer: a connect link for where the "
+        "reports land; each one summarised to a page with the numbers that changed; a weekly "
+        "roll-up."
+    ),
+    OnboardingNeed.EXECUTIVE_DECISIONS: (
+        "decisions piling up (Slack, Gmail). Offer: a daily list of what is blocked on their "
+        "call, oldest first, with the thread context pulled in so they decide in one read."
+    ),
+    OnboardingNeed.SALES_LEADS: (
+        "leads going cold (a list you hold, Gmail once connected). Offer: to take the open "
+        "deals now, by name; a nudge the moment one goes quiet, with the re-open drafted."
+    ),
+    OnboardingNeed.SALES_CALL_RESEARCH: (
+        "research before every call (the web, Calendar for the schedule). Offer: a brief on "
+        "each prospect before the call, company, person, recent news; a Calendar connect link "
+        "so it runs by itself."
+    ),
+    OnboardingNeed.PRODUCT_FEEDBACK: (
+        "feedback scattered everywhere (Slack, Gmail, the support tool). Offer: a connect link "
+        "for where most of it lands; a digest grouped by theme, daily or weekly; the top three "
+        "surfaced with the quotes behind them."
+    ),
+    OnboardingNeed.PRODUCT_SPECS: (
+        "specs that take forever (Notion, Linear). Offer: to draft the next spec from the "
+        "feedback and three answers from them; pushed into Notion as a page; a connect link "
+        "for whichever they write in."
+    ),
+    OnboardingNeed.MARKETING_CONTENT: (
+        "content always behind (Notion or Docs, Calendar). Offer: the next piece drafted ahead "
+        "of its slot in their voice; a nudge before anything is late; a connect link for where "
+        "the calendar lives."
+    ),
+    OnboardingNeed.MARKETING_REPORTS: (
+        "reports by hand (whatever holds the numbers). Ask which tool, then offer: the report "
+        "drafted on schedule from those numbers, written the way they would write it; what "
+        "changed since last time flagged."
+    ),
+    OnboardingNeed.ENGINEERING_PRS: (
+        "PRs waiting on them (GitHub). Offer: a GitHub connect link; a daily list of reviews "
+        "assigned to them with a summary of each; a nudge when one has waited a day."
+    ),
+    OnboardingNeed.ENGINEERING_NOTIFICATIONS: (
+        "drowning in notifications (GitHub, Linear, Slack). Offer: connect links; one filtered "
+        "digest a day instead of live pings, only what needs them; the rest summarised."
+    ),
+    OnboardingNeed.FINANCE_NUMBERS: (
+        "chasing people for numbers (Slack, Gmail). Offer: the reminders sent on a schedule to "
+        "the people they name; a running list of who has and has not sent; the late ones "
+        "escalated."
+    ),
+    OnboardingNeed.FINANCE_REPORTS: (
+        "the same report every week (whatever holds the numbers). Ask which tool, then offer: "
+        "the recurring report drafted on schedule; what changed since last week flagged."
+    ),
+    OnboardingNeed.CREATIVE_REVISIONS: (
+        "client revisions piling up (Slack, Drive comments, Gmail). Offer: a connect link for "
+        "where feedback lands; every revision gathered into one list, open versus done; a "
+        "daily digest per client."
+    ),
+    OnboardingNeed.CREATIVE_DEADLINES: (
+        "deadlines sneaking up (Calendar, or told to you). Offer: to take the deadlines now, by "
+        "name and date; early nudges; a weekly 'what is at risk'."
+    ),
+    OnboardingNeed.STUDENT_ASSIGNMENTS: (
+        "assignments piling up (told to you, Calendar if they use it). Offer: to take the "
+        "assignments now, with due dates; a plan for the week; nudges before each is due."
+    ),
+    OnboardingNeed.STUDENT_EXAMS: (
+        "not ready for exams (Notion or Docs for notes). Offer: a connect link for where the "
+        "notes live; a study digest per topic; practice questions from their own notes."
     ),
 }
 
