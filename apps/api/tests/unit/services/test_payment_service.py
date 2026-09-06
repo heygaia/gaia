@@ -10,10 +10,11 @@ Covers:
 
 from datetime import UTC, datetime
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, get_args
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bson import ObjectId
+from dodopayments.types import WebhookEventType
 from fastapi import HTTPException
 import pytest
 
@@ -2525,6 +2526,27 @@ class TestProcessWebhookIdempotency:
         mock_processed_webhook_repository.mark_processed.assert_awaited()
         webhook_service.handlers = original_handlers
 
+    async def test_every_event_type_dodo_can_send_parses(self) -> None:
+        """Drift guard against the SDK: a real Dodo event outside our enum failed
+        validation and was logged as a processing error (seen live with
+        subscription.updated on 2026-09-06). The SDK's literal is the contract."""
+        sdk_types = set(get_args(WebhookEventType))
+        ours = {member.value for member in DodoWebhookEventType}
+        assert ours == sdk_types
+
+    async def test_an_event_we_do_not_act_on_is_ignored_not_failed(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+    ):
+        """subscription.updated fires on every Dodo-side edit; we neither act on
+        it nor treat it as an error, and it is recorded so a redelivery is a no-op."""
+        event_data = _make_webhook_event("subscription.updated", {})
+        result = await webhook_service.process_webhook(event_data, "wh_updated")
+        assert result.status == "ignored"
+        assert "No handler" in result.message
+        mock_processed_webhook_repository.mark_processed.assert_awaited()
+
     async def test_processing_failure_returns_failed_result(
         self,
         webhook_service,
@@ -3429,20 +3451,26 @@ class TestPaymentWebhookServiceInit:
 
         assert svc.webhook_verifier is None
 
-    def test_all_handler_event_types_registered(self):
-        """All DodoWebhookEventType values have a corresponding handler."""
-        with patch("app.services.payments.payment_webhook_service.settings") as mock_settings:
-            mock_settings.DODO_WEBHOOK_PAYMENTS_SECRET = ""
-            mock_settings.ENV = "development"
-            svc = PaymentWebhookService()
-
-        for event_type in DodoWebhookEventType:
-            assert event_type in svc.handlers, f"Missing handler for {event_type}"
-
-
-# ============================================================================
-# process_webhook account-sync scheduling
-# ============================================================================
+    def test_every_handler_is_for_an_event_dodo_sends_and_the_acted_on_set_is_explicit(
+        self, webhook_service
+    ):
+        """The enum is everything Dodo can send (drift-guarded against the SDK);
+        the handlers are the subset GAIA acts on. Anything else is acknowledged
+        and ignored, never a processing error."""
+        assert set(webhook_service.handlers) <= set(DodoWebhookEventType)
+        assert set(webhook_service.handlers) == {
+            DodoWebhookEventType.PAYMENT_SUCCEEDED,
+            DodoWebhookEventType.PAYMENT_FAILED,
+            DodoWebhookEventType.PAYMENT_PROCESSING,
+            DodoWebhookEventType.PAYMENT_CANCELLED,
+            DodoWebhookEventType.SUBSCRIPTION_ACTIVE,
+            DodoWebhookEventType.SUBSCRIPTION_RENEWED,
+            DodoWebhookEventType.SUBSCRIPTION_CANCELLED,
+            DodoWebhookEventType.SUBSCRIPTION_EXPIRED,
+            DodoWebhookEventType.SUBSCRIPTION_FAILED,
+            DodoWebhookEventType.SUBSCRIPTION_ON_HOLD,
+            DodoWebhookEventType.SUBSCRIPTION_PLAN_CHANGED,
+        }
 
 
 class TestWebhookAccountSync:
