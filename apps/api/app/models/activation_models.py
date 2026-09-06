@@ -37,6 +37,10 @@ class ActivationDraft(BaseModel):
         min_length=1,
         description="The single concrete thing this message suggests, in one plain sentence",
     )
+    connect_target: str | None = Field(
+        None,
+        description="The integration id this message asked them to connect, or null",
+    )
 
 
 class ActivationMessage(BaseModel):
@@ -48,6 +52,7 @@ class ActivationMessage(BaseModel):
     sent_at: datetime
     bubbles: list[str]
     suggestion: str
+    connect_target: str | None = None
 
 
 class ActivationSequenceState(BaseModel):
@@ -67,6 +72,29 @@ class ActivationSequenceState(BaseModel):
     def earlier_drafts(self) -> list[tuple[str, str]]:
         """``(first bubble, suggestion)`` per earlier day, oldest first."""
         return [(m.bubbles[0] if m.bubbles else "", m.suggestion) for m in self.messages]
+
+    def connect_targets_asked(self) -> set[str]:
+        """Integrations an earlier day already asked them to connect."""
+        return {m.connect_target for m in self.messages if m.connect_target}
+
+    def connect_asks(self) -> int:
+        """Earlier days that asked for a connection."""
+        return sum(1 for m in self.messages if m.direction is Direction.CONNECT)
+
+    def unanswered_days(self) -> int:
+        """Trailing days the user never replied to. A reply shows up as the next
+        day being CONTINUE_THREAD, so the streak is counted back from the end."""
+        streak = 0
+        for message in reversed(self.messages):
+            if message.direction is Direction.CONTINUE_THREAD:
+                break
+            streak += 1
+        return streak
+
+    def handover_asks(self) -> int:
+        """Trailing HANDOVER days inside the unanswered streak."""
+        streak = self.messages[len(self.messages) - self.unanswered_days() :]
+        return sum(1 for m in streak if m.direction is Direction.HANDOVER)
 
 
 class ActivationSequenceUpdate(BaseModel):

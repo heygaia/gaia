@@ -21,12 +21,21 @@ DIRECTION_BRIEFS: dict[Direction, str] = {
     Direction.CONNECT: (
         "They have connected nothing yet. Name the ONE connection that unlocks the most for the "
         "jobs they picked, say concretely what you would do with it for them tomorrow morning, "
-        "and give them the connect link. Not a list of integrations."
+        "and give them the connect link. Not a list of integrations. If an earlier day already "
+        "asked for a connection (listed below), this one must be a DIFFERENT service; never ask "
+        "twice for the same one."
+    ),
+    Direction.UNPROMPTED_VALUE: (
+        "Your earlier asks went unanswered. Do not ask for anything, do not mention connecting. "
+        "Give them one real thing INSIDE this message, finished, that needs nothing connected: "
+        "a three-line brief on something from their job, a draft of the thing they keep putting "
+        "off, a checklist for the week from their picks. Something they can use without replying."
     ),
     Direction.HANDOVER: (
         "They have connected something but have never handed you a job. Take ONE job from their "
         "picks, make it today's version of that job (specific to what is actually in front of "
-        "them), and offer to do it now."
+        "them), and offer to do it now. A different pick, or a genuinely different angle, from "
+        "any earlier day listed below."
     ),
     Direction.FOLLOW_THROUGH: (
         "They handed you something and you did it. Pick up the thread on that specific thing: "
@@ -57,7 +66,10 @@ Hedge when unsure. No emojis unless they used one first. Never sound like suppor
 
 Also return `suggestion`: the one thing you are suggesting, in a plain sentence,
 in your own words. It is not sent to them; it is how we check tomorrow's message
-is a different idea rather than the same idea rephrased."""
+is a different idea rather than the same idea rephrased. And `connect_target`: the
+integration id you asked them to connect in this message (gmail, googlecalendar,
+slack, notion, github, linear, googledocs, googledrive), or null when you did not
+ask for one."""
 
 
 def build_activation_prompt(

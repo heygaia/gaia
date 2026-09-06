@@ -115,3 +115,63 @@ class TestClaimKey:
         assert claim_key("u1", 3) != claim_key("u1", 4)
         assert claim_key("u1", 3) != claim_key("u2", 3)
         assert CLAIM_KEY_PREFIX == "activation:sent:"
+
+
+class TestConnectRotation:
+    """An unanswered connect ask is never repeated the next day. Day two points
+    at a different connection when the picks offer one, otherwise at something
+    that works with nothing connected; after that, only real jobs."""
+
+    def test_the_first_connect_ask_is_a_connect(self) -> None:
+        assert (
+            direction(replace(SENDABLE, connect_asks=0, connect_targets_left=2))
+            is Direction.CONNECT
+        )
+
+    def test_one_unanswered_ask_with_another_target_left_asks_for_the_other(self) -> None:
+        assert (
+            direction(replace(SENDABLE, connect_asks=1, connect_targets_left=1))
+            is Direction.CONNECT
+        )
+
+    def test_one_unanswered_ask_with_no_target_left_gives_unprompted_value(self) -> None:
+        assert (
+            direction(replace(SENDABLE, connect_asks=1, connect_targets_left=0))
+            is Direction.UNPROMPTED_VALUE
+        )
+
+    def test_two_unanswered_asks_stop_asking_regardless_of_targets(self) -> None:
+        assert (
+            direction(replace(SENDABLE, connect_asks=2, connect_targets_left=3))
+            is Direction.UNPROMPTED_VALUE
+        )
+
+    def test_a_connection_still_beats_the_rotation(self) -> None:
+        assert (
+            direction(replace(SENDABLE, connect_asks=2, connected_integrations=1))
+            is Direction.HANDOVER
+        )
+
+
+class TestQuietUser:
+    """Asking twice is a nudge, giving value twice is generosity, and after four
+    unanswered days in a row the kindest message is none."""
+
+    def test_two_unanswered_handovers_switch_to_unprompted_value(self) -> None:
+        facts = replace(SENDABLE, connected_integrations=1, handover_asks=2, unanswered_days=2)
+        assert direction(facts) is Direction.UNPROMPTED_VALUE
+
+    def test_one_unanswered_handover_still_hands_over(self) -> None:
+        facts = replace(SENDABLE, connected_integrations=1, handover_asks=1, unanswered_days=1)
+        assert direction(facts) is Direction.HANDOVER
+
+    def test_four_unanswered_days_end_the_sequence(self) -> None:
+        assert skip_reason(replace(SENDABLE, unanswered_days=4)) is SkipReason.NO_RESPONSE
+
+    def test_three_unanswered_days_still_send(self) -> None:
+        assert skip_reason(replace(SENDABLE, unanswered_days=3)) is None
+
+    def test_a_reply_resets_nothing_it_simply_wins(self) -> None:
+        facts = replace(SENDABLE, unanswered_days=3, replied_to_sequence_last_24h=True)
+        assert skip_reason(facts) is None
+        assert direction(facts) is Direction.CONTINUE_THREAD

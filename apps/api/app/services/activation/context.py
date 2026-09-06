@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 
 from app.agents.context.fetchers import build_connected_integrations_manifest
-from app.agents.prompts.new_user_prompts import NEED_PLAYBOOKS
+from app.agents.prompts.new_user_prompts import NEED_CONNECT_IDS, playbook_for_message
 from app.db.repositories.conversations import conversation_repository
 from app.decorators.entitlements import is_subscription_active
 from app.models.activation_models import ActivationSequenceState
@@ -58,12 +58,22 @@ def format_who_block(preferences: OnboardingPreferences) -> str:
     needs: list[OnboardingNeed] = preferences.needs or []
     if needs:
         lines.append("They picked these, with what you can offer for each:")
-        lines.extend(f"- {NEED_PLAYBOOKS[need]}" for need in needs if need in NEED_PLAYBOOKS)
+        lines.extend(f"- {playbook_for_message(need)}" for need in needs)
     if preferences.other_need:
         lines.append(f'In their own words, they also said: "{preferences.other_need}"')
     if not needs and not preferences.other_need:
         lines.append("They picked nothing in onboarding, so you know only the role.")
     return "\n".join(lines)
+
+
+def connect_targets_left(preferences: OnboardingPreferences, state: ActivationSequenceState) -> int:
+    """Connections their picks can ask for that no earlier day has asked for yet."""
+    wanted = {
+        integration_id
+        for need in preferences.needs or []
+        for integration_id in NEED_CONNECT_IDS.get(need, ())
+    }
+    return len(wanted - state.connect_targets_asked())
 
 
 def format_yesterday_block(hits: list[ConversationMessageHit]) -> str:
@@ -125,6 +135,10 @@ async def gather(user: UserDocument, now: datetime) -> RunContext:
         replied_to_sequence_last_24h=_replied_to_sequence(state, user_hits, since),
         connected_integrations=len(integrations),
         handovers=int(ever_handed_over),
+        connect_asks=state.connect_asks(),
+        connect_targets_left=connect_targets_left(preferences, state),
+        handover_asks=state.handover_asks(),
+        unanswered_days=state.unanswered_days(),
     )
     return RunContext(
         facts=facts,

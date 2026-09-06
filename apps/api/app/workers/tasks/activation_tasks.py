@@ -142,6 +142,7 @@ async def send_activation_message(ctx: dict[str, Any], user_id: str, day: int) -
         sent_at=now,
         bubbles=draft.bubbles,
         suggestion=draft.suggestion,
+        connect_target=draft.connect_target,
     )
     # The bot never sees GAIA's outbound in its own history, so the reply to
     # this message would otherwise arrive with no context at all.
