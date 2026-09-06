@@ -1,11 +1,13 @@
 """The comms tier as a running graph.
 
 Comms is the front door and is deliberately the *narrowest* agent in the
-product: three things it can do (delegate to the executor, cancel that
-delegation, remember and recall), no tool retrieval at all, and every reply
+product: delegate to the executor, cancel that delegation, remember and recall,
+and the read-only discovery three (find an integration, search public workflow
+templates, draw the connect card). No tool retrieval at all, and every reply
 routed straight to the user. Its value comes from what it cannot do — a comms
 agent that could reach the executor's tools would act on the user's accounts
 without any of the delegation, approval, or streaming machinery in between.
+Nothing on this surface writes to the user's data.
 
 ``test_chat_stream.py`` covers what comms puts on the wire. This covers the
 graph: which tools exist, what happens to a call for one that does not, the
@@ -17,6 +19,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from itertools import pairwise
 import json
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from langchain_core.messages import (
@@ -30,6 +33,7 @@ from langgraph.graph.state import CompiledStateGraph
 import pytest
 
 from app.constants.general import NEW_MESSAGE_BREAKER
+from app.db.repositories.user_integrations import user_integration_repository
 from app.utils.multimodal import extract_text_content
 from tests.e2e._harness.graph_run import (
     AGENT_NODE,
@@ -47,7 +51,19 @@ pytestmark = pytest.mark.e2e
 
 class TestCommsToolSurface:
     @pytest.mark.parametrize(
-        "tool", ["call_executor", "cancel_executor", "add_memory", "search_memory"]
+        "tool",
+        [
+            "call_executor",
+            "cancel_executor",
+            "add_memory",
+            "search_memory",
+            # The discovery three. They read catalogues or draw the connect card
+            # and never touch the user's data, so they widen the surface without
+            # making comms a worker tier.
+            "find_integration",
+            "search_public_workflows",
+            "show_connect_card",
+        ],
     )
     async def test_the_comms_tools_are_bound_from_the_start(self, tool: str):
         """Comms retrieves nothing, so anything it can do it must already have."""
@@ -55,6 +71,47 @@ class TestCommsToolSurface:
             run = await run_graph(graph, "hello")
 
         assert REJECT_NODE not in run.nodes(), f"{tool} was not bound to comms"
+
+    async def test_the_connect_card_is_drawn_inside_the_comms_turn(self):
+        """The card must ride in this reply, not arrive from a later executor run.
+
+        This is the whole reason show_connect_card exists on the front door: the
+        executor's card is delivered on a separate message once the background
+        run reports back, so the sentence offering it and the button the user
+        taps landed in different bubbles.
+        """
+        writer = MagicMock()
+        with (
+            patch(
+                "app.utils.integration_checker.get_config",
+                return_value={"configurable": {"source_category": "ui"}},
+            ),
+            patch("app.utils.integration_checker.get_stream_writer", return_value=writer),
+            patch(
+                "app.utils.integration_checker.build_connect_link_url",
+                AsyncMock(return_value=None),
+            ),
+            patch.object(user_integration_repository, "is_expired", AsyncMock(return_value=False)),
+        ):
+            script = [call("show_connect_card", {"integration_id": "gmail"}, call_id="c1"), "ok"]
+            async with comms_graph(script) as graph:
+                run = await run_graph(graph, "connect my gmail")
+
+        assert REJECT_NODE not in run.nodes()
+        frames = [
+            args[0][0]["integration_connection_required"]
+            for args in writer.call_args_list
+            if "integration_connection_required" in args[0][0]
+        ]
+        assert frames == [
+            {
+                "integration_id": "gmail",
+                "expired": False,
+                "message": "To use Gmail features, please connect your account first.",
+            }
+        ]
+        # No delegation happened: the card did not come from the executor.
+        assert run.result_for("call_executor") is None
 
     async def test_delegating_to_the_executor_actually_dispatches(self):
         """Being bound is not the same as working. The "bound" test above stays

@@ -30,6 +30,11 @@ from app.agents.tools.core.store import get_tools_store
 from app.agents.tools.core.tool_runtime_config import (
     build_executor_child_tool_runtime_config,
 )
+from app.agents.tools.discovery_tools import (
+    find_integration,
+    search_public_workflows,
+    show_connect_card,
+)
 from app.agents.tools.executor_tool import call_executor, cancel_executor
 from app.agents.tools.todo_tools import create_todo_pre_model_hook, create_todo_tools
 from app.agents.tools.wait_for_subagents_tool import wait_for_subagents as wait_for_subagents_tool
@@ -188,9 +193,16 @@ async def build_comms_graph(
     if chat_llm is None:
         chat_llm = init_llm()
 
+    # The discovery three are read-only catalogue lookups plus the connect card,
+    # so they do not breach "delegate every real ask" -- and the card in
+    # particular CANNOT go through the executor, whose card lands on a later
+    # message than the sentence offering it.
     tool_registry = {
         "call_executor": call_executor,
         "cancel_executor": cancel_executor,
+        "find_integration": find_integration,
+        "search_public_workflows": search_public_workflows,
+        "show_connect_card": show_connect_card,
         **{memory_tool.name: memory_tool for memory_tool in memory_tools.tools},
     }
     store = await get_tools_store()
@@ -207,6 +219,9 @@ async def build_comms_graph(
             initial_tool_ids=[
                 "call_executor",
                 "cancel_executor",
+                "find_integration",
+                "search_public_workflows",
+                "show_connect_card",
                 *[memory_tool.name for memory_tool in memory_tools.tools],
             ],
         ),
