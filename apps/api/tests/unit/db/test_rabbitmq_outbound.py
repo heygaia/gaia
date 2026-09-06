@@ -4,6 +4,8 @@ Mocks only the aio-pika channel (the I/O boundary) and exercises the real
 reconnect-retry, declare-or-not, and dead-letter topology code.
 """
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import aio_pika
@@ -11,6 +13,7 @@ from aio_pika.exceptions import ChannelPreconditionFailed
 import pytest
 
 from app.constants.outbound import OUTBOUND_DLX, OUTBOUND_QUEUES, dlq_name
+from app.db import rabbitmq
 from app.db.rabbitmq import RabbitMQPublisher
 
 
@@ -186,3 +189,96 @@ class TestLazyOutboundTopologyDeclare:
 
         assert pub._outbound_topology_declared is True  # declare won't be retried
         assert channel.default_exchange.publish.await_count == 2  # tried + retried
+
+
+@pytest.mark.asyncio
+class TestAmqpAwaitsAreBounded:
+    """Every AMQP await has a deadline, so a stalled broker cannot hang a request.
+
+    Chat-stream is exempt from the request-timeout middleware, so an un-bounded
+    publish there hangs the request (and a graceful uvicorn reload) forever.
+    """
+
+    async def test_hanging_publish_times_out_instead_of_hanging(
+        self, connected_publisher, monkeypatch
+    ) -> None:
+        pub, channel = connected_publisher
+        monkeypatch.setattr(rabbitmq, "RABBITMQ_PUBLISH_TIMEOUT_SECONDS", 0.05)
+
+        async def _never_returns(*args: object, **kwargs: object) -> None:
+            await asyncio.sleep(3600)
+
+        channel.default_exchange.publish = AsyncMock(side_effect=_never_returns)
+
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            await pub.publish_outbound("outbound.whatsapp", b"{}")
+        # Both attempts bounded: well under the 3600s hang, not the wall clock.
+        assert time.monotonic() - started < 1.0
+        assert channel.default_exchange.publish.await_count == 2
+
+    async def test_hanging_publish_ends_in_the_failed_outcome(
+        self, connected_publisher, monkeypatch
+    ) -> None:
+        """The caller contract in outbound_delivery still holds: FAILED, not a hang."""
+        pub, channel = connected_publisher
+        monkeypatch.setattr(rabbitmq, "RABBITMQ_PUBLISH_TIMEOUT_SECONDS", 0.05)
+
+        async def _never_returns(*args: object, **kwargs: object) -> None:
+            await asyncio.sleep(3600)
+
+        channel.default_exchange.publish = AsyncMock(side_effect=_never_returns)
+
+        # Mirrors outbound_delivery's ``except Exception -> OutboundResult.FAILED``.
+        try:
+            await pub.publish_outbound("outbound.whatsapp", b"{}")
+            outcome = "published"
+        except Exception:
+            outcome = "failed"
+        assert outcome == "failed"
+
+    async def test_connect_passes_explicit_timeout_and_heartbeat(self, monkeypatch) -> None:
+        pub = RabbitMQPublisher("amqp://test")
+        connection = MagicMock(is_closed=False)
+        connection.channel = AsyncMock(return_value=MagicMock(is_closed=False))
+        connect_robust = AsyncMock(return_value=connection)
+        monkeypatch.setattr(aio_pika, "connect_robust", connect_robust)
+
+        await pub.connect()
+
+        kwargs = connect_robust.await_args.kwargs
+        assert kwargs["timeout"] == rabbitmq.RABBITMQ_CONNECT_TIMEOUT_SECONDS
+        assert kwargs["heartbeat"] == rabbitmq.RABBITMQ_HEARTBEAT_SECONDS
+
+    async def test_concurrent_ensure_connected_creates_one_connection(self, monkeypatch) -> None:
+        pub = RabbitMQPublisher("amqp://test")
+
+        async def _slow_connect(*args: object, **kwargs: object) -> MagicMock:
+            await asyncio.sleep(0.05)
+            connection = MagicMock(is_closed=False)
+            connection.channel = AsyncMock(return_value=MagicMock(is_closed=False))
+            return connection
+
+        connect_robust = AsyncMock(side_effect=_slow_connect)
+        monkeypatch.setattr(aio_pika, "connect_robust", connect_robust)
+
+        await asyncio.gather(*(pub.ensure_connected() for _ in range(5)))
+
+        assert connect_robust.await_count == 1
+
+    async def test_topology_declare_is_bounded(self, connected_publisher, monkeypatch) -> None:
+        pub, channel = connected_publisher
+        pub._outbound_topology_declared = False
+        monkeypatch.setattr(rabbitmq, "RABBITMQ_TOPOLOGY_TIMEOUT_SECONDS", 0.05)
+
+        async def _never_returns(*args: object, **kwargs: object) -> None:
+            await asyncio.sleep(3600)
+
+        channel.declare_exchange = AsyncMock(side_effect=_never_returns)
+
+        started = time.monotonic()
+        with pytest.raises(TimeoutError):
+            await pub.declare_outbound_topology()
+        assert time.monotonic() - started < 1.0
+        # A timed-out declare must not be recorded as done.
+        assert pub._outbound_topology_declared is False
