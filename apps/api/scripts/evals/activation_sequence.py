@@ -43,11 +43,15 @@ sys.path.insert(0, str(backend_dir))
 from pydantic import BaseModel
 
 from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_structured_runnable
-from app.models.activation_models import ActivationDraft
+from app.models.activation_models import (
+    ActivationDraft,
+    ActivationMessage,
+    ActivationSequenceState,
+)
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
-from app.services.activation.context import format_who_block
+from app.services.activation.context import build_facts, format_who_block
 from app.services.activation.copy import ActivationCopyError, draft_message
-from app.services.activation.policy import SEQUENCE_LENGTH, Direction, Facts, direction
+from app.services.activation.policy import SEQUENCE_LENGTH, Direction, Facts, direction, skip_reason
 
 JUDGE_TIMEOUT_SECONDS = 90.0
 #: A frozen clock so two runs of this script are comparable.
@@ -237,12 +241,19 @@ def _dump_raw(name: str, who: str, days: list[Day]) -> None:
     )
 
 
-def _facts_for(persona: Persona, day: int, yesterday: str) -> Facts:
-    """The facts a real run would have gathered, derived from the script."""
+def _facts_for(
+    persona: Persona,
+    preferences: OnboardingPreferences,
+    state: ActivationSequenceState,
+    day: int,
+    yesterday: str,
+) -> Facts:
+    """The facts a real run would have gathered, derived from the script and
+    from the days already sent, through the same builder the task uses."""
     replied = "[them]" in yesterday
-    return Facts(
-        opted_out=False,
-        days_sent=day,
+    return build_facts(
+        preferences=preferences,
+        state=state,
         account_age_days=day,
         subscription_active=True,
         has_channel=True,
@@ -270,10 +281,17 @@ async def _run_persona(persona: Persona) -> tuple[str, list[Day], _RunVerdict | 
     sent: list[Day] = []
     earlier: list[tuple[str, str]] = []
     already = "Nothing yet. This is the first message."
+    state = ActivationSequenceState()
 
     for day in range(SEQUENCE_LENGTH):
         yesterday = persona.days[day]
-        today = direction(_facts_for(persona, day, yesterday))
+        facts = _facts_for(persona, preferences, state, day, yesterday)
+        stop = skip_reason(facts)
+        if stop is not None:
+            print(f"... {persona.name} day {day} skipped ({stop})", flush=True)
+            sent.append(Day(day=day, direction=Direction.CONTINUE_THREAD, error=f"skipped: {stop}"))
+            continue
+        today = direction(facts)
         print(f"... {persona.name} day {day} ({today})", flush=True)
         row = Day(day=day, direction=today)
         try:
@@ -287,6 +305,21 @@ async def _run_persona(persona: Persona) -> tuple[str, list[Day], _RunVerdict | 
                 earlier=earlier,
             )
             earlier.append((row.draft.bubbles[0], row.draft.suggestion))
+            state = ActivationSequenceState(
+                day_sent=state.day_sent + 1,
+                messages=[
+                    *state.messages,
+                    ActivationMessage(
+                        day=day,
+                        direction=today,
+                        platform="telegram",
+                        sent_at=datetime.now(UTC),
+                        bubbles=row.draft.bubbles,
+                        suggestion=row.draft.suggestion,
+                        connect_target=row.draft.connect_target,
+                    ),
+                ],
+            )
             already = "\n\n".join(
                 f"Day {d.day} ({d.direction}):\n"
                 + "\n".join(d.draft.bubbles)

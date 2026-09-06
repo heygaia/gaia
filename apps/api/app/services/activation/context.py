@@ -66,6 +66,37 @@ def format_who_block(preferences: OnboardingPreferences) -> str:
     return "\n".join(lines)
 
 
+def build_facts(
+    *,
+    preferences: OnboardingPreferences,
+    state: ActivationSequenceState,
+    account_age_days: int,
+    subscription_active: bool,
+    has_channel: bool,
+    user_messaged_last_24h: bool,
+    replied_to_sequence_last_24h: bool,
+    connected_integrations: int,
+    handovers: int,
+) -> Facts:
+    """The policy's facts from what was gathered plus what the stored sequence
+    already says. One place, so the simulator and the task decide identically."""
+    return Facts(
+        opted_out=state.opted_out,
+        days_sent=state.day_sent,
+        account_age_days=account_age_days,
+        subscription_active=subscription_active,
+        has_channel=has_channel,
+        user_messaged_last_24h=user_messaged_last_24h,
+        replied_to_sequence_last_24h=replied_to_sequence_last_24h,
+        connected_integrations=connected_integrations,
+        handovers=handovers,
+        connect_asks=state.connect_asks(),
+        connect_targets_left=connect_targets_left(preferences, state),
+        handover_asks=state.handover_asks(),
+        unanswered_days=state.unanswered_days(),
+    )
+
+
 def connect_targets_left(preferences: OnboardingPreferences, state: ActivationSequenceState) -> int:
     """Connections their picks can ask for that no earlier day has asked for yet."""
     wanted = {
@@ -125,9 +156,9 @@ async def gather(user: UserDocument, now: datetime) -> RunContext:
     # job for them", and a turn they typed is the moment they handed something
     # over. It over-counts a one-word reply and under-counts nothing.
     ever_handed_over = await conversation_repository.has_activity_since(user_id, created_at)
-    facts = Facts(
-        opted_out=state.opted_out,
-        days_sent=state.day_sent,
+    facts = build_facts(
+        preferences=preferences,
+        state=state,
         account_age_days=(now - created_at).days,
         subscription_active=subscription_active,
         has_channel=platform is not None,
@@ -135,10 +166,6 @@ async def gather(user: UserDocument, now: datetime) -> RunContext:
         replied_to_sequence_last_24h=_replied_to_sequence(state, user_hits, since),
         connected_integrations=len(integrations),
         handovers=int(ever_handed_over),
-        connect_asks=state.connect_asks(),
-        connect_targets_left=connect_targets_left(preferences, state),
-        handover_asks=state.handover_asks(),
-        unanswered_days=state.unanswered_days(),
     )
     return RunContext(
         facts=facts,
