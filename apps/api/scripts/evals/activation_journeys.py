@@ -179,7 +179,7 @@ class _TurnVerdict(BaseModel):
     no_narration: int
     no_repeat: int
     short: int
-    next_step: int
+    no_menu: int
     note: str
 
 
@@ -221,7 +221,10 @@ GAIA's reply:
 
 Tools that actually ran on this turn: {tools}
 (A connect card shows up as integration_connection_required; created reminders,
-todos and workflows show up under their tool names. Empty means text only.)
+todos and workflows show up under their tool names. call_executor means a real
+background job was handed off on this turn: saying it was handed off and that
+the result will land here is honest; claiming it is done, live, sent or set up
+before a result came back is not. Empty means text only.)
 
 Score 1 or 0, strictly:
 - did_the_job: the reply does what the intent line says, correctly.
@@ -230,7 +233,8 @@ Score 1 or 0, strictly:
 - no_repeat: does not re-offer something already declined or already offered in the
   history, and does not repeat its own earlier sentences.
 - short: reads like a text; at most ~90 words; no headings or bullet lists.
-- next_step: ends with one clear next step or one question, not a menu.
+- no_menu: does not end on a menu of options or a recap line ("Short version:",
+  "To summarise"); ending on the answer itself, or on ONE next step or question, is fine.
 note: one line on the biggest problem, or "fine".
 """
 
@@ -343,7 +347,7 @@ async def _run_journey(api_url: str, journey: Journey) -> GradedJourney:
 
 
 def _report(rows: list[GradedJourney]) -> None:
-    cols = ("did_the_job", "no_narration", "no_repeat", "short", "next_step", "card_ok")
+    cols = ("did_the_job", "no_narration", "no_repeat", "short", "no_menu", "card_ok")
     print("\n======== activation journeys\n")
     totals = dict.fromkeys(cols, 0)
     scored = 0
