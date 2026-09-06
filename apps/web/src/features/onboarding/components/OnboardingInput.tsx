@@ -16,6 +16,7 @@ import { memo, useState } from "react";
 
 import {
   isListedProfession,
+  NEEDS_MAX_SELECTION,
   needOptions,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
@@ -113,6 +114,8 @@ function NeedsInput({
   // The field stays open while they type; un-picking the chip also clears the
   // text, so a closed field never submits words they can no longer see.
   const [otherOpen, setOtherOpen] = useState(otherNeed !== "");
+  const atCap =
+    selectedNeeds.length + (otherOpen ? 1 : 0) >= NEEDS_MAX_SELECTION;
 
   const handleSelect = (value: string) => {
     if (value !== OTHER_NEED) {
@@ -126,17 +129,18 @@ function NeedsInput({
   return (
     <div className={REPLY_WRAPPER_CLASS}>
       <OptionChips
-        label="Where does your week disappear?"
+        label="What do you want off your plate first?"
         options={[...needOptions, OTHER_NEED_OPTION]}
         isSelected={(value) =>
           value === OTHER_NEED ? otherOpen : selected.has(value)
         }
+        isDisabled={() => atCap}
         onSelect={handleSelect}
       />
       {otherOpen && (
         <OwnWordsInput
           label="Something else, in your words"
-          placeholder="What else eats your week?"
+          placeholder="What else should I take over?"
           maxLength={OTHER_NEED_MAX_LENGTH}
           value={otherNeed}
           onValueChange={onOtherNeedChange}
@@ -217,6 +221,8 @@ interface OptionChipsProps {
   label: string;
   options: { value: string; label: string }[];
   isSelected: (value: string) => boolean;
+  /** Chips that can no longer be picked (the Q2 cap); selected ones stay live. */
+  isDisabled?: (value: string) => boolean;
   onSelect: (value: string) => void;
 }
 
@@ -226,6 +232,7 @@ function OptionChips({
   label,
   options,
   isSelected,
+  isDisabled,
   onSelect,
 }: OptionChipsProps) {
   return (
@@ -237,6 +244,7 @@ function OptionChips({
     >
       {options.map((option, index) => {
         const selected = isSelected(option.value);
+        const disabled = !selected && (isDisabled?.(option.value) ?? false);
         const { icon: Icon, tint } = OPTION_STYLE[option.value];
         return (
           // Chips arrive one after another, like a reply being typed out, and
@@ -259,6 +267,7 @@ function OptionChips({
               radius="full"
               variant="flat"
               aria-pressed={selected}
+              isDisabled={disabled}
               onClick={() => onSelect(option.value)}
               // One pastel per option, on the fill, the text and the icon; the
               // fill goes solid when picked. Founder's call, not a theme override.

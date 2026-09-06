@@ -20,43 +20,29 @@ from app.models.user_models import OnboardingNeed
 #: model cannot offer something that does not exist.
 NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     OnboardingNeed.INBOX: (
-        "inbox: less mail in front of them. Offer: a Gmail connect link; a daily workflow "
+        "email: they handed you the inbox. Offer: a Gmail connect link; a daily workflow "
         "that surfaces only the mail needing them; drafts waiting on the replies they always "
         "end up writing."
     ),
     OnboardingNeed.CALENDAR: (
-        "calendar: other people book their day. Offer: a Google Calendar connect link; a "
+        "calendar: they handed you their day. Offer: a Google Calendar connect link; a "
         "morning agenda workflow flagging the meeting needing prep; a reminder before the "
         "ones they walk into cold."
     ),
-    OnboardingNeed.BRIEFINGS: (
-        "briefings: one message that catches them up. Offer: a morning brief workflow at an "
-        "hour they pick; an end-of-day wrap of what moved; a connect link for whatever it "
-        "should read."
-    ),
-    OnboardingNeed.TODOS: (
-        "todos: they want the list held for them. Offer: a list you hold, seeded with what "
-        "they name now; a recurring sweep pulling new follow-ups out of their mail once Gmail "
-        "is connected; a reminder on the one with a date."
-    ),
-    OnboardingNeed.MEMORY: (
-        "memory: tired of repeating themselves. Offer: to store the things they are sick of "
-        "retyping (people, preferences, context) the second they say them; a standing note on "
-        "how they want you to write."
-    ),
     OnboardingNeed.RESEARCH: (
-        "research: they need digging done properly. Offer: to take the next question now; a "
-        "recurring workflow watching a topic and reporting weekly; a held list of the "
-        "questions they keep meaning to get to."
+        "research: they want digging done and reported, not links. Offer: to take the next "
+        "question now, no connection needed; a recurring workflow watching a topic and "
+        "reporting weekly; a held list of the questions they keep meaning to get to."
+    ),
+    OnboardingNeed.FOLLOWUPS: (
+        "follow-ups: who owes them a reply and what they promised whom. Offer: a list you "
+        "hold, seeded with the names they give now; a recurring sweep pulling open loops out "
+        "of their mail once Gmail is connected; a nudge when one goes quiet."
     ),
     OnboardingNeed.AUTOMATION: (
-        "automation: the same chore every day. Offer: one named chore turned into a scheduled "
-        "workflow; a reminder for the part only they can do; a second workflow once they "
-        "trust the first."
-    ),
-    OnboardingNeed.REACH: (
-        "reach: they want you where they text. Offer: you are already here; a nudge on this "
-        "channel when something needs them; a standing rule about which channel gets what."
+        "chores: the same job every day or week. Offer: one named chore turned into a "
+        "scheduled workflow; a reminder for the part only they can do; a second workflow "
+        "once they trust the first."
     ),
 }
 
@@ -152,10 +138,6 @@ OTHER_NEED_PLAYBOOK = (
     "what you can do, say so in one line and move to their next need."
 )
 
-#: The ceiling on rendered playbooks, in pick order. Somebody who ticked all
-#: eight needs and got four chips would otherwise carry a 6.6k-character block.
-MAX_PLAYBOOK_LINES = 5
-
 #: Rendered only when the seeded conversation offered chips, so the model knows
 #: which words are jobs it offered rather than a message it has to parse.
 SEEDED_CHIPS_RULE = """
@@ -187,11 +169,6 @@ def build_new_user_guidance(
         lines.append(f"- {OTHER_NEED_PLAYBOOK.format(other_need=other_need)}")
     if not lines:
         return ""
-    # Their picks lead, so the truncation drops the least-wanted playbooks. Every
-    # line is prose the model reads on every turn of a new user's first
-    # conversations, and past a handful it stops being guidance and becomes the
-    # feature list this block exists to prevent.
-    lines = lines[:MAX_PLAYBOOK_LINES]
     return NEW_USER_GUIDANCE_TEMPLATE.format(
         profession=profession or "person",
         playbooks="\n".join(lines),

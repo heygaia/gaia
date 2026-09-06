@@ -40,7 +40,6 @@ from app.agents.context.text import (
 )
 from app.agents.context.tiers import AgentTier
 from app.agents.prompts.new_user_prompts import (
-    MAX_PLAYBOOK_LINES,
     NEED_PLAYBOOKS,
     NEW_USER_GUIDANCE_TEMPLATE,
     SEEDED_CHIPS_RULE,
@@ -51,7 +50,7 @@ from app.agents.workspace.paths import session_dir
 from app.memory.context import AGENDA_HEADING, RECENT_ACTIVITY_HEADING
 from app.models.memory_models import MemorySearchResult
 from app.models.todo_models import TodoDocument
-from app.models.user_models import OnboardingNeed, OnboardingPreferences
+from app.models.user_models import NEEDS_MAX_SELECTION, OnboardingNeed, OnboardingPreferences
 from app.services.onboarding.first_question import FirstQuestion, first_question_cache_key
 from app.utils.artifact_utils import artifact_url_base
 
@@ -513,7 +512,7 @@ class TestNewUserGuidanceBlock:
     #: an edit that doubles it should fail here rather than show up as a bill.
     # Raised from 3,400 when the playbooks went from one first move each to two
     # or three named things GAIA can create, and the focus table was added. The
-    # ceiling is real: MAX_PLAYBOOK_LINES bounds the list, this bounds the prose.
+    # ceiling is real: the pick cap bounds the list, this bounds the prose.
     # Raised again from 4,700 for the writing rules the persona eval showed the
     # block could not carry without: the sentence/opener rules that stop stacked
     # fragments and the "<chip>, got it." echo, the conditional markdown rule that
@@ -547,9 +546,9 @@ class TestNewUserGuidanceBlock:
         playbook, not the catalogue they would have to be told to ignore."""
         with self._patch_count(self._count(1)):
             block = await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Student", "needs": ["memory"]})
+                ctx(user_preferences={"profession": "Student", "needs": ["calendar"]})
             )
-        assert NEED_PLAYBOOKS[OnboardingNeed.MEMORY] in block
+        assert NEED_PLAYBOOKS[OnboardingNeed.CALENDAR] in block
         assert NEED_PLAYBOOKS[OnboardingNeed.INBOX] not in block
 
     async def test_one_need_alone_is_enough_to_render(self) -> None:
@@ -632,9 +631,9 @@ class TestNewUserGuidanceBlock:
     async def test_an_unknown_need_is_skipped_rather_than_dropping_the_block(self) -> None:
         with self._patch_count(self._count(1)):
             block = await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Founder", "needs": ["telepathy", "todos"]})
+                ctx(user_preferences={"profession": "Founder", "needs": ["telepathy", "followups"]})
             )
-        assert NEED_PLAYBOOKS[OnboardingNeed.TODOS] in block
+        assert NEED_PLAYBOOKS[OnboardingNeed.FOLLOWUPS] in block
 
     async def test_a_skipped_need_names_itself_in_the_wide_event(self) -> None:
         """Silently dropping a need would look identical to never picking it —
@@ -642,7 +641,12 @@ class TestNewUserGuidanceBlock:
         async with captured_wide_event() as event:
             with self._patch_count(self._count(1)):
                 await build_new_user_guidance_block(
-                    ctx(user_preferences={"profession": "Founder", "needs": ["telepathy", "todos"]})
+                    ctx(
+                        user_preferences={
+                            "profession": "Founder",
+                            "needs": ["telepathy", "followups"],
+                        }
+                    )
                 )
 
         assert event["warnings"] == [
@@ -704,10 +708,10 @@ class TestNewUserGuidanceBlock:
         malformed bullet instead of two instructions."""
         with self._patch_count(self._count(1)):
             block = await build_new_user_guidance_block(
-                ctx(user_preferences={"profession": "Founder", "needs": ["inbox", "todos"]})
+                ctx(user_preferences={"profession": "Founder", "needs": ["inbox", "followups"]})
             )
         assert (
-            f"- {NEED_PLAYBOOKS[OnboardingNeed.INBOX]}\n- {NEED_PLAYBOOKS[OnboardingNeed.TODOS]}"
+            f"- {NEED_PLAYBOOKS[OnboardingNeed.INBOX]}\n- {NEED_PLAYBOOKS[OnboardingNeed.FOLLOWUPS]}"
             in block
         )
 
@@ -725,19 +729,6 @@ class TestNewUserGuidanceBlock:
         playbook list is the generic coaching this whole section exists to
         replace, so it must be empty string, not an empty shell."""
         assert build_new_user_guidance("Founder", []) == ""
-
-    async def test_the_playbook_list_is_capped_in_pick_order(self) -> None:
-        """Their own picks lead, so truncation drops the least-wanted lines."""
-        block = build_new_user_guidance(
-            "Founder",
-            list(OnboardingNeed),
-            "chasing invoices",
-            ["Find investors", "Fix my marketing", "Hire someone", "Write my pitch"],
-        )
-        rendered = [p for p in NEED_PLAYBOOKS.values() if p in block]
-        assert len(rendered) == MAX_PLAYBOOK_LINES
-        assert NEED_PLAYBOOKS[OnboardingNeed.INBOX] in block
-        assert NEED_PLAYBOOKS[OnboardingNeed.REACH] not in block
 
     async def test_the_chips_rule_names_the_chips_that_were_offered(self) -> None:
         """The model has to see the exact words it offered, or a one-word first
@@ -849,11 +840,12 @@ class TestNewUserGuidanceBlock:
         )
 
     async def test_the_worst_case_block_stays_within_budget(self) -> None:
-        """Every need at once, plus four seeded chips and a typed need, is the
-        largest this can ever be."""
+        """The two longest playbooks (the API caps picks at two), plus four
+        seeded chips and a typed need, is the largest this can ever be."""
+        longest = sorted(OnboardingNeed, key=lambda n: len(NEED_PLAYBOOKS[n]), reverse=True)
         block = build_new_user_guidance(
             "Founder",
-            list(OnboardingNeed),
+            longest[:NEEDS_MAX_SELECTION],
             "chasing invoices",
             ["Find investors", "Fix my marketing", "Hire someone", "Write my pitch"],
         )

@@ -22,18 +22,15 @@ PROFESSION_PHRASES: dict[str, str] = {
     "student": "a student",
 }
 
-# Q2 chips describe the user's week (needOptions in apps/web onboarding
-# constants), so each phrase is that statement in the first person. Together
-# they read as one sentence: "I'm drowning in email and follow-ups slip through."
+# Q2 chips are jobs the user hands over (needOptions in apps/web onboarding
+# constants), so each phrase is that handover as they would say it. Together
+# they read as one instruction: "Take over my email and chase my follow-ups."
 NEED_PHRASES: dict[OnboardingNeed, str] = {
-    OnboardingNeed.INBOX: "I'm drowning in email",
-    OnboardingNeed.CALENDAR: "my week is back-to-back meetings",
-    OnboardingNeed.BRIEFINGS: "I wake up already behind",
-    OnboardingNeed.TODOS: "follow-ups slip through",
-    OnboardingNeed.MEMORY: "I keep re-explaining myself",
-    OnboardingNeed.RESEARCH: "research eats my evenings",
-    OnboardingNeed.AUTOMATION: "I do the same chores every single day",
-    OnboardingNeed.REACH: "I want you wherever I am",
+    OnboardingNeed.INBOX: "take over my email",
+    OnboardingNeed.CALENDAR: "run my calendar",
+    OnboardingNeed.RESEARCH: "research and brief me",
+    OnboardingNeed.FOLLOWUPS: "chase my follow-ups",
+    OnboardingNeed.AUTOMATION: "handle my recurring chores",
 }
 
 

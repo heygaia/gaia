@@ -72,7 +72,7 @@ _TODO_LIST = "app.api.v1.endpoints.onboarding.todo_repository.list_onboarding_to
 def _make_onboarding_request(**overrides) -> dict:
     base = {
         "profession": "Developer",
-        "needs": ["inbox", "todos"],
+        "needs": ["inbox", "followups"],
         "timezone": "UTC",
     }
     base.update(overrides)
@@ -158,7 +158,7 @@ class TestCompleteOnboarding:
         user_id, submitted = mock_complete.await_args.args
         assert user_id == FAKE_USER_ID
         assert submitted.profession == "Developer"
-        assert [need.value for need in submitted.needs] == ["inbox", "todos"]
+        assert [need.value for need in submitted.needs] == ["inbox", "followups"]
         assert submitted.timezone == "UTC"
 
 

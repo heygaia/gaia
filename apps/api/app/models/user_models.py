@@ -12,6 +12,9 @@ _RESPONSE_MESSAGE_DESC = "Response message"
 
 #: Onboarding Q2 "Something else": one short line, sent verbatim in the first message.
 OTHER_NEED_MAX_LENGTH = 120
+#: Q2 is "pick up to two": every extra pick dilutes the first thread's opener and
+#: the bot's first message down to a feature list. Mirrored in the web constants.
+NEEDS_MAX_SELECTION = 2
 #: Q1 is answered in sentences, not job titles, so this is a "one line" cap,
 #: not a "job title" one. Mirrored by PROFESSION_MAX_LENGTH in the web
 #: onboarding constants — the field's maxLength must match or typing goes dead.
@@ -78,16 +81,17 @@ class UpdateTimezoneResponse(BaseModel):
 
 
 class OnboardingNeed(StrEnum):
-    """What the user asked GAIA for during onboarding (Q2, multi-select)."""
+    """The jobs the user handed GAIA during onboarding (Q2, up to two picks).
+
+    Each value is a different kind of work, so two people rarely pick the same
+    pair and the picks carry signal into the first thread and the bot opener.
+    """
 
     INBOX = "inbox"
     CALENDAR = "calendar"
-    BRIEFINGS = "briefings"
-    TODOS = "todos"
-    MEMORY = "memory"
     RESEARCH = "research"
+    FOLLOWUPS = "followups"
     AUTOMATION = "automation"
-    REACH = "reach"
 
 
 class OnboardingPreferences(BaseModel):
@@ -97,7 +101,8 @@ class OnboardingPreferences(BaseModel):
     )
     needs: list[OnboardingNeed] | None = Field(
         None,
-        description="What the user wants GAIA to help with (onboarding Q2)",
+        max_length=NEEDS_MAX_SELECTION,
+        description="The jobs the user handed GAIA (onboarding Q2, up to two)",
     )
     response_style: str | None = Field(
         default=None,
@@ -163,7 +168,8 @@ class OnboardingRequest(BaseModel):
     )
     needs: list[OnboardingNeed] = Field(
         default_factory=list,
-        description="What the user wants GAIA to help with (onboarding Q2)",
+        max_length=NEEDS_MAX_SELECTION,
+        description="The jobs the user handed GAIA (onboarding Q2, up to two)",
     )
     other_need: str | None = Field(
         None,
@@ -174,12 +180,15 @@ class OnboardingRequest(BaseModel):
         None, description="User's detected timezone (e.g., 'America/New_York', 'UTC')"
     )
 
-    @field_validator("needs")
+    @field_validator("needs", mode="before")
     @classmethod
-    def dedupe_needs(cls, v: list[OnboardingNeed]) -> list[OnboardingNeed]:
+    def dedupe_needs(cls, v: object) -> object:
         """First-occurrence order, no duplicates — the UI is a toggle grid, so
-        a repeated value is a client bug, not a meaningful selection."""
-        return list(dict.fromkeys(v))
+        a repeated value is a client bug, not a meaningful selection. Runs
+        before the pick cap so a double tap counts as one pick, not three."""
+        if isinstance(v, list):
+            return list(dict.fromkeys(v))
+        return v
 
     @field_validator("profession")
     @classmethod

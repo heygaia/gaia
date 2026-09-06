@@ -414,7 +414,7 @@ class TestCompleteOnboarding:
         """The milestone is emitted here now that nothing runs afterwards, keyed
         on the user so a retried POST cannot count it twice."""
         mock_repo.complete_onboarding.return_value = sample_user
-        request = OnboardingRequest(profession="Engineer", needs=["todos", "inbox"])
+        request = OnboardingRequest(profession="Engineer", needs=["followups", "inbox"])
 
         with (
             patch(f"{SERVICE}.capture_event") as capture,
@@ -425,7 +425,7 @@ class TestCompleteOnboarding:
         capture.assert_called_once_with(
             sample_user_id,
             AnalyticsEvents.ONBOARDING_COMPLETED,
-            {"needs": ["inbox", "todos"], "has_other_need": False},
+            {"needs": ["followups", "inbox"], "has_other_need": False},
             dedupe_key=sample_user_id,
         )
         # The profession lands on the person, not the event, so cohorts can
@@ -443,7 +443,7 @@ class TestCompleteOnboarding:
     ) -> None:
         mock_repo.complete_onboarding.return_value = sample_user
         request = OnboardingRequest(
-            profession="Engineer", needs=["todos"], other_need="chase invoices"
+            profession="Engineer", needs=["followups"], other_need="chase invoices"
         )
 
         with (
@@ -525,7 +525,7 @@ class TestCompleteOnboarding:
         sample_user: UserDocument,
     ) -> None:
         request = OnboardingRequest(
-            profession="  Engineer  ", needs=["inbox", "briefings"], timezone=" UTC "
+            profession="  Engineer  ", needs=["inbox", "calendar"], timezone=" UTC "
         )
         mock_repo.complete_onboarding.return_value = sample_user
 
@@ -538,7 +538,7 @@ class TestCompleteOnboarding:
             bio_status=BioStatus.PENDING,
             preferences=OnboardingPreferences(
                 profession="Engineer",
-                needs=[OnboardingNeed.INBOX, OnboardingNeed.BRIEFINGS],
+                needs=[OnboardingNeed.INBOX, OnboardingNeed.CALENDAR],
                 response_style="casual",
                 custom_instructions=None,
             ),
@@ -558,8 +558,10 @@ class TestCompleteOnboarding:
         assert mock_repo.complete_onboarding.await_args.kwargs["timezone"] is None
 
     async def test_duplicate_needs_are_deduped_in_selection_order(self) -> None:
-        request = OnboardingRequest(profession="Engineer", needs=["todos", "inbox", "todos"])
-        assert request.needs == [OnboardingNeed.TODOS, OnboardingNeed.INBOX]
+        request = OnboardingRequest(
+            profession="Engineer", needs=["followups", "inbox", "followups"]
+        )
+        assert request.needs == [OnboardingNeed.FOLLOWUPS, OnboardingNeed.INBOX]
 
     async def test_generic_exception_returns_500(
         self,
@@ -1401,14 +1403,14 @@ class TestCompleteOnboardingExactKwargs:
         sample_user: UserDocument,
     ) -> None:
         mock_repo.complete_onboarding.return_value = sample_user
-        request = OnboardingRequest(profession="  Engineer  ", needs=["memory"], timezone=" UTC ")
+        request = OnboardingRequest(profession="  Engineer  ", needs=["research"], timezone=" UTC ")
         await complete_onboarding(sample_user_id, request)
 
         kwargs = mock_repo.complete_onboarding.await_args.kwargs
         assert kwargs["timezone"] == "UTC"
         assert kwargs["preferences"] == OnboardingPreferences(
             profession="Engineer",
-            needs=[OnboardingNeed.MEMORY],
+            needs=[OnboardingNeed.RESEARCH],
             response_style="casual",
             custom_instructions=None,
         )

@@ -94,7 +94,7 @@ PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     ),
     (
         "sales + todos",
-        OnboardingPreferences(profession="sales", needs=[OnboardingNeed.TODOS]),
+        OnboardingPreferences(profession="sales", needs=[OnboardingNeed.FOLLOWUPS]),
         None,
     ),
     (
@@ -115,7 +115,7 @@ PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     (
         "executive + briefings + memory",
         OnboardingPreferences(
-            profession="executive", needs=[OnboardingNeed.BRIEFINGS, OnboardingNeed.MEMORY]
+            profession="executive", needs=[OnboardingNeed.CALENDAR, OnboardingNeed.FOLLOWUPS]
         ),
         None,
     ),

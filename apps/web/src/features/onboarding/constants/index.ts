@@ -14,22 +14,25 @@ export const professionOptions: ProfessionOption[] = [
 ];
 
 /**
- * Q2 options: statements about the user's week, not GAIA's feature list, so
- * ticking several is describing yourself rather than ordering off a menu.
+ * Q2 options: jobs the user hands GAIA, each a different kind of work, so two
+ * people rarely pick the same pair and the picks mean something downstream
+ * (the seeded thread's chips, the connect-link order, the bot's opener).
  * `value` mirrors the backend `OnboardingNeed` StrEnum
  * (`apps/api/app/models/user_models.py`) one-for-one — the API rejects
  * anything outside that set, so the two lists must stay in lockstep. The
  * first-person phrasing lives in `first_message.py` next to the enum.
  */
 export const needOptions: NeedOption[] = [
-  { value: "inbox", label: "Drowning in email" },
-  { value: "calendar", label: "Back-to-back meetings" },
-  { value: "briefings", label: "I wake up already behind" },
-  { value: "todos", label: "Follow-ups slip through" },
-  { value: "memory", label: "I keep re-explaining myself" },
-  { value: "research", label: "Research eats my evenings" },
-  { value: "automation", label: "Same chores every single day" },
+  { value: "inbox", label: "Answer my email" },
+  { value: "calendar", label: "Run my calendar" },
+  { value: "research", label: "Research and brief me" },
+  { value: "followups", label: "Chase my follow-ups" },
+  { value: "automation", label: "Do my recurring chores" },
 ];
+
+export function isKnownNeed(value: string): boolean {
+  return needOptions.some((option) => option.value === value);
+}
 
 /** The catch-all chip; picking it opens a free-text field whose value replaces
  * this marker as the draft. Anything not in `professionOptions` is a typed job. */
@@ -51,6 +54,9 @@ export const OTHER_NEED_OPTION: NeedOption = {
 };
 
 export const NEEDS_MIN_SELECTION = 1;
+/** Mirrors `NEEDS_MAX_SELECTION` in apps/api user_models.py: the API 422s a
+ * third need. "Something else" counts as a pick, so the field closes the grid. */
+export const NEEDS_MAX_SELECTION = 2;
 
 /** Mirror `OnboardingPreferences` in apps/api user_models.py: the profession
  * validator caps at 80 and `OTHER_NEED_MAX_LENGTH` at 120; longer text 422s.
@@ -93,7 +99,7 @@ export const questions: Question[] = [
     id: "2",
     lines: (responses) => [
       professionAck(responses),
-      "Where does your week actually go? Tap whatever's true, all of it.",
+      "What do you want off your plate first? Pick up to two.",
     ],
     fieldName: FIELD_NAMES.NEEDS,
   },

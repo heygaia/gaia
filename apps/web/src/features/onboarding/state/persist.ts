@@ -1,3 +1,4 @@
+import { isKnownNeed } from "../constants";
 import type { OnboardingState } from "./types";
 
 // v3 = the paid-first flow. A bumped key is what stops a half-finished v2
@@ -42,7 +43,9 @@ export function loadPersisted(userId: string): Partial<OnboardingState> | null {
     return {
       responses: parsed.responses ?? {},
       questionIndex: parsed.questionIndex ?? 0,
-      selectedNeeds: parsed.selectedNeeds ?? [],
+      // A chip set from an older build must not resurrect a value the API
+      // no longer accepts.
+      selectedNeeds: (parsed.selectedNeeds ?? []).filter(isKnownNeed),
       otherNeed: parsed.otherNeed ?? "",
       preferencesPersisted: parsed.preferencesPersisted ?? false,
       paidRevealAcked: parsed.paidRevealAcked ?? false,

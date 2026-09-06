@@ -26,6 +26,7 @@ from app.models.message_models import (
     SelectedWorkflowData,
 )
 from app.models.user_models import (
+    NEEDS_MAX_SELECTION,
     PROFESSION_MAX_LENGTH,
     OnboardingNeed,
     OnboardingPreferences,
@@ -208,6 +209,17 @@ class TestOnboardingRequest:
         assert r.profession == "Engineer"
         assert [n.value for n in r.needs] == ["inbox", "calendar"]
 
+    def test_more_than_the_pick_cap_is_rejected(self) -> None:
+        """Q2 is "pick up to two": a third need is a client that skipped the cap."""
+        with pytest.raises(ValidationError):
+            OnboardingRequest(profession="Founder", needs=["inbox", "calendar", "research"])
+        with pytest.raises(ValidationError):
+            OnboardingPreferences(needs=["inbox", "calendar", "research"])
+
+    def test_the_pick_cap_is_two(self) -> None:
+        assert NEEDS_MAX_SELECTION == 2
+        assert OnboardingRequest(profession="Founder", needs=["inbox", "calendar"]).needs
+
     def test_multiline_profession_rejected(self):
         with pytest.raises(ValidationError):
             OnboardingRequest(profession="Eng\nineer", needs=["inbox"])
@@ -310,8 +322,8 @@ class TestOnboardingRequest:
             OnboardingRequest(profession="Engineer", needs=["world_peace"])
 
     def test_duplicate_needs_deduped_in_order(self):
-        r = OnboardingRequest(profession="Engineer", needs=["todos", "inbox", "todos"])
-        assert [n.value for n in r.needs] == ["todos", "inbox"]
+        r = OnboardingRequest(profession="Engineer", needs=["followups", "inbox", "followups"])
+        assert [n.value for n in r.needs] == ["followups", "inbox"]
 
     def test_a_name_is_not_part_of_the_contract(self):
         """The name is derived from the email server-side; an extra key is ignored."""
@@ -364,13 +376,10 @@ class TestOnboardingPreferences:
         assert OnboardingPreferences(profession="Developer").needs is None
 
     def test_needs_accept_the_allowed_keys(self):
-        p = OnboardingPreferences(needs=["inbox", "calendar", "reach"])
-        assert p.needs == [
-            OnboardingNeed.INBOX,
-            OnboardingNeed.CALENDAR,
-            OnboardingNeed.REACH,
-        ]
-        assert p.model_dump()["needs"] == ["inbox", "calendar", "reach"]
+        for need in OnboardingNeed:
+            p = OnboardingPreferences(needs=[need.value])
+            assert p.needs == [need]
+            assert p.model_dump()["needs"] == [need.value]
 
     def test_needs_reject_an_unknown_key(self):
         with pytest.raises(ValidationError):

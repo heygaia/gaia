@@ -5,7 +5,6 @@
  */
 
 import {
-  Brain01Icon,
   Briefcase01Icon,
   Calendar01Icon,
   ChartIncreaseIcon,
@@ -19,7 +18,6 @@ import {
   Rocket01Icon,
   Search01Icon,
   SparklesIcon,
-  SunriseIcon,
   TaskDone01Icon,
   UserMultipleIcon,
   WorkflowSquare01Icon,
@@ -97,10 +95,8 @@ export const OPTION_STYLE: Record<string, OptionStyle> = {
   // needs
   inbox: { icon: InboxIcon, tint: TINTS.sky },
   calendar: { icon: Calendar01Icon, tint: TINTS.violet },
-  briefings: { icon: SunriseIcon, tint: TINTS.amber },
-  todos: { icon: TaskDone01Icon, tint: TINTS.emerald },
-  memory: { icon: Brain01Icon, tint: TINTS.pink },
   research: { icon: Search01Icon, tint: TINTS.teal },
+  followups: { icon: TaskDone01Icon, tint: TINTS.emerald },
   automation: { icon: WorkflowSquare01Icon, tint: TINTS.orange },
   something_else: { icon: PencilEdit01Icon, tint: TINTS.indigo },
 };

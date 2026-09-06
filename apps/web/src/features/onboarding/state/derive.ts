@@ -21,6 +21,11 @@ function isQuestionsComplete(s: OnboardingState): boolean {
   return s.questionIndex >= questions.length;
 }
 
+/** Q2 picks so far: chips plus "Something else" once it carries words. */
+export function pickCount(s: OnboardingState): number {
+  return s.selectedNeeds.length + (s.otherNeed.trim() !== "" ? 1 : 0);
+}
+
 export function canSubmitNeeds(s: OnboardingState): boolean {
   return (
     s.selectedNeeds.length >= NEEDS_MIN_SELECTION || s.otherNeed.trim() !== ""

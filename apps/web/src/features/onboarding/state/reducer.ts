@@ -4,8 +4,8 @@
  * documented in `types.ts`.
  */
 
-import { questions } from "../constants";
-import { canSubmitNeeds } from "./derive";
+import { NEEDS_MAX_SELECTION, questions } from "../constants";
+import { canSubmitNeeds, pickCount } from "./derive";
 import { initialState } from "./initial";
 import type { Action, OnboardingState } from "./types";
 
@@ -27,11 +27,20 @@ export function reducer(
       };
     }
 
+    // The cap is enforced here, not only by dimming chips: a double tap or a
+    // stale chip must never submit a third need the API would reject.
     case "toggleNeed": {
-      const selected = state.selectedNeeds.includes(action.value)
-        ? state.selectedNeeds.filter((n) => n !== action.value)
-        : [...state.selectedNeeds, action.value];
-      return { ...state, selectedNeeds: selected };
+      if (state.selectedNeeds.includes(action.value)) {
+        return {
+          ...state,
+          selectedNeeds: state.selectedNeeds.filter((n) => n !== action.value),
+        };
+      }
+      if (pickCount(state) >= NEEDS_MAX_SELECTION) return state;
+      return {
+        ...state,
+        selectedNeeds: [...state.selectedNeeds, action.value],
+      };
     }
 
     case "setOtherNeed":
