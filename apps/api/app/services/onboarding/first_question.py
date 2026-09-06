@@ -40,8 +40,10 @@ QUESTION_TIMEOUT_SECONDS = 20.0
 
 #: The ceiling for the call made at completion, when the prewarm missed. The
 #: user is watching a spinner here, so this is a last chance rather than a real
-#: attempt: past two seconds the static line is the better product.
-LIVE_QUESTION_TIMEOUT_SECONDS = 2.0
+#: attempt. Six seconds because a thread that ships with only "Something else"
+#: is the worse product by a wide margin, and the prewarm usually has finished
+#: long before this runs; the dev lane measured 5 to 13 seconds per compose.
+LIVE_QUESTION_TIMEOUT_SECONDS = 6.0
 
 #: Low but not zero. At 0 the question collapses onto the same two shapes for
 #: every persona; above this it starts inventing facts about their week.
@@ -288,11 +290,16 @@ async def resolve_first_question(
         user_id=user_id,
         timeout_seconds=LIVE_QUESTION_TIMEOUT_SECONDS,
     )
-    log.info(
-        f"{LogTag.ONBOARDING} first question resolved",
-        user_id=user_id,
-        outcome="live" if live is not None else "fallback",
-    )
+    if live is None:
+        # A thread seeded without its chips is a real degradation, so it is a
+        # warning on the wide event, not an info line nobody reads.
+        log.warning(
+            f"{LogTag.ONBOARDING} first question missed: thread seeded without chips",
+            user_id=user_id,
+            outcome="fallback",
+        )
+    else:
+        log.info(f"{LogTag.ONBOARDING} first question resolved", user_id=user_id, outcome="live")
     return live
 
 
