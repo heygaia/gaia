@@ -14,7 +14,7 @@ and integration tiers.
 A judge model then answers the five questions that decide whether someone keeps
 a bot texting them, and rates the run out of 5.
 
-Every persona's messages are written to /tmp/activation-eval/<name>.json as they
+Every persona's messages are written to scripts/evals/runs/activation-eval/<name>.json as they
 are generated, before anything is judged, and a judge failure is printed rather
 than raised. Generating is the half that costs money and judging is the half
 that dies, so a dead judge must never throw away five days of model calls.
@@ -23,9 +23,9 @@ Usage (from apps/api/, secrets injected):
 
     infisical run --env=development -- uv run python scripts/evals/activation_sequence.py
     ... activation_sequence.py --users 3
-    ... activation_sequence.py --personas .agents/plans/prod-personas.json
+    ... activation_sequence.py --personas scripts/evals/runs/prod-personas.json
 
-``--personas`` seeds roles, picks and per-day transcripts from a probe dump
+``--personas`` (a file under scripts/evals/runs/) seeds roles, picks and per-day transcripts from a probe dump
 (startup log lines, then JSON from the first line starting with ``{``) instead
 of the three synthetic personas below.
 """
@@ -61,12 +61,13 @@ from app.services.activation.policy import (
     direction,
     skip_reason,
 )
+from scripts.evals.core.paths import RUNS_DIR, under_runs
 
 JUDGE_TIMEOUT_SECONDS = 90.0
 #: A frozen clock so two runs of this script are comparable.
 FROZEN_NOW = datetime(2026, 5, 4, 8, 0, tzinfo=UTC)
 #: Where the generated messages land before anything is judged.
-RAW_DIR = Path("/tmp/activation-eval")
+RAW_DIR = RUNS_DIR / "activation-eval"
 
 
 class Persona(BaseModel):
@@ -419,7 +420,7 @@ def _report(name: str, who: str, days: list[Day], run_verdict: _RunVerdict | Non
 async def run(count: int, personas_path: Path | None) -> None:
     print(f"activation sequence simulator — clock frozen at {FROZEN_NOW.isoformat()}")
     print(f"raw messages are written to {RAW_DIR} as they are generated")
-    personas = load_personas(personas_path) if personas_path else PERSONAS
+    personas = load_personas(under_runs(personas_path)) if personas_path else PERSONAS
     for persona in personas[:count]:
         who, days, run_verdict = await _run_persona(persona)
         _report(persona.name, who, days, run_verdict)

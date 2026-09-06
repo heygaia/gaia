@@ -36,6 +36,7 @@ from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_stru
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.onboarding.first_message import compose_first_message
 from scripts.evals.chat_quality import Turn, _send_turn
+from scripts.evals.core.paths import RUNS_DIR, under_runs
 from scripts.evals.need_playbooks import _provision
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:9330")
@@ -389,12 +390,13 @@ def _report(rows: list[GradedJourney]) -> None:
         print()
 
 
-RAW_DIR = Path("/tmp")
+RAW_DIR = RUNS_DIR
 
 
 def _save_raw(rows: list[GradedJourney]) -> Path:
     """Transcripts survive a judge outage: judging is the step most likely to
     die on credits, and the turns are the expensive part."""
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
     path = RAW_DIR / f"journeys-{RUN_ID}.json"
     path.write_text(json.dumps([r.model_dump(mode="json") for r in rows], indent=1))
     return path
@@ -437,7 +439,9 @@ async def main() -> None:
     )
     args = parser.parse_args()
     await run(
-        args.api_url.rstrip("/"), args.only, Path(args.judge_only) if args.judge_only else None
+        args.api_url.rstrip("/"),
+        args.only,
+        under_runs(Path(args.judge_only)) if args.judge_only else None,
     )
 
 
