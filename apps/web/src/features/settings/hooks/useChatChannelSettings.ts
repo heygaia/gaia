@@ -48,9 +48,8 @@ export function useChatChannelSettings(
     if (nextLinked === linkedOrder) return;
     // Unlinked platforms stay at the tail, so relinking one later restores the
     // position the user chose for it rather than dropping it to the default.
-    const unlinked = order.filter(
-      (platform) => !linkedPlatforms.includes(platform),
-    );
+    const linked = new Set(linkedPlatforms);
+    const unlinked = order.filter((platform) => !linked.has(platform));
     const previous = order;
     setOrder([...nextLinked, ...unlinked]);
     setSaving(true);
