@@ -511,15 +511,20 @@ async def build_agent_config(
         turn.writing_style,
     )
 
-    # turn.workflow_id covers the top-level fire; base_configurable covers every
-    # child run that inherits it. Reading only the latter attributed a workflow's
-    # own comms generations to chat, because nothing has stamped it yet.
-    run_workflow_id = turn.workflow_id or (base_configurable or {}).get("workflow_id")
+    # Both halves are resolved the same way and for the same reason: the turn
+    # carries them on a top-level run, the parent's configurable carries them on
+    # every child. Reading only one side mislabels the other — the executor and
+    # its subagents omit `source`, so taking it from the turn alone booked a web
+    # chat's own worker tiers as background, and nothing stamps `workflow_id`
+    # until after this function returns.
+    inherited = base_configurable or {}
+    run_source = source or inherited.get("conversation_source")
+    run_workflow_id = turn.workflow_id or inherited.get("workflow_id")
     callbacks = _build_agent_callbacks(
         conversation_id,
         user,
         agent_name,
-        source,
+        run_source,
         run_workflow_id,
         tracing.usage_metadata_callback,
     )
