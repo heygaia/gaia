@@ -186,13 +186,21 @@ class Turn(BaseModel):
 
 
 def _frame_tool_names(frame: dict) -> list[str]:
+    """Every tool name in a ``tool_data`` frame, including the one a
+    ``tool_calls_data`` announcement wraps (its ``data`` is one step dict)."""
     payload = frame.get("tool_data")
     entries = payload if isinstance(payload, list) else [payload]
-    return [
-        entry["tool_name"]
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("tool_name"), str)
-    ]
+    names: list[str] = []
+    for entry in entries:
+        if not isinstance(entry, dict) or not isinstance(entry.get("tool_name"), str):
+            continue
+        names.append(entry["tool_name"])
+        inner = entry.get("data")
+        if entry["tool_name"] == "tool_calls_data" and isinstance(inner, dict):
+            inner_name = inner.get("tool_name") or inner.get("name")
+            if isinstance(inner_name, str):
+                names.append(inner_name)
+    return names
 
 
 async def _send_turn(
@@ -241,7 +249,7 @@ async def _send_turn(
                 chunks.append(frame["response"])
             tools.extend(_frame_tool_names(frame))
     reply = "".join(chunks).strip() or "[no text in stream]"
-    delegated = "tool_calls_data" in tools
+    delegated = "call_executor" in tools
     if delegated:
         delivered, more_tools = await _await_delivery(client, api_url, conversation_id, message)
         if delivered:
