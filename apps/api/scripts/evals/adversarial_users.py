@@ -74,7 +74,7 @@ USER_TEMPLATE = os.environ.get("GAIA_DEV_USER_TEMPLATE", "adv-{slug}-" + RUN_ID 
 #: the saved conversation. Same contract as chat_quality.py.
 DELIVERY_WAIT_SECONDS = 75.0
 DELIVERY_POLL_SECONDS = 3.0
-TURN_TIMEOUT_SECONDS = 180.0
+TURN_TIMEOUT_SECONDS = 300.0  # a delegated turn on a slow dev lane waits on the executor; 60s timed out 33/35 personas on 2026-09-06
 JUDGE_TIMEOUT_SECONDS = 180.0
 USER_TIMEOUT_SECONDS = 120.0
 JUDGE_CONCURRENCY = 4
