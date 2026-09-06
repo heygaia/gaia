@@ -447,12 +447,27 @@ class TestSearchPublicWorkflowsShape:
             {"id": "w1", "title": "Digest (copy)", "description": "inbox", "slug": "other"},
             {"title": "Triage again", "description": "inbox", "slug": "triage"},
             {"title": "Sorter", "description": "inbox"},
+            {"title": "Fresh", "description": "inbox", "slug": "fresh"},
         ]
         with _public_workflows(explore, community):
             result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
 
-        # Two title-only rows with different titles are two templates.
-        assert [w["title"] for w in result["workflows"]] == ["Digest", "Triage", "Sorter", "Filer"]
+        # Two title-only rows with different titles are two templates, and a
+        # new template after a run of repeats is still found.
+        assert [w["title"] for w in result["workflows"]] == [
+            "Digest",
+            "Triage",
+            "Sorter",
+            "Filer",
+            "Fresh",
+        ]
+
+    async def test_a_word_in_no_field_matches_nothing(self) -> None:
+        rows = [_workflow("Digest", "inbox every morning", source_integration="gmail")]
+        with _public_workflows(rows, []):
+            result = await search_public_workflows.ainvoke({"query": "xx"}, _CONFIG)
+
+        assert result["workflows"] == []
 
     async def test_the_wide_event_names_the_tool_and_counts_the_matches(self) -> None:
         rows = [_workflow("Digest", "inbox"), _workflow("Sorter", "inbox")]
