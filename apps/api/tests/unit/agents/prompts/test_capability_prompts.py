@@ -168,3 +168,32 @@ class TestCapabilityBlock:
         assert COMMS_AGENT_PROMPT.index("12. CONNECT MEANS A LINK:") < COMMS_AGENT_PROMPT.index(
             "## Voice"
         )
+
+
+@pytest.mark.unit
+class TestGeneratedFacts:
+    """The counts and names come from the registries, so the block cannot drift
+    from what ships: add an integration or a bot and the prose follows."""
+
+    def test_integration_count_matches_the_registry(self) -> None:
+        from app.config.oauth_config import OAUTH_INTEGRATIONS
+
+        block = build_capability_block()
+        assert f"INTEGRATIONS: {len(OAUTH_INTEGRATIONS)} services" in block
+        assert "show a connect card" in block
+
+    def test_every_bot_platform_is_named(self) -> None:
+        block = build_capability_block()
+        for name in ("WhatsApp", "Telegram", "Discord", "Slack", "iMessage"):
+            assert name in block
+
+    def test_reminders_memory_and_research_are_explained(self) -> None:
+        block = build_capability_block()
+        for header in ("REMINDERS:", "MEMORY:", "RESEARCH, WRITING, FILES:"):
+            assert header in block
+
+    def test_no_dash_characters_leak_into_the_prompt(self) -> None:
+        """Prompt prose rule: no em or en dashes, the hygiene tests scan for them."""
+        block = build_capability_block()
+        assert "\u2014" not in block
+        assert "\u2013" not in block

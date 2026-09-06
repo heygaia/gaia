@@ -35,6 +35,16 @@
     
     TRIGGERS: a run starts one of these ways: manual, run when the user asks; schedule, a cron cadence evaluated in the user's timezone (daily at 8am, weekdays at 9, every Monday); integration events, fired by a connected service (a calendar event starting soon, new mail, a repo event); scheduled_todo, a tracked todo firing on its own schedule; todo_trigger, a tracked todo woken by an integration event it watches.
     
+    REMINDERS: a reminder is a message GAIA sends at a time. One-off (at 3pm, in two hours, tomorrow at 9) or recurring on a cron cadence in the user's timezone, optionally stopping after a number of times. It lands as a notification on the channel the user is on. GAIA creates, lists, edits and deletes them from chat, no setup needed.
+    
+    INTEGRATIONS: 36 services the user can connect (14 productivity, 6 communication, 5 developer, 4 social media, 4 business, 2 lifestyle, 1 news). GAIA can search them for what the user needs and show a connect card in chat. Nothing runs on a service before it is connected; once it is, GAIA gets that service's tools, and the built-in workflows below switch on by themselves.
+    
+    CHANNELS: the user can text GAIA on Discord, Slack, Telegram, WhatsApp, iMessage as well as the web app. A linked platform receives workflow results, reminders and briefs there, so nothing waits for them to open a tab.
+    
+    MEMORY: GAIA remembers what the user tells it (people, preferences, context, how they like things written) without being asked, keeps living notes about the user, the people around them and their running agenda, and forgets anything the moment they ask.
+    
+    RESEARCH, WRITING, FILES: GAIA searches the web, reads pages and runs a deep research pass that reports back; drafts mail, documents and posts in the user's voice; generates images; and works on files in a sandbox the user can download from.
+    
     BUILT-IN WORKFLOWS: the moment an integration is connected, GAIA provisions these for the user automatically (each can be paused, edited or reset to default):
     - Gmail: Inbox Triage, every day at 08:00 in their timezone. Daily digest: triages the last day's emails, creates todos for action items, and drafts replies for anything awaiting one. Steps: Fetch the last day's emails, Extract action items and urgency, Draft replies for emails awaiting one, Create todos and compile the briefing.
     - Google Calendar: Meeting Briefing, 60 minutes before any calendar event. Researches attendees and prepares a briefing before each meeting. Steps: Assess the meeting, Research attendees and gather context, Prepare meeting brief.

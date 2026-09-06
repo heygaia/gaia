@@ -11,7 +11,10 @@ Prompt prose rules apply (no dashes, human voice); the hygiene tests scan the
 rendered prompt.
 """
 
-from app.config.oauth_config import get_integration_by_id
+from collections import Counter
+
+from app.config.oauth_config import OAUTH_INTEGRATIONS, get_integration_by_id
+from app.models.chat_models import BOT_CONVERSATION_SOURCES, ConversationSource
 from app.models.trigger_configs import CalendarEventStartingSoonConfig
 from app.models.workflow_models import CreateWorkflowRequest, TriggerConfig, TriggerType
 from app.services.system_workflows.definitions import SYSTEM_WORKFLOWS_BY_INTEGRATION
@@ -36,6 +39,34 @@ _WORKFLOWS = (
     "can edit, activate, pause, run on demand, or reset a built-in one to its default. A "
     "workflow that finishes reports back on whatever channel the user is on."
 )
+
+_REMINDERS = (
+    "REMINDERS: a reminder is a message GAIA sends at a time. One-off (at 3pm, in two hours, "
+    "tomorrow at 9) or recurring on a cron cadence in the user's timezone, optionally stopping "
+    "after a number of times. It lands as a notification on the channel the user is on. GAIA "
+    "creates, lists, edits and deletes them from chat, no setup needed."
+)
+
+_MEMORY = (
+    "MEMORY: GAIA remembers what the user tells it (people, preferences, context, how they "
+    "like things written) without being asked, keeps living notes about the user, the people "
+    "around them and their running agenda, and forgets anything the moment they ask."
+)
+
+_RESEARCH = (
+    "RESEARCH, WRITING, FILES: GAIA searches the web, reads pages and runs a deep research "
+    "pass that reports back; drafts mail, documents and posts in the user's voice; generates "
+    "images; and works on files in a sandbox the user can download from."
+)
+
+#: Display names for the bot platforms; the enum values are lowercase slugs.
+_CHANNEL_NAMES: dict[ConversationSource, str] = {
+    ConversationSource.WHATSAPP: "WhatsApp",
+    ConversationSource.TELEGRAM: "Telegram",
+    ConversationSource.DISCORD: "Discord",
+    ConversationSource.SLACK: "Slack",
+    ConversationSource.IMESSAGE: "iMessage",
+}
 
 _TRIGGER_TEXT: dict[TriggerType, str] = {
     TriggerType.MANUAL: "manual, run when the user asks",
@@ -83,6 +114,31 @@ def _integration_name(integration_id: str) -> str:
     return integration.name if integration else integration_id
 
 
+def _integrations_line() -> str:
+    by_category = Counter(integration.category for integration in OAUTH_INTEGRATIONS)
+    categories = ", ".join(
+        f"{count} {category.replace('_', ' ')}" for category, count in by_category.most_common()
+    )
+    return (
+        f"INTEGRATIONS: {len(OAUTH_INTEGRATIONS)} services the user can connect ({categories}). "
+        "GAIA can search them for what the user needs and show a connect card in chat. Nothing "
+        "runs on a service before it is connected; once it is, GAIA gets that service's tools, "
+        "and the built-in workflows below switch on by themselves."
+    )
+
+
+def _channels_line() -> str:
+    names = ", ".join(
+        _CHANNEL_NAMES[source]
+        for source in sorted(BOT_CONVERSATION_SOURCES, key=lambda s: _CHANNEL_NAMES[s])
+    )
+    return (
+        f"CHANNELS: the user can text GAIA on {names} as well as the web app. A linked "
+        "platform receives workflow results, reminders and briefs there, so nothing waits for "
+        "them to open a tab."
+    )
+
+
 def build_capability_block() -> str:
     trigger_kinds = "; ".join(_TRIGGER_TEXT[kind] for kind in TriggerType)
     triggers = f"TRIGGERS: a run starts one of these ways: {trigger_kinds}."
@@ -95,7 +151,20 @@ def build_capability_block() -> str:
         "BUILT-IN WORKFLOWS: the moment an integration is connected, GAIA provisions these for "
         f"the user automatically (each can be paused, edited or reset to default):\n{workflows}"
     )
-    return f"{CAPABILITY_SECTION_HEADER}\n\n{_TODOS}\n\n{_WORKFLOWS}\n\n{triggers}\n\n{built_in}"
+    # The built-in list stays last: its header is followed by one workflow per
+    # line and nothing else, which is what the model (and a test) reads.
+    sections = (
+        _TODOS,
+        _WORKFLOWS,
+        triggers,
+        _REMINDERS,
+        _integrations_line(),
+        _channels_line(),
+        _MEMORY,
+        _RESEARCH,
+        built_in,
+    )
+    return f"{CAPABILITY_SECTION_HEADER}\n\n" + "\n\n".join(sections)
 
 
 CAPABILITY_BLOCK = build_capability_block()
