@@ -201,10 +201,11 @@ class DodoPaymentService:
             if discount_code:
                 # Pre-apply a known discount (customer can still edit it on the page)
                 params["discount_code"] = discount_code
-            if settings.ENV != "production":
-                # Test mode: everything but the card is filled in, and a card used
-                # once is offered back as a saved method, so a developer pays in
-                # one click after the first run.
+            if settings.ENV == "development":
+                # Opt-in for local development only: everything but the card is
+                # filled in, and a card used once is offered back as a saved
+                # method, so a developer pays in one click after the first run.
+                # Nothing here is sent unless the environment says development.
                 params["billing_address"] = dict(DODO_TEST_MODE_BILLING_ADDRESS)
                 params["customer"]["phone_number"] = DODO_TEST_MODE_PHONE_NUMBER
                 params["show_saved_payment_methods"] = True
