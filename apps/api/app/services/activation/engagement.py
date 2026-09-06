@@ -23,7 +23,7 @@ def record_reply(user_id: str, state: ActivationSequenceState) -> None:
     """
     if state.last_sent_at is None or not state.messages:
         return
-    age = datetime.now(UTC) - state.last_sent_at.astimezone(UTC)
+    age = datetime.now(UTC) - state.last_sent_at
     if age > timedelta(hours=REPLY_WINDOW_HOURS):
         return
     last = state.messages[-1]

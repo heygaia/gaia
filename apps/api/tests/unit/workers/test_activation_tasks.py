@@ -11,11 +11,18 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.models.activation_models import ActivationDraft
+from app.models.activation_models import ActivationDraft, ActivationMessage
+from app.models.chat_models import ConversationSource
 from app.models.user_models import UserDocument
 from app.services.activation.context import RunContext
 from app.services.activation.copy import ActivationCopyError
-from app.services.activation.policy import Direction, Facts, PromptBlocks, SkipReason
+from app.services.activation.policy import (
+    ActivationBrief,
+    Direction,
+    Facts,
+    PromptBlocks,
+    SkipReason,
+)
 from app.services.analytics_service import AnalyticsEvents
 from app.services.outbound_delivery import OutboundResult
 from app.workers.tasks import activation_tasks
@@ -83,7 +90,9 @@ def seams(user: UserDocument):
             activation_tasks,
             "draft_message",
             AsyncMock(
-                return_value=ActivationDraft(bubbles=["morning"], suggestion="connect gmail")
+                return_value=ActivationDraft(
+                    bubbles=["morning"], suggestion="connect gmail", connect_target="gmail"
+                )
             ),
         ) as draft,
         patch.object(
@@ -331,3 +340,79 @@ class TestSkip:
         capture.assert_called_once_with(
             "u1", AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 4, "reason": "copy_failed"}
         )
+
+
+class TestWhatTheTaskPassesOnAfterTheClaim:
+    async def test_the_brief_is_todays_day_direction_and_gathered_blocks(self, seams) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        assert seams["draft"].await_args.args == (
+            ActivationBrief(day=1, direction=Direction.HANDOVER, blocks=_context().blocks),
+        )
+        assert seams["draft"].await_args.kwargs == {"earlier": []}
+
+    async def test_a_lost_claim_is_skipped_under_the_users_id_and_day(self, seams) -> None:
+        seams["claim"].return_value = False
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 4)
+
+        assert result == f"skip {USER_ID} day 4: already_claimed"
+        seams["capture"].assert_called_once_with(
+            USER_ID, AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 4, "reason": "already_claimed"}
+        )
+
+    async def test_a_failed_draft_is_recorded_skipped_and_tomorrow_still_scheduled(
+        self, seams
+    ) -> None:
+        seams["draft"].side_effect = ActivationCopyError("no unique draft")
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        assert result == f"skip {USER_ID} day 1: copy_failed"
+        seams["log"].set.assert_any_call(copy_error="no unique draft")
+        seams["capture"].assert_called_once_with(
+            USER_ID, AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 1, "reason": "copy_failed"}
+        )
+        seams["enqueue"].assert_awaited_once_with(USER_ID, 2, "UTC", NOW)
+
+    async def test_the_message_is_published_to_this_user_on_their_platform(self, seams) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["publish"].assert_awaited_once_with(ConversationSource.TELEGRAM, USER_ID, ["morning"])
+
+    async def test_a_broker_failure_names_the_user_and_platform(self, seams) -> None:
+        seams["publish"].return_value = OutboundResult.FAILED
+
+        with pytest.raises(
+            activation_tasks.ActivationDeliveryError,
+            match=f"^activation publish failed for {USER_ID} on telegram$",
+        ):
+            await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+    async def test_a_skipped_publish_is_skipped_under_the_users_id_and_day(self, seams) -> None:
+        seams["publish"].return_value = OutboundResult.SKIPPED
+
+        result = await activation_tasks.send_activation_message({}, USER_ID, 2)
+
+        assert result == f"skip {USER_ID} day 2: publish_skipped"
+        seams["capture"].assert_called_once_with(
+            USER_ID, AnalyticsEvents.ACTIVATION_DAY_SKIPPED, {"day": 2, "reason": "publish_skipped"}
+        )
+
+    async def test_the_recorded_message_is_the_whole_delivered_day(self, seams, user) -> None:
+        await activation_tasks.send_activation_message({}, USER_ID, 1)
+
+        seams["record"].assert_awaited_once_with(
+            USER_ID,
+            ActivationMessage(
+                day=1,
+                direction=Direction.HANDOVER,
+                platform="telegram",
+                sent_at=NOW,
+                bubbles=["morning"],
+                suggestion="connect gmail",
+                connect_target="gmail",
+            ),
+        )
+        seams["sync"].assert_awaited_once_with(USER_ID, user.model_dump(), "telegram", ["morning"])
+        seams["log"].set.assert_any_call(bubbles=1)

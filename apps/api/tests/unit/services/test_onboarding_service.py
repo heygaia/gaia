@@ -1439,6 +1439,7 @@ class TestActivationEnqueueIsBestEffort:
     async def test_day_zero_is_queued_for_this_user_in_their_timezone_from_now(
         self, mock_repo: MagicMock, sample_user: Any, sample_user_id: str
     ) -> None:
+        sample_user.timezone = "Asia/Kolkata"
         mock_repo.complete_onboarding.return_value = sample_user
         request = OnboardingRequest(profession="Engineer", needs=["inbox"])
         with (
@@ -1449,7 +1450,7 @@ class TestActivationEnqueueIsBestEffort:
             await complete_onboarding(sample_user_id, request)
 
         enqueue.assert_awaited_once_with(
-            sample_user_id, 0, sample_user.timezone, datetime(2026, 5, 4, 6, 0, tzinfo=UTC)
+            sample_user_id, 0, "Asia/Kolkata", datetime(2026, 5, 4, 6, 0, tzinfo=UTC)
         )
 
     async def test_a_failed_enqueue_is_an_error_on_the_wide_event_with_its_cause(

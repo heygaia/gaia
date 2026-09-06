@@ -12,6 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.agents.tools.discovery_tools import (
     MAX_DISCOVERY_RESULTS,
+    PUBLIC_WORKFLOW_FETCH_LIMIT,
     _one_line,
     find_integration,
     search_public_workflows,
@@ -338,6 +339,139 @@ def _ui_graph_run(*, expired: bool = False) -> Iterator[MagicMock]:
         patch.object(user_integration_repository, "is_expired", AsyncMock(return_value=expired)),
     ):
         yield writer
+
+
+class TestSearchPublicWorkflowsShape:
+    async def test_the_result_is_exactly_what_the_model_reads(self) -> None:
+        rows = [
+            _workflow(
+                "Weekly investor update",
+                "  Summarise \n the week ",
+                source_integration="gmail",
+            )
+        ]
+        with _public_workflows(rows, []):
+            result = await search_public_workflows.ainvoke({"query": "investor"}, _CONFIG)
+
+        assert result == {
+            "workflows": [
+                {
+                    "title": "Weekly investor update",
+                    "description": "Summarise the week",
+                    "source_integration": "gmail",
+                    "slug": "Weekly investor update",
+                }
+            ],
+            "query": "investor",
+            "explore_url": f"{_FRONTEND}/workflows",
+        }
+
+    async def test_the_explore_url_drops_a_trailing_slash_from_the_frontend_url(self) -> None:
+        with (
+            _public_workflows([], []),
+            patch("app.agents.tools.discovery_tools.settings") as mock_settings,
+        ):
+            mock_settings.FRONTEND_URL = "https://app.example.com/"
+            result = await search_public_workflows.ainvoke({"query": "x"}, _CONFIG)
+
+        assert result["explore_url"] == "https://app.example.com/workflows"
+
+    async def test_both_lists_are_over_fetched_by_the_same_limit(self) -> None:
+        with _public_workflows([], []):
+            await search_public_workflows.ainvoke({"query": "x"}, _CONFIG)
+            from app.agents.tools.discovery_tools import WorkflowService
+
+            WorkflowService.get_explore_workflows.assert_awaited_once_with(
+                limit=PUBLIC_WORKFLOW_FETCH_LIMIT
+            )
+            WorkflowService.get_community_workflows.assert_awaited_once_with(
+                limit=PUBLIC_WORKFLOW_FETCH_LIMIT
+            )
+
+    async def test_a_template_matches_on_its_description_or_its_integration_alone(self) -> None:
+        rows = [
+            {"id": "a", "title": "Digest", "description": "your inbox every morning", "slug": "a"},
+            {
+                "id": "b",
+                "title": "Sync",
+                "description": "",
+                "source_integration": "linear",
+                "slug": "b",
+            },
+            {"id": "c", "title": "Other", "description": "", "slug": "c"},
+        ]
+        with _public_workflows(rows, []):
+            by_description = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+            by_integration = await search_public_workflows.ainvoke({"query": "linear"}, _CONFIG)
+
+        assert [w["title"] for w in by_description["workflows"]] == ["Digest"]
+        assert [w["title"] for w in by_integration["workflows"]] == ["Sync"]
+
+    async def test_identity_falls_back_from_id_to_slug_to_title(self) -> None:
+        """The explore and community rows describe the same template with
+        whichever key that list carries; a repeat under any of them is one hit."""
+        explore = [
+            {"id": "w1", "title": "Digest", "description": "inbox", "slug": "digest"},
+            {"title": "Triage", "description": "inbox", "slug": "triage"},
+            {"title": "Sorter", "description": "inbox"},
+        ]
+        community = [
+            {"id": "w1", "title": "Digest (copy)", "description": "inbox", "slug": "other"},
+            {"title": "Triage again", "description": "inbox", "slug": "triage"},
+            {"title": "Sorter", "description": "inbox"},
+            {"title": "Fresh", "description": "inbox", "slug": "fresh"},
+        ]
+        with _public_workflows(explore, community):
+            result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+
+        assert [w["title"] for w in result["workflows"]] == ["Digest", "Triage", "Sorter", "Fresh"]
+
+    async def test_the_wide_event_names_the_tool_and_counts_the_matches(self) -> None:
+        rows = [_workflow("Digest", "inbox"), _workflow("Sorter", "inbox")]
+        with _public_workflows(rows, []), patch("app.agents.tools.discovery_tools.log") as log:
+            await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+
+        log.set.assert_any_call(tool={"name": "search_public_workflows", "action": "search"})
+        log.set_ns.assert_called_once_with("tool", result_count=2)
+
+    async def test_a_failure_is_logged_by_type_and_returned_as_an_error_with_the_url(
+        self,
+    ) -> None:
+        with (
+            patch("app.agents.tools.discovery_tools.WorkflowService") as service,
+            patch("app.agents.tools.discovery_tools.settings") as mock_settings,
+            patch("app.agents.tools.discovery_tools.log") as log,
+        ):
+            mock_settings.FRONTEND_URL = _FRONTEND
+            service.get_explore_workflows = AsyncMock(side_effect=RuntimeError("db gone"))
+            result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+
+        assert result == {
+            "error": "Could not search public workflows: db gone",
+            "query": "inbox",
+            "explore_url": f"{_FRONTEND}/workflows",
+        }
+        log.error.assert_called_once()
+        assert "Error searching public workflows" in log.error.call_args.args[0]
+        assert log.error.call_args.kwargs == {"error_type": "RuntimeError"}
+
+
+class TestFindIntegrationFailure:
+    async def test_a_failure_is_logged_by_type_and_returned_with_the_query(self) -> None:
+        with (
+            patch("app.agents.tools.discovery_tools.OAUTH_INTEGRATIONS", _CATALOGUE),
+            patch(
+                "app.agents.tools.discovery_tools.check_multiple_integrations_status",
+                AsyncMock(side_effect=RuntimeError("composio down")),
+            ),
+            patch("app.agents.tools.discovery_tools.log") as log,
+        ):
+            result = await find_integration.ainvoke({"query": "gmail"}, _CONFIG)
+
+        assert result == {"error": "Could not search integrations: composio down", "query": "gmail"}
+        log.error.assert_called_once()
+        assert "Error finding integrations" in log.error.call_args.args[0]
+        assert log.error.call_args.kwargs == {"error_type": "RuntimeError"}
 
 
 class TestShowConnectCard:

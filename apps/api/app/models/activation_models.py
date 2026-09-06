@@ -7,10 +7,10 @@ and tomorrow's run reads the list of those back out of
 :class:`ActivationSequenceState` to avoid repeating itself.
 """
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.services.activation.policy import Direction
 
@@ -63,6 +63,14 @@ class ActivationSequenceState(BaseModel):
     platform: str | None = None
     opted_out: bool = False
     messages: list[ActivationMessage] = Field(default_factory=list)
+
+    @field_validator("last_sent_at")
+    @classmethod
+    def _aware_utc(cls, value: datetime | None) -> datetime | None:
+        """Mongo hands datetimes back naive; they were written in UTC."""
+        if value is None or value.tzinfo is not None:
+            return value
+        return value.replace(tzinfo=UTC)
 
     @classmethod
     def of(cls, raw: dict[str, Any] | None) -> "ActivationSequenceState":

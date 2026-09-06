@@ -18,7 +18,9 @@ class TestIsStopMessage:
     def test_the_word_alone_in_any_dress_is_a_stop(self, text: str) -> None:
         assert is_stop_message(text) is True
 
-    @pytest.mark.parametrize("text", ["stop booking that", "please stop", "stop?", "stopped", ""])
+    @pytest.mark.parametrize(
+        "text", ["stop booking that", "please stop", "stop?", "stopped", "Xstop", "stopX", ""]
+    )
     def test_the_word_inside_a_request_is_not(self, text: str) -> None:
         assert is_stop_message(text) is False
 

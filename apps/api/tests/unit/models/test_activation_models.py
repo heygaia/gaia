@@ -44,3 +44,6 @@ class TestEarlierDrafts:
 
     def test_of_none_is_a_fresh_sequence(self) -> None:
         assert ActivationSequenceState.of(None) == ActivationSequenceState()
+
+    def test_of_a_stored_subdoc_reads_its_fields(self) -> None:
+        assert ActivationSequenceState.of({"opted_out": True, "day_sent": 2}).opted_out is True

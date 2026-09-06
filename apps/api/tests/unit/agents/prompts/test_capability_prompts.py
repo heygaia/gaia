@@ -1,6 +1,8 @@
 """The capability block is generated from the registries, so what the comms
 agent says GAIA can do is exactly what the product ships."""
 
+import re
+
 import pytest
 
 from app.agents.prompts.capability_prompts import (
@@ -217,7 +219,7 @@ class TestGeneratedLines:
         assert sum(counts) == len(OAUTH_INTEGRATIONS)
         assert counts == sorted(counts, reverse=True)
         # Category ids are snake_case in the registry; the model reads words.
-        assert all("_" not in entry for entry in categories)
+        assert all(re.fullmatch(r"\d+ [a-z]+(?: [a-z]+)*", entry) for entry in categories)
         assert tail == (
             "GAIA can search them for what the user needs and show a connect card in chat. Nothing "
             "runs on a service before it is connected; once it is, GAIA gets that service's tools, "

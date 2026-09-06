@@ -98,3 +98,15 @@ class TestRecordReply:
         record_reply(USER_ID, state)
 
         capture.assert_not_called()
+
+    def test_a_naive_send_time_as_mongo_returns_it_is_read_as_utc(self, capture) -> None:
+        state = _state(timedelta(hours=1))
+        naive = state.last_sent_at.replace(tzinfo=None)
+        state = ActivationSequenceState(
+            day_sent=state.day_sent, last_sent_at=naive, messages=state.messages
+        )
+
+        assert state.last_sent_at.tzinfo is UTC
+        record_reply(USER_ID, state)
+
+        capture.assert_called_once()

@@ -154,7 +154,7 @@ class StyleGuardMiddleware(AgentMiddleware):
                 violations_after=before.total_violations,
                 regenerated=False,
                 regressed=False,
-                detectors=_fired_detectors(before, phantom),
+                detectors=_fired_detectors(before),
             )
             return response
 

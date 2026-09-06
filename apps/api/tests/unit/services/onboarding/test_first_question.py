@@ -638,6 +638,7 @@ class TestFallbackWarning:
             assert await resolve_first_question("u1", _prefs(), None) is None
 
         log.warning.assert_called_once()
+        assert "first question missed" in log.warning.call_args.args[0]
         assert log.warning.call_args.kwargs == {"user_id": "u1", "outcome": "fallback"}
 
     async def test_a_live_hit_is_not_a_warning(self) -> None:
