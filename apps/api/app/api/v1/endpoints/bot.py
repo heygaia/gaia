@@ -43,6 +43,8 @@ from app.models.bot_models import (
 from app.models.message_models import MessageDict, MessageRequestWithHistory
 from app.models.payment_models import PlanType
 from app.models.user_models import AuthenticatedUser
+from app.services.activation.engagement import record_reply
+from app.services.activation.opt_out import STOP_ACKNOWLEDGEMENT, is_stop_message, set_opted_out
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.audio_transcription_service import (
     MAX_AUDIO_BYTES,
@@ -116,8 +118,8 @@ def _refusal_stream_with_notice(notice_text: str, error_code: str) -> StreamingR
     return StreamingResponse(frame(), media_type="text/event-stream")
 
 
-def _paywall_notice_stream(notice_text: str) -> StreamingResponse:
-    """Refuse a linked free-plan user's turn with a `notice` + `done` pair.
+def _notice_only_stream(notice_text: str) -> StreamingResponse:
+    """Answer a turn with one canned line and no agent run: `notice` + `done`.
 
     No `text` frame is ever sent, so `onDone` receives an empty `fullText`
     and delivers nothing further — the `notice` is the whole reply. Reuses
@@ -539,7 +541,7 @@ async def _bot_stream_entitlement_gate(user_id: str, platform: str) -> Streaming
     if not await is_subscription_active(user_id):
         log.set(outcome="subscription_required")  # pragma: no mutate
         _capture_bot_turn_refused(user_id, platform, "subscription_required")
-        return _paywall_notice_stream(_paywall_notice(await _bot_upgrade_url(user_id)))
+        return _notice_only_stream(_paywall_notice(await _bot_upgrade_url(user_id)))
 
     return None
 
@@ -644,6 +646,16 @@ async def bot_chat_stream(request: Request, body: BotChatRequest) -> StreamingRe
 
     if (refusal := await _bot_stream_entitlement_gate(user_id, body.platform)) is not None:
         return refusal
+
+    # Before the turn is charged or the agent runs: "stop" is an instruction to
+    # GAIA about GAIA, and answering it with a model turn is both a bill and a
+    # risk that it gets talked out of. One line, then nothing.
+    if is_stop_message(body.message):
+        await set_opted_out(user_id, True, source=body.platform)
+        log.set(outcome="activation_opt_out")
+        return _notice_only_stream(STOP_ACKNOWLEDGEMENT)
+
+    await record_reply(user_id)
 
     await _charge_bot_turn(user_id, body)
 

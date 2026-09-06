@@ -45,6 +45,13 @@ class AnalyticsEvents(StrEnum):
     # Lifecycle email
     NURTURE_EMAIL_SENT = "nurture:email_sent"
 
+    # Day-by-day activation sequence. The three together are the funnel: how
+    # many days went out, why the rest did not, and how often anyone answered.
+    ACTIVATION_DAY_SENT = "activation:day_sent"
+    ACTIVATION_DAY_SKIPPED = "activation:day_skipped"
+    ACTIVATION_REPLIED = "activation:replied"
+    ACTIVATION_OPTED_OUT = "activation:opted_out"
+
     # Payments (used by payment webhook processing)
     PAYMENT_SUCCEEDED = "payment:succeeded"
     PAYMENT_FAILED = "payment:failed"

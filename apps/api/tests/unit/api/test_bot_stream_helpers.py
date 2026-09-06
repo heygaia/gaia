@@ -21,8 +21,8 @@ from app.api.v1.endpoints.bot import (
     _bot_stream_failure_logger,
     _bot_stream_payload_frame,
     _build_bot_message_request,
+    _notice_only_stream,
     _paywall_notice,
-    _paywall_notice_stream,
 )
 from app.models.bot_models import BotChatRequest
 from app.models.message_models import FileData
@@ -339,10 +339,10 @@ class TestPaywallNotice:
 
 
 class TestPaywallNoticeStream:
-    """``_paywall_notice_stream`` — notice + done, no text frame."""
+    """``_notice_only_stream`` — notice + done, no text frame."""
 
     async def test_yields_exactly_a_notice_frame_then_a_done_frame(self):
-        response = _paywall_notice_stream("subscribe please")
+        response = _notice_only_stream("subscribe please")
         chunks = [chunk async for chunk in response.body_iterator]
         assert chunks == [
             'data: {"notice": {"text": "subscribe please"}}\n\n',
@@ -376,7 +376,7 @@ class TestBotStreamEntitlementGate:
         mock_capture.assert_called_once_with("user-1", "imessage", "plan_required")
         mock_sub_active.assert_not_called()
 
-    async def test_subscription_required_returns_the_paywall_notice_stream(self):
+    async def test_subscription_required_returns_the_notice_only_stream(self):
         with (
             patch(
                 "app.api.v1.endpoints.bot.platform_requires_upgrade",

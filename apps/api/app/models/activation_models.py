@@ -67,3 +67,15 @@ class ActivationSequenceState(BaseModel):
     def earlier_drafts(self) -> list[tuple[str, str]]:
         """``(first bubble, suggestion)`` per earlier day, oldest first."""
         return [(m.bubbles[0] if m.bubbles else "", m.suggestion) for m in self.messages]
+
+
+class ActivationSequenceUpdate(BaseModel):
+    """The settings toggle's request body."""
+
+    opted_out: bool = Field(..., description="Whether to stop the daily activation messages")
+
+
+class ActivationSequenceResponse(BaseModel):
+    """The state after the toggle, echoed so the UI does not re-fetch."""
+
+    opted_out: bool
