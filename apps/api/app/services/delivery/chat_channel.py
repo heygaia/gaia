@@ -12,7 +12,6 @@ share it.
 from collections.abc import Mapping
 
 from app.constants.notifications import DEFAULT_CHAT_CHANNEL_PRIORITY
-from app.db.repositories.users import user_repository
 from app.services.platform_link_service import PlatformLinkService
 from app.utils.notification.channel_preferences import fetch_channel_preferences
 
@@ -56,13 +55,3 @@ async def resolve_chat_channel(user_id: str, stored_priority: list[str] | None) 
     linked = await PlatformLinkService.get_linked_platforms(user_id)
     preferences = await fetch_channel_preferences(user_id)
     return pick_chat_channel(resolve_channel_priority(stored_priority), linked, preferences)
-
-
-async def get_channel_priority(user_id: str) -> list[str]:
-    """The stored (or default) chat-channel priority for a user."""
-    return resolve_channel_priority(await user_repository.get_chat_channel_priority(user_id))
-
-
-async def set_channel_priority(user_id: str, priority: list[str]) -> None:
-    """Persist a user's chat-channel priority order."""
-    await user_repository.set_chat_channel_priority(user_id, priority)

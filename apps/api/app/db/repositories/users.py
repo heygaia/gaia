@@ -436,20 +436,6 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             return_document=False,
         )
 
-    async def get_chat_channel_priority(self, user_id: str) -> list[str] | None:
-        """The user's stored chat-channel priority order, or ``None`` if unset."""
-        user = await self.get(user_id)
-        return user.chat_channel_priority if user else None
-
-    async def set_chat_channel_priority(self, user_id: str, priority: list[str]) -> None:
-        """Persist the order in which proactive messages pick a chat platform."""
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {"$set": {"chat_channel_priority": priority}},
-            scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
-        )
-
     async def record_activation_message(self, user_id: str, message: ActivationMessage) -> None:
         """Record one delivered activation message on the user's sequence subdoc.
 
