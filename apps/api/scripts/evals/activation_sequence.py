@@ -14,15 +14,26 @@ and integration tiers.
 A judge model then answers the five questions that decide whether someone keeps
 a bot texting them, and rates the run out of 5.
 
-Usage (from apps/api/):
+Every persona's messages are written to /tmp/activation-eval/<name>.json as they
+are generated, before anything is judged, and a judge failure is printed rather
+than raised. Generating is the half that costs money and judging is the half
+that dies, so a dead judge must never throw away five days of model calls.
 
-    uv run python scripts/evals/activation_sequence.py
-    uv run python scripts/evals/activation_sequence.py --users 3
+Usage (from apps/api/, secrets injected):
+
+    infisical run --env=development -- uv run python scripts/evals/activation_sequence.py
+    ... activation_sequence.py --users 3
+    ... activation_sequence.py --personas .agents/plans/prod-personas.json
+
+``--personas`` seeds roles, picks and per-day transcripts from a probe dump
+(startup log lines, then JSON from the first line starting with ``{``) instead
+of the three synthetic personas below.
 """
 
 import argparse
 import asyncio
 from datetime import UTC, datetime
+import json
 from pathlib import Path
 import sys
 
@@ -41,6 +52,8 @@ from app.services.activation.policy import SEQUENCE_LENGTH, Direction, Facts, di
 JUDGE_TIMEOUT_SECONDS = 90.0
 #: A frozen clock so two runs of this script are comparable.
 FROZEN_NOW = datetime(2026, 5, 4, 8, 0, tzinfo=UTC)
+#: Where the generated messages land before anything is judged.
+RAW_DIR = Path("/tmp/activation-eval")
 
 
 class Persona(BaseModel):
@@ -97,6 +110,49 @@ PERSONAS = [
         ],
     ),
 ]
+
+
+def load_personas(path: Path) -> list[Persona]:
+    """Personas from a probe dump: real roles and picks instead of my three guesses.
+
+    The file is raw probe output, so it starts with startup log lines and the
+    JSON begins at the first line starting with ``{``. Everything before that is
+    dropped; everything after it must parse.
+
+    Validation is strict and the error is loud on purpose. This schema was never
+    inspected (the file was unreadable from this session), so a mismatch must
+    say exactly which keys the file actually has rather than quietly producing
+    three empty personas and five bland messages that look like a copy problem.
+    """
+    lines = path.read_text().splitlines()
+    start = next((i for i, line in enumerate(lines) if line.lstrip().startswith("{")), None)
+    if start is None:
+        raise SystemExit(f"{path}: no JSON object found (no line starts with '{{')")
+    payload = json.loads("\n".join(lines[start:]))
+
+    rows = payload if isinstance(payload, list) else payload.get("personas")
+    if not isinstance(rows, list) or not rows:
+        keys = sorted(payload) if isinstance(payload, dict) else type(payload).__name__
+        raise SystemExit(
+            f"{path}: expected a list of personas, or a 'personas' key holding one. Found: {keys}"
+        )
+
+    personas: list[Persona] = []
+    for i, row in enumerate(rows):
+        try:
+            personas.append(Persona.model_validate(row))
+        except Exception as e:
+            raise SystemExit(
+                f"{path}: persona {i} does not match the Persona schema "
+                f"(name, profession, needs, integrations, days).\n"
+                f"  keys present: {sorted(row) if isinstance(row, dict) else type(row).__name__}\n"
+                f"  error: {e}"
+            ) from e
+    short = [p.name for p in personas if len(p.days) < SEQUENCE_LENGTH]
+    if short:
+        raise SystemExit(f"{path}: these personas have fewer than {SEQUENCE_LENGTH} days: {short}")
+    return personas
+
 
 JUDGE_PROMPT = """You are judging one day of an assistant's daily message to a new user.
 
@@ -159,6 +215,28 @@ class Day(BaseModel):
     verdict: _Verdict | None = None
 
 
+def _dump_raw(name: str, who: str, days: list[Day]) -> None:
+    """Write the messages generated so far to ``RAW_DIR``, overwriting.
+
+    The generation is what costs money; the judging is what breaks. Keeping the
+    raw drafts on disk means a judge failure costs a judge run, not five days of
+    model calls per persona.
+    """
+    RAW_DIR.mkdir(parents=True, exist_ok=True)
+    path = RAW_DIR / f"{name}.json"
+    path.write_text(
+        json.dumps(
+            {
+                "persona": name,
+                "who": who,
+                "generated_at": datetime.now(UTC).isoformat(),
+                "days": [d.model_dump(mode="json") for d in days],
+            },
+            indent=2,
+        )
+    )
+
+
 def _facts_for(persona: Persona, day: int, yesterday: str) -> Facts:
     """The facts a real run would have gathered, derived from the script."""
     replied = "[them]" in yesterday
@@ -219,23 +297,49 @@ async def _run_persona(persona: Persona) -> tuple[str, list[Day], _RunVerdict | 
         except ActivationCopyError as e:
             row.error = str(e)
         sent.append(row)
+        # After every day, not at the end: generating five days is the expensive
+        # half and judging is the half most likely to die (a dead key, a rate
+        # limit). Whatever was written survives the crash and can be read.
+        _dump_raw(persona.name, who, sent)
 
     for row in sent:
         if row.draft is None:
             continue
-        row.verdict = await ainvoke_llm(
-            background_structured_runnable(_Verdict, temperature=0.0),
-            JUDGE_PROMPT.format(
-                who=who,
-                earlier="\n".join(f"- {b}" for b, _ in earlier[: row.day]) or "Nothing yet.",
-                yesterday=persona.days[row.day],
-                message="\n".join(row.draft.bubbles),
-            ),
-            label="activation_judge",
-            options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
-        )
+        try:
+            row.verdict = await _judge_day(persona, who, earlier, row)
+        except Exception as e:
+            # The messages are already on disk and already printed below. A dead
+            # judge must not throw away the expensive half of the run.
+            print(f"!!! judge failed for {persona.name} day {row.day}: {e}", flush=True)
+    try:
+        run_verdict = await _judge_run(who, sent)
+    except Exception as e:
+        print(f"!!! run judge failed for {persona.name}: {e}", flush=True)
+        run_verdict = None
+    return who, sent, run_verdict
 
-    run_verdict = await ainvoke_llm(
+
+async def _judge_day(
+    persona: Persona, who: str, earlier: list[tuple[str, str]], row: Day
+) -> "_Verdict":
+    """Score one day against the five things that decide whether a bot gets muted."""
+    assert row.draft is not None
+    return await ainvoke_llm(
+        background_structured_runnable(_Verdict, temperature=0.0),
+        JUDGE_PROMPT.format(
+            who=who,
+            earlier="\n".join(f"- {b}" for b, _ in earlier[: row.day]) or "Nothing yet.",
+            yesterday=persona.days[row.day],
+            message="\n".join(row.draft.bubbles),
+        ),
+        label="activation_judge",
+        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    )
+
+
+async def _judge_run(who: str, sent: list[Day]) -> "_RunVerdict":
+    """Rate the whole five days: would this person keep the bot."""
+    return await ainvoke_llm(
         background_structured_runnable(_RunVerdict, temperature=0.0),
         RUN_JUDGE_PROMPT.format(
             who=who,
@@ -247,7 +351,6 @@ async def _run_persona(persona: Persona) -> tuple[str, list[Day], _RunVerdict | 
         label="activation_run_judge",
         options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
     )
-    return who, sent, run_verdict
 
 
 def _report(name: str, who: str, days: list[Day], run_verdict: _RunVerdict | None) -> None:
@@ -273,9 +376,11 @@ def _report(name: str, who: str, days: list[Day], run_verdict: _RunVerdict | Non
         print()
 
 
-async def run(count: int) -> None:
+async def run(count: int, personas_path: Path | None) -> None:
     print(f"activation sequence simulator — clock frozen at {FROZEN_NOW.isoformat()}")
-    for persona in PERSONAS[:count]:
+    print(f"raw messages are written to {RAW_DIR} as they are generated")
+    personas = load_personas(personas_path) if personas_path else PERSONAS
+    for persona in personas[:count]:
         who, days, run_verdict = await _run_persona(persona)
         _report(persona.name, who, days, run_verdict)
 
@@ -283,8 +388,14 @@ async def run(count: int) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--users", type=int, default=len(PERSONAS))
+    parser.add_argument(
+        "--personas",
+        type=Path,
+        default=None,
+        help="A probe dump to seed roles, picks and per-day transcripts from.",
+    )
     args = parser.parse_args()
-    asyncio.run(run(args.users))
+    asyncio.run(run(args.users, args.personas))
 
 
 if __name__ == "__main__":
