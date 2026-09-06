@@ -46,6 +46,38 @@ class Direction(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class Signals:
+    """What the task gathered about the user today, before the policy reads it."""
+
+    account_age_days: int
+    subscription_active: bool
+    has_channel: bool
+    user_messaged_last_24h: bool
+    replied_to_sequence_last_24h: bool
+    connected_integrations: int
+    handovers: int
+
+
+@dataclass(frozen=True, slots=True)
+class PromptBlocks:
+    """The four context sections the day's prompt is written from."""
+
+    who: str
+    integrations: str
+    yesterday: str
+    already_sent: str
+
+
+@dataclass(frozen=True, slots=True)
+class ActivationBrief:
+    """One day's writing brief: which day, what direction, and the context blocks."""
+
+    day: int
+    direction: Direction
+    blocks: PromptBlocks
+
+
+@dataclass(frozen=True, slots=True)
 class Facts:
     """Everything the policy needs, gathered by the task before deciding."""
 

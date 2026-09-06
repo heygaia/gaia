@@ -240,7 +240,7 @@ def _bot_approval_payload(chunk: dict[str, Any]) -> dict[str, Any] | None:
 def _bot_stream_control_frame(
     chunk: str, conversation_id: str
 ) -> tuple[str | None, dict[str, Any] | None, bool]:
-    """Peel Redis SSE framing off one raw chunk from ``stream_from_redis``.
+    """Peel Redis SSE framing off one raw chunk from ``_bot_stream_from_redis``.
 
     Returns ``(frame, data, stop)`` — see the tri-state contract below.
     """
@@ -617,6 +617,79 @@ async def _charge_bot_turn(user_id: str, body: BotChatRequest) -> None:
     )
 
 
+async def _bot_stream_from_redis(
+    request: Request,
+    *,
+    stream_id: str,
+    conversation_id: str,
+    user_id: str,
+    session_token: str,
+    platform: str,
+) -> AsyncGenerator[str, None]:
+    """Subscribe to Redis stream and translate chunks for bot clients.
+
+    The body runs while the response streams — after the request's
+    ``http_request`` event has emitted — so it needs its own boundary or
+    the delivery outcome is silently discarded. The generator body
+    inherits the request's context, so ``get_trace_id()`` still returns
+    the request's trace_id.
+    """
+    async with log_context(
+        "sse_delivery",
+        trace_id=get_trace_id() or None,
+        stream_id=stream_id,
+        platform=platform,
+    ):
+        # Send session token as first event
+        yield f"data: {json.dumps({'session_token': session_token})}\n\n"
+
+        # Send initial keepalive to establish connection
+        yield ": keepalive\n\n"
+
+        try:
+            async for chunk in stream_manager.subscribe_stream(stream_id):
+                # Match the web stream path: stop forwarding if the bot client
+                # dropped the connection. The background task keeps running and
+                # persists the conversation.
+                if await request.is_disconnected():
+                    log.set(client_disconnected=True)
+                    log.info(
+                        f"{LogTag.API} Bot client disconnected, stream continues in background",
+                        stream_id=stream_id,
+                    )
+                    break  # pragma: no mutate — last stmt in the loop; return is identical
+
+                frame, data, stop = _bot_stream_control_frame(chunk, conversation_id)
+                if frame is not None:
+                    yield frame
+                    if stop:
+                        return
+                    continue
+                if data is None:
+                    continue
+
+                payload_frame, stop = await _bot_stream_payload_frame(data, user_id)
+                if payload_frame is not None:
+                    yield payload_frame
+                if stop:
+                    break  # pragma: no mutate — last stmt in the loop; return is identical
+        except asyncio.CancelledError:
+            # Client disconnected mid-stream — expected, not an error. The
+            # background LangGraph task keeps running and persists the result.
+            log.set(client_disconnected=True)
+            log.info(f"{LogTag.API} Bot stream cancelled (client disconnected)")
+            raise
+        except Exception as e:
+            log.error(
+                f"{LogTag.API} Bot stream subscription error",
+                stream_id=stream_id,
+                conversation_id=conversation_id,
+                error_type=type(e).__name__,
+                error=str(e),
+            )
+            yield f"data: {json.dumps({'error': 'Stream error occurred'})}\n\n"
+
+
 @router.post(
     "/chat-stream",
     status_code=200,
@@ -690,75 +763,23 @@ async def bot_chat_stream(request: Request, body: BotChatRequest) -> StreamingRe
         on_done=_bot_stream_failure_logger(stream_id, conversation_id),
     )
 
-    async def stream_from_redis() -> AsyncGenerator[str, None]:
-        """Subscribe to Redis stream and translate chunks for bot clients.
-
-        The body runs while the response streams — after the request's
-        ``http_request`` event has emitted — so it needs its own boundary or
-        the delivery outcome is silently discarded. The generator body
-        inherits the request's context, so ``get_trace_id()`` still returns
-        the request's trace_id.
-        """
-        async with log_context(
-            "sse_delivery",
-            trace_id=get_trace_id() or None,
-            stream_id=stream_id,
-            platform=body.platform,
-        ):
-            # Send session token as first event
-            yield f"data: {json.dumps({'session_token': session_token})}\n\n"
-
-            # Send initial keepalive to establish connection
-            yield ": keepalive\n\n"
-
-            try:
-                async for chunk in stream_manager.subscribe_stream(stream_id):
-                    # Match the web stream path: stop forwarding if the bot client
-                    # dropped the connection. The background task keeps running and
-                    # persists the conversation.
-                    if await request.is_disconnected():
-                        log.set(client_disconnected=True)
-                        log.info(
-                            f"{LogTag.API} Bot client disconnected, stream continues in background",
-                            stream_id=stream_id,
-                        )
-                        break  # pragma: no mutate — last stmt in the loop; return is identical
-
-                    frame, data, stop = _bot_stream_control_frame(chunk, conversation_id)
-                    if frame is not None:
-                        yield frame
-                        if stop:
-                            return
-                        continue
-                    if data is None:
-                        continue
-
-                    payload_frame, stop = await _bot_stream_payload_frame(data, user_id)
-                    if payload_frame is not None:
-                        yield payload_frame
-                    if stop:
-                        break  # pragma: no mutate — last stmt in the loop; return is identical
-            except asyncio.CancelledError:
-                # Client disconnected mid-stream — expected, not an error. The
-                # background LangGraph task keeps running and persists the result.
-                log.set(client_disconnected=True)
-                log.info(f"{LogTag.API} Bot stream cancelled (client disconnected)")
-                raise
-            except Exception as e:
-                log.error(
-                    f"{LogTag.API} Bot stream subscription error",
-                    stream_id=stream_id,
-                    conversation_id=conversation_id,
-                    error_type=type(e).__name__,
-                    error=str(e),
-                )
-                yield f"data: {json.dumps({'error': 'Stream error occurred'})}\n\n"
-
     # The translator above drops every web-only frame, so the socket can go
     # quiet for minutes while the turn is busy. with_heartbeat guarantees a
     # byte on the wire regardless, so no proxy in the path can mistake a
     # working stream for a dead one.
-    return StreamingResponse(with_heartbeat(stream_from_redis()), media_type="text/event-stream")
+    return StreamingResponse(
+        with_heartbeat(
+            _bot_stream_from_redis(
+                request,
+                stream_id=stream_id,
+                conversation_id=conversation_id,
+                user_id=user_id,
+                session_token=session_token,
+                platform=body.platform,
+            )
+        ),
+        media_type="text/event-stream",
+    )
 
 
 @router.post(

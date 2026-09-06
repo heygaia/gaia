@@ -9,7 +9,7 @@ is skipped. Sending nothing is strictly better than sending yesterday again.
 from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_structured_runnable
 from app.agents.prompts.activation_prompts import build_activation_prompt
 from app.models.activation_models import MAX_WORDS_PER_BUBBLE, ActivationDraft
-from app.services.activation.policy import Direction
+from app.services.activation.policy import ActivationBrief
 from app.services.activation.uniqueness import repeats_earlier
 from shared.py.wide_events import log
 
@@ -31,14 +31,7 @@ def _too_long(draft: ActivationDraft) -> bool:
 
 
 async def draft_message(
-    *,
-    day: int,
-    direction: Direction,
-    who_block: str,
-    integrations_block: str,
-    yesterday_block: str,
-    already_sent_block: str,
-    earlier: list[tuple[str, str]],
+    brief: ActivationBrief, *, earlier: list[tuple[str, str]]
 ) -> ActivationDraft:
     """One day's message, or raise :class:`ActivationCopyError`.
 
@@ -48,15 +41,7 @@ async def draft_message(
     """
     reason: str | None = None
     for attempt in range(MAX_DRAFTS):
-        prompt = build_activation_prompt(
-            day=day,
-            direction=direction,
-            who_block=who_block,
-            integrations_block=integrations_block,
-            yesterday_block=yesterday_block,
-            already_sent_block=already_sent_block,
-            retry_reason=reason,
-        )
+        prompt = build_activation_prompt(brief, retry_reason=reason)
         draft: ActivationDraft = await ainvoke_llm(
             background_structured_runnable(ActivationDraft),
             prompt,
@@ -71,5 +56,5 @@ async def draft_message(
             return draft
         log.set(draft_rejected=reason)
     raise ActivationCopyError(
-        f"no unique draft for day {day} after {MAX_DRAFTS} attempts: {reason}"
+        f"no unique draft for day {brief.day} after {MAX_DRAFTS} attempts: {reason}"
     )

@@ -15,7 +15,7 @@ from app.models.activation_models import ActivationDraft
 from app.models.user_models import UserDocument
 from app.services.activation.context import RunContext
 from app.services.activation.copy import ActivationCopyError
-from app.services.activation.policy import Direction, Facts, SkipReason
+from app.services.activation.policy import Direction, Facts, PromptBlocks, SkipReason
 from app.services.outbound_delivery import OutboundResult
 from app.workers.tasks import activation_tasks
 
@@ -46,10 +46,12 @@ def _context(**overrides: object) -> RunContext:
         facts=_facts(**overrides),
         state=ActivationSequenceState(),
         platform="telegram",
-        who_block="Role: founder",
-        integrations_block="Connected: Gmail",
-        yesterday_block="Nothing.",
-        already_sent_block="Nothing yet.",
+        blocks=PromptBlocks(
+            who="Role: founder",
+            integrations="Connected: Gmail",
+            yesterday="Nothing.",
+            already_sent="Nothing yet.",
+        ),
     )
 
 
@@ -116,7 +118,7 @@ class TestHappyPath:
 
     async def test_the_direction_reaches_both_the_prompt_and_the_event(self, seams) -> None:
         await activation_tasks.send_activation_message({}, USER_ID, 1)
-        assert seams["draft"].await_args.kwargs["direction"] is Direction.HANDOVER
+        assert seams["draft"].await_args.args[0].direction is Direction.HANDOVER
         assert seams["capture"].call_args.args[2]["direction"] is Direction.HANDOVER
 
 

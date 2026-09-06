@@ -12,7 +12,7 @@ is a request and this one is a requirement.
 """
 
 from app.models.activation_models import MAX_BUBBLES, MAX_WORDS_PER_BUBBLE
-from app.services.activation.policy import Direction
+from app.services.activation.policy import ActivationBrief, Direction
 
 #: What each direction asks the message to be about. One line each, because the
 #: direction is the brief, not the script — expanding these into paragraphs is
@@ -77,24 +77,16 @@ slack, notion, github, linear, googledocs, googledrive), or null when you did no
 ask for one."""
 
 
-def build_activation_prompt(
-    *,
-    day: int,
-    direction: Direction,
-    who_block: str,
-    integrations_block: str,
-    yesterday_block: str,
-    already_sent_block: str,
-    retry_reason: str | None = None,
-) -> str:
-    """The full day-``day`` prompt. ``retry_reason`` is set only on the second try."""
+def build_activation_prompt(brief: ActivationBrief, *, retry_reason: str | None = None) -> str:
+    """The full prompt for the brief's day. ``retry_reason`` is set only on the second try."""
+    blocks = brief.blocks
     sections = [
         _RULES,
-        f"## Today's direction (day {day})\n{DIRECTION_BRIEFS[direction]}",
-        f"## Who they are\n{who_block}",
-        f"## What they have connected\n{integrations_block}",
-        f"## What actually happened in the last day\n{yesterday_block}",
-        f"## What you already sent them\n{already_sent_block}",
+        f"## Today's direction (day {brief.day})\n{DIRECTION_BRIEFS[brief.direction]}",
+        f"## Who they are\n{blocks.who}",
+        f"## What they have connected\n{blocks.integrations}",
+        f"## What actually happened in the last day\n{blocks.yesterday}",
+        f"## What you already sent them\n{blocks.already_sent}",
     ]
     if retry_reason:
         sections.append(

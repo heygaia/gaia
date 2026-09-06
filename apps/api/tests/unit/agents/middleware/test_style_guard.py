@@ -18,7 +18,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 import pytest
 
@@ -26,6 +26,7 @@ from app.agents.middleware.style_guard import StyleGuardMiddleware, build_correc
 from app.constants.agents import AgentTag
 from app.constants.llm import LANE_FIELD_ID, PROVIDER_NAME_METADATA_KEY, UNKNOWN_MODEL_NAME
 from app.constants.log_tags import LogTag
+from app.helpers.message_helpers import build_current_time_message
 
 #: Every detector at once, in the register the production replies used. The
 #: closing hook is the reflexive shape (offer + justification clause) — a
@@ -656,6 +657,39 @@ class TestPhantomClaims:
 
         assert len(handler.requests) == 1
         assert response.result[0].id == "m1"
+
+    async def test_the_clock_marker_after_a_tool_result_does_not_make_it_a_direct_answer(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        """The real graph ends every request with the clock (a bare HumanMessage)
+        and, after a delegation, a still-running notice. Neither is the user
+        speaking: the executor was dispatched this turn, so "on it" is true.
+        Before this test the guard read the clock as the user's message, retracted
+        the acknowledgement and re-invoked the model on every delegated turn."""
+        handler = _ScriptedHandler(_draft("On it.", "m1"))
+        messages = [
+            HumanMessage(content="draw me a flowchart"),
+            AIMessage(content="", tool_calls=[{"name": "call_executor", "args": {}, "id": "c1"}]),
+            ToolMessage(content="Task accepted", tool_call_id="c1"),
+            SystemMessage(content="A background task you dispatched is STILL RUNNING"),
+            build_current_time_message(),
+        ]
+
+        response = await StyleGuardMiddleware().awrap_model_call(_request(messages), handler)
+
+        assert len(handler.requests) == 1
+        assert response.result[0].id == "m1"
+
+    async def test_the_clock_marker_after_the_user_still_counts_as_a_direct_answer(
+        self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig
+    ) -> None:
+        handler = _ScriptedHandler(_draft(PHANTOM_DRAFT, "m1"), _draft(CLEAN_REWRITE, "m2"))
+        messages = [HumanMessage(content="ok send it"), build_current_time_message()]
+
+        response = await StyleGuardMiddleware().awrap_model_call(_request(messages), handler)
+
+        assert len(handler.requests) == 2
+        assert response.result[0].text == CLEAN_REWRITE
 
     async def test_re_voicing_an_executor_result_may_say_it_is_done(
         self, emitted_frames: list[dict[str, Any]], interactive_run: RunnableConfig

@@ -15,7 +15,7 @@ from app.decorators.entitlements import is_subscription_active
 from app.models.activation_models import ActivationSequenceState
 from app.models.conversation_models import ConversationMessageHit
 from app.models.user_models import OnboardingNeed, OnboardingPreferences, UserDocument
-from app.services.activation.policy import Facts
+from app.services.activation.policy import Facts, PromptBlocks, Signals
 from app.services.delivery.chat_channel import resolve_chat_channel
 from app.services.integrations.user_integrations import get_connected_integrations_named
 
@@ -37,10 +37,7 @@ class RunContext:
     facts: Facts
     state: ActivationSequenceState
     platform: str | None
-    who_block: str
-    integrations_block: str
-    yesterday_block: str
-    already_sent_block: str
+    blocks: PromptBlocks
 
 
 def _preferences(user: UserDocument) -> OnboardingPreferences:
@@ -67,29 +64,20 @@ def format_who_block(preferences: OnboardingPreferences) -> str:
 
 
 def build_facts(
-    *,
-    preferences: OnboardingPreferences,
-    state: ActivationSequenceState,
-    account_age_days: int,
-    subscription_active: bool,
-    has_channel: bool,
-    user_messaged_last_24h: bool,
-    replied_to_sequence_last_24h: bool,
-    connected_integrations: int,
-    handovers: int,
+    preferences: OnboardingPreferences, state: ActivationSequenceState, signals: Signals
 ) -> Facts:
     """The policy's facts from what was gathered plus what the stored sequence
     already says. One place, so the simulator and the task decide identically."""
     return Facts(
         opted_out=state.opted_out,
         days_sent=state.day_sent,
-        account_age_days=account_age_days,
-        subscription_active=subscription_active,
-        has_channel=has_channel,
-        user_messaged_last_24h=user_messaged_last_24h,
-        replied_to_sequence_last_24h=replied_to_sequence_last_24h,
-        connected_integrations=connected_integrations,
-        handovers=handovers,
+        account_age_days=signals.account_age_days,
+        subscription_active=signals.subscription_active,
+        has_channel=signals.has_channel,
+        user_messaged_last_24h=signals.user_messaged_last_24h,
+        replied_to_sequence_last_24h=signals.replied_to_sequence_last_24h,
+        connected_integrations=signals.connected_integrations,
+        handovers=signals.handovers,
         connect_asks=state.connect_asks(),
         connect_targets_left=connect_targets_left(preferences, state),
         handover_asks=state.handover_asks(),
@@ -156,9 +144,7 @@ async def gather(user: UserDocument, now: datetime) -> RunContext:
     # job for them", and a turn they typed is the moment they handed something
     # over. It over-counts a one-word reply and under-counts nothing.
     ever_handed_over = await conversation_repository.has_activity_since(user_id, created_at)
-    facts = build_facts(
-        preferences=preferences,
-        state=state,
+    signals = Signals(
         account_age_days=(now - created_at).days,
         subscription_active=subscription_active,
         has_channel=platform is not None,
@@ -167,16 +153,17 @@ async def gather(user: UserDocument, now: datetime) -> RunContext:
         connected_integrations=len(integrations),
         handovers=int(ever_handed_over),
     )
+    blocks = PromptBlocks(
+        who=format_who_block(preferences),
+        integrations=await build_connected_integrations_manifest(user_id, header="Connected:"),
+        yesterday=format_yesterday_block(hits),
+        already_sent=format_already_sent_block(state),
+    )
     return RunContext(
-        facts=facts,
+        facts=build_facts(preferences, state, signals),
         state=state,
         platform=platform,
-        who_block=format_who_block(preferences),
-        integrations_block=await build_connected_integrations_manifest(
-            user_id, header="Connected:"
-        ),
-        yesterday_block=format_yesterday_block(hits),
-        already_sent_block=format_already_sent_block(state),
+        blocks=blocks,
     )
 
 

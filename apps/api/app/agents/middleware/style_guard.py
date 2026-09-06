@@ -36,7 +36,7 @@ from collections.abc import Awaitable, Callable
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.config import get_stream_writer
 
 from app.agents.context.slots import BACKGROUND_EXECUTOR_NAME
@@ -98,16 +98,23 @@ def _fired_detectors(score: AiIsmScore, phantom: dict[str, list[str]] | None = N
 
 
 def _answers_the_user_directly(request: ModelRequest) -> bool:
-    """True when the draft follows the user's own message with no tool result in
-    between: the one case where "doing it now" and "the card above" are false.
+    """True when nothing has happened this turn but the user speaking: the one
+    case where "doing it now" and "the card above" are false.
 
-    An executor result arrives as a HumanMessage too (see ``comms_narrator``),
-    but that turn re-voices finished work, so "it's set" there is true.
+    Walks back past the clock marker (a bare HumanMessage every request ends
+    with) and any system notice to the last message that carries the turn's
+    state. A tool call or its result means work was dispatched, so "on it" is
+    true; an executor result arrives as a HumanMessage (see ``comms_narrator``)
+    and re-voices finished work, so "it's set" there is true too.
     """
-    if not request.messages:
-        return False
-    last = request.messages[-1]
-    return isinstance(last, HumanMessage) and last.name != BACKGROUND_EXECUTOR_NAME
+    for message in reversed(request.messages):
+        if isinstance(message, ToolMessage):
+            return False
+        if isinstance(message, AIMessage):
+            return not message.tool_calls
+        if isinstance(message, HumanMessage) and message.name == BACKGROUND_EXECUTOR_NAME:
+            return False
+    return any(isinstance(message, HumanMessage) for message in request.messages)
 
 
 class StyleGuardMiddleware(AgentMiddleware):

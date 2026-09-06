@@ -21,7 +21,13 @@ from app.models.activation_models import ActivationMessage
 from app.models.chat_models import ConversationSource
 from app.services.activation import context
 from app.services.activation.copy import ActivationCopyError, draft_message
-from app.services.activation.policy import SEQUENCE_LENGTH, claim_key, direction, skip_reason
+from app.services.activation.policy import (
+    SEQUENCE_LENGTH,
+    ActivationBrief,
+    claim_key,
+    direction,
+    skip_reason,
+)
 from app.services.activation.schedule import next_send_at
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.delivery import chat_sync
@@ -113,12 +119,7 @@ async def send_activation_message(ctx: dict[str, Any], user_id: str, day: int) -
 
     try:
         draft = await draft_message(
-            day=day,
-            direction=today,
-            who_block=run.who_block,
-            integrations_block=run.integrations_block,
-            yesterday_block=run.yesterday_block,
-            already_sent_block=run.already_sent_block,
+            ActivationBrief(day=day, direction=today, blocks=run.blocks),
             earlier=run.state.earlier_drafts(),
         )
     except ActivationCopyError as e:
