@@ -9,11 +9,13 @@ no jobs the escape hatch is the only chip, never invented ones.
 from app.models.user_models import OnboardingPreferences
 from app.services.onboarding.first_conversation import (
     CALENDAR_INTEGRATION_ID,
+    CONNECT_OPTIONS,
+    CONNECT_OPTIONS_TOOL_NAME,
     GMAIL_INTEGRATION_ID,
     INTEGRATIONS_PATH,
-    LINKS_LINE,
     ROUTINES_LINE,
     SOMETHING_ELSE_CHIP,
+    WELCOME,
     compose_first_conversation,
     connect_link,
     with_starting_jobs,
@@ -27,20 +29,28 @@ def _prefs(profession: str | None = "founder") -> OnboardingPreferences:
 
 
 class TestOpeningBubble:
-    def test_a_linked_platform_is_named_then_the_routines_then_the_links(self) -> None:
-        composed = compose_first_conversation(_prefs(), "telegram")
-        assert composed.lines[0] == (
-            f"Okay, you're in. I'm on your Telegram, so text me there anytime. {ROUTINES_LINE}"
-            f"\n\n{LINKS_LINE}"
-        )
+    def test_a_linked_platform_is_named_in_the_welcome_then_the_routines(self) -> None:
+        composed = compose_first_conversation(_prefs("founder"), "telegram")
+        assert composed.opening == [
+            f"{WELCOME} I'm on your Telegram too, text me there anytime.",
+            ROUTINES_LINE,
+        ]
 
     def test_no_platform_opens_the_door_and_moves_on(self) -> None:
-        composed = compose_first_conversation(_prefs(), None)
-        assert composed.lines[0] == f"Okay, you're in. {ROUTINES_LINE}\n\n{LINKS_LINE}"
+        composed = compose_first_conversation(_prefs("founder"), None)
+        assert composed.opening == [WELCOME, ROUTINES_LINE]
+        assert composed.lines == [WELCOME, ROUTINES_LINE, composed.question]
+
+    def test_the_welcome_hands_the_work_over_in_one_line(self) -> None:
+        assert WELCOME == (
+            "Okay, you're in. From here on, anything you'd rather not do yourself, hand it to me."
+        )
 
     def test_imessage_keeps_its_capitalisation_and_unknown_platforms_are_capitalised(self) -> None:
-        assert "I'm on your iMessage," in compose_first_conversation(_prefs(), "imessage").lines[0]
-        assert "I'm on your Signal," in compose_first_conversation(_prefs(), "signal").lines[0]
+        assert (
+            "I'm on your iMessage too," in compose_first_conversation(_prefs(), "imessage").lines[0]
+        )
+        assert "I'm on your Signal too," in compose_first_conversation(_prefs(), "signal").lines[0]
 
     def test_the_routines_line_sells_exactly_the_two_built_ins(self) -> None:
         assert ROUTINES_LINE == (
@@ -48,40 +58,48 @@ class TestOpeningBubble:
             "comes back sorted, replies drafted. Add Calendar and I brief you before every meeting."
         )
 
-    def test_the_links_open_each_app_and_the_full_page(self) -> None:
-        assert (
-            f"[Connect Gmail]({connect_link(GMAIL_INTEGRATION_ID)}) "
-            f"[Connect Calendar]({connect_link(CALENDAR_INTEGRATION_ID)}) "
-            f"[All integrations]({INTEGRATIONS_PATH})"
-        ) == LINKS_LINE
-        assert connect_link("gmail") == "/integrations?connect=gmail"
+    def test_the_buttons_open_each_app_and_the_full_page(self) -> None:
+        """Rendered by the web as a row of buttons outside the bubble, same tab."""
+        tool = compose_first_conversation(_prefs("founder"), None).connect_tool_data()
+        assert tool["tool_name"] == CONNECT_OPTIONS_TOOL_NAME == "connect_options"
+        assert tool["data"] == {"options": CONNECT_OPTIONS}
+        assert [o["href"] for o in CONNECT_OPTIONS] == [
+            connect_link(GMAIL_INTEGRATION_ID),
+            connect_link(CALENDAR_INTEGRATION_ID),
+            INTEGRATIONS_PATH,
+        ]
+        assert [o.get("integration_id") for o in CONNECT_OPTIONS] == [
+            GMAIL_INTEGRATION_ID,
+            CALENDAR_INTEGRATION_ID,
+            None,
+        ]
 
 
 class TestHandoverBubble:
     def test_a_picked_job_is_addressed_by_its_phrase(self) -> None:
-        assert compose_first_conversation(_prefs("founder"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("founder"), None).question == (
             "Since you're a founder, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("sales"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("sales"), None).question == (
             "Since you're in sales, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("engineering"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("engineering"), None).question == (
             "Since you're an engineer, what are we starting with?"
         )
 
     def test_a_typed_sentence_is_turned_to_the_second_person(self) -> None:
-        assert compose_first_conversation(_prefs("I run a bakery."), None).lines[1] == (
+        assert compose_first_conversation(_prefs("I run a bakery."), None).question == (
             "Since you run a bakery, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("I'm a plumber"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("I'm a plumber"), None).question == (
             "Since you're a plumber, what are we starting with?"
         )
 
     def test_a_typed_title_gets_an_article_and_loses_its_capital(self) -> None:
-        assert compose_first_conversation(_prefs("Plumber"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("Plumber"), None).question == (
             "Since you're a plumber, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("An Architect"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("An Architect"), None).question == (
             "Since you're an architect, what are we starting with?"
         )
 
@@ -92,24 +110,24 @@ class TestHandoverBubble:
             "We're a two person studio": "Since you're a two person studio, what are we starting with?",
         }
         for typed, expected in cases.items():
-            assert compose_first_conversation(_prefs(typed), None).lines[1] == expected
+            assert compose_first_conversation(_prefs(typed), None).question == expected
 
     def test_trailing_punctuation_and_articles_are_dropped_and_vowels_get_an(self) -> None:
-        assert compose_first_conversation(_prefs("Engineer!"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("Engineer!"), None).question == (
             "Since you're an engineer, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("The Baker."), None).lines[1] == (
+        assert compose_first_conversation(_prefs("The Baker."), None).question == (
             "Since you're a baker, what are we starting with?"
         )
-        assert compose_first_conversation(_prefs("a Barista"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("a Barista"), None).question == (
             "Since you're a barista, what are we starting with?"
         )
         # Only the article goes; a multi-word title keeps every other word.
-        assert compose_first_conversation(_prefs("The head baker"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("The head baker"), None).question == (
             "Since you're a head baker, what are we starting with?"
         )
         # Only end punctuation is dropped, never a trailing letter of the job.
-        assert compose_first_conversation(_prefs("Founder at SpaceX"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("Founder at SpaceX"), None).question == (
             "Since you're a founder at SpaceX, what are we starting with?"
         )
         # Every vowel earns "an"; anything else, including x, gets "a".
@@ -118,16 +136,16 @@ class TestHandoverBubble:
             "Optometrist": "an optometrist",
             "Urban planner": "an urban planner",
         }.items():
-            assert compose_first_conversation(_prefs(typed), None).lines[1] == (
+            assert compose_first_conversation(_prefs(typed), None).question == (
                 f"Since you're {expected}, what are we starting with?"
             )
-        assert compose_first_conversation(_prefs("X-ray technician"), None).lines[1] == (
+        assert compose_first_conversation(_prefs("X-ray technician"), None).question == (
             "Since you're a x-ray technician, what are we starting with?"
         )
 
     def test_other_or_skipped_gets_the_plain_question(self) -> None:
         for profession in ("other", "Other", None):
-            assert compose_first_conversation(_prefs(profession), None).lines[1] == (
+            assert compose_first_conversation(_prefs(profession), None).question == (
                 "So, what are we starting with?"
             )
 

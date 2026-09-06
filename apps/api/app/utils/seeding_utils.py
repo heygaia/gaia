@@ -1,9 +1,10 @@
+from typing import cast
 from uuid import uuid4
 
 from app.constants.general import NEW_MESSAGE_BREAKER
 from app.constants.log_tags import LogTag
 from app.db.repositories.conversations import conversation_repository
-from app.models.chat_models import ConversationModel, MessageModel
+from app.models.chat_models import ConversationModel, MessageModel, ToolDataEntry
 from app.models.user_models import AuthenticatedUser
 from app.services.conversation_service import create_conversation_service
 from app.services.onboarding.first_conversation import FirstConversation
@@ -85,12 +86,20 @@ async def seed_first_conversation(user_id: str, composed: FirstConversation) -> 
         user_dict: AuthenticatedUser = {"user_id": user_id}
         await create_conversation_service(conversation, user_dict)
 
+        # Two bot messages: the web groups consecutive bot messages like
+        # iMessage, the first one's buttons render under its own bubbles, and
+        # the chips ride the question.
         messages = [
             MessageModel(
                 type="bot",
-                response=NEW_MESSAGE_BREAKER.join(composed.lines),
+                response=NEW_MESSAGE_BREAKER.join(composed.opening),
+                tool_data=[cast(ToolDataEntry, composed.connect_tool_data())],
+            ),
+            MessageModel(
+                type="bot",
+                response=composed.question,
                 follow_up_actions=composed.follow_ups,
-            )
+            ),
         ]
 
         message_ids = await conversation_repository.append_messages(

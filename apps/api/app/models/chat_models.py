@@ -77,6 +77,7 @@ tool_fields = [
     "code_data",
     "google_docs_data",
     "integration_connection_required",
+    "connect_options",
     "integration_list_data",
     "reddit_data",
     "twitter_user_data",

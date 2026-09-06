@@ -32,21 +32,29 @@ def connect_link(integration_id: str) -> str:
     return f"{INTEGRATIONS_PATH}?connect={integration_id}"
 
 
-WELCOME = "Okay, you're in."
-WELCOME_WITH_PLATFORM_TEMPLATE = (
-    "Okay, you're in. I'm on your {platform}, so text me there anytime."
-)
+WELCOME = "Okay, you're in. From here on, anything you'd rather not do yourself, hand it to me."
+WELCOME_WITH_PLATFORM_TEMPLATE = f"{WELCOME} I'm on your {{platform}} too, text me there anytime."
 ROUTINES_LINE = (
     "Two things worth switching on now: connect Gmail and every morning your mail "
     "comes back sorted, replies drafted. Add Calendar and I brief you before every meeting."
 )
-# Space-separated on purpose: the links render as pills, and a "·" between
-# them wraps onto its own line on a phone.
-LINKS_LINE = (
-    f"[Connect Gmail]({connect_link(GMAIL_INTEGRATION_ID)}) "
-    f"[Connect Calendar]({connect_link(CALENDAR_INTEGRATION_ID)}) "
-    f"[All integrations]({INTEGRATIONS_PATH})"
-)
+#: The buttons under the routines bubble: rendered by the web as a plain row of
+#: buttons outside the bubble (``connect_options`` in ToolRenderers), same tab,
+#: opening the app's connect flow on arrival exactly as the old links did.
+CONNECT_OPTIONS_TOOL_NAME = "connect_options"
+CONNECT_OPTIONS: list[dict[str, str]] = [
+    {
+        "integration_id": GMAIL_INTEGRATION_ID,
+        "label": "Connect Gmail",
+        "href": connect_link(GMAIL_INTEGRATION_ID),
+    },
+    {
+        "integration_id": CALENDAR_INTEGRATION_ID,
+        "label": "Connect Calendar",
+        "href": connect_link(CALENDAR_INTEGRATION_ID),
+    },
+    {"label": "All integrations", "href": INTEGRATIONS_PATH},
+]
 HANDOVER_TEMPLATE = "Since you're {job}, what are we starting with?"
 HANDOVER_SENTENCE_TEMPLATE = "Since {sentence}, what are we starting with?"
 HANDOVER_WITHOUT_JOB = "So, what are we starting with?"
@@ -67,11 +75,27 @@ _FIRST_PERSON_TO_SECOND: tuple[tuple[str, str], ...] = (
 
 
 class FirstConversation(BaseModel):
-    """The composed opening conversation: separate bot messages so the web renders
-    them as grouped bubbles, with the chips riding the last one."""
+    """The composed opening conversation.
 
-    lines: list[str]
+    ``opening`` is the welcome and the routines, grouped bubbles in one bot
+    message that also carries the connect buttons; ``question`` is the second
+    bot message, with the chips riding it. Two messages because a message's
+    cards render after all of its bubbles, and the buttons belong under the
+    routines, not under the question.
+    """
+
+    opening: list[str]
+    question: str
     follow_ups: list[str]
+
+    @property
+    def lines(self) -> list[str]:
+        """Every bubble in order, for anything that reads the thread as text."""
+        return [*self.opening, self.question]
+
+    @staticmethod
+    def connect_tool_data() -> dict[str, object]:
+        return {"tool_name": CONNECT_OPTIONS_TOOL_NAME, "data": {"options": CONNECT_OPTIONS}}
 
 
 def _platform_label(connected_platform: str) -> str:
@@ -111,11 +135,11 @@ def _handover(profession: str | None) -> str:
 def compose_first_conversation(
     preferences: OnboardingPreferences, connected_platform: str | None
 ) -> FirstConversation:
-    """The two bubbles GAIA opens with. The escape-hatch chip is always offered;
+    """The three bubbles GAIA opens with. The escape-hatch chip is always offered;
     the model-written jobs join it in :func:`with_starting_jobs`."""
-    opening = f"{_welcome(connected_platform)} {ROUTINES_LINE}\n\n{LINKS_LINE}"
     return FirstConversation(
-        lines=[opening, _handover(preferences.profession)],
+        opening=[_welcome(connected_platform), ROUTINES_LINE],
+        question=_handover(preferences.profession),
         follow_ups=[SOMETHING_ELSE_CHIP],
     )
 
@@ -123,4 +147,8 @@ def compose_first_conversation(
 def with_starting_jobs(composed: FirstConversation, chips: list[str]) -> FirstConversation:
     """The same conversation with the model-written starting jobs ahead of the
     escape hatch."""
-    return FirstConversation(lines=composed.lines[:], follow_ups=[*chips, SOMETHING_ELSE_CHIP])
+    return FirstConversation(
+        opening=composed.opening[:],
+        question=composed.question,
+        follow_ups=[*chips, SOMETHING_ELSE_CHIP],
+    )

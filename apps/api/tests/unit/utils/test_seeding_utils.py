@@ -34,10 +34,12 @@ def _composed() -> FirstConversation:
 
 @pytest.mark.unit
 class TestSeedFirstConversation:
-    async def test_seeds_one_message_of_grouped_bubbles_with_the_chips(self) -> None:
+    async def test_seeds_two_messages_buttons_under_the_opening_chips_under_the_question(
+        self,
+    ) -> None:
         composed = _composed()
         create = AsyncMock()
-        append = AsyncMock(return_value=["m1", "m2", "m3", "m4"])
+        append = AsyncMock(return_value=["m1", "m2"])
 
         with (
             patch(f"{MODULE}.create_conversation_service", create),
@@ -54,15 +56,21 @@ class TestSeedFirstConversation:
         assert conversation.conversation_id == conversation_id
 
         messages = append.await_args.kwargs["messages"]
-        assert len(messages) == 1
-        assert messages[0].response == NEW_MESSAGE_BREAKER.join(composed.lines)
-        assert split_message_bubbles(messages[0].response) == composed.lines
+        assert len(messages) == 2
         assert all(m.type == "bot" for m in messages)
 
-        assert all(m.tool_data is None for m in messages)
+        opening, question = messages
+        assert opening.response == NEW_MESSAGE_BREAKER.join(composed.opening)
+        assert split_message_bubbles(opening.response) == composed.opening
+        # The buttons ride the opening, so they render under the routines
+        # bubble and never under the question.
+        assert opening.tool_data == [composed.connect_tool_data()]
+        assert opening.follow_up_actions is None
 
+        assert question.response == composed.question
+        assert question.tool_data is None
         # The chips hang off the last message only, so they render once.
-        assert messages[0].follow_up_actions == composed.follow_ups
+        assert question.follow_up_actions == composed.follow_ups
 
     async def test_the_messages_are_written_to_that_conversation_for_that_user(self) -> None:
         """The id and owner are what route the write. Sent as None — or dropped —
