@@ -12,6 +12,7 @@ longer tracks.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 from app.config.oauth_config import get_integration_by_id
 from app.constants.log_tags import LogTag
@@ -74,26 +75,60 @@ async def pause_workflows_for_expired_integration(user_id: str, integration_id: 
     return paused
 
 
+@dataclass(frozen=True, slots=True)
+class PauseOutcome:
+    """What a blocked-run claim came to: the blockers the workflow is now
+    paused on, and the named integrations the run had no business naming."""
+
+    paused: list[str]
+    unrelated: list[str]
+
+
 async def pause_workflow_for_missing_integrations(
-    workflow_id: str, user_id: str, integration_ids: Sequence[str]
-) -> list[str]:
+    workflow_id: str,
+    user_id: str,
+    integration_ids: Sequence[str],
+    *,
+    used_by_run: Sequence[str],
+) -> PauseOutcome:
     """Pause one workflow whose run found integrations it needs unconnected.
 
-    Returns the integrations that were confirmed missing — empty when the claim
-    did not check out, in which case nothing is paused and the caller treats the
-    run as an ordinary decline. The confirmed list is stored on the workflow
-    because the resume side cannot re-derive it; see
+    A claim is a model's, so it is held to the run's own evidence first: an
+    integration counts only when the workflow's declared steps require it or
+    this run handed off to it (``used_by_run``). Anything else is reported back
+    as unrelated and nothing is paused — a disconnected Slack must not park a
+    Gmail workflow until Slack is connected. What passes is then confirmed
+    against real connection status; ``paused`` is empty when nothing checked
+    out, and the caller treats the run as an ordinary decline. The list is
+    stored on the workflow because the resume side cannot re-derive it; see
     ``WorkflowDocument.blocked_on_integrations``.
     """
-    confirmed = await confirm_disconnected(user_id, integration_ids)
+    workflow = await workflow_repository.get_for_user(workflow_id, user_id)
+    if workflow is None:
+        return PauseOutcome(paused=[], unrelated=list(dict.fromkeys(integration_ids)))
+    required = compute_required_integrations(workflow.steps, workflow.trigger_config)
+    claimed = list(dict.fromkeys(integration_ids))
+    unrelated = [i for i in claimed if i not in required and i not in used_by_run]
+    if unrelated:
+        log.info(
+            f"{LogTag.WORKFLOW} Blocked-run claim names integrations this run never needed",
+            workflow_id=workflow_id,
+            user_id=user_id,
+            unrelated=unrelated,
+            required=sorted(required),
+            used_by_run=list(used_by_run),
+        )
+        return PauseOutcome(paused=[], unrelated=unrelated)
+
+    confirmed = await confirm_disconnected(user_id, claimed)
     if not confirmed:
         log.info(
             f"{LogTag.WORKFLOW} Blocked-run claim did not check out — not pausing",
             workflow_id=workflow_id,
             user_id=user_id,
-            claimed=list(integration_ids),
+            claimed=claimed,
         )
-        return []
+        return PauseOutcome(paused=[], unrelated=[])
 
     # One write: a pause on record without its blockers could never be resumed,
     # since nothing but this list says what the run found missing.
@@ -109,7 +144,7 @@ async def pause_workflow_for_missing_integrations(
         user_id=user_id,
         integrations=confirmed,
     )
-    return confirmed
+    return PauseOutcome(paused=confirmed, unrelated=[])
 
 
 def _wants_integration(

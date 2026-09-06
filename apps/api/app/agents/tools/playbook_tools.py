@@ -113,6 +113,27 @@ def _answered_calls(state: Mapping[str, Any] | None) -> list[tuple[str, dict[str
     return calls
 
 
+def _handoff_targets(state: Mapping[str, Any] | None) -> list[str]:
+    """The subagents this run handed off to, in order, each once.
+
+    A blocked-run claim is held to this: a subagent id is the integration it
+    fronts, so a run that never handed off to Slack cannot have been blocked on
+    Slack.
+    """
+    if state is None:
+        return []
+    messages = state.get("messages")
+    if not isinstance(messages, list):
+        return []
+    targets = [
+        str((call.get("args") or {}).get("subagent_id") or "")
+        for message in messages
+        for call in getattr(message, "tool_calls", None) or []
+        if call.get("name") == "handoff"
+    ]
+    return list(dict.fromkeys(target for target in targets if target))
+
+
 def _invoked_call_names(state: Mapping[str, Any] | None) -> list[str]:
     """Every tool the run has called so far, answered or still in flight.
 
@@ -393,6 +414,8 @@ async def _record_blocked_run(
     user_id: str,
     kind: DeclineKind,
     integrations: list[str],
+    *,
+    used_by_run: list[str],
 ) -> dict[str, Any]:
     """Settle a run that never reached the work.
 
@@ -417,7 +440,22 @@ async def _record_blocked_run(
             "workflow. It will be asked again on a run that gets further.",
         )
 
-    paused = await pause_workflow_for_missing_integrations(workflow_id, user_id, integrations)
+    outcome = await pause_workflow_for_missing_integrations(
+        workflow_id, user_id, integrations, used_by_run=used_by_run
+    )
+    if outcome.unrelated:
+        # The run's own record says otherwise: neither the workflow's steps nor
+        # this run's handoffs involve what it named. Refused, not recorded, so
+        # the model re-decides with the integration it actually needed.
+        named = ", ".join(outcome.unrelated)
+        return error_response(
+            "integration_not_in_run",
+            f"{named} {'is' if len(outcome.unrelated) == 1 else 'are'} not part of this "
+            "workflow's steps and this run never handed off there. Name the integration "
+            "the run actually needed, or decline with the kind that says why the "
+            "sequence cannot hold.",
+        )
+    paused = outcome.paused
     if not paused:
         # The claim did not check out. Say so rather than pausing on it, and
         # still do not count a strike: a run that believed it was blocked did
@@ -551,7 +589,9 @@ async def _record_decline(
     count once per run."""
     workflow_id, user_id = workflow.id, workflow.user_id
     if kind in BLOCKED_DECLINE_KINDS:
-        return await _record_blocked_run(workflow_id, user_id, kind, integrations or [])
+        return await _record_blocked_run(
+            workflow_id, user_id, kind, integrations or [], used_by_run=_handoff_targets(state)
+        )
     if kind is DeclineKind.NO_WORK_TODAY:
         # The claim is checked against the run's own record, not taken on
         # trust: a run that made a doing-call had work to freeze.

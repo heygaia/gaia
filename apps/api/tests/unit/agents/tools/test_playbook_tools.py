@@ -46,6 +46,7 @@ from app.models.workflow_models import (
     WorkflowDocument,
     WorkflowUpdate,
 )
+from app.services.workflow.integration_pause import PauseOutcome
 from app.services.workflow.playbook.parser import (
     PlaybookValidation,
     RunResults,
@@ -1619,7 +1620,9 @@ class TestBlockedDeclines:
         with (
             patch(f"{TOOLS_MODULE}.playbook_repository", store),
             patch(f"{TOOLS_MODULE}.workflow_repository", workflows),
-            patch(PAUSE_TARGET, AsyncMock(return_value=["github"])) as pause,
+            patch(
+                PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=["github"], unrelated=[]))
+            ) as pause,
         ):
             result = await decline_playbook.ainvoke(
                 {
@@ -1630,7 +1633,7 @@ class TestBlockedDeclines:
                 config=_config(),
             )
 
-        pause.assert_awaited_once_with(WORKFLOW_ID, USER_ID, ["github"])
+        pause.assert_awaited_once_with(WORKFLOW_ID, USER_ID, ["github"], used_by_run=[])
         assert result == {
             "success": True,
             "data": {
@@ -1653,7 +1656,10 @@ class TestBlockedDeclines:
         with (
             patch(f"{TOOLS_MODULE}.playbook_repository", store),
             patch(f"{TOOLS_MODULE}.workflow_repository", _FakeWorkflowStore()),
-            patch(PAUSE_TARGET, AsyncMock(return_value=["github", "gmail"])),
+            patch(
+                PAUSE_TARGET,
+                AsyncMock(return_value=PauseOutcome(paused=["github", "gmail"], unrelated=[])),
+            ),
         ):
             result = await decline_playbook.ainvoke(
                 {
@@ -1668,6 +1674,51 @@ class TestBlockedDeclines:
             "by itself then."
         )
 
+    async def test_an_integration_the_run_never_used_is_refused_not_recorded(
+        self, store: _FakePlaybookStore
+    ) -> None:
+        """The run's own record is the evidence: its handoffs are handed to the
+        pause, and a claim it does not support is refused so the model names
+        the integration it actually needed."""
+        workflows = _FakeWorkflowStore()
+        handed_off = AIMessage(
+            content="",
+            tool_calls=[
+                {
+                    "id": "h1",
+                    "name": "handoff",
+                    "args": {"subagent_id": "gmail", "task": "read the inbox"},
+                    "type": "tool_call",
+                }
+            ],
+        )
+        with (
+            patch(f"{TOOLS_MODULE}.playbook_repository", store),
+            patch(f"{TOOLS_MODULE}.workflow_repository", workflows),
+            patch(
+                PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=[], unrelated=["slack"]))
+            ) as pause,
+        ):
+            result = await decline_playbook.ainvoke(
+                {
+                    "kind": "blocked_missing_integration",
+                    "integrations": ["slack"],
+                    "reason": "Slack is not connected",
+                    "state": {"messages": [handed_off]},
+                },
+                config=_config(),
+            )
+        pause.assert_awaited_once_with(WORKFLOW_ID, USER_ID, ["slack"], used_by_run=["gmail"])
+        assert result == {
+            "success": False,
+            "error": "integration_not_in_run",
+            "message": "slack is not part of this workflow's steps and this run never handed "
+            "off there. Name the integration the run actually needed, or decline with the "
+            "kind that says why the sequence cannot hold.",
+        }
+        assert workflows.workflow.playbook_declines == 0
+        assert workflows.workflow.activated is True
+
     async def test_a_claim_that_does_not_check_out_pauses_nothing(
         self, store: _FakePlaybookStore
     ) -> None:
@@ -1678,7 +1729,7 @@ class TestBlockedDeclines:
         with (
             patch(f"{TOOLS_MODULE}.playbook_repository", store),
             patch(f"{TOOLS_MODULE}.workflow_repository", workflows),
-            patch(PAUSE_TARGET, AsyncMock(return_value=[])),
+            patch(PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=[], unrelated=[]))),
         ):
             result = await decline_playbook.ainvoke(
                 {
@@ -1709,7 +1760,9 @@ class TestBlockedDeclines:
         with (
             patch(f"{TOOLS_MODULE}.playbook_repository", store),
             patch(f"{TOOLS_MODULE}.workflow_repository", _FakeWorkflowStore()),
-            patch(PAUSE_TARGET, AsyncMock(return_value=["gmail"])),
+            patch(
+                PAUSE_TARGET, AsyncMock(return_value=PauseOutcome(paused=["gmail"], unrelated=[]))
+            ),
         ):
             await decline_playbook.ainvoke(
                 {
