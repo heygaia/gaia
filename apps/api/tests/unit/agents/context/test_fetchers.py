@@ -319,6 +319,9 @@ class TestConnectedIntegrationsManifest:
             manifest = await build_connected_integrations_manifest("u1", header="HEADER:")
 
         assert manifest == "HEADER:\n- GitHub (github)"
+        assert mock_log.warning.call_args.args == (
+            "Could not list tools for a connected integration; manifest row stays bare",
+        )
         assert mock_log.warning.call_args.kwargs == {
             "integration_id": "github",
             "error": "registry cold",
