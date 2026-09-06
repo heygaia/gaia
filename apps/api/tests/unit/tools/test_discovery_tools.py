@@ -18,6 +18,7 @@ from app.agents.tools.discovery_tools import (
     search_public_workflows,
     show_connect_card,
 )
+from app.config.oauth_config import OAUTH_INTEGRATIONS
 from app.db.repositories.user_integrations import user_integration_repository
 
 _USER = "user1"
@@ -407,6 +408,32 @@ class TestSearchPublicWorkflowsShape:
         assert [w["title"] for w in by_description["workflows"]] == ["Digest"]
         assert [w["title"] for w in by_integration["workflows"]] == ["Sync"]
 
+    async def test_a_row_with_no_title_is_returned_with_an_empty_one(self) -> None:
+        rows = [{"id": "w1", "description": "inbox digest", "slug": "digest"}]
+        with _public_workflows(rows, []):
+            result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+
+        assert result["workflows"][0]["title"] == ""
+
+    async def test_the_cap_still_returns_the_whole_result_shape(self) -> None:
+        rows = [_workflow(f"Digest {n}", "inbox") for n in range(MAX_DISCOVERY_RESULTS + 2)]
+        with _public_workflows(rows, []):
+            result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
+
+        assert len(result["workflows"]) == MAX_DISCOVERY_RESULTS
+        assert result["query"] == "inbox"
+        assert result["explore_url"] == f"{_FRONTEND}/workflows"
+
+    async def test_only_slashes_are_trimmed_from_the_frontend_url(self) -> None:
+        with (
+            _public_workflows([], []),
+            patch("app.agents.tools.discovery_tools.settings") as mock_settings,
+        ):
+            mock_settings.FRONTEND_URL = "https://app.example.com/preX/"
+            result = await search_public_workflows.ainvoke({"query": "x"}, _CONFIG)
+
+        assert result["explore_url"] == "https://app.example.com/preX/workflows"
+
     async def test_identity_falls_back_from_id_to_slug_to_title(self) -> None:
         """The explore and community rows describe the same template with
         whichever key that list carries; a repeat under any of them is one hit."""
@@ -414,17 +441,18 @@ class TestSearchPublicWorkflowsShape:
             {"id": "w1", "title": "Digest", "description": "inbox", "slug": "digest"},
             {"title": "Triage", "description": "inbox", "slug": "triage"},
             {"title": "Sorter", "description": "inbox"},
+            {"title": "Filer", "description": "inbox"},
         ]
         community = [
             {"id": "w1", "title": "Digest (copy)", "description": "inbox", "slug": "other"},
             {"title": "Triage again", "description": "inbox", "slug": "triage"},
             {"title": "Sorter", "description": "inbox"},
-            {"title": "Fresh", "description": "inbox", "slug": "fresh"},
         ]
         with _public_workflows(explore, community):
             result = await search_public_workflows.ainvoke({"query": "inbox"}, _CONFIG)
 
-        assert [w["title"] for w in result["workflows"]] == ["Digest", "Triage", "Sorter", "Fresh"]
+        # Two title-only rows with different titles are two templates.
+        assert [w["title"] for w in result["workflows"]] == ["Digest", "Triage", "Sorter", "Filer"]
 
     async def test_the_wide_event_names_the_tool_and_counts_the_matches(self) -> None:
         rows = [_workflow("Digest", "inbox"), _workflow("Sorter", "inbox")]
@@ -529,7 +557,47 @@ class TestShowConnectCard:
             )
 
         writer.assert_not_called()
-        assert "User ID" in result
+        assert result == "Error: User ID not found in configuration."
+
+    async def test_an_unknown_id_names_every_valid_one(self) -> None:
+        with _ui_graph_run():
+            result = await show_connect_card.ainvoke({"integration_id": "quickbooks"}, _CONFIG)
+
+        valid = ", ".join(i.id for i in OAUTH_INTEGRATIONS if i.available)
+        assert result == (
+            "No connectable integration with id 'quickbooks'. No card was shown, so do NOT tell "
+            f"the user to connect anything. Valid ids: {valid}"
+        )
+
+    async def test_the_card_is_requested_for_this_user_by_id_and_name(self) -> None:
+        request = AsyncMock(return_value="Ask them to tap it.")
+        with (
+            patch("app.agents.tools.discovery_tools.request_integration_connection", request),
+            patch("app.agents.tools.discovery_tools.log") as log,
+        ):
+            result = await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
+
+        request.assert_awaited_once_with("gmail", "Gmail", _USER)
+        assert result.endswith("do not ask whether to send it. Ask them to tap it.")
+        log.set.assert_any_call(tool={"name": "show_connect_card", "action": "show"})
+
+    async def test_a_failure_is_logged_with_the_id_and_type_and_the_model_is_told(self) -> None:
+        with (
+            patch(
+                "app.agents.tools.discovery_tools.request_integration_connection",
+                AsyncMock(side_effect=RuntimeError("stream gone")),
+            ),
+            patch("app.agents.tools.discovery_tools.log") as log,
+        ):
+            result = await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
+
+        assert result.startswith("Could not show the connect card (stream gone). No card was shown")
+        log.error.assert_called_once()
+        assert "Error showing connect card" in log.error.call_args.args[0]
+        assert log.error.call_args.kwargs == {
+            "integration_id": "gmail",
+            "error_type": "RuntimeError",
+        }
 
 
 class TestCardPayloadMatchesTheExecutorPath:

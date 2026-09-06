@@ -2316,6 +2316,36 @@ class TestStopMessage:
         seams["reply"].assert_called_once_with("uid1", ActivationSequenceState.of(sequence))
         seams["opt_out"].assert_not_awaited()
 
+    async def test_the_forwarder_is_given_the_started_stream_and_the_bots_platform(
+        self, client: AsyncClient
+    ):
+        with (
+            self._linked_user({"user_id": "uid1", "_id": "uid1"}) as seams,
+            patch(
+                "app.api.v1.endpoints.bot.create_bot_session_token",
+                new=MagicMock(return_value="tok"),
+            ),
+            patch("app.api.v1.endpoints.bot.spawn_background_task", new=MagicMock()),
+            patch(
+                "app.api.v1.endpoints.bot._bot_stream_from_redis",
+                new=MagicMock(return_value=_empty_frames()),
+            ) as forwarder,
+        ):
+            response = await client.post(
+                f"{BOT_BASE}/chat-stream",
+                json={"message": "hello", "platform": "discord", "platform_user_id": "u1"},
+            )
+            await response.aread()
+
+        started_stream_id = seams["sm"].start_stream.await_args.args[0]
+        assert forwarder.call_args.kwargs == {
+            "stream_id": started_stream_id,
+            "conversation_id": "conv-1",
+            "user_id": "uid1",
+            "session_token": "tok",
+            "platform": "discord",
+        }
+
 
 async def _empty_frames() -> AsyncGenerator[str, None]:
     if False:  # pragma: no cover

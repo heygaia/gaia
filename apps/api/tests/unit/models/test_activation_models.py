@@ -47,3 +47,6 @@ class TestEarlierDrafts:
 
     def test_of_a_stored_subdoc_reads_its_fields(self) -> None:
         assert ActivationSequenceState.of({"opted_out": True, "day_sent": 2}).opted_out is True
+
+    def test_an_unset_send_time_stays_unset(self) -> None:
+        assert ActivationSequenceState(last_sent_at=None).last_sent_at is None

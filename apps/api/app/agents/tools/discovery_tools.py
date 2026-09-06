@@ -175,10 +175,8 @@ async def search_public_workflows(
             identity = str(row.get("id") or row.get("slug") or row.get("title"))
             if identity in seen:
                 continue
-            haystack = " ".join(
-                str(row.get(field) or "")
-                for field in ("title", "description", "source_integration")
-            ).lower()
+            fields = (row.get(field) for field in ("title", "description", "source_integration"))
+            haystack = " ".join(str(value) for value in fields if value).lower()
             if not matcher(haystack):
                 continue
             seen.add(identity)
