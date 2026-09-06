@@ -27,15 +27,18 @@ DIRECTION_BRIEFS: dict[Direction, str] = {
     ),
     Direction.UNPROMPTED_VALUE: (
         "Your earlier asks went unanswered. Do not ask for anything, do not mention connecting. "
-        "Give them one real thing INSIDE this message, finished, that needs nothing connected: "
-        "a three-line brief on something from their job, a draft of the thing they keep putting "
-        "off, a checklist for the week from their picks. Something they can use without replying."
+        "Give them one real thing INSIDE this message, finished, built ONLY from what is in the "
+        "context below (their role, their picks, their own words): a template for the update they "
+        "keep putting off, a checklist for the week, a three-line way to run the job they picked. "
+        "You have no data of theirs here, so never invent an email, a message, a meeting, a "
+        "person or a number. Something they can use without replying."
     ),
     Direction.HANDOVER: (
         "They have connected something but have never handed you a job. Take ONE job from their "
         "picks, make it today's version of that job (specific to what is actually in front of "
-        "them), and offer to do it now. A different pick, or a genuinely different angle, from "
-        "any earlier day listed below."
+        "them), and do the safe part of it INSIDE this message: the draft, the list, the plan "
+        "for today. Ask only for the one thing that needs their go-ahead (a send, a change). "
+        "A different pick, or a genuinely different angle, from any earlier day listed below."
     ),
     Direction.FOLLOW_THROUGH: (
         "They handed you something and you did it. Pick up the thread on that specific thing: "
@@ -59,6 +62,8 @@ Hard limits:
   variant. Nothing that admits the message exists because it is scheduled.
 - Never repeat an opener or a suggestion from an earlier day. Both are listed below.
 - If nothing real happened, say the one useful thing anyway. Do not fill.
+- Never mention a specific email, message, meeting, person, deal or number unless it
+  appears in the context below. Invented specifics are the fastest way to lose them.
 
 Voice: match how they write. Short, plain, alive. Fragments are fine, filler is not.
 Physical verbs for abstract things ("pulled it out of your inbox", not "retrieved").
