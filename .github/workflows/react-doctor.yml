@@ -44,20 +44,10 @@ jobs:
         # Full reference: https://www.react.doctor/ci
         with:
           blocking: warning
-          # Pinned like every other CI tool (see CLAUDE.md "Pinning Policy"):
-          # the action's default is the npm `latest` tag, and the local gate
-          # (`pnpm dlx react-doctor@0.9.12 ... --scope changed`) already pins
-          # this version. 0.9.13 shipped `no-high-complexity-react-function`,
-          # which fails any PR that touches one of the ~20 pre-existing
-          # components over its thresholds. Adopting that rule is a separate
-          # change: bump this together with the local pin once those
-          # components are split, not by letting an upstream release move
-          # the gate under an open PR.
-          version: "0.9.12"
         #   scope: full              # On PRs, scan the whole project instead of just changed files
         #   comment: false           # Disable the sticky PR summary comment
         #   review-comments: false   # Disable inline review comments on changed lines
         #   commit-status: false     # Disable the commit status (score + counts, links to the run)
-        #   version: "0.4.0"         # (pinned above)
+        #   version: "0.4.0"         # Pin to a specific react-doctor version instead of "latest"
         #   directory: apps/web      # Scan a sub-directory (default: ".")
         #   project: "web,admin"     # In a monorepo, scan specific workspace project(s)
