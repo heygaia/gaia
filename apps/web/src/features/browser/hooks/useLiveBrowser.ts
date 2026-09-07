@@ -109,6 +109,10 @@ export function useLiveBrowser(socketUrl: string | null, interactive: boolean) {
     return () => {
       disposed = true;
       if (retryTimer) clearTimeout(retryTimer);
+      // A frame decode in flight would otherwise draw onto a detached canvas
+      // after unmount; drop the handler and abort the load.
+      img.onload = null;
+      img.src = "";
       const ws = wsRef.current;
       if (ws) {
         ws.onopen = null;
