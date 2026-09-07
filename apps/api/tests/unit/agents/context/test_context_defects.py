@@ -17,6 +17,7 @@ from langchain_core.messages import SystemMessage
 import pytest
 from tests._harness.context_chain import (
     AgentTier,
+    ContextSeed,
     HarnessUser,
     effective_context,
     message_in_slot,
@@ -62,24 +63,32 @@ class TestVolatileContentIsNotInTheCacheablePrefix:
 
     @pytest.mark.parametrize("tier", WORKER_TIERS)
     async def test_recalled_memories_are_in_the_volatile_slot(self, tier: AgentTier) -> None:
-        messages = await effective_context(tier, sources=VOLATILE_SOURCES)
+        messages = await effective_context(tier, ContextSeed(sources=VOLATILE_SOURCES))
 
         recall = text_of(message_in_slot(messages, PromptSlot.MEMORY_RECALL))
         assert "Ships on Fridays" in recall
 
     @pytest.mark.parametrize("tier", WORKER_TIERS)
-    async def test_skills_are_in_the_volatile_slot(self, tier: AgentTier) -> None:
-        messages = await effective_context(tier, sources=VOLATILE_SOURCES)
+    async def test_skills_are_in_the_cached_prefix(self, tier: AgentTier) -> None:
+        """The listing is byte-stable per (user, agent) — no query, no clock,
+        Redis-cached 12h — so it belongs in the prefix where it costs nothing
+        per call, not in the tail it was re-read from on every worker call.
+        A mid-conversation skill install breaks the prefix once; that is the
+        same trade integrations_manifest already makes for connects."""
+        messages = await effective_context(tier, ContextSeed(sources=VOLATILE_SOURCES))
 
+        stable = text_of(message_in_slot(messages, PromptSlot.DYNAMIC_STABLE))
         recall = text_of(message_in_slot(messages, PromptSlot.MEMORY_RECALL))
-        assert "inbox-triage" in recall
+        assert "inbox-triage" in stable
+        assert "inbox-triage" not in recall
 
     @pytest.mark.parametrize("tier", [AgentTier.EXECUTOR, AgentTier.PROVIDER_SUBAGENT])
     async def test_run_banners_are_in_the_volatile_slot(self, tier: AgentTier) -> None:
         messages = await effective_context(
             tier,
-            sources=VOLATILE_SOURCES,
-            configurable_overrides={"execution_mode": "background"},
+            ContextSeed(
+                sources=VOLATILE_SOURCES, configurable_overrides={"execution_mode": "background"}
+            ),
         )
 
         recall = text_of(message_in_slot(messages, PromptSlot.MEMORY_RECALL))
@@ -87,17 +96,18 @@ class TestVolatileContentIsNotInTheCacheablePrefix:
 
     @pytest.mark.parametrize("tier", WORKER_TIERS)
     async def test_stable_slot_holds_no_per_query_content(self, tier: AgentTier) -> None:
-        messages = await effective_context(tier, sources=VOLATILE_SOURCES)
+        messages = await effective_context(tier, ContextSeed(sources=VOLATILE_SOURCES))
 
         stable = text_of(message_in_slot(messages, PromptSlot.DYNAMIC_STABLE))
         # "Prefers short answers" is deliberately absent: a memory-core DOCUMENT
         # is rewritten by consolidation, not per query, so it belongs in the
         # prefix. The core's agenda and journal are what churn, and they are a
-        # separate section in the volatile slot.
-        for volatile in ("Ships on Fridays", "inbox-triage"):
-            assert volatile not in stable, (
-                f"{volatile!r} churns per query but sits in the cacheable prefix"
-            )
+        # separate section in the volatile slot. "inbox-triage" (the skills
+        # listing) is likewise absent: it is byte-stable per (user, agent) and
+        # now lives in the prefix on purpose.
+        assert "Ships on Fridays" not in stable, (
+            "per-query recall churns per turn but sits in the cacheable prefix"
+        )
 
 
 @pytest.mark.unit
@@ -107,7 +117,9 @@ class TestEveryTierKnowsTheDate:
     date cannot resolve "every Monday" or "starting next week"."""
 
     async def test_workflow_authoring_receives_exactly_one_clock(self) -> None:
-        messages = await effective_context(AgentTier.WORKFLOW_AUTHORING, sources=VOLATILE_SOURCES)
+        messages = await effective_context(
+            AgentTier.WORKFLOW_AUTHORING, ContextSeed(sources=VOLATILE_SOURCES)
+        )
 
         clocks = [m for m in messages if m.additional_kwargs.get("time_context")]
         assert len(clocks) == 1
@@ -140,8 +152,10 @@ class TestSeedOrderIsAlreadyCanonical:
         effective = slots_of(
             await effective_context(
                 tier,
-                sources=VOLATILE_SOURCES,
-                configurable_overrides={"provider": LLMProviderName.GEMINI},
+                ContextSeed(
+                    sources=VOLATILE_SOURCES,
+                    configurable_overrides={"provider": LLMProviderName.GEMINI},
+                ),
             )
         )
 
@@ -160,18 +174,22 @@ class TestAQueryChangeMovesOnlyTheVolatileSlot:
     ) -> None:
         first = await effective_context(
             tier,
-            query="summarise my unread mail",
-            sources=ContextSources(
-                memories=[memory("Ships on Fridays", mentioned="2026-02-01")],
-                connected_integrations=[{"id": "gmail", "name": "Gmail"}],
+            ContextSeed(
+                query="summarise my unread mail",
+                sources=ContextSources(
+                    memories=[memory("Ships on Fridays", mentioned="2026-02-01")],
+                    connected_integrations=[{"id": "gmail", "name": "Gmail"}],
+                ),
             ),
         )
         second = await effective_context(
             tier,
-            query="what did I promise the design team?",
-            sources=ContextSources(
-                memories=[memory("Owes the design team a spec", mentioned="2026-03-02")],
-                connected_integrations=[{"id": "gmail", "name": "Gmail"}],
+            ContextSeed(
+                query="what did I promise the design team?",
+                sources=ContextSources(
+                    memories=[memory("Owes the design team a spec", mentioned="2026-03-02")],
+                    connected_integrations=[{"id": "gmail", "name": "Gmail"}],
+                ),
             ),
         )
 
@@ -184,9 +202,11 @@ class TestAQueryChangeMovesOnlyTheVolatileSlot:
     async def test_the_difference_lands_in_the_volatile_slot(self, tier: AgentTier) -> None:
         messages = await effective_context(
             tier,
-            query="what did I promise the design team?",
-            sources=ContextSources(
-                memories=[memory("Owes the design team a spec", mentioned="2026-03-02")]
+            ContextSeed(
+                query="what did I promise the design team?",
+                sources=ContextSources(
+                    memories=[memory("Owes the design team a spec", mentioned="2026-03-02")]
+                ),
             ),
         )
 
@@ -207,9 +227,11 @@ class TestOnboardingPromptDoesNotEvictIdentity:
         user = HarnessUser(name="Zylphara", timezone="Asia/Kolkata")
         messages = await effective_context(
             AgentTier.COMMS,
-            user=user,
-            sources=ContextSources(connected_integrations=[{"id": "gmail", "name": "Gmail"}]),
-            onboarding_prompt="Welcome! Ask about their inbox.",
+            ContextSeed(
+                user=user,
+                sources=ContextSources(connected_integrations=[{"id": "gmail", "name": "Gmail"}]),
+                onboarding_prompt="Welcome! Ask about their inbox.",
+            ),
         )
 
         stable = text_of(message_in_slot(messages, PromptSlot.DYNAMIC_STABLE))
@@ -218,7 +240,7 @@ class TestOnboardingPromptDoesNotEvictIdentity:
 
     async def test_the_onboarding_prompt_still_reaches_the_model(self) -> None:
         messages = await effective_context(
-            AgentTier.COMMS, onboarding_prompt="Welcome! Ask about their inbox."
+            AgentTier.COMMS, ContextSeed(onboarding_prompt="Welcome! Ask about their inbox.")
         )
 
         assembled = " ".join(text_of(m) for m in messages if m.type == "system")
@@ -228,7 +250,7 @@ class TestOnboardingPromptDoesNotEvictIdentity:
         """The onboarding prompt must not evict the static prompt either — the
         obvious 'fix' of dropping its marker would just move the eviction."""
         with_onboarding = await effective_context(
-            AgentTier.COMMS, onboarding_prompt="Welcome! Ask about their inbox."
+            AgentTier.COMMS, ContextSeed(onboarding_prompt="Welcome! Ask about their inbox.")
         )
         without = await effective_context(AgentTier.COMMS)
 
@@ -242,8 +264,9 @@ class TestOnboardingPromptDoesNotEvictIdentity:
         )
         messages = await effective_context(
             AgentTier.COMMS,
-            onboarding_prompt="Welcome! Ask about their inbox.",
-            prior_messages=[stale],
+            ContextSeed(
+                onboarding_prompt="Welcome! Ask about their inbox.", prior_messages=[stale]
+            ),
         )
 
         assert slots_of(messages).count(PromptSlot.ONBOARDING) == 1

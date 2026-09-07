@@ -76,7 +76,7 @@ async def materialize_user_integrations(user_id: str, connected_ids: set[str]) -
     """
     # Late-bound to break the storage -> sessions -> lifecycle -> service ->
     # storage import cycle (the service transitively re-enters the storage pkg).
-    from app.services.integration_instructions_service import (
+    from app.services.integration_instructions_service import (  # noqa: PLC0415 -- breaks the storage -> sessions -> lifecycle -> service -> storage import cycle
         get_all_instructions,
         instructions_signature,
     )
@@ -108,10 +108,18 @@ async def provision_user_workspace(user_id: str, connected_ids: set[str] | None 
     # Late-bound: ``app.services.storage`` re-exports this module, so importing
     # ``system_workspace`` (which imports ``storage.juicefs``) at top level would
     # re-enter the half-initialized storage package.
-    from app.services.storage.system_workspace import link_system_files_into_workspace
+    from app.services.storage.system_workspace import (  # noqa: PLC0415 -- deferred
+        link_system_files_into_workspace,
+    )
 
     await link_system_files_into_workspace(user_id)
     await materialize_user_integrations(user_id, connected_ids or set())
+
+    # Late-bound for the same reason (workspace_areas -> account_fs -> storage).
+    from app.services.workspace_areas import all_areas  # noqa: PLC0415 -- deferred
+
+    for area in all_areas():
+        area.schedule_sync(user_id)
 
 
 async def delete_session_dir(user_id: str, conv_id: str) -> None:

@@ -24,8 +24,15 @@ FAKE_USER_ID = "507f1f77bcf86cd799439011"
 MODULE = "app.agents.tools.reminder_tool"
 
 
-def _cfg(user_id: str = FAKE_USER_ID, user_timezone: str = "Asia/Kolkata") -> dict[str, Any]:
-    return {"configurable": {"user_id": user_id, "user_timezone": user_timezone}}
+def _cfg(
+    user_id: str = FAKE_USER_ID,
+    user_timezone: str = "Asia/Kolkata",
+    conversation_id: str | None = None,
+) -> dict[str, Any]:
+    configurable: dict[str, Any] = {"user_id": user_id, "user_timezone": user_timezone}
+    if conversation_id is not None:
+        configurable["conversation_id"] = conversation_id
+    return {"configurable": configurable}
 
 
 def _cfg_no_user() -> dict[str, Any]:
@@ -66,7 +73,7 @@ class TestCreateReminderTool:
         from app.models.reminder_models import StaticReminderPayload
 
         payload = StaticReminderPayload(title="Wake up", body="Time to wake up")
-        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(),
             payload=payload,
             scheduled_at="2026-03-21 08:00:00",
@@ -74,12 +81,33 @@ class TestCreateReminderTool:
         assert result == "Reminder created successfully"
         mock_scheduler.create_reminder.assert_awaited_once()
 
+    @patch(f"{MODULE}.reminder_scheduler")
+    @patch(f"{MODULE}.CreateReminderToolRequest")
+    async def test_source_conversation_id_threaded_from_config(
+        self, mock_req_cls: MagicMock, mock_scheduler: MagicMock
+    ) -> None:
+        mock_instance = MagicMock()
+        mock_instance.to_create_reminder_request.return_value = MagicMock()
+        mock_req_cls.return_value = mock_instance
+        mock_scheduler.create_reminder = AsyncMock()
+
+        from app.agents.tools.reminder_tool import create_reminder_tool
+        from app.models.reminder_models import StaticReminderPayload
+
+        payload = StaticReminderPayload(title="Wake up", body="Time to wake up")
+        await create_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
+            config=_cfg(conversation_id="conv-abc123"),
+            payload=payload,
+            scheduled_at="2026-03-21 08:00:00",
+        )
+        assert mock_req_cls.call_args.kwargs["source_conversation_id"] == "conv-abc123"
+
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import create_reminder_tool
         from app.models.reminder_models import StaticReminderPayload
 
         payload = StaticReminderPayload(title="Test", body="Body")
-        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg_no_user(), payload=payload
         )
         assert result == {"error": "User ID is required to create a reminder"}
@@ -93,7 +121,7 @@ class TestCreateReminderTool:
         from app.models.reminder_models import StaticReminderPayload
 
         payload = StaticReminderPayload(title="Test", body="Body")
-        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await create_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), payload=payload, repeat="bad-cron"
         )
         assert "Invalid cron" in result["error"]
@@ -110,7 +138,7 @@ class TestCreateReminderTool:
         from app.models.reminder_models import StaticReminderPayload
 
         payload = StaticReminderPayload(title="Test", body="Body")
-        result = await create_reminder_tool.coroutine(config=_cfg(), payload=payload)  # type: ignore[attr-defined]
+        result = await create_reminder_tool.coroutine(config=_cfg(), payload=payload)  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert "DB down" in result["error"]
 
 
@@ -128,14 +156,14 @@ class TestListUserRemindersTool:
 
         from app.agents.tools.reminder_tool import list_user_reminders_tool
 
-        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]
+        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert isinstance(result, list)
         assert len(result) == 2
 
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import list_user_reminders_tool
 
-        result = await list_user_reminders_tool.coroutine(config=_cfg_no_user())  # type: ignore[attr-defined]
+        result = await list_user_reminders_tool.coroutine(config=_cfg_no_user())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert result == {"error": "User ID is required to list reminders"}
 
     @patch(f"{MODULE}.reminder_scheduler")
@@ -144,7 +172,7 @@ class TestListUserRemindersTool:
 
         from app.agents.tools.reminder_tool import list_user_reminders_tool
 
-        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]
+        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert result == []
 
     @patch(f"{MODULE}.reminder_scheduler")
@@ -153,7 +181,7 @@ class TestListUserRemindersTool:
 
         from app.agents.tools.reminder_tool import list_user_reminders_tool
 
-        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]
+        result = await list_user_reminders_tool.coroutine(config=_cfg())  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert "err" in result["error"]
 
 
@@ -169,7 +197,7 @@ class TestGetReminderTool:
 
         from app.agents.tools.reminder_tool import get_reminder_tool
 
-        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="rem-1")  # type: ignore[attr-defined]
+        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="rem-1")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert result["id"] == "rem-1"
 
     @patch(f"{MODULE}.reminder_scheduler")
@@ -178,13 +206,13 @@ class TestGetReminderTool:
 
         from app.agents.tools.reminder_tool import get_reminder_tool
 
-        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="bad")  # type: ignore[attr-defined]
+        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="bad")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert result == {"error": "Reminder not found"}
 
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import get_reminder_tool
 
-        result = await get_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await get_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg_no_user(), reminder_id="r1"
         )
         assert result == {"error": "User ID is required to get reminder"}
@@ -195,7 +223,7 @@ class TestGetReminderTool:
 
         from app.agents.tools.reminder_tool import get_reminder_tool
 
-        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="r1")  # type: ignore[attr-defined]
+        result = await get_reminder_tool.coroutine(config=_cfg(), reminder_id="r1")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert "err" in result["error"]
 
 
@@ -211,7 +239,7 @@ class TestDeleteReminderTool:
 
         from app.agents.tools.reminder_tool import delete_reminder_tool
 
-        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="rem-1"
         )
         assert result == {"status": "cancelled"}
@@ -222,7 +250,7 @@ class TestDeleteReminderTool:
 
         from app.agents.tools.reminder_tool import delete_reminder_tool
 
-        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="rem-1"
         )
         assert result == {"error": "Failed to cancel reminder"}
@@ -230,7 +258,7 @@ class TestDeleteReminderTool:
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import delete_reminder_tool
 
-        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await delete_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg_no_user(), reminder_id="r1"
         )
         assert result == {"error": "User ID is required to delete reminder"}
@@ -241,7 +269,7 @@ class TestDeleteReminderTool:
 
         from app.agents.tools.reminder_tool import delete_reminder_tool
 
-        result = await delete_reminder_tool.coroutine(config=_cfg(), reminder_id="r1")  # type: ignore[attr-defined]
+        result = await delete_reminder_tool.coroutine(config=_cfg(), reminder_id="r1")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert "err" in result["error"]
 
 
@@ -257,7 +285,7 @@ class TestUpdateReminderTool:
 
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="rem-1", repeat="0 9 * * *"
         )
         assert result == {"status": "updated"}
@@ -273,7 +301,7 @@ class TestUpdateReminderTool:
 
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(),
             reminder_id="rem-1",
             stop_after="2026-06-01 12:00:00",
@@ -289,7 +317,7 @@ class TestUpdateReminderTool:
 
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="rem-1", max_occurrences=5
         )
         assert result == {"error": "Failed to update reminder"}
@@ -297,7 +325,7 @@ class TestUpdateReminderTool:
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg_no_user(), reminder_id="r1"
         )
         assert result == {"error": "User ID is required to update reminder"}
@@ -305,7 +333,7 @@ class TestUpdateReminderTool:
     async def test_invalid_stop_after_format(self) -> None:
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="r1", stop_after="not-a-date"
         )
         assert "Invalid stop_after format" in result["error"]
@@ -316,7 +344,7 @@ class TestUpdateReminderTool:
 
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), reminder_id="r1", repeat="0 9 * * *"
         )
         assert "err" in result["error"]
@@ -327,7 +355,7 @@ class TestUpdateReminderTool:
 
         from app.agents.tools.reminder_tool import update_reminder_tool
 
-        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]
+        result = await update_reminder_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(),
             reminder_id="rem-1",
             payload={"title": "New title", "body": "New body"},
@@ -365,7 +393,7 @@ class TestSearchRemindersTool:
 
         from app.agents.tools.reminder_tool import search_reminders_tool
 
-        result = await search_reminders_tool.coroutine(config=_cfg(), query="Meeting")  # type: ignore[attr-defined]
+        result = await search_reminders_tool.coroutine(config=_cfg(), query="Meeting")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         # Only r1 should match
         assert isinstance(result, list)
         assert len(result) == 1
@@ -378,7 +406,7 @@ class TestSearchRemindersTool:
 
         from app.agents.tools.reminder_tool import search_reminders_tool
 
-        result = await search_reminders_tool.coroutine(  # type: ignore[attr-defined]
+        result = await search_reminders_tool.coroutine(  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
             config=_cfg(), query="ZZZ_NONEXISTENT"
         )
         assert result == []
@@ -386,7 +414,7 @@ class TestSearchRemindersTool:
     async def test_no_user_id(self) -> None:
         from app.agents.tools.reminder_tool import search_reminders_tool
 
-        result = await search_reminders_tool.coroutine(config=_cfg_no_user(), query="X")  # type: ignore[attr-defined]
+        result = await search_reminders_tool.coroutine(config=_cfg_no_user(), query="X")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert result == {"error": "User ID is required to search reminders"}
 
     @patch(f"{MODULE}.reminder_scheduler")
@@ -395,7 +423,7 @@ class TestSearchRemindersTool:
 
         from app.agents.tools.reminder_tool import search_reminders_tool
 
-        result = await search_reminders_tool.coroutine(config=_cfg(), query="X")  # type: ignore[attr-defined]
+        result = await search_reminders_tool.coroutine(config=_cfg(), query="X")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert "err" in result["error"]
 
     @patch(f"{MODULE}.reminder_scheduler")
@@ -405,5 +433,5 @@ class TestSearchRemindersTool:
 
         from app.agents.tools.reminder_tool import search_reminders_tool
 
-        result = await search_reminders_tool.coroutine(config=_cfg(), query="meeting")  # type: ignore[attr-defined]
+        result = await search_reminders_tool.coroutine(config=_cfg(), query="meeting")  # type: ignore[attr-defined]  # langchain BaseTool exposes .coroutine only at runtime
         assert len(result) == 1

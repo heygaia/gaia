@@ -42,6 +42,8 @@ class NotificationSourceEnum(str, Enum):
     WORKFLOW_FAILED = "workflow_failed"
     SYSTEM_WORKFLOWS_PROVISIONED = "system_workflows_provisioned"
     USAGE_LIMIT = "usage_limit"
+    INTEGRATION_EXPIRED = "integration_expired"
+    TODO_TRIGGER = "todo_trigger"
 
 
 class ActionType(str, Enum):

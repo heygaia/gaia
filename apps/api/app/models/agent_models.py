@@ -1,10 +1,12 @@
 """Types for driving one LangGraph agent run: the config, the user it is built
 from, and the middleware stack it runs under."""
 
+from dataclasses import dataclass
 from typing import Any, Literal, TypedDict, cast
 
 from langchain.agents.middleware.types import AgentMiddleware, ToolCallRequest
 from langchain_core.runnables import RunnableConfig
+from langgraph.config import get_config
 
 #: One entry of an agent's middleware stack.
 #:
@@ -90,6 +92,14 @@ class AgentConfigurable(TypedDict, total=False):
     #: judge grounds gated calls against these, so they are never an agent's
     #: paraphrase of the request.
     user_messages: list[str] | None
+    #: The live turn's request, exactly as the user typed it and NOT clipped
+    #: (``user_messages`` is capped at ``HIL_JUDGE_MAX_TURN_CHARS`` per turn, so it
+    #: cannot serve as the verbatim copy). Established once by comms and inherited
+    #: parent-overrides, same rule as ``user_messages``. ``call_executor`` folds it
+    #: into the executor brief so the worker tier always sees the user's own words
+    #: next to the comms agent's paraphrase of them. Absent for non-chat roots
+    #: (workflow/trigger runs), which have no literal user turn.
+    user_request: str | None
     user_message_id: str
     #: The live comms turn's own bot message id (chat stream's ``state.bot_message_id``).
     #: Threaded into ``call_executor`` so a HIL pause that later resumes can reconcile
@@ -159,6 +169,14 @@ class AgentConfigurable(TypedDict, total=False):
     workflow_id: str
     workflow_title: str
     workflow_notify_on_completion: bool
+    #: A playbook replay stopped partway in THIS fire and the agent is finishing
+    #: it: the replay's own record of what already ran. Carried to the executor
+    #: verbatim (``call_executor`` folds it into the heal brief) because comms
+    #: cannot be trusted to transcribe "do not repeat these" into its task.
+    playbook_fallback: str | None
+    #: The calls a stopped replay made this fire, as ``RecordedCall`` dumps, so a
+    #: rewrite may freeze them. See ``PLAYBOOK_REPLAYED_CALLS_KEY``.
+    playbook_replayed_calls: list[dict[str, Any]] | None
 
     # --- tracing ------------------------------------------------------------
     #: Stashed here so child agents spawned via ``asyncio.create_task`` re-emit
@@ -174,6 +192,21 @@ class AgentConfigurable(TypedDict, total=False):
     #: model switcher. The executor builds its own configurable rather than
     #: inheriting comms's lane wholesale, so the choice rides down here.
     dev_executor_model: str
+
+
+def current_run_config() -> RunnableConfig:
+    """The active ``RunnableConfig`` for the current graph run.
+
+    LangChain's middleware hooks are called as ``(state, runtime)`` and
+    ``(request, handler)`` — neither hands the config in as a parameter.
+    ``get_config()`` reads it from LangGraph's context-var, the same mechanism
+    nodes use. Returns an empty config outside a runnable context, so callers on
+    a sync fallback path never have to guard.
+    """
+    try:
+        return get_config()
+    except RuntimeError:
+        return RunnableConfig()
 
 
 def agent_configurable(config: RunnableConfig | None) -> AgentConfigurable:
@@ -228,3 +261,24 @@ class AgentRunnableConfig(RunnableConfig):
     """
 
     agent_name: str
+
+
+@dataclass(frozen=True)
+class SilentRunResult:
+    """What one ``call_agent_silent`` turn produced.
+
+    ``queued_task_id`` is set when the turn's comms agent delegated to the
+    executor and that dispatch was QUEUED behind an in-flight run for the same
+    conversation instead of running. The ``message`` is then an acknowledgement
+    of work that has not started, so a caller must not record the turn as work
+    done. It is ``None`` whenever an executor actually ran.
+    """
+
+    message: str
+    tool_data: dict[str, Any]
+    queued_task_id: str | None = None
+    #: The executor this turn delegated to ended in an error. ``message`` is
+    #: then comms' account of that error, not a result; ``executor_failure``
+    #: is the error itself, or why the wait for it gave up.
+    executor_failed: bool = False
+    executor_failure: str | None = None

@@ -1,8 +1,10 @@
 from datetime import UTC
 from functools import lru_cache
+import os
 import sys
 from typing import Any
 
+from bson import ObjectId
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorCollection, AsyncIOMotorDatabase
 import pymongo
 from pymongo.server_api import ServerApi
@@ -14,7 +16,11 @@ from shared.py.wide_events import log
 # The app always uses this database, whatever database `MONGO_DB` names in its
 # path — so anything that has to reach the same data (tests seeding the app's
 # startup preconditions) must resolve it from here rather than from the URL.
-MONGO_DATABASE_NAME = "GAIA"
+#
+# MONGO_DB_NAME overrides it so several CI lanes can share ONE mongod: the URI's
+# database component is ignored by design (above), so the name is the only
+# namespace available. Unset = "GAIA", the production database.
+MONGO_DATABASE_NAME = os.getenv("MONGO_DB_NAME", "GAIA")
 
 
 class MongoDB:
@@ -84,7 +90,8 @@ class MongoDB:
         try:
             log.info(f"{LogTag.MONGO} Initializing all indexes in MongoDB...")
             # Import here to avoid circular import
-            from app.db.mongodb.indexes import create_all_indexes
+            # Deferred import: breaks circular dependency: indexes imports collections, which imports this module
+            from app.db.mongodb.indexes import create_all_indexes  # noqa: PLC0415 -- deferred
 
             await create_all_indexes()
             # await log_index_summary()
@@ -114,3 +121,10 @@ def init_mongodb() -> MongoDB:
     mongodb_instance.ping()
     log.info(f"{LogTag.MONGO} Successfully connected to MongoDB.")
     return mongodb_instance
+
+
+def object_id_filter(id_value: str) -> dict[str, ObjectId]:
+    """The ``_id`` filter for a 24-hex string id — the id-codec stays in app/db
+    (repository-boundaries lint), so raw-connection operational scripts never
+    import bson themselves."""
+    return {"_id": ObjectId(id_value)}

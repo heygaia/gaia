@@ -50,7 +50,7 @@ class BaseAppSettings(BaseSettings):
 
     # For handling both normal env var loading and dict constructor
     @classmethod
-    def from_env(cls, **kwargs: Any) -> Self:
+    def from_env(cls, **kwargs: Any) -> Self:  # noqa: ANN401 -- framework contract
         """Create settings from environment variables."""
         try:
             return cls(**kwargs)
@@ -91,6 +91,12 @@ class CommonSettings(BaseAppSettings):
     # Where the scripted stub lives when sim mode is on; consumed only by
     # _sim_llm (defaults to SIM_STUB_BASE_URL when unset).
     OPENROUTER_BASE_URL: str | None = None
+    # Comma-separated OpenRouter provider slugs (tag form, e.g. "coreweave/fp8")
+    # to PREFER for the default-model lane — fallbacks stay enabled, so an
+    # outage degrades to the normal rotation. Empty (the default) leaves
+    # routing untouched. Set from the per-provider cache-hit table, not by
+    # guesswork; see _provider_order_kwargs in agents/llm/client.py.
+    OPENROUTER_PROVIDER_ORDER: str | None = None
     # Dev-only: lift every per-user rate limit (chat messages, uploads, ...).
     # Eval harnesses drive thousands of legitimate requests per day against a
     # free-plan dev user; without this they 429 at the free tier's 200/day.
@@ -151,6 +157,22 @@ class CommonSettings(BaseAppSettings):
     # ----------------------------------------------
     ENABLE_PROFILING: bool = False  # Must be explicitly enabled via .env
     PROFILING_SAMPLE_RATE: float = 1.0  # 100% of requests by default
+
+    # ----------------------------------------------
+    # ARQ worker
+    # ----------------------------------------------
+    # Concurrent jobs PER WORKER. The 10 is sized for a single worker (mean task
+    # 10.9s at 0.72 tasks/s needs ~8 concurrent by Little's Law); being a
+    # per-process cap, M workers give a fleet ceiling of 10 x M — which is not
+    # more throughput, just more simultaneous load on shared limits. Scaling the
+    # worker out therefore means scaling this DOWN (~ceil(8/M)), which is why it
+    # is configurable rather than a literal.
+    #
+    # Postgres is the wall: each worker opens SQLAlchemy's pool (pool_size=5 +
+    # max_overflow=10) PLUS the LangGraph checkpointer pool (max_size=20) = 35
+    # connections, against a default max_connections of 100. Raise
+    # max_connections before adding the third worker, or connections get refused.
+    ARQ_MAX_JOBS: int = 10
 
     # ----------------------------------------------
     # Crawl4AI (headless-browser scraping)
@@ -385,6 +407,16 @@ class CommonSettings(BaseAppSettings):
     DEV_DEFAULT_MODEL: str | None = None
 
     # ----------------------------------------------
+    # Workflows
+    # ----------------------------------------------
+    # Delete a workflow conversation's LangGraph checkpoint threads before every
+    # run, so run N stops replaying runs 1..N-1 out of Postgres (one production
+    # workflow held 1.39 MB of message state across three threads). The previous
+    # run reaches the next one as a recorded trace instead. Kill switch: set to
+    # false to fall back to the replaying behaviour without a deploy.
+    WORKFLOW_THREAD_RESET_ENABLED: bool = True
+
+    # ----------------------------------------------
     # GitHub Integration (for Skill Discovery)
     # ----------------------------------------------
     # Optional: Get a token at https://github.com/settings/tokens
@@ -408,43 +440,43 @@ class CommonSettings(BaseAppSettings):
     # ----------------------------------------------
 
     # OAuth Callback URLs
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def WORKOS_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/workos/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def WORKOS_DESKTOP_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL for desktop app."""
         return f"{self.HOST}/api/v1/oauth/workos/desktop/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def WORKOS_MOBILE_REDIRECT_URI(self) -> str:
         """WorkOS OAuth callback URL for mobile app."""
         return f"{self.HOST}/api/v1/oauth/workos/mobile/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def COMPOSIO_REDIRECT_URI(self) -> str:
         """Composio OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/composio/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def GOOGLE_CALLBACK_URL(self) -> str:
         """Google OAuth callback URL."""
         return f"{self.HOST}/api/v1/oauth/google/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def DISCORD_OAUTH_REDIRECT_URI(self) -> str:
         """Discord OAuth callback URL."""
         return f"{self.HOST}/api/v1/platform-auth/discord/callback"
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def SLACK_OAUTH_REDIRECT_URI(self) -> str:
         """Slack OAuth callback URL."""
@@ -494,6 +526,10 @@ class ProductionSettings(CommonSettings):
     RESEND_API_KEY: str
     RESEND_AUDIENCE_ID: str
     EMAIL_UNSUBSCRIBE_SECRET: str
+    # Signs single-purpose file-share grants (fetched by Composio during tool
+    # execution). Dedicated secret so share tokens are domain-separated from
+    # unsubscribe links.
+    SHARE_GRANT_SECRET: str
 
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str
@@ -716,6 +752,7 @@ class DevelopmentSettings(CommonSettings):
     RESEND_API_KEY: str | None = None
     RESEND_AUDIENCE_ID: str | None = None
     EMAIL_UNSUBSCRIBE_SECRET: str | None = None
+    SHARE_GRANT_SECRET: str | None = None
 
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str | None = None
@@ -876,7 +913,7 @@ class DevelopmentSettings(CommonSettings):
     BOT_SESSION_TOKEN_SECRET: str | None = None  # Falls back to GAIA_BOT_API_KEY
     BOT_SESSION_TOKEN_EXPIRY_MINUTES: int = 15
 
-    @computed_field  # type: ignore[prop-decorator]
+    @computed_field  # type: ignore[prop-decorator]  # pydantic’s computed_field over @property trips mypy’s prop-decorator check
     @property
     def SLACK_OAUTH_REDIRECT_URI(self) -> str:
         """Slack OAuth callback URL using redirectmeto proxy for local development."""
@@ -905,7 +942,7 @@ def _ensure_infisical_loaded() -> None:
 
 
 @lru_cache(maxsize=1)
-def get_settings() -> Any:
+def get_settings() -> Any:  # noqa: ANN401 -- framework contract
     """
     Get cached settings instance based on environment.
 

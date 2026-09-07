@@ -49,7 +49,7 @@ class MCPTokenStore:
             except Exception as e:
                 raise ValueError(
                     f"MCP_ENCRYPTION_KEY is not a valid Fernet key (must be 32 url-safe base64-encoded bytes): {e}"
-                )
+                ) from e
         return self._cipher
 
     def _encrypt(self, data: str) -> str:
@@ -137,7 +137,8 @@ class MCPTokenStore:
             return False
 
         if cred.token_expires_at:
-            from datetime import timedelta
+            # Deferred import: stdlib import kept local to this expiry branch
+            from datetime import timedelta  # noqa: PLC0415 -- stdlib import kept local
 
             return cred.token_expires_at < datetime.now(UTC) + timedelta(seconds=threshold_seconds)
 
@@ -146,7 +147,7 @@ class MCPTokenStore:
         # expired only when mcp-use fails to connect.
         max_age_seconds = 3600
         if cred.connected_at:
-            from datetime import timedelta
+            from datetime import timedelta  # noqa: PLC0415 -- stdlib import kept local
 
             return cred.connected_at < datetime.now(UTC) - timedelta(seconds=max_age_seconds)
 

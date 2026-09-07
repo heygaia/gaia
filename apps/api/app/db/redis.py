@@ -26,6 +26,7 @@ from pydantic import TypeAdapter
 from pydantic.type_adapter import TypeAdapter as TypeAdapterType
 import redis.asyncio as redis
 from redis.asyncio.client import Pipeline, PubSub
+from redis.asyncio.lock import Lock
 
 from app.config.settings import settings
 from app.constants.cache import (
@@ -138,41 +139,83 @@ class AsyncRedisCommands(Protocol):
     Adding a command here is the cost of using a new one — mypy will name it.
     """
 
-    async def ping(self) -> bool: ...
+    async def ping(self) -> bool:
+        """Liveness probe."""
+        ...
 
-    async def get(self, name: str) -> str | None: ...
+    async def get(self, name: str) -> str | None:
+        """GET — None when the key is absent."""
+        ...
 
     async def set(
         self, name: str, value: str, *, ex: int | None = None, nx: bool = False
-    ) -> bool | None: ...
+    ) -> bool | None:
+        """SET — with ``nx`` returns None when the key already existed."""
+        ...
 
-    async def setex(self, name: str, time: int, value: str) -> bool: ...
+    async def setex(self, name: str, time: int, value: str) -> bool:
+        """SET with a TTL in seconds."""
+        ...
 
-    async def getdel(self, name: str) -> str | None: ...
+    async def getdel(self, name: str) -> str | None:
+        """Atomic GET + DEL — None when the key was absent."""
+        ...
 
-    async def delete(self, *names: str) -> int: ...
+    async def delete(self, *names: str) -> int:
+        """DEL — returns how many of the keys existed."""
+        ...
 
-    async def exists(self, *names: str) -> int: ...
+    async def exists(self, *names: str) -> int:
+        """EXISTS — count of the named keys present."""
+        ...
 
-    async def expire(self, name: str, time: int) -> bool: ...
+    async def expire(self, name: str, time: int) -> bool:
+        """Set a TTL in seconds on an existing key."""
+        ...
 
-    async def keys(self, pattern: str = "*") -> list[str]: ...
+    async def ttl(self, name: str) -> int:
+        """Seconds left on a key — -1 when it has no TTL, -2 when it is gone."""
+        ...
 
-    async def incr(self, name: str, amount: int = 1) -> int: ...
+    async def keys(self, pattern: str = "*") -> list[str]:
+        """KEYS — full scan; only for small, bounded keyspaces."""
+        ...
 
-    async def llen(self, name: str) -> int: ...
+    async def incr(self, name: str, amount: int = 1) -> int:
+        """INCRBY — returns the value after the increment."""
+        ...
 
-    async def lpop(self, name: str) -> str | None: ...
+    async def llen(self, name: str) -> int:
+        """LLEN — 0 for a missing key."""
+        ...
 
-    async def lrange(self, name: str, start: int, end: int) -> list[str]: ...
+    async def lpop(self, name: str) -> str | None:
+        """LPOP — None when the list is empty or absent."""
+        ...
 
-    async def rpush(self, name: str, *values: str) -> int: ...
+    async def lrange(self, name: str, start: int, end: int) -> list[str]:
+        """LRANGE — inclusive on both ends; -1 is the last element."""
+        ...
 
-    async def hset(self, name: str, *, mapping: Mapping[str, str]) -> int: ...
+    async def ltrim(self, name: str, start: int, end: int) -> bool:
+        """LTRIM — keep only [start, end]; negative indexes count from the tail."""
+        ...
 
-    async def hgetall(self, name: str) -> dict[str, str]: ...
+    async def rpush(self, name: str, *values: str) -> int:
+        """RPUSH — returns the list length after the push."""
+        ...
 
-    async def publish(self, channel: str, message: str) -> int: ...
+    async def hset(self, name: str, *, mapping: Mapping[str, str]) -> int:
+        """HSET from a mapping — returns how many fields were newly added."""
+        ...
+
+    async def hgetall(self, name: str) -> dict[str, str]:
+        """HGETALL — empty dict for a missing key."""
+        ...
+
+    async def publish(self, channel: str, message: str) -> int:
+        """PUBLISH — returns the number of subscribers that received it."""
+        ...
 
     async def xadd(
         self,
@@ -181,7 +224,9 @@ class AsyncRedisCommands(Protocol):
         *,
         maxlen: int | None = None,
         approximate: bool = True,
-    ) -> str: ...
+    ) -> str:
+        """XADD — returns the new entry's stream id."""
+        ...
 
     async def xread(
         self,
@@ -189,15 +234,36 @@ class AsyncRedisCommands(Protocol):
         *,
         count: int | None = None,
         block: int | None = None,
-    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]: ...
+    ) -> list[tuple[str, list[tuple[str, dict[str, str]]]]]:
+        """XREAD — [(stream, [(entry_id, fields)])] for streams with new entries."""
+        ...
 
     # Lua's return type is whatever the script yields — genuinely dynamic, so the
     # caller narrows it (the one call site coerces to bool).
-    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any: ...
+    async def eval(self, script: str, numkeys: int, *keys_and_args: str) -> Any:
+        """EVAL — runs a Lua script; the caller narrows the dynamic result."""
+        ...
 
-    def pubsub(self) -> PubSub: ...
+    def pubsub(self) -> PubSub:
+        """A pub/sub interface bound to this client."""
+        ...
 
-    def pipeline(self, transaction: bool = True) -> Pipeline: ...
+    def lock(
+        self,
+        name: str,
+        *,
+        timeout: float | None = None,
+        sleep: float = 0.1,
+        blocking: bool = True,
+        blocking_timeout: float | None = None,
+        thread_local: bool = True,
+    ) -> Lock:
+        """A distributed mutex — SET NX lease with a token-checked Lua release."""
+        ...
+
+    def pipeline(self, transaction: bool = True) -> Pipeline:
+        """A command pipeline; ``transaction=True`` wraps it in MULTI/EXEC."""
+        ...
 
 
 def _new_client(redis_url: str) -> AsyncRedisCommands:

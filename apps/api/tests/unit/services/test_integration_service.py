@@ -8,8 +8,8 @@ Covers:
   connect_composio_integration, connect_self_integration, disconnect_integration,
   _invalidate_caches)
 - user_integrations.py (get_user_integrations, get_user_integration_records,
-  add_user_integration, remove_user_integration, check_user_has_integration,
-  get_user_integration_capabilities)
+  add_user_integration, remove_user_integration, check_user_has_integration)
+- integration_capabilities.py (get_user_integration_capabilities)
 - user_integration_status.py (update_user_integration_status)
 - custom_crud.py (create_custom_integration, update_custom_integration,
   delete_custom_integration, create_and_connect_custom_integration)
@@ -17,10 +17,13 @@ Covers:
 
 from datetime import UTC, datetime
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
+from app.agents.core.integration_capabilities import (
+    get_user_integration_capabilities,
+)
 from app.helpers.mcp_helpers import get_api_base_url
 from app.models.integration_models import (
     CreateCustomIntegrationRequest,
@@ -67,7 +70,6 @@ from app.services.integrations.user_integration_status import (
 from app.services.integrations.user_integrations import (
     add_user_integration,
     check_user_has_integration,
-    get_user_integration_capabilities,
     get_user_integration_records,
     get_user_integrations,
     remove_user_integration,
@@ -84,36 +86,25 @@ CUSTOM_INTEGRATION_ID = "custom-int-uuid-456"
 SERVER_URL = "https://mcp.example.com/v1"
 
 
-def _make_oauth_integration(
-    *,
-    id: str = "platform-int",
-    name: str = "Platform Integration",
-    description: str = "A platform integration",
-    category: str = "productivity",
-    provider: str = "google",
-    managed_by: str = "self",
-    available: bool = True,
-    mcp_config: MCPConfig | None = None,
-    composio_config: Any | None = None,
-    subagent_config: SubAgentConfig | None = None,
-    is_featured: bool = False,
-    display_priority: int = 0,
-) -> OAuthIntegration:
-    return OAuthIntegration(
-        id=id,
-        name=name,
-        description=description,
-        category=category,
-        provider=provider,
-        scopes=[],
-        available=available,
-        managed_by=managed_by,  # type: ignore[arg-type]
-        mcp_config=mcp_config,
-        composio_config=composio_config,
-        subagent_config=subagent_config,
-        is_featured=is_featured,
-        display_priority=display_priority,
-    )
+def _make_oauth_integration(**overrides: Any) -> OAuthIntegration:
+    """Build an OAuthIntegration with test defaults; override any field by name."""
+    overrides.setdefault("id", overrides.pop("integration_id", "platform-int"))
+    params: dict[str, Any] = {
+        "name": "Platform Integration",
+        "description": "A platform integration",
+        "category": "productivity",
+        "provider": "google",
+        "scopes": [],
+        "available": True,
+        "managed_by": "self",
+        "mcp_config": None,
+        "composio_config": None,
+        "subagent_config": None,
+        "is_featured": False,
+        "display_priority": 0,
+        **overrides,
+    }
+    return OAuthIntegration.model_validate(params)
 
 
 def _make_custom_doc(
@@ -123,7 +114,6 @@ def _make_custom_doc(
     created_by: str = USER_ID,
     server_url: str = SERVER_URL,
     requires_auth: bool = False,
-    auth_type: str = "none",
     is_public: bool = False,
 ) -> dict[str, Any]:
     return {
@@ -136,11 +126,11 @@ def _make_custom_doc(
         "is_public": is_public,
         "created_by": created_by,
         "requires_auth": requires_auth,
-        "auth_type": auth_type,
+        "auth_type": "none",
         "mcp_config": {
             "server_url": server_url,
             "requires_auth": requires_auth,
-            "auth_type": auth_type,
+            "auth_type": "none",
         },
         "tools": [],
         "icon_url": None,
@@ -168,7 +158,9 @@ class TestIntegrationResolverResolve:
     @patch("app.services.integrations.integration_resolver.get_integration_by_id")
     async def test_resolve_platform_integration_with_mcp_config(self, mock_get_by_id, mock_repo):
         mcp_cfg = MCPConfig(server_url=SERVER_URL, requires_auth=True, auth_type="oauth")
-        oauth_int = _make_oauth_integration(id="github", managed_by="mcp", mcp_config=mcp_cfg)
+        oauth_int = _make_oauth_integration(
+            integration_id="github", managed_by="mcp", mcp_config=mcp_cfg
+        )
         mock_get_by_id.return_value = oauth_int
 
         result = await IntegrationResolver.resolve("github")
@@ -188,7 +180,7 @@ class TestIntegrationResolverResolve:
     async def test_resolve_platform_with_composio_config(self, mock_get_by_id, mock_repo):
         composio_cfg = ComposioConfig(auth_config_id="auth_123", toolkit="slack_toolkit")
         oauth_int = _make_oauth_integration(
-            id="slack", managed_by="composio", composio_config=composio_cfg
+            integration_id="slack", managed_by="composio", composio_config=composio_cfg
         )
         mock_get_by_id.return_value = oauth_int
 
@@ -202,7 +194,9 @@ class TestIntegrationResolverResolve:
     @patch("app.services.integrations.integration_resolver.integration_repository")
     @patch("app.services.integrations.integration_resolver.get_integration_by_id")
     async def test_resolve_platform_self_managed(self, mock_get_by_id, mock_repo):
-        oauth_int = _make_oauth_integration(id="gcal", managed_by="self", provider="google")
+        oauth_int = _make_oauth_integration(
+            integration_id="gcal", managed_by="self", provider="google"
+        )
         mock_get_by_id.return_value = oauth_int
 
         result = await IntegrationResolver.resolve("gcal")
@@ -217,7 +211,9 @@ class TestIntegrationResolverResolve:
     async def test_resolve_platform_no_auth(self, mock_get_by_id, mock_repo):
         """Platform integration with no mcp, composio, or self — requires no auth."""
         mcp_cfg = MCPConfig(server_url=SERVER_URL, requires_auth=False)
-        oauth_int = _make_oauth_integration(id="public-tool", managed_by="mcp", mcp_config=mcp_cfg)
+        oauth_int = _make_oauth_integration(
+            integration_id="public-tool", managed_by="mcp", mcp_config=mcp_cfg
+        )
         mock_get_by_id.return_value = oauth_int
 
         result = await IntegrationResolver.resolve("public-tool")
@@ -264,7 +260,7 @@ class TestIntegrationResolverResolve:
     async def test_resolve_custom_with_auth_mismatch_syncs(self, mock_get_by_id, mock_repo):
         """When mcp_config.requires_auth differs from doc-level, mcp_config wins and syncs."""
         mock_get_by_id.return_value = None
-        doc = _make_custom_doc(requires_auth=False, auth_type="none")
+        doc = _make_custom_doc(requires_auth=False)
         doc["mcp_config"]["requires_auth"] = True
         doc["mcp_config"]["auth_type"] = "oauth"
         mock_repo.get = AsyncMock(return_value=Integration.model_validate(doc))
@@ -390,7 +386,7 @@ class TestGetUserAvailableToolNamespaces:
     @patch(
         "app.services.integrations.integration_service.OAUTH_INTEGRATIONS",
         [
-            _make_oauth_integration(id="todos", managed_by="internal", available=True),
+            _make_oauth_integration(integration_id="todos", managed_by="internal", available=True),
         ],
     )
     async def test_includes_internal_integrations(
@@ -427,7 +423,7 @@ class TestGetUserAvailableToolNamespaces:
             system_prompt="You are a github agent.",
         )
         platform_int = _make_oauth_integration(
-            id="github", managed_by="mcp", subagent_config=subagent
+            integration_id="github", managed_by="mcp", subagent_config=subagent
         )
         mock_get_by_id.return_value = platform_int
 
@@ -493,7 +489,9 @@ class TestGetUserAvailableToolNamespaces:
     @patch(
         "app.services.integrations.integration_service.OAUTH_INTEGRATIONS",
         [
-            _make_oauth_integration(id="reminders", managed_by="internal", available=False),
+            _make_oauth_integration(
+                integration_id="reminders", managed_by="internal", available=False
+            ),
         ],
     )
     async def test_unavailable_internal_integrations_excluded(
@@ -523,7 +521,7 @@ class TestGetUserAvailableToolNamespaces:
         mock_status.return_value = {"some-int": True}
         # get_integration_by_id returns an integration but without subagent_config
         platform_int = _make_oauth_integration(
-            id="some-int", managed_by="mcp", subagent_config=None
+            integration_id="some-int", managed_by="mcp", subagent_config=None
         )
         mock_get_by_id.return_value = platform_int
         mock_server_url.return_value = "https://some-server.com"
@@ -620,7 +618,13 @@ class TestUpdateUserIntegrationStatus:
         )
 
         assert result is True
-        mock_repo.set_status.assert_awaited_once_with(USER_ID, INTEGRATION_ID, status="connected")
+        mock_repo.set_status.assert_awaited_once_with(
+            USER_ID,
+            INTEGRATION_ID,
+            status="connected",
+            expired_reason=None,
+            connected_account_id=None,
+        )
         mock_sched.assert_called_once_with(USER_ID)
 
     @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
@@ -633,7 +637,53 @@ class TestUpdateUserIntegrationStatus:
         )
 
         assert result is True
-        mock_repo.set_status.assert_awaited_once_with(USER_ID, INTEGRATION_ID, status="created")
+        mock_repo.set_status.assert_awaited_once_with(
+            USER_ID,
+            INTEGRATION_ID,
+            status="created",
+            expired_reason=None,
+            connected_account_id=None,
+        )
+        mock_sched.assert_not_called()
+
+    @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
+    @patch("app.services.integrations.user_integration_status.user_integration_repository")
+    async def test_the_connected_account_id_is_recorded_whenever_known(self, mock_repo, mock_sched):
+        # Composio addresses an account by its nanoid; without it a dead account
+        # can only be found by listing every account the user has.
+        mock_repo.set_status = AsyncMock(return_value=True)
+
+        await update_user_integration_status.__wrapped__(
+            USER_ID, INTEGRATION_ID, "connected", connected_account_id="ca_abc123"
+        )
+
+        mock_repo.set_status.assert_awaited_once_with(
+            USER_ID,
+            INTEGRATION_ID,
+            status="connected",
+            expired_reason=None,
+            connected_account_id="ca_abc123",
+        )
+
+    @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
+    @patch("app.services.integrations.user_integration_status.user_integration_repository")
+    async def test_update_status_expired_passes_the_reason_through(self, mock_repo, mock_sched):
+        # The expiry transition owns the VFS resync itself, so this chokepoint
+        # must keep scheduling it only on connect.
+        mock_repo.set_status = AsyncMock(return_value=True)
+
+        result = await update_user_integration_status.__wrapped__(
+            USER_ID, INTEGRATION_ID, "expired", expired_reason="refresh_token_revoked"
+        )
+
+        assert result is True
+        mock_repo.set_status.assert_awaited_once_with(
+            USER_ID,
+            INTEGRATION_ID,
+            status="expired",
+            expired_reason="refresh_token_revoked",
+            connected_account_id=None,
+        )
         mock_sched.assert_not_called()
 
 
@@ -654,7 +704,13 @@ def _async_find_cursor(docs: list[dict]) -> MagicMock:
     return cursor
 
 
-def _ui_doc(integration_id: str, *, status: str = "connected", connected: bool = True):
+def _ui_doc(
+    integration_id: str,
+    *,
+    status: str = "connected",
+    connected: bool = True,
+    expired_at: datetime | None = None,
+):
     now = datetime.now(UTC)
     return UserIntegrationDocument(
         user_id=USER_ID,
@@ -662,6 +718,7 @@ def _ui_doc(integration_id: str, *, status: str = "connected", connected: bool =
         status=status,
         created_at=now,
         connected_at=now if connected else None,
+        expired_at=expired_at,
     )
 
 
@@ -683,6 +740,40 @@ class TestGetUserIntegrations:
         assert result.integrations[0].integration_id == "github"
         assert result.integrations[0].status == "connected"
         assert result.integrations[0].integration.name == "GitHub"
+
+    @patch("app.services.integrations.user_integrations.user_repository")
+    @patch("app.services.integrations.user_integrations.integration_repository")
+    @patch("app.services.integrations.user_integrations.user_integration_repository")
+    async def test_expired_at_is_carried_from_the_stored_document(
+        self, mock_repo, mock_int_repo, mock_users_col
+    ):
+        """Dropping expired_at here is what leaves the UI unable to say how long
+        a connection has been dead."""
+        died = datetime(2026, 8, 15, 9, 0, tzinfo=UTC)
+        mock_repo.list_for_user_newest_first = AsyncMock(
+            return_value=[_ui_doc("github", status="expired", connected=False, expired_at=died)]
+        )
+        mock_int_repo.find_by_ids = AsyncMock(return_value=[])
+        mock_users_col.find_by_ids = AsyncMock(return_value=[])
+
+        result = await get_user_integrations(USER_ID)
+
+        assert result.integrations[0].status == "expired"
+        assert result.integrations[0].expired_at == died
+
+    @patch("app.services.integrations.user_integrations.user_repository")
+    @patch("app.services.integrations.user_integrations.integration_repository")
+    @patch("app.services.integrations.user_integrations.user_integration_repository")
+    async def test_expired_at_is_none_for_a_healthy_integration(
+        self, mock_repo, mock_int_repo, mock_users_col
+    ):
+        mock_repo.list_for_user_newest_first = AsyncMock(return_value=[_ui_doc("github")])
+        mock_int_repo.find_by_ids = AsyncMock(return_value=[])
+        mock_users_col.find_by_ids = AsyncMock(return_value=[])
+
+        result = await get_user_integrations(USER_ID)
+
+        assert result.integrations[0].expired_at is None
 
     @patch("app.services.integrations.user_integrations.user_repository")
     @patch("app.services.integrations.user_integrations.integration_repository")
@@ -868,18 +959,163 @@ class TestCheckUserHasIntegration:
         result = await check_user_has_integration(USER_ID, "missing")
         assert result is False
 
+    @patch("app.services.integrations.user_integrations.user_integration_repository")
+    async def test_the_question_is_scoped_to_this_user_and_this_integration(self, mock_repo):
+        """A fixed-answer stub cannot tell the real lookup from one that dropped or
+        swapped an argument — and answering for the wrong user is how a caller
+        concludes a stranger's integration is connected."""
+
+        async def _exists(user_id: str, integration_id: str) -> bool:
+            return (user_id, integration_id) == (USER_ID, INTEGRATION_ID)
+
+        mock_repo.exists = AsyncMock(side_effect=_exists)
+
+        assert await check_user_has_integration(USER_ID, INTEGRATION_ID) is True
+        assert await check_user_has_integration("someone-else", INTEGRATION_ID) is False
+        assert await check_user_has_integration(USER_ID, "another-integration") is False
+
+
+CAPABILITIES_MODULE = "app.agents.core.integration_capabilities"
+
+
+def _integration_response(integration_id: str, name: str, tools: list[IntegrationTool]):
+    return IntegrationResponse(
+        integration_id=integration_id,
+        name=name,
+        description="",
+        category="developer",
+        managed_by="mcp",
+        source="platform",
+        is_featured=False,
+        display_priority=0,
+        tools=tools,
+    )
+
+
+@pytest.mark.asyncio
+class TestCapabilitiesPayloadAndArguments:
+    """The suggestions the LLM turns into clickable follow-ups are built from this
+    payload, so its exact shape is the contract. The tests above stub with fixed
+    return values, which cannot tell a correct argument from a nulled one, and
+    never assert the per-integration entry at all."""
+
+    @staticmethod
+    def _registry(*core_tool_names: str) -> MagicMock:
+        # `name` is a MagicMock constructor kwarg, so it has to be assigned after
+        # construction to become a real attribute (same as the tests above).
+        tools = []
+        for tool_name in core_tool_names:
+            tool = MagicMock()
+            tool.name = tool_name
+            tools.append(tool)
+        category = MagicMock()
+        category.tools = tools
+        registry = MagicMock()
+        registry.get_core_categories.return_value = [category]
+        return registry
+
+    async def test_it_reads_the_asking_users_integrations_and_looks_each_one_up(self) -> None:
+        """A nulled user id would build another user's follow-up suggestions; a
+        nulled integration id would look up the wrong integration's tools."""
+
+        async def _connected(user_id: str) -> set[str]:
+            return {"github"} if user_id == USER_ID else set()
+
+        async def _details(integration_id: str):
+            if integration_id != "github":
+                return None
+            return _integration_response(
+                "github", "GitHub", [IntegrationTool(name="create_issue", description="Create")]
+            )
+
+        with (
+            patch(
+                f"{CAPABILITIES_MODULE}.get_tool_registry", AsyncMock(return_value=self._registry())
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_connected_integration_ids",
+                AsyncMock(side_effect=_connected),
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_integration_details", AsyncMock(side_effect=_details)
+            ),
+        ):
+            result = await get_user_integration_capabilities.__wrapped__(USER_ID)
+
+        assert result["capabilities"] == {
+            "github": {
+                "name": "GitHub",
+                "tools": [{"name": "create_issue", "description": "Create"}],
+            }
+        }
+
+    async def test_a_tool_without_a_description_carries_an_empty_string(self) -> None:
+        """The follow-up prompt reads `description` off every entry — a None there
+        renders as the word "None" in the model's context."""
+        with (
+            patch(
+                f"{CAPABILITIES_MODULE}.get_tool_registry", AsyncMock(return_value=self._registry())
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_connected_integration_ids",
+                AsyncMock(return_value={"github"}),
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_integration_details",
+                AsyncMock(
+                    return_value=_integration_response(
+                        "github", "GitHub", [IntegrationTool(name="create_issue", description=None)]
+                    )
+                ),
+            ),
+        ):
+            result = await get_user_integration_capabilities.__wrapped__(USER_ID)
+
+        assert result["capabilities"]["github"]["tools"] == [
+            {"name": "create_issue", "description": ""}
+        ]
+
+    async def test_an_integration_that_no_longer_exists_does_not_end_the_scan(self) -> None:
+        """The deleted integration is FIRST: a loop that breaks instead of
+        continuing would drop every still-connected integration behind it."""
+
+        async def _details(integration_id: str):
+            if integration_id == "deleted":
+                return None
+            return _integration_response(
+                "github", "GitHub", [IntegrationTool(name="create_issue", description="Create")]
+            )
+
+        with (
+            patch(
+                f"{CAPABILITIES_MODULE}.get_tool_registry", AsyncMock(return_value=self._registry())
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_connected_integration_ids",
+                # A list, not a set: the order this test depends on must be real.
+                AsyncMock(return_value=["deleted", "github"]),
+            ),
+            patch(
+                f"{CAPABILITIES_MODULE}.get_integration_details", AsyncMock(side_effect=_details)
+            ),
+        ):
+            result = await get_user_integration_capabilities.__wrapped__(USER_ID)
+
+        assert result["integration_names"] == ["GitHub"]
+        assert "github" in result["capabilities"]
+
 
 class TestGetUserIntegrationCapabilities:
     @patch(
-        "app.services.integrations.user_integrations.get_integration_details",
+        "app.agents.core.integration_capabilities.get_integration_details",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_connected_integration_ids",
+        "app.agents.core.integration_capabilities.get_connected_integration_ids",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_tool_registry",
+        "app.agents.core.integration_capabilities.get_tool_registry",
         new_callable=AsyncMock,
     )
     async def test_includes_core_tools_and_integrations(
@@ -917,15 +1153,15 @@ class TestGetUserIntegrationCapabilities:
         assert "github" in result["capabilities"]
 
     @patch(
-        "app.services.integrations.user_integrations.get_integration_details",
+        "app.agents.core.integration_capabilities.get_integration_details",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_connected_integration_ids",
+        "app.agents.core.integration_capabilities.get_connected_integration_ids",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_tool_registry",
+        "app.agents.core.integration_capabilities.get_tool_registry",
         new_callable=AsyncMock,
     )
     async def test_skips_integrations_with_no_details(
@@ -944,15 +1180,15 @@ class TestGetUserIntegrationCapabilities:
         assert result["capabilities"] == {}
 
     @patch(
-        "app.services.integrations.user_integrations.get_integration_details",
+        "app.agents.core.integration_capabilities.get_integration_details",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_connected_integration_ids",
+        "app.agents.core.integration_capabilities.get_connected_integration_ids",
         new_callable=AsyncMock,
     )
     @patch(
-        "app.services.integrations.user_integrations.get_tool_registry",
+        "app.agents.core.integration_capabilities.get_tool_registry",
         new_callable=AsyncMock,
     )
     async def test_no_connected_integrations(self, mock_registry, mock_connected, mock_details):
@@ -1191,11 +1427,22 @@ class TestUpdateCustomIntegration:
 
 
 class TestDeleteCustomIntegration:
-    @patch(
-        "app.services.integrations.custom_crud.delete_cache_by_pattern",
-        new_callable=AsyncMock,
-    )
-    @patch("app.services.integrations.custom_crud.delete_cache", new_callable=AsyncMock)
+    @pytest.fixture
+    def _patched_delete_caches(self):
+        """Stub the cache invalidation writes; no delete test asserts on them."""
+        with (
+            patch(
+                "app.services.integrations.custom_crud.delete_cache",
+                new_callable=AsyncMock,
+            ),
+            patch(
+                "app.services.integrations.custom_crud.delete_cache_by_pattern",
+                new_callable=AsyncMock,
+            ),
+        ):
+            yield
+
+    @pytest.mark.usefixtures("_patched_delete_caches")
     @patch(
         "app.services.integrations.custom_crud.cleanup_integration_chroma_data",
         new_callable=AsyncMock,
@@ -1219,8 +1466,6 @@ class TestDeleteCustomIntegration:
         mock_remove_public,
         mock_get_db,
         mock_chroma_cleanup,
-        mock_delete_cache,
-        mock_delete_pattern,
     ):
         doc = _make_custom_integration(created_by=USER_ID, is_public=False)
         mock_repo.get_custom = AsyncMock(return_value=doc)
@@ -1245,11 +1490,7 @@ class TestDeleteCustomIntegration:
         mock_remove_user.assert_awaited_once_with(USER_ID, CUSTOM_INTEGRATION_ID)
         mock_chroma_cleanup.assert_awaited_once()
 
-    @patch(
-        "app.services.integrations.custom_crud.delete_cache_by_pattern",
-        new_callable=AsyncMock,
-    )
-    @patch("app.services.integrations.custom_crud.delete_cache", new_callable=AsyncMock)
+    @pytest.mark.usefixtures("_patched_delete_caches")
     @patch(
         "app.services.integrations.custom_crud.cleanup_integration_chroma_data",
         new_callable=AsyncMock,
@@ -1273,8 +1514,6 @@ class TestDeleteCustomIntegration:
         mock_remove_public,
         mock_get_db,
         mock_chroma_cleanup,
-        mock_delete_cache,
-        mock_delete_pattern,
     ):
         doc = _make_custom_integration(created_by=USER_ID, is_public=True)
         mock_repo.get_custom = AsyncMock(return_value=doc)
@@ -1356,11 +1595,7 @@ class TestDeleteCustomIntegration:
         # User's link is removed via the canonical mutator
         mock_remove_user.assert_awaited_once_with(USER_ID, CUSTOM_INTEGRATION_ID)
 
-    @patch(
-        "app.services.integrations.custom_crud.delete_cache_by_pattern",
-        new_callable=AsyncMock,
-    )
-    @patch("app.services.integrations.custom_crud.delete_cache", new_callable=AsyncMock)
+    @pytest.mark.usefixtures("_patched_delete_caches")
     @patch(
         "app.services.integrations.custom_crud.cleanup_integration_chroma_data",
         new_callable=AsyncMock,
@@ -1379,8 +1614,6 @@ class TestDeleteCustomIntegration:
         mock_remove_public,
         mock_get_db,
         mock_chroma_cleanup,
-        mock_delete_cache,
-        mock_delete_pattern,
     ):
         doc = _make_custom_integration(created_by=USER_ID)
         mock_repo.get_custom = AsyncMock(return_value=doc)
@@ -1661,11 +1894,11 @@ class TestBuildIntegrationsConfig:
         "app.services.integrations.integration_connection_service.OAUTH_INTEGRATIONS",
         [
             _make_oauth_integration(
-                id="github",
+                integration_id="github",
                 managed_by="mcp",
                 mcp_config=MCPConfig(server_url=SERVER_URL, requires_auth=True),
             ),
-            _make_oauth_integration(id="todos", managed_by="internal"),
+            _make_oauth_integration(integration_id="todos", managed_by="internal"),
         ],
     )
     def test_excludes_internal_integrations(self):
@@ -1680,7 +1913,7 @@ class TestBuildIntegrationsConfig:
         "app.services.integrations.integration_connection_service.OAUTH_INTEGRATIONS",
         [
             _make_oauth_integration(
-                id="no-auth-mcp",
+                integration_id="no-auth-mcp",
                 managed_by="mcp",
                 mcp_config=MCPConfig(server_url=SERVER_URL, requires_auth=False),
             ),
@@ -1696,7 +1929,7 @@ class TestBuildIntegrationsConfig:
         "app.services.integrations.integration_connection_service.OAUTH_INTEGRATIONS",
         [
             _make_oauth_integration(
-                id="oauth-mcp",
+                integration_id="oauth-mcp",
                 managed_by="mcp",
                 mcp_config=MCPConfig(server_url=SERVER_URL, requires_auth=True),
             ),
@@ -1711,7 +1944,7 @@ class TestBuildIntegrationsConfig:
     @patch(
         "app.services.integrations.integration_connection_service.OAUTH_INTEGRATIONS",
         [
-            _make_oauth_integration(id="no-mcp", managed_by="self"),
+            _make_oauth_integration(integration_id="no-mcp", managed_by="self"),
         ],
     )
     def test_auth_type_none_when_no_mcp_config(self):
@@ -1991,7 +2224,13 @@ class TestConnectComposioIntegration:
     )
     async def test_connect_success(self, mock_get_composio, mock_create_state, mock_update_status):
         mock_service = AsyncMock()
-        mock_service.connect_account.return_value = {"redirect_url": "https://composio.dev/auth"}
+        # connect_account always returns connection_id — Composio mints the
+        # connected account at initiate time and GAIA records it.
+        mock_service.connect_account.return_value = {
+            "status": "pending",
+            "redirect_url": "https://composio.dev/auth",
+            "connection_id": "ca_initiated",
+        }
         mock_get_composio.return_value = mock_service
         mock_create_state.return_value = "state-token"
 
@@ -2005,7 +2244,12 @@ class TestConnectComposioIntegration:
 
         assert result.status == "redirect"
         assert result.redirect_url == "https://composio.dev/auth"
-        mock_update_status.assert_awaited_once_with(USER_ID, "slack", "created")
+        # Two writes: `created` before the redirect, so an abandoned connect still
+        # leaves a record, then the connected-account id once Composio mints it.
+        assert mock_update_status.await_args_list == [
+            call(USER_ID, "slack", "created"),
+            call(USER_ID, "slack", "created", connected_account_id="ca_initiated"),
+        ]
 
 
 class TestConnectSelfIntegration:
@@ -2179,7 +2423,7 @@ class TestDisconnectIntegration:
         self, mock_resolve, mock_get_composio, mock_invalidate
     ):
         platform_int = _make_oauth_integration(
-            id="slack",
+            integration_id="slack",
             managed_by="composio",
             provider="slack",
             composio_config=ComposioConfig(auth_config_id="cfg-slack", toolkit="slack"),
@@ -2253,7 +2497,9 @@ class TestDisconnectIntegration:
     async def test_disconnect_self_managed_integration(
         self, mock_resolve, mock_token_repo, mock_invalidate
     ):
-        platform_int = _make_oauth_integration(id="gcal", managed_by="self", provider="google")
+        platform_int = _make_oauth_integration(
+            integration_id="gcal", managed_by="self", provider="google"
+        )
         mock_resolve.return_value = ResolvedIntegration(
             integration_id="gcal",
             name="Google Calendar",
@@ -2329,7 +2575,9 @@ class TestDisconnectIntegration:
             requires_auth=True,
             auth_type="oauth",
             mcp_config=MCPConfig(server_url=SERVER_URL),
-            platform_integration=_make_oauth_integration(id="perplexity", managed_by="mcp"),
+            platform_integration=_make_oauth_integration(
+                integration_id="perplexity", managed_by="mcp"
+            ),
             custom_doc=None,
         )
         mock_client = AsyncMock()
@@ -2415,7 +2663,7 @@ class TestInvalidateCaches:
             _invalidate_caches,
         )
 
-        mock_get_by_id.return_value = _make_oauth_integration(id="gcal")
+        mock_get_by_id.return_value = _make_oauth_integration(integration_id="gcal")
 
         await _invalidate_caches(USER_ID, "gcal", "self")
 

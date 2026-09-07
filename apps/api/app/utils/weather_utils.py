@@ -258,7 +258,8 @@ def process_forecast_data(forecast_data: dict) -> list[dict]:
         weather_descriptions = [item["weather"][0]["description"] for item in items]
 
         # Use the most frequent condition (simple approach)
-        from collections import Counter
+        # Deferred import: stdlib import kept local to the daily aggregation loop
+        from collections import Counter  # noqa: PLC0415 -- stdlib import kept local to
 
         condition_counter = Counter(weather_conditions)
         description_counter = Counter(weather_descriptions)
@@ -350,4 +351,4 @@ async def geocode_location(location_name: str) -> dict[str, Any]:
             error=str(e),
             error_type=type(e).__name__,
         )
-        raise Exception(f"Failed to geocode location: {e!s}")
+        raise Exception(f"Failed to geocode location: {e!s}") from e

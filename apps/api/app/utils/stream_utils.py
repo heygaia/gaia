@@ -29,6 +29,9 @@ class SubagentGroup(TypedDict):
     :func:`reconstruct_subagent_groups` from the turn's start/end events."""
 
     subagent_id: str
+    #: The subagent's stable id, from the start event; ``None`` for a spawned
+    #: subagent that has none.
+    subagent: str | None
     subagent_name: str
     agent_type: str
     tool_calls: list[Any]
@@ -143,13 +146,16 @@ def absorb_collector_event(
 
 
 def absorb_reasoning(reasoning: dict[str, Any], tool_data: list[ToolDataEntry]) -> None:
-    """Persist a streamed thinking delta into tool_data as a reasoning step.
+    """Persist a streamed thinking block into tool_data as a reasoning step.
 
     Mirrors the frontend (streamHandlers.handleReasoning): a reasoning step rides a
     ``tool_calls_data`` entry so it persists + renders alongside tool calls; the
     ``subagent_id`` tag lets reconstruct_subagent_groups nest subagent thinking.
-    Consecutive deltas for the same scope merge into one block that breaks at each
-    tool call (so thinking shows per-step, not as hundreds of fragments).
+
+    One event is already one step's worth of thinking — ``_ReasoningBuffer`` in the
+    subagent runner accumulates the deltas and flushes at each tool boundary — so
+    this appends. Merging here was what kept an event-per-token stream readable;
+    it never bounded what got persisted, and the entries are the cost.
     """
     content = reasoning.get("content")
     if not content:
@@ -159,17 +165,6 @@ def absorb_reasoning(reasoning: dict[str, Any], tool_data: list[ToolDataEntry]) 
     # a subagent entry's `data` straight into tool_calls, and bucketToolData wraps a
     # single dict on the frontend — a list here would nest a tool_call with no
     # tool_name and crash the renderer.
-    last = tool_data[-1] if tool_data else None
-    last_data = last.get("data") if last is not None else None
-    if (
-        last is not None
-        and last.get("tool_name") == "tool_calls_data"
-        and last.get("subagent_id") == subagent_id
-        and isinstance(last_data, dict)
-        and last_data.get("reasoning") is not None
-    ):
-        last_data["reasoning"] += content
-        return
     entry: ToolDataEntry = {
         "tool_name": "tool_calls_data",
         "tool_category": "reasoning",
@@ -228,6 +223,7 @@ def reconstruct_subagent_groups(accumulated: dict[str, Any]) -> None:
         end = subagent_ends.get(subagent_id, {})
         groups[subagent_id] = SubagentGroup(
             subagent_id=subagent_id,
+            subagent=start.get("subagent"),
             subagent_name=start.get("subagent_name", ""),
             agent_type=start.get("agent_type", "spawned"),
             tool_calls=[],

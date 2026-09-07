@@ -6,21 +6,19 @@ from bson import ObjectId
 from fastapi import HTTPException
 import pytest
 
-from app.models.integration_models import UserIntegrationDocument
 from app.models.user_models import BioStatus, UserDocument
 from app.services.oauth.oauth_service import (
     check_integration_status,
     check_multiple_integrations_status,
-    get_all_integrations_status,
     handle_oauth_connection,
     store_user_info,
 )
-
-
-def _ui_doc(integration_id: str, status: str) -> UserIntegrationDocument:
-    """Build a UserIntegrationDocument as list_for_user would return it."""
-    return UserIntegrationDocument(user_id="user123", integration_id=integration_id, status=status)
-
+from app.services.triggers.subscription_service import (
+    resync_subscriptions_for_trigger_names,
+)
+from app.services.workflow.integration_pause import (
+    resume_workflows_for_reconnected_integration,
+)
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -36,30 +34,6 @@ def mock_user_repo():
         mock_repo.create = AsyncMock()
         mock_repo.set_bio_status = AsyncMock()
         yield mock_repo
-
-
-@pytest.fixture
-def mock_user_integration_repo():
-    with patch("app.services.oauth.oauth_service.user_integration_repository") as mock_repo:
-        mock_repo.list_for_user = AsyncMock(return_value=[])
-        yield mock_repo
-
-
-@pytest.fixture
-def mock_token_repository():
-    with patch("app.services.oauth.oauth_service.token_repository") as mock_repo:
-        yield mock_repo
-
-
-@pytest.fixture
-def mock_composio_service():
-    mock_service = AsyncMock()
-    mock_service.check_connection_status = AsyncMock(return_value={})
-    with patch(
-        "app.services.oauth.oauth_service.get_composio_service",
-        return_value=mock_service,
-    ):
-        yield mock_service
 
 
 @pytest.fixture
@@ -376,329 +350,6 @@ class TestStoreUserInfo:
 # ---------------------------------------------------------------------------
 
 
-class TestGetAllIntegrationsStatus:
-    """Tests for get_all_integrations_status.
-
-    Note: The @Cacheable decorator is bypassed in tests via the autouse
-    bypass_cacheable fixture, so each call hits the real function body.
-    """
-
-    async def test_unavailable_integrations_marked_false(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Integrations with available=False should always return False."""
-        unavailable = MagicMock()
-        unavailable.available = False
-        unavailable.id = "disabled_integration"
-        unavailable.managed_by = "composio"
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [unavailable],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["disabled_integration"] is False
-
-    async def test_integration_connected_in_mongodb(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """If user_integrations has status='connected', result should be True."""
-        mock_user_integration_repo.list_for_user = AsyncMock(
-            return_value=[_ui_doc("notion", "connected")]
-        )
-
-        integration = MagicMock()
-        integration.id = "notion"
-        integration.available = True
-        integration.managed_by = "composio"
-        integration.provider = "notion"
-        integration.composio_config = MagicMock()
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [integration],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["notion"] is True
-
-    async def test_integration_disconnected_in_mongodb(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """If user_integrations has status != 'connected', result should be False."""
-        mock_user_integration_repo.list_for_user = AsyncMock(
-            return_value=[_ui_doc("notion", "created")]
-        )
-
-        integration = MagicMock()
-        integration.id = "notion"
-        integration.available = True
-        integration.managed_by = "composio"
-        integration.provider = "notion"
-        integration.composio_config = MagicMock()
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [integration],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["notion"] is False
-
-    async def test_mcp_integration_not_in_mongo_returns_false(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """MCP integrations not in MongoDB should return False."""
-        integration = MagicMock()
-        integration.id = "deepwiki"
-        integration.available = True
-        integration.managed_by = "mcp"
-        integration.provider = "deepwiki"
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [integration],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["deepwiki"] is False
-
-    async def test_composio_integration_falls_back_to_composio_check(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Composio integrations not in MongoDB should query Composio service."""
-        mock_composio_service.check_connection_status = AsyncMock(return_value={"twitter": True})
-
-        integration = MagicMock()
-        integration.id = "twitter"
-        integration.available = True
-        integration.managed_by = "composio"
-        integration.provider = "twitter"
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [integration],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["twitter"] is True
-        mock_composio_service.check_connection_status.assert_awaited_once()
-
-    async def test_composio_batch_check_failure_returns_false(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """If Composio batch check raises, all Composio integrations are False."""
-        mock_composio_service.check_connection_status = AsyncMock(
-            side_effect=Exception("Composio API error")
-        )
-
-        integration = MagicMock()
-        integration.id = "twitter"
-        integration.available = True
-        integration.managed_by = "composio"
-        integration.provider = "twitter"
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [integration],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["twitter"] is False
-
-    async def test_self_managed_integration_with_valid_token(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Self-managed integrations check token repository for scopes."""
-        mock_token_repository.get_token = AsyncMock(
-            return_value={
-                "scope": "https://www.googleapis.com/auth/calendar.events https://www.googleapis.com/auth/calendar.readonly",
-            }
-        )
-
-        integration = MagicMock()
-        integration.id = "googlecalendar"
-        integration.available = True
-        integration.managed_by = "self"
-        integration.provider = "google"
-
-        with (
-            patch(
-                "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-                [integration],
-            ),
-            patch(
-                "app.services.oauth.oauth_service.get_integration_scopes",
-                return_value=[
-                    "https://www.googleapis.com/auth/calendar.events",
-                    "https://www.googleapis.com/auth/calendar.readonly",
-                ],
-            ),
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["googlecalendar"] is True
-
-    async def test_self_managed_integration_with_missing_scopes(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Self-managed with partial scopes should return False."""
-        mock_token_repository.get_token = AsyncMock(
-            return_value={
-                "scope": "https://www.googleapis.com/auth/calendar.readonly",
-            }
-        )
-
-        integration = MagicMock()
-        integration.id = "googlecalendar"
-        integration.available = True
-        integration.managed_by = "self"
-        integration.provider = "google"
-
-        with (
-            patch(
-                "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-                [integration],
-            ),
-            patch(
-                "app.services.oauth.oauth_service.get_integration_scopes",
-                return_value=[
-                    "https://www.googleapis.com/auth/calendar.events",
-                    "https://www.googleapis.com/auth/calendar.readonly",
-                ],
-            ),
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["googlecalendar"] is False
-
-    async def test_self_managed_integration_with_no_token(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Self-managed with no token at all should return False."""
-        mock_token_repository.get_token = AsyncMock(side_effect=Exception("Token not found"))
-
-        integration = MagicMock()
-        integration.id = "googlecalendar"
-        integration.available = True
-        integration.managed_by = "self"
-        integration.provider = "google"
-
-        with (
-            patch(
-                "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-                [integration],
-            ),
-            patch(
-                "app.services.oauth.oauth_service.get_integration_scopes",
-                return_value=["https://www.googleapis.com/auth/calendar.events"],
-            ),
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["googlecalendar"] is False
-
-    async def test_custom_integrations_in_mongo_included(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Custom integrations in MongoDB not in OAUTH_INTEGRATIONS are still included."""
-        mock_user_integration_repo.list_for_user = AsyncMock(
-            return_value=[_ui_doc("custom_tool", "connected")]
-        )
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["custom_tool"] is True
-
-    async def test_mixed_integrations(
-        self,
-        mock_user_integration_repo,
-        mock_composio_service,
-        mock_token_repository,
-    ):
-        """Test a mix of connected, disconnected, and unavailable integrations."""
-        mock_user_integration_repo.list_for_user = AsyncMock(
-            return_value=[_ui_doc("notion", "connected")]
-        )
-
-        # Composio returns twitter as connected
-        mock_composio_service.check_connection_status = AsyncMock(return_value={"slack": False})
-
-        notion = MagicMock()
-        notion.id = "notion"
-        notion.available = True
-        notion.managed_by = "composio"
-        notion.provider = "notion"
-
-        slack = MagicMock()
-        slack.id = "slack"
-        slack.available = True
-        slack.managed_by = "composio"
-        slack.provider = "slack"
-
-        disabled = MagicMock()
-        disabled.id = "disabled"
-        disabled.available = False
-        disabled.managed_by = "composio"
-        disabled.provider = "disabled"
-
-        mcp_int = MagicMock()
-        mcp_int.id = "deepwiki"
-        mcp_int.available = True
-        mcp_int.managed_by = "mcp"
-
-        with patch(
-            "app.services.oauth.oauth_service.OAUTH_INTEGRATIONS",
-            [notion, slack, disabled, mcp_int],
-        ):
-            result = await get_all_integrations_status("user123")
-
-        assert result["notion"] is True
-        assert result["slack"] is False
-        assert result["disabled"] is False
-        assert result["deepwiki"] is False
-
-
-# ---------------------------------------------------------------------------
-# check_integration_status
-# ---------------------------------------------------------------------------
-
-
 class TestCheckIntegrationStatus:
     async def test_returns_true_for_connected_integration(self):
         with patch(
@@ -808,7 +459,7 @@ class TestHandleOAuthConnection:
         )
 
         mock_update_user_integration_status.assert_awaited_once_with(
-            "user123", "notion", "connected"
+            "user123", "notion", "connected", connected_account_id=None
         )
 
     async def test_sets_up_triggers_when_present(
@@ -1136,6 +787,58 @@ class TestHandleOAuthConnection:
             # provision_system_workflows should NOT appear in any background task
             for call in background_tasks.add_task.call_args_list:
                 assert call[0][0] is not mock_psw
+
+    async def test_reconnecting_schedules_the_workflow_resume_for_that_user_and_integration(
+        self,
+        mock_update_user_integration_status,
+    ):
+        """Reconnecting is what un-pauses the workflows this integration's expiry
+        stopped. Scheduled for the wrong user or integration, the user's workflows
+        stay dark and someone else's come back."""
+        config = _make_integration_config(integration_id="notion", name="Notion")
+        background_tasks = MagicMock()
+
+        await handle_oauth_connection(
+            user_id="user123",
+            integration_config=config,
+            background_tasks=background_tasks,
+        )
+
+        background_tasks.add_task.assert_any_call(
+            resume_workflows_for_reconnected_integration,
+            "user123",
+            "notion",
+        )
+
+    async def test_reconnect_resyncs_todo_subscriptions_for_this_integrations_triggers(
+        self,
+        mock_update_user_integration_status,
+    ):
+        """A reconnect strands the todo subscriptions on this integration's
+        triggers exactly as it strands workflow triggers. They must be resynced
+        for the reconnecting user against the set of trigger slugs — dropped or
+        nulled, the todo watches stay dead on a fresh connected account with no
+        signal to the user."""
+        trigger = MagicMock()
+        trigger.workflow_trigger_schema.slug = "notion_page_added"
+        config = _make_integration_config(
+            integration_id="notion",
+            associated_triggers=[trigger],
+        )
+        background_tasks = MagicMock()
+
+        with patch("app.services.oauth.oauth_service.get_composio_service"):
+            await handle_oauth_connection(
+                user_id="user123",
+                integration_config=config,
+                background_tasks=background_tasks,
+            )
+
+        background_tasks.add_task.assert_any_call(
+            resync_subscriptions_for_trigger_names,
+            "user123",
+            {"notion_page_added"},
+        )
 
     async def test_integration_status_update_failure_does_not_raise(
         self,

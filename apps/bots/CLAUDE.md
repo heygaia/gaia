@@ -53,7 +53,7 @@ Each bot's `index.ts` is three lines: `runBotProcess(new XAdapter(), allCommands
 
 `loadConfig()` (`bots/config/index.ts`) is called inside `boot()`, not the constructor. Resolution order, first wins: process env → `apps/bots/.env` (shared by all bots) → `apps/bots/{platform}/.env` (legacy) → Infisical. dotenv is loaded in code, so no `--require dotenv` flag.
 
-Required for every bot (process throws if missing): `GAIA_API_URL`, `GAIA_BOT_API_KEY` (must equal backend `BOT_API_KEY`), `GAIA_FRONTEND_URL`, `BOT_LOG_HASH_SECRET` (≥32 chars, HMAC key for hashing PII in logs; `openssl rand -hex 32`).
+Required for every bot (process throws if missing): `GAIA_API_URL`, `GAIA_BOT_API_KEY` (must equal backend `BOT_API_KEY`), `GAIA_FRONTEND_URL`, `BOT_LOG_HASH_SECRET` (≥64 hex chars = 32 bytes, HMAC key for hashing PII in logs; `openssl rand -hex 32`).
 
 Platform-specific: Discord `DISCORD_BOT_TOKEN` + `DISCORD_CLIENT_ID`; Slack `SLACK_BOT_TOKEN` + `SLACK_SIGNING_SECRET` + `SLACK_APP_TOKEN`; Telegram `TELEGRAM_BOT_TOKEN`; WhatsApp `KAPSO_API_KEY` + `KAPSO_PHONE_NUMBER_ID` + `KAPSO_WEBHOOK_SECRET`; iMessage `SPECTRUM_PROJECT_ID` + `SPECTRUM_PROJECT_SECRET` + `SPECTRUM_WEBHOOK_SECRET`.
 
@@ -98,7 +98,7 @@ Inside it, use the `wideLog` facade: `wideLog.set({ ... })` / `wideLog.setNs("ns
 
 A field named like an envelope key (`platform`, `service`, `component`, `message`, `logger`, `level`, `time`, `env`, `commit`) is re-emitted as `ctx_<key>`. That is a bug marker, not a feature: `platform` is already on every line, so `logger.warn("x", { platform })` only produces a `ctx_platform` nobody queries. Drop the field.
 
-**The bots surface is gated at 100/100.** `node scripts/ci/evlog-map-bots.mjs` (the TypeScript counterpart of `tools/evlog_map`) discovers every entry point above, scores it on boundary/context/audit/error-handling, and CI runs it as `--min-score 100 --min-entries 23` — the score gate blocks under-instrumented handlers, the entry-count gate blocks a refactor that makes the scanner stop finding them (an empty map scores a perfect 100). Run it locally before pushing. If a check genuinely does not apply, waive it with `// evlog-map-disable-next-line <check-id> -- <reason>`; the `--` reason is mandatory, and waivers are counted in every report.
+**The bots surface is gated at 100/100.** `node scripts/ci/checks.mjs evlog-map-bots` (the TypeScript counterpart of `tools/evlog_map`) discovers every entry point above, scores it on boundary/context/audit/error-handling, and CI runs it as `--min-score 100 --min-entries 23` — the score gate blocks under-instrumented handlers, the entry-count gate blocks a refactor that makes the scanner stop finding them (an empty map scores a perfect 100). Run it locally before pushing. If a check genuinely does not apply, waive it with `// evlog-map-disable-next-line <check-id> -- <reason>`; the `--` reason is mandatory, and waivers are counted in every report.
 
 ## Analytics (PostHog)
 

@@ -51,7 +51,6 @@ async def create_all_indexes() -> None:
             create_payment_indexes(),
             create_processed_webhook_indexes(),
             create_usage_indexes(),
-            create_ai_models_indexes(),
             create_integration_indexes(),
             create_user_integration_indexes(),
             create_integration_instructions_indexes(),
@@ -64,6 +63,8 @@ async def create_all_indexes() -> None:
             create_pending_platform_registration_indexes(),
             create_browser_profiles_indexes(),
             create_browser_tasks_indexes(),
+            create_llm_call_indexes(),
+            create_playbook_indexes(),
         ]
 
         # Execute all index creation tasks concurrently
@@ -85,7 +86,6 @@ async def create_all_indexes() -> None:
             "payments",
             "processed_webhooks",
             "usage",
-            "ai_models",
             "integrations",
             "user_integrations",
             "integration_instructions",
@@ -98,10 +98,12 @@ async def create_all_indexes() -> None:
             "pending_platform_registrations",
             "browser_profiles",
             "browser_tasks",
+            "llm_calls",
+            "playbooks",
         ]
 
         index_results = {}
-        for i, (collection_name, result) in enumerate(zip(collection_names, results)):
+        for collection_name, result in zip(collection_names, results):
             if isinstance(result, Exception):
                 log.error(
                     f"{LogTag.MONGO} Failed to create indexes for collection",
@@ -188,6 +190,10 @@ async def create_conversation_indexes() -> None:
             conversations_collection.create_index([("user_id", 1), ("messages.message_id", 1)]),
             # For message pinning aggregations
             conversations_collection.create_index([("user_id", 1), ("messages.pinned", 1)]),
+            # For "active since <date>" range queries (e.g. the cost/usage dashboard).
+            # updatedAt is the only activity timestamp stored as a real BSON date —
+            # createdAt is an ISO string and can't be range-queried efficiently.
+            conversations_collection.create_index([("updatedAt", -1)]),
         )
 
     except Exception as e:
@@ -257,6 +263,21 @@ async def create_todo_indexes() -> None:
                     ("gaia_retry_count", 1),
                 ],
                 name="tracked_sweep",
+            ),
+            # Trigger dispatch resolves subscriptions on every webhook event, so
+            # both lookups must be indexed or each event scans the collection.
+            # Per-resource triggers are found by Composio instance id (cross-user,
+            # mirroring the workflows index); account-level triggers (Gmail) carry
+            # no instance id and are found by user + trigger name instead.
+            todos_collection.create_index(
+                "trigger_subscriptions.composio_trigger_ids",
+                name="subscription_trigger_ids",
+                sparse=True,
+            ),
+            todos_collection.create_index(
+                [("user_id", 1), ("trigger_subscriptions.trigger_name", 1)],
+                name="user_subscription_trigger_name",
+                sparse=True,
             ),
         )
 
@@ -668,6 +689,26 @@ async def create_pending_platform_registration_indexes() -> None:
         raise
 
 
+async def create_playbook_indexes() -> None:
+    """Create indexes for the playbooks collection.
+
+    Unique on (workflow_id, user_id): "one active playbook per workflow" is the
+    invariant the replay path rests on, and the repository's upsert relies on
+    the index to reject the loser of two concurrent first authorings. The same
+    index serves the per-run lookup.
+    """
+    playbooks_collection = get_async_collection("playbooks")
+    try:
+        await playbooks_collection.create_index([("workflow_id", 1), ("user_id", 1)], unique=True)
+    except Exception as e:
+        log.error(
+            f"{LogTag.MONGO} Error creating playbook indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise
+
+
 async def create_usage_indexes() -> None:
     """
     Create indexes for the usage_snapshots and usage_daily collections.
@@ -721,49 +762,10 @@ async def create_usage_indexes() -> None:
         raise
 
 
-async def create_ai_models_indexes() -> None:
-    """
-    Create indexes for ai_models collection for optimal query performance.
-
-    Query patterns:
-    - Find models by ID (primary lookup)
-    - Find active models by plan availability
-    - Find default models
-    - Pricing lookups
-    """
-    ai_models_collection = get_async_collection("ai_models")
-    try:
-        await asyncio.gather(
-            # Primary model lookup
-            ai_models_collection.create_index("model_id", unique=True),
-            # Active models filtering
-            ai_models_collection.create_index("is_active"),
-            # Default model lookup
-            ai_models_collection.create_index([("is_default", 1), ("is_active", 1)]),
-            # Plan availability queries
-            ai_models_collection.create_index("available_in_plans"),
-            # Combined active + plan queries (most common)
-            ai_models_collection.create_index([("is_active", 1), ("available_in_plans", 1)]),
-            # Pricing queries (for cost calculation)
-            ai_models_collection.create_index(
-                [("model_id", 1), ("is_active", 1)], name="model_pricing_lookup"
-            ),
-            # Provider filtering
-            ai_models_collection.create_index("model_provider"),
-            ai_models_collection.create_index("inference_provider"),
-        )
-
-    except Exception as e:
-        log.error(
-            f"{LogTag.MONGO} Error creating AI models indexes",
-            error=str(e),
-            error_type=type(e).__name__,
-        )
-        raise
-
-
 async def _create_index_safe(
-    collection: AsyncIOMotorCollection[dict[str, Any]], keys: IndexKeys, **kwargs: Any
+    collection: AsyncIOMotorCollection[dict[str, Any]],
+    keys: IndexKeys,
+    **kwargs: Any,  # noqa: ANN401 -- contract
 ) -> None:
     """
     Create an index safely, handling IndexOptionsConflict gracefully.
@@ -1175,6 +1177,72 @@ async def create_browser_tasks_indexes() -> None:
     except Exception as e:
         log.error(
             f"{LogTag.MONGO} Error creating browser_tasks indexes",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+        raise
+
+
+async def create_llm_call_indexes() -> None:
+    """Create indexes for the ``llm_calls`` ledger — one document per model call.
+
+    Five query indexes and no more: this is the highest-write collection in the
+    system, and every extra index is paid on every insert. Each one below names
+    the query it exists for; a query without an index here is a query the ledger
+    is not claiming to answer.
+
+    The sixth is not a query index — it is the uniqueness constraint that makes
+    the history backfill re-runnable, and it is sparse, so no live row is in it.
+    """
+    llm_calls_collection = get_async_collection("llm_calls")
+    try:
+        await asyncio.gather(
+            # "What did this user spend, call by call, over this window?" — the
+            # per-user cost drill-down behind every billing question. ESR: equality
+            # on user_id, then the range/sort on created_at.
+            llm_calls_collection.create_index(
+                [("user_id", 1), ("created_at", -1)], name="user_calls_recent"
+            ),
+            # "What did this conversation cost, and which calls made it up?" —
+            # the per-turn breakdown. Matches on the bare conversation id, so a
+            # comms call and its executor children come back as one timeline.
+            llm_calls_collection.create_index(
+                [("conversation_id", 1), ("created_at", -1)], name="conversation_calls_recent"
+            ),
+            # "What did this workflow run cost?" — sparse because only calls made
+            # inside a workflow execution carry the field, and that is the small
+            # minority; a full index would carry a null entry for every chat call.
+            llm_calls_collection.create_index(
+                "workflow_execution_id", sparse=True, name="workflow_execution_calls"
+            ),
+            # "What is each lane spending over time?" — the COGS-by-agent split
+            # (comms vs executor vs each auxiliary helper) that decides where an
+            # optimisation is worth making.
+            llm_calls_collection.create_index(
+                [("agent_name", 1), ("created_at", -1)], name="agent_calls_recent"
+            ),
+            # Idempotency for scripts/backfill_llm_calls.py: the deterministic
+            # key each reconstructed row carries, so re-running --apply matches
+            # the existing document instead of duplicating history. Sparse and
+            # unique — only backfilled rows have the field, so the index costs
+            # the live write path nothing.
+            llm_calls_collection.create_index(
+                "backfill_key", unique=True, sparse=True, name="backfill_idempotency"
+            ),
+            # Retention. The ledger is unbounded by construction (one row per
+            # call, forever), so its size has to be bounded in time — 90 days,
+            # matching usage_snapshots. The durable money history is usage_daily,
+            # which this never replaces and which nothing here expires.
+            llm_calls_collection.create_index(
+                "created_at",
+                name="created_at_ttl",
+                expireAfterSeconds=7776000,  # 90 days
+            ),
+        )
+
+    except Exception as e:
+        log.error(
+            f"{LogTag.MONGO} Failed to create llm_calls indexes",
             error=str(e),
             error_type=type(e).__name__,
         )

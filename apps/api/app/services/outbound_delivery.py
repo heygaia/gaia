@@ -16,6 +16,7 @@ from app.db.rabbitmq import RabbitMQPublisher, get_rabbitmq_publisher
 from app.models.chat_models import ConversationSource
 from app.schemas.outbound import OutboundAttachment, OutboundMessageEnvelope
 from app.services.platform_link_service import PlatformLinkService
+from app.utils.message_breaks import split_message_bubbles
 from shared.py.wide_events import log
 
 
@@ -41,10 +42,17 @@ async def _resolve_destination(platform: ConversationSource, user_id: str) -> st
 
 
 async def _prepare(
-    platform: ConversationSource, user_id: str, log_label: str
+    platform: ConversationSource,
+    user_id: str,
+    log_label: str,
+    destination_override: str | None = None,
 ) -> tuple[str, str, RabbitMQPublisher] | OutboundResult:
     """Resolve the queue, destination, and publisher shared by every outbound
     publish.
+
+    ``destination_override`` sends to an explicit platform-native id (a group's
+    channel id) instead of resolving the user's DM from the platform link — used
+    to deliver a proactive message back into the group conversation it came from.
 
     Returns ``(queue_name, destination_id, publisher)`` on success, or the
     :class:`OutboundResult` to report when the message can't be enqueued
@@ -54,7 +62,7 @@ async def _prepare(
     if queue_name is None:
         return OutboundResult.SKIPPED
 
-    destination_id = await _resolve_destination(platform, user_id)
+    destination_id = destination_override or await _resolve_destination(platform, user_id)
     if not destination_id:
         log.warning(
             ": account not linked", log_label=log_label, user_id=user_id, platform=platform.value
@@ -73,26 +81,41 @@ async def _prepare(
 
 
 async def publish_outbound_message(
-    platform: ConversationSource, user_id: str, text_parts: list[str]
+    platform: ConversationSource,
+    user_id: str,
+    text_parts: list[str],
+    *,
+    destination_override: str | None = None,
+    is_channel: bool = False,
 ) -> OutboundResult:
     """Resolve ``user_id`` to its ``platform`` id and enqueue the ordered text
     parts as a SINGLE envelope.
+
+    ``destination_override`` + ``is_channel`` deliver to a specific channel/group
+    (the conversation the message came from) instead of the user's DM; the flag
+    tells the bot to address a channel rather than open a DM. Defaults keep the
+    DM behavior every existing caller relies on.
 
     The parts of one logical message (e.g. a workflow completion's header,
     result bubbles, and footer) are published together so the consumer delivers
     them in order. Publishing one envelope per part instead lets a concurrent
     consumer (prefetch > 1) reorder the bubbles — the bug this avoids.
 
+    Each incoming part is itself split on the bubble-break sentinel, so any
+    caller handing over raw agent text (executor replies, notifications, the
+    account-linked confirmation) delivers as the bubbles the model asked for
+    instead of one wall carrying literal ``<NEW_MESSAGE_BREAK>`` tokens.
+
     Returns ``PUBLISHED`` when the envelope was enqueued. ``SKIPPED`` when the
     platform is unsupported, the account is unlinked, or there is nothing to
     send. ``FAILED`` when the broker is unavailable or the publish errored.
     Best-effort: never raises into the caller's flow.
     """
-    parts = [p for p in (s.strip() for s in text_parts) if p]
+    parts = [bubble for part in text_parts for bubble in split_message_bubbles(part)]
     if not parts:
         return OutboundResult.SKIPPED
 
-    prep = await _prepare(platform, user_id, "publish_outbound_message")
+    prep = await _prepare(platform, user_id, "publish_outbound_message", destination_override)
     if isinstance(prep, OutboundResult):
         return prep
     queue_name, destination_id, publisher = prep
@@ -102,11 +125,17 @@ async def publish_outbound_message(
     # consumer's responsibility within one message, not the broker's across many.
     if len(parts) == 1:
         envelope = OutboundMessageEnvelope(
-            platform=platform.value, destination_id=destination_id, text=parts[0]
+            platform=platform.value,
+            destination_id=destination_id,
+            text=parts[0],
+            is_channel=is_channel,
         )
     else:
         envelope = OutboundMessageEnvelope(
-            platform=platform.value, destination_id=destination_id, text_parts=parts
+            platform=platform.value,
+            destination_id=destination_id,
+            text_parts=parts,
+            is_channel=is_channel,
         )
 
     try:
@@ -127,6 +156,17 @@ async def publish_outbound_message(
         parts=len(parts),
     )
     return OutboundResult.PUBLISHED
+
+
+# Friendly platform names for user-facing copy consumed by other modules
+# (e.g. workflow delivery provenance frames). Single source — import, don't
+# restate. In-module copy prefers ``ConversationSource.display_name``.
+PLATFORM_DISPLAY_NAMES: dict[ConversationSource, str] = {
+    ConversationSource.TELEGRAM: "Telegram",
+    ConversationSource.DISCORD: "Discord",
+    ConversationSource.SLACK: "Slack",
+    ConversationSource.WHATSAPP: "WhatsApp",
+}
 
 
 async def notify_account_linked(platform: str, user_id: str) -> OutboundResult:

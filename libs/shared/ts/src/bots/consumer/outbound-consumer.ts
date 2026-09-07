@@ -11,6 +11,7 @@
 
 import { type Channel, type ConsumeMessage, connect } from "amqplib";
 import type { PlatformName } from "../types";
+import { segmentIntoBubbles } from "../utils/bubbles";
 import { renderForPlatform } from "../utils/formatters";
 import { type BotLogger, createBotLogger } from "../utils/logger";
 import { chunkResponse } from "../utils/text";
@@ -32,8 +33,16 @@ const PREFETCH = 8;
 const RECONNECT_BASE_MS = 1_000;
 const RECONNECT_MAX_MS = 30_000;
 
-/** Sends one already-rendered message to a platform destination. */
-type DeliverFn = (destinationId: string, text: string) => Promise<void>;
+/**
+ * Sends one already-rendered message to a platform destination. `isChannel`
+ * tells the adapter whether `destinationId` is a channel/group id (send to the
+ * channel) or a user id (open the DM).
+ */
+type DeliverFn = (
+  destinationId: string,
+  text: string,
+  isChannel: boolean,
+) => Promise<void>;
 
 /** Sends one file attachment to a platform destination. */
 type DeliverFileFn = (
@@ -221,6 +230,7 @@ export class OutboundConsumer {
           env.destination_id,
           env.text,
           env.text_parts,
+          env.is_channel,
         );
       },
     );
@@ -313,6 +323,7 @@ export class OutboundConsumer {
     destinationId: string,
     text: string | null | undefined,
     textParts: string[] | null | undefined,
+    isChannel: boolean,
   ): Promise<void> {
     const sources = resolveSources(text, textParts);
     if (sources.length === 0) {
@@ -325,8 +336,12 @@ export class OutboundConsumer {
     // many chunks already went out — a partial send must NOT requeue.
     const progress = { delivered: 0 };
     try {
-      await this.deliverSources(destinationId, sources, progress);
+      await this.deliverSources(destinationId, sources, progress, isChannel);
       wideLog.set({ delivered_count: progress.delivered });
+      // `redelivered` only ever appeared on the error branches, so a duplicate
+      // that succeeded — the exact case the at-least-once queue produces — was
+      // indistinguishable from a first delivery in Loki.
+      wideLog.set({ redelivered: msg.fields.redelivered });
       // Non-empty source text that rendered to nothing on every chunk: don't
       // silently ack it away (the backend recorded it DELIVERED). Dead-letter
       // it so the dropped message is visible for inspection.
@@ -358,31 +373,40 @@ export class OutboundConsumer {
   }
 
   /**
-   * Chunk the raw markdown by the platform limit, then render each chunk so
-   * every sent message is valid platform markdown. The renderer is passed into
-   * chunkResponse so chunks are sized by their RENDERED length — otherwise
-   * markdown that expands when rendered (e.g. Telegram tables padded into
-   * <pre> blocks) can overflow the platform's message limit and be rejected.
-   * Increments `progress.delivered` for each non-empty message sent, so the
-   * caller sees the partial count even if a later send throws.
+   * Segment each source into bubbles, chunk them by the platform limit, then
+   * render each chunk so every sent message is valid platform markdown.
+   *
+   * Segmentation happens HERE and not only in the streamer because these
+   * messages never went through it: an executor reply, a reminder or a workflow
+   * result arrives as one blob of agent markdown, sentinels and all, and used
+   * to be sent as one wall with `<NEW_MESSAGE_BREAK>` visible in it.
+   *
+   * The renderer is passed into chunkResponse so chunks are sized by their
+   * RENDERED length — otherwise markdown that expands when rendered (e.g.
+   * Telegram tables padded into <pre> blocks) can overflow the platform's
+   * message limit and be rejected. Increments `progress.delivered` for each
+   * non-empty message sent, so the caller sees the partial count even if a
+   * later send throws.
    */
   private async deliverSources(
     destinationId: string,
     sources: string[],
     progress: { delivered: number },
+    isChannel: boolean,
   ): Promise<void> {
     const render = (chunk: string): string =>
       renderForPlatform(chunk, this.platform);
     // Await each send before the next so the bubbles arrive in the published
     // order — never fan these out concurrently.
-    for (const source of sources) {
-      for (const chunk of chunkResponse(source, this.platform, render)) {
+    const bubbles = sources.flatMap((source) => segmentIntoBubbles(source));
+    for (const bubble of bubbles) {
+      for (const chunk of chunkResponse(bubble, this.platform, render)) {
         const rendered = render(chunk);
         // A chunk made up solely of strippable markup (e.g. a lone horizontal
         // rule) renders to nothing; platform send APIs reject empty text, so
         // skip it instead of throwing and dead-lettering the whole envelope.
         if (!rendered.trim()) continue;
-        await this.deliver(destinationId, rendered);
+        await this.deliver(destinationId, rendered, isChannel);
         progress.delivered += 1;
       }
     }

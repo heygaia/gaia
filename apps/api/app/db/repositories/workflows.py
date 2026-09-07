@@ -20,6 +20,7 @@ scan/routing reads are not keyed by id. Matches the ``workflow_executions``
 repository. Revisit only with evidence of a hot by-id read path.
 """
 
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import re
 from typing import Any
@@ -37,6 +38,12 @@ from app.models.workflow_models import (
     WorkflowUpdate,
 )
 from app.utils.creator import creator_lookup_stage
+from app.utils.occurrence import occurrence_window
+
+# The scheduler's occurrence field, written by every arm/re-arm path and pinned
+# by the stale-fire claim gate. One constant keeps the dotted key from drifting
+# between the writers and the gate.
+NEXT_RUN_FIELD = "trigger_config.next_run"
 
 # Cron-driven workflows only carry a non-empty ``repeat``; manual / integration /
 # todo workflows default to status="scheduled" with ``scheduled_at=now``, so the
@@ -64,6 +71,33 @@ class _Unset:
 
 
 UNSET = _Unset()
+
+
+@dataclass(frozen=True, slots=True)
+class WorkflowReArm:
+    """The scheduler's re-arm fields for ``set_status``, grouped into one argument.
+
+    ``scheduled_at``/``next_run`` keep the ``UNSET`` sentinel because ``None`` is a
+    meaningful clear the recovery scan writes; ``occurrence_count``/``repeat`` are
+    applied only when provided.
+    """
+
+    scheduled_at: datetime | _Unset | None = UNSET
+    occurrence_count: int | None = None
+    repeat: str | None = None
+    next_run: datetime | _Unset | None = UNSET
+
+
+@dataclass(frozen=True, slots=True)
+class SystemWorkflowDefinition:
+    """A system workflow's canonical definition, re-applied on ``reset_system_workflow``."""
+
+    title: str
+    description: str
+    prompt: str
+    steps: list[WorkflowStep]
+    trigger_config: TriggerConfig
+    composio_trigger_ids: list[str]
 
 
 class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
@@ -451,7 +485,7 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
                     "trigger_config.composio_trigger_ids": trigger_ids,
                     "status": ScheduledTaskStatus.SCHEDULED.value,
                     "scheduled_at": next_run,
-                    "trigger_config.next_run": next_run,
+                    NEXT_RUN_FIELD: next_run,
                     "deactivated_reason": None,
                 }
             },
@@ -459,24 +493,30 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         )
 
     async def deactivate(
-        self, workflow_id: str, user_id: str, *, reason: DeactivationReason | None = None
+        self,
+        workflow_id: str,
+        user_id: str,
+        *,
+        reason: DeactivationReason | None = None,
+        blocked_on_integrations: list[str] | None = None,
     ) -> WorkflowDocument | None:
         """Deactivate the user's workflow (disable its trigger and clear Composio
         ids). Liveness is governed by ``activated``; a deferred fire is rejected by
         the claim gate. ``reason`` marks a system pause so an automatic resume can
         tell it apart from a user switching the workflow off (which passes none).
+        ``blocked_on_integrations`` is written in the same operation as the pause
+        it explains: a pause on record with no blockers could never be resumed.
         Returns the after state, or ``None`` when not found."""
+        fields: dict[str, object] = {
+            "activated": False,
+            "trigger_config.enabled": False,
+            "trigger_config.composio_trigger_ids": [],
+            "deactivated_reason": reason.value if reason else None,
+        }
+        if blocked_on_integrations is not None:
+            fields["blocked_on_integrations"] = blocked_on_integrations
         return await self._apply_raw_update(
-            {"_id": workflow_id, "user_id": user_id},
-            {
-                "$set": {
-                    "activated": False,
-                    "trigger_config.enabled": False,
-                    "trigger_config.composio_trigger_ids": [],
-                    "deactivated_reason": reason.value if reason else None,
-                }
-            },
-            scope=REPO_GLOBAL_SCOPE,
+            {"_id": workflow_id, "user_id": user_id}, {"$set": fields}, scope=REPO_GLOBAL_SCOPE
         )
 
     async def mark_activated_with_triggers(
@@ -492,19 +532,31 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
             {"_id": workflow_id}, {"$set": set_fields}, scope=REPO_GLOBAL_SCOPE
         )
 
-    async def claim_for_execution(self, workflow_id: str) -> bool:
+    async def claim_for_execution(
+        self, workflow_id: str, *, expected_next_run: datetime | None = None
+    ) -> bool:
         """Atomically claim a live, idle workflow for a fire (SCHEDULED -> EXECUTING).
 
         Returns ``False`` — and the caller skips the fire — when the workflow is not
         both ``activated`` and ``status="scheduled"`` (a concurrent recovery scan
         already claimed it, or it was deactivated but a deferred job fired anyway).
+
+        ``expected_next_run`` pins the occurrence the fire was armed for: ARQ has
+        no job cancellation, so after a reschedule the old deferred job still
+        fires — but ``trigger_config.next_run`` has moved on, and the mismatch
+        rejects it. Matched at second resolution (``occurrence_window``), the
+        resolution the stamp survives. Jobs enqueued before this stamp existed
+        pass ``None`` and claim exactly as before.
         """
+        filter_: dict[str, Any] = {
+            "_id": workflow_id,
+            "activated": True,
+            "status": ScheduledTaskStatus.SCHEDULED.value,
+        }
+        if expected_next_run is not None:
+            filter_[NEXT_RUN_FIELD] = occurrence_window(expected_next_run)
         result = await self._apply_raw_update(
-            {
-                "_id": workflow_id,
-                "activated": True,
-                "status": ScheduledTaskStatus.SCHEDULED.value,
-            },
+            filter_,
             {"$set": {"status": ScheduledTaskStatus.EXECUTING.value}},
             scope=REPO_GLOBAL_SCOPE,
         )
@@ -516,32 +568,26 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         status: ScheduledTaskStatus,
         *,
         user_id: str | None = None,
-        scheduled_at: datetime | _Unset | None = UNSET,
-        occurrence_count: int | None = None,
-        repeat: str | None = None,
-        next_run: datetime | _Unset | None = UNSET,
+        rearm: WorkflowReArm | None = None,
     ) -> bool:
         """Set a workflow's run-state ``status`` plus the scheduler's re-arm fields.
         Returns whether a workflow matched. ``user_id`` adds the owner guard where
-        the caller has one; the worker paths update by id alone.
-
-        ``scheduled_at`` and ``next_run`` (written as ``trigger_config.next_run``)
-        take an ``UNSET`` sentinel because ``None`` is a meaningful value the recovery
-        scan writes — omitted fields are left untouched; an explicit ``None`` clears
-        them. ``occurrence_count``/``repeat`` are only set when provided (they never
-        need clearing to ``None``)."""
+        the caller has one; the worker paths update by id alone. The re-arm fields
+        (``scheduled_at``/``occurrence_count``/``repeat``/``next_run``) are grouped
+        in ``rearm`` — see ``WorkflowReArm`` for the per-field write semantics."""
+        rearm = rearm or WorkflowReArm()
         filter_: dict[str, Any] = {"_id": workflow_id}
         if user_id:
             filter_["user_id"] = user_id
         set_fields: dict[str, Any] = {"status": status.value}
-        if not isinstance(scheduled_at, _Unset):
-            set_fields["scheduled_at"] = scheduled_at
-        if occurrence_count is not None:
-            set_fields["occurrence_count"] = occurrence_count
-        if repeat is not None:
-            set_fields["repeat"] = repeat
-        if not isinstance(next_run, _Unset):
-            set_fields["trigger_config.next_run"] = next_run
+        if not isinstance(rearm.scheduled_at, _Unset):
+            set_fields["scheduled_at"] = rearm.scheduled_at
+        if rearm.occurrence_count is not None:
+            set_fields["occurrence_count"] = rearm.occurrence_count
+        if rearm.repeat is not None:
+            set_fields["repeat"] = rearm.repeat
+        if not isinstance(rearm.next_run, _Unset):
+            set_fields[NEXT_RUN_FIELD] = rearm.next_run
         result = await self._apply_raw_update(
             filter_, {"$set": set_fields}, scope=REPO_GLOBAL_SCOPE
         )
@@ -589,27 +635,21 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         )
 
     async def reset_system_workflow(
-        self,
-        workflow_id: str,
-        *,
-        title: str,
-        description: str,
-        steps: list[WorkflowStep],
-        trigger_config: TriggerConfig,
-        composio_trigger_ids: list[str],
+        self, workflow_id: str, definition: SystemWorkflowDefinition
     ) -> WorkflowDocument | None:
-        """Re-apply a system workflow's original definition (title/description/steps/
-        trigger_config), preserving liveness, stats and ``created_at``. ``next_run``
+        """Re-apply a system workflow's original definition (title/description/prompt/
+        steps/trigger_config), preserving liveness, stats and ``created_at``. ``next_run``
         stays a native datetime (python-mode dump), consistent with create/re-arm."""
-        trigger_doc = trigger_config.model_dump()
-        trigger_doc["composio_trigger_ids"] = composio_trigger_ids
+        trigger_doc = definition.trigger_config.model_dump()
+        trigger_doc["composio_trigger_ids"] = definition.composio_trigger_ids
         return await self._apply_raw_update(
             {"_id": workflow_id},
             {
                 "$set": {
-                    "title": title,
-                    "description": description,
-                    "steps": [s.model_dump() for s in steps],
+                    "title": definition.title,
+                    "description": definition.description,
+                    "prompt": definition.prompt,
+                    "steps": [s.model_dump() for s in definition.steps],
                     "trigger_config": trigger_doc,
                 }
             },
@@ -628,6 +668,43 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         return await self._delete_many(
             {"_id": {"$in": workflow_ids}, "user_id": user_id}, scope=REPO_GLOBAL_SCOPE
         )
+
+    async def count_playbook_decline(
+        self, workflow_id: str, user_id: str, *, run_id: str, workflow_hash: str
+    ) -> int | None:
+        """Count one run's decision not to write a playbook, once per run.
+
+        A model voices the decision several times in one turn, and those calls
+        run in parallel on the same state, so no call can see another's answer:
+        the tally is grown here, matched on the run that last grew it. A tally
+        for a different workflow hash (the workflow was edited) starts over at
+        one. ``None`` when this run already counted, so the caller can say so
+        without counting again.
+        """
+        key = {**self._identity_filter(workflow_id), "user_id": user_id}
+        grown = await self._apply_raw_update(
+            {
+                **key,
+                "playbook_declined_hash": workflow_hash,
+                "playbook_declined_run": {"$ne": run_id},
+            },
+            {"$inc": {"playbook_declines": 1}, "$set": {"playbook_declined_run": run_id}},
+            scope=REPO_GLOBAL_SCOPE,
+        )
+        if grown is not None:
+            return grown.playbook_declines
+        fresh = await self._apply_raw_update(
+            {**key, "playbook_declined_hash": {"$ne": workflow_hash}},
+            {
+                "$set": {
+                    "playbook_declines": 1,
+                    "playbook_declined_hash": workflow_hash,
+                    "playbook_declined_run": run_id,
+                }
+            },
+            scope=REPO_GLOBAL_SCOPE,
+        )
+        return None if fresh is None else fresh.playbook_declines
 
 
 workflow_repository = WorkflowsRepository()

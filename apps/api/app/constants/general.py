@@ -5,6 +5,9 @@ Centralized general-purpose constants.
 """
 
 ORCHESTRATOR_MAX_ITERATIONS = 10
+# The canonical bubble-break sentinel the comms prompt tells the model to emit.
+# Recognizing the near-miss spellings it actually emits (and splitting on them)
+# is ``app.utils.message_breaks`` — this is only the token we ask for.
 NEW_MESSAGE_BREAKER = "<NEW_MESSAGE_BREAK>"
 
 # Upper bound for every 1-based `page` query parameter. Paginated endpoints turn
@@ -40,6 +43,13 @@ SPAWN_AGENT_NAME = "spawned_subagent"
 # Shared because the middleware mints these and the nightly retention sweep selects
 # on them — a drift between the two would silently strand every spawn thread.
 SPAWN_THREAD_PREFIX = "spawn_"
+
+# Thread-id prefix for the executor's checkpoint thread (`executor_<conversation>`),
+# which a handoff subagent further wraps as `<namespace>_executor_<conversation>`.
+# Shared because prepare_executor_execution mints these and the workflow thread
+# reset selects on them — a drift between the two would leave a workflow replaying
+# its whole history out of a thread the reset failed to recognize.
+EXECUTOR_THREAD_PREFIX = "executor_"
 
 MAX_EMAILS_PER_PLATFORM = 20
 DEDUPLICATION_SIMILARITY_THRESHOLD = 0.9

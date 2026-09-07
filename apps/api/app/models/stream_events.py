@@ -128,6 +128,21 @@ class ToolOutputPayload(BaseModel):
     subagent_id: str | None = None
 
 
+class MessageBoundaryPayload(BaseModel):
+    """End of one assistant message inside a turn.
+
+    ``discarded`` is true when that message turned out to carry tool calls, which
+    makes any text it streamed a MOMENT-1 preamble ("let me get that set up…")
+    the user must not keep — the real reply arrives as the next message. The
+    frame exists because the wire streams that text BEFORE the tool call, so a
+    live consumer has already shown it by the time we know, and has to retract
+    it rather than leave a duplicate reply on screen.
+    """
+
+    message_id: str
+    discarded: bool
+
+
 class ReasoningPayload(BaseModel):
     """A streamed reasoning ("thinking") delta from the model."""
 
@@ -140,6 +155,11 @@ class SubagentStartPayload(BaseModel):
 
     subagent_id: str
     subagent_name: str
+    #: The subagent's stable id (``todos``, ``gmail``): what a playbook's
+    #: ``handoff:`` names. ``subagent_id`` is this dispatch's row, unique per
+    #: call, which is right for nesting and wrong for matching a call back to
+    #: the subagent that made it.
+    subagent: str | None = None
     agent_type: str
     started_at: str
     icon_url: str | None = None

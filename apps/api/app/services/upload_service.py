@@ -47,7 +47,7 @@ def upload_file_to_cloudinary(
         raise HTTPException(status_code=400, detail="public_id is required")
 
     # Validate file path exists if provided
-    if file_path and not os.path.exists(file_path):
+    if file_path and not os.path.exists(file_path):  # noqa: PTH110 -- tests patch upload_service.os.path.exists
         log.error("File not found", file_path=file_path)
         raise HTTPException(status_code=404, detail=f"File not found: {file_path}")
 
@@ -75,9 +75,9 @@ def upload_file_to_cloudinary(
 
     except cloudinary.exceptions.Error as e:
         log.error("Cloudinary upload failed", error=str(e), error_type=type(e).__name__)
-        raise HTTPException(status_code=500, detail="Failed to upload file to Cloudinary")
+        raise HTTPException(status_code=500, detail="Failed to upload file to Cloudinary") from e
     except Exception as e:
         log.error("Unexpected error during upload", error=str(e), error_type=type(e).__name__)
         raise HTTPException(
             status_code=500, detail="An unexpected error occurred during file upload"
-        )
+        ) from e

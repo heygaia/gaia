@@ -61,7 +61,7 @@ class SlackTriggerHandler(TriggerHandler):
     async def register(
         self,
         user_id: str,
-        _workflow_id: str,
+        _owner_id: str,
         trigger_name: str,
         trigger_config: TriggerConfig,
     ) -> list[str]:
@@ -152,7 +152,7 @@ class SlackTriggerHandler(TriggerHandler):
         has_failure = False
         failure_message = ""
 
-        for i, result in enumerate(results):
+        for result in results:
             if isinstance(result, Exception):
                 has_failure = True
                 failure_message = str(result)
@@ -160,7 +160,7 @@ class SlackTriggerHandler(TriggerHandler):
                     f"{LogTag.TRIGGER} Slack trigger registration failed",
                     result=result,
                     user_id=user_id,
-                    workflow_id=_workflow_id,
+                    owner_id=_owner_id,
                 )
             elif isinstance(result, list):
                 successful_ids.extend(result)
@@ -172,7 +172,7 @@ class SlackTriggerHandler(TriggerHandler):
                     f"{LogTag.TRIGGER} Rolling back Slack triggers due to partial failure",
                     successful_ids_count=len(successful_ids),
                     user_id=user_id,
-                    workflow_id=_workflow_id,
+                    owner_id=_owner_id,
                 )
                 await self.unregister(user_id, successful_ids)
 
@@ -298,7 +298,7 @@ class SlackTriggerHandler(TriggerHandler):
         field_name: str,
         user_id: str,
         integration_id: str,
-        parent_ids: list[str] | None = None,
+        parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
         **_kwargs: str,
     ) -> list[TriggerOption]:
         """Get dynamic options for Slack trigger config fields."""

@@ -29,6 +29,7 @@ from app.models.workflow_models import (
     WorkflowUpdate,
     WorkflowWithIntegrations,
 )
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.workflow.integration_requirements import (
     build_integration_refs,
     compute_integration_refs,
@@ -142,7 +143,10 @@ class WorkflowService:
             )
 
         # Imported lazily to avoid a circular import via system_workflows.
-        from app.services.oauth.oauth_service import check_integration_status
+        # Deferred import: lazy to break the circular import routed via system_workflows
+        from app.services.oauth.oauth_service import (  # noqa: PLC0415 -- deferred
+            check_integration_status,
+        )
 
         integration_id = get_integration_for_trigger(trigger_name)
         if integration_id:
@@ -157,7 +161,7 @@ class WorkflowService:
 
         trigger_ids = await TriggerService.register_triggers(
             user_id=user_id,
-            workflow_id=workflow_id,
+            owner_id=workflow_id,
             trigger_name=trigger_name,
             trigger_config=trigger_config,
             raise_on_failure=True,
@@ -538,10 +542,7 @@ class WorkflowService:
             ]
 
             # Enrich all workflows with integration fields in one status call.
-            # Deferred import: oauth_service → provisioner → service is circular.
             if workflows:
-                from app.services.oauth.oauth_service import get_all_integrations_status
-
                 status_map = await get_all_integrations_status(user_id)
                 for workflow in workflows:
                     required = compute_required_integrations(
@@ -749,7 +750,7 @@ class WorkflowService:
                         registered_trigger_ids,
                         workflow_id,
                     )
-                raise db_err
+                raise
 
             if updated is None:
                 return None
@@ -955,7 +956,7 @@ class WorkflowService:
             # Refuse activation up front: registration would otherwise silently
             # no-op for a disconnected integration, confusing the user.
             if trigger_type == TriggerType.INTEGRATION and trigger_config.trigger_name:
-                from app.services.oauth.oauth_service import (
+                from app.services.oauth.oauth_service import (  # noqa: PLC0415 -- breaks circular chain: oauth_service -> provisioner -> this service
                     check_integration_status,
                 )
 
@@ -1059,9 +1060,11 @@ class WorkflowService:
         user_timezone: str | None = None,
         *,
         reason: DeactivationReason | None = None,
+        blocked_on_integrations: list[str] | None = None,
     ) -> Workflow | None:
         """Deactivate a workflow (disable its trigger). ``reason`` marks a system
-        pause; a user switching the workflow off passes none."""
+        pause; a user switching the workflow off passes none. A pause on
+        integrations a run found missing records them in the same write."""
         try:
             workflow = await WorkflowService.get_workflow(workflow_id, user_id)
             if not workflow:
@@ -1093,7 +1096,9 @@ class WorkflowService:
                     )
 
             # Update trigger to disabled and clear trigger IDs
-            deactivated = await workflow_repository.deactivate(workflow_id, user_id, reason=reason)
+            deactivated = await workflow_repository.deactivate(
+                workflow_id, user_id, reason=reason, blocked_on_integrations=blocked_on_integrations
+            )
 
             if deactivated is None:
                 return None

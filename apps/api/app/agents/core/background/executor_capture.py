@@ -11,16 +11,18 @@ implementation so chat and workflow runs render identically.
 """
 
 import asyncio
+from pathlib import Path
+from types import CoroutineType, FrameType
 from typing import Any
 
 from app.agents.core.background.session import (
     RunKind,
     create_session,
     get_session,
+    mark_executor_failed,
     teardown_session,
-    was_executor_spawned,
 )
-from app.constants.agents import RETURNED_TO_FRONTEND_MARKER
+from app.constants.agents import AgentTag, wrap_agent_payload
 from app.constants.cache import EXECUTOR_WAIT_TIMEOUT
 from app.constants.log_tags import LogTag
 from app.models.chat_models import ToolDataEntry, tool_fields
@@ -51,25 +53,75 @@ def register_executor_capture(stream_id: str, voice_mode: bool = False) -> async
 async def await_executor_done(
     stream_id: str,
     timeout: float = EXECUTOR_WAIT_TIMEOUT,  # NOSONAR python:S7483
-) -> None:
+) -> bool:
     """Block until the background executor for this stream signals completion.
 
-    No-op when no executor was spawned for the stream. On timeout, logs and
-    returns so the caller can still drain whatever events were collected.
+    ``True`` when it finished (or none was spawned). On timeout the executor is
+    recorded as failed with the reason, the tasks still running are logged so
+    the stall can be read, and ``False`` comes back so the caller can still
+    drain whatever events were collected.
     """
-    if not was_executor_spawned(stream_id):
-        return
     session = get_session(stream_id)
-    if session is None:
-        return
+    if session is None or not session.executor_spawned:
+        return True
     log.info(f"{LogTag.AGENT} Waiting for executor completion", stream_id=stream_id)
     try:
         async with asyncio.timeout(timeout):
             await session.done_event.wait()
     except TimeoutError:
-        log.warning(
-            f"{LogTag.AGENT} Timed out waiting for executor — draining anyway", stream_id=stream_id
+        reason = f"the executor did not finish within {int(timeout)}s"
+        mark_executor_failed(stream_id, reason)
+        log.error(
+            f"{LogTag.AGENT} Timed out waiting for executor; draining what it produced",
+            stream_id=stream_id,
+            timeout_seconds=int(timeout),
+            stuck_tasks=_running_task_stacks(),
         )
+        return False
+    return True
+
+
+#: Tasks worth naming when the executor stalls: the executor's own run and
+#: the subagent runs it dispatched. Everything else is the loop's plumbing.
+_AGENT_TASK_MARKERS = ("run_executor", "run_subagent")
+_STACK_FRAMES = 6
+
+
+def _running_task_stacks() -> list[str]:
+    """One line per agent task still running, with its innermost frames.
+
+    A thread dump shows only the idle event loop; the stall is in a coroutine,
+    and this is the only view of where it sits.
+    """
+    return [
+        f"{name}: {_innermost_frames(task)}"
+        for task in asyncio.all_tasks()
+        if not task.done() and (name := _agent_task_name(task)) is not None
+    ]
+
+
+def _agent_task_name(task: asyncio.Task[object]) -> str | None:
+    """The task's coroutine name when it is an agent run, else ``None``."""
+    coro = task.get_coro()
+    name = getattr(coro, "__qualname__", type(coro).__name__)
+    return name if any(marker in name for marker in _AGENT_TASK_MARKERS) else None
+
+
+def _innermost_frames(task: asyncio.Task[object]) -> str:
+    """Where the task is suspended, innermost await first.
+
+    ``Task.get_stack`` stops at the task's own coroutine; the stall is down the
+    chain of awaits, so the chain is walked to its end and its tail kept.
+    """
+    frames: list[FrameType] = []
+    coro: object = task.get_coro()
+    while isinstance(coro, CoroutineType) and coro.cr_frame is not None:
+        frames.append(coro.cr_frame)
+        coro = coro.cr_await
+    return " <- ".join(
+        f"{frame.f_code.co_name}({Path(frame.f_code.co_filename).name}:{frame.f_lineno})"
+        for frame in reversed(frames[-_STACK_FRAMES:])
+    )
 
 
 def drain_executor_tool_data(stream_id: str) -> list[ToolDataEntry]:
@@ -110,29 +162,49 @@ def build_returned_to_frontend_note(stream_id: str) -> str:
     ``tool_fields`` source of truth as ``OPENUI_SUPPRESSED_TOOLS``), so it states
     what was RETURNED to the frontend — not a claim about DOM rendering.
 
+    Each row names the subagent that produced the card. Without that, the note
+    says a todo card exists but not which system holds those todos, so comms has
+    nothing to weigh against an executor summary that credits the wrong product
+    (eight GAIA todos reached a user as "8 tasks created (Todoist)").
+
     MUST be called before the session is torn down (and, for live streams,
     before ``done_event`` is set, since the chat stream drains + tears down in
     parallel). Returns "" when nothing card-worthy was emitted.
     """
     entries = drain_executor_tool_data(stream_id)
-    summary: list[str] = []
+    subagent_names: dict[str, str] = {}
+    for entry in entries:
+        group = entry.get("data")
+        if entry.get("tool_name") != "subagent_group" or not isinstance(group, dict):
+            continue
+        subagent_names[str(group.get("subagent_id"))] = str(group.get("subagent_name") or "")
+
+    # (field name, producer) -> item count. Eight separate one-item todo cards
+    # from one subagent are one fact, not eight lines of noise.
+    counts: dict[tuple[str, str], int] = {}
     for entry in entries:
         name = entry.get("tool_name")
         if name not in tool_fields:
             continue  # excludes tool_calls_data / subagent_group (loading rows)
         data = entry.get("data")
-        count = len(data) if isinstance(data, list) else 1
+        producer = subagent_names.get(str(entry.get("subagent_id")), "")
+        key = (str(name), producer)
+        counts[key] = counts.get(key, 0) + (len(data) if isinstance(data, list) else 1)
+
+    summary: list[str] = []
+    for (name, producer), count in counts.items():
         # Derive a readable label from the field name so it never drifts from
         # the tool_fields source of truth (e.g. "email_fetch_data" -> "email fetch").
         noun = name.removesuffix("_data").replace("_", " ") or "items"
-        summary.append(f"  - {name} ({count} {noun})")
+        via = f", via subagent:{producer}" if producer else ""
+        summary.append(f"  - {name} ({count} {noun}{via})")
 
     if not summary:
         return ""
 
     body = "\n".join(summary)
-    return (
-        f"{RETURNED_TO_FRONTEND_MARKER}\n"
+    return wrap_agent_payload(
+        AgentTag.RETURNED_TO_FRONTEND,
         "These native cards are already on the user's screen this turn:\n"
         f"{body}\n"
         "They visually render the RAW items, so don't re-type those items "
@@ -157,7 +229,7 @@ def build_returned_to_frontend_note(stream_id: str) -> str:
         "deliverable IN FULL per the long-form rule — every section, point, and "
         "citation — and do NOT compress it to a 'here's the breakdown' summary. "
         "This note never authorizes shrinking a report; it only stops you "
-        "re-typing rows a card already lists.\n"
+        "re-typing rows a card already lists.",
     )
 
 

@@ -1,13 +1,15 @@
 import asyncio
+from dataclasses import dataclass
 import json
 from typing import Any
 
 from fastapi import UploadFile
 from langchain_core.tools import StructuredTool
 
+from app.constants.email import GMAIL_MULTIPLE_ATTACHMENTS_ERROR
 from app.constants.log_tags import LogTag
 from app.models.mail_models import (
-    GmailAttachmentPayload,
+    ComposioAttachment,
     GmailDraftsResponse,
     GmailEmailResult,
     GmailFetchEmailsData,
@@ -16,6 +18,7 @@ from app.models.mail_models import (
     GmailMessagesResponse,
     GmailToolResult,
 )
+from app.services.composio.attachments import upload_bytes_sync
 from app.services.composio.composio_service import (
     get_composio_service,
 )
@@ -23,14 +26,26 @@ from app.utils.general_utils import transform_gmail_message
 from shared.py.wide_events import MailContext, log
 
 
-def get_gmail_tool(tool_name: str, user_id: str) -> StructuredTool | None:
-    """Get a specific Gmail tool by name via ComposioService, or None if not found."""
+def get_gmail_tool(
+    tool_name: str, user_id: str, *, use_schema_modifier: bool = True
+) -> StructuredTool | None:
+    """Get a specific Gmail tool by name via ComposioService, or None if not found.
+
+    ``use_schema_modifier=False`` asks for the tool's own schema instead of the
+    agent-facing one. Callers that speak Composio's native argument shape need
+    it: the modifiers exist to hide that shape from the model, and LangChain
+    silently drops any argument the bound schema does not declare.
+    """
     log.set(user={"id": user_id}, mail=MailContext(provider="gmail"))
     composio_service = get_composio_service()
 
     try:
         return composio_service.get_tool(
-            tool_name, use_before_hook=False, use_after_hook=False, user_id=user_id
+            tool_name,
+            use_before_hook=False,
+            use_after_hook=False,
+            use_schema_modifier=use_schema_modifier,
+            user_id=user_id,
         )
     except Exception as e:
         log.error(
@@ -44,15 +59,20 @@ def get_gmail_tool(tool_name: str, user_id: str) -> StructuredTool | None:
 
 
 async def invoke_gmail_tool(
-    user_id: str, tool_name: str, parameters: dict[str, Any]
+    user_id: str,
+    tool_name: str,
+    parameters: dict[str, Any],
+    *,
+    use_schema_modifier: bool = True,
 ) -> GmailToolResult:
     """Invoke a specific Gmail tool with the given parameters.
 
     ``parameters`` stays a loose mapping on purpose: every Gmail tool accepts a
     different argument set, and Composio validates it against the tool's own schema.
+    ``use_schema_modifier`` is passed through to ``get_gmail_tool``.
     """
     try:
-        tool = get_gmail_tool(tool_name, user_id)
+        tool = get_gmail_tool(tool_name, user_id, use_schema_modifier=use_schema_modifier)
 
         if not tool:
             return GmailToolResult(error=f"Tool {tool_name} not found", successful=False)
@@ -72,38 +92,73 @@ async def invoke_gmail_tool(
         return GmailToolResult(error=str(e), successful=False)
 
 
-def _process_attachments(attachments: list[UploadFile]) -> list[GmailAttachmentPayload]:
-    """Process UploadFile objects into format expected by Composio."""
-    processed: list[GmailAttachmentPayload] = [
-        {
-            "filename": att.filename,
-            "content": att.file.read(),
-            "content_type": att.content_type,
-        }
-        for att in attachments
-    ]
-    # Reset file pointers
+def _process_attachments(attachments: list[UploadFile], tool_name: str) -> list[ComposioAttachment]:
+    """Upload each multipart file to Composio, returning its ``{name, mimetype, s3key}``.
+
+    Composio's compose tools take files already uploaded to their store, not raw
+    bytes; ``upload_bytes_sync`` does that upload. Runs sync (called via
+    ``asyncio.to_thread``) because the Composio upload client is synchronous.
+    """
+    processed: list[ComposioAttachment] = []
     for att in attachments:
-        att.file.seek(0)
+        content = att.file.read()
+        att.file.seek(0)  # reset so a later reader sees the whole file
+        processed.append(
+            upload_bytes_sync(
+                content,
+                att.filename or "attachment",
+                att.content_type,
+                tool=tool_name,
+                toolkit="gmail",
+            )
+        )
     return processed
+
+
+@dataclass
+class EmailContent:
+    """Subject/body plus the secondary recipients of one Gmail compose or draft."""
+
+    subject: str
+    body: str
+    extra_recipients: list[str] | None = None
+    cc_list: list[str] | None = None
+    bcc_list: list[str] | None = None
+
+
+@dataclass
+class MessageFetchOptions:
+    """Presentation knobs for fetched/searched Gmail messages."""
+
+    output_format: str | None = None
+    include_payload: bool | None = None
+    verbose: bool | None = None
+
+
+@dataclass
+class LabelChanges:
+    """Optional field updates for an existing Gmail label."""
+
+    name: str | None = None
+    label_list_visibility: str | None = None
+    message_list_visibility: str | None = None
+    background_color: str | None = None
+    text_color: str | None = None
 
 
 async def send_email(
     user_id: str,
     to: str,
-    subject: str,
-    body: str,
+    content: EmailContent,
+    *,
     thread_id: str | None = None,
-    extra_recipients: list[str] | None = None,
-    cc_list: list[str] | None = None,
-    bcc_list: list[str] | None = None,
     attachments: list[UploadFile] | None = None,
 ) -> GmailToolResult:
     """Send an email via Composio Gmail tools.
 
     Uses GMAIL_REPLY_TO_THREAD when thread_id is given, else GMAIL_SEND_EMAIL.
-    Body is always delivered as HTML; the Composio before-hook converts Markdown
-    so Gmail renders formatting instead of literal ``**`` / ``###``.
+    The body is handed to Gmail as given: this path runs no Composio hooks, so
+    the Markdown-to-HTML normalisation the agent path gets does not apply here.
     """
     log.set(
         user={"id": user_id},
@@ -115,15 +170,11 @@ async def send_email(
         tool_name = "GMAIL_REPLY_TO_THREAD" if is_reply else "GMAIL_SEND_EMAIL"
         body_param = "message_body" if is_reply else "body"
 
-        # Build parameters. The Composio before-hook (gmail_compose_before_hook)
-        # normalises body → HTML and sets is_html=True for every compose tool,
-        # so callers can hand us either Markdown or HTML and Gmail will render
-        # consistently.
         parameters: dict[str, Any] = {
             "recipient_email": to,
-            "extra_recipients": extra_recipients or [],
-            body_param: body,
-            "subject": subject,
+            "extra_recipients": content.extra_recipients or [],
+            body_param: content.body,
+            "subject": content.subject,
         }
 
         # Add thread_id for replies
@@ -131,12 +182,18 @@ async def send_email(
             parameters["thread_id"] = thread_id
 
         # Add optional parameters
-        if cc_list:
-            parameters["cc"] = cc_list
-        if bcc_list:
-            parameters["bcc"] = bcc_list
+        if content.cc_list:
+            parameters["cc"] = content.cc_list
+        if content.bcc_list:
+            parameters["bcc"] = content.bcc_list
         if attachments:
-            parameters["attachments"] = await asyncio.to_thread(_process_attachments, attachments)
+            # Composio types Gmail's `attachment` as a single FileUploadable, not
+            # an array, so reject extra files up front instead of uploading them
+            # all and failing the send.
+            if len(attachments) > 1:
+                return GmailToolResult(error=GMAIL_MULTIPLE_ATTACHMENTS_ERROR, successful=False)
+            processed = await asyncio.to_thread(_process_attachments, attachments, tool_name)
+            parameters["attachment"] = processed[0]
 
         log.info(
             f"{LogTag.MAIL} Sending email via Gmail tool",
@@ -146,7 +203,14 @@ async def send_email(
             to=to,
         )
 
-        result = await invoke_gmail_tool(user_id, tool_name, parameters)
+        # ``attachment`` is Gmail's own param name. The agent-facing schema
+        # modifier replaces it with the reference-based ``attachments`` the model
+        # can fill, and the before-hook that translates one into the other is off
+        # on this path — so under that schema LangChain drops the key and the mail
+        # goes out with no file. A call carrying files asks for the native schema.
+        result = await invoke_gmail_tool(
+            user_id, tool_name, parameters, use_schema_modifier=not attachments
+        )
         if not result.successful:
             log.error(
                 f"{LogTag.MAIL} Error from tool",
@@ -372,17 +436,16 @@ async def search_messages(
     query: str | None = None,
     max_results: int = 20,
     page_token: str | None = None,
-    format: str | None = None,
-    include_payload: bool | None = None,
-    verbose: bool | None = None,
+    options: MessageFetchOptions | None = None,
 ) -> GmailMessagesResponse:
     """
     Search Gmail messages using Composio Gmail tool.
 
-    Pass format="metadata" with include_payload=False and verbose=False to
-    skip body decode and bypass GMAIL_FULL_FETCH_HARD_LIMIT.
+    Pass MessageFetchOptions(output_format="metadata", include_payload=False,
+    verbose=False) to skip body decode and bypass GMAIL_FULL_FETCH_HARD_LIMIT.
     """
     log.set(user={"id": user_id}, mail=MailContext(operation="fetch", provider="gmail"))
+    opts = options or MessageFetchOptions()
     try:
         parameters: dict[str, Any] = {
             "query": query or "",
@@ -390,12 +453,12 @@ async def search_messages(
         }
         if page_token:
             parameters["page_token"] = page_token
-        if format is not None:
-            parameters["format"] = format
-        if include_payload is not None:
-            parameters["include_payload"] = include_payload
-        if verbose is not None:
-            parameters["verbose"] = verbose
+        if opts.output_format is not None:
+            parameters["format"] = opts.output_format
+        if opts.include_payload is not None:
+            parameters["include_payload"] = opts.include_payload
+        if opts.verbose is not None:
+            parameters["verbose"] = opts.verbose
 
         result = await invoke_gmail_tool(user_id, "GMAIL_FETCH_EMAILS", parameters)
 
@@ -411,7 +474,7 @@ async def search_messages(
 
     except Exception:
         log.set_ns("mail", success=False)
-        return GmailMessagesResponse(messages=[])
+        raise
 
 
 async def create_label(
@@ -455,11 +518,7 @@ async def create_label(
 async def update_label(
     user_id: str,
     label_id: str,
-    name: str | None = None,
-    label_list_visibility: str | None = None,
-    message_list_visibility: str | None = None,
-    background_color: str | None = None,
-    text_color: str | None = None,
+    changes: LabelChanges,
 ) -> GmailToolResult:
     """Update an existing Gmail label."""
     log.info(f"{LogTag.MAIL} Updating label", label_id=label_id)
@@ -469,20 +528,20 @@ async def update_label(
         }
 
         # Add parameters if provided
-        if name:
-            parameters["name"] = name
-        if label_list_visibility:
-            parameters["label_list_visibility"] = label_list_visibility
-        if message_list_visibility:
-            parameters["message_list_visibility"] = message_list_visibility
+        if changes.name:
+            parameters["name"] = changes.name
+        if changes.label_list_visibility:
+            parameters["label_list_visibility"] = changes.label_list_visibility
+        if changes.message_list_visibility:
+            parameters["message_list_visibility"] = changes.message_list_visibility
 
         # Add color parameters if provided
-        if background_color or text_color:
+        if changes.background_color or changes.text_color:
             color_data = {}
-            if background_color:
-                color_data["background_color"] = background_color
-            if text_color:
-                color_data["text_color"] = text_color
+            if changes.background_color:
+                color_data["background_color"] = changes.background_color
+            if changes.text_color:
+                color_data["text_color"] = changes.text_color
             parameters["color"] = json.dumps(color_data)
 
         return await invoke_gmail_tool(user_id, "GMAIL_PATCH_LABEL", parameters)
@@ -645,10 +704,7 @@ async def update_draft(
     user_id: str,
     draft_id: str,
     to_list: list[str],
-    subject: str,
-    body: str,
-    cc_list: list[str] | None = None,
-    bcc_list: list[str] | None = None,
+    content: EmailContent,
 ) -> GmailToolResult:
     """Update an existing Gmail draft.
 
@@ -659,15 +715,15 @@ async def update_draft(
         parameters = {
             "draft_id": draft_id,
             "to": to_list,
-            "subject": subject,
-            "body": body,
+            "subject": content.subject,
+            "body": content.body,
         }
 
         # Add optional parameters if provided
-        if cc_list:
-            parameters["cc"] = cc_list
-        if bcc_list:
-            parameters["bcc"] = bcc_list
+        if content.cc_list:
+            parameters["cc"] = content.cc_list
+        if content.bcc_list:
+            parameters["bcc"] = content.bcc_list
 
         result = await invoke_gmail_tool(user_id, "GMAIL_UPDATE_DRAFT", parameters)
 

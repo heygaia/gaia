@@ -56,6 +56,7 @@ from app.services.browser.session import (
 from app.services.browser.tasks import record_browser_task
 from app.templates.docstrings.browser_tool_docs import BROWSER_TASK
 from app.utils.agent_utils import (
+    SubagentStartDetails,
     format_browser_action_entry,
     format_subagent_end_event,
     format_subagent_start_event,
@@ -138,7 +139,7 @@ class _BrowserThreadMirror:
                     subagent_name="Browser",
                     agent_type="spawned",
                     subagent_id=self._group_id,
-                    tool_category=BROWSER_TOOL_CATEGORY,
+                    details=SubagentStartDetails(tool_category=BROWSER_TOOL_CATEGORY),
                 )
             }
         )

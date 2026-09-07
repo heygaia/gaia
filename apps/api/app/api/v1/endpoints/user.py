@@ -28,6 +28,7 @@ from app.models.user_models import (
     UserUpdate,
     UserUpdateResponse,
 )
+from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import AnalyticsEvents, capture_context_event, track_logout
 from app.services.onboarding.onboarding_service import get_user_onboarding_status
 from app.services.user_service import update_user_profile
@@ -146,8 +147,8 @@ async def update_user_name(
         capture_context_event(AnalyticsEvents.PROFILE_UPDATED, {"changed_field_count": 1})
         log.set(outcome="success")
         return updated_user
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.API} Error updating user name",
@@ -189,6 +190,7 @@ async def update_user_timezone(
         if updated is None:
             raise HTTPException(status_code=404, detail="User not found")
 
+        schedule_account_sync(user_id)
         log.audit("profile updated", actor=user_id, changed_fields=["timezone"])
         capture_context_event(AnalyticsEvents.PROFILE_UPDATED, {"changed_field_count": 1})
         log.set(outcome="success")
@@ -197,8 +199,8 @@ async def update_user_timezone(
             message="Timezone updated successfully",
             timezone=user_timezone.strip(),
         )
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.API} Error updating timezone",

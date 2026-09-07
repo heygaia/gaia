@@ -15,6 +15,7 @@
  * @module
  */
 
+import { BOT_EVENTS } from "@gaia/shared/analytics";
 import {
   BaseBotAdapter,
   BODY_READ_TIMEOUT,
@@ -44,8 +45,7 @@ import {
   WEBHOOK_MAX_BODY_BYTES,
   wideLog,
   withWideEvent,
-} from "@gaia/shared";
-import { BOT_EVENTS } from "@gaia/shared/analytics";
+} from "@gaia/shared/bots";
 import { WhatsAppClient } from "@kapso/whatsapp-cloud-api";
 import {
   NOTIFICATION_TEMPLATE_LANGUAGE,
@@ -630,6 +630,7 @@ export class WhatsAppAdapter extends BaseBotAdapter {
           platform: "whatsapp",
           platformUserId: waId,
           channelId: waId,
+          isDm: true,
           ...(attachments.length > 0
             ? {
                 fileIds: attachments.map((a) => a.fileId),
@@ -853,6 +854,7 @@ export class WhatsAppAdapter extends BaseBotAdapter {
       platform: "whatsapp",
       userId: waId,
       channelId: waId,
+      isDm: true,
 
       send: async (text: string): Promise<SentMessage> => {
         return this.sendWhatsAppText(waId, renderForPlatform(text, "whatsapp"));
@@ -923,7 +925,10 @@ export class WhatsAppAdapter extends BaseBotAdapter {
   protected async deliverOutbound(
     destinationId: string,
     text: string,
+    _isChannel: boolean,
   ): Promise<void> {
+    // WhatsApp (Kapso) has no group/channel outbound model — destinationId is
+    // always a wa_id (phone), so _isChannel is never set for this platform.
     try {
       await this.sendWhatsAppText(destinationId, text);
     } catch (err) {

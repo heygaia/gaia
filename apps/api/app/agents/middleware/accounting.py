@@ -32,7 +32,7 @@ from langchain.agents.middleware.types import (
 )
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage
 from langchain_core.runnables import RunnableConfig
-from langgraph.config import get_config, get_stream_writer
+from langgraph.config import get_stream_writer
 from langgraph.runtime import Runtime
 
 from app.agents.llm.lane import ModelLane
@@ -50,7 +50,7 @@ from app.constants.llm import (
 )
 from app.constants.log_tags import LogTag
 from app.decorators.rate_limiting import build_rate_limit_card
-from app.models.agent_models import agent_configurable
+from app.models.agent_models import agent_configurable, current_run_config
 from app.models.payment_models import PlanType
 from app.services.cost_budget import (
     BUDGET_WRAPUP_NOTICE,
@@ -58,23 +58,18 @@ from app.services.cost_budget import (
     get_budget_stop_reason,
     is_budget_wrapup_threshold,
 )
-from app.services.llm_metering import extract_message_usage, record_llm_call
+from app.services.llm_metering import (
+    LLMCallContext,
+    extract_finish_reason,
+    extract_generation_id,
+    extract_message_cost,
+    extract_message_model,
+    extract_message_provider,
+    extract_message_usage,
+    record_llm_call,
+    resolve_channel,
+)
 from shared.py.wide_events import ModelContext, log
-
-
-def _current_config() -> RunnableConfig:
-    """Return the active ``RunnableConfig`` for the current graph run.
-
-    LangChain's middleware hook signature is ``(state, runtime)`` — it does
-    not hand the config in as a parameter. ``get_config()`` reads the config
-    from LangGraph's runnable context-var (the same mechanism nodes use).
-    Returns an empty dict when called outside a runnable context so this
-    helper never raises on the sync fallback paths.
-    """
-    try:
-        return get_config()
-    except RuntimeError:
-        return RunnableConfig()
 
 
 def _latest_ai_message(messages: list[AnyMessage]) -> AIMessage | None:
@@ -121,6 +116,12 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
         self._hwm_emitted: set[str] = set()
         self._budget_wrapup_emitted: set[str] = set()
         self._start_ts: dict[str, float] = {}
+        # Wall time of the last provider call on each thread, measured around
+        # the invocation itself in ``awrap_model_call``. ``_start_ts`` cannot
+        # stand in: it spans before_model -> after_model, so it also carries
+        # every other middleware in the stack. Consumed (popped) by the
+        # ``aafter_model`` that meters that same call.
+        self._invoke_ms: dict[str, float] = {}
 
     # --- helpers ---------------------------------------------------------
 
@@ -172,7 +173,7 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
         in :meth:`awrap_model_call`, which can short-circuit the invocation.
         """
         del state, runtime  # state not consulted in this pre-call hook yet
-        config = _current_config()
+        config = current_run_config()
         thread_id = self._thread_id(config)
         self._start_ts[thread_id] = time.monotonic()
         return None
@@ -202,7 +203,7 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
         ``create_agent._maybe_inject_wrapup``) so the model lands the plane
         with what it has instead of dying mid-tool-call on the hard stop.
         """
-        config = _current_config()
+        config = current_run_config()
         configurable = agent_configurable(config)
         user_id = configurable.get("user_id")
         root_request_id = configurable.get("root_request_id")
@@ -267,7 +268,15 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
                 messages=[*request.messages, HumanMessage(content=BUDGET_WRAPUP_NOTICE)]
             )
 
-        return await handler(request)
+        # The one seam that can see the provider call start and finish, so it
+        # is the only place a real latency number exists. Measured across the
+        # retry/fallback chain the handler owns, i.e. what the turn actually
+        # waited for, and stashed for the ``aafter_model`` that meters it.
+        invoke_start = time.monotonic()
+        try:
+            return await handler(request)
+        finally:
+            self._invoke_ms[thread_id] = round((time.monotonic() - invoke_start) * 1000, 2)
 
     async def aafter_model(
         self,
@@ -283,7 +292,7 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
         if ai_msg is None:
             return None
 
-        config = _current_config()
+        config = current_run_config()
         configurable = agent_configurable(config)
         thread_id = self._thread_id(config)
         lane = ModelLane.from_configurable(configurable.get(LANE_FIELD_ID))
@@ -316,15 +325,40 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
         cached_tokens = usage["cached_tokens"]
         reasoning_tokens = usage["reasoning_tokens"]
         root_request_id = configurable.get("root_request_id")
+        # The provider's own price when it reported one; the pricing table only
+        # when it did not (direct Gemini, the sim lane).
+        provider_cost = extract_message_cost(ai_msg)
+        generation_id = extract_generation_id(ai_msg)
+        workflow_id = configurable.get("workflow_id")
         total_cost = await record_llm_call(
             user_id=str(user_id) if user_id else None,
             model_name=str(model_name),
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
-            cached_tokens=cached_tokens,
-            reasoning_tokens=reasoning_tokens,
+            usage=usage,
             root_request_id=str(root_request_id) if root_request_id else None,
-            charge_to_budget=True,
+            provider_cost=provider_cost,
+            context=LLMCallContext(
+                agent_name=self.agent_name,
+                background=False,
+                charge_to_budget=True,
+                model_served=extract_message_model(ai_msg),
+                provider=extract_message_provider(ai_msg),
+                generation_id=generation_id,
+                # The TRUE conversation id, which for a child agent is NOT the
+                # checkpoint thread (that one is ``executor_<conv>``). Both are
+                # passed so the ledger can carry each in its own field.
+                conversation_id=(
+                    str(configurable["conversation_id"])
+                    if configurable.get("conversation_id")
+                    else None
+                ),
+                thread_id=thread_id,
+                workflow_id=str(workflow_id) if workflow_id else None,
+                # The surface the turn came from — inherited by executor and
+                # subagent runs, so a child call reports its root's channel.
+                channel=resolve_channel(configurable),
+                duration_ms=self._invoke_ms.pop(thread_id, None),
+                finish_reason=extract_finish_reason(ai_msg),
+            ),
         )
 
         step_index = self._next_step(thread_id)
@@ -381,7 +415,18 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
             output_tokens=output_tokens,
             reasoning_tokens=reasoning_tokens,
             cost_usd=total_cost,
+            # Whether this figure is what the provider charged or what our price
+            # table guessed — the two disagree by more than 10x per upstream, so
+            # coverage of the reported price is worth being able to measure.
+            cost_source="provider" if provider_cost is not None else "table",
             step_index=step_index,
+            # Which UPSTREAM served this call. ``provider`` above is the lane's
+            # configured provider (always "openrouter"), which cannot answer the
+            # question a zero-cache call raises: did the request land on a
+            # different upstream that holds no warm prefix, or did the prefix
+            # break? This id resolves to the serving provider through
+            # OpenRouter's generation-metadata endpoint, spending no model call.
+            generation_id=generation_id,
         )
 
         # Recursion high-water-mark — emitted once per thread when the run
@@ -406,14 +451,14 @@ class LLMAccountingMiddleware(AgentMiddleware[AgentState[Any], Any]):
     # when the graph is compiled without an async runtime).
     def before_model(self, state: AgentState[Any], runtime: Runtime[Any]) -> dict[str, Any] | None:
         del state, runtime
-        thread_id = self._thread_id(_current_config())
+        thread_id = self._thread_id(current_run_config())
         self._start_ts[thread_id] = time.monotonic()
         return None
 
     def after_model(self, state: AgentState[Any], runtime: Runtime[Any]) -> dict[str, Any] | None:
         del state, runtime
         # Cost calc is async-only; in sync mode we still want the HWM signal.
-        thread_id = self._thread_id(_current_config())
+        thread_id = self._thread_id(current_run_config())
         step_index = self._next_step(thread_id)
         hwm_cap = max(1, int(self.recursion_limit * RECURSION_HWM_FRACTION))
         if step_index >= hwm_cap and thread_id not in self._hwm_emitted:

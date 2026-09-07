@@ -611,6 +611,20 @@ class TestWorkflowAndOnboarding:
         assert found.source is ConversationSource.WORKFLOW_SYSTEM
         assert await repo.find_workflow_conversation(doc.user_id, "missing") is None
 
+    async def test_is_workflow_execution_only_for_a_workflows_own_conversation(self, repo):
+        # The workflow thread reset keys on this: an email or reminder run is
+        # system-generated too, and a chat conversation must never match.
+        workflow = _doc(is_system_generated=True, system_purpose=SystemPurpose.WORKFLOW_EXECUTION)
+        email = _doc(is_system_generated=True, system_purpose=SystemPurpose.EMAIL_PROCESSING)
+        chat = _doc()
+        for doc in (workflow, email, chat):
+            await repo.create(doc)
+
+        assert await repo.is_workflow_execution(workflow.conversation_id) is True
+        assert await repo.is_workflow_execution(email.conversation_id) is False
+        assert await repo.is_workflow_execution(chat.conversation_id) is False
+        assert await repo.is_workflow_execution(_cid()) is False
+
     async def test_get_source(self, repo):
         doc = _doc(source=ConversationSource.WEB)
         await repo.create(doc)
@@ -758,6 +772,17 @@ class TestActivitySignal:
 
     async def test_an_untouched_old_conversation_does_not_count(self, repo):
         doc = _doc(createdAt=(datetime.now(UTC) - timedelta(days=400)).isoformat())
+        await repo.create(doc)
+
+        cutoff = datetime.now(UTC) - timedelta(days=1)
+        assert await repo.has_activity_since(doc.user_id, cutoff) is False
+
+    async def test_a_system_generated_conversation_does_not_count(self, repo):
+        """A workflow execution appends to its system conversation and stamps
+        updatedAt — counting that let a user's own automation vouch for them as
+        "active" forever, so the dormancy sweep could never pause it."""
+        doc = _doc()
+        doc.is_system_generated = True
         await repo.create(doc)
 
         cutoff = datetime.now(UTC) - timedelta(days=1)

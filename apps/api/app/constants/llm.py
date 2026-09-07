@@ -1,7 +1,6 @@
 from typing import Any
 
-from app.agents.llm.types import LLMProviderName
-from app.models.models_models import DevModelOption
+from app.agents.llm.types import DevModelOption, LLMProviderName
 
 # The ``configurable`` keys LangChain's own field resolution reads. Written at
 # TWO definition sites (the Gemini lane's ConfigurableField and the OpenRouter
@@ -21,6 +20,14 @@ GEMINI_PROVIDER = "gemini"
 OPENROUTER_PROVIDER = "openrouter"
 
 DEFAULT_LLM_PROVIDER = OPENROUTER_PROVIDER
+
+# The ``response_metadata`` key carrying the name of the upstream that actually
+# served an OpenRouter call ("Baidu", "StreamLake", ...), as opposed to
+# ``model_provider``, which LangChain owns and which OpenRouter's integration
+# stamps with the aggregator's own name. Set by
+# ``openrouter_provider_name_patch`` and read by anything attributing a call to
+# the vendor that served it.
+PROVIDER_NAME_METADATA_KEY = "provider_name"
 
 # How often the messages DeltaChannel writes a full snapshot blob (every Nth
 # update). Between snapshots only per-step deltas are persisted, so checkpoint
@@ -130,22 +137,9 @@ TOOL_TIMEOUT_EXEMPT_TOOLS = frozenset(
 # to the default model (see with_llm_retry in app/agents/llm/client.py).
 LLM_RETRY_MAX_ATTEMPTS = 3
 
-# Sticky-flip retry: when a large call's cache read is below this fraction of
-# its prompt (the request landed on a cold provider after the ~5-minute sticky
-# expiry — a known OpenRouter behavior), re-send it once — the first attempt
-# wrote the chain there and the re-send hits it (~99%, verified by byte-exact
-# shadow replays of captured requests: 99.2-99.7%). 0.92 catches the full
-# flips (0-5%), the partial static-only dips (65-75%) AND the small-
-# conversation steady state (83-90% — the provider under-reads the fresh
-# chain for a few turns after a big turn; measured live at 83.8% flat while
-# the exact bytes replay at 99.7%). The retry's second call reads ~99% cached,
-# so the turn's aggregate hit rises toward (cached + 0.99*input)/2*input while
-# the extra input bills at the cached-read rate.
-STICKY_FLIP_RETRY_MIN_HIT = 0.92
-STICKY_FLIP_RETRY_MIN_INPUT = 8_000
-# The replay's premise — sticky routing that re-reads the chain the first
-# attempt wrote — is OpenRouter-wire behaviour. Gemini has no sticky routing,
-# so a replay there is a second full-price call with no possible upside.
+# Sticky routing (the ``session_id`` hint that pins a chain to one upstream) is
+# OpenRouter-wire behaviour. Gemini has no sticky routing, so the key is an
+# unsupported argument there and must never be sent.
 STICKY_ROUTING_PROVIDERS = frozenset({LLMProviderName.OPENROUTER, LLMProviderName.CUSTOM})
 # Auxiliary one-shots route on their own sticky session: sharing the
 # conversation's key re-pinned its provider from a background call (measured).
@@ -177,9 +171,9 @@ DEFAULT_MAX_TOKENS = 1_000_000
 # you do, confirm for the new model:
 #   - context window  -> update DEFAULT_MAX_TOKENS above (else fractional-token
 #     middleware fails to build and the whole agent graph dies; see get_default_llm)
-#   - pricing entry    -> the `ai_models` collection (scripts/seed_models.py);
-#     without one, calculate_token_cost falls back to DEFAULT_PRICING and the
-#     cost budgets meter at the wrong rate
+#   - pricing entry    -> MODEL_PRICING in app/config/model_pricing.py; without
+#     one, calculate_token_cost falls back to DEFAULT_PRICING and the cost
+#     budgets meter at the wrong rate (the pricing unit test enforces this)
 #   - it's multimodal if vision/file tools rely on it
 # Default model for every tier and every auxiliary call, served over OpenRouter.
 # Text-only: tool results carrying images are captioned for it rather than shown
@@ -207,13 +201,28 @@ UNKNOWN_MODEL_NAME = "unknown"
 # cache namespace. They must NOT share the conversation's namespace — their
 # ~30k tokens/turn of new blocks were evicting the conversation chain between
 # turns (measured: real-graph hit rate capped at ~63% while the intra-turn
-# steady state is 87–91%). A separate id lets the aux calls chain with each
-# other and stops the eviction. This id is priced SEPARATELY from the default
-# — see AUX_MODEL_PRICING, which is what meters it, and which is hand-written
-# here rather than seeded because the id is an internal routing choice, not a
-# model users can select. Nothing reconciles it against OpenRouter's live
-# listing, so it has to be re-checked by hand whenever either id is re-pointed.
-AUX_MODEL_NAME = "deepseek/deepseek-v4-flash"
+# steady state is 87–91%).
+#
+# That isolation used to come from a SEPARATE model id (the original V4 Flash).
+# It now comes from the suffixed sticky sessions ("-aux", "memory-{user}"),
+# because the separate id's provider pool turned out unable to cache or hold
+# affinity for TOOL-carrying requests at all — measured with fixed sessions:
+# the old id read [1536,0]/[0,0]/[0,0] across three sessions while this id
+# read [0,1792,1792]/[1792,1792,1792], and every structured one-shot carries a
+# tool. Same id as the graph, different sessions: the chains stay separate per
+# key, and the follow-up/memory lanes get a pool that actually caches them.
+AUX_MODEL_NAME = DEFAULT_MODEL_NAME
+
+# The OpenRouter-served chat models GAIA runs, mapped to whether images survive
+# in their TOOL results (the onboarding gate in tests/model_onboarding vets the
+# flag with a live call — see its module docstring for why no listing can answer
+# this). This is the single declaration the gate parameterises off, so a model
+# is added here (with its MODEL_PRICING entry in app/config/model_pricing.py)
+# and nowhere else. False routes tool media through the caption fallback
+# (agents/llm/vision/) instead of asserting the model sees pixels.
+OPENROUTER_MODEL_TOOL_IMAGE_SUPPORT: dict[str, bool] = {
+    DEFAULT_MODEL_NAME: False,
+}
 # Retained for the direct-Gemini lane, which is still selectable as a provider
 # alternative and in the dev model menu — it is no longer the default.
 DEFAULT_GEMINI_MODEL_NAME = "gemini-3.1-flash-lite"
@@ -288,30 +297,40 @@ HELPER_MAX_OUTPUT_TOKENS = 8_000
 # Default reasoning effort for OpenRouter thinking models (executor + subagents),
 # passed to ChatOpenRouter's native `reasoning` field.
 OPENROUTER_REASONING: dict[str, Any] = {"effort": "medium"}
-# Comms-specific reasoning: "low" instead of the executor's "medium". Comms is
-# mostly routing/ack work, so the reasoning budget is most useful for the executor's
-# tool selection. GLM 5.2 also documents "high"/"xhigh" efforts — revisit these
-# levels if comms routing or executor tool-selection quality needs more headroom.
-COMMS_REASONING: dict[str, Any] = {"effort": "low"}
+# Reasoning effort for a PAID comms turn. Its own constant rather than a reuse of
+# OPENROUTER_REASONING because it is the knob that raises paid comms further
+# (GLM 5.2 also documents "high"/"xhigh"); the executor's default must not move
+# with it. It sat at "low" while free comms inherited "medium" from the client
+# default, so a paying user's front-door agent thought LESS than a free user's.
+# Floor: paid comms is never thinner than free comms.
+PAID_COMMS_REASONING: dict[str, Any] = {"effort": "medium"}
 
 # Output cap for the env-defined custom dev provider (the "custom" entry below;
-# endpoint/key/model all come from the DEV_LLM_* settings). 64k fits under the
-# completion ceilings of the cheap lanes this is meant for (e.g. DeepSeek V4
-# Flash caps at 65,536).
-DEV_LLM_MAX_OUTPUT_TOKENS = 64_000
+# endpoint/key/model all come from the DEV_LLM_* settings). Bounded well under
+# the model's 65,536 completion ceiling on purpose: the cheap lanes this targets
+# RESERVE max_tokens against the account balance per request, so a 64k cap made
+# every call a 64k reservation and the lane started answering 402 ("lower the
+# requested maximum output tokens") the moment the balance dipped below that,
+# while a 256-token probe still succeeded. No agent turn needs anything near
+# 64k of output; the one that ran to it was a narration cut mid-sentence.
+DEV_LLM_MAX_OUTPUT_TOKENS = 16_000
 
 # OpenRouter app attribution (https://openrouter.ai/docs/app-attribution). The
 # OpenRouter client surfaces these as the HTTP-Referer / X-Title /
 # X-OpenRouter-Categories headers so GAIA appears on OpenRouter's app rankings.
-# The referer URL is the public site (settings.FRONTEND_URL); title + categories
-# are fixed app identity.
+# In production the referer is the public site (settings.FRONTEND_URL);
+# development sends a fixed synthetic referer instead, because a localhost
+# FRONTEND_URL cannot be attributed and the traffic lands in the dashboard's
+# "unknown app" bucket — indistinguishable from a misconfigured caller.
 OPENROUTER_APP_TITLE = "GAIA"
+OPENROUTER_DEV_APP_URL = "https://dev.heygaia.io"
+OPENROUTER_DEV_APP_TITLE = "GAIA (dev)"
 OPENROUTER_APP_CATEGORIES = ["personal-agent", "general-chat"]
 
 # DEV-ONLY model menu (ENV=development). The dev chat-header selector sends one of
 # these stable ids per role (comms / executor); the backend pins the matching model.
 # `reasoning` flags whether the model is an OpenRouter reasoning model — effort is
-# applied per-role at override time (comms -> COMMS_REASONING, executor ->
+# applied per-role at override time (comms -> PAID_COMMS_REASONING, executor ->
 # OPENROUTER_REASONING). Gemini models route direct via the "gemini" provider and
 # ignore OpenRouter `model_kwargs`/`reasoning`. This menu is NEVER used in production.
 DEV_MODEL_OPTIONS: dict[str, DevModelOption] = {

@@ -7,6 +7,7 @@ real; the only mocked boundaries are the executor graph itself
 
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
+from datetime import UTC, datetime
 import json
 import time
 from typing import Any, cast
@@ -17,7 +18,11 @@ from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool
 import pytest
 
-from app.agents.core.background.session import teardown_session, was_executor_spawned
+from app.agents.core.background.session import (
+    get_session,
+    queued_without_run,
+    teardown_session,
+)
 from app.agents.tools import executor_tool
 from app.agents.tools.executor_tool import call_executor, cancel_executor, tools
 from app.constants.cache import (
@@ -30,7 +35,14 @@ from app.constants.streaming import WS_EVENT_EXECUTOR_CANCELLED
 from app.core.stream_manager import StreamManager
 from app.core.websocket_manager import websocket_manager
 from app.db.redis import redis_cache
+from app.db.repositories.playbooks import playbook_repository
+from app.models.playbook_models import PlaybookDocument, PlaybookRunStatus, ToolStep
 from app.utils import background_tasks
+
+
+def _spawned(stream_id: str) -> bool:
+    session = get_session(stream_id)
+    return session is not None and session.executor_spawned
 
 
 def tool_function(tool_obj: BaseTool) -> Callable[..., Awaitable[str]]:
@@ -207,7 +219,18 @@ class TestCallExecutorDispatch:
         assert run.user_message_id == "umsg-1"
         assert run.user["user_id"] == "user-1"
         assert run.kind.value == "live"
-        assert was_executor_spawned("stream-1") is True
+        assert _spawned("stream-1") is True
+
+    async def test_a_dispatch_with_no_stream_carries_an_empty_stream_id(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """A run with no live client still gets a run identity. The absent stream is
+        the empty string — a placeholder would be treated as a real stream by every
+        session lookup downstream."""
+        await call_executor_with(config=config_for(stream_id=None), task="check my calendar")
+        await drain_background_tasks()
+
+        assert spawned_runs[0]["run"].stream_id == ""
 
     async def test_holds_the_busy_lock_with_its_own_value_and_a_ttl(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
@@ -289,7 +312,7 @@ class TestCallExecutorLockContention:
         await drain_background_tasks()
 
         assert second == (
-            "That task is already running from this same message — not "
+            "That task is already running from this same message, not "
             "starting it again. The results are on the way."
         )
         assert first.startswith("Task accepted")
@@ -326,6 +349,29 @@ class TestCallExecutorLockContention:
         assert items[0]["configurable"]["stream_id"] == "stream-2"
         assert items[0]["configurable"]["active_todo_id"] == "todo-3"
         assert await fake_redis.ttl(QUEUE_KEY) == EXECUTOR_QUEUE_TTL
+
+    async def test_a_queued_dispatch_is_recorded_on_its_stream_not_only_in_its_prose(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        fast_redirect: None,
+    ) -> None:
+        """The queue acknowledgement above is written for the comms model.
+
+        A silent caller — a workflow fire — has to know whether work actually
+        STARTED before it writes an execution record, and that string is the
+        wrong thing to ask: it is prose, the model may re-voice it, and it says
+        nothing the caller can trust. The session carries the fact instead.
+        """
+        await call_executor_with(config=config_for("stream-1"), task="first")
+
+        response = await call_executor_with(config=config_for("stream-2"), task="second")
+        await drain_background_tasks()
+
+        assert queued_without_run("stream-2") == task_id_from(response)
+        # The stream that actually ran deferred nothing, and says so.
+        assert _spawned("stream-1") is True
+        assert queued_without_run("stream-1") is None
 
     async def test_holder_without_a_stream_id_is_never_waited_on(
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
@@ -476,7 +522,7 @@ class TestCallExecutorFailures:
         """An unconditional release here let a second executor run concurrently."""
         await fake_redis.set(LOCK_KEY, "stream-1:live-task", ex=EXECUTOR_BUSY_TTL)
 
-        async def explode(**kwargs: Any) -> None:
+        async def explode(*args: Any, **kwargs: Any) -> None:
             raise RuntimeError("redis write failed")
 
         monkeypatch.setattr(executor_tool, "enqueue_task", explode)
@@ -558,7 +604,7 @@ class TestCancelExecutor:
         response = await run_cancel_executor(config=config_for(), task_ids=["q2"])
 
         assert response == (
-            "Cancelled: q2. Currently running task was not in the cancel list — still running."
+            "Cancelled: q2. Currently running task was not in the cancel list, still running."
         )
         assert await fake_redis.get(LOCK_KEY) == "stream-1:running-task"
         cancel_stream.assert_not_awaited()
@@ -751,7 +797,7 @@ class TestCancelWithMalformedQueueItems:
         response = await run_cancel_executor(config=config_for(), task_ids=["q1"])
 
         assert response == (
-            "Cancelled: q1. Currently running task was not in the cancel list — still running."
+            "Cancelled: q1. Currently running task was not in the cancel list, still running."
         )
         assert await fake_redis.get(LOCK_KEY) == "stream-1:running-task"
         assert await fake_redis.lrange(QUEUE_KEY, 0, -1) == ["5"]
@@ -864,11 +910,15 @@ class TestDispatchThreadsTheTurnsIdentity:
         self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
     ) -> None:
         """The executor's brief carries the verbatim request alongside comms'
-        paraphrase, so a detail comms dropped is still recoverable downstream."""
+        paraphrase, so a detail comms dropped is still recoverable downstream.
+
+        Sourced from the configurable, so it rides along whatever the comms model
+        did or did not emit — the tool call below passes no verbatim argument
+        because the schema no longer has one.
+        """
         await call_executor_with(
-            config=config_for(),
+            config=config_for(user_request="pls archive the junk mail and flag the offer thing"),
             task="triage the inbox",
-            verbatim_request="pls archive the junk mail and flag the offer thing",
         )
         await drain_background_tasks()
 
@@ -877,6 +927,104 @@ class TestDispatchThreadsTheTurnsIdentity:
             "Original request (verbatim):\npls archive the junk mail and flag the offer thing"
         )
         assert "triage the inbox" in brief
+
+    async def test_identifiers_survive_a_paraphrase_that_mangles_them(
+        self, fake_redis: fakeredis.aioredis.FakeRedis, spawned_runs: list[dict[str, Any]]
+    ) -> None:
+        """Regression: a pasted billing table went to the executor with 3 of its 4
+        recipient addresses corrupted by the comms model's rewrite, and no verbatim
+        copy to check against. The brief must still carry the exact bytes even when
+        the model's `task` gets the identifiers wrong."""
+        pasted = (
+            "writetokhair@gmail.com\tFailed\t$30.00\tsub_0Ni7oWIA6kMF0ogWiKC3x\n"
+            "tmunson750@gmail.com\tCancelled\t$30.00\tsub_0NfdUP7ekmLIw59KBtWwa"
+        )
+        await call_executor_with(
+            config=config_for(user_request=pasted),
+            task="email writetokhair@gmail.com and tmndo.send@gmail.com about sub_0Ni7cWqI5",
+        )
+        await drain_background_tasks()
+
+        brief = spawned_runs[0]["task"]
+        assert pasted in brief
+        assert "sub_0NfdUP7ekmLIw59KBtWwa" in brief
+
+
+FALLBACK_NOTE = (
+    "<playbook_fallback>\n"
+    "The playbook for this workflow was replayed first and it stopped partway.\n\n"
+    "These steps ALREADY RAN in this same execution, and their effects are real:\n"
+    "- events (list_events) -> 12 events\n\n"
+    "Do not repeat them. Pick up from where the replay stopped and finish the workflow.\n"
+    "</playbook_fallback>"
+)
+
+
+def _failed_playbook() -> PlaybookDocument:
+    now = datetime.now(UTC)
+    return PlaybookDocument(
+        playbook_id="pb-1",
+        workflow_id="wf-1",
+        user_id="user-1",
+        workflow_hash="h",
+        description="d",
+        steps=[ToolStep(id="events", tool="list_events", args={})],
+        result_brief="s",
+        last_run_status=PlaybookRunStatus.FAILED,
+        last_run_reason="stopped at step 2 (send_email)",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+@pytest.mark.unit
+class TestStoppedReplayRecordReachesTheExecutor:
+    """A workflow fire whose replay stopped partway is finished by the executor.
+
+    The replay's record used to reach only comms, as part of the trigger
+    message, while the executor got the heal brief alone: "do the work properly
+    yourself" with no word that half of it had already happened. The record now
+    rides the configurable, like the verbatim request, and lands in the brief
+    exactly as the worker wrote it.
+    """
+
+    async def test_the_fallback_note_reaches_the_brief_verbatim(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(executor_tool, "get_last_run_brief", AsyncMock(return_value=""))
+        monkeypatch.setattr(
+            playbook_repository, "get_for_workflow", AsyncMock(return_value=_failed_playbook())
+        )
+
+        await call_executor_with(
+            config=config_for(workflow_id="wf-1", playbook_fallback=FALLBACK_NOTE),
+            task="finish the agenda run",
+        )
+        await drain_background_tasks()
+
+        brief = spawned_runs[0]["task"]
+        assert FALLBACK_NOTE in brief
+        assert "stopped at step 2 (send_email)" in brief, "still the heal brief"
+        assert brief.index("finish the agenda run") < brief.index(FALLBACK_NOTE)
+
+    async def test_a_fire_without_a_stopped_replay_carries_no_record(
+        self,
+        fake_redis: fakeredis.aioredis.FakeRedis,
+        spawned_runs: list[dict[str, Any]],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(executor_tool, "get_last_run_brief", AsyncMock(return_value=""))
+        monkeypatch.setattr(
+            playbook_repository, "get_for_workflow", AsyncMock(return_value=_failed_playbook())
+        )
+
+        await call_executor_with(config=config_for(workflow_id="wf-1"), task="run the agenda")
+        await drain_background_tasks()
+
+        assert "playbook_fallback" not in spawned_runs[0]["task"]
 
 
 @pytest.mark.unit
@@ -897,7 +1045,7 @@ class TestDispatchAcknowledgement:
         task_id = task_id_from(response)
 
         assert response == (
-            f"Task accepted (task_id: {task_id}). Nothing has run yet — this only means the "
+            f"Task accepted (task_id: {task_id}). Nothing has run yet: this only means the "
             "work has STARTED. Do not tell the user anything was sent, created, deleted, or "
             "finished. Risky actions pause for the user's approval first and they see an "
             "approval card; if that happens the work waits on them, not on you. Acknowledge "

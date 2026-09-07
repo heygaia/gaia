@@ -109,23 +109,21 @@ async def _get_collection(name: str) -> AsyncCollection:
             return _collections[name]
 
         client = await ChromaClient.get_client()
-        existing = [collection.name for collection in await client.list_collections()]
-        if name not in existing:
-            collection = await client.create_collection(
+        try:
+            # Atomic server-side get-or-create. A check-then-create (list then
+            # create) races when several processes share one Chroma server —
+            # the shared test collections under xdist, and cold-start
+            # concurrency in production — and the loser gets "already exists".
+            collection = await client.get_or_create_collection(
                 name=name,
                 metadata={"hnsw:space": "cosine"},
                 embedding_function=NoOpEmbeddingFunction(),
             )
-        else:
-            try:
-                collection = await client.get_collection(
-                    name=name, embedding_function=NoOpEmbeddingFunction()
-                )
-            except ValueError:
-                # ChromaDB 1.x rejects a new embedding function when one is
-                # already persisted in the collection config; embeddings are
-                # passed explicitly anyway, so plain get is safe.
-                collection = await client.get_collection(name=name)
+        except ValueError:
+            # ChromaDB 1.x rejects a new embedding function when a different one
+            # is already persisted in the collection config; embeddings are
+            # passed explicitly anyway, so plain get is safe.
+            collection = await client.get_collection(name=name)
 
         _collections[name] = collection
         return collection
@@ -233,6 +231,25 @@ async def delete_user(user_id: str) -> None:
     ):
         collection = await _get_collection(name)
         await collection.delete(where={"user_id": user_id})
+
+
+async def delete_conversation_chunks(user_id: str, source_id: str) -> None:
+    """Hard-delete the verbatim chunks of one conversation.
+
+    Chunk metadata carries only ``{user_id, date}``, so the conversation is
+    identified by the id prefix ``{user_id}:{source_id}:`` that ingestion
+    stamps on every chunk. Called when a memory sourced from that conversation
+    is forgotten: forgetting a fact deliberately forfeits verbatim recall of
+    the conversation that produced it — the privacy-safe direction, since the
+    original sentence would otherwise stay quotable via conversation search
+    forever.
+    """
+    collection = await _get_collection(CHROMA_CONVERSATION_CHUNKS_COLLECTION)
+    result = await collection.get(where={"user_id": user_id}, include=[])
+    prefix = f"{user_id}:{source_id}:"
+    ids = [chunk_id for chunk_id in result["ids"] if chunk_id.startswith(prefix)]
+    if ids:
+        await collection.delete(ids=ids)
 
 
 async def upsert_conversation_chunks(items: list[ConversationChunkItem]) -> None:

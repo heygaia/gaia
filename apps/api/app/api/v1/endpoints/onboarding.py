@@ -42,6 +42,7 @@ from app.models.user_models import (
     OnboardingStatusResponse,
     UserDocument,
 )
+from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.composio.composio_service import get_composio_service
 from app.services.onboarding.clarify_service import generate_clarify_questions
@@ -119,8 +120,8 @@ async def complete_user_onboarding(
         return OnboardingResponse(
             success=True, message="Onboarding completed successfully", user=updated_user
         )
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.ONBOARDING} Error completing onboarding",
@@ -333,6 +334,7 @@ async def update_user_preferences(
 
     try:
         updated_user = await update_onboarding_preferences(user["user_id"], preferences)
+        schedule_account_sync(user["user_id"])
         # PATCH semantics: only the fields the caller actually sent were written,
         # so `fields` is what changed — not the whole preferences object.
         capture_context_event(
@@ -350,8 +352,8 @@ async def update_user_preferences(
             message="Preferences updated successfully",
             user=updated_user,
         )
-    except HTTPException as e:
-        raise e
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.ONBOARDING} Error updating preferences",
@@ -543,7 +545,7 @@ async def get_onboarding_personalization(
             error_type=type(e).__name__,
             exc_info=True,
         )
-        raise HTTPException(status_code=500, detail="Failed to fetch personalization data")
+        raise HTTPException(status_code=500, detail="Failed to fetch personalization data") from e
 
 
 class WritingStyleEditRequest(BaseModel):

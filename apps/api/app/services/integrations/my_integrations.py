@@ -19,11 +19,11 @@ from app.schemas.integrations.responses import (
 )
 from app.services.integrations.integration_connection_service import build_integrations_config
 from app.services.integrations.integration_resolver import IntegrationResolver
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.integrations.user_integrations import (
     check_user_has_integration,
     get_user_integrations,
 )
-from app.services.oauth.oauth_service import get_all_integrations_status
 from app.services.tools.tools_service import get_integration_tool_list, get_tool_categories
 from app.utils.errors import create_error
 from shared.py.wide_events import log
@@ -72,6 +72,7 @@ async def get_my_integrations(user_id: str) -> MyIntegrationsResponse:
                 source="platform",
                 managed_by=cfg.managed_by,
                 status=status,
+                expired_at=ui.expired_at if ui is not None else None,
                 requires_auth=cfg.requires_auth,
                 auth_type=cfg.auth_type,
                 is_featured=cfg.is_featured,
@@ -95,6 +96,7 @@ async def get_my_integrations(user_id: str) -> MyIntegrationsResponse:
                 source="custom",
                 managed_by=integ.managed_by,
                 status=ui.status,
+                expired_at=ui.expired_at,
                 requires_auth=integ.requires_auth,
                 auth_type=integ.auth_type,
                 is_featured=integ.is_featured,

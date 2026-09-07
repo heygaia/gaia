@@ -46,7 +46,7 @@ import {
   STREAMING_DEFAULTS,
   sanitizeErrorForLog,
   withWideEvent,
-} from "@gaia/shared";
+} from "@gaia/shared/bots";
 import type { Message } from "@grammyjs/types";
 import { Bot, type Context, GrammyError, InputFile } from "grammy";
 
@@ -443,9 +443,12 @@ export class TelegramAdapter extends BaseBotAdapter {
   protected async deliverOutbound(
     destinationId: string,
     text: string,
+    _isChannel: boolean,
   ): Promise<void> {
     // grammY accepts a string chat_id; passing the id through avoids the NaN
-    // that Number() would produce for any non-numeric destination.
+    // that Number() would produce for any non-numeric destination. A Telegram
+    // chat_id is polymorphic — a group/supergroup id routes to the group with no
+    // special handling, so _isChannel needs no branch here.
     await this.sendHtml(
       (t, opts) => this.bot.api.sendMessage(destinationId, t, opts),
       text,
@@ -483,17 +486,20 @@ export class TelegramAdapter extends BaseBotAdapter {
   }
 
   /**
-   * Edits a message as Telegram HTML. A "message is not modified" error (thrown
-   * when the new text equals the current text) is ignored; any other failure
-   * retries as stripped plain text. Centralises the fallback every Telegram
-   * edit path needs.
+   * Edits a message as Telegram HTML, recovering from the one failure a resend
+   * can actually fix.
    *
-   * A failure of that retry is reported via `onError` **and rethrown**. It used
-   * to be swallowed, which made a rejected edit — an expired message, or text
-   * the API refused — look like a successful delivery to the caller: the stream
-   * logged `chat_stream_completed` while the user was still looking at stale
-   * text. Callers that can recover (the shared streamer resends as a new
-   * message) need the throw to know they must.
+   * A "message is not modified" error (the new text equals the current text) is
+   * a no-op success. An HTML parse rejection retries the SAME message as
+   * stripped plain text — the same gate `sendHtml` uses. Everything else is
+   * rethrown for the caller to classify: retrying plain text on a 429 burned a
+   * second call against a rate limit that was already refusing us, and on a
+   * network failure it hammered a broken connection.
+   *
+   * A failure is reported via `onError` **and rethrown**. It used to be
+   * swallowed, which made a rejected edit look like a successful delivery: the
+   * stream logged `chat_stream_completed` while the user was still looking at
+   * stale text.
    */
   private async editHtml(
     edit: (text: string, opts?: { parse_mode: "HTML" }) => Promise<unknown>,
@@ -506,6 +512,13 @@ export class TelegramAdapter extends BaseBotAdapter {
       if (e instanceof Error && e.message.includes("message is not modified")) {
         return;
       }
+      if (!isTelegramHtmlParseError(e)) {
+        onError(e);
+        throw e;
+      }
+      this.adapterLogger.warn("telegram_html_parse_fallback", {
+        reason: e instanceof Error ? e.message : String(e),
+      });
       try {
         await edit(htmlToPlainText(html));
       } catch (err) {
@@ -570,6 +583,7 @@ export class TelegramAdapter extends BaseBotAdapter {
           platform: "telegram",
           platformUserId: userId,
           channelId: chatId.toString(),
+          isDm: ctx.chat?.type === "private",
           ...(attachments.length > 0
             ? {
                 fileIds: attachments.map((a) => a.fileId),
@@ -877,6 +891,7 @@ export class TelegramAdapter extends BaseBotAdapter {
       platform: "telegram",
       userId,
       channelId: chatId?.toString(),
+      isDm: !isGroup,
       profile,
 
       send: async (text: string): Promise<SentMessage> => {

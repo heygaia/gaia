@@ -80,7 +80,6 @@ def _slow_block(seconds: float = 0.2) -> None:
 def processor() -> DocumentProcessor:
     """Return a DocumentProcessor with mocked parser and llm."""
     with (
-        patch("app.utils.file_utils.LlamaParse"),
         patch("app.utils.file_utils.get_helper_llm", return_value=_mock_llm()),
     ):
         proc = DocumentProcessor(user_id="u-test")
@@ -94,7 +93,6 @@ class TestDocumentProcessorInit:
     async def test_summarization_runs_on_the_helper_llm_the_constructor_built(self) -> None:
         helper = _mock_llm(batch_return=[AIMessage(content="Summary 1")])
         with (
-            patch("app.utils.file_utils.LlamaParse"),
             patch("app.utils.file_utils.get_helper_llm", return_value=helper) as get_llm,
         ):
             proc = DocumentProcessor(user_id="u-test")
@@ -112,7 +110,6 @@ class TestDocumentProcessorInit:
         assert the mock rather than the cap. Only the key is pinned — the
         hermetic conftest blanks it, and building the client dials nothing."""
         with (
-            patch("app.utils.file_utils.LlamaParse"),
             patch("app.agents.llm.client.settings.OPENROUTER_API_KEY", new="sk-unit-test"),
         ):
             proc = DocumentProcessor(user_id="u-test")
@@ -124,7 +121,6 @@ class TestDocumentProcessorInit:
 
     def test_user_id_is_held_for_cost_attribution(self) -> None:
         with (
-            patch("app.utils.file_utils.LlamaParse"),
             patch("app.utils.file_utils.get_helper_llm", return_value=_mock_llm()),
         ):
             proc = DocumentProcessor(user_id="u-billed")
@@ -141,7 +137,7 @@ class TestProcessFileRouting:
     """Verify that process_file routes to the correct sub-processor."""
 
     async def test_image_routes_to_process_image(self, processor: DocumentProcessor) -> None:
-        processor.process_image = AsyncMock(return_value="image desc")  # type: ignore[method-assign]
+        processor.process_image = AsyncMock(return_value="image desc")  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         result = await processor.process_file(b"imgdata", "image/png", "photo.png")
         processor.process_image.assert_awaited_once_with(b"imgdata")
         assert result == "image desc"
@@ -150,17 +146,17 @@ class TestProcessFileRouting:
     async def test_various_image_types_route_to_process_image(
         self, processor: DocumentProcessor, content_type: str
     ) -> None:
-        processor.process_image = AsyncMock(return_value="ok")  # type: ignore[method-assign]
+        processor.process_image = AsyncMock(return_value="ok")  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         await processor.process_file(b"data", content_type, "file.img")
         processor.process_image.assert_awaited_once()
 
     async def test_pdf_routes_to_process_doc(self, processor: DocumentProcessor) -> None:
-        processor.process_doc = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        processor.process_doc = AsyncMock(return_value=[])  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         await processor.process_file(b"pdfdata", "application/pdf", "doc.pdf")
         processor.process_doc.assert_awaited_once_with(b"pdfdata")
 
     async def test_text_routes_to_process_text(self, processor: DocumentProcessor) -> None:
-        processor.process_text = AsyncMock(  # type: ignore[method-assign]
+        processor.process_text = AsyncMock(  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
             return_value=DocumentSummaryModel(
                 data=DocumentPageModel(page_number=1, content="hello"),
                 summary="summary",
@@ -173,7 +169,7 @@ class TestProcessFileRouting:
     async def test_various_text_types_route_to_process_text(
         self, processor: DocumentProcessor, content_type: str
     ) -> None:
-        processor.process_text = AsyncMock(  # type: ignore[method-assign]
+        processor.process_text = AsyncMock(  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
             return_value=DocumentSummaryModel(
                 data=DocumentPageModel(page_number=1, content="c"),
                 summary="s",
@@ -200,13 +196,13 @@ class TestProcessFileRouting:
     async def test_office_and_csv_types_route_to_process_office_document(
         self, processor: DocumentProcessor, content_type: str, suffix: str
     ) -> None:
-        processor.process_office_document = AsyncMock(return_value=[])  # type: ignore[method-assign]
+        processor.process_office_document = AsyncMock(return_value=[])  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         await processor.process_file(b"data", content_type, f"file{suffix}")
         processor.process_office_document.assert_awaited_once_with(b"data", suffix=suffix)
 
     async def test_json_routes_to_process_text(self, processor: DocumentProcessor) -> None:
         """JSON is text; it routes to process_text, not the office parser."""
-        processor.process_text = AsyncMock(  # type: ignore[method-assign]
+        processor.process_text = AsyncMock(  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
             return_value=DocumentSummaryModel(
                 data=DocumentPageModel(page_number=1, content='{"a": 1}'),
                 summary="summary",
@@ -222,7 +218,7 @@ class TestProcessFileRouting:
         assert "no content extraction" in result
 
     async def test_exception_returns_error_string(self, processor: DocumentProcessor) -> None:
-        processor.process_image = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+        processor.process_image = AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]  # instance method stubbed with unittest.mock
         result = await processor.process_file(b"img", "image/png", "bad.png")
         assert isinstance(result, str)
         assert "File processing failed" in result
@@ -677,7 +673,6 @@ class TestProcessText:
         """A freshly built processor summarizes with get_helper_llm's model."""
         helper = _mock_llm(invoke_return="Helper summary")
         with (
-            patch("app.utils.file_utils.LlamaParse"),
             patch("app.utils.file_utils.get_helper_llm", return_value=helper),
         ):
             proc = DocumentProcessor(user_id="u-test")

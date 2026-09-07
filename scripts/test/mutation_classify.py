@@ -90,6 +90,35 @@ def _body(name: str) -> list[str]:
     return []
 
 
+def _first_argument_end(text: str, i: int) -> int:
+    """Index just past the first call argument starting at ``i``: the comma
+    that ends it, or the closing bracket of a one-argument call.
+
+    Bracket/quote balanced: a type arg like ``dict[str, object] | None`` (or a
+    quoted forward ref) holds commas a regex stops at, and a half-blanked cast
+    then reads as a real change.
+    """
+    depth = 0
+    quote: str | None = None
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == quote and text[i - 1] != "\\":
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif ch == "," and depth == 0:
+            break
+        i += 1
+    return i
+
+
 def _normalized(lines: list[str]) -> list[str]:
     """Blank the TYPE argument of every ``cast()``.
 
@@ -108,29 +137,7 @@ def _normalized(lines: list[str]) -> list[str]:
     out: list[str] = []
     pos = 0
     while (start := joined.find("cast(", pos)) != -1:
-        # Scan the FIRST argument with bracket/quote balancing: a type arg
-        # like ``dict[str, object] | None`` (or a quoted forward ref) holds
-        # commas a regex stops at, and a half-blanked cast then reads as a
-        # real change.
-        i = start + len("cast(")
-        depth = 0
-        quote: str | None = None
-        while i < len(joined):
-            ch = joined[i]
-            if quote:
-                if ch == quote and joined[i - 1] != "\\":
-                    quote = None
-            elif ch in "\"'":
-                quote = ch
-            elif ch in "([{":
-                depth += 1
-            elif ch in ")]}":
-                if depth == 0:
-                    break  # cast with one argument — not ours to touch
-                depth -= 1
-            elif ch == "," and depth == 0:
-                break
-            i += 1
+        i = _first_argument_end(joined, start + len("cast("))
         if i < len(joined) and joined[i] == ",":
             arg = joined[start + len("cast(") : i]
             out.append(joined[pos:start] + "cast(" + "\n" * arg.count("\n") + "_")
@@ -217,13 +224,20 @@ def _mutated_token(span, line_no: int, orig_line: str, mut_line: str) -> str | N
     return mut_line[start_col : end_col + len(mut_line) - len(orig_line)]
 
 
-def _falsy_replacement(replacement: str | None) -> bool:
-    """True when the mutation put another falsy literal where the original was."""
+def _falsy_replacement(replacement: str | None, *, removal_stays_falsy: bool) -> bool:
+    """True when the mutation put another falsy literal where the original was.
+
+    ``removal_stays_falsy`` answers the one case the text cannot: mutmut also
+    DELETES the argument, and what the call then does is the callee's business.
+    ``d.get(k)`` still hands back None, so the mutant is equivalent; ``d.pop(k)``
+    and ``getattr(o, n)`` raise instead, and ``json.dumps`` falls back to
+    ``ensure_ascii=True`` — all three observable, none of them falsy.
+    """
     if replacement is None:
         return False
     stripped = replacement.strip()
     if not stripped:
-        return True  # the argument was removed; the default becomes None
+        return removal_stays_falsy
     try:
         return not ast.literal_eval(stripped)
     except (ValueError, SyntaxError):
@@ -236,9 +250,27 @@ def _boolean_consumer(node) -> bool:
     if isinstance(parent, ast.BoolOp) and isinstance(parent.op, ast.Or):
         # `x or y` evaluates to y for EVERY falsy x, so which falsy x it was is lost.
         return parent.values[-1] is not node
+    if isinstance(parent, ast.BoolOp) and isinstance(parent.op, ast.And):
+        # `x and y` is the opposite: for falsy x it evaluates to x ITSELF, so the
+        # distinction survives into the BoolOp's result and dies (or does not)
+        # wherever that result goes. Follow it rather than answering here —
+        # `if x and y:` collapses every falsy x exactly as `if x:` does, while
+        # `return x and y` hands the caller the falsy value it was.
+        return _boolean_consumer(parent)
     if isinstance(parent, ast.UnaryOp) and isinstance(parent.op, ast.Not):
         # `not x` is True for every falsy x — the distinction dies here no
         # matter where the result then flows.
+        return True
+    if (
+        isinstance(parent, ast.Call)
+        and isinstance(parent.func, ast.Name)
+        and parent.func.id == "bool"
+        and not parent.keywords
+        and len(parent.args) == 1
+        and parent.args[0] is node
+    ):
+        # `bool(x)` is False for every falsy x — the same collapse as `not x`,
+        # written the other way round.
         return True
     return isinstance(parent, ast.If | ast.IfExp) and parent.test is node
 
@@ -256,17 +288,28 @@ def _early_exit_on_falsy(stmt, name: str) -> bool:
     )
 
 
+def _tests_truthy(test, name: str) -> bool:
+    """True when reaching a body past ``test`` requires ``name`` to be truthy.
+
+    Either the test IS the name, or it is an ``and`` chain containing it: ``and``
+    short-circuits, so `if x and y:` reaches its body only on a truthy x, exactly
+    as `if x:` does. ``or`` is deliberately not here — `if x or y:` runs its body
+    with x falsy, so the falsy value is still observable inside.
+    """
+    if isinstance(test, ast.Name):
+        return test.id == name
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
+        return any(isinstance(v, ast.Name) and v.id == name for v in test.values)
+    return False
+
+
 def _guarded_by(node, name: str) -> bool:
     """True when node sits in code that runs only while `name` is truthy."""
     child = node
     parent = getattr(node, "parent", None)
     while parent is not None:
         test = getattr(parent, "test", None)
-        if (
-            isinstance(parent, ast.If | ast.IfExp)
-            and isinstance(test, ast.Name)
-            and test.id == name
-        ):
+        if isinstance(parent, ast.If | ast.IfExp) and _tests_truthy(test, name):
             body = parent.body if isinstance(parent.body, list) else [parent.body]
             if any(child is stmt for stmt in body):
                 return True
@@ -400,9 +443,75 @@ def _unobservable_get_default(
         )
         if not _within(span, line_no, col):
             continue
+        # Only ``.get`` survives losing its default with a falsy value (None);
+        # ``.pop`` and ``getattr`` raise, which every test can see.
+        func = node.func
+        removal_stays_falsy = isinstance(func, ast.Attribute) and func.attr == "get"
         return _falsy_replacement(
-            _mutated_token(span, line_no, orig_line, mut_line)
+            _mutated_token(span, line_no, orig_line, mut_line),
+            removal_stays_falsy=removal_stays_falsy,
         ) and _only_boolean_uses(_outermost_lookup(node))
+    return False
+
+
+def _unobservable_header_case(
+    path: str, line_no: int, col: int, orig_line: str, mut_line: str
+) -> bool:
+    """True when the mutation only re-cased an HTTP header name in a lookup.
+
+    HTTP header field names are case-insensitive (RFC 9110 §5.1), and every
+    ``.headers`` mapping in this stack implements that: Starlette's
+    ``Headers.__getitem__`` lowercases the key before comparing (verified on the
+    installed version), and httpx/requests/aiohttp do the same. So
+    ``request.headers.get("X-Bot-API-Key")`` and ``...get("x-bot-api-key")``
+    return the identical value on every input — no test can tell them apart, and
+    six of them survived as "real" on app/core/bot_auth_middleware.py.
+
+    Deliberately narrow on both sides:
+
+    - The receiver must be an ATTRIBUTE named ``headers`` (``x.headers.get``).
+      A bare local ``headers = {...}`` is an ordinary dict built for an OUTGOING
+      request, where case is preserved and a re-cased lookup really does miss.
+    - The change must be case-ONLY. mutmut also rewrites the literal to
+      ``"XXX-Bot-API-KeyXX"``, which asks for a different header entirely and is
+      exactly as observable as any other wrong key.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("get", "getlist")
+            and isinstance(node.func.value, ast.Attribute)
+            and node.func.value.attr == "headers"
+            and node.args
+            and isinstance(node.args[0], ast.Constant)
+            and isinstance(node.args[0].value, str)
+        ):
+            continue
+        name = node.args[0]
+        span = (
+            name.lineno,
+            name.col_offset,
+            name.end_lineno or name.lineno,
+            name.end_col_offset,
+        )
+        if not _within(span, line_no, col):
+            continue
+        replacement = _mutated_token(span, line_no, orig_line, mut_line)
+        if replacement is None:
+            return False
+        try:
+            mutated = ast.literal_eval(replacement.strip())
+        except (ValueError, SyntaxError):
+            return False
+        original = name.value
+        return (
+            isinstance(mutated, str) and mutated != original and mutated.lower() == original.lower()
+        )
     return False
 
 
@@ -446,7 +555,49 @@ def _unobservable_ensure_ascii(
                 value.end_col_offset,
             )
             if _within(span, line_no, col):
-                return _falsy_replacement(_mutated_token(span, line_no, orig_line, mut_line))
+                # Dropping the keyword entirely restores json's own default of
+                # True, which is the one value that DOES change the output.
+                return _falsy_replacement(
+                    _mutated_token(span, line_no, orig_line, mut_line),
+                    removal_stays_falsy=False,
+                )
+    return False
+
+
+def _unreachable_match_arm(path: str, line_no: int) -> bool:
+    """True when line_no sits in a ``case _: assert_never(...)`` arm.
+
+    That arm exists for mypy, which uses it to prove the match exhaustive over
+    the enum or union it switches on; at runtime no input reaches it. Deleting
+    the arm, or its argument, changes no execution, so no test can kill the
+    mutant — and the arm must stay, since it is what turns a new enum member
+    into a type error instead of a silent fall-through. Seven of these survived
+    as "real" on the playbook lifecycle's three match statements.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Match):
+            continue
+        for case in node.cases:
+            wildcard = (
+                isinstance(case.pattern, ast.MatchAs)
+                and case.pattern.pattern is None
+                and case.pattern.name is None
+            )
+            if not wildcard or len(case.body) != 1 or not isinstance(case.body[0], ast.Expr):
+                continue
+            call = case.body[0].value
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "assert_never"
+            ):
+                continue
+            if case.pattern.lineno <= line_no <= (case.body[0].end_lineno or line_no):
+                return True
     return False
 
 
@@ -483,9 +634,12 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
         # Raw (un-normalized) lines: the cast() rewrite above shifts columns.
         col = _first_differing_col(orig_raw[i], mut_raw[i])
         real_path = f"{workdir}/{module_path}"
-        if _unobservable_get_default(
-            real_path, line_no, col, orig_raw[i], mut_raw[i]
-        ) or _unobservable_ensure_ascii(real_path, line_no, col, orig_raw[i], mut_raw[i]):
+        if (
+            _unobservable_get_default(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unobservable_ensure_ascii(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unobservable_header_case(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unreachable_match_arm(real_path, line_no)
+        ):
             print("EQUIV")
             sys.exit(0)
         span = _excluded_span(real_path, line_no)

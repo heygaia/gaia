@@ -61,6 +61,14 @@ export const toolIconConfigs: Record<string, ToolIconConfig> = {
     iconColorRaw: "#e4e4e7",
     isImage: true,
   },
+  googledrive: {
+    icon: "googledrive",
+    bgColor: "bg-zinc-700",
+    iconColor: "text-zinc-200",
+    bgColorRaw: "#3f3f46",
+    iconColorRaw: "#e4e4e7",
+    isImage: true,
+  },
   googlesheets: {
     icon: "googlesheets",
     bgColor: "bg-zinc-700",
@@ -423,6 +431,14 @@ export const toolIconConfigs: Record<string, ToolIconConfig> = {
     iconColorRaw: "#60a5fa",
     isImage: false,
   },
+  billing: {
+    icon: "CreditCardIcon",
+    bgColor: "bg-green-500/20 backdrop-blur",
+    iconColor: "text-green-400",
+    bgColorRaw: "rgba(34, 197, 94, 0.2)",
+    iconColorRaw: "#4ade80",
+    isImage: false,
+  },
   general: {
     icon: "ToolsIcon",
     bgColor: "bg-gray-500/20 backdrop-blur",
@@ -600,6 +616,14 @@ export const toolIconConfigs: Record<string, ToolIconConfig> = {
     iconColor: "text-yellow-400",
     bgColorRaw: "rgba(234, 179, 8, 0.2)",
     iconColorRaw: "#facc15",
+    isImage: false,
+  },
+  playbooks: {
+    icon: "BookBookmark02Icon",
+    bgColor: "bg-violet-500/20 backdrop-blur",
+    iconColor: "text-violet-400",
+    bgColorRaw: "rgba(139, 92, 246, 0.2)",
+    iconColorRaw: "#a78bfa",
     isImage: false,
   },
   unknown: {

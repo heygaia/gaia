@@ -15,7 +15,7 @@ MODULE = "app.services.integrations.marketplace"
 
 
 def _make_oauth_integration(
-    id: str = "gmail",
+    integration_id: str = "gmail",
     name: str = "Gmail",
     category: str = "communication",
     available: bool = True,
@@ -24,7 +24,7 @@ def _make_oauth_integration(
 ) -> MagicMock:
     """Build a mock OAuthIntegration."""
     oauth = MagicMock()
-    oauth.id = id
+    oauth.id = integration_id
     oauth.name = name
     oauth.description = "Test integration"
     oauth.category = category
@@ -298,7 +298,7 @@ class TestGetIntegrationDetails:
 
             result = await get_integration_details("gmail")
 
-        assert result.creator == {"name": "Creator", "picture": "https://pic.com"}  # type: ignore[union-attr]
+        assert result.creator == {"name": "Creator", "picture": "https://pic.com"}
 
     @pytest.mark.asyncio
     @patch(f"{MODULE}.user_repository")

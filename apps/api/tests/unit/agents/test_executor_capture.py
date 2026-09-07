@@ -7,13 +7,19 @@ Pins the contracts terminal handlers depend on:
 - the redis stream writer appends every event to the session collector.
 """
 
+import asyncio
+from collections.abc import Coroutine, Generator
+import re
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.agents.core.background import redis_writer as rw, session as sess
 from app.agents.core.background.executor_capture import (
+    _STACK_FRAMES,
+    _running_task_stacks,
     await_executor_done,
+    build_returned_to_frontend_note,
     drain_executor_tool_data,
     register_executor_capture,
     teardown_executor_capture,
@@ -25,6 +31,8 @@ from app.agents.core.background.session import (
     get_session,
     signal_executor_done,
 )
+from app.constants.agents import AgentTag, wrap_agent_payload
+from app.constants.log_tags import LogTag
 
 
 @pytest.fixture(autouse=True)
@@ -55,13 +63,16 @@ class TestRegisterAndDone:
     async def test_await_returns_immediately_when_no_executor_spawned(self) -> None:
         register_executor_capture("s1")
         # No mark_executor_spawned — must not block on the done event.
-        await await_executor_done("s1")
+        assert await await_executor_done("s1") is True
+
+    async def test_await_without_a_session_is_finished(self) -> None:
+        assert await await_executor_done("never-registered") is True
 
     async def test_await_unblocks_when_executor_signals_done(self) -> None:
         session = create_session("s1", RunKind.LIVE)
         session.executor_spawned = True
         signal_executor_done("s1")
-        await await_executor_done("s1")  # returns because the event is set
+        assert await await_executor_done("s1") is True  # the event is set
 
 
 class TestDrain:
@@ -129,6 +140,195 @@ class TestDrain:
         assert drain_executor_tool_data("s1") == []
 
 
+class TestReturnedToFrontendNote:
+    """The note is comms' only record of which cards the frontend already has.
+
+    Reduced to (name, count) it says a todo card exists but not which system
+    produced it, so comms had nothing to contradict an executor summary that
+    filed eight GAIA todos under "Todoist".
+    """
+
+    def test_cards_from_a_subagent_name_the_subagent_that_produced_them(self) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append(
+            {
+                "subagent_start": {
+                    "subagent_id": "sub-1",
+                    "subagent_name": "Todos",
+                    "agent_type": "handoff",
+                }
+            }
+        )
+        for _ in range(8):
+            session.tool_events.append(
+                {
+                    "tool_data": {
+                        "tool_name": "todo_data",
+                        "data": [{"id": "x"}],
+                        "subagent_id": "sub-1",
+                    }
+                }
+            )
+
+        note = build_returned_to_frontend_note("s1")
+
+        assert "  - todo_data (8 todo, via subagent:Todos)\n" in note
+
+    def test_a_card_the_executor_emitted_itself_carries_no_provenance(self) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append(
+            {"tool_data": {"tool_name": "weather_data", "data": {"temp": 20}}}
+        )
+
+        note = build_returned_to_frontend_note("s1")
+
+        assert "  - weather_data (1 weather)\n" in note
+
+    def test_two_subagents_emitting_the_same_card_stay_separate_rows(self) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        for sid, name in (("sub-1", "Todos"), ("sub-2", "Todoist")):
+            session.tool_events.append(
+                {
+                    "subagent_start": {
+                        "subagent_id": sid,
+                        "subagent_name": name,
+                        "agent_type": "handoff",
+                    }
+                }
+            )
+            session.tool_events.append(
+                {"tool_data": {"tool_name": "todo_data", "data": [{"id": sid}], "subagent_id": sid}}
+            )
+
+        note = build_returned_to_frontend_note("s1")
+
+        assert "  - todo_data (1 todo, via subagent:Todos)\n" in note
+        assert "  - todo_data (1 todo, via subagent:Todoist)\n" in note
+
+    def test_an_unattributable_card_is_never_credited_to_a_producer(self) -> None:
+        """A subagent that started without a name produces cards nothing can
+        credit — and neither can the executor's own cards. Both must land on the
+        SAME unattributed row: two ways of having no producer are one fact, and
+        splitting them into two rows tells comms two different things happened.
+        """
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append({"subagent_start": {"subagent_id": "sub-9"}})
+        session.tool_events.append(
+            {"tool_data": {"tool_name": "todo_data", "data": [{"id": "a"}], "subagent_id": "sub-9"}}
+        )
+        session.tool_events.append({"tool_data": {"tool_name": "todo_data", "data": [{"id": "b"}]}})
+
+        note = build_returned_to_frontend_note("s1")
+
+        assert "  - todo_data (2 todo)\n" in note
+        assert "via subagent" not in note
+
+    def test_a_malformed_group_row_is_skipped_not_fatal(self) -> None:
+        """``subagent_group`` rows also arrive pre-formed from child streams, so
+        the shape is not this module's to guarantee. One bad row must cost its
+        own provenance, never the whole note."""
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append({"tool_data": {"tool_name": "subagent_group", "data": None}})
+        session.tool_events.append({"tool_data": {"tool_name": "todo_data", "data": [{"id": "a"}]}})
+
+        assert "  - todo_data (1 todo)\n" in build_returned_to_frontend_note("s1")
+
+    def test_nothing_card_worthy_yields_no_note(self) -> None:
+        create_session("s1", RunKind.QUEUED)
+        assert build_returned_to_frontend_note("s1") == ""
+
+    def test_the_full_note_is_pinned_verbatim_for_a_named_subagent_card(self) -> None:
+        """Exact rendered text — not a substring — so a dropped tool name, an
+        emptied subagent name, or a vanished data lookup all go red here even
+        if a looser 'in note' check would not notice the surrounding text."""
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append(
+            {
+                "subagent_start": {
+                    "subagent_id": "sub-1",
+                    "subagent_name": "Todos",
+                    "agent_type": "handoff",
+                }
+            }
+        )
+        session.tool_events.append(
+            {
+                "tool_data": {
+                    "tool_name": "todo_data",
+                    "data": [{"id": "x"}],
+                    "subagent_id": "sub-1",
+                }
+            }
+        )
+
+        note = build_returned_to_frontend_note("s1")
+
+        assert note == wrap_agent_payload(
+            AgentTag.RETURNED_TO_FRONTEND,
+            "These native cards are already on the user's screen this turn:\n"
+            "  - todo_data (1 todo, via subagent:Todos)\n"
+            "They visually render the RAW items, so don't re-type those items "
+            "row-by-row and don't re-emit them as OpenUI — that literal duplication "
+            "is the ONLY thing to avoid here.\n"
+            "The cards are visual aids, NOT your reply. You still owe the user the "
+            "ANSWER in your own voice — the substance the executor produced: what it "
+            "found, grouped and counted, the few items that actually matter (and "
+            'why), and the natural next step. This synthesis is never "card '
+            'contents"; suppressing it because a card exists is the worst failure '
+            "you can have.\n"
+            "Match the depth to the work: a quick outcome gets a line or two; a "
+            "large, comprehensive result (a full triage, a multi-item analysis) gets "
+            "a real structured rundown — never a one-liner. Replying just \"here's "
+            'the list 👇" with no substance, when the executor did real work, fails '
+            "the user. Point them to the card for the granular rows AFTER you've "
+            "actually delivered the gist.\n"
+            "CRITICAL EXCEPTION — LONG-FORM DELIVERABLE: if the executor's result is "
+            "itself a finished written piece (a research report, an article, an "
+            "analysis, a document), that is the ANSWER, not raw card rows. The cards "
+            "above were just the research/loading steps along the way. Deliver the "
+            "deliverable IN FULL per the long-form rule — every section, point, and "
+            "citation — and do NOT compress it to a 'here's the breakdown' summary. "
+            "This note never authorizes shrinking a report; it only stops you "
+            "re-typing rows a card already lists.",
+        )
+
+
+class TestCollectCoalescesReasoning:
+    """Direct unit coverage of ``redis_writer._collect``'s content-merge line —
+    pins the exact defaults used when a dict is missing its ``content`` key,
+    which the higher-level streaming tests never exercise (every delta they
+    send already carries content)."""
+
+    def test_two_consecutive_deltas_concatenate_exactly(self) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        rw._collect(session, {"reasoning": {"content": "hello ", "subagent_id": None}})
+        rw._collect(session, {"reasoning": {"content": "world", "subagent_id": None}})
+
+        assert session.tool_events == [
+            {"reasoning": {"content": "hello world", "subagent_id": None}}
+        ]
+
+    def test_a_previous_entry_with_no_content_key_defaults_to_empty_not_the_word_none(
+        self,
+    ) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        session.tool_events.append({"reasoning": {"subagent_id": None}})  # no "content" key
+
+        rw._collect(session, {"reasoning": {"content": "world", "subagent_id": None}})
+
+        assert session.tool_events[-1]["reasoning"]["content"] == "world"
+
+    def test_an_incoming_delta_with_no_content_key_leaves_the_previous_content_unchanged(
+        self,
+    ) -> None:
+        session = create_session("s1", RunKind.QUEUED)
+        rw._collect(session, {"reasoning": {"content": "hello", "subagent_id": None}})
+
+        rw._collect(session, {"reasoning": {"subagent_id": None}})  # no "content" key
+
+        assert session.tool_events[-1]["reasoning"]["content"] == "hello"
+
+
 class TestRedisStreamWriter:
     async def test_writer_appends_event_to_session_and_publishes(self) -> None:
         create_session("s1", RunKind.QUEUED)
@@ -147,3 +347,111 @@ class TestRedisStreamWriter:
             writer = make_redis_stream_writer("unregistered")
             writer({"tool_data": {"x": 1}})  # publish still happens, no collector
         assert get_session("unregistered") is None
+
+
+@pytest.mark.unit
+class TestAnExecutorThatNeverFinishes:
+    """Seen live: an executor stopped mid-run and never signalled done. The
+    silent path waited the whole EXECUTOR_WAIT_TIMEOUT, which equals the
+    worker's job timeout, so the job was cut first, the fire was never closed
+    out, and the record stayed 'running'. The wait now ends before the job
+    does, counts as the executor failing, and says what was still running."""
+
+    async def test_a_timed_out_wait_marks_the_executor_failed_with_a_reason(self) -> None:
+        register_executor_capture("s1")
+        sess.mark_executor_spawned("s1")
+
+        finished = await await_executor_done("s1", timeout=0.01)
+
+        assert finished is False
+        assert sess.executor_failed("s1") is True
+        assert "did not finish within" in (sess.executor_failure("s1") or "")
+
+    async def test_a_timed_out_wait_names_the_tasks_still_running(self) -> None:
+        register_executor_capture("s1")
+        sess.mark_executor_spawned("s1")
+
+        async def run_executor_background() -> None:
+            await asyncio.sleep(10)
+
+        stuck = asyncio.create_task(run_executor_background())
+        try:
+            with patch("app.agents.core.background.executor_capture.log") as log:
+                await await_executor_done("s1", timeout=0.01)
+        finally:
+            stuck.cancel()
+
+        assert log.error.call_args.args == (
+            f"{LogTag.AGENT} Timed out waiting for executor; draining what it produced",
+        )
+        kwargs = log.error.call_args.kwargs
+        assert kwargs["stream_id"] == "s1"
+        assert kwargs["timeout_seconds"] == 0
+        assert any("run_executor_background" in line for line in kwargs["stuck_tasks"])
+
+    async def test_the_stuck_tasks_are_the_agent_runs_with_their_innermost_frames(
+        self,
+    ) -> None:
+        """Only the executor's and subagents' runs are named, each with the
+        innermost frames joined newest first, so the line says where it sits."""
+
+        async def deeper(levels: int) -> None:
+            if levels:
+                await deeper(levels - 1)
+            else:
+                await asyncio.sleep(10)
+
+        async def run_executor_background() -> None:
+            await deeper(10)
+
+        async def idle_plumbing() -> None:
+            await asyncio.sleep(10)
+
+        class run_subagent_probe(Coroutine[object, object, object]):  # noqa: N801 -- named like the coroutine it stands for
+            """A coroutine object with no ``__qualname__``: named by its type."""
+
+            def __init__(self) -> None:
+                self._inner = asyncio.sleep(10)
+
+            def send(self, value: object) -> object:
+                return self._inner.send(value)
+
+            def throw(self, *args: object) -> object:
+                return self._inner.throw(*args)  # type: ignore[arg-type] -- delegating verbatim
+
+            def close(self) -> None:
+                self._inner.close()
+
+            def __await__(self) -> Generator[object, object, object]:
+                return self._inner.__await__()
+
+        tasks = [
+            asyncio.create_task(run_executor_background()),
+            asyncio.create_task(idle_plumbing()),
+            asyncio.create_task(run_subagent_probe()),
+        ]
+        await asyncio.sleep(0)
+        try:
+            lines = sorted(_running_task_stacks())
+        finally:
+            for task in tasks:
+                task.cancel()
+
+        assert sorted(line.split(":")[0] for line in lines) == sorted(
+            [
+                "run_subagent_probe",
+                "TestAnExecutorThatNeverFinishes.test_the_stuck_tasks_are_the_agent_runs_with_"
+                "their_innermost_frames.<locals>.run_executor_background",
+            ]
+        )
+        executor_line = next(line for line in lines if "run_executor_background" in line)
+        frames = executor_line.split(": ", 1)[1].split(" <- ")
+        assert len(frames) == _STACK_FRAMES
+        assert frames[0].startswith("sleep("), frames
+        assert all(re.fullmatch(r"\w+\([\w.]+\.py:\d+\)", f) for f in frames), frames
+
+    def test_the_background_wait_ends_before_the_job_that_awaits_it(self) -> None:
+        from app.constants.cache import BACKGROUND_EXECUTOR_WAIT_TIMEOUT
+        from app.workers.config.worker_settings import WORKER_JOB_TIMEOUT_SECONDS
+
+        assert BACKGROUND_EXECUTOR_WAIT_TIMEOUT < WORKER_JOB_TIMEOUT_SECONDS

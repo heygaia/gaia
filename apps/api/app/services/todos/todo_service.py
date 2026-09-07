@@ -30,6 +30,7 @@ from app.models.todo_models import (
     UpdateProjectRequest,
 )
 from app.services.analytics_service import AnalyticsEvents, capture_event
+from app.services.triggers.subscription_service import teardown_subscriptions
 from app.services.user_todos_fs import schedule_user_todos_sync
 from app.utils.canvas_vector_utils import delete_canvas_embedding
 from app.utils.todo_vector_utils import (
@@ -181,7 +182,10 @@ class TodoService:
 
         # Queue workflow generation as fire-and-forget (does not block response)
         try:
-            from app.services.workflow.queue_service import WorkflowQueueService
+            # Deferred import: workflow/ARQ enqueue stack loads only when generation is actually queued
+            from app.services.workflow.queue_service import (  # noqa: PLC0415 -- deferred
+                WorkflowQueueService,
+            )
 
             spawn_logged_task(
                 "todo_workflow_generation",
@@ -305,7 +309,9 @@ class TodoService:
             existing = await todo_repository.get(todo_id, user_id=user_id)
             if existing and existing.vfs_path:
                 try:
-                    from app.services.tracked_todo_service import tracked_todo_service
+                    from app.services.tracked_todo_service import (  # noqa: PLC0415 -- tracked_todo_service imports this module at module level, so a top-level import back would be circular
+                        tracked_todo_service,
+                    )
 
                     await tracked_todo_service.complete_tracked_todo(
                         todo_id, user_id, summary="Completed via UI"
@@ -364,6 +370,11 @@ class TodoService:
         doc = await todo_repository.get(todo_id, user_id=user_id)
         if not doc:
             raise ValueError(f"Todo {todo_id} not found")
+
+        # Unregister before the document goes: once it is deleted nothing names
+        # the Composio trigger any more, so the registration would leak forever.
+        if doc.trigger_subscriptions:
+            await teardown_subscriptions(todo_id, user_id, reason="deleted")
 
         # Tracked-todo canvas/log content lives on the doc, so it disappears with
         # the delete below — only the ChromaDB canvas embedding needs cleanup.

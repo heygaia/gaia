@@ -20,8 +20,9 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
-from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
+from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, ToolMessage
+from langchain_core.runnables import RunnableConfig
 import pytest
 
 # ---------------------------------------------------------------------------
@@ -31,7 +32,11 @@ import pytest
 from app.agents.core.graph_builder.build_graph import build_comms_graph
 from app.agents.core.nodes.follow_up_actions_node import FollowUpActions
 from app.config.settings import settings
-from tests.helpers import create_fake_llm, create_fake_llm_with_tool_calls
+from tests.helpers import (
+    BindableToolsFakeModel,
+    create_fake_llm,
+    create_fake_llm_with_tool_calls,
+)
 
 
 @pytest.fixture
@@ -124,7 +129,7 @@ def _follow_up_node_io_patches(
     node's internal slicing/prompt/guard logic runs for real.
     """
     if writer_fn is None:
-        writer_fn = lambda _: None  # noqa: E731
+        writer_fn = lambda _: None  # noqa: E731  # default no-op writer for an optional hook parameter
 
     if capabilities is None:
         capabilities = {"tool_names": []}
@@ -811,11 +816,13 @@ class TestRealCommsAgent:
             f"Expected ToolMessage for malformed_call_001; got IDs: {ids_seen}"
         )
 
-    async def test_comms_agent_timeout_handling(self, no_model_fallback):
+    async def test_comms_agent_timeout_handling(self, no_model_fallback, single_llm_attempt):
         """
         When the LLM call raises asyncio.TimeoutError, the exception must
         propagate to the caller with the original TimeoutError type intact —
         it must NOT be swallowed silently or converted to a different type.
+        ``single_llm_attempt`` skips the retry backoff: TimeoutError is
+        retryable, and the point here is propagation, not the retry count.
 
         This test will FAIL if:
         - The graph swallows the TimeoutError (returns normally instead of raising)
@@ -829,11 +836,15 @@ class TestRealCommsAgent:
         # The LLM raises TimeoutError immediately when invoked
         timeout_error = TimeoutError("LLM request timed out")
 
-        class TimeoutFakeLLM(FakeMessagesListChatModel):
-            def bind_tools(self, tools: Any, **kwargs: Any) -> "TimeoutFakeLLM":
-                return self
-
-            async def ainvoke(self, *args, **kwargs):
+        class TimeoutFakeLLM(BindableToolsFakeModel):
+            async def ainvoke(
+                self,
+                input: LanguageModelInput,  # noqa: A002 - overrides langchain Runnable.ainvoke's contract
+                config: RunnableConfig | None = None,
+                *,
+                stop: list[str] | None = None,
+                **kwargs: object,
+            ) -> AIMessage:
                 raise timeout_error
 
         fake_llm = TimeoutFakeLLM(responses=[])

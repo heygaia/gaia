@@ -5,7 +5,7 @@
 # Cloud sandboxes (Claude Code on the web, CI runners, dev containers) usually
 # have no /var/run/docker.sock, so `docker compose up` in infra/docker/ is not
 # an option. Everything here installs and runs natively instead, pinned to the
-# same major versions we ship in infra/docker/docker-compose.prod.yml.
+# same major versions we ship in prod (the prod compose lives in gaia-infra).
 #
 #   ./scripts/dev/sandbox-services.sh up      # install (if needed) + start
 #   ./scripts/dev/sandbox-services.sh status  # per-service port probe
@@ -111,30 +111,24 @@ start_all() {
   wait_for_port 8080 chromadb 45
 }
 
-# The API refuses to boot until AI models and subscription plans exist
-# (app/services/startup_validation.py, strategy=ERROR). Both are plain counts,
-# so one row each is enough to clear the gate.
+# The API refuses to boot until subscription plans exist
+# (app/services/startup_validation.py, strategy=ERROR). A plain count,
+# so one row is enough to clear the gate.
 #
 # NOTE: the database is "GAIA", NOT the path in MONGO_DB. Seeding the URI's
 # database looks like it works and leaves startup_validation still failing.
 seed_mongo() {
-  log "seeding GAIA.ai_models + GAIA.subscription_plans"
+  log "seeding GAIA.subscription_plans"
   (cd "$API_DIR" && uv run --no-build python - <<'PY'
 from pymongo import MongoClient
 
 db = MongoClient("mongodb://localhost:27017/")["GAIA"]
-if db.ai_models.count_documents({}) == 0:
-    db.ai_models.insert_one({
-        "model_id": "gemini-2.0-flash", "name": "Gemini 2.0 Flash",
-        "provider": "google", "available_in_plans": ["free"], "is_active": True,
-    })
 if db.subscription_plans.count_documents({}) == 0:
     db.subscription_plans.insert_one({
         "plan_id": "free", "name": "Free", "amount": 0,
         "currency": "USD", "is_active": True,
     })
-print(f"ai_models={db.ai_models.count_documents({})} "
-      f"subscription_plans={db.subscription_plans.count_documents({})}")
+print(f"subscription_plans={db.subscription_plans.count_documents({})}")
 PY
   )
 }

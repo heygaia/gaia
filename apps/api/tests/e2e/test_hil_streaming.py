@@ -75,6 +75,7 @@ from app.db.repositories.conversations import conversation_repository
 from app.db.repositories.hil import hil_approval_repository
 from app.db.repositories.users import user_repository
 from app.memory.ingestion import RetainedMemory
+from app.models.chat_models import ToolDataEntry
 from app.models.hil_models import (
     HILApprovalRecord,
     HILApprovalStatus,
@@ -121,14 +122,14 @@ def executor_script() -> list[Any]:
     rather than as a silently shorter stream.
     """
     return [
-        call("retrieve_tools", {"exact_tool_names": [GATED_TOOL]}, id="tc_retrieve"),
-        call(GATED_TOOL, GATED_ARGS, id=GATED_CALL_ID),
+        call("retrieve_tools", {"exact_tool_names": [GATED_TOOL]}, call_id="tc_retrieve"),
+        call(GATED_TOOL, GATED_ARGS, call_id=GATED_CALL_ID),
         "Drew the flowchart.",
     ]
 
 
 def comms_script() -> list[Any]:
-    return [call("call_executor", {"task": "draw the flowchart"}, id="tc_exec"), "On it."]
+    return [call("call_executor", {"task": "draw the flowchart"}, call_id="tc_exec"), "On it."]
 
 
 def assert_real_tool_output(output: str) -> None:
@@ -541,7 +542,14 @@ async def hil_world(
         elif payload.get("type") == WS_EVENT_EXECUTOR_CANCELLED:
             world.cancelled_broadcasts.append(payload)
 
-    async def _deliver(_run: Any, text: str, result_type: str, _note: str) -> tuple[str, str]:
+    async def _deliver(
+        _run: Any,
+        text: str,
+        result_type: str,
+        _note: str,
+        *,
+        tool_data: list[ToolDataEntry] | None,
+    ) -> tuple[str, str]:
         world.delivered.append((text, result_type))
         return text, "executor-message-1"
 
@@ -923,11 +931,11 @@ def sibling_executor_script() -> list[Any]:
         call(
             "retrieve_tools",
             {"exact_tool_names": [SIBLING_TOOL, GATED_TOOL]},
-            id="tc_retrieve",
+            call_id="tc_retrieve",
         ),
         [
-            call(SIBLING_TOOL, SIBLING_ARGS, id=SIBLING_CALL_ID),
-            call(GATED_TOOL, GATED_ARGS, id=GATED_CALL_ID),
+            call(SIBLING_TOOL, SIBLING_ARGS, call_id=SIBLING_CALL_ID),
+            call(GATED_TOOL, GATED_ARGS, call_id=GATED_CALL_ID),
         ],
         "Checked the weather and drew the flowchart.",
     ]
@@ -1039,9 +1047,9 @@ def cancelling_comms_script() -> list[Any]:
     it is the only caller of ``cancel_conversation_approvals``.
     """
     return [
-        call("call_executor", {"task": "draw the flowchart"}, id="tc_exec"),
+        call("call_executor", {"task": "draw the flowchart"}, call_id="tc_exec"),
         "On it.",
-        call("cancel_executor", {"task_ids": []}, id="tc_cancel"),
+        call("cancel_executor", {"task_ids": []}, call_id="tc_cancel"),
         "Stopped.",
     ]
 
@@ -1087,13 +1095,13 @@ class TestCancellationWhileParked:
             # decision that cannot be acted on never reports success), and the
             # deny gets as far as the transition and loses it, because the record
             # is no longer pending. Both leave the run dead.
-            with pytest.raises(resolution.ApprovalNotResumable):
+            with pytest.raises(resolution.ApprovalNotResumableError):
                 await resolution.resolve_approval(
                     approval_id=record.approval_id,
                     user_id=str(USER["user_id"]),
                     kind="approve",
                 )
-            with pytest.raises(resolution.ApprovalRequestNotFound):
+            with pytest.raises(resolution.ApprovalRequestNotFoundError):
                 await resolution.resolve_approval(
                     approval_id=record.approval_id,
                     user_id=str(USER["user_id"]),
@@ -1239,10 +1247,14 @@ GATE_B_CALL_ID = "tc_gate_b"
 
 def two_gated_calls_script() -> list[Any]:
     return [
-        call("retrieve_tools", {"exact_tool_names": [GATE_A_TOOL, GATE_B_TOOL]}, id="tc_retrieve"),
+        call(
+            "retrieve_tools",
+            {"exact_tool_names": [GATE_A_TOOL, GATE_B_TOOL]},
+            call_id="tc_retrieve",
+        ),
         [
-            call(GATE_A_TOOL, SIBLING_ARGS, id=GATE_A_CALL_ID),
-            call(GATE_B_TOOL, GATED_ARGS, id=GATE_B_CALL_ID),
+            call(GATE_A_TOOL, SIBLING_ARGS, call_id=GATE_A_CALL_ID),
+            call(GATE_B_TOOL, GATED_ARGS, call_id=GATE_B_CALL_ID),
         ],
         "Checked the weather and drew the flowchart.",
     ]
@@ -1314,7 +1326,7 @@ class TestTwoGatedCallsInOneTurn:
         got re-dispatch context: LangGraph emits one ``__interrupt__`` event PER
         paused task, and the runner used to keep only the last one it saw — leaving
         the other record with no ``resume_item``, so deciding it raised
-        ApprovalNotResumable and that decision could never be applied.
+        ApprovalNotResumableError and that decision could never be applied.
         """
         async with two_gate_world() as (world, calls):
             await run_turn(world, "check the weather and draw me a flowchart")
@@ -1513,11 +1525,15 @@ SECOND_GATE_ARGS = {"description": "the second approved action", "direction": "T
 def one_ungated_two_gated_script() -> list[Any]:
     """One AI message: a harmless call and two that need approval."""
     return [
-        call("retrieve_tools", {"exact_tool_names": [SIBLING_TOOL, GATED_TOOL]}, id="tc_retrieve"),
+        call(
+            "retrieve_tools",
+            {"exact_tool_names": [SIBLING_TOOL, GATED_TOOL]},
+            call_id="tc_retrieve",
+        ),
         [
-            call(SIBLING_TOOL, SIBLING_ARGS, id=SIBLING_CALL_ID),
-            call(GATED_TOOL, FIRST_GATE_ARGS, id=FIRST_GATE_CALL_ID),
-            call(GATED_TOOL, SECOND_GATE_ARGS, id=SECOND_GATE_CALL_ID),
+            call(SIBLING_TOOL, SIBLING_ARGS, call_id=SIBLING_CALL_ID),
+            call(GATED_TOOL, FIRST_GATE_ARGS, call_id=FIRST_GATE_CALL_ID),
+            call(GATED_TOOL, SECOND_GATE_ARGS, call_id=SECOND_GATE_CALL_ID),
         ],
         "Checked the weather and drew both flowcharts.",
     ]
@@ -1645,7 +1661,7 @@ class TestAnUngatedCallAcrossTwoResumes:
 
         The defect this pins: LangGraph reports one ``__interrupt__`` event PER
         paused task, and the runner used to keep only one. The approval left out
-        got no ``resume_item``, so deciding it raised ApprovalNotResumable — the
+        got no ``resume_item``, so deciding it raised ApprovalNotResumableError — the
         user presses Approve and nothing can ever happen. Asserted on the records
         directly, because through the UI it looks like a silent no-op.
         """

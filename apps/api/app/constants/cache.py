@@ -31,6 +31,11 @@ SUBSCRIPTION_PLAN_CACHE_TTL = FIVE_MINUTES_TTL
 ACTIVE_PLANS_CACHE_KEY = "plans:active"
 ALL_PLANS_CACHE_KEY = "plans:all"
 PLANS_CACHE_KEYS = (ACTIVE_PLANS_CACHE_KEY, ALL_PLANS_CACHE_KEY)
+# A minted Dodo checkout session, per user and billing cycle. Reused rather than
+# re-minted so a user who asks to upgrade twice — or hits a limit repeatedly —
+# doesn't leave a trail of abandoned sessions in Dodo.
+UPGRADE_LINK_CACHE_PREFIX = "upgrade_link:"
+UPGRADE_LINK_CACHE_TTL = ONE_HOUR_TTL
 # The tracked-todo summary injected into comms context. Deliberately short: the
 # list changes as the agent works, and a stale pin is worse than the lookup it
 # saves. Keyed by user alone, so only the unpinned summary may use it.
@@ -46,6 +51,9 @@ COMMUNITY_CACHE_TTL = FIVE_MINUTES_TTL
 FAVICON_CACHE_TTL = SIX_MONTH_TTL
 SEARCH_CACHE_TTL = ONE_DAY_TTL
 STREAM_TTL = FIVE_MINUTES_TTL
+# A streaming turn refreshes its progress/resume keys once they drop below this,
+# so the refresh costs one TTL read per frame instead of a read-plus-two-writes.
+STREAM_LIVENESS_REFRESH_AFTER = STREAM_TTL // 2
 STATE_TOKEN_TTL = TEN_MINUTES_TTL
 MOBILE_REDIRECT_TTL = FIVE_MINUTES_TTL
 
@@ -166,6 +174,11 @@ EXECUTOR_QUEUE_TTL = ONE_HOUR_TTL  # Tasks expire if not picked up within 1 hour
 # whatever tool events were collected. Matches the busy lock TTL — the executor
 # cannot outlive its lock, so waiting longer would be pointless.
 EXECUTOR_WAIT_TIMEOUT = THIRTY_MINUTES_TTL
+#: How long a background (workflow) turn waits for the executor it dispatched.
+#: Shorter than the worker's job timeout on purpose: a wait as long as the job
+#: means the job is cut first, mid-bookkeeping, and the fire is never closed
+#: out. Seen live: an executor that stopped mid-run left a record 'running'.
+BACKGROUND_EXECUTOR_WAIT_TIMEOUT = 25 * 60
 # ElevenLabs voice lists (account + shared library) cached for the voice picker.
 ELEVENLABS_VOICES_CACHE_KEY = "voice:elevenlabs_voices"
 ELEVENLABS_SHARED_VOICES_CACHE_KEY = "voice:elevenlabs_shared_voices"
@@ -177,3 +190,7 @@ VOICE_EXECUTOR_RESULT_TIMEOUT_S = 90.0
 # One-shot gate (SET NX) for the "priority compute used this month" in-app notice,
 # so a degraded pro user is told once per month, not once per turn.
 COST_BUDGET_NOTIFIED_KEY = "cost_budget_notified:{user_id}:{window}"
+
+#: Prefix of the tiered rate limiter's per-user counters: ``{prefix}:{user_id}:{feature}:{period}:{window}``.
+#: Named so a dev tool can clear one user's counters without knowing the rest of the key.
+RATE_LIMIT_KEY_PREFIX = "rate_limit"

@@ -47,7 +47,7 @@ from app.services.browser.replay import create_replay_link
 from app.services.browser.screenshots import upload_step_screenshot
 from app.services.browser.session import BrowserHostSession
 from app.services.browser.tools import build_browser_tools
-from app.services.llm_metering import record_llm_call
+from app.services.llm_metering import LLMCallContext, TokenUsage, record_llm_call
 from app.utils.background_tasks import spawn_background_task
 from shared.py.wide_events import log
 
@@ -578,8 +578,16 @@ class BrowserTaskRunner:
             await record_llm_call(
                 user_id=self._user_id,
                 model_name=model_name,
-                input_tokens=stats.prompt_tokens,
-                output_tokens=stats.completion_tokens,
+                usage=TokenUsage(
+                    input_tokens=stats.prompt_tokens,
+                    output_tokens=stats.completion_tokens,
+                    cached_tokens=0,
+                    reasoning_tokens=0,
+                ),
                 root_request_id=self._root_request_id,
-                charge_to_budget=True,
+                context=LLMCallContext(
+                    agent_name="browser_task",
+                    background=False,
+                    charge_to_budget=True,
+                ),
             )

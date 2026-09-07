@@ -7,7 +7,7 @@ from arq.typing import WorkerCoroutine
 # same monkey-patches as the API process (main.py). Without this, custom tools
 # 500 with "Missing user_id in auth_credentials" because the CustomTool
 # user_id-injection patch never loads in this process.
-import app.patches  # noqa: F401
+import app.patches  # noqa: F401 -- applies monkeypatches on import; must run before the patched SDKs are used
 from app.workers.config.worker_settings import WorkerSettings
 from app.workers.lifecycle import shutdown, startup
 from app.workers.task_envelope import arq_task
@@ -30,6 +30,7 @@ from app.workers.tasks import (
     regenerate_workflow_steps,
     run_nurture_sequence_task,
     sweep_abandoned_imessage_registrations,
+    sweep_expired_memories,
     sweep_idle_sandboxes,
 )
 from app.workers.tasks.hil_sweep_tasks import sweep_hil_approvals
@@ -39,6 +40,7 @@ from app.workers.tasks.tracked_todo_tasks import (
     execute_tracked_todo,
     safety_net_check_orphaned_todos,
 )
+from app.workers.tasks.trigger_dispatch_tasks import dispatch_todo_subscriptions
 from app.workers.tasks.workflow_dormancy_tasks import sweep_dormant_user_workflows
 
 # Wrap every task in the standard envelope (wide event + Prometheus histogram)
@@ -63,6 +65,7 @@ _sweep_idle_sandboxes = arq_task(sweep_idle_sandboxes)
 _prune_inactive_sessions = arq_task(prune_inactive_sessions)
 _prune_checkpoint_versions = arq_task(prune_checkpoint_versions)
 _execute_tracked_todo = arq_task(execute_tracked_todo)
+_dispatch_todo_subscriptions = arq_task(dispatch_todo_subscriptions)
 _safety_net_check_orphaned_todos = arq_task(safety_net_check_orphaned_todos)
 _maintenance_sweep_tracked_todos = arq_task(maintenance_sweep_tracked_todos)
 _rescan_pending_scheduled_tasks = arq_task(rescan_pending_scheduled_tasks)
@@ -70,6 +73,7 @@ _run_nurture_sequence_task = arq_task(run_nurture_sequence_task)
 _promote_usage_badges = arq_task(promote_usage_badges)
 _sweep_dormant_user_workflows = arq_task(sweep_dormant_user_workflows)
 _sweep_abandoned_imessage_registrations = arq_task(sweep_abandoned_imessage_registrations)
+_sweep_expired_memories = arq_task(sweep_expired_memories)
 
 WorkerSettings.functions = [
     _sweep_hil_approvals,
@@ -89,11 +93,13 @@ WorkerSettings.functions = [
     _prune_inactive_sessions,
     _prune_checkpoint_versions,
     _execute_tracked_todo,
+    _dispatch_todo_subscriptions,
     _backfill_active_users,
     _backfill_user_memories,
     _promote_usage_badges,
     _sweep_dormant_user_workflows,
     _sweep_abandoned_imessage_registrations,
+    _sweep_expired_memories,
 ]
 
 WorkerSettings.cron_jobs = [
@@ -183,6 +189,15 @@ WorkerSettings.cron_jobs = [
     cron(
         cast(WorkerCoroutine, _sweep_dormant_user_workflows),
         hour=6,  # Daily at 06:00 UTC
+        minute=0,
+        second=0,
+    ),
+    # Retire memories whose forget_after has passed. Without this, expiry is
+    # only a read-time filter: an expired fact stays in the folder tree, the
+    # plan cap count, the workspace projection and the rendered agenda.
+    cron(
+        cast(WorkerCoroutine, _sweep_expired_memories),
+        hour=2,  # Daily at 02:00 UTC, before the session/checkpoint prunes
         minute=0,
         second=0,
     ),

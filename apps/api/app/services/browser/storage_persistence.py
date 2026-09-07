@@ -53,7 +53,7 @@ def _get_cipher() -> Fernet:
             raise ValueError(
                 "BROWSER_STATE_ENCRYPTION_KEY is not a valid Fernet key "
                 f"(must be 32 url-safe base64-encoded bytes): {e}"
-            )
+            ) from e
     return _cipher
 
 

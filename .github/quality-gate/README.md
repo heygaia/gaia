@@ -31,7 +31,7 @@ to reintroduce, not a default.
 ## Lane names
 
 `biome`, `deps`, `circular`, `file-size`, `types-location`, `components-per-file`,
-`duplicates`, `package-hygiene`, `type-check`, `python-ruff`,
-`python-mypy`, `python-interrogate`, `python-xenon`, `python-security`,
-`observability`, `wide-event-conformance`, `dead-code`, `alert-rules`,
-`suppression-ratchet`, `gitleaks`, `semgrep`, `test-mutation`.
+`duplicates`, `package-hygiene`, `type-check`, `python-static`,
+`python-mypy`, `observability`, `wide-event-conformance`, `dead-code`, `alert-rules`,
+`suppression-hygiene`, `gitleaks`, `semgrep`, `test-mutation-plan`, `test-mutation`
+(twenty — keep this list, the `LANES` array and the `needs:` list in step).

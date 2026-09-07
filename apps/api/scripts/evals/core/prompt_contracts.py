@@ -47,7 +47,6 @@ PROMPT_SOURCES: dict[str, tuple[str, str]] = {
     "openui": ("app.agents.prompts.openui_prompts", "OPENUI_SURFACE_POLICY"),
     "subagent_base": ("app.agents.prompts.subagent_prompts", "BASE_SUBAGENT_PROMPT"),
     "subagent_gmail": ("app.agents.prompts.subagent_prompts", "GMAIL_AGENT_SYSTEM_PROMPT"),
-    "subagent_reminders": ("app.agents.prompts.subagent_prompts", "REMINDER_AGENT_SYSTEM_PROMPT"),
     "memory_extraction": ("app.agents.prompts.memory_prompts", "BASE_MEMORY_EXTRACTION_PROMPT"),
 }
 
@@ -169,7 +168,7 @@ CLAUSES: tuple[Clause, ...] = (
         name="no_invented_capabilities",
         source="comms",
         starts_at="11. NO INVENTED CAPABILITIES:",
-        ends_before="—Voice (Human WhatsApp Mode)—",
+        ends_before="## Voice (Human WhatsApp Mode)",
         governs="how a request outside GAIA's real abilities is declined",
         depends_on=("data/quality/refusals.yaml", "data/comms/honesty.yaml"),
     ),
@@ -200,7 +199,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="no_dashes",
         source="comms",
-        starts_at="- NEVER use em dashes",
+        starts_at="- Banned literals (dashes): NEVER use em dashes",
         ends_before="Never sound like a bot:",
         governs="em dashes and en dashes are banned from every output",
         depends_on=("gate:dash_discipline",),
@@ -208,7 +207,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="banned_bot_phrases",
         source="comms",
-        starts_at="- Banned phrases (they scream chatbot):",
+        starts_at="- Banned literals (phrases that scream chatbot):",
         ends_before="- When the user is just chatting,",
         governs="the literal chatbot phrases that must never be said",
         depends_on=("gate:banned_bot_phrases", "data/quality/voice.yaml"),
@@ -216,8 +215,8 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="content_vs_conversation_length",
         source="comms",
-        starts_at="—Length Modes (CRITICAL: two different modes, never confuse them)—",
-        ends_before="—Chat Bubbles—",
+        starts_at="## Length Modes (CRITICAL: two different modes, never confuse them)",
+        ends_before="## Chat Bubbles",
         governs="chat replies stay short; requested deliverables are written in full",
         depends_on=("data/quality/hard.yaml", "data/quality/everyday.yaml"),
     ),
@@ -225,15 +224,15 @@ CLAUSES: tuple[Clause, ...] = (
         name="write_like_a_human",
         source="comms",
         starts_at="WRITE LIKE A HUMAN (all content you produce):",
-        ends_before="—Chat Bubbles—",
+        ends_before="## Chat Bubbles",
         governs="the AI-tell patterns banned from produced content (LLM vocabulary, scaffolding)",
         depends_on=("data/quality/hard.yaml",),
     ),
     Clause(
         name="bubble_splitting",
         source="comms",
-        starts_at="—Chat Bubbles—",
-        ends_before="—Rich UI Components (OpenUI) — CRITICAL—",
+        starts_at="## Chat Bubbles",
+        ends_before="## Rich UI Components (OpenUI), CRITICAL",
         governs="conversational messages split into bubbles; structured data stays in one",
         depends_on=("gate:bubble_boundary", "data/quality/bubbles.yaml"),
     ),
@@ -262,10 +261,10 @@ CLAUSES: tuple[Clause, ...] = (
         depends_on=("gate:internal_machinery",),
     ),
     Clause(
-        name="never_reproduce_internal_markers",
+        name="never_reproduce_internal_tags",
         source="comms",
-        starts_at="Never reproduce the literal markers:",
-        governs="the internal routing tags never appear in a user-facing reply",
+        starts_at="Never reproduce the literal tags:",
+        governs="the internal channel tags never appear in a user-facing reply",
         depends_on=("gate:internal_machinery",),
     ),
     Clause(
@@ -279,16 +278,17 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="executor_ground_truth_contract",
         source="comms",
-        starts_at="—Delivering Results ([EXECUTOR_RESULT] / [EXECUTOR_ERROR])—",
-        ends_before="—Rate Limits & Subscription—",
+        starts_at="## Delivering Results (<executor_result> / <executor_error>)",
+        ends_before="## Rate Limits & Subscription",
         governs="how executor output is re-voiced: relay everything, change only tone",
         depends_on=("gate:communicate", "data/quality/hard.yaml"),
     ),
     Clause(
         name="upgrade_link",
         source="comms",
-        starts_at="[Upgrade to GAIA Pro](https://heygaia.io/pricing)",
-        governs="the exact markdown link offered when usage limits are hit",
+        starts_at="Plan, billing, payment and upgrade questions are executor work:",
+        governs="billing and upgrade asks delegate to the executor's real tools; "
+        "comms never pastes a static pricing link itself",
         depends_on=("data/quality/domains.yaml",),
     ),
     Clause(
@@ -303,7 +303,7 @@ CLAUSES: tuple[Clause, ...] = (
         name="preference_is_not_a_task",
         source="comms",
         starts_at="- A PREFERENCE IS NOT A TASK:",
-        ends_before="—Active Todo Binding—",
+        ends_before="## Active Todo Binding",
         governs="a standing preference is remembered, never turned into a destructive action",
         depends_on=("gate:no_forbidden_tools", "data/quality/hard.yaml"),
     ),
@@ -311,7 +311,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="risky_writes_draft_first",
         source="executor",
-        starts_at="RISKY WRITES — DRAFT AND CONFIRM FIRST",
+        starts_at="RISKY WRITES: DRAFT AND CONFIRM FIRST",
         ends_before="TWO TASK SYSTEMS (do not confuse)",
         governs="emails always go through the draft flow; nothing auto-sends or auto-deletes",
         depends_on=("data/capability/gmail.yaml", "suites/hil.py"),
@@ -383,7 +383,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="how_to_emit",
         source="openui",
-        starts_at="How to emit openui — fence the openui-lang code",
+        starts_at="How to emit openui: fence the openui-lang code",
         governs="a component is openui-lang inside a :::openui fence, mixed with ordinary prose",
         depends_on=("openui_policy:required", "data/quality/openui.yaml"),
     ),
@@ -398,17 +398,10 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="draft_first_workflow",
         source="subagent_gmail",
-        starts_at="— DRAFT-FIRST WORKFLOW (NON-NEGOTIABLE)",
-        ends_before="— WHAT MAKES A GOOD EMAIL",
+        starts_at="## DRAFT-FIRST WORKFLOW (NON-NEGOTIABLE)",
+        ends_before="## WHAT MAKES A GOOD EMAIL",
         governs="every email goes through the real compose card, never plain text or OpenUI",
         depends_on=("data/capability/gmail.yaml", "suites/hil.py"),
-    ),
-    Clause(
-        name="delete_requires_consent",
-        source="subagent_reminders",
-        starts_at="- NEVER use delete_reminder_tool without explicit user consent",
-        governs="destructive reminder tools need explicit consent",
-        depends_on=("gate:no_forbidden_tools", "data/capability/reminders.yaml"),
     ),
     # -- memory extraction --------------------------------------------------
     Clause(

@@ -16,15 +16,22 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 import pytest
 
-from app.db.repositories.workflows import WorkflowsRepository
+from app.db.repositories.workflows import (
+    SystemWorkflowDefinition,
+    WorkflowReArm,
+    WorkflowsRepository,
+)
 from app.models.scheduler_models import ScheduledTaskStatus
 from app.models.workflow_models import (
+    DeactivationReason,
     TriggerConfig,
     TriggerType,
     WorkflowDocument,
     WorkflowStep,
     WorkflowUpdate,
 )
+from app.services.workflow.scheduler import WorkflowScheduler
+from app.utils.occurrence import parse_occurrence_stamp
 
 
 def _uid(prefix: str) -> str:
@@ -112,6 +119,29 @@ class TestWorkflowsOwnedCrud:
         # cross-user update is a no-op
         assert await repo.update_for_user(created.id, "attacker", WorkflowUpdate(title="X")) is None
         assert (await repo.get(created.id)).title == "New"
+
+    async def test_deactivate_records_the_blockers_in_the_same_write(self, repo):
+        """A pause on integrations a run found missing carries them with it;
+        a plain deactivation leaves whatever list was there alone."""
+        created = await repo.create(_workflow(user_id="owner"))
+
+        paused = await repo.deactivate(
+            created.id,
+            "owner",
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github", "slack"],
+        )
+        assert paused is not None
+        assert paused.activated is False
+        assert paused.deactivated_reason is DeactivationReason.INTEGRATION_NEVER_CONNECTED
+        assert paused.blocked_on_integrations == ["github", "slack"]
+        assert (await repo.get(created.id)).blocked_on_integrations == ["github", "slack"]
+
+        plain = await repo.deactivate(created.id, "owner")
+        assert plain is not None
+        assert plain.deactivated_reason is None
+        assert plain.blocked_on_integrations == ["github", "slack"]
+        assert await repo.deactivate(created.id, "attacker") is None
 
     async def test_delete_for_user_scoped(self, repo):
         created = await repo.create(_workflow(user_id="owner"))
@@ -205,6 +235,97 @@ class TestWorkflowsScheduler:
         wf = await repo.create(_workflow(activated=False, status=ScheduledTaskStatus.SCHEDULED))
         assert await repo.claim_for_execution(wf.id) is False
 
+    async def test_claim_pin_rejects_stale_fire_after_reschedule(self, repo):
+        """The bug-2 gate against real Mongo: a deferred ARQ job armed for 16:00
+        that fires after the workflow was rescheduled to 21:00 must be rejected,
+        and the rejection must leave the row claimable by the 21:00 job."""
+        old_fire = (datetime.now(UTC) + timedelta(hours=5)).replace(microsecond=0)
+        new_fire = old_fire + timedelta(hours=5)
+        wf = await repo.create(
+            _workflow(
+                activated=True,
+                status=ScheduledTaskStatus.SCHEDULED,
+                scheduled_at=old_fire,
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE,
+                    enabled=True,
+                    cron_expression="0 16 * * *",
+                    timezone="UTC",
+                    next_run=old_fire,
+                ),
+            )
+        )
+
+        # The reschedule itself: update_workflow persists the new cron's next_run.
+        assert (
+            await repo.set_status(
+                wf.id,
+                ScheduledTaskStatus.SCHEDULED,
+                rearm=WorkflowReArm(scheduled_at=new_fire, next_run=new_fire),
+            )
+            is True
+        )
+
+        # Old job fires: armed for 16:00 but next_run is now 21:00 -> rejected...
+        assert await repo.claim_for_execution(wf.id, expected_next_run=old_fire) is False
+        # ...and the rejection changed nothing — the row is still idle/scheduled.
+        after_stale = await repo.get(wf.id)
+        assert after_stale.status == ScheduledTaskStatus.SCHEDULED
+
+        # New job fires: matches the current occurrence -> claims cleanly.
+        assert await repo.claim_for_execution(wf.id, expected_next_run=new_fire) is True
+        assert (await repo.get(wf.id)).status == ScheduledTaskStatus.EXECUTING
+
+    async def test_claim_pin_survives_the_real_stamp_round_trip(self, repo):
+        """The pin must match the armed occurrence through ARQ's serialized args.
+
+        The stamp travels as a unix int and comes back floored to the second,
+        while Mongo holds ``next_run`` at BSON's millisecond precision. Cron
+        fires land on whole seconds, so only a sub-second ``next_run`` — a
+        one-shot re-armed by the stale-executing reaper at its original time —
+        exposes it; the gate must not depend on that luck. Driven through the
+        real producer and parser so the encoding itself is under test.
+        """
+        armed = datetime.now(UTC) + timedelta(hours=5)
+        assert armed.microsecond, "fixture must carry a sub-second component"
+        wf = await repo.create(
+            _workflow(
+                activated=True,
+                status=ScheduledTaskStatus.SCHEDULED,
+                scheduled_at=armed,
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE,
+                    enabled=True,
+                    cron_expression="0 16 * * *",
+                    timezone="UTC",
+                    next_run=armed,
+                ),
+            )
+        )
+
+        _, context = WorkflowScheduler()._build_job_args(wf.id, armed)
+        expected = parse_occurrence_stamp(context["scheduled_for"], wf.id)
+
+        assert await repo.claim_for_execution(wf.id, expected_next_run=expected) is True
+
+    async def test_claim_without_pin_stays_ungated(self, repo):
+        """Jobs enqueued before the stamp existed carry no expected time; they
+        must keep claiming across a deploy."""
+        wf = await repo.create(
+            _workflow(
+                activated=True,
+                status=ScheduledTaskStatus.SCHEDULED,
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE,
+                    enabled=True,
+                    cron_expression="0 16 * * *",
+                    timezone="UTC",
+                    next_run=datetime.now(UTC).replace(microsecond=0),
+                ),
+            )
+        )
+        assert await repo.claim_for_execution(wf.id) is True
+
     async def test_find_stale_executing(self, repo, raw_collection):
         now = datetime.now(UTC)
         stale = await repo.create(_workflow(activated=True, status=ScheduledTaskStatus.EXECUTING))
@@ -227,9 +348,7 @@ class TestWorkflowsScheduler:
             wf.id,
             ScheduledTaskStatus.SCHEDULED,
             user_id=owner,
-            scheduled_at=run_at,
-            occurrence_count=3,
-            next_run=run_at,
+            rearm=WorkflowReArm(scheduled_at=run_at, occurrence_count=3, next_run=run_at),
         )
         assert ok is True
         fetched = await repo.get(wf.id)
@@ -247,7 +366,10 @@ class TestWorkflowsScheduler:
         assert (await repo.get(wf.id)).scheduled_at == run_at
         # an explicit None clears it (the reap path for a non-recurring workflow).
         assert (
-            await repo.set_status(wf.id, ScheduledTaskStatus.SCHEDULED, scheduled_at=None) is True
+            await repo.set_status(
+                wf.id, ScheduledTaskStatus.SCHEDULED, rearm=WorkflowReArm(scheduled_at=None)
+            )
+            is True
         )
         assert (await repo.get(wf.id)).scheduled_at is None
 
@@ -374,20 +496,72 @@ class TestWorkflowsTriggersAndSystem:
         )
         updated = await repo.reset_system_workflow(
             wf.id,
-            title="Fresh",
-            description="fresh desc",
-            steps=[WorkflowStep(title="s2", category="notion", description="d2")],
-            trigger_config=TriggerConfig(
-                type=TriggerType.SCHEDULE, enabled=True, cron_expression="0 9 * * *"
+            SystemWorkflowDefinition(
+                title="Fresh",
+                description="fresh desc",
+                prompt="fresh prompt",
+                steps=[WorkflowStep(title="s2", category="notion", description="d2")],
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE, enabled=True, cron_expression="0 9 * * *"
+                ),
+                composio_trigger_ids=["t1"],
             ),
-            composio_trigger_ids=["t1"],
         )
         assert updated is not None
         assert updated.title == "Fresh"
         assert updated.description == "fresh desc"
+        assert updated.prompt == "fresh prompt"
         assert [s.title for s in updated.steps] == ["s2"]
         assert updated.trigger_config.type == TriggerType.SCHEDULE
         assert updated.trigger_config.composio_trigger_ids == ["t1"]
+
+
+class TestPlaybookDeclineTally:
+    """``count_playbook_decline``: once per run, atomically, a fresh tally per hash."""
+
+    async def test_a_run_counts_once_however_many_times_it_declines(self, repo) -> None:
+        created = await repo.create(_workflow())
+        first = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_a", workflow_hash="h1"
+        )
+        again = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_a", workflow_hash="h1"
+        )
+        next_run = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_b", workflow_hash="h1"
+        )
+
+        assert (first, again, next_run) == (1, None, 2)
+        stored = await repo.get_for_user(created.id, created.user_id)
+        assert stored is not None
+        assert stored.playbook_declined_run == "run_b"
+
+    async def test_an_edited_workflow_starts_a_fresh_tally(self, repo) -> None:
+        created = await repo.create(_workflow())
+        await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r1", workflow_hash="h1"
+        )
+        await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r2", workflow_hash="h1"
+        )
+
+        fresh = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r3", workflow_hash="h2"
+        )
+
+        assert fresh == 1
+        stored = await repo.get_for_user(created.id, created.user_id)
+        assert stored is not None
+        assert (stored.playbook_declines, stored.playbook_declined_hash) == (1, "h2")
+
+    async def test_another_users_workflow_is_not_counted(self, repo) -> None:
+        created = await repo.create(_workflow())
+        assert (
+            await repo.count_playbook_decline(
+                created.id, _uid("stranger"), run_id="r1", workflow_hash="h1"
+            )
+            is None
+        )
 
 
 class TestWorkflowsPublishAndWrites:
@@ -477,6 +651,48 @@ class TestWorkflowsPublishAndWrites:
         with_msg = await repo.set_error_message(wf.id, owner, "boom")
         assert with_msg is not None and with_msg.error_message == "boom"
         assert await repo.touch(_uid("missing"), owner) is None
+
+
+class TestScheduledWorkflowToolPayloadJsonSafety:
+    """Bug-1 gate against real Mongo: a persisted scheduled workflow read back
+    through the repository carries native datetimes (BSON dates), so the tool
+    payloads the workflow tools emit must be built with ``model_dump(mode="json")``
+    — their consumers (the LLM ToolMessage and the stream writer) plain
+    ``json.dumps`` them."""
+
+    async def test_get_workflow_tool_payload_is_json_safe(self, repo):
+        import json
+
+        next_run = (datetime.now(UTC) + timedelta(hours=5)).replace(microsecond=0)
+        wf = await repo.create(
+            _workflow(
+                activated=True,
+                scheduled_at=next_run,
+                last_executed_at=next_run - timedelta(days=1),
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE,
+                    enabled=True,
+                    cron_expression="0 16 * * *",
+                    timezone="UTC",
+                    next_run=next_run,
+                ),
+            )
+        )
+
+        doc = await repo.get_for_user(wf.id, wf.user_id)
+        assert doc is not None
+        # The document really does carry native datetimes after the round-trip.
+        assert isinstance(doc.trigger_config.next_run, datetime)
+
+        # Exactly what get_workflow emits (workflow_tool.py).
+        payload = {"success": True, "data": doc.model_dump(mode="json")}
+        dumped = json.dumps(payload)
+        assert doc.trigger_config.next_run.isoformat() in dumped
+
+        # The old python-mode dump is what raised TypeError in production —
+        # keep this assertion so a regression to model_dump() fails here too.
+        with pytest.raises(TypeError, match="not JSON serializable"):
+            json.dumps({"success": True, "data": doc.model_dump()})
 
 
 class TestWorkflowsUniqueIndexSurface:

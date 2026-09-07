@@ -17,10 +17,10 @@
 @source inline("grid-rows-3 grid-rows-4 grid-cols-3 grid-cols-4");
 
 /* HeroUI */
-@source "../../../../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
+@source "../../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}";
 
 /* Streamdown — markdown renderer; scan its dist so Tailwind emits the utilities its components use */
-@source "../../../../../node_modules/streamdown/dist/*.js";
+@source "../../../node_modules/streamdown/dist/*.js";
 
 @custom-variant dark (&:is(.dark *));
 @plugin "./hero.ts";
@@ -176,6 +176,7 @@
   --animate-shimmer: shimmer 2s linear infinite;
   --animate-shake: shake 0.7s ease-in-out;
   --animate-scale-in: scale-in 0.4s ease-out forwards;
+  --animate-caret-blink: caret-blink 1.25s ease-out infinite;
 }
 
 @keyframes shine {
@@ -284,6 +285,18 @@
   60%,
   80% {
     transform: translateX(4px);
+  }
+}
+
+@keyframes caret-blink {
+  0%,
+  70%,
+  100% {
+    opacity: 1;
+  }
+  20%,
+  50% {
+    opacity: 0;
   }
 }
 

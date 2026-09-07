@@ -49,6 +49,14 @@ class ReminderModel(BaseScheduledTask):
     """Reminder document model for MongoDB (one-time or recurring)."""
 
     agent: AgentType = Field(..., description="Agent responsible for this reminder task")
+    source_conversation_id: str | None = Field(
+        default=None,
+        description=(
+            "The chat that created this reminder. When it fires, the reminder is "
+            "delivered back into this conversation (on its own surface) and recorded "
+            "in its langgraph thread. None for reminders created outside a chat."
+        ),
+    )
     timezone: str | None = Field(
         default=None,
         description=(
@@ -88,6 +96,9 @@ class CreateReminderRequest(BaseModel):
             "wall-clock zone). None falls back to UTC."
         ),
     )
+    source_conversation_id: str | None = Field(
+        None, description="The chat that created the reminder; delivery target when it fires."
+    )
 
     @field_validator("timezone")
     @classmethod
@@ -100,7 +111,8 @@ class CreateReminderRequest(BaseModel):
     @field_validator("repeat")
     @classmethod
     def check_repeat_cron(cls, v: str | None) -> str | None:
-        from app.utils.cron_utils import validate_cron_expression
+        # Deferred import: validator-local re-import of validate_cron_expression, also bound at module top level
+        from app.utils.cron_utils import validate_cron_expression  # noqa: PLC0415 -- deferred
 
         if v is not None and not validate_cron_expression(v):
             raise ValueError(f"Invalid cron expression: {v}")
@@ -197,6 +209,9 @@ class CreateReminderToolRequest(BaseModel):
             "are interpreted in and the recurrence runs in. None falls back to UTC."
         ),
     )
+    source_conversation_id: str | None = Field(
+        None, description="The chat that created the reminder; delivery target when it fires."
+    )
 
     @field_validator("repeat")
     @classmethod
@@ -224,7 +239,7 @@ class CreateReminderToolRequest(BaseModel):
     def validate_timezone_offset(cls, v: str | None) -> str | None:
         """Validate timezone offset format (+|-)HH:MM"""
         if v is not None:
-            import re
+            import re  # noqa: PLC0415 -- stdlib import kept local to this validator branch
 
             if not re.match(r"^[+-]\d{2}:\d{2}$", v):
                 raise ValueError("Timezone offset must be in (+|-)HH:MM format")
@@ -244,7 +259,7 @@ class CreateReminderToolRequest(BaseModel):
         except ValueError as e:
             raise ValueError(
                 f"Invalid {field_name} format: {raw}. Use YYYY-MM-DD HH:MM:SS format. Error: {e}"
-            )
+            ) from e
         tzinfo = Timezone.parse(offset).tzinfo if offset else home_tz.tzinfo
         return dt.astimezone(tzinfo) if dt.tzinfo is not None else dt.replace(tzinfo=tzinfo)
 
@@ -285,6 +300,7 @@ class CreateReminderToolRequest(BaseModel):
             max_occurrences=self.max_occurrences,
             stop_after=processed_stop_after,
             timezone=reminder_timezone,
+            source_conversation_id=self.source_conversation_id,
         )
 
 
@@ -302,7 +318,9 @@ class UpdateReminderRequest(BaseModel):
     @field_validator("repeat")
     @classmethod
     def check_repeat_cron(cls, v: str | None) -> str | None:
-        from app.utils.cron_utils import validate_cron_expression
+        from app.utils.cron_utils import (  # noqa: PLC0415 -- keeps croniter off this module's import path; only needed when a repeat cron actually validates
+            validate_cron_expression,
+        )
 
         if v is not None and not validate_cron_expression(v):
             raise ValueError(f"Invalid cron expression: {v}")
@@ -326,8 +344,6 @@ class UpdateReminderRequest(BaseModel):
     @field_validator("stop_after")
     @classmethod
     def check_stop_after_future(cls, v: datetime | None) -> datetime | None:
-        from datetime import datetime
-
         if v is not None:
             # Ensure timezone-aware datetime
             if v.tzinfo is None:

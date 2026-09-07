@@ -2,7 +2,7 @@
 Tracked todo service — Mongo-backed lifecycle for GAIA's working memory todos.
 
 A tracked todo is a regular todo with:
-- vfs_path (display label) set to /users/{user_id}/todos/{todo_id}/
+- vfs_path (display label) set to /workspace/gaia-tasks/{todo_id}
 - 'gaia-tracked' label
 - canvas_content field (agent-written brain) indexed in ChromaDB
 - log_content field (system-written audit trail)
@@ -13,7 +13,6 @@ JuiceFS / FUSE mount is required, so tracked todos work in every dev mode.
 """
 
 from datetime import UTC, datetime
-import re
 
 from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
@@ -26,6 +25,7 @@ from app.services.todo_canvas_storage import (
     write_canvas,
 )
 from app.services.todos.todo_service import TodoService
+from app.services.triggers.subscription_service import teardown_subscriptions
 from app.utils.canvas_vector_utils import (
     mark_canvas_completed,
     store_canvas_embedding,
@@ -80,32 +80,6 @@ def _format_due_string(due_date: datetime | None, now: datetime) -> str:
 # Capture everything under the "## Key Details" heading up to the next "## "
 # heading (or end of text). A tempered greedy token — "any char that does not
 # begin a new section" — avoids a reluctant quantifier entirely.
-_KEY_DETAILS_RE = re.compile(r"## Key Details\n((?:(?!\n## ).)*)", re.DOTALL)
-_KEY_DETAILS_MAX_LINES = 5
-
-
-async def _extract_canvas_key_details(doc: TodoDocument, user_id: str) -> str:
-    """Pull the Key Details section text from a tracked todo's canvas (empty on miss)."""
-    try:
-        canvas = await read_canvas(doc.id, user_id)
-    except Exception as e:
-        log.warning("tracked_todo.canvas_read_failed", todo_id=doc.id, error=str(e))
-        return ""
-    if not canvas:
-        return ""
-    match = _KEY_DETAILS_RE.search(canvas)
-    return match.group(1).strip() if match else ""
-
-
-def _format_signal_entry(doc: TodoDocument, key_details: str) -> str:
-    """Render one tracked todo as a signal-matching context bullet (+ indented key details)."""
-    labels = [lbl for lbl in doc.labels if lbl != GAIA_TRACKED_LABEL]
-    labels_str = f" [{', '.join(labels)}]" if labels else ""
-    entry = f'- "{doc.title}"{labels_str} (ID: {doc.id}, vfs: {doc.vfs_path or ""})'
-    if key_details:
-        for dl in key_details.split("\n")[:_KEY_DETAILS_MAX_LINES]:
-            entry += f"\n    {dl.strip()}"
-    return entry
 
 
 def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: str | None) -> str:
@@ -118,7 +92,7 @@ def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: 
     return (
         f'  {prefix}"{doc.title}"{labels_str}{_format_due_string(doc.due_date, now)}'
         f" — {age_days}d old, updated {last_update}d ago"
-        f" | ID: {doc.id} | VFS: {doc.vfs_path or 'none'}"
+        f" | ID: {doc.id}"
     )
 
 
@@ -139,6 +113,7 @@ class TrackedTodoService:
         priority: Priority = Priority.NONE,
         labels: list[str] | None = None,
         initial_canvas: str | None = None,
+        source_conversation_id: str | None = None,
     ) -> TodoResponse:
         """Create a todo with VFS canvas and ChromaDB indexing.
 
@@ -162,7 +137,7 @@ class TrackedTodoService:
         result = await TodoService.create_todo(todo, user_id)
         todo_id = result.id
 
-        vfs_path = build_vfs_label(user_id, todo_id)
+        vfs_path = build_vfs_label(todo_id)
         canvas_content = initial_canvas or CANVAS_TEMPLATE.format(title=title)
         now = datetime.now(UTC)
         log_content = (
@@ -176,7 +151,10 @@ class TrackedTodoService:
             todo_id,
             user_id=user_id,
             update=TodoUpdate(
-                vfs_path=vfs_path, canvas_content=canvas_content, log_content=log_content
+                vfs_path=vfs_path,
+                canvas_content=canvas_content,
+                log_content=log_content,
+                source_conversation_id=source_conversation_id,
             ),
         )
 
@@ -210,7 +188,6 @@ class TrackedTodoService:
         if doc.completed:
             return True
 
-        vfs_path = doc.vfs_path or build_vfs_label(user_id, todo_id)
         now = datetime.now(UTC)
 
         await append_log(
@@ -219,8 +196,10 @@ class TrackedTodoService:
             f"\n## {now.isoformat()} [COMPLETED]\n- Summary: {summary}\n",
         )
 
-        # Switch the display label to the archived form (purely cosmetic).
-        archive_path = vfs_path.replace("/todos/", "/todos/archive/")
+        # Always derive the archived label — never persist a stored one back.
+        # Legacy docs still carry the host-side /users/<uid>/todos/<id> format;
+        # deriving here heals them on completion instead of re-saving the leak.
+        archive_path = build_vfs_label(todo_id, archived=True)
 
         # The repository refreshes the entity cache and bumps the generation, so
         # the frontend reflects completion immediately — no manual invalidation.
@@ -231,6 +210,10 @@ class TrackedTodoService:
         )
 
         await mark_canvas_completed(todo_id)
+
+        # A completed todo must stop watching. Teardown lives here rather than at
+        # the callers (tool, sweep, worker) so no completion path can forget it.
+        await teardown_subscriptions(todo_id, user_id, reason="completed")
 
         log.info("tracked_todo.completed", todo_id=todo_id, user_id=user_id, summary=summary)
         schedule_gaia_tasks_sync(user_id)
@@ -302,25 +285,6 @@ class TrackedTodoService:
             todo_id,
             user_id,
             f"\n## {now.isoformat()} [{event_type}]\n- {details}\n",
-        )
-
-    @staticmethod
-    async def get_signal_matching_context(user_id: str) -> str:
-        """Compact tracked todos summary optimized for signal matching.
-
-        Includes key IDs (thread_ids, email addresses, event_ids) so the
-        agent can match incoming signals to relevant todos.
-        """
-        docs = await todo_repository.list_active_tracked(user_id, limit=15)
-        if not docs:
-            return ""
-
-        lines = [
-            _format_signal_entry(doc, await _extract_canvas_key_details(doc, user_id))
-            for doc in docs
-        ]
-        return "ACTIVE TRACKED TODOS (check if incoming signal relates to any):\n" + "\n".join(
-            lines
         )
 
     @staticmethod

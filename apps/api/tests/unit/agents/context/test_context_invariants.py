@@ -14,6 +14,7 @@ import pytest
 from tests._harness.context_chain import (
     FIXED_NOW,
     AgentTier,
+    ContextSeed,
     HarnessUser,
     effective_context,
     message_in_slot,
@@ -93,9 +94,11 @@ class TestSystemBlockIsLeadingAndContiguous:
     ) -> None:
         messages = await effective_context(
             tier,
-            sources=RICH_SOURCES,
-            prior_messages=list(STALE_THREAD) if multi_turn else None,
-            configurable_overrides={"provider": LLMProviderName.GEMINI},
+            ContextSeed(
+                sources=RICH_SOURCES,
+                prior_messages=list(STALE_THREAD) if multi_turn else None,
+                configurable_overrides={"provider": LLMProviderName.GEMINI},
+            ),
         )
 
         first_non_system = next(
@@ -122,7 +125,7 @@ class TestTheTailLayoutOnTheOpenAIWire:
     @pytest.mark.parametrize("tier", list(AgentTier))
     async def test_the_per_turn_slots_sit_behind_the_conversation(self, tier: AgentTier) -> None:
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            tier, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         slots = slots_of(messages)
@@ -136,7 +139,7 @@ class TestTheTailLayoutOnTheOpenAIWire:
         the conversation is byte-stable — if a stable slot slipped behind it, the
         prefix would end at the static prompt again."""
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            tier, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         slots = slots_of(messages)
@@ -156,8 +159,8 @@ class TestStaticPromptIsUserIndependent:
         ada = HarnessUser(user_id="user-alpha", name="Ada", timezone="Asia/Kolkata")
         grace = HarnessUser(user_id="user-beta", name="Grace", timezone="America/New_York")
 
-        for_ada = await effective_context(tier, user=ada, sources=RICH_SOURCES)
-        for_grace = await effective_context(tier, user=grace, sources=RICH_SOURCES)
+        for_ada = await effective_context(tier, ContextSeed(user=ada, sources=RICH_SOURCES))
+        for_grace = await effective_context(tier, ContextSeed(user=grace, sources=RICH_SOURCES))
 
         assert text_of(message_in_slot(for_ada, PromptSlot.STATIC)) == text_of(
             message_in_slot(for_grace, PromptSlot.STATIC)
@@ -173,7 +176,7 @@ class TestStaticPromptIsUserIndependent:
             email="zylphara@example.invalid",
             timezone="Asia/Kolkata",
         )
-        messages = await effective_context(tier, user=user, sources=RICH_SOURCES)
+        messages = await effective_context(tier, ContextSeed(user=user, sources=RICH_SOURCES))
 
         static = text_of(message_in_slot(messages, PromptSlot.STATIC))
         for leak in (user.name, user.user_id, user.timezone, user.email):
@@ -182,7 +185,7 @@ class TestStaticPromptIsUserIndependent:
     @pytest.mark.parametrize("tier", list(AgentTier))
     async def test_identity_is_carried_outside_the_static_prompt(self, tier: AgentTier) -> None:
         user = HarnessUser(name="Zylphara", timezone="Asia/Kolkata")
-        messages = await effective_context(tier, user=user, sources=RICH_SOURCES)
+        messages = await effective_context(tier, ContextSeed(user=user, sources=RICH_SOURCES))
 
         carried = " ".join(
             text_of(m) for m in messages if m.type == "system" and m.content != messages[0].content
@@ -199,14 +202,14 @@ class TestClockPlacement:
 
     @pytest.mark.parametrize("tier", list(AgentTier))
     async def test_clock_is_the_final_message_and_is_human(self, tier: AgentTier) -> None:
-        messages = await effective_context(tier, sources=RICH_SOURCES)
+        messages = await effective_context(tier, ContextSeed(sources=RICH_SOURCES))
 
         assert messages[-1].type == "human"
         assert slots_of(messages)[-1] is PromptSlot.TIME
 
     @pytest.mark.parametrize("tier", list(AgentTier))
     async def test_no_system_message_carries_a_timestamp(self, tier: AgentTier) -> None:
-        messages = await effective_context(tier, sources=RICH_SOURCES)
+        messages = await effective_context(tier, ContextSeed(sources=RICH_SOURCES))
 
         stamp = FIXED_NOW.strftime("%H:%M")
         for message in messages:
@@ -218,7 +221,7 @@ class TestClockPlacement:
 
     async def test_only_the_latest_clock_survives_a_multi_turn_thread(self) -> None:
         messages = await effective_context(
-            AgentTier.EXECUTOR, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            AgentTier.EXECUTOR, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         clocks = [m for m in messages if m.additional_kwargs.get("time_context")]
@@ -231,7 +234,7 @@ class TestOneMessagePerSlot:
     @pytest.mark.parametrize("tier", list(AgentTier))
     async def test_every_singleton_slot_holds_at_most_one_message(self, tier: AgentTier) -> None:
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            tier, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         slots = slots_of(messages)
@@ -250,7 +253,7 @@ class TestOneMessagePerSlot:
         no current-turn copy to displace, so a stale one legitimately survives.
         """
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            tier, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         refilled = {PromptSlot.STATIC, PromptSlot.DYNAMIC_STABLE, PromptSlot.TIME}
@@ -269,9 +272,11 @@ class TestOneMessagePerSlot:
         differ, and sorting by the enum alone would only ever check one of them."""
         messages = await effective_context(
             tier,
-            sources=RICH_SOURCES,
-            prior_messages=list(STALE_THREAD),
-            configurable_overrides={"provider": provider},
+            ContextSeed(
+                sources=RICH_SOURCES,
+                prior_messages=list(STALE_THREAD),
+                configurable_overrides={"provider": provider},
+            ),
         )
 
         order = request_slot_order(provider)
@@ -281,7 +286,7 @@ class TestOneMessagePerSlot:
     async def test_conversation_history_is_preserved_in_order(self) -> None:
         """Collapsing slots must never collapse the conversation."""
         messages = await effective_context(
-            AgentTier.EXECUTOR, sources=RICH_SOURCES, prior_messages=list(STALE_THREAD)
+            AgentTier.EXECUTOR, ContextSeed(sources=RICH_SOURCES, prior_messages=list(STALE_THREAD))
         )
 
         turns = [text_of(m) for m in messages if m.type in ("human", "ai")]
@@ -298,7 +303,7 @@ class TestLegacyMarkersStillResolve:
         assert slot_of(legacy) is PromptSlot.DYNAMIC_STABLE
 
         messages = await effective_context(
-            AgentTier.EXECUTOR, sources=RICH_SOURCES, prior_messages=[legacy]
+            AgentTier.EXECUTOR, ContextSeed(sources=RICH_SOURCES, prior_messages=[legacy])
         )
         assert legacy not in messages, "the legacy block competes for the stable slot and loses"
 
@@ -319,7 +324,7 @@ class TestLegacyMarkersStillResolve:
         assert slot_of(legacy) is PromptSlot.DYNAMIC_STABLE
 
         messages = await effective_context(
-            AgentTier.EXECUTOR, sources=RICH_SOURCES, prior_messages=[legacy]
+            AgentTier.EXECUTOR, ContextSeed(sources=RICH_SOURCES, prior_messages=[legacy])
         )
         assert legacy not in messages
 
@@ -336,7 +341,7 @@ class TestWorkspaceSessionNeverGuesses:
     )
     async def test_absent_vfs_session_id_yields_no_banner(self, tier: AgentTier) -> None:
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, configurable_overrides={"vfs_session_id": None}
+            tier, ContextSeed(sources=RICH_SOURCES, configurable_overrides={"vfs_session_id": None})
         )
 
         assembled = " ".join(text_of(m) for m in messages if m.type == "system")
@@ -347,7 +352,7 @@ class TestWorkspaceSessionNeverGuesses:
     )
     async def test_it_never_falls_back_to_thread_id(self, tier: AgentTier) -> None:
         messages = await effective_context(
-            tier, sources=RICH_SOURCES, configurable_overrides={"vfs_session_id": None}
+            tier, ContextSeed(sources=RICH_SOURCES, configurable_overrides={"vfs_session_id": None})
         )
 
         assembled = " ".join(text_of(m) for m in messages if m.type == "system")
@@ -497,14 +502,14 @@ class TestTheGatherSlotsEachSectionWhereItDeclared:
 
         stable = text_of(assembled.stable)
         volatile = text_of(assembled.volatile)
-        # "Prefers short answers" is a memory-core DOCUMENT: rewritten by the
-        # consolidation pass, never per turn, so it declares the stable slot.
-        # The core's agenda and activity journal are the churning half and are
-        # split out into their own volatile section — see the sibling below.
-        for declared_stable in ("Ada", "Asia/Kolkata", "Gmail", "Prefers short answers"):
+        # The memory core in FULL — documents included — now declares the
+        # volatile slot, so "Prefers short answers" belongs below, not here. See
+        # the sibling test for the measurement that moved it.
+        for declared_stable in ("Ada", "Asia/Kolkata", "Gmail"):
             assert declared_stable in stable
             assert declared_stable not in volatile
         for declared_volatile in (
+            "Prefers short answers",
             "Ships on Fridays",
             "GAIA can run scheduled workflows",
             "ship the context refactor",
@@ -512,14 +517,24 @@ class TestTheGatherSlotsEachSectionWhereItDeclared:
             assert declared_volatile in volatile
             assert declared_volatile not in stable
 
-    async def test_the_memory_cores_churning_half_is_split_off_into_the_volatile_block(
+    async def test_the_whole_memory_core_sits_behind_the_conversation(
         self,
     ) -> None:
-        """``get_core_context`` renders the stable documents, the agenda and the
-        activity journal as one string. The agenda's commitments move and the
-        journal grows on every turn, so leaving them joined to the documents puts
-        per-turn bytes inside the cached prefix — measured as ~10 points of comms
-        hit rate before the split."""
+        """``get_core_context`` renders the documents, the agenda and the activity
+        journal as one string, and ALL of it now rides behind the conversation.
+
+        The agenda and journal were split off first, because they obviously churn
+        per turn. The documents were left in the cached prefix on the assumption
+        that only the consolidation pass rewrites them, "not per turn". Measured
+        on the real graph, that assumption is false: consolidation runs DURING a
+        conversation, so the documents move inside the prefix and evict the entire
+        conversation behind them.
+
+        Moving them out costs the documents their own caching — they are re-sent
+        uncached every turn now — and buys the conversation's caching instead. The
+        conversation is the bigger block and it grows, so the trade pays:
+        comms 46.0% -> 59.3%, executor 64.8% -> 75.8%, total 48.4% -> 59.3%.
+        Nothing is dropped; the model still receives the whole core."""
         core = (
             "- Prefers short answers.\n\n"
             "## Current agenda\n- Ship the merge by Friday\n\n"
@@ -530,9 +545,12 @@ class TestTheGatherSlotsEachSectionWhereItDeclared:
 
         stable = text_of(assembled.stable)
         volatile = text_of(assembled.volatile)
-        assert "Prefers short answers" in stable
+        # Nothing from the memory core may sit in the cached prefix.
+        assert "Prefers short answers" not in stable
         assert "Current agenda" not in stable
         assert "Recent activity" not in stable
+        # All of it still reaches the model, behind the conversation.
+        assert "Prefers short answers" in volatile
         assert "Ship the merge by Friday" in volatile
         assert "Asked about the invoice at 14:02" in volatile
 
@@ -545,40 +563,58 @@ class TestTheGatherSlotsEachSectionWhereItDeclared:
 
         assert text_of(assembled.stable) == "User Name: Ada\nUser Timezone: Asia/Kolkata"
 
+    @staticmethod
+    async def _volatile_driven_by_todos(text: str) -> str:
+        """The volatile block with ``text`` as the only per-turn content.
+
+        Driven through the tracked-todo summary: it is retrieved per turn and
+        grows with the user's todo list, so it is one of the sections this cap
+        exists for. (``skills`` used to play this role and no longer can — it
+        is byte-stable and now sits in the cached prefix.)
+        """
+        with fake_context_sources(ContextSources(tracked_todos=text)):
+            assembled = await assemble_context(replace(COMMS_CONTEXT, tier=AgentTier.EXECUTOR))
+        return text_of(assembled.volatile)
+
+    async def _section_wrapper_len(self) -> int:
+        """How many characters the section adds around its own text.
+
+        Measured rather than hardcoded, so a reworded heading changes the
+        fixture sizes with it instead of silently making the boundary tests
+        test the wrong boundary.
+        """
+        return len(await self._volatile_driven_by_todos("x")) - 1
+
     async def test_the_volatile_block_is_bounded_however_big_its_sections_get(self) -> None:
         """Sections are emitted whole; this is the backstop on their SUM, so one
-        runaway section cannot blow the context window and the bill. Driven
-        through the skills section because it is the one that can grow without
-        bound — a user's whole installed skill list.
-        """
-        skills = "## Available skills\n" + "- inbox-triage\n" * 2000
-        with fake_context_sources(replace(RICH_SOURCES, skills=skills)):
-            assembled = await assemble_context(replace(COMMS_CONTEXT, tier=AgentTier.EXECUTOR))
+        runaway section cannot blow the context window and the bill."""
+        volatile = await self._volatile_driven_by_todos("- ship the refactor\n" * 2000)
 
-        volatile = text_of(assembled.volatile)
         assert len(volatile) <= VOLATILE_BLOCK_MAX_CHARS + len(VOLATILE_BLOCK_TRUNC_MARKER)
         assert VOLATILE_BLOCK_TRUNC_MARKER in volatile
 
     async def test_a_volatile_block_exactly_at_the_cap_is_left_whole(self) -> None:
         """The ceiling truncates what exceeds it, not what exactly fills it."""
-        skills = "S" * VOLATILE_BLOCK_MAX_CHARS
-        with fake_context_sources(ContextSources(skills=skills)):
-            assembled = await assemble_context(replace(COMMS_CONTEXT, tier=AgentTier.EXECUTOR))
+        filler = "S" * (VOLATILE_BLOCK_MAX_CHARS - await self._section_wrapper_len())
 
-        assert text_of(assembled.volatile) == skills
+        volatile = await self._volatile_driven_by_todos(filler)
+
+        assert len(volatile) == VOLATILE_BLOCK_MAX_CHARS
+        assert VOLATILE_BLOCK_TRUNC_MARKER not in volatile
 
     async def test_an_oversized_volatile_block_keeps_head_and_tail_verbatim(self) -> None:
         """Over the ceiling: head + the exact truncation marker + tail, nothing
         else. The marker's own bytes are asserted whole — a marker that grew
         extra characters would still satisfy a substring check while changing
         what every request sends."""
-        head = "H" * VOLATILE_BLOCK_HEAD_CHARS
-        middle = "M" * 1_000
+        head_filler = "H" * (VOLATILE_BLOCK_HEAD_CHARS - await self._section_wrapper_len())
         tail = "T" * VOLATILE_BLOCK_TAIL_CHARS
-        with fake_context_sources(ContextSources(skills=head + middle + tail)):
-            assembled = await assemble_context(replace(COMMS_CONTEXT, tier=AgentTier.EXECUTOR))
+        expected_head = await self._volatile_driven_by_todos(head_filler)
 
-        assert text_of(assembled.volatile) == f"{head}{VOLATILE_BLOCK_TRUNC_MARKER}{tail}"
+        volatile = await self._volatile_driven_by_todos(f"{head_filler}{'M' * 1_000}{tail}")
+
+        assert len(expected_head) == VOLATILE_BLOCK_HEAD_CHARS
+        assert volatile == f"{expected_head}{VOLATILE_BLOCK_TRUNC_MARKER}{tail}"
 
     async def test_nothing_per_turn_to_say_means_no_volatile_message_at_all(self) -> None:
         """An empty volatile block would still occupy its slot and cost bytes."""

@@ -418,6 +418,10 @@ async def test_edit_empty_old_string_rejected_before_sandbox() -> None:
         ("x" * (MAX_PATCH_BYTES + 1), "y"),
         ("x", "y" * (MAX_PATCH_BYTES + 1)),
     ],
+    # Explicit ids: the default id embeds the 2 MB parameter, and a 2 MB test
+    # id in pytest's --durations output wedged the CI runner (it processes
+    # step output line by line) for the job's whole timeout.
+    ids=["oversize-old_string", "oversize-new_string"],
 )
 async def test_edit_oversize_strings_rejected_before_sandbox(
     old_string: str, new_string: str
@@ -439,7 +443,7 @@ async def test_edit_path_escaping_workspace_is_rejected() -> None:
             config=CONFIG,
         )
 
-    assert result == "Error: Path escapes /workspace: /etc/passwd"
+    assert result == "Error: path must stay inside /workspace"
     mock_acquire.assert_not_called()
 
 
@@ -473,7 +477,7 @@ async def test_edit_sandbox_unavailable_returns_friendly_error() -> None:
             config=CONFIG,
         )
 
-    assert result == "Error: sandbox unavailable — pool empty"
+    assert result == "Error: sandbox unavailable (pool empty)"
 
 
 async def test_edit_unexpected_sandbox_failure_returns_error_and_logs() -> None:
