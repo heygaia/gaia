@@ -15,7 +15,7 @@ from app.db.repositories.users import user_repository
 from app.services.platform_link_service import PlatformLinkService
 from app.utils.notification.channel_preferences import fetch_channel_preferences
 
-# The four chat platforms a priority list may contain — the same set the priority
+# The chat platforms a priority list may contain — the same set the priority
 # endpoint validates against, so a stale doc can never route a brief elsewhere.
 VALID_CHAT_PLATFORMS: frozenset[str] = frozenset(DEFAULT_CHAT_CHANNEL_PRIORITY)
 
@@ -23,7 +23,7 @@ VALID_CHAT_PLATFORMS: frozenset[str] = frozenset(DEFAULT_CHAT_CHANNEL_PRIORITY)
 def resolve_channel_priority(stored: list[str] | None) -> list[str]:
     """The user's stored briefing chat-channel priority, or the default order.
 
-    Drops any stored entry that is not one of the four chat platforms so a
+    Drops any stored entry that is not a known chat platform so a
     hand-edited or legacy document can never route a brief to an unknown channel.
     """
     if isinstance(stored, list):

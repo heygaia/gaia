@@ -160,7 +160,7 @@ class ChannelPriorityResponse(BaseModel):
 
 
 class ChannelPriorityUpdate(BaseModel):
-    """A non-empty, duplicate-free ordered subset of the four chat platforms."""
+    """A non-empty, duplicate-free ordered subset of the chat platforms."""
 
     chat_channel_priority: list[str] = Field(min_length=1)
 
