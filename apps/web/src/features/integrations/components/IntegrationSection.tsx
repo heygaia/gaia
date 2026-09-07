@@ -10,7 +10,7 @@ import type React from "react";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import type { Integration } from "../types";
 
-export const IntegrationRow: React.FC<{
+const IntegrationRow: React.FC<{
   integration: Integration;
   onConnect: (id: string) => void;
   onClick: (id: string) => void;

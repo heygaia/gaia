@@ -47,8 +47,10 @@ export function useNavbar() {
     // wastes battery and prevents Lighthouse from ever settling (massively
     // inflating LCP/TBT/TTI). Cap the flicker; NumberFlow animates to the real
     // value once it arrives.
+    // A fixed stride through 100..999 reads as a shuffle at 80ms; nothing
+    // here needs randomness, so no PRNG is involved.
     const id = setInterval(() => {
-      setStars(Math.floor(100 + Math.random() * 900));
+      setStars((current) => 100 + ((current * 7 + 173) % 900));
     }, 80);
     const stop = setTimeout(() => clearInterval(id), 1600);
     return () => {
