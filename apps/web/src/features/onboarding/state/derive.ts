@@ -14,16 +14,26 @@
  * state) rather than advancing them past a gate that was never checked.
  */
 
-import { NEEDS_MIN_SELECTION, questions } from "../constants";
+import {
+  NEEDS_MAX_SELECTION,
+  NEEDS_MIN_SELECTION,
+  questions,
+} from "../constants";
 import type { OnboardingState, Stage } from "./types";
 
 function isQuestionsComplete(s: OnboardingState): boolean {
   return s.questionIndex >= questions.length;
 }
 
-/** Q2 picks so far: chips plus "Something else" once it carries words. */
+/** Q2 picks so far: chips plus "Something else" once its field is open. */
 export function pickCount(s: OnboardingState): number {
-  return s.selectedNeeds.length + (s.otherNeed.trim() !== "" ? 1 : 0);
+  return s.selectedNeeds.length + (s.otherNeedOpen ? 1 : 0);
+}
+
+/** Whether Q2 has spent all its picks. The reducer refuses further picks on
+ * this; the chip row only reads it to dim what can no longer be chosen. */
+export function isAtNeedsCap(s: OnboardingState): boolean {
+  return pickCount(s) >= NEEDS_MAX_SELECTION;
 }
 
 export function canSubmitNeeds(s: OnboardingState): boolean {

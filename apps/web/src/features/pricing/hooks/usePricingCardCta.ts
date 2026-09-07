@@ -31,9 +31,6 @@ interface PricingCardCta {
   isConfirmingPayment: boolean;
   isCheckoutLate: boolean;
   paymentError: string | null;
-  /** GAIA is paid-only; kept as a defensive branch — see PricingCardCta. */
-  isFree: boolean;
-  isOnFreePlan: boolean;
   onGetStarted: () => Promise<void>;
 }
 
@@ -127,8 +124,6 @@ export function usePricingCardCta({
       checkoutPhase === "confirming" || checkoutPhase === "timeout",
     isCheckoutLate: checkoutPhase === "timeout",
     paymentError,
-    isFree: price === 0,
-    isOnFreePlan: !!user.userId && !hasActiveSubscription,
     onGetStarted,
   };
 }

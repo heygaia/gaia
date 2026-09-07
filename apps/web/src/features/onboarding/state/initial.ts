@@ -6,6 +6,7 @@ export const initialState: OnboardingState = {
   draftProfession: null,
   selectedNeeds: [],
   otherNeed: "",
+  otherNeedOpen: false,
   preferencesPersisted: false,
 
   paidRevealAcked: false,
@@ -13,6 +14,8 @@ export const initialState: OnboardingState = {
   connectedPlatform: null,
 
   isRestarting: false,
+
+  introSeen: null,
 
   hydratedFor: null,
 };

@@ -15,7 +15,6 @@
 
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";
-import { useEffect, useState } from "react";
 import { MessagesRegion } from "@/features/onboarding/components/MessagesRegion";
 import { OnboardingIntro } from "@/features/onboarding/components/OnboardingIntro";
 import { OnboardingShell } from "@/features/onboarding/components/OnboardingShell";
@@ -30,8 +29,6 @@ import {
 } from "@/features/onboarding/components/stages";
 import { EASE_OUT_QUART } from "@/features/onboarding/constants/motion";
 import { useOnboarding } from "@/features/onboarding/hooks/useOnboarding";
-import { usePaceStore } from "@/features/onboarding/state/paceStore";
-import { useUserStore } from "@/stores/userStore";
 
 const INTRO_FADE_IN = {
   initial: { opacity: 0, filter: "blur(12px)" },
@@ -39,67 +36,13 @@ const INTRO_FADE_IN = {
   transition: { duration: 0.6, ease: EASE_OUT_QUART },
 } as const;
 
-const INTRO_SEEN_PREFIX = "gaia.onboarding.introSeen";
-
-function introSeenKey(userId: string): string | null {
-  return userId ? `${INTRO_SEEN_PREFIX}.${userId}` : null;
-}
-
-function hasSeenIntro(userId: string): boolean {
-  if (typeof window === "undefined") return false;
-  const key = introSeenKey(userId);
-  if (!key) return false;
-  try {
-    return window.localStorage.getItem(key) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function markIntroSeen(userId: string): void {
-  const key = introSeenKey(userId);
-  if (!key) return;
-  try {
-    window.localStorage.setItem(key, "1");
-  } catch {
-    // localStorage unavailable (private mode, etc.) — silently skip.
-  }
-}
-
-function clearIntroSeen(userId: string): void {
-  const key = introSeenKey(userId);
-  if (!key) return;
-  try {
-    window.localStorage.removeItem(key);
-  } catch {
-    // localStorage unavailable (private mode, etc.) — silently skip.
-  }
-}
-
 export default function Onboarding() {
-  const { state, stage, dispatch, restart } = useOnboarding();
-  const userId = useUserStore((s) => s.userId);
-  // `null` until userId hydrates from persisted storage AND we confirm on the
-  // client, so the intro doesn't replay on every reload and server/client
-  // render identically (no hydration mismatch).
-  const [introDone, setIntroDone] = useState<boolean | null>(null);
-
-  useEffect(() => {
-    if (!userId) return;
-    setIntroDone((prev) => (prev === null ? hasSeenIntro(userId) : prev));
-  }, [userId]);
-
-  const handleRestart = () => {
-    clearIntroSeen(userId);
-    usePaceStore.getState().reset();
-    setIntroDone(false);
-    return restart();
-  };
-
-  const handleIntroComplete = () => {
-    markIntroSeen(userId);
-    setIntroDone(true);
-  };
+  // `introSeen` is owned by the onboarding state (persisted alongside the rest
+  // of the wizard's progress) and is `null` until storage has been read, so
+  // server and first client render agree and the intro never replays.
+  const { state, stage, dispatch, introSeen, markIntroSeen, restart } =
+    useOnboarding();
+  const introDone = introSeen === true;
 
   const stageContent = (() => {
     switch (stage) {
@@ -133,14 +76,14 @@ export default function Onboarding() {
     <m.div {...INTRO_FADE_IN}>{composer}</m.div>
   ) : null;
 
-  const introResolved = introDone !== null;
+  const introResolved = introSeen !== null;
 
   return (
     <>
       <OnboardingShell
         state={state}
         stage={stage}
-        onRestart={handleRestart}
+        onRestart={restart}
         composer={wrappedComposer}
       >
         {introDone ? (
@@ -154,7 +97,7 @@ export default function Onboarding() {
       </OnboardingShell>
       <AnimatePresence>
         {introResolved && !introDone && (
-          <OnboardingIntro onComplete={handleIntroComplete} />
+          <OnboardingIntro onComplete={markIntroSeen} />
         )}
       </AnimatePresence>
     </>

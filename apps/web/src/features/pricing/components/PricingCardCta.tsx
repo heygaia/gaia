@@ -1,6 +1,5 @@
 "use client";
 
-import { Button } from "@heroui/button";
 import { RaisedButton } from "@/components/ui/raised-button";
 
 import type { CheckoutSource } from "../api/pricingApi";
@@ -31,8 +30,6 @@ export function PricingCardCta({
     isConfirmingPayment,
     isCheckoutLate,
     paymentError,
-    isFree,
-    isOnFreePlan,
     onGetStarted,
   } = usePricingCardCta({
     title,
@@ -50,17 +47,13 @@ export function PricingCardCta({
           <p className="text-sm text-red-400">{paymentError}</p>
         </div>
       )}
-      {isFree ? (
-        <FreePlanCta isOnFreePlan={isOnFreePlan} onGetStarted={onGetStarted} />
-      ) : (
-        <PaidPlanCta
-          buttonText={buttonText}
-          isCtaDisabled={isCtaDisabled}
-          isCheckoutLate={isCheckoutLate}
-          isConfirmingPayment={isConfirmingPayment}
-          onGetStarted={onGetStarted}
-        />
-      )}
+      <PaidPlanCta
+        buttonText={buttonText}
+        isCtaDisabled={isCtaDisabled}
+        isCheckoutLate={isCheckoutLate}
+        isConfirmingPayment={isConfirmingPayment}
+        onGetStarted={onGetStarted}
+      />
     </div>
   );
 }
@@ -91,27 +84,5 @@ function PaidPlanCta({
     >
       {buttonText}
     </RaisedButton>
-  );
-}
-
-interface FreePlanCtaProps {
-  isOnFreePlan: boolean;
-  onGetStarted: () => void;
-}
-
-// GAIA is paid-only: the backend no longer serves a $0 plan (PricingCards
-// filters any stray $0 row out before it reaches this component), so this
-// branch is effectively unreachable. Kept as a defensive fallback.
-function FreePlanCta({ isOnFreePlan, onGetStarted }: FreePlanCtaProps) {
-  if (isOnFreePlan)
-    return (
-      <Button isDisabled className="w-full" variant="flat">
-        Current Plan
-      </Button>
-    );
-  return (
-    <Button className="w-full" variant="flat" onPress={onGetStarted}>
-      Start for Free
-    </Button>
   );
 }

@@ -27,10 +27,10 @@ const GlobalPricingModal = nextDynamic(
     })),
   { ssr: false },
 );
-const GlobalPaywallModal = nextDynamic(
+const PaywallModal = nextDynamic(
   () =>
-    import("@/features/pricing/components/GlobalPaywallModal").then((m) => ({
-      default: m.GlobalPaywallModal,
+    import("@/features/pricing/components/PaywallModal").then((m) => ({
+      default: m.PaywallModal,
     })),
   { ssr: false },
 );
@@ -160,7 +160,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
           <GlobalPricingModal />
 
           {/* Global Paywall Modal — non-dismissible, opened on 402 subscription_required */}
-          <GlobalPaywallModal />
+          <PaywallModal />
 
           {/* What's New Modal */}
           <WhatsNewModal />

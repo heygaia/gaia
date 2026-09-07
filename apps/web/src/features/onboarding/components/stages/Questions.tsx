@@ -12,7 +12,7 @@ import { useCallback } from "react";
 import { FIELD_NAMES, questions } from "../../constants";
 import { MOTION_FADE_UP } from "../../constants/motion";
 import { usePaceDone } from "../../hooks/useTypedLines";
-import { canSubmitNeeds } from "../../state/derive";
+import { canSubmitNeeds, isAtNeedsCap } from "../../state/derive";
 import { questionRevealKey } from "../../state/paceStore";
 import type { Action, OnboardingState } from "../../state/types";
 import { OnboardingInput } from "../OnboardingInput";
@@ -47,6 +47,11 @@ export function QuestionsReply({ state, dispatch }: QuestionsProps) {
     [dispatch],
   );
 
+  const handleToggleOtherNeed = useCallback(
+    () => dispatch({ type: "toggleOtherNeed" }),
+    [dispatch],
+  );
+
   const handleOtherNeedChange = useCallback(
     (value: string) => dispatch({ type: "setOtherNeed", value }),
     [dispatch],
@@ -67,8 +72,11 @@ export function QuestionsReply({ state, dispatch }: QuestionsProps) {
           profession={state.responses[FIELD_NAMES.PROFESSION] ?? null}
           selectedNeeds={state.selectedNeeds}
           otherNeed={state.otherNeed}
+          otherOpen={state.otherNeedOpen}
+          atCap={isAtNeedsCap(state)}
           canContinue={canSubmitNeeds(state)}
           onToggleNeed={handleToggleNeed}
+          onToggleOtherNeed={handleToggleOtherNeed}
           onOtherNeedChange={handleOtherNeedChange}
           onContinue={handleSubmitNeeds}
         />

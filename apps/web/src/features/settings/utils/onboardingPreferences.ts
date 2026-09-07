@@ -1,4 +1,4 @@
-import type { OnboardingData } from "@/stores/userStore";
+import type { OnboardingData } from "@/features/auth/api/authApi";
 
 type PreferencesPatch = Partial<NonNullable<OnboardingData["preferences"]>>;
 

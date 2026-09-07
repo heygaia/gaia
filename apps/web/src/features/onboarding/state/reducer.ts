@@ -4,8 +4,8 @@
  * documented in `types.ts`.
  */
 
-import { NEEDS_MAX_SELECTION, questions } from "../constants";
-import { canSubmitNeeds, pickCount } from "./derive";
+import { questions } from "../constants";
+import { canSubmitNeeds, isAtNeedsCap } from "./derive";
 import { initialState } from "./initial";
 import type { Action, OnboardingState } from "./types";
 
@@ -36,7 +36,7 @@ export function reducer(
           selectedNeeds: state.selectedNeeds.filter((n) => n !== action.value),
         };
       }
-      if (pickCount(state) >= NEEDS_MAX_SELECTION) return state;
+      if (isAtNeedsCap(state)) return state;
       return {
         ...state,
         selectedNeeds: [...state.selectedNeeds, action.value],
@@ -45,6 +45,16 @@ export function reducer(
 
     case "setOtherNeed":
       return { ...state, otherNeed: action.value };
+
+    // Opening "Something else" spends a pick, so it obeys the same cap as a
+    // chip. Closing it clears the words: a field they can no longer see must
+    // never be submitted.
+    case "toggleOtherNeed": {
+      if (state.otherNeedOpen)
+        return { ...state, otherNeedOpen: false, otherNeed: "" };
+      if (isAtNeedsCap(state)) return state;
+      return { ...state, otherNeedOpen: true };
+    }
 
     // Min-selection is enforced here, not only in the composer: the gate is
     // what the backend contract requires, so it lives with the transition.
@@ -68,8 +78,13 @@ export function reducer(
     case "skipPlatforms":
       return { ...state, platformsConfirmed: true };
 
+    case "introSeen":
+      return { ...state, introSeen: true };
+
+    // A restart replays the intro, so `introSeen` goes to a resolved false
+    // rather than back to the unresolved null of a cold mount.
     case "restartStart":
-      return { ...initialState, isRestarting: true };
+      return { ...initialState, isRestarting: true, introSeen: false };
 
     case "restartDone":
       return { ...state, isRestarting: false };

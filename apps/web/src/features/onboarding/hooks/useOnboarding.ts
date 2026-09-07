@@ -27,7 +27,12 @@ import { useOnboardingPreferences } from "../effects/useOnboardingPreferences";
 import { useOnboardingSubmission } from "../effects/useOnboardingSubmission";
 import { getStage } from "../state/derive";
 import { initialState } from "../state/initial";
-import { clearPersisted } from "../state/persist";
+import { usePaceStore } from "../state/paceStore";
+import {
+  clearIntroSeen,
+  clearPersisted,
+  saveIntroSeen,
+} from "../state/persist";
 import { reducer } from "../state/reducer";
 import type { Action, OnboardingState, Stage } from "../state/types";
 
@@ -35,6 +40,9 @@ interface UseOnboardingReturn {
   state: OnboardingState;
   stage: Stage;
   dispatch: React.Dispatch<Action>;
+  /** Whether the intro has already been watched; `null` until storage is read. */
+  introSeen: boolean | null;
+  markIntroSeen: () => void;
   restart: () => Promise<void>;
 }
 
@@ -58,12 +66,21 @@ export function useOnboarding(): UseOnboardingReturn {
 
   useOnboardingAnalytics(state, stage, hydrated);
 
+  const markIntroSeen = useCallback(() => {
+    saveIntroSeen(userId);
+    dispatch({ type: "introSeen" });
+  }, [userId]);
+
+  // Every part of a restart lives here: the caches (wizard blob, intro flag,
+  // typed-line pacing), the reducer, the user record and the server reset.
   const restart = useCallback(async () => {
     if (state.isRestarting) return;
 
     // Captured before the reset, so the event says where the user gave up.
     trackEvent(ANALYTICS_EVENTS.ONBOARDING_RESTARTED, { from_stage: stage });
     clearPersisted(userId);
+    clearIntroSeen(userId);
+    usePaceStore.getState().reset();
     dispatch({ type: "restartStart" });
     updateUser({ onboarding: undefined });
 
@@ -79,5 +96,12 @@ export function useOnboarding(): UseOnboardingReturn {
     }
   }, [state.isRestarting, stage, userId, updateUser]);
 
-  return { state, stage, dispatch, restart };
+  return {
+    state,
+    stage,
+    dispatch,
+    introSeen: state.introSeen,
+    markIntroSeen,
+    restart,
+  };
 }

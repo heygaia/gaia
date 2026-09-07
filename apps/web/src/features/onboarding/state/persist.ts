@@ -10,6 +10,14 @@ const STORAGE_KEY_PREFIX = "gaia-onboarding-state-v3";
 
 const storageKey = (userId: string) => `${STORAGE_KEY_PREFIX}:${userId}`;
 
+// The intro is remembered per user under its own key: it survives the wizard
+// blob's version bumps (an intro already watched should not replay because
+// the state shape changed) and is written at a different moment.
+const INTRO_SEEN_PREFIX = "gaia.onboarding.introSeen";
+
+const introSeenKey = (userId: string) =>
+  userId ? `${INTRO_SEEN_PREFIX}.${userId}` : null;
+
 interface PersistedShape {
   responses: Record<string, string>;
   questionIndex: number;
@@ -47,6 +55,9 @@ export function loadPersisted(userId: string): Partial<OnboardingState> | null {
       // no longer accepts.
       selectedNeeds: (parsed.selectedNeeds ?? []).filter(isKnownNeed),
       otherNeed: parsed.otherNeed ?? "",
+      // The open flag is derived, not stored: words in the cache mean the
+      // field was open when they were typed.
+      otherNeedOpen: (parsed.otherNeed ?? "") !== "",
       preferencesPersisted: parsed.preferencesPersisted ?? false,
       paidRevealAcked: parsed.paidRevealAcked ?? false,
       platformsConfirmed:
@@ -73,5 +84,38 @@ export function clearPersisted(userId: string): void {
     localStorage.removeItem(storageKey(userId));
   } catch {
     // localStorage unavailable (private mode, quota, etc.) — persistence is best-effort.
+  }
+}
+
+export function loadIntroSeen(userId: string): boolean {
+  if (typeof window === "undefined") return false;
+  const key = introSeenKey(userId);
+  if (!key) return false;
+  try {
+    return localStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveIntroSeen(userId: string): void {
+  if (typeof window === "undefined") return;
+  const key = introSeenKey(userId);
+  if (!key) return;
+  try {
+    localStorage.setItem(key, "1");
+  } catch {
+    // localStorage unavailable (private mode, quota, etc.) — best-effort.
+  }
+}
+
+export function clearIntroSeen(userId: string): void {
+  if (typeof window === "undefined") return;
+  const key = introSeenKey(userId);
+  if (!key) return;
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // localStorage unavailable (private mode, quota, etc.) — best-effort.
   }
 }

@@ -3,7 +3,7 @@
 import { type Dispatch, useEffect, useRef } from "react";
 
 import { initialState } from "../state/initial";
-import { loadPersisted, savePersisted } from "../state/persist";
+import { loadIntroSeen, loadPersisted, savePersisted } from "../state/persist";
 import type { Action, OnboardingState } from "../state/types";
 
 /**
@@ -32,7 +32,12 @@ export function useOnboardingPersistence(
     if (!userId || hydratedFor === userId) return;
     const partial = loadPersisted(userId);
     if (hydratedFor !== null) dispatch({ type: "reset" });
-    if (partial) dispatch({ type: "hydrate", partial });
+    // The intro flag resolves on the same beat, cache or no cache: until it
+    // does it is `null`, and the page renders neither the intro nor the flow.
+    dispatch({
+      type: "hydrate",
+      partial: { ...(partial ?? {}), introSeen: loadIntroSeen(userId) },
+    });
     dispatch({ type: "hydrated", userId });
     awaitingHydratedStateRef.current = true;
   }, [userId, hydratedFor, dispatch]);

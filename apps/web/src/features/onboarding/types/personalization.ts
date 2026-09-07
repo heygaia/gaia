@@ -1,3 +1,5 @@
+import type { OnboardingData } from "@/features/auth/api/authApi";
+
 /**
  * The `/onboarding/personalization` payload — everything the Gmail
  * intelligence pipeline writes onto the user document, and the shape the
@@ -28,7 +30,13 @@ export interface WritingStyleExampleBlocks {
   name: string;
 }
 
-export interface PersonalizationData {
+/** The handoff conversation ids are the API's onboarding block, verbatim —
+ * borrowed rather than restated so there is one declaration of them. */
+export interface PersonalizationData
+  extends Pick<
+    OnboardingData,
+    "first_message_conversation_id" | "getting_started_conversation_id"
+  > {
   phase?: OnboardingPhase;
   bio_status?: BioStatus;
   has_personalization?: boolean;
@@ -75,8 +83,5 @@ export interface PersonalizationData {
     description?: string | null;
     source_email?: { sender: string; subject: string } | null;
   }> | null;
-  first_message_conversation_id?: string;
-  /** The seeded "Getting started" conversation the wizard hands off into. */
-  getting_started_conversation_id?: string;
   first_message?: string | null;
 }
