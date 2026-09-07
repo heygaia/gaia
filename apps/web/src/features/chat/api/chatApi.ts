@@ -109,7 +109,9 @@ export interface GenerateImageResponse {
 export enum SystemPurpose {
   EMAIL_PROCESSING = "email_processing",
   WORKFLOW_EXECUTION = "workflow_execution",
-  OTHER = "other", // Add more purposes as needed
+  /** The seeded Getting-started thread: the user's first screen after onboarding. */
+  GETTING_STARTED = "getting_started",
+  OTHER = "other",
 }
 
 export enum ConversationSource {

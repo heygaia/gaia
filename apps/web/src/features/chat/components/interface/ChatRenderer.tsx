@@ -15,6 +15,7 @@ import {
   useState,
 } from "react";
 import { MessageScrollerItem } from "@/components/ui/message-scroller";
+import { SystemPurpose } from "@/features/chat/api/chatApi";
 import CreatedByGAIABanner from "@/features/chat/components/banners/CreatedByGAIABanner";
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import SearchedImageDialog from "@/features/chat/components/bubbles/bot/SearchedImageDialog";
@@ -37,7 +38,6 @@ import {
   useIsAwaitingExecutor,
   useIsConversationStreaming,
 } from "@/stores/streamStore";
-import { useUserStore } from "@/stores/userStore";
 import type {
   ChatBubbleBotProps,
   ChatBubbleUserProps,
@@ -297,11 +297,6 @@ export default function ChatRenderer({
     improvedPrompt: "",
   });
 
-  // The seeded Getting-started thread is system-generated too, but it is the
-  // user's first screen after onboarding, not a run that appeared on its own.
-  const gettingStartedConversationId = useUserStore(
-    (s) => s.onboarding?.getting_started_conversation_id,
-  );
   const conversation = useMemo(() => {
     return conversations.find(
       (convo) => convo.conversation_id === convoIdParam,
@@ -453,7 +448,7 @@ export default function ChatRenderer({
       <CreatedByGAIABanner
         show={
           conversation?.is_system_generated === true &&
-          conversation.conversation_id !== gettingStartedConversationId
+          conversation.system_purpose !== SystemPurpose.GETTING_STARTED
         }
       />
       {messagesWithDeduplicatedToolCalls?.map(

@@ -4,7 +4,7 @@ from uuid import uuid4
 from app.constants.general import NEW_MESSAGE_BREAKER
 from app.constants.log_tags import LogTag
 from app.db.repositories.conversations import conversation_repository
-from app.models.chat_models import ConversationModel, MessageModel, ToolDataEntry
+from app.models.chat_models import ConversationModel, MessageModel, SystemPurpose, ToolDataEntry
 from app.models.user_models import AuthenticatedUser
 from app.services.conversation_service import create_conversation_service
 from app.services.onboarding.first_conversation import FirstConversation
@@ -80,6 +80,7 @@ async def seed_first_conversation(user_id: str, composed: FirstConversation) -> 
             conversation_id=conversation_id,
             description=_FIRST_CONVERSATION_DESCRIPTION,
             is_system_generated=True,
+            system_purpose=SystemPurpose.GETTING_STARTED,
             is_unread=True,
         )
 

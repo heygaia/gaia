@@ -26,7 +26,6 @@ export default function ConnectOptions({
         <Button
           key={option.href}
           size="sm"
-          radius="full"
           variant="flat"
           startContent={
             option.integration_id ? (
