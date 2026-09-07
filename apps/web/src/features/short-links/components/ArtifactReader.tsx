@@ -1,15 +1,11 @@
 "use client";
 
-import { Button } from "@heroui/button";
 import { Spinner } from "@heroui/spinner";
-import { AlertCircleIcon, Cancel01Icon, CheckmarkCircle02Icon } from "@icons";
+import { AlertCircleIcon } from "@icons";
 import { useQuery } from "@tanstack/react-query";
 
 import RichContentRenderer from "@/features/chat/components/interface/RichContentRenderer";
-import { todoApi } from "@/features/todo/api/todoApi";
-import { useApproveTodo } from "@/features/todo/hooks/useApproveTodo";
-import { useDismissTodo } from "@/features/todo/hooks/useDismissTodo";
-import { useTodoCanvas } from "@/features/todo/hooks/useTodoCanvas";
+import { getTodoCanvas, todoApi } from "@/features/todo/api/todoApi";
 
 interface ArtifactReaderProps {
   todoId: string;
@@ -17,9 +13,7 @@ interface ArtifactReaderProps {
 
 /**
  * Full-width reader for a todo's canvas — the landing surface a heygaia.link
- * short link resolves to. Renders GAIA's canvas markdown as a document and, for
- * a still-pending proposal, pins Approve/Dismiss at the top so the artifact can
- * be actioned without opening the todo list.
+ * short link resolves to. Renders GAIA's canvas markdown as a document.
  *
  * Auth is enforced the same way every other (main) page enforces it: the authed
  * `todoApi.getTodo` fetch 401s for a signed-out viewer, and the global response
@@ -37,16 +31,16 @@ export default function ArtifactReader({ todoId }: ArtifactReaderProps) {
   });
 
   const {
-    content,
+    data: canvas,
     isLoading: canvasLoading,
-    hasError: canvasError,
-  } = useTodoCanvas(todoId, { auto: true });
+    isError: canvasError,
+  } = useQuery({
+    queryKey: ["todo-canvas", todoId],
+    queryFn: () => getTodoCanvas(todoId),
+    retry: false,
+  });
 
-  const approveTodo = useApproveTodo();
-  const dismissTodo = useDismissTodo();
-
-  const isProposal = todo?.execution_status === "proposed";
-  const acted = approveTodo.isSuccess || dismissTodo.isSuccess;
+  const content = canvas?.content;
 
   return (
     <div className="flex h-full w-full flex-col">
@@ -55,41 +49,7 @@ export default function ArtifactReader({ todoId }: ArtifactReaderProps) {
           <h1 className="min-w-0 truncate text-lg font-medium text-white">
             {todo?.title ?? "Artifact"}
           </h1>
-
-          {isProposal && !acted && (
-            <div className="flex shrink-0 items-center gap-2">
-              <Button
-                size="sm"
-                color="success"
-                variant="flat"
-                radius="lg"
-                startContent={<CheckmarkCircle02Icon className="size-3.5" />}
-                isLoading={approveTodo.isPending}
-                onPress={() => approveTodo.mutate(todoId)}
-              >
-                Approve
-              </Button>
-              <Button
-                size="sm"
-                color="default"
-                variant="flat"
-                radius="lg"
-                startContent={<Cancel01Icon className="size-3.5" />}
-                isLoading={dismissTodo.isPending}
-                onPress={() => dismissTodo.mutate({ todoId })}
-              >
-                Dismiss
-              </Button>
-            </div>
-          )}
         </div>
-
-        {acted && (
-          <div className="mx-auto mt-2 flex max-w-3xl items-center gap-2 text-sm text-zinc-400">
-            <CheckmarkCircle02Icon className="size-4 text-emerald-400" />
-            {approveTodo.isSuccess ? "Approved — GAIA is on it." : "Dismissed."}
-          </div>
-        )}
       </header>
 
       <div className="flex-1 overflow-y-auto px-6 pb-16 pt-2">
