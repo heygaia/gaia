@@ -1,7 +1,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import { usePathname, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef } from "react";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import {
   prependNotification,
   upsertNotification,
@@ -113,7 +113,7 @@ function handleDeliveredNotification(
 }
 
 export function useNotificationWebSocket() {
-  const user = useUser();
+  const user = useCurrentUser();
   const isAuthenticated = !!user?.email;
   // Live pushes are written straight into the query cache the lists read —
   // same keys, no parallel store to drift out of sync.

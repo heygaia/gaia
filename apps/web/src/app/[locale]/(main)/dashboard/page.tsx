@@ -16,7 +16,7 @@ import {
 } from "@shared/utils";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { useCalendarsQuery } from "@/features/calendar/hooks/useCalendarsQuery";
 import { useUpcomingEventsQuery } from "@/features/calendar/hooks/useUpcomingEventsQuery";
 import { GridSection } from "@/features/chat/components/interface/sections/GridSection";
@@ -175,7 +175,7 @@ function DashboardSummary({
 }
 
 export default function HomePage() {
-  const user = useUser();
+  const user = useCurrentUser();
   const { counts: todoCounts, loading: todosLoading } = useTodoData();
   const { getIntegrationStatus } = useIntegrations();
 

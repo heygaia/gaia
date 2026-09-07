@@ -52,8 +52,8 @@ vi.mock("@/lib/websocket/WebSocketManager", () => ({
   },
 }));
 
-vi.mock("@/features/auth/hooks/useUser", () => ({
-  useUser: () => ({ email: "test@example.com" }),
+vi.mock("@/features/auth/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => ({ email: "test@example.com" }),
 }));
 
 vi.mock("next/navigation", () => ({

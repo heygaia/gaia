@@ -12,7 +12,7 @@ import * as m from "motion/react-m";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 import { RaisedButton } from "@/components/ui/raised-button";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { PaymentBackdrop } from "@/features/pricing/components/PaymentBackdrop";
 import { PostPaymentReceipt } from "@/features/pricing/components/PostPaymentReceipt";
 import { LAST_CHECKOUT_PRODUCT_KEY } from "@/features/pricing/constants";
@@ -34,7 +34,7 @@ export default function PaymentSuccessPage() {
   const { plans, subscriptionStatus, verifyPayment } = usePricing();
   const { createSubscriptionAndRedirect, isLoading: isRestarting } =
     useDodoPayments();
-  const user = useUser();
+  const user = useCurrentUser();
 
   // Send the user straight to onboarding when we already know it's incomplete,
   // so they don't land on /c and get bounced by the onboarding guard a couple

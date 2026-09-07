@@ -28,7 +28,7 @@ from app.models.message_models import (
     SelectedCalendarEventData,
     SelectedWorkflowData,
 )
-from app.models.user_models import OnboardingPhase
+from app.models.user_models import OnboardingPhase, OnboardingSubdocument
 from app.services.workflow.service import WorkflowService
 from app.utils.timezone import Timezone
 from shared.py.wide_events import log
@@ -290,14 +290,16 @@ async def get_onboarding_system_prompt_if_applicable(
         if not user_doc:
             return None
 
-        onboarding = user_doc.onboarding or {}
-        phase = onboarding.get("phase", "initial")
-        if phase == OnboardingPhase.COMPLETED:
+        onboarding = user_doc.onboarding or OnboardingSubdocument()
+        if onboarding.phase == OnboardingPhase.COMPLETED:
             return None
 
         name = user_doc.name or "there"
-        profession = onboarding.get("preferences", {}).get("profession", "")
-        triage_summary = onboarding.get("triage_summary", "")
+        profession = (onboarding.preferences.profession if onboarding.preferences else None) or ""
+        # Persisted as the triage model's dump; only its summary line belongs in a prompt.
+        triage_summary = (
+            onboarding.triage_summary.get("summary", "") if onboarding.triage_summary else ""
+        )
 
         onboarding_context = (
             f"Profession: {profession}" if profession else "Profession: not specified"

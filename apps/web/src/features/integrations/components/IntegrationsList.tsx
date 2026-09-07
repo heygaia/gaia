@@ -10,9 +10,9 @@ import {
 } from "@shared/utils";
 import type React from "react";
 import { useMemo } from "react";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useIntegrationModalActions } from "@/stores/uiStore";
-import { useUserStore } from "@/stores/userStore";
 import {
   ALL_CATEGORIES,
   getCategoryLabel,
@@ -174,7 +174,7 @@ export const IntegrationsList: React.FC<IntegrationsListProps> = ({
 }) => {
   const { openIntegrationModal } = useIntegrationModalActions();
   const { integrations, isPending, connectIntegration } = useIntegrations();
-  const currentUserId = useUserStore((state) => state.userId);
+  const currentUserId = useCurrentUser().userId;
 
   const { filteredIntegrations } = useIntegrationSearch(
     integrations,

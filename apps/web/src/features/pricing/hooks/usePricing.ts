@@ -3,13 +3,13 @@
 import { useQuery } from "@tanstack/react-query";
 import { useCallback, useState } from "react";
 
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 
 import { type Plan, pricingApi } from "../api/pricingApi";
 
 export const usePricing = (initialPlans: Plan[] = []) => {
   const [error, setError] = useState<string | null>(null);
-  const user = useUser();
+  const user = useCurrentUser();
 
   // Get all plans (no authentication required)
   const {
@@ -98,7 +98,7 @@ export const usePricing = (initialPlans: Plan[] = []) => {
 
 // Separate hook for just subscription status (for backward compatibility)
 export const useUserSubscriptionStatus = () => {
-  const user = useUser();
+  const user = useCurrentUser();
 
   return useQuery({
     queryKey: ["subscription-status"],
@@ -121,7 +121,7 @@ export const useUserSubscriptionStatus = () => {
  * "free"/"not paid".
  */
 export function useIsSubscriptionStatusUnknown(): boolean {
-  const user = useUser();
+  const user = useCurrentUser();
   const { data } = useUserSubscriptionStatus();
   return !user.userId || data === undefined;
 }
