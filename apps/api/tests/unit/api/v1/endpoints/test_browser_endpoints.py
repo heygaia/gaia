@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import HTTPException
 import pytest
@@ -16,6 +16,7 @@ from app.schemas.browser import (
     HandoffDecisionRequest,
     HandoffRecord,
 )
+from app.services.analytics_service import AnalyticsEvents
 
 pytestmark = pytest.mark.unit
 
@@ -328,6 +329,25 @@ class TestMintBrowserImportToken:
             await browser_ep.mint_browser_import_token({})
         assert exc.value.status_code == 400
 
+    async def test_captures_analytics_via_request_context(self, monkeypatch):
+        monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock(return_value="tok-123"))
+        captured = MagicMock()
+        monkeypatch.setattr(browser_ep, "capture_context_event", captured)
+
+        await browser_ep.mint_browser_import_token({"user_id": "u1"})
+
+        # Session-authenticated route: identity comes from the request context,
+        # so the event carries no distinct_id of its own.
+        assert captured.call_args.args[0] == AnalyticsEvents.BROWSER_IMPORT_TOKEN_MINTED
+
+    async def test_no_analytics_when_user_id_missing(self, monkeypatch):
+        monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock())
+        captured = MagicMock()
+        monkeypatch.setattr(browser_ep, "capture_context_event", captured)
+        with pytest.raises(HTTPException):
+            await browser_ep.mint_browser_import_token({})
+        captured.assert_not_called()
+
 
 class TestImportBrowserSessions:
     def _payload(self, token="tok", source_browser=None):
@@ -378,6 +398,37 @@ class TestImportBrowserSessions:
         await browser_ep.import_browser_sessions(self._payload(), self._request())
 
         assert imp.await_args.kwargs["source_ip"] == "198.51.100.9"
+
+    async def test_captures_analytics_attributed_to_token_owner(self, monkeypatch):
+        monkeypatch.setattr(browser_ep, "consume_import_token", AsyncMock(return_value="u1"))
+        monkeypatch.setattr(browser_ep.settings, "BROWSER_PERSIST_LOGINS", True)
+        monkeypatch.setattr(
+            browser_ep,
+            "import_browser_profile",
+            AsyncMock(return_value=[("github.com", 1), ("news.ycombinator.com", 2)]),
+        )
+        captured = MagicMock()
+        monkeypatch.setattr(browser_ep, "capture_event", captured)
+
+        await browser_ep.import_browser_sessions(
+            self._payload(source_browser="Arc"), self._request()
+        )
+
+        # No session cookie here: the id must come from the consumed token, or the
+        # event lands on an anonymous profile and never joins the user's funnel.
+        distinct_id, event, props = captured.call_args.args
+        assert distinct_id == "u1"
+        assert event == AnalyticsEvents.BROWSER_LOGINS_IMPORTED
+        assert props == {"host_count": 2, "cookie_count": 1, "source_browser": "Arc"}
+
+    async def test_no_analytics_when_token_rejected(self, monkeypatch):
+        monkeypatch.setattr(browser_ep, "consume_import_token", AsyncMock(return_value=None))
+        monkeypatch.setattr(browser_ep, "import_browser_profile", AsyncMock())
+        captured = MagicMock()
+        monkeypatch.setattr(browser_ep, "capture_event", captured)
+        with pytest.raises(HTTPException):
+            await browser_ep.import_browser_sessions(self._payload("expired"), self._request())
+        captured.assert_not_called()
 
     async def test_bad_token_401(self, monkeypatch):
         monkeypatch.setattr(browser_ep, "consume_import_token", AsyncMock(return_value=None))

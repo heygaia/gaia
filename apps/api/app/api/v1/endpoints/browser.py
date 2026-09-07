@@ -33,6 +33,7 @@ from app.schemas.browser import (
     ImportTokenResponse,
     LiveViewTokenResponse,
 )
+from app.services.analytics_service import AnalyticsEvents, capture_context_event, capture_event
 from app.services.browser import registry
 from app.services.browser.exceptions import BrowserHandoffNotOwned
 from app.services.browser.handoff import get_handoff, resolve_handoff
@@ -205,6 +206,7 @@ async def mint_browser_import_token(
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id required")
     token = await mint_import_token(str(user_id))
     log.info(f"{LogTag.BROWSER} Minted browser import token", user={"id": user_id})
+    capture_context_event(AnalyticsEvents.BROWSER_IMPORT_TOKEN_MINTED, {})
     return ImportTokenResponse(token=token, expires_in_seconds=BROWSER_IMPORT_TOKEN_TTL_SECONDS)
 
 
@@ -250,6 +252,17 @@ async def import_browser_sessions(
         state,
         source_browser=payload.source_browser,
         source_ip=_client_ip(request),
+    )
+    # Explicit id: the CLI authenticates with the single-use code, so this route
+    # is excluded from the session auth that sets the PostHog request context.
+    capture_event(
+        user_id,
+        AnalyticsEvents.BROWSER_LOGINS_IMPORTED,
+        {
+            "host_count": len(imported),
+            "cookie_count": len(payload.cookies),
+            "source_browser": payload.source_browser,
+        },
     )
     return BrowserImportResponse(
         imported=[BrowserLoginResponse(domain=host, updated_at=None) for host, _ in imported],

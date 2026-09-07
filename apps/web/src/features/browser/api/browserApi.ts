@@ -3,7 +3,11 @@ import type {
   BrowserHandoffDecision,
   BrowserHandoffStatus,
 } from "@/types/features/browserTaskTypes";
-import type { BrowserTask, SavedBrowserLogin } from "../types";
+import type {
+  BrowserTask,
+  ImportTokenResponse,
+  SavedBrowserLogin,
+} from "../types";
 
 interface HandoffDecisionResponse {
   handoff_id: string;
@@ -62,6 +66,16 @@ export const browserApi = {
     apiService.delete("/browser/logins", {
       successMessage: "All saved logins cleared",
       errorMessage: "Could not clear saved logins",
+    }),
+
+  /**
+   * Mint the single-use code the local `gaia-connect` tool presents when it
+   * uploads this user's browser logins. Authorised by the web session; the tool,
+   * which has no cookie, authenticates with the code instead.
+   */
+  mintImportToken: () =>
+    apiService.post<ImportTokenResponse>("/browser/import/token", undefined, {
+      silent: true,
     }),
 
   /**

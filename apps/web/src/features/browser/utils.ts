@@ -21,6 +21,38 @@ export const BROWSER_STATUS_META: Record<
   cancelled: { label: "Stopped", color: "default" },
 };
 
+/** The origin the local `gaia-connect` tool must talk to: the web's API base
+ * without its `/api/v1` path, since the tool appends that itself. */
+export function connectApiOrigin(apiBaseUrl: string): string {
+  return new URL(apiBaseUrl).origin;
+}
+
+export interface ConnectCommandOptions {
+  apiOrigin: string;
+  token: string;
+  /** Passed as `--browser`; null lets the tool detect or ask. */
+  browser: string | null;
+}
+
+/** The one command a user pastes to sync their browser's logins. */
+export function buildConnectCommand({
+  apiOrigin,
+  token,
+  browser,
+}: ConnectCommandOptions): string {
+  const parts = ["gaia-connect", "--api", apiOrigin, "--token", token];
+  if (browser) parts.push("--browser", browser);
+  return parts.join(" ");
+}
+
+/** "9:58" from seconds remaining, clamped at 0:00 once expired. */
+export function formatCountdown(secondsLeft: number): string {
+  const total = Math.max(0, Math.floor(secondsLeft));
+  const minutes = Math.floor(total / 60);
+  const seconds = String(total % 60).padStart(2, "0");
+  return `${minutes}:${seconds}`;
+}
+
 /** Short relative time ("Just now", "5m ago", "Yesterday", "3d ago", then a date). */
 export function formatRelativeDate(dateString: string): string {
   const date = new Date(dateString);

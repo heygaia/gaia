@@ -25,6 +25,13 @@ export interface BrowserTask {
   frames: BrowserTaskFrame[];
 }
 
+/** The single-use code the web mints for the local `gaia-connect` tool. */
+export interface ImportTokenResponse {
+  token: string;
+  /** How long the code stays redeemable, from the moment it was minted. */
+  expires_in_seconds: number;
+}
+
 export interface SavedBrowserLogin {
   domain: string;
   updated_at: string | null;

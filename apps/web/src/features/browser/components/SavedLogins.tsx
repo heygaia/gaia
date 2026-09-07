@@ -18,15 +18,20 @@ import {
   Search01Icon,
 } from "@icons";
 import Image from "next/image";
-import { type ComponentType, useState } from "react";
+import { type ComponentType, useEffect, useState } from "react";
 import { ConfirmationDialog } from "@/components/shared/ConfirmationDialog";
 import { useConfirmation } from "@/hooks/useConfirmation";
 import { useBrowserLogins } from "../hooks/useBrowserLogins";
 import type { SavedBrowserLogin } from "../types";
 import { formatRelativeDate } from "../utils";
+import { ConnectBrowserBanner } from "./ConnectBrowserBanner";
+import { ConnectBrowserModal } from "./ConnectBrowserModal";
 
 /** Source value stamped on logins the `gaia connect` CLI imported. */
 const IMPORT_SOURCE = "import";
+/** While the connect modal is open the tool may upload any second; poll so
+ * the new sites appear without a manual refresh. */
+const CONNECT_REFETCH_MS = 3000;
 
 /** Real browser logo for a source name, falling back to a globe. */
 function browserIcon(
@@ -198,6 +203,7 @@ export function SavedLogins() {
   } = useBrowserLogins();
   const { confirm, confirmationProps } = useConfirmation();
   const [query, setQuery] = useState("");
+  const [connectOpen, setConnectOpen] = useState(false);
   const filtered = query.trim()
     ? logins.filter((l) => l.domain.includes(query.trim().toLowerCase()))
     : logins;
@@ -224,6 +230,16 @@ export function SavedLogins() {
     await clearAllLogins();
   };
 
+  useEffect(() => {
+    if (!connectOpen) return undefined;
+    const id = setInterval(() => void refetch(), CONNECT_REFETCH_MS);
+    return () => {
+      clearInterval(id);
+      // One settling fetch so a sync finished just before closing shows up.
+      void refetch();
+    };
+  }, [connectOpen, refetch]);
+
   return (
     <section>
       <div className="mb-3 flex items-start justify-between gap-3">
@@ -247,6 +263,15 @@ export function SavedLogins() {
           </Button>
         )}
       </div>
+
+      {!isLoading && !error && (
+        <div className="mb-3">
+          <ConnectBrowserBanner
+            hasLogins={logins.length > 0}
+            onConnect={() => setConnectOpen(true)}
+          />
+        </div>
+      )}
 
       {logins.length > 0 && (
         <Input
@@ -306,6 +331,10 @@ export function SavedLogins() {
         </ScrollShadow>
       )}
 
+      <ConnectBrowserModal
+        isOpen={connectOpen}
+        onClose={() => setConnectOpen(false)}
+      />
       <ConfirmationDialog {...confirmationProps} />
     </section>
   );
