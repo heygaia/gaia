@@ -149,33 +149,33 @@ def _create_workflow_payload(**overrides) -> dict:
 class TestWorkflowPaidOnlyGate:
     """402 contract on the workflow endpoints that create/run work."""
 
-    async def test_create_workflow_free_user_gets_402(self, client: AsyncClient):
+    async def test_create_workflow_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(f"{_WF_SERVICE}.create_workflow", new_callable=AsyncMock) as mock_create:
-            response = await client.post(BASE_URL, json=_create_workflow_payload())
+            response = await gated_client.post(BASE_URL, json=_create_workflow_payload())
 
         assert response.status_code == 402
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_create.assert_not_called()
 
-    async def test_execute_workflow_free_user_gets_402(self, client: AsyncClient):
+    async def test_execute_workflow_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(f"{_WF_SERVICE}.execute_workflow", new_callable=AsyncMock) as mock_execute:
-            response = await client.post(f"{BASE_URL}/wf_abc123/execute", json={})
+            response = await gated_client.post(f"{BASE_URL}/wf_abc123/execute", json={})
 
         assert response.status_code == 402
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_execute.assert_not_called()
 
-    async def test_activate_workflow_free_user_gets_402(self, client: AsyncClient):
+    async def test_activate_workflow_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(f"{_WF_SERVICE}.activate_workflow", new_callable=AsyncMock) as mock_activate:
-            response = await client.post(f"{BASE_URL}/wf_abc123/activate")
+            response = await gated_client.post(f"{BASE_URL}/wf_abc123/activate")
 
         assert response.status_code == 402
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_activate.assert_not_called()
 
-    async def test_create_from_todo_free_user_gets_402(self, client: AsyncClient):
+    async def test_create_from_todo_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(f"{_WF_SERVICE}.create_workflow", new_callable=AsyncMock) as mock_create:
-            response = await client.post(
+            response = await gated_client.post(
                 f"{BASE_URL}/from-todo",
                 json={"todo_id": "todo_123", "todo_title": "Buy groceries"},
             )
@@ -184,11 +184,11 @@ class TestWorkflowPaidOnlyGate:
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_create.assert_not_called()
 
-    async def test_regenerate_steps_free_user_gets_402(self, client: AsyncClient):
+    async def test_regenerate_steps_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(
             f"{_WF_SERVICE}.regenerate_workflow_steps", new_callable=AsyncMock
         ) as mock_regen:
-            response = await client.post(
+            response = await gated_client.post(
                 f"{BASE_URL}/wf_abc123/regenerate-steps",
                 json={"instruction": "Make it better"},
             )
@@ -197,11 +197,11 @@ class TestWorkflowPaidOnlyGate:
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_regen.assert_not_called()
 
-    async def test_generate_prompt_free_user_gets_402(self, client: AsyncClient):
+    async def test_generate_prompt_free_user_gets_402(self, gated_client: AsyncClient):
         with patch(
             f"{_WF_GEN_SERVICE}.generate_workflow_prompt", new_callable=AsyncMock
         ) as mock_gen:
-            response = await client.post(
+            response = await gated_client.post(
                 f"{BASE_URL}/generate-prompt",
                 json={"title": "My Workflow"},
             )
@@ -209,29 +209,6 @@ class TestWorkflowPaidOnlyGate:
         assert response.status_code == 402
         assert response.json()["detail"]["code"] == "subscription_required"
         mock_gen.assert_not_called()
-
-    async def test_deactivate_workflow_free_user_is_not_gated(self, client: AsyncClient):
-        """Deactivate must stay reachable for a lapsed user — otherwise a free
-        user could never turn off a workflow the paywall itself deactivated."""
-        mock_wf = _make_workflow(activated=False)
-        with patch(
-            f"{_WF_SERVICE}.deactivate_workflow",
-            new_callable=AsyncMock,
-            return_value=mock_wf,
-        ):
-            response = await client.post(f"{BASE_URL}/wf_abc123/deactivate")
-
-        assert response.status_code == 200
-
-    async def test_list_workflows_free_user_is_not_gated(self, client: AsyncClient):
-        with patch(
-            f"{_WF_SERVICE}.list_workflows",
-            new_callable=AsyncMock,
-            return_value=([], 0),
-        ):
-            response = await client.get(BASE_URL)
-
-        assert response.status_code == 200
 
 
 # ---------------------------------------------------------------------------

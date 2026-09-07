@@ -535,6 +535,34 @@ async def client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
 
 
 @pytest.fixture
+async def gated_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
+    """``client`` with the real ``EntitlementMiddleware`` in front of the app.
+
+    The test app strips every middleware, so a route's 402 contract cannot be
+    proved through ``client``: the deny-by-default gate lives in the middleware,
+    not in the route. This stacks the gate exactly as production does (auth
+    outside it, writing ``request.state.user``; the gate inside) around the
+    same app, so a test asserts what a FREE caller really gets.
+    """
+    from starlette.middleware.base import BaseHTTPMiddleware
+
+    from app.api.v1.middleware.entitlement import EntitlementMiddleware
+
+    class _AuthedState(BaseHTTPMiddleware):
+        async def dispatch(self, request, call_next):
+            request.state.user = FAKE_USER
+            return await call_next(request)
+
+    gated = _AuthedState(app=EntitlementMiddleware(app=test_app))
+    transport = ASGITransport(app=gated, raise_app_exceptions=False)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://test",  # NOSONAR
+    ) as ac:
+        yield ac
+
+
+@pytest.fixture
 async def unauthed_client(test_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
     """Client without auth — requests will get 401."""
     from app.api.v1.dependencies.oauth_dependencies import get_current_user

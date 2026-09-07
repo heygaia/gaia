@@ -444,14 +444,14 @@ class TestChatStreamPaywall:
         mock_subscription,
         mock_checkout,
         mock_spawn,
-        test_client,
+        gated_test_client,
     ):
         mock_subscription.return_value = _make_subscription_mock(PlanType.FREE)
         checkout = MagicMock()
         checkout.checkout.payment_link = "https://checkout.dodo.test/xyz"
         mock_checkout.return_value = checkout
 
-        response = await test_client.post("/api/v1/chat-stream", json=_VALID_BODY)
+        response = await gated_test_client.post("/api/v1/chat-stream", json=_VALID_BODY)
 
         assert response.status_code == 402
         assert response.json()["detail"] == {
@@ -478,14 +478,14 @@ class TestChatStreamPaywall:
         mock_subscription,
         mock_checkout,
         mock_spawn,
-        test_client,
+        gated_test_client,
     ):
         mock_subscription.return_value = _make_subscription_mock(PlanType.FREE)
         checkout = MagicMock()
         checkout.checkout.payment_link = None
         mock_checkout.return_value = checkout
 
-        response = await test_client.post("/api/v1/chat-stream", json=_VALID_BODY)
+        response = await gated_test_client.post("/api/v1/chat-stream", json=_VALID_BODY)
 
         assert response.status_code == 402
         mock_spawn.assert_not_called()

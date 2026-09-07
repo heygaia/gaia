@@ -9,8 +9,6 @@ every failure path stays best-effort (logs, never raises).
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.agents.core.background.workflow_platform_delivery import deliver_result_to_platforms
 from app.constants.general import NEW_MESSAGE_BREAKER
 from app.constants.log_tags import LogTag
@@ -220,7 +218,6 @@ class TestDeliveredResultsReachTheSessionThread:
             )
         return recorder
 
-    @pytest.mark.regression
     async def test_published_result_is_recorded_in_the_session_thread(self) -> None:
         record = await self._deliver(OutboundResult.PUBLISHED)
 
@@ -285,7 +282,6 @@ class TestDeliveredResultsReachTheSessionThread:
             )
         assert recorder.await_args.args[1].startswith("[Delivered to the user on iMessage —")
 
-    @pytest.mark.regression
     async def test_a_result_that_was_not_delivered_is_not_recorded(self) -> None:
         record = await self._deliver(OutboundResult.FAILED)
 

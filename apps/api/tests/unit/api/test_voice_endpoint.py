@@ -162,13 +162,16 @@ class TestVoicePaidOnlyGate:
 
     @patch("app.api.v1.endpoints.voice.get_user_voice", new_callable=AsyncMock)
     async def test_free_user_gets_402_and_never_mints_a_token(
-        self, mock_get_voice: AsyncMock, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+        self,
+        mock_get_voice: AsyncMock,
+        gated_client: AsyncClient,
+        monkeypatch: pytest.MonkeyPatch,
     ):
         monkeypatch.setattr(settings, "LIVEKIT_API_KEY", FAKE_API_KEY)
         monkeypatch.setattr(settings, "LIVEKIT_API_SECRET", FAKE_API_SECRET)
         monkeypatch.setattr(settings, "LIVEKIT_URL", "wss://test.livekit.cloud")
 
-        resp = await client.get(VOICE_BASE + "/token")
+        resp = await gated_client.get(VOICE_BASE + "/token")
 
         assert resp.status_code == 402
         assert resp.json()["detail"]["code"] == "subscription_required"
