@@ -849,6 +849,8 @@ class TestInitializedCategoryContract:
             "suggest_integrations": False,
             "connect_integration": True,
             "check_integrations_status": False,
+            # Force-gated (always_gate), not destructive — see the always_gate test.
+            "add_custom_mcp_server": False,
         }
 
 

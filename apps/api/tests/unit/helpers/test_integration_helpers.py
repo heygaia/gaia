@@ -2,7 +2,32 @@
 
 import pytest
 
-from app.helpers.integration_helpers import generate_integration_slug
+from app.helpers.integration_helpers import generate_integration_slug, normalize_server_url
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://mcp.sentry.dev/mcp", "https://mcp.sentry.dev/mcp"),
+        # trailing slash stripped
+        ("https://mcp.sentry.dev/mcp/", "https://mcp.sentry.dev/mcp"),
+        # scheme + host lowercased, path case preserved
+        ("HTTPS://MCP.Sentry.DEV/McP", "https://mcp.sentry.dev/McP"),
+        # fragment dropped, query preserved
+        ("https://x.example/mcp?v=2#frag", "https://x.example/mcp?v=2"),
+        # surrounding whitespace stripped
+        ("  https://x.example/mcp  ", "https://x.example/mcp"),
+    ],
+)
+def test_normalize_server_url(raw, expected):
+    assert normalize_server_url(raw) == expected
+
+
+def test_normalize_server_url_dedupes_case_and_slash_variants():
+    """The whole point: two spellings of one server collapse to one key."""
+    a = normalize_server_url("https://MCP.Sentry.dev/mcp/")
+    b = normalize_server_url("https://mcp.sentry.dev/mcp")
+    assert a == b
 
 
 @pytest.mark.parametrize(

@@ -4,6 +4,8 @@ import { AlertCircleIcon } from "@icons";
 import { CONNECT_ACTION_LABEL, connectionPromptState } from "@shared/utils";
 import CollapsibleListWrapper from "@/components/shared/CollapsibleListWrapper";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { BearerTokenModal } from "@/features/integrations/components/BearerTokenModal";
+import { useBearerTokenModal } from "@/features/integrations/hooks/useBearerTokenModal";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import type { IntegrationConnectionData } from "@/features/integrations/types";
 
@@ -16,6 +18,13 @@ export default function IntegrationConnectionPrompt({
 }: IntegrationConnectionPromptProps) {
   const { integration_id, message, expired } = integration_connection_required;
   const { integrations, connectIntegration } = useIntegrations();
+  const bearer = useBearerTokenModal({
+    connect: (id, token) => connectIntegration(id, token),
+    onConnected: () => {
+      // connectIntegration already toasts success and invalidates the
+      // integration/tool caches, so there is nothing extra to do here.
+    },
+  });
 
   const integration = integrations.find((i) => i.id === integration_id);
 
@@ -26,8 +35,16 @@ export default function IntegrationConnectionPrompt({
   const state = connectionPromptState(expired, integration.status);
   const isConnected = state === "connected";
   const isAvailable = integration.source === "custom" || integration.available;
+  // API-key (bearer) servers collect their token in a secure modal — never in
+  // chat and never through the LLM. Everything else uses OAuth/direct connect.
+  const needsBearerToken =
+    integration.authType === "bearer" && integration.requiresAuth;
 
   const handleConnect = async () => {
+    if (needsBearerToken) {
+      bearer.open(integration.id, integration.name);
+      return;
+    }
     try {
       await connectIntegration(integration.id);
     } catch (error) {
@@ -102,20 +119,29 @@ export default function IntegrationConnectionPrompt({
   );
 
   return (
-    <CollapsibleListWrapper
-      icon={getToolCategoryIcon(integration_id, {
-        size: 20,
-        width: 20,
-        height: 20,
-        showBackground: false,
-      })}
-      count={1}
-      label={
-        state === "expired" ? "Reconnect Required" : "Integration Required"
-      }
-      isCollapsible={true}
-    >
-      {content}
-    </CollapsibleListWrapper>
+    <>
+      <CollapsibleListWrapper
+        icon={getToolCategoryIcon(integration_id, {
+          size: 20,
+          width: 20,
+          height: 20,
+          showBackground: false,
+        })}
+        count={1}
+        label={
+          state === "expired" ? "Reconnect Required" : "Integration Required"
+        }
+        isCollapsible={true}
+      >
+        {content}
+      </CollapsibleListWrapper>
+      <BearerTokenModal
+        isOpen={bearer.isOpen}
+        onClose={bearer.close}
+        integrationId={bearer.integrationId}
+        integrationName={bearer.integrationName}
+        onSubmit={bearer.submit}
+      />
+    </>
   );
 }

@@ -20,23 +20,36 @@ from app.constants.log_tags import LogTag
 from app.db.repositories.integrations import integration_repository
 from app.db.repositories.user_integrations import user_integration_repository
 from app.decorators import with_doc
-from app.helpers.integration_helpers import build_search_patterns, generate_integration_slug
+from app.helpers.integration_helpers import (
+    build_search_patterns,
+    generate_integration_slug,
+    normalize_server_url,
+)
 from app.models.agent_models import agent_configurable
 from app.models.integration_models import (
+    AuthType,
+    CreateCustomIntegrationRequest,
     IntegrationInfo,
     ListIntegrationsResult,
     SuggestedIntegration,
 )
+from app.services.integrations.custom_crud import (
+    create_and_connect_custom_integration,
+    create_custom_integration,
+)
+from app.services.mcp.mcp_client import get_mcp_client
 from app.services.oauth.oauth_service import (
     check_integration_status as check_single_integration_status,
     check_multiple_integrations_status,
 )
 from app.templates.docstrings.integration_tool_docs import (
+    ADD_CUSTOM_MCP_SERVER,
     CHECK_INTEGRATIONS_STATUS,
     CONNECT_INTEGRATION,
     LIST_INTEGRATIONS,
 )
 from app.utils.integration_checker import request_integration_connection
+from app.utils.url_safety import assert_safe_url_shape
 from shared.py.wide_events import log
 
 
@@ -356,10 +369,127 @@ async def check_integrations_status(
         return f"Error checking status: {e!s}"
 
 
+@tool
+@with_doc(ADD_CUSTOM_MCP_SERVER)
+async def add_custom_mcp_server(
+    server_url: Annotated[
+        str,
+        "The exact MCP server endpoint URL resolved from the vendor's docs via web search "
+        "(e.g. 'https://mcp.sentry.dev/mcp'). Never guess it.",
+    ],
+    name: Annotated[str, "Human-facing server name, e.g. 'Sentry'."],
+    config: RunnableConfig,
+) -> str:
+    try:
+        log.set(tool={"name": "add_custom_mcp_server", "action": "create"})
+        configurable = agent_configurable(config)
+        user_id = configurable.get("user_id") if configurable else None
+        if not user_id:
+            return "Error: User ID not found in configuration."
+
+        # Cheap, non-resolving SSRF/shape guard (the request model carries no
+        # validators); the DNS-resolving guard fires again inside probe/connect.
+        try:
+            assert_safe_url_shape(server_url)
+        except ValueError as e:
+            return f"❌ That server URL can't be used: {e}"
+
+        # Catalog apps have a first-class connector, never re-add them as custom.
+        search_name = name.lower().strip()
+        catalog = next(
+            (
+                integ
+                for integ in OAUTH_INTEGRATIONS
+                if integ.id.lower() == search_name
+                or integ.name.lower() == search_name
+                or (integ.short_name and integ.short_name.lower() == search_name)
+            ),
+            None,
+        )
+        if catalog:
+            return (
+                f"{catalog.name} is a built-in integration; use connect_integration with id "
+                f"'{catalog.id}' instead of adding it as a custom MCP server."
+            )
+
+        normalized_url = normalize_server_url(server_url)
+        mcp_client = await get_mcp_client(user_id=str(user_id))
+
+        # Idempotency: reuse an existing server at the same URL rather than duplicating.
+        existing = await integration_repository.find_custom_by_server_url(
+            normalized_url, str(user_id)
+        )
+        if existing:
+            if await user_integration_repository.is_connected(user_id, existing.integration_id):
+                return f"✅ {existing.name} is already added and connected."
+            return await request_integration_connection(
+                existing.integration_id, existing.name, str(user_id)
+            )
+
+        # Probe once to classify auth. A bearer server needs a secret we must never
+        # take through chat, so it is created and handed to the secure UI card.
+        probe = await mcp_client.probe_connection(normalized_url)
+        if probe.get("error"):
+            return f"❌ Couldn't reach that MCP server: {probe['error']}"
+
+        requires_auth = bool(probe.get("requires_auth"))
+        probed_type = probe.get("auth_type")
+
+        if requires_auth and probed_type == "bearer":
+            integration = await create_custom_integration(
+                str(user_id),
+                CreateCustomIntegrationRequest(
+                    name=name,
+                    description=None,
+                    server_url=normalized_url,
+                    requires_auth=True,
+                    auth_type="bearer",
+                    is_public=False,
+                    bearer_token=None,
+                ),
+            )
+            return await request_integration_connection(
+                integration.integration_id, name, str(user_id)
+            )
+
+        resolved_type = cast(
+            AuthType | None, probed_type if probed_type in ("none", "oauth", "bearer") else None
+        )
+        integration, connection = await create_and_connect_custom_integration(
+            str(user_id),
+            CreateCustomIntegrationRequest(
+                name=name,
+                description=None,
+                server_url=normalized_url,
+                requires_auth=requires_auth,
+                auth_type=resolved_type,
+                is_public=False,
+                bearer_token=None,
+            ),
+            mcp_client,
+        )
+        status = connection.get("status")
+        if status == "connected":
+            count = connection.get("tools_count") or 0
+            return f"✅ Added and connected {integration.name} ({count} tools available)."
+        if status == "requires_oauth":
+            return await request_integration_connection(
+                integration.integration_id, name, str(user_id)
+            )
+        return (
+            f"❌ Added {name} but couldn't connect: {connection.get('error', 'unknown error')}. "
+            f"It's saved (id {integration.integration_id}); you can ask me to retry connecting it."
+        )
+    except Exception as e:
+        log.error(f"{LogTag.TOOL} Error adding custom MCP server", error_type=type(e).__name__)
+        return f"Error adding MCP server: {e!s}"
+
+
 # Export all tools
 tools = [
     list_integrations,
     suggest_integrations,
     connect_integration,
     check_integrations_status,
+    add_custom_mcp_server,
 ]

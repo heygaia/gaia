@@ -76,6 +76,18 @@ class IntegrationsRepository(MongoRepository[Integration, IntegrationUpdate]):
             {"integration_id": integration_id, "source": "custom", "created_by": user_id}
         )
 
+    async def find_custom_by_server_url(
+        self, server_url: str, created_by: str
+    ) -> Integration | None:
+        """A user's custom integration at this exact (normalized) server URL.
+
+        The idempotency check that stops the agent re-adding the same MCP server on
+        a retry. Callers must pass an already-normalized URL (helpers.normalize_server_url).
+        """
+        return await self._find_one(
+            {"source": "custom", "created_by": created_by, "mcp_config.server_url": server_url}
+        )
+
     async def delete_custom(self, integration_id: str, created_by: str) -> bool:
         """Delete a custom integration only if ``created_by`` owns it (creator-only)."""
         return await self._remove(

@@ -37,6 +37,31 @@ Examples:
 - User: "Show me my connected integrations" → connected_only: True
 """
 
+ADD_CUSTOM_MCP_SERVER = """
+INTEGRATIONS (ADD CUSTOM MCP SERVER): Add a remote MCP server the user asks for by name
+(e.g. "add the Sentry MCP", "connect the Linear MCP server").
+
+WORKFLOW (do this in order):
+1. If you only have a product name, FIRST use web_search_tool / fetch_webpages to find the
+   vendor's official MCP server endpoint URL from their docs. NEVER guess the URL.
+2. Call this tool with the resolved `server_url`. The user is shown the name + URL and must
+   approve before anything connects, so you do not need to ask separately; the approval card handles it.
+3. If the result says authorization or a token is needed, a connect button is shown to the user;
+   ask them to click it. Do NOT put any URL in your reply; the card handles it.
+
+PARAMETERS:
+- `server_url` (str): The exact MCP endpoint URL you resolved (e.g. "https://mcp.sentry.dev/mcp").
+- `name` (str): A human-facing name for the server (e.g. "Sentry").
+
+SECURITY (non-negotiable):
+- NEVER ask the user to paste an API key or token to you, and never accept one as an argument.
+  Servers that need a token are handed to a secure UI form instead.
+
+WHEN NOT TO USE:
+- Do NOT use this for integrations already in the catalog (Gmail, Notion, GitHub, Slack, ...).
+  Use connect_integration with the integration's id for those.
+"""
+
 CONNECT_INTEGRATION = """
 INTEGRATIONS (CONNECT): This tool initiates the connection flow for one or more integrations.
 
