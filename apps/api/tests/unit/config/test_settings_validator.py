@@ -109,6 +109,16 @@ EXPECTED_GROUPS: list[_ExpectedGroup] = [
         None,
     ),
     _ExpectedGroup(
+        "File Sharing",
+        ["SHARE_GRANT_SECRET"],
+        "HMAC signing secret for single-purpose file-share grants",
+        "File attachments fetched by Composio during tool execution",
+        True,
+        True,
+        None,
+        None,
+    ),
+    _ExpectedGroup(
         "Speech Processing",
         ["DEEPGRAM_API_KEY"],
         "Speech-to-text transcription service",

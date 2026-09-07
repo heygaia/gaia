@@ -582,7 +582,7 @@ async def test_run_cdp_proxy_refuses_and_forwards() -> None:
                 return next(self._iter)
             except StopIteration:
                 await asyncio.sleep(0.2)
-                raise StopAsyncIteration
+                raise StopAsyncIteration from None
 
     fake_chromium = FakeChromiumWS()
     mock_ws_ctx = MagicMock()

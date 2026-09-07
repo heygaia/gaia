@@ -170,7 +170,11 @@ class TestDeliverMessageToPlatform:
             ok = await pms.deliver_message_to_platform("whatsapp", "user-1", text)
         assert ok is True
         pub.assert_awaited_once_with(
-            ConversationSource.WHATSAPP, "user-1", ["first bubble", "second bubble"]
+            ConversationSource.WHATSAPP,
+            "user-1",
+            ["first bubble", "second bubble"],
+            destination_override=None,
+            is_channel=False,
         )
 
     async def test_breaker_only_whitespace_parts_are_not_published(self) -> None:
@@ -192,7 +196,13 @@ class TestDeliverMessageToPlatform:
         ) as pub:
             ok = await pms.deliver_message_to_platform("whatsapp", "user-1", text)
         assert ok is True
-        pub.assert_awaited_once_with(ConversationSource.WHATSAPP, "user-1", ["real bubble"])
+        pub.assert_awaited_once_with(
+            ConversationSource.WHATSAPP,
+            "user-1",
+            ["real bubble"],
+            destination_override=None,
+            is_channel=False,
+        )
 
 
 class TestBotPlatformConsistency:

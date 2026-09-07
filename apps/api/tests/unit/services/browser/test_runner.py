@@ -22,6 +22,7 @@ from app.schemas.browser import BrowserAction, HandoffOutcome
 from app.services.browser import runner as runner_mod
 from app.services.browser.runner import BrowserTaskRunner
 from app.services.browser.session import BrowserHostSession
+from app.services.llm_metering import LLMCallContext, TokenUsage
 
 
 class _Action:
@@ -1168,13 +1169,17 @@ async def test_each_models_tokens_are_charged_to_the_users_budget(monkeypatch) -
     assert by_model["gemini-flash"] == {
         "user_id": "u1",
         "model_name": "gemini-flash",
-        "input_tokens": 1200,
-        "output_tokens": 34,
+        "usage": TokenUsage(
+            input_tokens=1200, output_tokens=34, cached_tokens=0, reasoning_tokens=0
+        ),
         "root_request_id": "req-1",
-        "charge_to_budget": True,
+        "context": LLMCallContext(
+            agent_name="browser_task", background=False, charge_to_budget=True
+        ),
     }
-    assert by_model["claude-sonnet"]["input_tokens"] == 90
-    assert by_model["claude-sonnet"]["output_tokens"] == 7
+    assert by_model["claude-sonnet"]["usage"]["input_tokens"] == 90
+    assert by_model["claude-sonnet"]["usage"]["output_tokens"] == 7
+    assert by_model["claude-sonnet"]["context"].charge_to_budget is True
 
 
 async def test_a_completed_run_charges_its_llm_usage(patch_browser, monkeypatch) -> None:

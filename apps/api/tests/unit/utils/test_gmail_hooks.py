@@ -610,17 +610,23 @@ class TestGmailComposeBeforeHook:
         writer.assert_called_once()
 
     @patch("app.utils.composio_hooks.gmail_hooks.get_stream_writer")
-    def test_sends_draft_payload(self, mock_writer: MagicMock) -> None:
-        from app.utils.composio_hooks.gmail_hooks import gmail_compose_before_hook
+    def test_holds_draft_card_instead_of_streaming_it(self, mock_writer: MagicMock) -> None:
+        # A draft card's Send button needs the draft id, which only exists after
+        # the tool runs, so the before-hook holds the card for the after-hook to
+        # stream rather than emitting it now.
+        from app.utils.composio_hooks.gmail_hooks import (
+            _pending_draft_card,
+            gmail_compose_before_hook,
+        )
 
         writer = _noop_writer()
         mock_writer.return_value = writer
         params = _make_params({"recipient_email": "a@b.com", "subject": "draft", "body": "content"})
         gmail_compose_before_hook("GMAIL_CREATE_EMAIL_DRAFT", "gmail", params)
-        writer.assert_called_once()
-        payload = writer.call_args[0][0]
-        assert "email_compose_data" in payload
-        assert payload["email_compose_data"][0]["subject"] == "draft"
+        writer.assert_not_called()
+        held = _pending_draft_card.get()
+        assert held is not None
+        assert held["subject"] == "draft"
 
     @patch("app.utils.composio_hooks.gmail_hooks.get_stream_writer")
     def test_sends_email_sent_payload_for_send(self, mock_writer: MagicMock) -> None:
