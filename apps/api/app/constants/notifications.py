@@ -19,7 +19,7 @@ CHANNEL_TYPE_SLACK = "slack"
 CHANNEL_TYPE_IMESSAGE = "imessage"
 CHANNEL_TYPE_EMAIL = "email"
 
-# External channel types that are auto-injected based on platform links
+# External channel types a notification can be delivered on
 EXTERNAL_NOTIFICATION_CHANNELS = (
     CHANNEL_TYPE_TELEGRAM,
     CHANNEL_TYPE_DISCORD,
@@ -28,9 +28,11 @@ EXTERNAL_NOTIFICATION_CHANNELS = (
     CHANNEL_TYPE_IMESSAGE,
 )
 
-# All channel types that are auto-injected when no channels are explicitly specified.
 # inapp is always available; the external platforms respect user preferences.
-ALL_AUTO_INJECTED_CHANNELS = (
+#: Every channel type a notification may name explicitly (the tool validates
+#: against this). A notification that names none goes in-app plus the user's
+#: preferred chat platform; see ``NotificationOrchestrator._default_channels``.
+NOTIFICATION_CHANNEL_TYPES = (
     CHANNEL_TYPE_INAPP,
     CHANNEL_TYPE_TELEGRAM,
     CHANNEL_TYPE_DISCORD,
