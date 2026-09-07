@@ -14,13 +14,12 @@ import { Input } from "@heroui/input";
 import { Tooltip } from "@heroui/tooltip";
 import { SparklesIcon } from "@icons";
 import * as m from "motion/react-m";
-import { memo, useState } from "react";
+import { memo } from "react";
 
 import {
   isListedProfession,
   isRoleNeed,
   NEEDS_HINT,
-  NEEDS_MAX_SELECTION,
   needOptionsFor,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
@@ -48,8 +47,13 @@ interface NeedsModeProps {
   profession: string | null;
   selectedNeeds: string[];
   otherNeed: string;
+  /** Whether "Something else" is open. Owned by the onboarding state. */
+  otherOpen: boolean;
+  /** Whether every pick is spent — read from the state, never recomputed here. */
+  atCap: boolean;
   canContinue: boolean;
   onToggleNeed: (value: string) => void;
+  onToggleOtherNeed: () => void;
   onOtherNeedChange: (value: string) => void;
   onContinue: () => void;
 }
@@ -114,17 +118,15 @@ function NeedsInput({
   profession,
   selectedNeeds,
   otherNeed,
+  otherOpen,
+  atCap,
   canContinue,
   onToggleNeed,
+  onToggleOtherNeed,
   onOtherNeedChange,
   onContinue,
 }: NeedsModeProps) {
   const selected = new Set(selectedNeeds);
-  // The field stays open while they type; un-picking the chip also clears the
-  // text, so a closed field never submits words they can no longer see.
-  const [otherOpen, setOtherOpen] = useState(otherNeed !== "");
-  const atCap =
-    selectedNeeds.length + (otherOpen ? 1 : 0) >= NEEDS_MAX_SELECTION;
   const rolePhrase = profession ? ROLE_PHRASES[profession] : undefined;
   const personalisedNote = (value: string) =>
     rolePhrase && isRoleNeed(value)
@@ -132,12 +134,8 @@ function NeedsInput({
       : null;
 
   const handleSelect = (value: string) => {
-    if (value !== OTHER_NEED) {
-      onToggleNeed(value);
-      return;
-    }
-    if (otherOpen) onOtherNeedChange("");
-    setOtherOpen(!otherOpen);
+    if (value === OTHER_NEED) onToggleOtherNeed();
+    else onToggleNeed(value);
   };
 
   return (
@@ -259,7 +257,7 @@ function OptionChips({
     // `min-inline-size: min-content`, which would otherwise stop the pills wrapping.
     <fieldset
       aria-label={label}
-      className="flex w-full min-w-0 flex-wrap justify-end gap-2"
+      className="flex w-full min-w-0 flex-wrap justify-end gap-2.5"
     >
       {options.map((option, index) => {
         const selected = isSelected(option.value);
@@ -304,13 +302,23 @@ function OptionChips({
               ease: EASE_OUT_QUART,
             }}
           >
-            {note ? (
-              <Tooltip content={note} placement="top" delay={200}>
-                {chip}
-              </Tooltip>
-            ) : (
-              chip
-            )}
+            {/* A picked chip lifts a touch, the same for every chip: the
+                tooltip wrapper on the personalised ones must not be the only
+                thing that makes a selection feel like one. */}
+            <m.span
+              className="relative inline-block"
+              style={{ zIndex: selected ? 1 : 0 }}
+              animate={{ scale: selected ? 1.04 : 1 }}
+              transition={{ type: "spring", stiffness: 500, damping: 28 }}
+            >
+              {note ? (
+                <Tooltip content={note} placement="top" delay={200}>
+                  {chip}
+                </Tooltip>
+              ) : (
+                chip
+              )}
+            </m.span>
           </m.div>
         );
       })}

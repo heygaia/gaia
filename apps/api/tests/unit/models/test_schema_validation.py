@@ -212,17 +212,19 @@ class TestOnboardingRequest:
         assert [n.value for n in r.needs] == ["inbox", "calendar"]
 
     def test_more_than_the_pick_cap_is_rejected(self) -> None:
-        """Q2 is "pick up to two": a third need is a client that skipped the cap."""
+        """Q2 is "pick up to three": a fourth need is a client that skipped the cap."""
         with pytest.raises(ValidationError):
-            OnboardingRequest(profession="Founder", needs=["inbox", "calendar", "mornings"])
+            OnboardingRequest(
+                profession="Founder", needs=["inbox", "calendar", "mornings", "reminders"]
+            )
         # The stored shape is read back for users who picked up to seven under
         # the old Q2; it keeps their first picks rather than refusing to load.
         assert [
-            n.value for n in OnboardingPreferences(needs=["inbox", "calendar", "mornings"]).needs
-        ] == [
-            "inbox",
-            "calendar",
-        ]
+            n.value
+            for n in OnboardingPreferences(
+                needs=["inbox", "calendar", "mornings", "reminders"]
+            ).needs
+        ] == ["inbox", "calendar", "mornings"]
 
     def test_a_role_need_is_accepted_for_its_role(self) -> None:
         r = OnboardingRequest(profession="student", needs=["student_exams", "inbox"])
@@ -248,9 +250,11 @@ class TestOnboardingRequest:
         shared = [n for n in OnboardingNeed if role_of_need(n) is None]
         assert len(shared) == 6
 
-    def test_the_pick_cap_is_two(self) -> None:
-        assert NEEDS_MAX_SELECTION == 2
-        assert OnboardingRequest(profession="Founder", needs=["inbox", "calendar"]).needs
+    def test_the_pick_cap_is_three(self) -> None:
+        assert NEEDS_MAX_SELECTION == 3
+        assert OnboardingRequest(
+            profession="Founder", needs=["inbox", "calendar", "mornings"]
+        ).needs
 
     def test_multiline_profession_rejected(self):
         with pytest.raises(ValidationError):

@@ -56,7 +56,7 @@ export function needLabel(value: string): string | undefined {
   return allNeedOptions.find((option) => option.value === value)?.label;
 }
 
-/** Under the Q2 grid: two picks set up the first thing, they are not a ceiling. */
+/** Under the Q2 grid: the picks set up the first thing, they are not a ceiling. */
 export const NEEDS_HINT =
   "Just a starting point. You can hand me more anytime.";
 
@@ -79,7 +79,7 @@ export const OTHER_NEED_OPTION: TypedNeedOption = {
 export const NEEDS_MIN_SELECTION = 1;
 /** Mirrors `NEEDS_MAX_SELECTION` in apps/api user_models.py: the API 422s a
  * third need. "Something else" counts as a pick, so the field closes the grid. */
-export const NEEDS_MAX_SELECTION = 2;
+export const NEEDS_MAX_SELECTION = 3;
 
 /** Mirror `OnboardingPreferences` in apps/api user_models.py: the profession
  * validator caps at 80 and `OTHER_NEED_MAX_LENGTH` at 120; longer text 422s.
@@ -122,7 +122,7 @@ export const questions: Question[] = [
     id: "2",
     lines: (responses) => [
       professionAck(responses),
-      "What do you want off your plate first? Pick up to two.",
+      "What do you want off your plate first? Pick up to three.",
     ],
     fieldName: FIELD_NAMES.NEEDS,
   },

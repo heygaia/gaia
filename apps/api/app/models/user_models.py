@@ -12,9 +12,9 @@ _RESPONSE_MESSAGE_DESC = "Response message"
 
 #: Onboarding Q2 "Something else": one short line, sent verbatim in the first message.
 OTHER_NEED_MAX_LENGTH = 120
-#: Q2 is "pick up to two": every extra pick dilutes the first thread's opener and
+#: Q2 is "pick up to three": every extra pick dilutes the first thread's opener and
 #: the bot's first message down to a feature list. Mirrored in the web constants.
-NEEDS_MAX_SELECTION = 2
+NEEDS_MAX_SELECTION = 3
 #: Q1 is answered in sentences, not job titles, so this is a "one line" cap,
 #: not a "job title" one. Mirrored by PROFESSION_MAX_LENGTH in the web
 #: onboarding constants — the field's maxLength must match or typing goes dead.
@@ -81,7 +81,7 @@ class UpdateTimezoneResponse(BaseModel):
 
 
 class OnboardingNeed(StrEnum):
-    """The pains the user handed GAIA during onboarding (Q2, up to two picks).
+    """The pains the user handed GAIA during onboarding (Q2, up to three picks).
 
     Six are shown to everyone; the rest come in pairs, one pair per Q1 role, and
     only that role sees its pair (``ROLE_NEEDS``). Each value is a different job
@@ -151,7 +151,7 @@ class OnboardingPreferences(BaseModel):
     needs: list[OnboardingNeed] | None = Field(
         None,
         max_length=NEEDS_MAX_SELECTION,
-        description="The jobs the user handed GAIA (onboarding Q2, up to two)",
+        description="The jobs the user handed GAIA (onboarding Q2, up to three)",
     )
 
     @field_validator("needs", mode="before")
@@ -232,7 +232,7 @@ class OnboardingRequest(BaseModel):
     needs: list[OnboardingNeed] = Field(
         default_factory=list,
         max_length=NEEDS_MAX_SELECTION,
-        description="The jobs the user handed GAIA (onboarding Q2, up to two)",
+        description="The jobs the user handed GAIA (onboarding Q2, up to three)",
     )
     other_need: str | None = Field(
         None,
