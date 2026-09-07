@@ -36,4 +36,5 @@ async def test_preferences_saved_before_completion_do_not_block_it(repo):
         preferences=OnboardingPreferences(profession="eng", needs=["inbox"]),
     )
     assert completed is not None
-    assert completed.onboarding["completed"] is True
+    assert completed.onboarding is not None
+    assert completed.onboarding.completed is True

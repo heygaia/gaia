@@ -19,6 +19,7 @@ from app.models.notification.notification_models import (
     NotificationSourceEnum,
     NotificationType,
 )
+from app.models.user_models import UserDocument
 from app.models.workflow_models import DeactivationReason, IntegrationRef
 from app.workers.tasks.workflow_tasks import (
     _notify_workflow_failed,
@@ -44,8 +45,7 @@ def _workflow(user_id: str = "user-1") -> MagicMock:
 async def _run_task(
     workflow: MagicMock, missing: list[IntegrationRef], context: dict[str, Any] | None
 ) -> tuple[str, AsyncMock, AsyncMock, AsyncMock]:
-    onboarded = MagicMock()
-    onboarded.onboarding = {"completed": True}
+    onboarded = UserDocument.model_validate({"onboarding": {"completed": True}})
 
     with (
         patch(f"{MODULE}.workflow_scheduler") as scheduler,

@@ -9,6 +9,7 @@ app. Manual "run now" fires and onboarded users are unaffected.
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.models.user_models import UserDocument
 from app.workers.tasks.workflow_tasks import execute_workflow_by_id
 
 MODULE = "app.workers.tasks.workflow_tasks"
@@ -23,10 +24,8 @@ def _workflow(user_id: str = "user-1") -> MagicMock:
     return wf
 
 
-def _user(completed: bool) -> MagicMock:
-    user = MagicMock()
-    user.onboarding = {"completed": completed}
-    return user
+def _user(completed: bool) -> UserDocument:
+    return UserDocument.model_validate({"onboarding": {"completed": completed}})
 
 
 async def _run_task(
