@@ -136,65 +136,60 @@ const initialState: ComposerState = {
   executorModel: DEFAULT_DEV_EXECUTOR_MODEL,
 };
 
-/** Bumped when the two selection stores were folded into this one. */
-const COMPOSER_STORAGE_VERSION = 1;
+/**
+ * 1: the two selection stores were folded into this one.
+ * 2: selections are no longer persisted (see `partializeComposer`).
+ */
+const COMPOSER_STORAGE_VERSION = 2;
 
-const LEGACY_WORKFLOW_SELECTION_KEY = "workflow-selection-storage";
-const LEGACY_CALENDAR_SELECTION_KEY = "calendar-event-selection-storage";
+/** Keys of the standalone selection stores this slice replaced. */
+const LEGACY_SELECTION_KEYS = [
+  "workflow-selection-storage",
+  "calendar-event-selection-storage",
+] as const;
 
-const readLegacySelectionState = (key: string): Record<string, unknown> => {
-  const raw = globalThis.localStorage?.getItem(key);
-  if (!raw) return {};
-  const parsed: unknown = JSON.parse(raw);
-  const state =
-    parsed && typeof parsed === "object"
-      ? (parsed as { state?: unknown }).state
-      : null;
-  return state && typeof state === "object"
-    ? (state as Record<string, unknown>)
-    : {};
+const forgetLegacySelections = (): void => {
+  for (const key of LEGACY_SELECTION_KEYS) {
+    globalThis.localStorage?.removeItem(key);
+  }
 };
 
 /**
- * One-time move of the two standalone selection stores' persisted state into
- * this store. Runs after every rehydrate (a fresh install has no
- * ``composer-storage`` yet, so a version-gated ``migrate`` would never fire),
- * and is a no-op once the legacy keys are gone.
+ * Only the draft survives a reload. A workflow or calendar selection that
+ * outlives the session can auto-send something the user never meant to.
  */
-const readLegacySelections = (): Partial<ComposerState> | null => {
-  if (typeof globalThis.localStorage === "undefined") return null;
-  const workflow = readLegacySelectionState(LEGACY_WORKFLOW_SELECTION_KEY);
-  const calendar = readLegacySelectionState(LEGACY_CALENDAR_SELECTION_KEY);
-  const hadLegacy =
-    globalThis.localStorage.getItem(LEGACY_WORKFLOW_SELECTION_KEY) !== null ||
-    globalThis.localStorage.getItem(LEGACY_CALENDAR_SELECTION_KEY) !== null;
-  if (!hadLegacy) return null;
-  globalThis.localStorage.removeItem(LEGACY_WORKFLOW_SELECTION_KEY);
-  globalThis.localStorage.removeItem(LEGACY_CALENDAR_SELECTION_KEY);
-  return {
-    selectedWorkflow:
-      (workflow.selectedWorkflow as SelectedWorkflowData | null) ?? null,
-    workflowAutoSend: workflow.autoSend === true,
-    selectedCalendarEvent:
-      (calendar.selectedCalendarEvent as SelectedCalendarEventData | null) ??
-      null,
-  };
-};
-
 const partializeComposer = (state: ComposerStore) => ({
   inputText: state.inputText,
   pendingPrompt: state.pendingPrompt,
   useDefaultModels: state.useDefaultModels,
   commsModel: state.commsModel,
   executorModel: state.executorModel,
-  // Selections persisted here to preserve the behaviour of the two
-  // selection stores this slice replaced.
-  selectedWorkflow: state.selectedWorkflow,
-  workflowAutoSend: state.workflowAutoSend,
-  selectedCalendarEvent: state.selectedCalendarEvent,
 });
 
 type PersistedComposerState = ReturnType<typeof partializeComposer>;
+
+/** Version 1 also persisted the selections; they must not be restored. */
+type PersistedComposerStateV1 = PersistedComposerState &
+  Pick<
+    ComposerState,
+    "selectedWorkflow" | "workflowAutoSend" | "selectedCalendarEvent"
+  >;
+
+export const migrateComposerState = (
+  persisted: unknown,
+  version: number,
+): PersistedComposerState => {
+  if (version >= COMPOSER_STORAGE_VERSION) {
+    return persisted as PersistedComposerState;
+  }
+  const {
+    selectedWorkflow: _workflow,
+    workflowAutoSend: _autoSend,
+    selectedCalendarEvent: _event,
+    ...draft
+  } = persisted as PersistedComposerStateV1;
+  return draft;
+};
 
 export const useComposerStore = create<ComposerStore>()(
   devtools(
@@ -387,17 +382,13 @@ export const useComposerStore = create<ComposerStore>()(
         name: "composer-storage",
         version: COMPOSER_STORAGE_VERSION,
         partialize: partializeComposer,
-        // Older persisted shapes carry nothing that needs reshaping; without
-        // a migrate, persist would drop them on a version bump.
-        migrate: (persisted) => persisted as PersistedComposerState,
+        migrate: migrateComposerState,
         // Runs inside hydration, before the store binding exists, so it must
-        // not reach for `useComposerStore`; it folds the legacy keys straight
-        // into the state being restored.
-        merge: (persisted, current) => ({
-          ...current,
-          ...(persisted as Partial<ComposerStore>),
-          ...(readLegacySelections() ?? {}),
-        }),
+        // not reach for `useComposerStore`.
+        merge: (persisted, current) => {
+          forgetLegacySelections();
+          return { ...current, ...(persisted as Partial<ComposerStore>) };
+        },
       },
     ),
     { name: "composer-store" },
