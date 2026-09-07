@@ -1080,15 +1080,11 @@ async def _run_holo_card(
         t_save = time.monotonic()
         await save_personalization_data(
             ctx.user_id,
-            card_design.house,
-            phrase,
-            user_bio,
-            bio_status,
-            [],
-            metadata.account_number,
-            metadata.member_since,
-            card_design.overlay_color,
-            card_design.overlay_opacity,
+            card_design,
+            metadata,
+            personality_phrase=phrase,
+            user_bio=user_bio,
+            bio_status=bio_status,
         )
         log.info(
             f"{LogTag.ONBOARDING} holo_card done",

@@ -67,8 +67,6 @@ def _onboarded_user():
 def _make_workflow(
     workflow_id: str | None = None,
     user_id: str = "user_abc",
-    title: str = "Daily Standup",
-    steps: list | None = None,
     is_todo_workflow: bool = False,
     source_todo_id: str | None = None,
     system_workflow_key: str | None = None,
@@ -76,12 +74,10 @@ def _make_workflow(
     wf = MagicMock()
     wf.id = workflow_id or str(uuid4())
     wf.user_id = user_id
-    wf.title = title
+    wf.title = "Daily Standup"
     wf.description = "A test workflow"
     wf.prompt = "Run the standup"
-    wf.steps = steps or [
-        MagicMock(id="s1", title="Step 1", description="Do it", category="general")
-    ]
+    wf.steps = [MagicMock(id="s1", title="Step 1", description="Do it", category="general")]
     wf.is_todo_workflow = is_todo_workflow
     wf.source_todo_id = source_todo_id
     wf.system_workflow_key = system_workflow_key

@@ -8,6 +8,7 @@ from fastapi import BackgroundTasks, HTTPException
 import pytest
 
 from app.constants.log_tags import LogTag
+from app.models.onboarding_models import ProfileCardDesign, UserProfileMetadata
 from app.models.user_models import (
     BioStatus,
     ClarifyAnswer,
@@ -388,27 +389,25 @@ class TestSavePersonalizationData:
     ) -> None:
         await save_personalization_data(
             sample_user_id,
-            house="explorer",
+            ProfileCardDesign(house="mistgrove", overlay_color="#ff0000", overlay_opacity=80),
+            UserProfileMetadata(account_number=42, member_since="Mar 2024"),
             personality_phrase="Creative thinker",
             user_bio="A passionate engineer.",
             bio_status=BioStatus.COMPLETED,
-            workflow_ids=["wf1", "wf2"],
-            account_number=42,
-            member_since="Mar 2024",
-            overlay_color="#ff0000",
-            overlay_opacity=80,
         )
 
         mock_save_personalization.assert_awaited_once()
         kwargs = mock_save_personalization.call_args.kwargs
-        assert kwargs["house"] == "explorer"
+        assert kwargs["house"] == "mistgrove"
         assert kwargs["personality_phrase"] == "Creative thinker"
         assert kwargs["user_bio"] == "A passionate engineer."
         assert kwargs["bio_status"] == BioStatus.COMPLETED
-        assert kwargs["workflow_ids"] == ["wf1", "wf2"]
         assert kwargs["account_number"] == 42
+        assert kwargs["member_since"] == "Mar 2024"
         assert kwargs["overlay_color"] == "#ff0000"
         assert kwargs["overlay_opacity"] == 80
+        # The workflows step persists its own ids; the card bundle never carries them.
+        assert kwargs["workflow_ids"] == []
 
     async def test_handles_exception(
         self, mock_save_personalization: AsyncMock, sample_user_id: str
@@ -417,15 +416,11 @@ class TestSavePersonalizationData:
 
         await save_personalization_data(
             sample_user_id,
-            house="explorer",
+            ProfileCardDesign(house="mistgrove", overlay_color="#000", overlay_opacity=50),
+            UserProfileMetadata(account_number=1, member_since="Jan 2024"),
             personality_phrase="phrase",
             user_bio="bio",
             bio_status=BioStatus.COMPLETED,
-            workflow_ids=[],
-            account_number=1,
-            member_since="Jan 2024",
-            overlay_color="#000",
-            overlay_opacity=50,
         )
 
 

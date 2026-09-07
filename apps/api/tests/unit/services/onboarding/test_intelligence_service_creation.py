@@ -761,8 +761,9 @@ class TestRunHoloCard:
 
         args = save.await_args.args
         assert args[0] == USER
-        assert args[1] == "mistgrove"
-        assert args[2] == "a phrase"
+        assert args[1].house == "mistgrove"
+        assert args[2].account_number == 1
+        assert save.await_args.kwargs["personality_phrase"] == "a phrase"
         # Both the id and the already-loaded document: without the document the
         # lookup re-reads Mongo, without the id it reads the wrong person.
         metadata.assert_awaited_once_with(USER, user=user)

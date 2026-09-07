@@ -2,6 +2,7 @@
 
 from app.constants.log_tags import LogTag
 from app.db.repositories.users import user_repository
+from app.models.onboarding_models import ProfileCardDesign, UserProfileMetadata
 from app.models.user_models import BioStatus
 from app.services.system_workflows.provisioner import provision_universal_system_workflows
 from app.utils.seeding_utils import seed_onboarding_todo
@@ -10,43 +11,29 @@ from shared.py.wide_events import log
 
 async def save_personalization_data(
     user_id: str,
-    house: str,
+    card_design: ProfileCardDesign,
+    metadata: UserProfileMetadata,
     personality_phrase: str,
     user_bio: str,
     bio_status: BioStatus,
-    workflow_ids: list[str],
-    account_number: int,
-    member_since: str,
-    overlay_color: str,
-    overlay_opacity: int,
 ) -> None:
-    """
-    Save personalization data to user document.
+    """Save the generated holo-card personalization bundle to the user document.
 
-    Args:
-        user_id: User identifier
-        house: Assigned house
-        personality_phrase: Generated phrase
-        user_bio: Generated bio
-        bio_status: Status of bio generation
-        workflow_ids: Suggested workflow IDs
-        account_number: User's account number
-        member_since: Member since date
-        overlay_color: Generated overlay color or gradient
-        overlay_opacity: Opacity percentage
+    The suggested workflows are not part of this bundle: they are persisted on
+    their own by the workflows step, which finishes independently of the card.
     """
     try:
         await user_repository.save_personalization(
             user_id,
-            house=house,
+            house=card_design.house,
             personality_phrase=personality_phrase,
             user_bio=user_bio,
             bio_status=bio_status,
-            account_number=account_number,
-            member_since=member_since,
-            overlay_color=overlay_color,
-            overlay_opacity=overlay_opacity,
-            workflow_ids=workflow_ids,
+            account_number=metadata.account_number,
+            member_since=metadata.member_since,
+            overlay_color=card_design.overlay_color,
+            overlay_opacity=card_design.overlay_opacity,
+            workflow_ids=[],
         )
         log.info(f"{LogTag.ONBOARDING} Saved personalization data for user", user_id=user_id)
 
