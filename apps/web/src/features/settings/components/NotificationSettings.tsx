@@ -1,15 +1,16 @@
 "use client";
 
+import { NOTIFICATION_CHANNELS } from "@gaia/shared";
+import type { ChannelPlatform, ChannelPreferences } from "@gaia/shared/types";
 import { Switch } from "@heroui/switch";
-import { MailIcon } from "@icons";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
+import { isBotPlatform } from "@/config/botPlatforms";
 import { ChannelPriorityList } from "@/features/briefing/components/ChannelPriorityList";
 import {
-  NOTIFICATION_PLATFORM_ICONS,
-  NOTIFICATION_PLATFORM_LABELS,
+  NOTIFICATION_CHANNEL_ICONS,
+  NOTIFICATION_CHANNEL_LABELS,
   NOTIFICATION_PLATFORMS,
-  type NotificationChannelPreference,
   type NotificationPlatform,
 } from "@/features/notification/constants";
 import { SettingsPage } from "@/features/settings/components/ui/SettingsPage";
@@ -25,16 +26,12 @@ export default function NotificationSettings() {
   const [platformLinks, setPlatformLinks] = useState<
     Record<string, PlatformLink | null>
   >({});
-  const [channelPrefs, setChannelPrefs] = useState<
-    Record<NotificationChannelPreference, boolean>
-  >({
-    telegram: true,
-    discord: true,
-    whatsapp: true,
-    slack: true,
-    imessage: true,
-    email: true,
-  });
+  const [channelPrefs, setChannelPrefs] = useState<ChannelPreferences>(
+    () =>
+      Object.fromEntries(
+        NOTIFICATION_CHANNELS.map((channel) => [channel, true]),
+      ) as ChannelPreferences,
+  );
   const [loading, setLoading] = useState(true);
   const [togglingPlatform, setTogglingPlatform] = useState<string | null>(null);
 
@@ -71,10 +68,7 @@ export default function NotificationSettings() {
     fetchAll();
   }, []);
 
-  const handleToggle = async (
-    channel: NotificationChannelPreference,
-    enabled: boolean,
-  ) => {
+  const handleToggle = async (channel: ChannelPlatform, enabled: boolean) => {
     setTogglingPlatform(channel);
     try {
       await NotificationsAPI.updateChannelPreference(channel, enabled);
@@ -93,21 +87,25 @@ export default function NotificationSettings() {
   return (
     <SettingsPage>
       <SettingsSection description="Choose where to receive GAIA notifications.">
-        {NOTIFICATION_PLATFORMS.map((platform) => {
-          const label = NOTIFICATION_PLATFORM_LABELS[platform];
-          const isConnected = !!platformLinks[platform]?.platformUserId;
+        {NOTIFICATION_CHANNELS.map((channel) => {
+          const label = NOTIFICATION_CHANNEL_LABELS[channel];
+          // Only bot platforms need a linked account; email reaches the user
+          // through the address on their GAIA account.
+          const needsLink = isBotPlatform(channel);
+          const isAvailable =
+            !needsLink || !!platformLinks[channel]?.platformUserId;
           return (
             <SettingsRow
-              key={platform}
+              key={channel}
               label={label}
               description={
-                isConnected
-                  ? "Send notifications to this platform"
+                isAvailable
+                  ? "Send notifications to this channel"
                   : "Connect in Linked Accounts to enable"
               }
               icon={
                 <Image
-                  src={NOTIFICATION_PLATFORM_ICONS[platform]}
+                  src={NOTIFICATION_CHANNEL_ICONS[channel]}
                   alt={label}
                   width={36}
                   height={36}
@@ -117,33 +115,16 @@ export default function NotificationSettings() {
             >
               <Switch
                 size="sm"
-                isSelected={isConnected ? channelPrefs[platform] : false}
+                isSelected={isAvailable ? channelPrefs[channel] : false}
                 isDisabled={
-                  !isConnected || loading || togglingPlatform === platform
+                  !isAvailable || loading || togglingPlatform === channel
                 }
-                onValueChange={(enabled) => handleToggle(platform, enabled)}
+                onValueChange={(enabled) => handleToggle(channel, enabled)}
                 aria-label={`Enable ${label} notifications`}
               />
             </SettingsRow>
           );
         })}
-        <SettingsRow
-          label="Email"
-          description="Daily briefings and weekly digests, sent to your account email"
-          icon={
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-zinc-800">
-              <MailIcon className="h-5 w-5 text-zinc-300" />
-            </div>
-          }
-        >
-          <Switch
-            size="sm"
-            isSelected={channelPrefs.email}
-            isDisabled={loading || togglingPlatform === "email"}
-            onValueChange={(enabled) => handleToggle("email", enabled)}
-            aria-label="Enable email notifications"
-          />
-        </SettingsRow>
       </SettingsSection>
 
       <div>

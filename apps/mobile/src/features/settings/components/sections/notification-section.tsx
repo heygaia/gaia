@@ -1,4 +1,5 @@
 import type { ChannelPlatform, ChannelPreferences } from "@gaia/shared/types";
+import { NOTIFICATION_CHANNELS } from "@gaia/shared/types";
 import { Spinner } from "heroui-native";
 import { useCallback, useEffect, useState } from "react";
 import { Alert, ScrollView, View } from "react-native";
@@ -17,12 +18,12 @@ import { SettingsGroup, SettingsSwitchRow } from "../settings-row";
 
 export function NotificationSection() {
   const { spacing, fontSize } = useResponsive();
-  const [channels, setChannels] = useState<ChannelPreferences>({
-    telegram: false,
-    discord: false,
-    whatsapp: false,
-    slack: false,
-  });
+  const [channels, setChannels] = useState<ChannelPreferences>(
+    () =>
+      Object.fromEntries(
+        NOTIFICATION_CHANNELS.map((channel) => [channel, false]),
+      ) as ChannelPreferences,
+  );
   const [isLoading, setIsLoading] = useState(true);
   const [updatingChannel, setUpdatingChannel] =
     useState<ChannelPlatform | null>(null);
