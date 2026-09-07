@@ -8,6 +8,8 @@ being invisible to the API.
 
 from app.constants.notifications import (
     DEFAULT_CHANNEL_PREFERENCES,
+    DEFAULT_CHAT_CHANNEL_PRIORITY,
+    EXTERNAL_NOTIFICATION_CHANNELS,
     USER_CONFIGURABLE_CHANNELS,
     NotificationChannel,
 )
@@ -37,3 +39,14 @@ class TestChannelSetIsSingleSourced:
     def test_update_model_omits_unset_channels(self):
         update = ChannelPreferencesUpdate(imessage=False)
         assert update.model_dump(exclude_none=True) == {"imessage": False}
+
+    def test_briefing_priority_covers_every_chat_platform(self):
+        """A chat platform missing here can never receive a briefing.
+
+        The briefing picks ONE platform by walking this order, so a channel the
+        user has linked and enabled but that is absent from the list is silently
+        skipped — an iMessage-only user got no brief at all.
+        """
+        assert set(DEFAULT_CHAT_CHANNEL_PRIORITY) == {
+            channel.value for channel in EXTERNAL_NOTIFICATION_CHANNELS
+        }
