@@ -11,14 +11,14 @@ vi.mock("@/features/pricing/hooks/useIsPaid", () => ({
 }));
 
 import { PaywallNotice } from "@/features/chat/components/composer/PaywallNotice";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 describe("PaywallNotice", () => {
   beforeEach(() => {
     isPaid = false;
     isUnknown = false;
     hasEverSubscribed = false;
-    usePaywallModalStore.setState({ open: false, offer: null });
+    useUpgradeModalStore.setState({ open: false, offer: null });
   });
 
   it("tells a lapsed subscriber to resubscribe, not that the rules changed", () => {
@@ -58,10 +58,10 @@ describe("PaywallNotice", () => {
 
     fireEvent.click(screen.getByRole("button", { name: /subscribe/i }));
 
-    expect(usePaywallModalStore.getState().open).toBe(true);
+    expect(useUpgradeModalStore.getState().open).toBe(true);
     // Enforcement — the composer's paywall notice is itself a consequence of
     // being blocked, so its "Upgrade to Pro" must not open a dismissible
     // paywall the user could close their way past.
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
   });
 });

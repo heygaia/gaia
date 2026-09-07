@@ -9,7 +9,7 @@ import {
 } from "@icons";
 import type { RateLimitData } from "@shared/chat";
 import { formatFeatureName, formatPlanName } from "@shared/utils";
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 interface RateLimitCardProps {
   data: RateLimitData;
@@ -48,7 +48,7 @@ const PRO_BENEFITS = [
 
 export default function RateLimitCard({ data }: RateLimitCardProps) {
   const { feature, plan_required, reset_time, message, current_plan } = data;
-  const openPricingModal = usePricingModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const isUpgradeRequired = !!plan_required;
   // A user already on the top tier has nothing to upgrade to — hide the pitch.
   const isPro = current_plan === "pro";
@@ -183,7 +183,7 @@ export default function RateLimitCard({ data }: RateLimitCardProps) {
               size="sm"
               color="primary"
               variant={isUpgradeRequired ? "solid" : "flat"}
-              onPress={() => openPricingModal()}
+              onPress={() => openUpgradeModal(undefined, { dismissible: true })}
               className="w-full rounded-xl font-medium"
             >
               {isUpgradeRequired ? `Upgrade to ${planName}` : "View Plans"}

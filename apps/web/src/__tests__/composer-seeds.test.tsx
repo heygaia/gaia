@@ -72,3 +72,37 @@ describe("useComposerSeeds", () => {
     expect(replace).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * The reply target is selection state: a reload must not restore a reply the
+ * user has forgotten about, so it stays out of the persisted slice.
+ */
+describe("composer reply-to-message", () => {
+  const reply = {
+    id: "msg-1",
+    content: "the message being replied to",
+    role: "assistant" as const,
+  };
+
+  beforeEach(() => {
+    store().clearReplyToMessage();
+    window.localStorage.clear();
+  });
+
+  it("never persists the reply target", () => {
+    store().setReplyToMessage(reply);
+    expect(store().replyToMessage).toEqual(reply);
+
+    const persisted = window.localStorage.getItem("composer-storage");
+    expect(persisted).not.toBeNull();
+    expect(JSON.parse(persisted as string).state).not.toHaveProperty(
+      "replyToMessage",
+    );
+  });
+
+  it("clearReplyToMessage empties the reply target", () => {
+    store().setReplyToMessage(reply);
+    store().clearReplyToMessage();
+    expect(store().replyToMessage).toBeNull();
+  });
+});

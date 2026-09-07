@@ -1,9 +1,18 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useMemo } from "react";
+
+import {
+  patchNotifications,
+  prependNotification,
+  removeNotifications,
+  restoreNotificationPages,
+  snapshotNotificationPages,
+  upsertNotification,
+} from "@/features/notification/api/notificationCache";
+import { notificationKeys } from "@/features/notification/api/queryKeys";
 import { NOTIFICATION_PAGE_SIZE } from "@/features/notification/constants";
 import { toast } from "@/lib/toast";
-
 import { NotificationsAPI } from "@/services/api/notifications";
-import { useNotificationStore } from "@/stores/notificationStore";
 import {
   type NotificationRecord,
   NotificationStatus,
@@ -24,176 +33,203 @@ interface UseNotificationsReturn {
   updateNotification: (notification: NotificationRecord) => void;
 }
 
-// `offset` is deliberately not accepted: the store is a single unkeyed entry
-// shared by every mount, so it cannot represent a page other than the first.
-// Excluding it makes that a compile error instead of a silent wrong page.
+// `offset` is deliberately not accepted by the hook: the UI does not page. The
+// query key does carry offset (see `notificationKeys.list`), so adding a paged
+// caller later is a new key, not a cache collision — the failure the old
+// single-entry store could not avoid.
 type UseNotificationsHookOptions = Omit<UseNotificationsOptions, "offset">;
+
+// One canonical request for the whole app: the first unfiltered page, at the
+// API's maximum size. Caller options never reach the wire — status, channel and
+// limit are view-level and applied client-side in the memo below. Sending a
+// caller's `limit` here would fetch a page that doesn't match what the other
+// mounts expect, and would 422 for any value above the API's ceiling.
+const CANONICAL_FILTERS: UseNotificationsOptions = {
+  limit: NOTIFICATION_PAGE_SIZE,
+};
+
+const EMPTY: NotificationRecord[] = [];
 
 export function useNotifications(
   options: UseNotificationsHookOptions = {},
 ): UseNotificationsReturn {
-  const {
-    notifications: allNotifications,
-    isLoaded,
-    setNotifications,
-    addNotification,
-    updateNotification,
-  } = useNotificationStore();
+  const queryClient = useQueryClient();
+  const listKey = notificationKeys.list(CANONICAL_FILTERS);
 
-  const [loading, setLoading] = useState(!isLoaded);
-  const [error, setError] = useState<string | null>(null);
+  const query = useQuery({
+    queryKey: listKey,
+    queryFn: () => NotificationsAPI.getNotifications(CANONICAL_FILTERS),
+    staleTime: 30_000,
+  });
 
-  const { limit, channel_type } = options;
-  // setFetching accessed via store.getState() inside fetchNotifications
+  const allNotifications = query.data?.notifications ?? EMPTY;
 
-  // One canonical request for the whole app: the first unfiltered page, at the
-  // API's maximum size. Caller options never reach the wire — status, channel
-  // and limit are view-level and applied client-side in the memo below. Sending
-  // a caller's `limit` here would both fetch a page that doesn't match what the
-  // other mounts expect and 422 for any value above the API's ceiling.
-  const fetchNotifications = useCallback(
-    async (force = false) => {
-      const state = useNotificationStore.getState();
-      if (!force && (state.isLoaded || state.isFetching)) {
-        setLoading(false);
-        return;
-      }
-      state.setFetching(true);
-      try {
-        setLoading(true);
-        setError(null);
-        const response = await NotificationsAPI.getNotifications({
-          limit: NOTIFICATION_PAGE_SIZE,
-        });
-        setNotifications(response.notifications ?? []);
-      } catch (err) {
-        const errorMessage =
-          err instanceof Error ? err.message : "Failed to fetch notifications";
-        setError(errorMessage);
-        console.error("Error fetching notifications:", err);
-      } finally {
-        setLoading(false);
-        useNotificationStore.getState().setFetching(false);
-      }
+  const refetch = useCallback(async () => {
+    await query.refetch();
+  }, [query]);
+
+  const markAsReadMutation = useMutation({
+    mutationFn: (id: string) => NotificationsAPI.markAsRead(id),
+    onMutate: async (id: string) => {
+      await queryClient.cancelQueries({ queryKey: notificationKeys.all });
+      const snapshot = snapshotNotificationPages(queryClient);
+      patchNotifications(queryClient, [id], {
+        status: NotificationStatus.READ,
+        read_at: new Date().toISOString(),
+      });
+      return { snapshot };
     },
-    [setNotifications],
-  );
+    onSuccess: () => toast.success("Notification marked as read"),
+    onError: (error, _id, context) => {
+      if (context?.snapshot) {
+        restoreNotificationPages(queryClient, context.snapshot);
+      }
+      toast.error("Failed to mark notification as read");
+      console.error("Error marking notification as read:", error);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    },
+  });
 
-  const refetch = useCallback(
-    () => fetchNotifications(true),
-    [fetchNotifications],
-  );
+  const bulkMarkAsReadMutation = useMutation({
+    mutationFn: (ids: string[]) => NotificationsAPI.bulkMarkAsRead(ids),
+    onMutate: async (ids: string[]) => {
+      await queryClient.cancelQueries({ queryKey: notificationKeys.all });
+      const snapshot = snapshotNotificationPages(queryClient);
+      patchNotifications(queryClient, ids, {
+        status: NotificationStatus.READ,
+        read_at: new Date().toISOString(),
+      });
+      return { snapshot };
+    },
+    onSuccess: (_data, ids) =>
+      toast.success(`Marked ${ids.length} notifications as read`),
+    onError: (error, _ids, context) => {
+      if (context?.snapshot) {
+        restoreNotificationPages(queryClient, context.snapshot);
+      }
+      toast.error("Failed to mark notifications as read");
+      console.error("Error bulk marking notifications as read:", error);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    },
+  });
+
+  const archiveMutation = useMutation({
+    mutationFn: (ids: string[]) =>
+      ids.length === 1
+        ? NotificationsAPI.archiveNotification(ids[0])
+        : NotificationsAPI.bulkArchive(ids),
+    onMutate: async (ids: string[]) => {
+      await queryClient.cancelQueries({ queryKey: notificationKeys.all });
+      const snapshot = snapshotNotificationPages(queryClient);
+      removeNotifications(queryClient, ids);
+      return { snapshot };
+    },
+    onError: (error, ids, context) => {
+      if (context?.snapshot) {
+        restoreNotificationPages(queryClient, context.snapshot);
+      }
+      toast.error(
+        ids.length === 1
+          ? "Failed to archive notification"
+          : "Failed to archive notifications",
+      );
+      console.error("Error archiving notifications:", error);
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: notificationKeys.all });
+    },
+  });
 
   const markAsRead = useCallback(
     async (id: string) => {
-      const existing = (allNotifications ?? []).find((n) => n.id === id);
-      try {
-        if (existing) {
-          updateNotification({
-            ...existing,
-            status: NotificationStatus.READ,
-            read_at: new Date().toISOString(),
-          });
-        }
-
-        await NotificationsAPI.markAsRead(id);
-        await fetchNotifications(true);
-        toast.success("Notification marked as read");
-      } catch (error) {
-        await fetchNotifications(true);
-        toast.error("Failed to mark notification as read");
-        console.error("Error marking notification as read:", error);
-      }
+      // The mutation reports failure through its own onError/toast; swallowing
+      // the rejection here keeps the caller's `await` from throwing, matching
+      // the previous hook's contract.
+      await markAsReadMutation.mutateAsync(id).catch(() => undefined);
     },
-    [allNotifications, updateNotification, fetchNotifications],
-  );
-
-  const archiveNotification = useCallback(
-    async (id: string) => {
-      try {
-        await NotificationsAPI.archiveNotification(id);
-        await fetchNotifications(true);
-        toast.success("Notification archived");
-      } catch (error) {
-        toast.error("Failed to archive notification");
-        console.error("Error archiving notification:", error);
-      }
-    },
-    [fetchNotifications],
+    [markAsReadMutation],
   );
 
   const bulkMarkAsRead = useCallback(
     async (ids: string[]) => {
-      const idSet = new Set(ids);
-      const prev = useNotificationStore.getState().notifications;
-      setNotifications(
-        prev.map((n) =>
-          idSet.has(n.id) ? { ...n, status: NotificationStatus.READ } : n,
-        ),
-      );
-      try {
-        await NotificationsAPI.bulkMarkAsRead(ids);
-        toast.success(`Marked ${ids.length} notifications as read`);
-      } catch (error) {
-        await fetchNotifications(true);
-        toast.error("Failed to mark notifications as read");
-        console.error("Error bulk marking notifications as read:", error);
-      }
+      await bulkMarkAsReadMutation.mutateAsync(ids).catch(() => undefined);
     },
-    [fetchNotifications, setNotifications],
+    [bulkMarkAsReadMutation],
+  );
+
+  const archiveNotification = useCallback(
+    async (id: string) => {
+      const ok = await archiveMutation
+        .mutateAsync([id])
+        .then(() => true)
+        .catch(() => false);
+      if (ok) toast.success("Notification archived");
+    },
+    [archiveMutation],
   );
 
   const bulkArchive = useCallback(
     async (ids: string[]) => {
-      try {
-        await NotificationsAPI.bulkArchive(ids);
-        await fetchNotifications(true);
-        toast.success(`${ids.length} notifications archived`);
-      } catch (error) {
-        toast.error("Failed to archive notifications");
-        console.error("Error bulk archiving notifications:", error);
-      }
+      const ok = await archiveMutation
+        .mutateAsync(ids)
+        .then(() => true)
+        .catch(() => false);
+      if (ok) toast.success(`${ids.length} notifications archived`);
     },
-    [fetchNotifications],
+    [archiveMutation],
   );
 
-  // Narrow the shared store down to this caller's view. `?? []` is the last
-  // line of defence — the API layer already rejects a malformed payload.
+  const addNotification = useCallback(
+    (notification: NotificationRecord) =>
+      prependNotification(queryClient, notification),
+    [queryClient],
+  );
+
+  const updateNotification = useCallback(
+    (notification: NotificationRecord) =>
+      upsertNotification(queryClient, notification),
+    [queryClient],
+  );
+
+  // Narrow the shared page down to this caller's view.
   const notifications = useMemo(() => {
-    let result = allNotifications ?? [];
+    let result = allNotifications;
     if (options.status) {
       result = result.filter((n) => n.status === options.status);
     }
-    if (channel_type) {
+    if (options.channel_type) {
       result = result.filter((n) =>
-        n.channels?.some((c) => c.channel_type === channel_type),
+        n.channels?.some((c) => c.channel_type === options.channel_type),
       );
     }
-    if (limit) {
-      result = result.slice(0, limit);
+    if (options.limit) {
+      result = result.slice(0, options.limit);
     }
     return result;
-  }, [allNotifications, options.status, channel_type, limit]);
+  }, [allNotifications, options.status, options.channel_type, options.limit]);
 
-  // Count unread from the full fetched set, not the status/limit-sliced view, so
-  // the badge reflects every loaded unread notification (not just the first page).
+  // Counted from the full fetched page, not the status/limit-sliced view, so the
+  // badge reflects every loaded unread notification.
   const unreadCount = useMemo(
     () =>
-      (allNotifications ?? []).filter(
+      allNotifications.filter(
         (notification) => notification.status === NotificationStatus.DELIVERED,
       ).length,
     [allNotifications],
   );
 
-  // Initial fetch — skipped if store is already populated
-  useEffect(() => {
-    fetchNotifications();
-  }, [fetchNotifications]);
-
   return {
     notifications,
-    loading,
-    error,
+    loading: query.isPending,
+    error: query.error
+      ? query.error instanceof Error
+        ? query.error.message
+        : "Failed to fetch notifications"
+      : null,
     refetch,
     markAsRead,
     archiveNotification,

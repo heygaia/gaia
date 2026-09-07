@@ -2,14 +2,14 @@
 
 import { Button } from "@heroui/button";
 import { useElectron } from "@/hooks/useElectron";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 const PRICING_PATH = "/pricing";
 
 /**
  * The paid-only wall, as it appears in the desktop popup.
  *
- * The popup cannot use `GlobalPaywallModal`: its composer window is a 420x48
+ * The popup cannot use `UpgradeModal`: its composer window is a 420x48
  * frameless capsule, and a HeroUI `Modal` portals a full-viewport blurred
  * backdrop that would be clipped to that sliver. So the block renders inline
  * in the feed window instead — the popup's only content-sized surface, which
@@ -19,8 +19,8 @@ const PRICING_PATH = "/pricing";
  * in the composer window, which owns sending, and is mirrored here.
  */
 export default function PopupPaywallNotice() {
-  const open = usePaywallModalStore((s) => s.open);
-  const offer = usePaywallModalStore((s) => s.offer);
+  const open = useUpgradeModalStore((s) => s.open);
+  const offer = useUpgradeModalStore((s) => s.offer);
   const { openExternal } = useElectron();
 
   if (!open) return null;

@@ -43,7 +43,7 @@ import {
   usePlatformDetection,
 } from "@/hooks/ui/usePlatformDetection";
 import { useConfirmation } from "@/hooks/useConfirmation";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { settingsPageItems, socialMediaItems } from "../config/settingsConfig";
 import { useNestedMenu } from "../hooks/useNestedMenu";
 import { NestedMenuTooltip } from "./NestedMenuTooltip";
@@ -251,7 +251,7 @@ export default function SettingsMenu({
   >();
   const [modalAction, setModalAction] = useState<ModalAction | null>(null);
   const { isPaid, isUnknown } = useIsPaid();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const { unseen: unseenReleases } = useReleases();
 
   const whatsNewMenu = useNestedMenu();
@@ -306,7 +306,7 @@ export default function SettingsMenu({
                 key: "upgrade_to_pro",
                 label: "Subscribe to GAIA Pro",
                 action: () =>
-                  openPaywallModal(undefined, { dismissible: true }),
+                  openUpgradeModal(undefined, { dismissible: true }),
                 icon: CircleArrowUp02Icon,
                 iconColor: "#00bbff",
                 customClassNames: { title: "text-primary font-medium" },

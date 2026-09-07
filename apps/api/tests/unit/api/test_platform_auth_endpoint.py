@@ -669,3 +669,42 @@ class TestCallbackRedirectTargets:
             error="boom",
             exc_info=True,
         )
+
+
+class TestCallbackHandsEachStepWhatItNeeds:
+    async def test_the_code_and_the_profile_reach_the_exchange_and_the_link(
+        self, client: AsyncClient
+    ) -> None:
+        with (
+            patch(
+                "app.services.oauth.oauth_state_service.validate_and_consume_oauth_state",
+                new_callable=AsyncMock,
+                return_value={"user_id": "uid1", "redirect_path": "/settings"},
+            ),
+            patch(
+                f"{_MODULE}._exchange_code",
+                new_callable=AsyncMock,
+                return_value={"access_token": "tok_abc"},
+            ) as exchange,
+            patch(
+                f"{_MODULE}._resolve_platform_user",
+                new_callable=AsyncMock,
+                return_value=("DISC1", {"username": "user", "display_name": "User"}),
+            ),
+            patch(f"{_MODULE}._link_platform_account", new_callable=AsyncMock) as link,
+        ):
+            await client.get(
+                f"{BASE}/discord/callback",
+                params={"code": "c1", "state": "s1"},
+                follow_redirects=False,
+            )
+
+        from app.api.v1.endpoints.platform_auth import PLATFORM_CONFIGS
+
+        exchange.assert_awaited_once_with(PLATFORM_CONFIGS["discord"], "c1")
+        link.assert_awaited_once_with(
+            "uid1",
+            PLATFORM_CONFIGS["discord"],
+            "DISC1",
+            {"username": "user", "display_name": "User"},
+        )

@@ -18,7 +18,10 @@ from unittest.mock import MagicMock, patch
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
 from langchain_core.messages import AIMessage, HumanMessage
 
-from app.agents.middleware.empty_completion import EmptyCompletionRetryMiddleware
+from app.agents.middleware.empty_completion import (
+    EmptyCompletionRetryMiddleware,
+    is_empty_completion,
+)
 from app.constants.log_tags import LogTag
 
 EMPTY = AIMessage(content="")
@@ -188,4 +191,28 @@ class TestTheRetryIsRecordedOnTheTurn:
 
         assert mock_log.error.call_args.args == (
             f"{LogTag.AGENT} Empty completion survived the retry",
+        )
+
+
+class TestWhatCountsAsEmpty:
+    def test_no_message_at_all_is_empty(self):
+        assert is_empty_completion(ModelResponse(result=[])) is True
+
+    def test_a_message_that_is_not_the_models_own_is_left_alone(self):
+        assert is_empty_completion(ModelResponse(result=[HumanMessage(content="")])) is False
+
+
+class TestTheRetryIsLoggedExactly:
+    async def test_the_retry_and_the_surviving_silence_are_logged_against_comms(self):
+        handler = _ScriptedHandler(EMPTY)
+        with patch("app.agents.middleware.empty_completion.log") as log:
+            await EmptyCompletionRetryMiddleware().awrap_model_call(_request(), handler)
+
+        log.warning.assert_called_once_with(
+            f"{LogTag.AGENT} Empty completion, retrying the model call once",
+            agent_name="comms_agent",
+        )
+        log.error.assert_called_once_with(
+            f"{LogTag.AGENT} Empty completion survived the retry",
+            agent_name="comms_agent",
         )

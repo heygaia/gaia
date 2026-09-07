@@ -9,11 +9,11 @@ vi.mock("@/hooks/useElectron", () => ({
 }));
 
 import PopupPaywallNotice from "@/features/desktop-popup/components/PopupPaywallNotice";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 describe("PopupPaywallNotice", () => {
   beforeEach(() => {
-    usePaywallModalStore.setState({
+    useUpgradeModalStore.setState({
       open: false,
       offer: null,
       dismissible: false,
@@ -31,7 +31,7 @@ describe("PopupPaywallNotice", () => {
     // The whole point of the popup fix: before this, a 402 flipped this store
     // in the composer window and nothing in the (desktop) tree rendered it, so
     // the user's send vanished in silence.
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: "https://checkout.dodo.test/abc",
       discountCode: "LAUNCH20",
       message: "GAIA is a paid product.",
@@ -43,7 +43,7 @@ describe("PopupPaywallNotice", () => {
   });
 
   it("opens the 402's own checkout link in the browser, not in the popup window", () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: "https://checkout.dodo.test/abc",
       discountCode: null,
     });
@@ -57,7 +57,7 @@ describe("PopupPaywallNotice", () => {
   it("falls back to the pricing page when Dodo minted no checkout link", () => {
     // A paywall response never fails just because the checkout provider is
     // down — the block still stands, so the CTA must still lead somewhere.
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: null,
       discountCode: null,
     });

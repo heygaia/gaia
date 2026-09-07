@@ -5,7 +5,7 @@ import { ShineBorder } from "@/components/ui/shine-border";
 import { paywallCopyFor } from "@/features/pricing/constants";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { cn } from "@/lib/utils";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 /**
  * Quiet notice shown directly above the composer for a non-subscribed user.
@@ -22,7 +22,7 @@ interface PaywallNoticeProps {
 
 export function PaywallNotice({ className }: PaywallNoticeProps = {}) {
   const { isPaid, isUnknown, hasEverSubscribed } = useIsPaid();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 
   if (isUnknown || isPaid) return null;
 
@@ -40,7 +40,7 @@ export function PaywallNotice({ className }: PaywallNoticeProps = {}) {
           size="sm"
           color="primary"
           className="shrink-0 font-medium text-black"
-          onPress={() => openPaywallModal()}
+          onPress={() => openUpgradeModal()}
         >
           {copy.cta}
         </Button>

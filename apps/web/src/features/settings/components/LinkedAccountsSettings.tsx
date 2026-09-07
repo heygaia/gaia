@@ -20,7 +20,7 @@ import { SettingsSection } from "@/features/settings/components/ui/SettingsSecti
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { apiService } from "@/lib/api/service";
 import { toast } from "@/lib/toast";
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import type { PlatformLink } from "@/types/platform";
 
 interface PlatformConfig {
@@ -98,7 +98,7 @@ export default function LinkedAccountsSettings() {
   // previous attempt's number into the session the user is now in.
   const connectAttemptRef = useRef(0);
   const { isPaid, isUnknown } = useIsPaid();
-  const openPricingModal = usePricingModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 
   const clearPollTimer = () => {
     if (pollTimerRef.current) {
@@ -139,7 +139,7 @@ export default function LinkedAccountsSettings() {
     // premium gate server-side, so a brief permissive window here is safe,
     // but blocking a paying customer's connect attempt is not.
     if (platform.premium && !isUnknown && !isPaid) {
-      openPricingModal();
+      openUpgradeModal(undefined, { dismissible: true });
       return;
     }
     if (platform.requiresPhone) {

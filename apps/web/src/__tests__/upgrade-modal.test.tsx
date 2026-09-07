@@ -1,6 +1,20 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+// The dismissible mode's HeroUI Tabs measure themselves via ResizeObserver,
+// which jsdom doesn't implement.
+class MockResizeObserver {
+  observe() {
+    // no-op: jsdom has no layout to observe
+  }
+  unobserve() {
+    // no-op: jsdom has no layout to observe
+  }
+  disconnect() {
+    // no-op: jsdom has no layout to observe
+  }
+}
 
 const openCheckoutOverlay = vi.fn();
 const logout = vi.fn();
@@ -68,13 +82,26 @@ vi.mock("@/features/pricing/hooks/usePricing", () => ({
   }),
 }));
 
-import { PaywallModal } from "@/features/pricing/components/PaywallModal";
-import { trackEvent } from "@/lib/analytics";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+// The dismissible mode embeds the plan picker, which drags in the router,
+// the user session and checkout. Those are PricingCards' own tests to run —
+// here only the modal shell is under test.
+vi.mock("@/features/pricing/components/PricingCards", () => ({
+  PricingCards: () => <div data-testid="pricing-cards" />,
+}));
 
-describe("PaywallModal", () => {
+import { UpgradeModal } from "@/features/pricing/components/UpgradeModal";
+import { trackEvent } from "@/lib/analytics";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
+
+describe("UpgradeModal", () => {
+  beforeAll(() => {
+    (
+      globalThis as unknown as { ResizeObserver: typeof MockResizeObserver }
+    ).ResizeObserver = MockResizeObserver;
+  });
+
   beforeEach(() => {
-    usePaywallModalStore.setState({
+    useUpgradeModalStore.setState({
       open: false,
       offer: null,
       dismissible: false,
@@ -87,8 +114,8 @@ describe("PaywallModal", () => {
   });
 
   it("renders non-dismissible with a checkout CTA when open", async () => {
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).not.toBeNull();
@@ -104,8 +131,8 @@ describe("PaywallModal", () => {
   });
 
   it("renders dismissible with a close button and no logout link when opened dismissible (voluntary upgrade entry points)", async () => {
-    usePaywallModalStore.getState().openModal(undefined, { dismissible: true });
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
+    render(<UpgradeModal />);
 
     const dialog = await screen.findByRole("dialog");
     expect(dialog).not.toBeNull();
@@ -117,43 +144,43 @@ describe("PaywallModal", () => {
   });
 
   it("clears store state when dismissed via the close button (voluntary upgrade entry points)", async () => {
-    usePaywallModalStore.getState().openModal(undefined, { dismissible: true });
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: /close/i }));
 
     await waitFor(() => {
-      expect(usePaywallModalStore.getState().open).toBe(false);
+      expect(useUpgradeModalStore.getState().open).toBe(false);
     });
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
   });
 
   it("shows the discount banner only when a discount code is present", async () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: null,
       discountCode: "LAUNCH20",
     });
-    render(<PaywallModal />);
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText("LAUNCH20")).not.toBeNull();
   });
 
   it("does not render a discount banner when no offer is set", async () => {
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.queryByText(/at checkout/i)).toBeNull();
   });
 
   it("opens the embedded overlay for Pro monthly instead of redirecting away", async () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: null,
       discountCode: "LAUNCH20",
     });
-    render(<PaywallModal />);
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     fireEvent.click(
@@ -170,8 +197,8 @@ describe("PaywallModal", () => {
 
   it("shows the migration copy to a user who has never subscribed", async () => {
     hasEverSubscribed = false;
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText("GAIA is paid only")).not.toBeNull();
@@ -180,8 +207,8 @@ describe("PaywallModal", () => {
 
   it("shows the lapsed copy to a user who has subscribed before", async () => {
     hasEverSubscribed = true;
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText("Your subscription ended")).not.toBeNull();
@@ -193,16 +220,16 @@ describe("PaywallModal", () => {
 
   it("keeps the migration copy while the status is still unknown", async () => {
     hasEverSubscribed = undefined;
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText("GAIA is paid only")).not.toBeNull();
   });
 
   it("carries no refund or tax footnote under the CTA", async () => {
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.queryByText(/Cancel within/)).toBeNull();
@@ -210,8 +237,8 @@ describe("PaywallModal", () => {
   });
 
   it("does not label the feature list with the plan name", async () => {
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.queryByText("Pro")).toBeNull();
@@ -220,8 +247,8 @@ describe("PaywallModal", () => {
   it("renders nothing on the onboarding route, where the wizard owns payment", () => {
     pathname = "/onboarding";
     try {
-      usePaywallModalStore.getState().openModal();
-      render(<PaywallModal />);
+      useUpgradeModalStore.getState().openModal();
+      render(<UpgradeModal />);
       expect(screen.queryByRole("dialog")).toBeNull();
     } finally {
       pathname = "/c";
@@ -230,8 +257,8 @@ describe("PaywallModal", () => {
 
   it("replaces the CTA with a confirming state once the overlay closes", async () => {
     checkoutPhase = "confirming";
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText(/confirming your payment/i)).not.toBeNull();
@@ -243,8 +270,8 @@ describe("PaywallModal", () => {
 
   it("admits the delay once confirmation passes its visible budget", async () => {
     checkoutPhase = "timeout";
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     expect(screen.getByText(/taking longer than expected/i)).not.toBeNull();
@@ -254,11 +281,11 @@ describe("PaywallModal", () => {
     // The API owns payment:checkout_started now — it fires after the session
     // actually exists and carries the same `source` this click passes down.
     // Any client capture here would be a rival event for one user action.
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: null,
       discountCode: null,
     });
-    render(<PaywallModal />);
+    render(<UpgradeModal />);
 
     fireEvent.click(
       screen.getByRole("button", { name: /subscribe to gaia pro/i }),
@@ -275,12 +302,12 @@ describe("PaywallModal", () => {
   });
 
   it("captures one paywall impression per open, with the offer's shape", () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: "https://checkout.dodo.test/abc",
       discountCode: "LAUNCH20",
     });
-    const { rerender } = render(<PaywallModal />);
-    rerender(<PaywallModal />);
+    const { rerender } = render(<UpgradeModal />);
+    rerender(<UpgradeModal />);
 
     const impressions = vi
       .mocked(trackEvent)
@@ -295,7 +322,7 @@ describe("PaywallModal", () => {
   });
 
   it("captures no impression while the paywall is closed", () => {
-    render(<PaywallModal />);
+    render(<UpgradeModal />);
 
     expect(trackEvent).not.toHaveBeenCalledWith(
       "paywall:modal_viewed",
@@ -304,8 +331,8 @@ describe("PaywallModal", () => {
   });
 
   it("logs out via the quiet text link, not by closing the modal", async () => {
-    usePaywallModalStore.getState().openModal();
-    render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
     fireEvent.click(screen.getByRole("button", { name: /log out/i }));
@@ -314,32 +341,32 @@ describe("PaywallModal", () => {
   });
 
   it("auto-closes when the subscription status resolves to paid while open (cold-cache race guard)", async () => {
-    usePaywallModalStore.getState().openModal();
-    const { rerender } = render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    const { rerender } = render(<UpgradeModal />);
     await screen.findByRole("dialog");
 
     // Subscription-status query resolves to paid — nothing else in the app
     // ever calls closeModal, so the modal must close itself here or a Pro
     // user is trapped behind it forever.
     isPaid = true;
-    rerender(<PaywallModal />);
+    rerender(<UpgradeModal />);
 
     await waitFor(() => {
-      expect(usePaywallModalStore.getState().open).toBe(false);
+      expect(useUpgradeModalStore.getState().open).toBe(false);
     });
   });
 
   it("does not auto-close while the subscription status is still unknown", async () => {
     isSubscriptionStatusUnknown = true;
-    usePaywallModalStore.getState().openModal();
-    const { rerender } = render(<PaywallModal />);
+    useUpgradeModalStore.getState().openModal();
+    const { rerender } = render(<UpgradeModal />);
     await screen.findByRole("dialog");
 
     // isPaid flips true, but isUnknown is still true this render — the
     // resolution isn't trustworthy yet, so the modal must not close.
     isPaid = true;
-    rerender(<PaywallModal />);
+    rerender(<UpgradeModal />);
 
-    expect(usePaywallModalStore.getState().open).toBe(true);
+    expect(useUpgradeModalStore.getState().open).toBe(true);
   });
 });

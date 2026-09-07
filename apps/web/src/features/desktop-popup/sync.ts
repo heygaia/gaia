@@ -4,14 +4,12 @@ import { useEffect } from "react";
 import type { IMessage } from "@/lib/db/chatDb";
 import { type OptimisticMessage, useChatStore } from "@/stores/chatStore";
 import {
-  type PaywallOffer,
-  usePaywallModalStore,
-} from "@/stores/paywallModalStore";
-import {
   type ToolInfo,
   type TurnUiState,
   useStreamStore,
 } from "@/stores/streamStore";
+import type { UpgradeOffer } from "@/stores/upgradeModal.types";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 /**
  * Cross-window chat state sync for the desktop assistant popup.
@@ -42,7 +40,7 @@ interface PopupChatState {
    * window, which is content-sized, and surfaces there instead.
    */
   paywallOpen: boolean;
-  paywallOffer: PaywallOffer | null;
+  paywallOffer: UpgradeOffer | null;
 }
 
 /** Consumer → publisher request for the current snapshot. */
@@ -58,7 +56,7 @@ const PUBLISH_THROTTLE_MS = 50;
 function snapshot(): PopupChatState {
   const chat = useChatStore.getState();
   const stream = useStreamStore.getState();
-  const paywall = usePaywallModalStore.getState();
+  const paywall = useUpgradeModalStore.getState();
   const id = chat.activeConversationId;
   const key = id ?? stream.pendingNewConversationKey;
   return {
@@ -97,7 +95,7 @@ export function usePopupChatPublisher(): void {
 
     const unsubChat = useChatStore.subscribe(schedule);
     const unsubStream = useStreamStore.subscribe(schedule);
-    const unsubPaywall = usePaywallModalStore.subscribe(schedule);
+    const unsubPaywall = useUpgradeModalStore.subscribe(schedule);
     channel.onmessage = (event: MessageEvent<PopupChatMessage>) => {
       if (event.data?.type === "hello") publish();
     };
@@ -129,12 +127,12 @@ export function usePopupChatConsumer(): void {
 
       const chat = useChatStore.getState();
       const stream = useStreamStore.getState();
-      const paywall = usePaywallModalStore.getState();
+      const paywall = useUpgradeModalStore.getState();
       // Only on change — the snapshots arrive ~20x/sec and openModal would
       // otherwise rewrite the store (and spam devtools) on every one.
       if (data.paywallOpen !== paywall.open) {
         if (data.paywallOpen) paywall.openModal(data.paywallOffer ?? undefined);
-        else paywall.closeModal();
+        else paywall.closeModal({ force: true });
       }
       chat.setActiveConversationId(data.activeConversationId);
       if (data.activeConversationId) {

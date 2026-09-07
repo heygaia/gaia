@@ -19,7 +19,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from itertools import pairwise
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 from langchain_core.messages import (
@@ -33,7 +32,6 @@ from langgraph.graph.state import CompiledStateGraph
 import pytest
 
 from app.constants.general import NEW_MESSAGE_BREAKER
-from app.db.repositories.user_integrations import user_integration_repository
 from app.utils.multimodal import extract_text_content
 from tests.e2e._harness.graph_run import (
     AGENT_NODE,
@@ -57,12 +55,11 @@ class TestCommsToolSurface:
             "cancel_executor",
             "add_memory",
             "search_memory",
-            # The discovery three. They read catalogues or draw the connect card
-            # and never touch the user's data, so they widen the surface without
-            # making comms a worker tier.
+            # The discovery pair. They read catalogues and never touch the
+            # user's data, so they widen the surface without making comms a
+            # worker tier.
             "find_integration",
             "search_public_workflows",
-            "show_connect_card",
         ],
     )
     async def test_the_comms_tools_are_bound_from_the_start(self, tool: str):
@@ -71,47 +68,6 @@ class TestCommsToolSurface:
             run = await run_graph(graph, "hello")
 
         assert REJECT_NODE not in run.nodes(), f"{tool} was not bound to comms"
-
-    async def test_the_connect_card_is_drawn_inside_the_comms_turn(self):
-        """The card must ride in this reply, not arrive from a later executor run.
-
-        This is the whole reason show_connect_card exists on the front door: the
-        executor's card is delivered on a separate message once the background
-        run reports back, so the sentence offering it and the button the user
-        taps landed in different bubbles.
-        """
-        writer = MagicMock()
-        with (
-            patch(
-                "app.utils.integration_checker.get_config",
-                return_value={"configurable": {"source_category": "ui"}},
-            ),
-            patch("app.utils.integration_checker.get_stream_writer", return_value=writer),
-            patch(
-                "app.utils.integration_checker.build_connect_link_url",
-                AsyncMock(return_value=None),
-            ),
-            patch.object(user_integration_repository, "is_expired", AsyncMock(return_value=False)),
-        ):
-            script = [call("show_connect_card", {"integration_id": "gmail"}, call_id="c1"), "ok"]
-            async with comms_graph(script) as graph:
-                run = await run_graph(graph, "connect my gmail")
-
-        assert REJECT_NODE not in run.nodes()
-        frames = [
-            args[0][0]["integration_connection_required"]
-            for args in writer.call_args_list
-            if "integration_connection_required" in args[0][0]
-        ]
-        assert frames == [
-            {
-                "integration_id": "gmail",
-                "expired": False,
-                "message": "To use Gmail features, please connect your account first.",
-            }
-        ]
-        # No delegation happened: the card did not come from the executor.
-        assert run.result_for("call_executor") is None
 
     async def test_delegating_to_the_executor_actually_dispatches(self):
         """Being bound is not the same as working. The "bound" test above stays
@@ -216,38 +172,6 @@ class TestReplyShape:
 
         assert run.final_text().replace(NEW_MESSAGE_BREAKER, "")
         assert "Empty response" in run.final_text()
-
-
-class TestStyleGuard:
-    """The comms tier scores its own draft and rewrites it once.
-
-    Proved here, through the compiled graph, rather than only against the
-    middleware in isolation: the guard sits inside ``wrap_model_call``, so
-    whether it actually runs depends on the middleware stack the graph builder
-    assembles and on the bridge that chains those wrappers. A unit test of the
-    middleware passes either way.
-    """
-
-    async def test_a_draft_carrying_ai_isms_is_regenerated_before_it_is_delivered(self):
-        dirty = "it's not a feature, it's a switching cost — want me to draft that?"
-        clean = "that's a switching cost. i can draft it."
-
-        async with comms_graph([AIMessage(content=dirty), AIMessage(content=clean)]) as graph:
-            run = await run_graph(graph, "why does it matter?")
-
-        assert run.final_text() == f"{clean}{NEW_MESSAGE_BREAKER}"
-        assert dirty not in run.final_text()
-
-    async def test_a_clean_draft_is_delivered_on_the_first_call(self):
-        """The guard must cost an already-clean reply nothing. The scripted
-        model cycles its responses, so a second call would deliver the WRONG
-        text here — which is exactly what makes this assertion falsifiable."""
-        async with comms_graph(
-            [AIMessage(content="that's a switching cost."), AIMessage(content="second call")]
-        ) as graph:
-            run = await run_graph(graph, "why does it matter?")
-
-        assert run.final_text() == f"that's a switching cost.{NEW_MESSAGE_BREAKER}"
 
 
 class TestEndOfTurnHooks:

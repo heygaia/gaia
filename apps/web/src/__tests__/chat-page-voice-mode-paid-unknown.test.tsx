@@ -17,8 +17,7 @@ vi.mock("@/features/pricing/hooks/useIsPaid", () => ({
   useIsPaid: () => ({ isPaid, isUnknown }),
 }));
 
-const openPricingModal = vi.fn();
-const openPaywallModal = vi.fn();
+const openUpgradeModal = vi.fn();
 const enterVoiceMode = vi.fn();
 const exitVoiceMode = vi.fn();
 const prefetchConnectionDetails = vi.fn();
@@ -171,30 +170,22 @@ const clearPendingPrompt = vi.fn(() => {
 vi.mock("@/stores/composerStore", () => ({
   useComposerTextActions: () => ({ clearPendingPrompt }),
   usePendingPrompt: () => pendingPrompt,
+  useComposerStore: Object.assign(
+    (selector: (s: unknown) => unknown) =>
+      selector({ selectedWorkflow: null, workflowAutoSend: false }),
+    { getState: () => ({ clearSelectedWorkflow: vi.fn() }) },
+  ),
 }));
 
-vi.mock("@/stores/paywallModalStore", () => ({
-  usePaywallModalStore: (selector: (s: unknown) => unknown) =>
-    selector({ openModal: openPaywallModal }),
-}));
-
-vi.mock("@/stores/pricingModalStore", () => ({
-  usePricingModalStore: (selector: (s: unknown) => unknown) =>
-    selector({ openModal: openPricingModal }),
+vi.mock("@/stores/upgradeModalStore", () => ({
+  useUpgradeModalStore: (selector: (s: unknown) => unknown) =>
+    selector({ openModal: openUpgradeModal }),
 }));
 
 vi.mock("@/stores/voiceModeStore", () => ({
   useDiscoveredConversationId: () => null,
   useVoiceModeActions: () => ({ enterVoiceMode, exitVoiceMode }),
   useVoiceModeActive: () => false,
-}));
-
-vi.mock("@/stores/workflowSelectionStore", () => ({
-  useWorkflowSelectionStore: Object.assign(
-    (selector: (s: unknown) => unknown) =>
-      selector({ selectedWorkflow: null, autoSend: false }),
-    { getState: () => ({ clearSelectedWorkflow: vi.fn() }) },
-  ),
 }));
 
 import ChatPage from "@/features/chat/components/interface/ChatPage";
@@ -204,8 +195,7 @@ describe("ChatPage voice-mode gate — plan status unknown vs. known-free", () =
     isPaid = false;
     isUnknown = false;
     capturedComposerProps = null;
-    openPricingModal.mockReset();
-    openPaywallModal.mockReset();
+    openUpgradeModal.mockReset();
     enterVoiceMode.mockReset();
     prefetchConnectionDetails.mockReset();
     trackEvent.mockReset();
@@ -218,7 +208,7 @@ describe("ChatPage voice-mode gate — plan status unknown vs. known-free", () =
 
     act(() => capturedComposerProps?.voiceModeActive());
 
-    expect(openPricingModal).toHaveBeenCalledTimes(1);
+    expect(openUpgradeModal).toHaveBeenCalledTimes(1);
     expect(enterVoiceMode).not.toHaveBeenCalled();
   });
 
@@ -229,7 +219,7 @@ describe("ChatPage voice-mode gate — plan status unknown vs. known-free", () =
 
     act(() => capturedComposerProps?.voiceModeActive());
 
-    expect(openPricingModal).not.toHaveBeenCalled();
+    expect(openUpgradeModal).not.toHaveBeenCalled();
     expect(enterVoiceMode).toHaveBeenCalledTimes(1);
   });
 
@@ -244,7 +234,7 @@ describe("ChatPage voice-mode gate — plan status unknown vs. known-free", () =
     // ?.is_subscribed` directly off the raw (disabled/never-fetched) query,
     // which is `undefined` in this exact window — falsy, so a paying user
     // reloading mid-fetch got the upgrade paywall instead of their call.
-    expect(openPricingModal).not.toHaveBeenCalled();
+    expect(openUpgradeModal).not.toHaveBeenCalled();
     expect(enterVoiceMode).toHaveBeenCalledTimes(1);
   });
 

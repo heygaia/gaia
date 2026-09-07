@@ -5,7 +5,7 @@ import { Chip } from "@heroui/chip";
 import { paywallCopyFor } from "@/features/pricing/constants";
 import { SettingsPage } from "@/features/settings/components/ui/SettingsPage";
 import { SettingsSection } from "@/features/settings/components/ui/SettingsSection";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 interface SubscriptionUpsellProps {
   /** Separates the lapsed audience from the paid-only migration audience. */
@@ -16,7 +16,7 @@ interface SubscriptionUpsellProps {
 export function SubscriptionUpsell({
   hasEverSubscribed,
 }: SubscriptionUpsellProps) {
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const copy = paywallCopyFor(hasEverSubscribed);
 
   return (
@@ -47,7 +47,7 @@ export function SubscriptionUpsell({
             color="primary"
             className="w-full font-semibold text-black"
             size="sm"
-            onPress={() => openPaywallModal(undefined, { dismissible: true })}
+            onPress={() => openUpgradeModal(undefined, { dismissible: true })}
           >
             View plans
           </Button>

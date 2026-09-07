@@ -71,7 +71,11 @@ class TestStoredPreferencesFromBeforeTheQ2Rewrite:
             {"profession": "founder", "needs": ["inbox", "calendar", "reminders", "tools"]}
         )
 
-        assert prefs.needs == [OnboardingNeed.INBOX, OnboardingNeed.CALENDAR]
+        assert prefs.needs == [
+            OnboardingNeed.INBOX,
+            OnboardingNeed.CALENDAR,
+            OnboardingNeed.REMINDERS,
+        ]
 
     def test_only_unknown_values_leaves_no_picks(self) -> None:
         prefs = OnboardingPreferences.model_validate({"profession": "founder", "needs": ["memory"]})

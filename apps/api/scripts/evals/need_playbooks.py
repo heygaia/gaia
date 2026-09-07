@@ -7,8 +7,8 @@ Not a test: it drives a REAL running API and a REAL model. One fresh Pro dev
 user per need, carrying that need (and the role that unlocks it), sends the
 exact opener the bots send after linking (``compose_first_message``), and the
 reply is judged against the need's playbook: does it propose THAT job, does it
-carry the connect card when it talks about connecting, does it end on an easy
-yes without narrating work that never ran.
+hand the connect to the executor when it talks about connecting, does it end on
+an easy yes without narrating work that never ran.
 
 Usage (from apps/api/, with the worktree API already running):
 
@@ -20,7 +20,6 @@ import argparse
 import asyncio
 import os
 from pathlib import Path
-import subprocess
 import sys
 import time
 from uuid import uuid4
@@ -28,22 +27,34 @@ from uuid import uuid4
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-import httpx
 from pydantic import BaseModel
 
-from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_structured_runnable
 from app.agents.prompts.new_user_prompts import NEED_PLAYBOOKS
 from app.models.user_models import OnboardingNeed, OnboardingPreferences, role_of_need
 from app.services.onboarding.first_message import compose_first_message
-from scripts.evals.chat_quality import Turn, _send_turn
+from scripts.evals.core.dev_users import dev_client, provision
+from scripts.evals.core.judge import judge
+from scripts.evals.core.live_chat import Turn, TurnOptions, send_turn
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:9330")
 RUN_ID = time.strftime("%H%M%S")
 USER_TEMPLATE = "np-{slug}-" + RUN_ID + "@gaia.local"
 #: The role a shared need is evaluated under; any listed role would do.
 SHARED_ROLE = "founder"
-CONNECT_TOOL = "integration_connection_required"
+#: A connect is delegated now, so either the executor handoff or the card the
+#: executor puts on the stream counts as the ask being actionable.
+CONNECT_TOOLS = ("integration_connection_required", "call_executor")
 JUDGE_TIMEOUT_SECONDS = 90.0
+#: Was inherited from chat_quality when this script imported its ``_send_turn``;
+#: named here now that the shared helper takes it as an argument.
+TURN_TIMEOUT_SECONDS = 180.0
+DELIVERY_WAIT_SECONDS = 75.0
+DELIVERY_POLL_SECONDS = 3.0
+TURN_OPTIONS = TurnOptions(
+    timeout=TURN_TIMEOUT_SECONDS,
+    delivery_wait_seconds=DELIVERY_WAIT_SECONDS,
+    delivery_poll_seconds=DELIVERY_POLL_SECONDS,
+)
 
 
 class _Verdict(BaseModel):
@@ -95,38 +106,20 @@ note: one line on the biggest problem, or "fine".
 """
 
 
-async def _provision(api_url: str, email: str, prefs: OnboardingPreferences) -> None:
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        await client.post(f"{api_url}/api/v1/dev/users", json={"email": email, "name": "Alex"})
-        await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "scripts/grant_pro_access.py", "--email", email],
-            check=True,
-            capture_output=True,
-        )
-        await client.patch(
-            f"{api_url}/api/v1/onboarding/preferences",
-            headers={"X-Dev-User": email},
-            json=prefs.model_dump(mode="json", exclude_none=True),
-        )
-
-
 async def _one(api_url: str, need: OnboardingNeed) -> Graded:
     role = role_of_need(need) or SHARED_ROLE
     prefs = OnboardingPreferences(profession=role, needs=[need])
     email = USER_TEMPLATE.format(slug=need.value.replace("_", "-"))
-    await _provision(api_url, email, prefs)
+    await provision(api_url, email, prefs)
     opener = compose_first_message(prefs)
     conversation_id = str(uuid4())
-    async with httpx.AsyncClient(
-        headers={"X-Dev-User": email}, cookies={"dev_bypass_user": email}
-    ) as client:
+    async with dev_client(email) as client:
         await client.post(
             f"{api_url}/api/v1/conversations",
             json={"conversation_id": conversation_id, "description": "need playbook eval"},
             timeout=30.0,
         )
-        turn = await _send_turn(client, api_url, opener, conversation_id, [])
+        turn = await send_turn(client, api_url, opener, conversation_id, [], TURN_OPTIONS)
     lowered = turn.reply.lower()
     return Graded(
         need=need,
@@ -134,7 +127,7 @@ async def _one(api_url: str, need: OnboardingNeed) -> Graded:
         opener=opener,
         turn=turn,
         mentions_connecting="connect" in lowered,
-        has_connect_card=CONNECT_TOOL in turn.tools,
+        has_connect_card=any(name in turn.tools for name in CONNECT_TOOLS),
     )
 
 
@@ -145,11 +138,8 @@ async def _judge(row: Graded) -> _Verdict:
         reply=row.turn.reply,
         tools=", ".join(row.turn.tools) or "none",
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_Verdict, temperature=0.0),
-        prompt,
-        label="need_playbooks_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    return await judge(
+        _Verdict, prompt, label="need_playbooks_judge", timeout=JUDGE_TIMEOUT_SECONDS
     )
 
 

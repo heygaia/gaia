@@ -29,21 +29,32 @@ from uuid import uuid4
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-import httpx
 from pydantic import BaseModel
 
-from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_structured_runnable
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.onboarding.first_message import compose_first_message
-from scripts.evals.chat_quality import Turn, _send_turn
+from scripts.evals.core.dev_users import dev_client, provision
+from scripts.evals.core.judge import judge
+from scripts.evals.core.live_chat import Turn, TurnOptions, send_turn
 from scripts.evals.core.paths import RUNS_DIR, under_runs
-from scripts.evals.need_playbooks import _provision
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:9330")
 RUN_ID = time.strftime("%H%M%S")
 USER_TEMPLATE = "aj-{slug}-" + RUN_ID + "@gaia.local"
-CONNECT_TOOL = "integration_connection_required"
+#: A connect is delegated now, so either the executor handoff or the card the
+#: executor puts on the stream counts as the ask being actionable.
+CONNECT_TOOLS = ("integration_connection_required", "call_executor")
 JUDGE_TIMEOUT_SECONDS = 90.0
+#: Was inherited from chat_quality when this script imported its ``_send_turn``;
+#: named here now that the shared helper takes it as an argument.
+TURN_TIMEOUT_SECONDS = 180.0
+DELIVERY_WAIT_SECONDS = 75.0
+DELIVERY_POLL_SECONDS = 3.0
+TURN_OPTIONS = TurnOptions(
+    timeout=TURN_TIMEOUT_SECONDS,
+    delivery_wait_seconds=DELIVERY_WAIT_SECONDS,
+    delivery_poll_seconds=DELIVERY_POLL_SECONDS,
+)
 
 
 class Step(BaseModel):
@@ -91,7 +102,7 @@ JOURNEYS: list[Journey] = [
         steps=[
             Step(
                 message="yes do the inbox",
-                intent="The Gmail connect card is in THIS reply, plus one line on what happens after the tap. No 'want me to send the link'.",
+                intent="The Gmail connect is handed to the executor, plus one line on what happens after the tap. No 'want me to send the link'.",
             ),
             Step(
                 message="ok connected it",
@@ -99,7 +110,7 @@ JOURNEYS: list[Journey] = [
             ),
             Step(
                 message="is there a notion integration?",
-                intent="Answer from a real search or the registry: yes/no and what it unlocks, with the connect card if yes. No guessing.",
+                intent="Answer from a real search or the registry: yes/no and what it unlocks, handing the connect to the executor if yes. No guessing.",
             ),
             Step(
                 message="any ready-made workflow for a weekly investor update?",
@@ -273,11 +284,8 @@ async def _judge_turn(role: str, graded: GradedTurn, history: str) -> _TurnVerdi
         reply=graded.turn.reply,
         tools=", ".join(graded.turn.tools) or "none",
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_TurnVerdict, temperature=0.0),
-        prompt,
-        label="activation_journeys_turn_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    return await judge(
+        _TurnVerdict, prompt, label="activation_journeys_turn_judge", timeout=JUDGE_TIMEOUT_SECONDS
     )
 
 
@@ -292,31 +300,29 @@ async def _judge_journey(row: GradedJourney) -> _JourneyVerdict:
         + ([f"  GAIA: {row.turns[-1].turn.reply}"] if row.turns else [])
     )
     prompt = JOURNEY_PROMPT.format(role=row.journey.role, transcript=transcript)
-    return await ainvoke_llm(
-        background_structured_runnable(_JourneyVerdict, temperature=0.0),
+    return await judge(
+        _JourneyVerdict,
         prompt,
         label="activation_journeys_journey_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+        timeout=JUDGE_TIMEOUT_SECONDS,
     )
 
 
 async def _run_journey(api_url: str, journey: Journey) -> GradedJourney:
     prefs = OnboardingPreferences(profession=journey.role, needs=journey.needs)
     email = USER_TEMPLATE.format(slug=journey.slug)
-    await _provision(api_url, email, prefs)
+    await provision(api_url, email, prefs)
     opener = compose_first_message(prefs)
     row = GradedJourney(journey=journey, opener=opener)
     conversation_id = str(uuid4())
     history: list[dict[str, str]] = []
-    async with httpx.AsyncClient(
-        headers={"X-Dev-User": email}, cookies={"dev_bypass_user": email}
-    ) as client:
+    async with dev_client(email) as client:
         await client.post(
             f"{api_url}/api/v1/conversations",
             json={"conversation_id": conversation_id, "description": "activation journey eval"},
             timeout=30.0,
         )
-        first = await _send_turn(client, api_url, opener, conversation_id, history)
+        first = await send_turn(client, api_url, opener, conversation_id, history, TURN_OPTIONS)
         history += [
             {"role": "user", "content": opener},
             {"role": "assistant", "content": first.reply},
@@ -331,7 +337,9 @@ async def _run_journey(api_url: str, journey: Journey) -> GradedJourney:
         )
         for step in journey.steps:
             print(f"    > {step.message}", flush=True)
-            turn = await _send_turn(client, api_url, step.message, conversation_id, history)
+            turn = await send_turn(
+                client, api_url, step.message, conversation_id, history, TURN_OPTIONS
+            )
             history += [
                 {"role": "user", "content": step.message},
                 {"role": "assistant", "content": turn.reply},
@@ -341,7 +349,8 @@ async def _run_journey(api_url: str, journey: Journey) -> GradedJourney:
                 GradedTurn(
                     step=step,
                     turn=turn,
-                    card_ok=(CONNECT_TOOL in turn.tools) or ("connect" not in lowered),
+                    card_ok=any(n in turn.tools for n in CONNECT_TOOLS)
+                    or ("connect" not in lowered),
                 )
             )
     return row

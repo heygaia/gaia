@@ -27,14 +27,14 @@ def _prefs(profession: str | None = "founder") -> OnboardingPreferences:
 
 
 class TestOpeningBubble:
-    def test_one_idea_per_bubble_welcome_to_the_two_routines(self) -> None:
+    def test_welcome_handover_then_the_two_routines_as_one_bulleted_bubble(self) -> None:
         composed = compose_first_conversation(_prefs("founder"), None)
         assert composed.opening == [
             "Okay, you're in.",
             "Anything you'd rather not do yourself, hand it to me.",
-            "Two things worth switching on now.",
-            "Gmail: every morning your mail comes back sorted, replies drafted.",
-            "Calendar: I brief you before every meeting.",
+            "Two things worth switching on now.\n"
+            "- Gmail: every morning your mail comes back sorted, replies drafted.\n"
+            "- Calendar: I brief you before every meeting.",
         ]
         assert composed.lines == [*composed.opening, composed.question]
 
@@ -50,9 +50,11 @@ class TestOpeningBubble:
         )
         assert "I'm on your Signal too." in compose_first_conversation(_prefs(), "signal").lines[1]
 
-    def test_every_bubble_is_one_short_line(self) -> None:
-        for line in compose_first_conversation(_prefs("founder"), "telegram").lines:
-            assert len(line.split()) <= 16, line
+    def test_every_line_of_every_bubble_is_short(self) -> None:
+        """A bubble may hold a bulleted list, but each line stays skimmable."""
+        for bubble in compose_first_conversation(_prefs("founder"), "telegram").lines:
+            for line in bubble.splitlines():
+                assert len(line.split()) <= 16, line
 
     def test_the_buttons_open_each_app_and_the_full_page(self) -> None:
         """Rendered by the web as a row of buttons outside the bubble, same tab."""

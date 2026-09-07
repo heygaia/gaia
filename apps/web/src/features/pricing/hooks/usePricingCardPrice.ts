@@ -1,6 +1,6 @@
 "use client";
 
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 import {
   getOfferPrice,
@@ -37,13 +37,17 @@ export function usePricingCardPrice({
   originalPrice,
   durationIsMonth,
 }: PricingCardPriceInput): PricingCardPrice {
-  const offer = usePricingModalStore((s) => s.offer);
+  // Only an offer that names a percentage can restate the prices; the
+  // enforcement path's offer (a checkout link, a code) leaves them as-is.
+  const discountPercent = useUpgradeModalStore(
+    (s) => s.offer?.discountPercent ?? null,
+  );
   return {
     list: getPriceDisplay(price, originalPrice, durationIsMonth),
     offer:
-      offer && price > 0
+      discountPercent && price > 0
         ? getPriceDisplay(
-            getOfferPrice(price, offer),
+            getOfferPrice(price, discountPercent),
             originalPrice,
             durationIsMonth,
           )

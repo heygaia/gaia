@@ -35,7 +35,6 @@ from app.agents.middleware.factory import (
 from app.agents.middleware.hil_approval import HILApprovalMiddleware
 from app.agents.middleware.loop_guard import LoopGuardMiddleware
 from app.agents.middleware.media import MediaDescriptionMiddleware
-from app.agents.middleware.style_guard import StyleGuardMiddleware
 from app.agents.middleware.subagent import SubagentMiddleware
 from app.agents.middleware.subagent_join import SubagentJoinMiddleware
 from app.agents.middleware.summarization import (
@@ -137,23 +136,9 @@ class TestCommsStackComposition:
     delegates instead of acting — so what is and is not in its stack is the
     contract, not an implementation detail."""
 
-    def test_the_style_guard_scores_the_model_and_nothing_above_it(self) -> None:
-        """Position is load-bearing: near-innermost of the wrap_model_call chain
-        means it scores the response the model actually produced, not one an
-        outer middleware already substituted (the budget wall's stop text, for
-        one, is not the model's prose and must not be rewritten). Only the
-        empty-completion retry sits below it, and that one returns the model's
-        own words too."""
-        stack = create_comms_middleware(chat_llm=_fake_llm())
-
-        assert isinstance(stack[-2], StyleGuardMiddleware)
-        assert isinstance(stack[-1], EmptyCompletionRetryMiddleware)
-        assert sum(isinstance(mw, StyleGuardMiddleware) for mw in stack) == 1
-
     def test_the_empty_completion_retry_is_the_innermost_middleware(self) -> None:
-        """It has to see the raw completion: a retry above the style guard would
-        re-ask on a reply the guard had already substituted, and would let the
-        guard score silence."""
+        """It has to see the raw completion: anything above it reads a reply the
+        retry may still be replacing."""
         stack = create_comms_middleware(chat_llm=_fake_llm())
 
         assert isinstance(stack[-1], EmptyCompletionRetryMiddleware)
@@ -615,9 +600,8 @@ class TestCommsAndSubagentDelegation:
             WorkspaceArchivingSummarizationMiddleware,
             MediaDescriptionMiddleware,
             LoopGuardMiddleware,
-            StyleGuardMiddleware,
-            # Innermost: the empty-completion retry runs before the style guard
-            # scores anything, so the guard reads the reply the user will get.
+            # Innermost: the empty-completion retry runs closest to the model,
+            # so the turn delivers the reply the user will actually get.
             EmptyCompletionRetryMiddleware,
         ]
 

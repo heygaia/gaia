@@ -28,10 +28,10 @@ vi.mock("@/features/pricing/hooks/useIsPaid", () => ({
   useIsPaid: () => ({ isPaid, isUnknown }),
 }));
 
-const openPricingModal = vi.fn();
-vi.mock("@/stores/pricingModalStore", () => ({
-  usePricingModalStore: (selector: (s: unknown) => unknown) =>
-    selector({ openModal: openPricingModal }),
+const openUpgradeModal = vi.fn();
+vi.mock("@/stores/upgradeModalStore", () => ({
+  useUpgradeModalStore: (selector: (s: unknown) => unknown) =>
+    selector({ openModal: openUpgradeModal }),
 }));
 
 vi.mock("@/lib/analytics", () => ({
@@ -72,7 +72,7 @@ describe("LinkedAccountsSettings — iMessage (premium) gate vs. plan status unk
   beforeEach(() => {
     isPaid = false;
     isUnknown = false;
-    openPricingModal.mockReset();
+    openUpgradeModal.mockReset();
   });
 
   it("shows the Pro badge and paywalls the connect attempt for a known-free user", async () => {
@@ -81,7 +81,7 @@ describe("LinkedAccountsSettings — iMessage (premium) gate vs. plan status unk
 
     expect(row.getByText("Pro")).not.toBeNull();
     fireEvent.click(row.getByRole("button", { name: "Connect" }));
-    expect(openPricingModal).toHaveBeenCalledTimes(1);
+    expect(openUpgradeModal).toHaveBeenCalledTimes(1);
   });
 
   it("does not show the Pro badge and does not paywall the connect attempt for a paid user", async () => {
@@ -91,7 +91,7 @@ describe("LinkedAccountsSettings — iMessage (premium) gate vs. plan status unk
 
     expect(row.queryByText("Pro")).toBeNull();
     fireEvent.click(row.getByRole("button", { name: "Connect" }));
-    expect(openPricingModal).not.toHaveBeenCalled();
+    expect(openUpgradeModal).not.toHaveBeenCalled();
   });
 
   it("does not show the Pro badge and lets the connect attempt proceed while the subscription status is still unknown", async () => {
@@ -106,6 +106,6 @@ describe("LinkedAccountsSettings — iMessage (premium) gate vs. plan status unk
     // possibly-paid user.
     expect(row.queryByText("Pro")).toBeNull();
     fireEvent.click(row.getByRole("button", { name: "Connect" }));
-    expect(openPricingModal).not.toHaveBeenCalled();
+    expect(openUpgradeModal).not.toHaveBeenCalled();
   });
 });

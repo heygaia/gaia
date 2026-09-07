@@ -49,6 +49,7 @@ FREE_PATH_PREFIXES: tuple[str, ...] = (
     "/api/v1/onboarding",  # status/phase/preferences drive the pre-pay flow
     # ── Public marketing surfaces (no session required) ────────────────────
     "/api/v1/blogs",  # public blog content on the marketing site
+    "/api/v1/workflows/explore",  # the public template catalogue; use-case pages read it
     "/api/v1/desktop/releases",  # public download lookup for the landing page
     # ── Support: a blocked user must be able to tell us they are blocked ───
     "/api/v1/support",  # request submission + its rate-limit status
