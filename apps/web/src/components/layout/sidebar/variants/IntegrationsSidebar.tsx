@@ -10,13 +10,11 @@ import { IntegrationSidebar } from "@/components/layout/sidebar/right-variants/I
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import type { Integration } from "@/features/integrations/types";
-import { useIntegrationModalStore } from "@/stores/integrationModalStore";
 import { useRightSidebar } from "@/stores/rightSidebarStore";
+import { useIntegrationModalActions } from "@/stores/uiStore";
 
 export default function IntegrationsSidebar() {
-  const openIntegrationModal = useIntegrationModalStore(
-    (state) => state.openModal,
-  );
+  const { openIntegrationModal } = useIntegrationModalActions();
   const {
     integrations,
     connectIntegration,

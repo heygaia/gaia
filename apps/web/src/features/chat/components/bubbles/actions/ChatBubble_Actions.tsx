@@ -13,7 +13,7 @@ import { chatApi } from "@/features/chat/api/chatApi";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import { syncSingleConversation } from "@/services/syncService";
-import { useReplyToMessage } from "@/stores/replyToMessageStore";
+import { useReplyToMessage } from "@/stores/composerStore";
 
 interface ChatBubbleActionsProps {
   loading: boolean;

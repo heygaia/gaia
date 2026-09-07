@@ -13,9 +13,9 @@ import {
   useComposerTextActions,
   useComposerUI,
   useInputText,
+  useReplyToMessage,
 } from "@/stores/composerStore";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
-import { useReplyToMessage } from "@/stores/replyToMessageStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 
 interface UseComposerSubmitParams {
@@ -50,7 +50,7 @@ export function useComposerSubmit({
   const { replyToMessage, clearReplyToMessage } = useReplyToMessage();
   const { autoSend } = useWorkflowSelectionStore();
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 
   const sendMessage = useSendMessage();
 
@@ -83,7 +83,7 @@ export function useComposerSubmit({
     // than trapping a paying user behind the paywall on a not-yet-resolved
     // "false".
     if (!isSubscriptionStatusUnknown && !isPaid) {
-      openPaywallModal();
+      openUpgradeModal();
       return;
     }
     // Note: Loading state is now set in useSendMessage AFTER user message is persisted

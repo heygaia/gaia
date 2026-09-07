@@ -52,9 +52,6 @@ vi.mock("@/stores/composerStore", () => ({
   }),
   useComposerIsUploading: () => false,
   useComposerUI: () => ({ isSlashCommandDropdownOpen: false }),
-}));
-
-vi.mock("@/stores/replyToMessageStore", () => ({
   useReplyToMessage: () => ({
     replyToMessage: null,
     clearReplyToMessage,
@@ -66,13 +63,13 @@ vi.mock("@/stores/workflowSelectionStore", () => ({
 }));
 
 import { useComposerSubmit } from "@/features/chat/hooks/useComposerSubmit";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 describe("useComposerSubmit paywall pre-check", () => {
   beforeEach(() => {
     isPaid = false;
     isSubscriptionStatusUnknown = false;
-    usePaywallModalStore.setState({ open: false, offer: null });
+    useUpgradeModalStore.setState({ open: false, offer: null });
     vi.clearAllMocks();
   });
 
@@ -88,10 +85,10 @@ describe("useComposerSubmit paywall pre-check", () => {
     result.current.handleFormSubmit();
 
     expect(sendMessage).not.toHaveBeenCalled();
-    expect(usePaywallModalStore.getState().open).toBe(true);
+    expect(useUpgradeModalStore.getState().open).toBe(true);
     // Enforcement — the composer pre-check must never let the user dismiss
     // their way past the paywall.
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
     // Composer input is left intact — free users can keep typing.
     expect(clearInputText).not.toHaveBeenCalled();
   });
@@ -108,7 +105,7 @@ describe("useComposerSubmit paywall pre-check", () => {
     result.current.handleFormSubmit();
 
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(usePaywallModalStore.getState().open).toBe(false);
+    expect(useUpgradeModalStore.getState().open).toBe(false);
     expect(clearInputText).toHaveBeenCalledTimes(1);
   });
 
@@ -128,6 +125,6 @@ describe("useComposerSubmit paywall pre-check", () => {
     // user — a not-yet-resolved plan status must never trap a paying user
     // behind the non-dismissible paywall.
     expect(sendMessage).toHaveBeenCalledTimes(1);
-    expect(usePaywallModalStore.getState().open).toBe(false);
+    expect(useUpgradeModalStore.getState().open).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import {
 import { BearerTokenModal } from "@/features/integrations/components/BearerTokenModal";
 import { IntegrationsList } from "@/features/integrations/components/IntegrationsList";
 import { IntegrationsSearchInput } from "@/features/integrations/components/IntegrationsSearchInput";
+import { ALL_CATEGORIES } from "@/features/integrations/constants/categories";
 import {
   POST_CONNECT_POLL_INTERVAL_MS,
   POST_CONNECT_POLL_MAX_ATTEMPTS,
@@ -31,7 +32,6 @@ import ContactSupportModal from "@/features/support/components/ContactSupportMod
 import { useHeader } from "@/hooks/layout/useHeader";
 import { usePlatform } from "@/hooks/ui/usePlatform";
 import { toast } from "@/lib/toast";
-import { useIntegrationsStore } from "@/stores/integrationsStore";
 import { useRightSidebar } from "@/stores/rightSidebarStore";
 
 export default function IntegrationsPage() {
@@ -64,11 +64,19 @@ export default function IntegrationsPage() {
   const setRightSidebarVariant = useRightSidebar((state) => state.setVariant);
   const isSidebarOpen = useRightSidebar((state) => state.isOpen);
 
-  // Integrations store for search
-  const searchQuery = useIntegrationsStore((state) => state.searchQuery);
-  const setSearchQuery = useIntegrationsStore((state) => state.setSearchQuery);
-  const clearSearch = useIntegrationsStore((state) => state.clearSearch);
-  const { filteredIntegrations } = useIntegrationSearch(integrations);
+  // Search + category filter — page-owned, so they reset when you leave.
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
+  const clearSearch = useCallback(() => setSearchQuery(""), []);
+  const clearFilters = useCallback(() => {
+    setSearchQuery("");
+    setSelectedCategory(ALL_CATEGORIES);
+  }, []);
+  const { filteredIntegrations } = useIntegrationSearch(
+    integrations,
+    searchQuery,
+    selectedCategory,
+  );
 
   // Local state
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<
@@ -294,7 +302,13 @@ export default function IntegrationsPage() {
       <div className="flex-1 overflow-y-auto pb-20">
         <div className="flex w-full justify-center px-5">
           <div className="w-full">
-            <IntegrationsList onIntegrationClick={handleIntegrationClick} />
+            <IntegrationsList
+              onIntegrationClick={handleIntegrationClick}
+              searchQuery={searchQuery}
+              selectedCategory={selectedCategory}
+              setSelectedCategory={setSelectedCategory}
+              clearFilters={clearFilters}
+            />
           </div>
         </div>
       </div>

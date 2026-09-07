@@ -13,10 +13,7 @@ import { db, type IMessage } from "@/lib/db/chatDb";
 import { useCalendarEventSelectionStore } from "@/stores/calendarEventSelectionStore";
 import { useChatStore } from "@/stores/chatStore";
 import { useComposerStore } from "@/stores/composerStore";
-import {
-  type ReplyToMessageData,
-  useReplyToMessageStore,
-} from "@/stores/replyToMessageStore";
+import type { ReplyToMessageData } from "@/stores/composerStore.types";
 import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 import type { MessageType } from "@/types/features/convoTypes";
 import type { WorkflowData } from "@/types/features/workflowTypes";
@@ -54,7 +51,6 @@ const resolveSendContext = (
   const composerState = useComposerStore.getState();
   const workflowState = useWorkflowSelectionStore.getState();
   const calendarEventState = useCalendarEventSelectionStore.getState();
-  const replyState = useReplyToMessageStore.getState();
 
   const files = (overrides?.files ??
     composerState.uploadedFileData ??
@@ -72,7 +68,7 @@ const resolveSendContext = (
     calendarEventState.selectedCalendarEvent ??
     null;
   const replyToMessage =
-    overrides?.replyToMessage ?? replyState.replyToMessage ?? null;
+    overrides?.replyToMessage ?? composerState.replyToMessage ?? null;
 
   const trimmedContent = content.trim();
   const hasValidContent =

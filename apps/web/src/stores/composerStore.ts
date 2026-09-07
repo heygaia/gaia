@@ -7,6 +7,7 @@ import {
   DEFAULT_DEV_EXECUTOR_MODEL,
 } from "@/features/chat/constants/devModels";
 import { stripLocalePrefix } from "@/i18n/config";
+import type { ReplyToMessageData } from "@/stores/composerStore.types";
 import type { FileData } from "@/types/shared/fileTypes";
 import type { SearchMode } from "@/types/shared/searchTypes";
 
@@ -31,6 +32,10 @@ interface ComposerState {
 
   // UI state
   isSlashCommandDropdownOpen: boolean;
+
+  // Reply-to-message selection (never persisted: a reload must not restore a
+  // reply target the user has forgotten about)
+  replyToMessage: ReplyToMessageData | null;
 
   // DEV-ONLY model selection (chat-header selector; only used in development)
   useDefaultModels: boolean;
@@ -66,6 +71,10 @@ interface ComposerActions {
   // UI actions
   setIsSlashCommandDropdownOpen: (open: boolean) => void;
 
+  // Reply-to-message actions
+  setReplyToMessage: (message: ReplyToMessageData | null) => void;
+  clearReplyToMessage: () => void;
+
   // DEV-ONLY model selection actions
   setUseDefaultModels: (use: boolean) => void;
   setCommsModel: (model: string) => void;
@@ -93,6 +102,9 @@ const initialState: ComposerState = {
 
   // UI state
   isSlashCommandDropdownOpen: false,
+
+  // Reply-to-message selection
+  replyToMessage: null,
 
   // DEV-ONLY model selection
   useDefaultModels: true,
@@ -239,6 +251,13 @@ export const useComposerStore = create<ComposerStore>()(
             "setIsSlashCommandDropdownOpen",
           ),
 
+        // Reply-to-message actions
+        setReplyToMessage: (replyToMessage) =>
+          set({ replyToMessage }, false, "setReplyToMessage"),
+
+        clearReplyToMessage: () =>
+          set({ replyToMessage: null }, false, "clearReplyToMessage"),
+
         // DEV-ONLY model selection actions
         setUseDefaultModels: (useDefaultModels) =>
           set({ useDefaultModels }, false, "setUseDefaultModels"),
@@ -338,5 +357,14 @@ export const useComposerModelSelection = () =>
       setUseDefaultModels: state.setUseDefaultModels,
       setCommsModel: state.setCommsModel,
       setExecutorModel: state.setExecutorModel,
+    })),
+  );
+
+export const useReplyToMessage = () =>
+  useComposerStore(
+    useShallow((state) => ({
+      replyToMessage: state.replyToMessage,
+      setReplyToMessage: state.setReplyToMessage,
+      clearReplyToMessage: state.clearReplyToMessage,
     })),
   );

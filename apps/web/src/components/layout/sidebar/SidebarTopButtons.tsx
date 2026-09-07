@@ -21,7 +21,7 @@ import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { usePricing } from "@/features/pricing/hooks/usePricing";
 import { usePathname } from "@/i18n/navigation";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { NotificationStatus } from "@/types/features/notificationTypes";
 import { SidebarPromo } from "./SidebarPromo";
 
@@ -74,7 +74,7 @@ export default function SidebarTopButtons() {
   const pathname = usePathname();
   const { isPaid, isUnknown, hasEverSubscribed } = useIsPaid();
   const { plans } = usePricing();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const { notifications } = useNotifications({
     status: NotificationStatus.DELIVERED,
     limit: 50,
@@ -121,7 +121,7 @@ export default function SidebarTopButtons() {
         <SidebarPromo
           price={price}
           copy={paywallCopyFor(hasEverSubscribed)}
-          onUpgrade={() => openPaywallModal(undefined, { dismissible: true })}
+          onUpgrade={() => openUpgradeModal(undefined, { dismissible: true })}
         />
       )}
 

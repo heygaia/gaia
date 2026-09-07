@@ -23,8 +23,8 @@ import {
   useComposerTextActions,
   useComposerUI,
   useInputText,
+  useReplyToMessage,
 } from "@/stores/composerStore";
-import { useReplyToMessage } from "@/stores/replyToMessageStore";
 import type { SearchMode } from "@/types/shared/searchTypes";
 
 import ComposerInput, { type ComposerInputRef } from "./ComposerInput";
@@ -73,8 +73,7 @@ const Composer: React.FC<MainSearchbarProps> = ({
   const { selectedWorkflow, clearSelectedWorkflow } = useWorkflowSelection();
   const { selectedCalendarEvent, clearSelectedCalendarEvent } =
     useCalendarEventSelection();
-  const { replyToMessage, clearReplyToMessage, setInputFocusCallback } =
-    useReplyToMessage();
+  const { replyToMessage, clearReplyToMessage } = useReplyToMessage();
 
   const { handleFormSubmit, handleRemoveSelectedTool, handleKeyDown } =
     useComposerSubmit({ inputRef, scrollToBottom });
@@ -92,17 +91,11 @@ const Composer: React.FC<MainSearchbarProps> = ({
     [selectedMode],
   );
 
-  // Set up input focus callback for reply-to-message functionality
+  // Picking a reply target hands focus to the composer — focus is the
+  // composer's job, it owns the textarea ref.
   useEffect(() => {
-    setInputFocusCallback(() => {
-      if (inputRef.current) {
-        inputRef.current.focus();
-      }
-    });
-
-    // Clean up on unmount
-    return () => setInputFocusCallback(null);
-  }, [inputRef, setInputFocusCallback]);
+    if (replyToMessage) inputRef.current?.focus();
+  }, [replyToMessage, inputRef]);
 
   // NOTE: Workflow auto-send logic lives in ChatPage, NOT here.
   // Composer remounts across the NewChatLayout → ChatWithMessages layout

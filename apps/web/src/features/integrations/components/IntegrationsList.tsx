@@ -10,10 +10,10 @@ import {
 import type React from "react";
 import { useMemo } from "react";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
-import { useIntegrationModalStore } from "@/stores/integrationModalStore";
-import { useIntegrationsStore } from "@/stores/integrationsStore";
+import { useIntegrationModalActions } from "@/stores/uiStore";
 import { useUserStore } from "@/stores/userStore";
 import {
+  ALL_CATEGORIES,
   getCategoryLabel,
   getUniqueCategories,
   sortCategories,
@@ -146,24 +146,30 @@ const IntegrationSection: React.FC<IntegrationSectionProps> = ({
   );
 };
 
-export const IntegrationsList: React.FC<{
+interface IntegrationsListProps {
   onIntegrationClick?: (integrationId: string) => void;
-}> = ({ onIntegrationClick }) => {
-  const openModal = useIntegrationModalStore((state) => state.openModal);
-  const { integrations, connectIntegration } = useIntegrations();
+  searchQuery: string;
+  selectedCategory: string;
+  setSelectedCategory: (category: string) => void;
+  clearFilters: () => void;
+}
 
-  // Get state from store
-  const searchQuery = useIntegrationsStore((state) => state.searchQuery);
-  const selectedCategory = useIntegrationsStore(
-    (state) => state.selectedCategory,
-  );
-  const setSelectedCategory = useIntegrationsStore(
-    (state) => state.setSelectedCategory,
-  );
-  const clearFilters = useIntegrationsStore((state) => state.clearFilters);
+export const IntegrationsList: React.FC<IntegrationsListProps> = ({
+  onIntegrationClick,
+  searchQuery,
+  selectedCategory,
+  setSelectedCategory,
+  clearFilters,
+}) => {
+  const { openIntegrationModal } = useIntegrationModalActions();
+  const { integrations, connectIntegration } = useIntegrations();
   const currentUserId = useUserStore((state) => state.userId);
 
-  const { filteredIntegrations } = useIntegrationSearch(integrations);
+  const { filteredIntegrations } = useIntegrationSearch(
+    integrations,
+    searchQuery,
+    selectedCategory,
+  );
 
   const handleConnect = async (integrationId: string) => {
     const integration = integrations.find((i) => i.id === integrationId);
@@ -264,7 +270,7 @@ export const IntegrationsList: React.FC<{
     <div>
       {/* Marketplace Banner */}
       <div className="my-8">
-        <MarketplaceBanner onCreateCustomIntegration={openModal} />
+        <MarketplaceBanner onCreateCustomIntegration={openIntegrationModal} />
       </div>
 
       <div className="mb-6">
@@ -276,7 +282,7 @@ export const IntegrationsList: React.FC<{
       </div>
 
       {/* No Results State */}
-      {!hasResults && (searchQuery || selectedCategory !== "all") && (
+      {!hasResults && (searchQuery || selectedCategory !== ALL_CATEGORIES) && (
         <div className="py-16 text-center space-y-2">
           <p className="text-sm text-zinc-400">
             {searchQuery
@@ -306,7 +312,7 @@ export const IntegrationsList: React.FC<{
       {/* Featured Section */}
       {featuredIntegrations.length > 0 &&
         !searchQuery &&
-        selectedCategory === "all" && (
+        selectedCategory === ALL_CATEGORIES && (
           <IntegrationSection
             title="Featured"
             integrations={featuredIntegrations}
@@ -316,16 +322,17 @@ export const IntegrationsList: React.FC<{
           />
         )}
 
-      {createdByYouIntegrations.length > 0 && selectedCategory === "all" && (
-        <IntegrationSection
-          title="Created by You"
-          integrations={createdByYouIntegrations}
-          onConnect={handleConnect}
-          onIntegrationClick={onIntegrationClick}
-        />
-      )}
+      {createdByYouIntegrations.length > 0 &&
+        selectedCategory === ALL_CATEGORIES && (
+          <IntegrationSection
+            title="Created by You"
+            integrations={createdByYouIntegrations}
+            onConnect={handleConnect}
+            onIntegrationClick={onIntegrationClick}
+          />
+        )}
 
-      {selectedCategory === "all" ? (
+      {selectedCategory === ALL_CATEGORIES ? (
         // Exclude "created_by_you" virtual category (shown above) and "custom" category.
         // Custom integrations with createdBy set are shown in "Created by You" section.
         // Note: This assumes all user-created integrations have createdBy property set.

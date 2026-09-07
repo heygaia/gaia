@@ -11,11 +11,14 @@ export interface IntegrationCategory {
   label: string;
 }
 
+/** Category key meaning "no category filter" — the default selection. */
+export const ALL_CATEGORIES = "all";
+
 /**
  * Browse taxonomy for the marketplace filter chips.
  */
 export const INTEGRATION_CATEGORIES: IntegrationCategory[] = [
-  { key: "all", label: "All" },
+  { key: ALL_CATEGORIES, label: "All" },
   { key: "productivity", label: "Productivity" },
   { key: "communication", label: "Communication" },
   { key: "developer", label: "Developer" },
