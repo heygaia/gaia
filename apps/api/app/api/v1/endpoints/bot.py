@@ -23,7 +23,6 @@ from app.decorators import (
     require_active_subscription,
     tiered_rate_limit,
 )
-from app.models.activation_models import ActivationSequenceState
 from app.models.bot_models import (
     BotAuthStatusResponse,
     BotChatRequest,
@@ -44,8 +43,6 @@ from app.models.bot_models import (
 from app.models.message_models import MessageDict, MessageRequestWithHistory
 from app.models.payment_models import PlanType
 from app.models.user_models import AuthenticatedUser
-from app.services.activation.engagement import record_reply
-from app.services.activation.opt_out import STOP_ACKNOWLEDGEMENT, is_stop_message, set_opted_out
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.audio_transcription_service import (
     MAX_AUDIO_BYTES,
@@ -720,16 +717,6 @@ async def bot_chat_stream(request: Request, body: BotChatRequest) -> StreamingRe
 
     if (refusal := await _bot_stream_entitlement_gate(user_id, body.platform)) is not None:
         return refusal
-
-    # Before the turn is charged or the agent runs: "stop" is an instruction to
-    # GAIA about GAIA, and answering it with a model turn is both a bill and a
-    # risk that it gets talked out of. One line, then nothing.
-    if is_stop_message(body.message):
-        await set_opted_out(user_id, True, source=body.platform)
-        log.set(outcome="activation_opt_out")
-        return _notice_only_stream(STOP_ACKNOWLEDGEMENT)
-
-    record_reply(user_id, ActivationSequenceState.of(user.get("activation_sequence")))
 
     await _charge_bot_turn(user_id, body)
 

@@ -47,10 +47,6 @@ class AnalyticsEvents(StrEnum):
 
     # Day-by-day activation sequence. The three together are the funnel: how
     # many days went out, why the rest did not, and how often anyone answered.
-    ACTIVATION_DAY_SENT = "activation:day_sent"
-    ACTIVATION_DAY_SKIPPED = "activation:day_skipped"
-    ACTIVATION_REPLIED = "activation:replied"
-    ACTIVATION_OPTED_OUT = "activation:opted_out"
 
     # Settings. Which platform GAIA texts first — the names of the platforms
     # and how many are ordered, never anything the user wrote.

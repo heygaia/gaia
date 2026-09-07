@@ -92,7 +92,6 @@ STATUS = "/api/v1/onboarding/status"
 PERSONALIZATION = "/api/v1/onboarding/personalization"
 
 MEMORY_TASK = "process_gmail_emails_to_memory"
-ACTIVATION_TASK = "send_activation_message"
 
 GMAIL_CONFIG = OAuthIntegration(
     id=GMAIL_INTEGRATION_ID,
@@ -671,7 +670,7 @@ class TestSubmittingTheFormIsCompletion:
         assert response.status_code == 200
         assert users.onboarding_of(USER_ID)["phase"] == OnboardingPhase.COMPLETED.value
 
-    async def test_only_the_day_zero_activation_job_is_queued_and_the_opener_is_seeded(
+    async def test_no_job_is_queued_and_only_the_opener_is_seeded(
         self, client: AsyncClient, arq_pool: ArqRedis, externals: _Externals
     ):
         """The pipeline and the holo-card announcement are Gmail's to earn.
@@ -680,7 +679,7 @@ class TestSubmittingTheFormIsCompletion:
         completion does seed — it is composed from the answers, not the inbox."""
         await complete_submit(client)
 
-        assert await queued_job_names(arq_pool) == [ACTIVATION_TASK]
+        assert await queued_job_names(arq_pool) == []
         assert seeded_descriptions(externals) == [GETTING_STARTED_DESCRIPTION]
 
     async def test_the_seeded_opener_is_recorded_on_its_own_field(
@@ -723,7 +722,7 @@ class TestSubmittingTheFormIsCompletion:
         assert response.status_code == 200
         assert response.json()["user"]["user_id"] == USER_ID
         assert response.json()["user"]["onboarding"]["preferences"]["profession"] == "Lawyer"
-        assert await queued_job_names(arq_pool) == [ACTIVATION_TASK]
+        assert await queued_job_names(arq_pool) == []
 
     async def test_the_status_endpoint_reports_the_user_as_onboarded(self, client: AsyncClient):
         await complete_submit(client)
@@ -759,7 +758,7 @@ class TestConnectingGmailEarnsThePersonalization:
         """Exactly one personalization job, plus the memory ingestion the scan
         queues behind it. A second personalization job here would rebuild the
         card and re-announce it."""
-        assert self.ran == [INTELLIGENCE_TASK, ACTIVATION_TASK, MEMORY_TASK]
+        assert self.ran == [INTELLIGENCE_TASK, MEMORY_TASK]
 
     async def test_the_inbox_scan_reports_what_it_found(self, stages: _StageSink):
         assert stages.emitted(OnboardingStage.INBOX_SCANNING)
@@ -884,7 +883,7 @@ class TestThePipelineRunsAtMostOnce:
 
         await connect_gmail()
 
-        assert await queued_job_names(arq_pool) == [MEMORY_TASK, ACTIVATION_TASK]
+        assert await queued_job_names(arq_pool) == [MEMORY_TASK]
 
     async def test_a_queued_job_that_lost_the_race_does_nothing(
         self, client: AsyncClient, arq_pool: ArqRedis, externals: _Externals, users: _UserStore

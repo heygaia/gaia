@@ -76,17 +76,3 @@ class TestUpdateChatChannelPriority:
         assert resp.status_code == 200
         assert resp.json() == {"priority": ["telegram", "slack"]}
         assert save.await_args.args[1] == ["telegram", "slack"]
-
-
-@pytest.mark.unit
-class TestReadActivationSequence:
-    async def test_reports_the_current_opt_out(self, client: AsyncClient) -> None:
-        with (
-            patch(f"{MODULE}.get_opted_out", new_callable=AsyncMock, return_value=True) as read,
-            patch(f"{MODULE}.log") as log,
-        ):
-            resp = await client.get(f"{API}/user/activation-sequence")
-        assert resp.status_code == 200
-        assert resp.json() == {"opted_out": True}
-        read.assert_awaited_once_with(USER_ID)
-        log.set.assert_any_call(user={"id": USER_ID}, operation="read_activation_sequence")

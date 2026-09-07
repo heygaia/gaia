@@ -32,7 +32,6 @@ from app.workers.tasks import (
     sweep_expired_memories,
     sweep_idle_sandboxes,
 )
-from app.workers.tasks.activation_tasks import send_activation_message
 from app.workers.tasks.hil_sweep_tasks import sweep_hil_approvals
 from app.workers.tasks.maintenance_sweep_tasks import maintenance_sweep_tracked_todos
 from app.workers.tasks.scheduler_recovery_tasks import rescan_pending_scheduled_tasks
@@ -73,7 +72,6 @@ _promote_usage_badges = arq_task(promote_usage_badges)
 _sweep_dormant_user_workflows = arq_task(sweep_dormant_user_workflows)
 _sweep_abandoned_imessage_registrations = arq_task(sweep_abandoned_imessage_registrations)
 _sweep_expired_memories = arq_task(sweep_expired_memories)
-_send_activation_message = arq_task(send_activation_message)
 
 WorkerSettings.functions = [
     _sweep_hil_approvals,
@@ -99,7 +97,6 @@ WorkerSettings.functions = [
     _sweep_dormant_user_workflows,
     _sweep_abandoned_imessage_registrations,
     _sweep_expired_memories,
-    _send_activation_message,
 ]
 
 WorkerSettings.cron_jobs = [

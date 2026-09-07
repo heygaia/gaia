@@ -1,4 +1,3 @@
-from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import HTTPException
@@ -40,7 +39,6 @@ from app.services.platform_link_service import linked_platforms_of
 from app.services.workflow.service import WorkflowService
 from app.utils.background_tasks import spawn_background_task
 from app.utils.seeding_utils import seed_first_conversation
-from app.workers.tasks.activation_tasks import enqueue_next_day
 from shared.py.wide_events import log
 
 
@@ -119,23 +117,6 @@ async def complete_onboarding(
             user_id,
             {"profession": onboarding_data.profession, "onboarding_completed": True},
         )
-
-        # Past the exactly-once gate above, so a replayed completion cannot
-        # restart a finished sequence. The job is deferred to their next 08:00
-        # local and deduped by job id, and every stop condition is re-read at
-        # run time, so scheduling it here commits to nothing.
-        try:
-            await enqueue_next_day(user_id, 0, updated_user.timezone, datetime.now(UTC))
-        except Exception as e:
-            # Best effort on purpose: the sequence is enrichment, completion is
-            # the product. A Redis blip here must never cost the user their
-            # onboarding, so it is loud in the wide event and nowhere else.
-            log.error(
-                f"{LogTag.ONBOARDING} Could not schedule day 0 of the activation sequence",
-                user_id=user_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
 
         seeded_user = await _seed_first_conversation(updated_user, preferences)
 

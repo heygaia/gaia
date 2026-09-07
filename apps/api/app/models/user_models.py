@@ -355,7 +355,6 @@ class AuthenticatedUser(TypedDict, total=False):
     hil_preferences: dict[str, Any] | None
     notification_channel_prefs: dict[str, Any] | None
     chat_channel_priority: list[str] | None
-    activation_sequence: dict[str, Any] | None
     platform_links: dict[str, Any] | None
     platform_links_connected_at: dict[str, Any] | None
     starred_voice_ids: list[str] | None
@@ -432,9 +431,6 @@ class UserDocument(MongoDocument):
     # Order in which a proactive message picks its ONE chat platform; unset
     # means DEFAULT_CHAT_CHANNEL_PRIORITY.
     chat_channel_priority: list[str] | None = None
-    # Day-by-day activation sequence state: day_sent, last_sent_at, platform,
-    # opted_out and the sent messages the uniqueness check reads back.
-    activation_sequence: dict[str, Any] | None = None
     starred_voice_ids: list[str] | None = None
     selected_voice_id: str | None = None
     # Profile / billing display name used by the payments emails.

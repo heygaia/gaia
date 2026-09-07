@@ -32,12 +32,12 @@ def connect_link(integration_id: str) -> str:
     return f"{INTEGRATIONS_PATH}?connect={integration_id}"
 
 
-WELCOME = "Okay, you're in. From here on, anything you'd rather not do yourself, hand it to me."
-WELCOME_WITH_PLATFORM_TEMPLATE = f"{WELCOME} I'm on your {{platform}} too, text me there anytime."
-ROUTINES_LINE = (
-    "Two things worth switching on now: connect Gmail and every morning your mail "
-    "comes back sorted, replies drafted. Add Calendar and I brief you before every meeting."
-)
+WELCOME = "Okay, you're in."
+HANDOVER_LINE = "Anything you'd rather not do yourself, hand it to me."
+PLATFORM_TEMPLATE = " I'm on your {platform} too."
+ROUTINES_INTRO = "Two things worth switching on now."
+GMAIL_LINE = "Gmail: every morning your mail comes back sorted, replies drafted."
+CALENDAR_LINE = "Calendar: I brief you before every meeting."
 #: The buttons under the routines bubble: rendered by the web as a plain row of
 #: buttons outside the bubble (``connect_options`` in ToolRenderers), same tab,
 #: opening the app's connect flow on arrival exactly as the old links did.
@@ -55,9 +55,9 @@ CONNECT_OPTIONS: list[dict[str, str]] = [
     },
     {"label": "All integrations", "href": INTEGRATIONS_PATH},
 ]
-HANDOVER_TEMPLATE = "Since you're {job}, what are we starting with?"
-HANDOVER_SENTENCE_TEMPLATE = "Since {sentence}, what are we starting with?"
-HANDOVER_WITHOUT_JOB = "So, what are we starting with?"
+HANDOVER_TEMPLATE = "You're {job}. What's first?"
+HANDOVER_SENTENCE_TEMPLATE = "{sentence}. What's first?"
+HANDOVER_WITHOUT_JOB = "What's first?"
 SOMETHING_ELSE_CHIP = "Something else"
 _VOWELS = ("a", "e", "i", "o", "u")
 
@@ -77,11 +77,10 @@ _FIRST_PERSON_TO_SECOND: tuple[tuple[str, str], ...] = (
 class FirstConversation(BaseModel):
     """The composed opening conversation.
 
-    ``opening`` is the welcome and the routines, grouped bubbles in one bot
-    message that also carries the connect buttons; ``question`` is the second
-    bot message, with the chips riding it. Two messages because a message's
-    cards render after all of its bubbles, and the buttons belong under the
-    routines, not under the question.
+    ``opening`` is one idea per bubble, welcome to the two routines, in one bot
+    message; the connect buttons ride a message of their own after it; the
+    ``question`` is the last bot message, with the chips riding it. Separate
+    messages because a message's cards render after all of its bubbles.
     """
 
     opening: list[str]
@@ -105,10 +104,10 @@ def _platform_label(connected_platform: str) -> str:
     return PLATFORM_DISPLAY_NAMES.get(source) or source.value.capitalize()
 
 
-def _welcome(connected_platform: str | None) -> str:
+def _handover_line(connected_platform: str | None) -> str:
     if not connected_platform:
-        return WELCOME
-    return WELCOME_WITH_PLATFORM_TEMPLATE.format(platform=_platform_label(connected_platform))
+        return HANDOVER_LINE
+    return HANDOVER_LINE + PLATFORM_TEMPLATE.format(platform=_platform_label(connected_platform))
 
 
 def _handover(profession: str | None) -> str:
@@ -123,8 +122,9 @@ def _handover(profession: str | None) -> str:
         return HANDOVER_TEMPLATE.format(job=PROFESSION_PHRASES[key])
     for opener, replacement in _FIRST_PERSON_TO_SECOND:
         if key.startswith(opener):
+            sentence = f"{replacement}{cleaned[len(opener) :]}"
             return HANDOVER_SENTENCE_TEMPLATE.format(
-                sentence=f"{replacement}{cleaned[len(opener) :]}"
+                sentence=f"{sentence[0].upper()}{sentence[1:]}"
             )
     title = cleaned.split(maxsplit=1)[1] if key.startswith(_ARTICLES) else cleaned
     title = f"{title[0].lower()}{title[1:]}"
@@ -135,10 +135,16 @@ def _handover(profession: str | None) -> str:
 def compose_first_conversation(
     preferences: OnboardingPreferences, connected_platform: str | None
 ) -> FirstConversation:
-    """The three bubbles GAIA opens with. The escape-hatch chip is always offered;
+    """The bubbles GAIA opens with. The escape-hatch chip is always offered;
     the model-written jobs join it in :func:`with_starting_jobs`."""
     return FirstConversation(
-        opening=[_welcome(connected_platform), ROUTINES_LINE],
+        opening=[
+            WELCOME,
+            _handover_line(connected_platform),
+            ROUTINES_INTRO,
+            GMAIL_LINE,
+            CALENDAR_LINE,
+        ],
         question=_handover(preferences.profession),
         follow_ups=[SOMETHING_ELSE_CHIP],
     )

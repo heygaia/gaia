@@ -12,9 +12,6 @@ rather than in ``agents/context/text.py`` because it is prompt prose and is
 held to this package's rules (no dashes, human voice).
 """
 
-import re
-
-from app.config.oauth_config import get_integration_by_id
 from app.models.user_models import OnboardingNeed
 
 #: One line per need: what they want, then the two or three things you can
@@ -140,48 +137,6 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
         "practice questions from their own notes."
     ),
 }
-
-#: Integration ids each playbook may ask the user to connect, in the order they appear.
-#: The activation sequence reads this to rotate its asks; the comms tier reads the prose.
-NEED_CONNECT_IDS: dict[OnboardingNeed, tuple[str, ...]] = {
-    OnboardingNeed.INBOX: ("gmail",),
-    OnboardingNeed.CALENDAR: ("googlecalendar",),
-    OnboardingNeed.MORNINGS: ("googlecalendar", "gmail"),
-    OnboardingNeed.TOOLS: ("slack", "notion", "github", "linear"),
-    OnboardingNeed.FOUNDER_TEAM_UPDATES: ("slack",),
-    OnboardingNeed.EXECUTIVE_REPORTS: ("slack", "notion", "googledocs"),
-    OnboardingNeed.EXECUTIVE_DECISIONS: ("slack", "gmail"),
-    OnboardingNeed.SALES_CALL_RESEARCH: ("googlecalendar",),
-    OnboardingNeed.PRODUCT_FEEDBACK: ("slack", "gmail"),
-    OnboardingNeed.PRODUCT_SPECS: ("notion",),
-    OnboardingNeed.MARKETING_CONTENT: ("notion", "googledocs"),
-    OnboardingNeed.ENGINEERING_PRS: ("github",),
-    OnboardingNeed.ENGINEERING_NOTIFICATIONS: ("github", "linear", "slack"),
-    OnboardingNeed.CREATIVE_REVISIONS: ("slack", "googledrive", "gmail"),
-    OnboardingNeed.STUDENT_EXAMS: ("notion", "googledocs"),
-}
-
-
-_CARD_CALL = re.compile(r"show_connect_card(?:\('(\w+)'\))?(?: in this reply)?")
-
-
-def playbook_for_message(need: OnboardingNeed) -> str:
-    """The same playbook for a surface with no cards: a bot message, the daily sequence.
-
-    ``show_connect_card('gmail') in this reply`` becomes ``a Gmail connect link``;
-    a choice (``show_connect_card for it ('slack' or 'gmail')``) keeps its ids as
-    ``a connect link for it (slack or gmail)``.
-    """
-
-    def _link(match: re.Match[str]) -> str:
-        integration_id = match.group(1)
-        if integration_id is None:
-            return "a connect link"
-        integration = get_integration_by_id(integration_id)
-        return f"a {integration.name if integration else integration_id} connect link"
-
-    return _CARD_CALL.sub(_link, NEED_PLAYBOOKS[need])
-
 
 #: The one worked example of the whole move, in the register we want: a real
 #: sentence to open, two offers joined the way speech joins them, an easy yes to

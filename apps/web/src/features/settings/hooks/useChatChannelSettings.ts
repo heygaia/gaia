@@ -12,32 +12,24 @@ import { toast } from "@/lib/toast";
 interface UseChatChannelSettings {
   /** The linked platforms in priority order — the rows the section renders. */
   linkedOrder: NotificationPlatform[];
-  /** Whether the daily activation messages are still on. */
-  dailyCheckIns: boolean;
   /** True while a reorder is in flight, so the arrows can't race each other. */
   saving: boolean;
   move: (index: number, direction: "up" | "down") => Promise<void>;
-  setDailyCheckIns: (enabled: boolean) => Promise<void>;
 }
 
 /**
- * Owns "where GAIA texts you": the stored priority order and the daily
- * activation opt-out, both persisted immediately and rolled back on failure.
+ * Owns "where GAIA texts you": the stored priority order, persisted
+ * immediately and rolled back on failure.
  */
 export function useChatChannelSettings(
   linkedPlatforms: NotificationPlatform[],
 ): UseChatChannelSettings {
   const [order, setOrder] = useState<NotificationPlatform[]>([]);
-  const [dailyCheckIns, setDailyCheckIns] = useState(true);
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      chatChannelApi.fetchPriority(),
-      chatChannelApi.fetchActivationSequence(),
-    ]).then(([priority, activation]) => {
+    chatChannelApi.fetchPriority().then((priority) => {
       setOrder(priority.priority);
-      setDailyCheckIns(!activation.opted_out);
     });
   }, []);
 
@@ -67,21 +59,9 @@ export function useChatChannelSettings(
     }
   };
 
-  const toggleDailyCheckIns = async (enabled: boolean) => {
-    setDailyCheckIns(enabled);
-    try {
-      await chatChannelApi.updateActivationSequence(!enabled);
-    } catch {
-      setDailyCheckIns(!enabled);
-      toast.error("Couldn't save your daily check-in preference.");
-    }
-  };
-
   return {
     linkedOrder,
-    dailyCheckIns,
     saving,
     move,
-    setDailyCheckIns: toggleDailyCheckIns,
   };
 }

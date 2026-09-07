@@ -7,7 +7,6 @@ phase lands on PERSONALIZATION_COMPLETE in one write.
 """
 
 from collections.abc import AsyncIterator, Iterator
-from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -158,14 +157,6 @@ def persisting_repo(mock_repo: MagicMock, sample_user_id: str) -> MagicMock:
 
 
 @pytest.fixture(autouse=True)
-def _no_activation_enqueue() -> Iterator[AsyncMock]:
-    """Completion schedules day 0 of the activation sequence through ARQ; the
-    unit tier never talks to Redis, so the enqueue is a seam here."""
-    with patch(f"{SERVICE}.enqueue_next_day", AsyncMock()) as mock:
-        yield mock
-
-
-@pytest.fixture(autouse=True)
 def no_llm_question() -> Iterator[MagicMock]:
     """No unit test reaches a model or Redis. The default is the static
     conversation; the two cases that care patch the return value themselves."""
@@ -194,7 +185,7 @@ class TestCompleteOnboarding:
             await complete_onboarding(sample_user_id, sample_onboarding_request)
 
         composed = seed.await_args.args[1]
-        assert composed.question == "Since you're an engineer, what are we starting with?"
+        assert composed.question == "You're an engineer. What's first?"
         assert composed.follow_ups == [
             "Find investors",
             "Fix my marketing",
@@ -293,7 +284,7 @@ class TestCompleteOnboarding:
 
         assert seed.await_args.args[0] == sample_user_id
         composed = seed.await_args.args[1]
-        assert composed.question == "Since you're an engineer, what are we starting with?"
+        assert composed.question == "You're an engineer. What's first?"
         mock_repo.set_first_conversation_id.assert_awaited_once_with(sample_user_id, "conv-1")
         assert result["onboarding"][GETTING_STARTED_CONVERSATION_ID_FIELD] == "conv-1"
         # The legacy holo-card field is a different conversation; the seed must
@@ -370,11 +361,7 @@ class TestCompleteOnboarding:
             await complete_onboarding(sample_user_id, sample_onboarding_request)
 
         assert no_llm_question.await_args.args[2] == "telegram"
-        assert (
-            seed.await_args.args[1]
-            .lines[0]
-            .__contains__("I'm on your Telegram too, text me there anytime.")
-        )
+        assert "I'm on your Telegram too." in seed.await_args.args[1].lines[1]
 
     async def test_a_failed_seed_still_completes_onboarding(
         self,
@@ -1423,66 +1410,3 @@ class TestCompleteOnboardingExactKwargs:
             response_style="casual",
             custom_instructions=None,
         )
-
-
-@pytest.mark.unit
-class _Clock:
-    """``datetime`` as the service sees it, pinned so the enqueue time is exact."""
-
-    @staticmethod
-    def now(tz: object = None) -> datetime:
-        assert tz is UTC
-        return datetime(2026, 5, 4, 6, 0, tzinfo=UTC)
-
-
-class TestActivationEnqueueIsBestEffort:
-    async def test_day_zero_is_queued_for_this_user_in_their_timezone_from_now(
-        self, mock_repo: MagicMock, sample_user: Any, sample_user_id: str
-    ) -> None:
-        sample_user.timezone = "Asia/Kolkata"
-        mock_repo.complete_onboarding.return_value = sample_user
-        request = OnboardingRequest(profession="Engineer", needs=["inbox"])
-        with (
-            patch(f"{SERVICE}.enqueue_next_day", AsyncMock()) as enqueue,
-            patch(f"{SERVICE}.datetime", _Clock),
-            patch(f"{SERVICE}.seed_first_conversation", AsyncMock(return_value="conv-1")),
-        ):
-            await complete_onboarding(sample_user_id, request)
-
-        enqueue.assert_awaited_once_with(
-            sample_user_id, 0, "Asia/Kolkata", datetime(2026, 5, 4, 6, 0, tzinfo=UTC)
-        )
-
-    async def test_a_failed_enqueue_is_an_error_on_the_wide_event_with_its_cause(
-        self, mock_repo: MagicMock, sample_user: Any, sample_user_id: str
-    ) -> None:
-        mock_repo.complete_onboarding.return_value = sample_user
-        request = OnboardingRequest(profession="Engineer", needs=["inbox"])
-        with (
-            patch(f"{SERVICE}.enqueue_next_day", AsyncMock(side_effect=RuntimeError("redis down"))),
-            patch(f"{SERVICE}.seed_first_conversation", AsyncMock(return_value="conv-1")),
-            patch(f"{SERVICE}.log") as log,
-        ):
-            await complete_onboarding(sample_user_id, request)
-
-        log.error.assert_called_once()
-        assert log.error.call_args.kwargs == {
-            "user_id": sample_user_id,
-            "error": "redis down",
-            "error_type": "RuntimeError",
-        }
-
-    async def test_a_failed_day_zero_enqueue_does_not_fail_completion(
-        self, mock_repo: MagicMock, sample_user: Any, sample_user_id: str
-    ) -> None:
-        """A Redis blip while scheduling a nudge must never cost the user their
-        onboarding; the sequence is enrichment, completion is the product."""
-        mock_repo.complete_onboarding.return_value = sample_user
-        request = OnboardingRequest(profession="Engineer", needs=["inbox"])
-        with (
-            patch(f"{SERVICE}.enqueue_next_day", AsyncMock(side_effect=RuntimeError("redis down"))),
-            patch(f"{SERVICE}.seed_first_conversation", AsyncMock(return_value="conv-1")) as seed,
-        ):
-            result = await complete_onboarding(sample_user_id, request)
-        assert result is not None
-        seed.assert_awaited_once()

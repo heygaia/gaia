@@ -1,7 +1,6 @@
 // @vitest-environment jsdom
 /**
- * The two things the section has to actually do: reorder where GAIA texts you
- * first, and turn the daily check-ins off.
+ * The one thing the section has to actually do: reorder where GAIA texts you first.
  */
 
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
@@ -9,16 +8,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchPriority = vi.fn();
 const updatePriority = vi.fn();
-const fetchActivationSequence = vi.fn();
-const updateActivationSequence = vi.fn();
 
 vi.mock("@/features/settings/api/chatChannelApi", () => ({
   chatChannelApi: {
     fetchPriority: () => fetchPriority(),
     updatePriority: (order: string[]) => updatePriority(order),
-    fetchActivationSequence: () => fetchActivationSequence(),
-    updateActivationSequence: (optedOut: boolean) =>
-      updateActivationSequence(optedOut),
   },
 }));
 
@@ -35,11 +29,9 @@ describe("ChatChannelSettings", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     fetchPriority.mockResolvedValue({ priority: ["telegram", "whatsapp"] });
-    fetchActivationSequence.mockResolvedValue({ opted_out: false });
     updatePriority.mockImplementation((priority: string[]) =>
       Promise.resolve({ priority }),
     );
-    updateActivationSequence.mockResolvedValue({ opted_out: true });
   });
 
   it("promotes the second platform and saves the new order", async () => {
@@ -58,20 +50,6 @@ describe("ChatChannelSettings", () => {
         "disabled",
         true,
       ),
-    );
-  });
-
-  it("opts out of the daily check-ins when the switch is turned off", async () => {
-    render(<ChatChannelSettings linkedPlatforms={linked} />);
-    const toggle = await screen.findByRole("switch", {
-      name: "Daily check-ins for your first week",
-    });
-    await waitFor(() => expect(toggle).toHaveProperty("checked", true));
-
-    fireEvent.click(toggle);
-
-    await waitFor(() =>
-      expect(updateActivationSequence).toHaveBeenCalledWith(true),
     );
   });
 });

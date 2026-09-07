@@ -39,7 +39,6 @@ from app.constants.onboarding import (
 from app.db.redis import redis_cache
 from app.db.repositories.base import MongoRepository, cached_query
 from app.db.repositories.cache import CachePolicy
-from app.models.activation_models import ActivationMessage
 from app.models.onboarding_models import (
     PersistedTriageSummary,
     SocialProfile,
@@ -432,38 +431,6 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
         await self._apply_raw_update(
             {"_id": self._id_value(user_id)},
             {"$set": set_fields},
-            scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
-        )
-
-    async def record_activation_message(self, user_id: str, message: ActivationMessage) -> None:
-        """Record one delivered activation message on the user's sequence subdoc.
-
-        ``day_sent`` is the count of messages sent, not the last index, so the
-        policy's ``days_sent >= SEQUENCE_LENGTH`` reads as plain arithmetic. The
-        message text is kept because tomorrow's prompt (and the repetition
-        check) need every earlier day, and re-reading them from four different
-        bot conversations would be four queries for something we already had.
-        """
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {
-                "$set": {
-                    "activation_sequence.day_sent": message.day + 1,
-                    "activation_sequence.last_sent_at": message.sent_at,
-                    "activation_sequence.platform": message.platform,
-                },
-                "$push": {"activation_sequence.messages": message.model_dump(mode="python")},
-            },
-            scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
-        )
-
-    async def set_activation_opted_out(self, user_id: str, opted_out: bool) -> None:
-        """Opt a user in or out of the activation sequence."""
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {"$set": {"activation_sequence.opted_out": opted_out}},
             scope=REPO_GLOBAL_SCOPE,
             return_document=False,
         )

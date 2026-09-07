@@ -5,11 +5,9 @@ routing, status codes, response bodies, and auth checks.
 """
 
 import asyncio
-from collections.abc import AsyncGenerator, Iterator
-from contextlib import contextmanager
+from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 import json
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
@@ -25,7 +23,6 @@ from app.api.v1.endpoints.bot import (
 from app.constants.auth import AUDIT_ACTOR_BOT_API
 from app.core.stream_manager import with_heartbeat
 from app.db.redis import redis_cache
-from app.models.activation_models import ActivationSequenceState
 from app.models.bot_models import BotChatRequest, RedeemLinkCodeRequest
 from app.models.payment_models import (
     CreateSubscriptionResponse,
@@ -35,7 +32,6 @@ from app.models.payment_models import (
     ProCheckout,
 )
 from app.models.platform_models import PlatformLinkResult
-from app.services.activation.opt_out import STOP_ACKNOWLEDGEMENT
 from app.services.analytics_service import AnalyticsEvents
 from app.services.platform_link_code_service import PlatformLinkCodePayload
 from app.utils.errors import AppError
@@ -2247,109 +2243,6 @@ class TestBotRateLimitNotice:
     async def test_other_tool_cards_are_left_alone(self) -> None:
         chunk = {"tool_data": {"tool_name": "memory_data", "data": {}}}
         assert await _bot_rate_limit_notice(chunk, "user_1") is None
-
-
-class TestStopMessage:
-    """ "stop" on its own is an instruction about GAIA, not a turn for GAIA."""
-
-    @staticmethod
-    @contextmanager
-    def _linked_user(user: dict[str, Any]) -> Iterator[dict[str, Any]]:
-        with (
-            patch("app.api.v1.endpoints.bot.require_bot_api_key", new=AsyncMock()),
-            patch(
-                "app.api.v1.endpoints.bot.PlatformLinkService.get_user_by_platform_id",
-                new=AsyncMock(return_value=user),
-            ),
-            patch("app.api.v1.endpoints.bot.BotService") as bot_svc,
-            patch("app.api.v1.endpoints.bot.stream_manager") as sm,
-            patch("app.api.v1.endpoints.bot.set_opted_out", new_callable=AsyncMock) as opt_out,
-            patch("app.api.v1.endpoints.bot.record_reply") as reply,
-            patch("app.api.v1.endpoints.bot._charge_bot_turn", new_callable=AsyncMock) as charge,
-            patch("app.api.v1.endpoints.bot.log") as log,
-        ):
-            bot_svc.enforce_rate_limit = AsyncMock()
-            bot_svc.get_or_create_session = AsyncMock(return_value="conv-1")
-            bot_svc.load_conversation_history = AsyncMock(return_value=[])
-            sm.start_stream = AsyncMock()
-            sm.subscribe_stream.return_value = _empty_frames()
-            yield {"opt_out": opt_out, "reply": reply, "charge": charge, "log": log, "sm": sm}
-
-    async def test_stop_opts_out_answers_with_one_line_and_never_charges_or_streams(
-        self, client: AsyncClient
-    ):
-        with self._linked_user({"user_id": "uid1", "_id": "uid1"}) as seams:
-            response = await client.post(
-                f"{BOT_BASE}/chat-stream",
-                json={"message": " Stop. ", "platform": "discord", "platform_user_id": "u1"},
-            )
-            body = (await response.aread()).decode()
-
-        assert response.status_code == 200
-        assert STOP_ACKNOWLEDGEMENT in body
-        seams["opt_out"].assert_awaited_once_with("uid1", True, source="discord")
-        seams["log"].set.assert_any_call(outcome="activation_opt_out")
-        seams["charge"].assert_not_awaited()
-        seams["reply"].assert_not_called()
-        seams["sm"].start_stream.assert_not_called()
-
-    async def test_an_ordinary_message_counts_as_a_reply_against_the_stored_sequence(
-        self, client: AsyncClient
-    ):
-        sequence = {"day_sent": 1, "opted_out": False}
-        with self._linked_user(
-            {"user_id": "uid1", "_id": "uid1", "activation_sequence": sequence}
-        ) as seams:
-            with (
-                patch(
-                    "app.api.v1.endpoints.bot.create_bot_session_token",
-                    new=MagicMock(return_value="tok"),
-                ),
-                patch("app.api.v1.endpoints.bot.spawn_background_task", new=MagicMock()),
-            ):
-                response = await client.post(
-                    f"{BOT_BASE}/chat-stream",
-                    json={"message": "hello", "platform": "discord", "platform_user_id": "u1"},
-                )
-                await response.aread()
-
-        seams["reply"].assert_called_once_with("uid1", ActivationSequenceState.of(sequence))
-        seams["opt_out"].assert_not_awaited()
-
-    async def test_the_forwarder_is_given_the_started_stream_and_the_bots_platform(
-        self, client: AsyncClient
-    ):
-        with (
-            self._linked_user({"user_id": "uid1", "_id": "uid1"}) as seams,
-            patch(
-                "app.api.v1.endpoints.bot.create_bot_session_token",
-                new=MagicMock(return_value="tok"),
-            ),
-            patch("app.api.v1.endpoints.bot.spawn_background_task", new=MagicMock()),
-            patch(
-                "app.api.v1.endpoints.bot._bot_stream_from_redis",
-                new=MagicMock(return_value=_empty_frames()),
-            ) as forwarder,
-        ):
-            response = await client.post(
-                f"{BOT_BASE}/chat-stream",
-                json={"message": "hello", "platform": "discord", "platform_user_id": "u1"},
-            )
-            await response.aread()
-
-        started_stream_id = seams["sm"].start_stream.await_args.args[0]
-        assert forwarder.call_args.kwargs == {
-            "stream_id": started_stream_id,
-            "conversation_id": "conv-1",
-            "user_id": "uid1",
-            "session_token": "tok",
-            "platform": "discord",
-        }
-
-
-async def _empty_frames() -> AsyncGenerator[str, None]:
-    if False:  # pragma: no cover
-        yield
 
 
 class TestBotStreamFromRedis:
