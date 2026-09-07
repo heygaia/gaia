@@ -334,6 +334,22 @@ class TestTopologyArgumentsMatchTheConsumer:
         stale.close.assert_awaited_once()
         assert pub.connection is fresh
 
+    async def test_a_stale_connection_that_will_not_close_does_not_block_the_reconnect(
+        self, monkeypatch
+    ) -> None:
+        pub = RabbitMQPublisher("amqp://test")
+        stale = MagicMock(is_closed=False)
+        stale.close = AsyncMock(side_effect=RuntimeError("socket gone"))
+        pub.connection = stale
+        pub.channel = None
+        fresh = MagicMock(is_closed=False)
+        fresh.channel = AsyncMock(return_value=MagicMock(is_closed=False))
+        monkeypatch.setattr(aio_pika, "connect_robust", AsyncMock(return_value=fresh))
+
+        await pub.ensure_connected()
+
+        assert pub.connection is fresh
+
     async def test_connect_dials_the_configured_url(self, monkeypatch) -> None:
         pub = RabbitMQPublisher("amqp://broker.example/vhost")
         connection = MagicMock(is_closed=False)

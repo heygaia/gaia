@@ -63,10 +63,10 @@ class TestDeliverWorkflowResultToPlatforms:
                 )
 
         session.assert_not_called()
-        assert any(
-            e["msg"] == f"{LogTag.AGENT} workflow platform delivery: channel lookup failed"
-            for e in event["errors"]
-        )
+        assert {
+            "msg": f"{LogTag.AGENT} workflow platform delivery: channel lookup failed",
+            "error": "db down",
+        } in event["errors"]
 
     async def test_happy_path_persists_and_publishes_to_the_one_platform(self) -> None:
         with (

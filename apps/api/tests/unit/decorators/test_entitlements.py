@@ -80,11 +80,13 @@ class TestRequireActiveSubscription:
             patch(
                 f"{ENT}.payment_service.get_cached_plan_type",
                 new=AsyncMock(return_value=PlanType.PRO),
-            ),
+            ) as plan,
             patch(f"{ENT}.payment_service.create_pro_checkout", new=checkout_mock),
         ):
             await require_active_subscription("u1", feature="chat")  # must not raise
         checkout_mock.assert_not_called()
+        # The plan read is for THIS user; a lost id would read some default tier.
+        plan.assert_awaited_once_with("u1")
 
     async def test_free_user_gets_the_exact_402_wire_contract(self) -> None:
         checkout_mock = AsyncMock(return_value=_checkout("https://checkout.dodo.test/abc"))

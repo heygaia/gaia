@@ -215,6 +215,23 @@ class TestTheGateNeverDestroysAndNeverTrustsTheCacheAlone:
         scheduler.handle_recurring_task.assert_awaited_once()
         service.deactivate_workflow.assert_not_called()
 
+    async def test_the_re_arm_names_the_workflow_it_could_not_arm(self) -> None:
+        """A re-arm failure is logged against the workflow id; a lost id is an
+        unattributable error in the worker log."""
+        workflow = _make_workflow(user_id="user-free-6")
+        workflow.repeat = "daily"
+        scheduler, p_scheduler = _patch_scheduler(workflow)
+        with (
+            p_scheduler,
+            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}._rearm_quietly", new_callable=AsyncMock) as rearm,
+        ):
+            context = {"trigger_type": "schedule"}
+            await execute_workflow_by_id({}, workflow.id, context)
+
+        rearm.assert_awaited_once_with(scheduler, workflow, context, workflow.id)
+
     async def test_a_skipped_manual_run_does_not_shift_the_schedule(self) -> None:
         workflow = _make_workflow(user_id="user-free-5")
         workflow.repeat = "daily"

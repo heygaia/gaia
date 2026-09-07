@@ -28,6 +28,7 @@ from app.models.payment_models import (
     PlanDuration,
     PlanResponse,
     PlanType,
+    ProcessedWebhookUpdate,
     ProCheckout,
     SubscriptionDocument,
     SubscriptionStatus,
@@ -2477,7 +2478,24 @@ class TestProcessWebhookIdempotency:
         result = await webhook_service.process_webhook(event_data, "wh_dup")
 
         assert result.status == "ignored"
-        assert "already processed" in result.message
+        assert result.message == "Webhook already processed"
+        # The claim is on this delivery id, under the event type Dodo sent.
+        mock_processed_webhook_repository.claim.assert_awaited_once_with(
+            "wh_dup", event_type="payment.succeeded"
+        )
+        mock_processed_webhook_repository.record_outcome.assert_not_awaited()
+
+    async def test_a_delivery_without_a_type_is_claimed_as_unknown(
+        self, webhook_service, mock_processed_webhook_repository
+    ):
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
+
+        result = await webhook_service.process_webhook({"data": {}}, "wh_typeless")
+
+        assert result.event_type == "unknown"
+        mock_processed_webhook_repository.claim.assert_awaited_once_with(
+            "wh_typeless", event_type="unknown"
+        )
 
     async def test_a_replayed_cancellation_deactivates_workflows_only_once(
         self,
@@ -2522,8 +2540,51 @@ class TestProcessWebhookIdempotency:
 
         assert result.status == "ignored"
         assert "No handler" in result.message
-        mock_processed_webhook_repository.record_outcome.assert_awaited()
+        mock_processed_webhook_repository.record_outcome.assert_awaited_once_with(
+            "wh_unknown",
+            ProcessedWebhookUpdate(
+                status="ignored", message=result.message, payment_id=None, subscription_id=None
+            ),
+        )
         webhook_service.handlers = original_handlers
+
+    async def test_a_handled_delivery_records_the_handlers_full_outcome(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
+
+        result = await webhook_service.process_webhook(event_data, "wh_cancel_outcome")
+
+        assert result.status == "processed"
+        mock_processed_webhook_repository.record_outcome.assert_awaited_once_with(
+            "wh_cancel_outcome",
+            ProcessedWebhookUpdate(
+                status=result.status,
+                message=result.message,
+                payment_id=result.payment_id,
+                subscription_id=result.subscription_id,
+            ),
+        )
+
+    def test_the_recorded_outcome_carries_every_field_of_the_result(self):
+        from app.services.payments.payment_webhook_service import _outcome_of
+
+        result = DodoWebhookProcessingResult(
+            event_type="payment.succeeded",
+            status="processed",
+            message="ok",
+            payment_id="pay_1",
+            subscription_id="sub_1",
+        )
+
+        assert _outcome_of(result) == ProcessedWebhookUpdate(
+            status="processed", message="ok", payment_id="pay_1", subscription_id="sub_1"
+        )
 
     async def test_every_event_type_dodo_can_send_parses(self) -> None:
         """Drift guard against the SDK: a real Dodo event outside our enum failed

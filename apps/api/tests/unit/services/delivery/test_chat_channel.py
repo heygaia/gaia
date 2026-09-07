@@ -110,6 +110,15 @@ class TestPickChatChannel:
         )
 
 
+class TestPickChatChannelRefusesNonBotSources:
+    def test_a_linked_platform_that_is_not_a_bot_is_skipped(self) -> None:
+        """The web is a conversation source but never a delivery channel."""
+        assert pick_chat_channel(["web"], {"web": {"platformUserId": "1"}}, {}) is None
+
+    def test_an_unknown_platform_with_an_account_id_is_skipped(self) -> None:
+        assert pick_chat_channel(["pager"], {"pager": {"platformUserId": "1"}}, {}) is None
+
+
 class TestResolveChatChannel:
     async def test_reads_order_links_and_preferences_off_one_document(self) -> None:
         user = UserDocument.model_validate(

@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from app.models.notification.notification_models import (
     NotificationContentView,
+    NotificationQuery,
     NotificationSourceEnum,
     NotificationStatus,
     NotificationType,
@@ -76,11 +77,29 @@ class TestGetNotifications:
 
         from app.agents.tools.notification_tool import get_notifications
 
-        result = await get_notifications.coroutine(config=_make_config())
+        result = await get_notifications.coroutine(
+            config=_make_config(),
+            status=NotificationStatus.READ,
+            notification_type=NotificationType.WARNING,
+            source=NotificationSourceEnum.AI_REMINDER,
+            limit=7,
+            offset=3,
+        )
 
         assert result["notifications"] == [n.model_dump(mode="json") for n in notifications]
         assert "error" not in result
-        mock_service.get_user_notifications.assert_awaited_once()
+        # Every filter the model passed reaches the service; a dropped one
+        # silently widens what the user is shown.
+        mock_service.get_user_notifications.assert_awaited_once_with(
+            FAKE_USER_ID,
+            NotificationQuery(
+                status=NotificationStatus.READ,
+                notification_type=NotificationType.WARNING,
+                source=NotificationSourceEnum.AI_REMINDER,
+                limit=7,
+                offset=3,
+            ),
+        )
 
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.get_user_id_from_config", return_value="")
@@ -177,10 +196,15 @@ class TestSearchNotifications:
         result = await search_notifications.coroutine(
             config=_make_config(),
             query="meeting",
+            status=NotificationStatus.READ,
         )
 
         assert len(result["notifications"]) == 1
         assert result["notifications"][0]["content"]["title"] == "Meeting reminder"
+        # The search scans one page of a hundred under the caller's status filter.
+        mock_service.get_user_notifications.assert_awaited_once_with(
+            FAKE_USER_ID, NotificationQuery(status=NotificationStatus.READ, limit=100)
+        )
 
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.notification_service")

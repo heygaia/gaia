@@ -106,6 +106,9 @@ def _make_user_doc(**overrides) -> UserDocument:
 # ---------------------------------------------------------------------------
 
 
+from tests.conftest import FAKE_USER
+
+
 class TestCompleteOnboarding:
     """Tests for the complete user onboarding endpoint."""
 
@@ -988,3 +991,20 @@ class TestOnboardingGenerationPaidOnlyGate:
 
         assert resp.status_code == 200
         mock_regenerate.assert_awaited_once()
+
+    async def test_the_gate_is_asked_for_this_user_under_the_routes_own_feature_name(
+        self, client: AsyncClient
+    ):
+        """The feature name is what the paywall funnel is split by."""
+        with (
+            patch(
+                "app.api.v1.endpoints.onboarding.require_active_subscription",
+                new_callable=AsyncMock,
+            ) as gate,
+            patch(_REGENERATE_SERVICE, new_callable=AsyncMock, return_value=None),
+        ):
+            await client.post(REGENERATE_URL, json=_REGENERATE_PAYLOAD)
+
+        gate.assert_awaited_once_with(
+            FAKE_USER["user_id"], feature="regenerate_writing_style_example"
+        )

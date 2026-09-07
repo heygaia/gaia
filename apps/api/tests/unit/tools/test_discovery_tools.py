@@ -129,12 +129,23 @@ class TestFindIntegration:
 
         assert public.await_args.kwargs["limit"] == 1
 
-    async def test_descriptions_are_collapsed_to_one_line(self) -> None:
+    async def test_a_marketplace_row_is_exactly_what_the_model_reads(self) -> None:
         crm = _community("hubspot", "HubSpot", "  Sales \n  CRM   for teams ")
         with _catalogue(community=[crm]):
             result = await find_integration.ainvoke({"query": "crm"}, _CONFIG)
 
-        assert result["integrations"][0]["description"] == "Sales CRM for teams"
+        assert result == {
+            "integrations": [
+                {
+                    "id": "hubspot",
+                    "name": "HubSpot",
+                    "description": "Sales CRM for teams",
+                    "connected": False,
+                    "source": "community",
+                }
+            ],
+            "query": "crm",
+        }
 
     async def test_missing_user_id_is_an_error_not_an_empty_result(self) -> None:
         with _catalogue():
