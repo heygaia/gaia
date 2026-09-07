@@ -449,13 +449,12 @@ class OnboardingSubdocument(BaseModel):
     def unknown_enum_values_read_as_unset(cls, value: object) -> object:
         """A historical row with a value outside today's enum is an unset field,
         not a failed auth read; only our own code writes these, but the read
-        must never depend on that."""
-        if value is None or isinstance(value, (OnboardingPhase, BioStatus)):
-            return value
+        must never depend on that. Enum members are str, so they pass as
+        themselves."""
         known = {member.value for member in OnboardingPhase} | {
             member.value for member in BioStatus
         }
-        return value if value in known else None
+        return value if isinstance(value, str) and value in known else None
 
     @field_validator("preferences", mode="before")
     @classmethod
