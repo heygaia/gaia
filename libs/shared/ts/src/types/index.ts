@@ -77,7 +77,6 @@ export type {
 } from "./skills";
 export type {
   BulkMoveRequest,
-  ExecutionStatus,
   PaginationMeta,
   Project,
   ProjectCreate,

@@ -1,10 +1,10 @@
 """BriefingService — the daily/weekly run pipeline.
 
-Deterministic curation and context-gathering happen here; the agent only turns
-the gathered context into one structured ``BriefingPayload`` (forced via prompt
-contract, validated on the way out — invalid output fails the run loudly and
-stores nothing). Persistence precedes delivery so the dashboard never misses a
-brief that reached a channel.
+Deterministic fact assembly and context-gathering happen here; the agent only
+turns the gathered context into one structured ``BriefingPayload`` (forced via
+prompt contract, validated on the way out — invalid output fails the run loudly
+and stores nothing). Persistence precedes delivery so the dashboard never misses
+a brief that reached a channel.
 """
 
 import asyncio
@@ -19,7 +19,6 @@ from app.agents.core.agent import AgentRunOptions, call_agent_silent
 from app.agents.prompts.briefing_prompts import (
     VoicePromptBlocks,
     build_briefing_voice_prompt,
-    build_overnight_work_prompt,
     build_weekly_digest_prompt,
 )
 from app.constants.briefing import (
@@ -34,7 +33,6 @@ from app.constants.notifications import (
     NOTIFICATION_KIND_BRIEFING_DAILY,
     NOTIFICATION_KIND_BRIEFING_WEEKLY,
 )
-from app.constants.todos import FACET_DELIVERABLE, PROPOSAL_TTL_HOURS, facet_from_doc
 from app.db.repositories.briefings import briefing_repository
 from app.db.repositories.users import user_repository
 from app.models.briefing_models import BriefingKind, BriefingModel, BriefingPayload
@@ -51,19 +49,13 @@ from app.models.notification.notification_models import (
     NotificationType,
     RedirectConfig,
 )
-from app.models.todo_models import ExecutionStatus, TodoDocument
+from app.models.todo_models import TodoDocument
 from app.models.user_models import AuthenticatedUser
 from app.services.briefing import chat_sync, context, delivery_channels, dormancy
-from app.services.briefing.badges import check_and_award_badges
 from app.services.briefing.context import UserClock
 from app.services.briefing.edition_rotation import choose_edition_family
 from app.services.briefing.editions import rotation_families
 from app.services.notification_service import notification_service
-from app.services.todos import activity
-from app.services.todos.gaia_todo_lifecycle import (
-    expire_stale_proposals,
-    get_rejection_strikes_summary,
-)
 from app.services.user_service import get_user_by_id
 from app.utils.analytics import track
 from shared.py.wide_events import log
@@ -144,37 +136,14 @@ async def _generate_payload(
     return _parse_payload(await _run_silent(user, clock, prompt, conversation_key=kind))
 
 
-def _format_curation(expired_titles: list[str]) -> str:
-    if not expired_titles:
-        return "Nothing needed clearing — the list was already tidy."
-    joined = "; ".join(expired_titles)
-    return f"Expired {len(expired_titles)} stale proposal(s) the user never acted on: {joined}."
-
-
-def _format_awards(badge_labels: list[str]) -> str:
-    if not badge_labels:
-        return ""
-    return (
-        "\n## BADGES EARNED THIS RUN (mention them warmly, once)\n" + ", ".join(badge_labels) + "\n"
-    )
-
-
-def _group_by_serves(docs: list[TodoDocument]) -> str:
-    """GAIA completions grouped by the goal they served, each with a deliverable
-    snippet so the digest voices specifics instead of bare titles."""
-    groups: dict[str, list[TodoDocument]] = {}
-    for d in docs[:15]:
-        key = (d.serves or "").strip() or "unfiled"
-        groups.setdefault(key, []).append(d)
+def _gaia_shipped_lines(docs: list[TodoDocument]) -> str:
+    """GAIA completions, each with a canvas snippet so the digest voices
+    specifics instead of bare titles."""
     lines: list[str] = []
-    for serves, items in groups.items():
-        lines.append(f"{serves}:")
-        for d in items:
-            snippet = _canvas_snippet(
-                facet_from_doc(d.model_dump(), FACET_DELIVERABLE, allow_canvas_fallback=True)
-            )
-            title = d.title or "untitled"
-            lines.append(f"  - {title}" + (f": {snippet}" if snippet else ""))
+    for d in docs[:15]:
+        snippet = _canvas_snippet(d.canvas_content or "")
+        title = d.title or "untitled"
+        lines.append(f"- {title}" + (f": {snippet}" if snippet else ""))
     return "\n".join(lines)
 
 
@@ -182,9 +151,7 @@ def _format_week(completed: context.CompletedWork) -> str:
     gaia_n, user_n = len(completed.gaia), len(completed.user)
     lines = [f"GAIA completed {gaia_n} todo(s); you completed {user_n}."]
     if completed.gaia:
-        lines.append(
-            "GAIA shipped, grouped by the goal it served:\n" + _group_by_serves(completed.gaia)
-        )
+        lines.append("GAIA shipped:\n" + _gaia_shipped_lines(completed.gaia))
     if completed.user:
         lines.append(
             "You finished:\n" + "\n".join(f"- {d.title or 'untitled'}" for d in completed.user[:15])
@@ -219,8 +186,8 @@ class _ArtifactFact:
     """What the voice pass balances per item: a concrete summary it always voices,
     an always-available link, the deliverable size as a HINT (not a verdict — a
     long research trail behind a one-line decision is not a thing to open), and
-    whether it needs action. The pass summarises everything and links only what's
-    genuinely a deliverable-to-open or awaiting action.
+    whether it is waiting on the user. The pass summarises everything and links
+    only what's genuinely a deliverable-to-open or waiting on the user.
     """
 
     snippet: str
@@ -256,40 +223,25 @@ def _deliverable_size(canvas: str) -> int:
     return len(" ".join(kept))
 
 
-async def _gather_artifacts(lanes: list[context.GoalLane]) -> dict[str, _ArtifactFact]:
-    """Per lane item: a concrete summary, a minted heygaia.link, and the two
-    signals the voice pass balances on — is the deliverable big, does it need
-    action. The pass always summarises; it appends the link only for big or
-    actionable items, never a bare link and never one for a small stated result.
-    Minting is idempotent per target, so re-running the brief reuses the slug.
-    An item whose mint fails carries an empty link and is still briefed.
+def _gather_artifacts(work: context.TrackedWork) -> dict[str, _ArtifactFact]:
+    """Per tracked item: a concrete summary and the two signals the voice pass
+    balances on — is the deliverable big, is it waiting on the user. The pass
+    always summarises; it appends the link only for big or waiting items, never
+    a bare link and never one for a small stated result.
     """
     out: dict[str, _ArtifactFact] = {}
-    for lane in lanes:
-        action_ids = {d.id for d in [*lane.staged, *lane.needs_you]}
-        for doc in [
-            *lane.completed,
-            *lane.staged,
-            *lane.running,
-            *lane.needs_you,
-            *lane.failed,
-        ]:
-            todo_id = doc.id
-            if todo_id in out:
-                continue
-            # The briefing summarises and links the DELIVERABLE facet — the
-            # send-ready output — not GAIA's private working notes. Fields are
-            # projected in context.gather_goal_lanes, so no extra read here.
-            allow_canvas_fallback = doc.execution_status == ExecutionStatus.PROPOSED
-            deliverable = facet_from_doc(
-                doc.model_dump(), FACET_DELIVERABLE, allow_canvas_fallback=allow_canvas_fallback
-            )
-            out[todo_id] = _ArtifactFact(
-                snippet=_canvas_snippet(deliverable),
-                link="",
-                chars=_deliverable_size(deliverable),
-                action=todo_id in action_ids,
-            )
+    blocked_ids = {d.id for d in work.blocked}
+    for doc in [*work.completed, *work.running, *work.blocked, *work.failed]:
+        todo_id = doc.id
+        if todo_id in out:
+            continue
+        canvas = doc.canvas_content or ""
+        out[todo_id] = _ArtifactFact(
+            snippet=_canvas_snippet(canvas),
+            link="",
+            chars=_deliverable_size(canvas),
+            action=todo_id in blocked_ids,
+        )
     return out
 
 
@@ -361,53 +313,21 @@ async def _deliver(
     return channels or ["inapp"]
 
 
-def _expires_within_a_day(created_at: datetime | None, now: datetime) -> bool:
-    """True when a staged proposal's PROPOSAL_TTL expiry falls within 24h of now."""
-    if created_at is None:
-        return False
-    if created_at.tzinfo is None:
-        created_at = created_at.replace(tzinfo=UTC)
-    return created_at + timedelta(hours=PROPOSAL_TTL_HOURS) - now <= timedelta(hours=24)
-
-
-def _lane_items(lane: context.GoalLane) -> list[dict]:
-    """Code-built items for one goal lane. Truth by construction."""
-    now = datetime.now(UTC)
+def _work_items(work: context.TrackedWork) -> list[dict]:
+    """Code-built items for GAIA's tracked work. Truth by construction."""
     items: list[dict] = []
-    for d in lane.completed:
-        items.append(
-            {
-                "text": f"Done overnight: {d.title}",
-                "todo_id": d.id,
-                "kind": "lookback",
-            }
-        )
-    for d in lane.staged:
-        expiry = " (expires within a day)" if _expires_within_a_day(d.created_at, now) else ""
-        items.append(
-            {
-                "text": f"Staged and ready: {d.title}{expiry} — a reply releases it.",
-                "todo_id": d.id,
-                "kind": "proposal",
-            }
-        )
-    for d in lane.running:
+    for d in work.completed:
+        items.append({"text": f"Done: {d.title}", "todo_id": d.id, "kind": "lookback"})
+    for d in work.running:
         items.append({"text": f"In progress: {d.title}", "todo_id": d.id, "kind": "gaia"})
-    for d in lane.failed:
-        cause = d.error_message or "unknown cause"
-        items.append(
-            {
-                "text": f"Failed: {d.title} — {cause}",
-                "todo_id": d.id,
-                "kind": "note",
-            }
-        )
-    for d in lane.needs_you:
-        items.append({"text": f"Needs you: {d.title}", "todo_id": d.id, "kind": "you"})
+    for d in work.failed:
+        items.append({"text": f"Failed: {d.title}", "todo_id": d.id, "kind": "note"})
+    for d in work.blocked:
+        items.append({"text": f"Waiting on you: {d.title}", "todo_id": d.id, "kind": "you"})
     return items
 
 
-_ROMAN = ["I", "II", "III", "IV", "V", "VI"]
+_WORK_SECTION_TITLE = "GAIA'S WORK"
 
 
 def _fact_line(item: dict, art: _ArtifactFact | None) -> str:
@@ -417,58 +337,49 @@ def _fact_line(item: dict, art: _ArtifactFact | None) -> str:
             line += f" | summary: {art.snippet}"
         line += f" | artifact holds ~{art.chars} chars"
         if art.action:
-            line += " | awaiting your action"
+            line += " | waiting on you"
         if art.link:
             line += f" | link: {art.link}"
     return line
 
 
 def _build_facts(
-    lanes: list[context.GoalLane],
-    curation_note: str,
+    work: context.TrackedWork,
     artifacts: dict[str, _ArtifactFact],
     user_todos_note: str,
 ) -> tuple[list[dict], list[dict], str]:
-    """Assemble sections + stats deterministically from lane state.
+    """Assemble sections + stats deterministically from tracked-work state.
 
     Returns (sections, stats, facts_block) — the model voices the facts_block but
     the rendered sections come from here, so the brief cannot lie. Each fact hands
     the model a concrete ``summary`` to voice, whether the deliverable is big and
-    whether it needs action, and the link — the model summarises every item and
-    only appends the link for big/actionable ones. The dashboard item carries the
-    link only when it earns one (same rule), never for a small stated result.
+    whether it is waiting on the user, and the link — the model summarises every
+    item and only appends the link for big/waiting ones.
     """
-    sections: list[dict] = []
-    for i, lane in enumerate(lanes):
-        items = _lane_items(lane)
-        for it in items:
-            art = artifacts.get(it.get("todo_id", ""))
-            if art and art.link:
-                it["link"] = art.link
-        if items:
-            sections.append(
-                {
-                    "numeral": _ROMAN[min(i, len(_ROMAN) - 1)],
-                    "title": lane.title.upper(),
-                    "items": items,
-                }
-            )
-    staged_total = sum(len(lane.staged) for lane in lanes)
-    done_total = sum(len(lane.completed) for lane in lanes)
+    items = _work_items(work)
+    for it in items:
+        art = artifacts.get(it.get("todo_id", ""))
+        if art and art.link:
+            it["link"] = art.link
+    sections: list[dict] = (
+        [{"numeral": "I", "title": _WORK_SECTION_TITLE, "items": items}] if items else []
+    )
     stats: list[dict] = []
-    if done_total:
-        stats.append({"value": str(done_total), "label": "done overnight"})
-    if staged_total:
-        stats.append({"value": str(staged_total), "label": "awaiting your word"})
+    if work.completed:
+        stats.append({"value": str(len(work.completed)), "label": "done since yesterday"})
+    if work.running:
+        stats.append({"value": str(len(work.running)), "label": "in progress"})
+    if work.blocked:
+        stats.append({"value": str(len(work.blocked)), "label": "waiting on you"})
 
-    fact_lines: list[str] = [curation_note]
+    fact_lines: list[str] = []
     for sec in sections:
         fact_lines.append(f"[{sec['title']}]")
         for it in sec["items"]:
             fact_lines.append(_fact_line(it, artifacts.get(it.get("todo_id", ""))))
     if not sections:
         fact_lines.append(
-            "No goal lanes exist and no background work ran. Do not claim anything "
+            "GAIA has no tracked work and no background work ran. Do not claim anything "
             "ran, finished, or is pending beyond what is stated here."
         )
     fact_lines.append(user_todos_note)
@@ -525,60 +436,10 @@ async def _clear_bootstrap(user_id: str, user: dict) -> None:
         await user_repository.clear_briefing_bootstrap(user_id)
 
 
-async def run_overnight_work(user_id: str) -> None:
-    """GAIA's night shift: work the user's goals so the morning brief reports results.
-
-    Runs hours before the briefing. The agent does internal work inline and via
-    immediately-executing queued todos (research, lists, drafts, documents) and
-    stages outward-facing sends as proposals; the approval rule is enforced by
-    the ``create_tracked_todo`` contract exactly as in any other run. Silent by
-    design: no payload, no notification; the 8am briefing narrates what exists.
-    """
-    log.set(component="briefing", operation="run_overnight_work", user_id=user_id)
-    user = await get_user_by_id(user_id)
-    if not user:
-        raise BriefingGenerationError(f"Cannot run overnight work for unknown user {user_id}")
-    user["user_id"] = user_id
-    clock = context.resolve_clock(user.get("timezone"))
-
-    # Dormant loop: only the daily run mutates dormancy state, but the night
-    # shift must not burn an LLM run for a paused user — unless a reactivation
-    # signal already arrived (then tonight's work resumes immediately).
-    dstate = dormancy.state_from_user(user)
-    if dstate.dormant_since and not await dormancy.reactivation_signal_since(
-        user_id, dstate.dormant_since
-    ):
-        log.info("briefing.overnight_dormant_skip", user_id=user_id)
-        return
-
-    lanes = await context.gather_goal_lanes(user_id, context.day_start_utc(clock, days_ago=1))
-    if not lanes:
-        # No confirmed goal lanes: the night shift has nothing legitimate to
-        # advance (goal creation always goes through the user, never overnight).
-        log.info("briefing.overnight_no_goal_skip", user_id=user_id)
-        return
-    strikes = await get_rejection_strikes_summary(user_id)
-    replies_block = await chat_sync.format_replies_block(
-        user_id, context.day_start_utc(clock, days_ago=1)
-    )
-
-    prompt = build_overnight_work_prompt(
-        date_local=clock.date_str,
-        goal_block=context.format_goal_lanes_block(lanes),
-        todos_block=await context.format_todos_block(user_id),
-        strikes_block=strikes,
-        replies_block=replies_block,
-    )
-    # Reuse the silent-run plumbing; the run's value is its side effects (todos,
-    # canvases, drafts), so the text result is only logged.
-    result = await _run_silent(user, clock, prompt, conversation_key="overnight")
-    log.info("briefing.overnight_complete", user_id=user_id, result_preview=result[:200])
-
-
 async def _wake_or_skip(user_id: str, user: dict) -> dormancy.DormancyState | None:
-    """Dormant loop: wake on a reactivation signal (goal created, user active,
-    any message), otherwise None means skip before any LLM cost. The daily run
-    is the only writer of dormancy state."""
+    """Dormant loop: wake on a reactivation signal (user active, any message),
+    otherwise None means skip before any LLM cost. The daily run is the only
+    writer of dormancy state."""
     dstate = dormancy.state_from_user(user)
     if not dstate.dormant_since:
         return dstate
@@ -639,7 +500,7 @@ async def _publish_daily(
 
 
 async def run_daily_briefing(user_id: str) -> None:
-    """Curate, look back, plan, and deliver one daily briefing for the user."""
+    """Look back, plan, and deliver one daily briefing for the user."""
     log.set(component="briefing", operation="run_daily_briefing", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
@@ -656,16 +517,11 @@ async def run_daily_briefing(user_id: str) -> None:
         log.info("briefing.bootstrap_pending_skip", user_id=user_id)
         return
 
-    # 1. Deterministic curation before anything new is planned.
-    expired = await expire_stale_proposals(user_id)
-
-    # 2. Gather the world the agent must see.
+    # Gather the world the agent must see.
     yesterday = await context.get_yesterday_payload(user_id, before_date=clock.date_str)
     since = context.day_start_utc(clock, days_ago=1)
     lookback_block = await context.format_lookback_block(user_id, yesterday, since)
-    strikes_block = await get_rejection_strikes_summary(user_id)
     winback = await context.compute_winback_state(user_id)
-    streak = await activity.compute_streak(user_id, clock.tz)
     is_first = not await briefing_repository.has_daily_briefing(user_id)
 
     # Gone-quiet backoff: a winback already went out and the user is still silent.
@@ -673,19 +529,17 @@ async def run_daily_briefing(user_id: str) -> None:
         log.info("briefing.winback_backoff", user_id=user_id, unacknowledged=winback.unacknowledged)
         return
 
-    badge_labels = await check_and_award_badges(user_id, clock, streak)
-
-    # Facts are assembled by code from lane state; the model only voices them.
-    lanes = await context.gather_goal_lanes(user_id, since)
-    artifacts = await _gather_artifacts(lanes)
+    # Facts are assembled by code from tracked-work state; the model only voices them.
+    work = await context.gather_tracked_work(user_id, since)
+    artifacts = _gather_artifacts(work)
     open_count, open_titles = await context.user_open_todo_summary(user_id)
     sections, stats, facts_block = _build_facts(
-        lanes, _format_curation(expired), artifacts, _user_todos_note(open_count, open_titles)
+        work, artifacts, _user_todos_note(open_count, open_titles)
     )
 
-    # Idle ladder: nothing to advance (no lanes, no goal knowledge) escalates
+    # Idle ladder: nothing to report (no tracked work, no goal knowledge) escalates
     # from the goal question to a plain warning to one goodbye, then dormancy.
-    idle = not lanes and not has_goal
+    idle = work.is_empty and not has_goal
     idle_days = await dormancy.record_idle_day(user_id, dstate, idle, clock.date_str)
     wind_down = dormancy.wind_down_stage(idle_days) if idle else None
 
@@ -696,8 +550,6 @@ async def run_daily_briefing(user_id: str) -> None:
             goal=goal_block,
             lookback=lookback_block,
             replies=await chat_sync.format_replies_block(user_id, since),
-            strikes=strikes_block or "No blocked proposal kinds.",
-            awards=_format_awards(badge_labels),
         ),
         winback=winback.is_winback and wind_down is None,
         is_first_briefing=is_first,
@@ -730,7 +582,7 @@ async def run_daily_briefing(user_id: str) -> None:
 
 
 async def run_weekly_digest(user_id: str) -> None:
-    """Zoom out on the week: completed work by assignee, hours saved, streak."""
+    """Zoom out on the week: completed work (GAIA's and the user's), hours saved."""
     log.set(component="briefing", operation="run_weekly_digest", user_id=user_id)
     user = await get_user_by_id(user_id)
     if not user:
@@ -749,15 +601,11 @@ async def run_weekly_digest(user_id: str) -> None:
     since = context.day_start_utc(clock, days_ago=7)
     completed = await context.gather_completed_since(user_id, since)
     hours_saved = round(len(completed.gaia) * MINUTES_SAVED_PER_GAIA_TODO / 60)
-    streak = await activity.compute_streak(user_id, clock.tz)
-    badge_labels = await check_and_award_badges(user_id, clock, streak)
 
     prompt = build_weekly_digest_prompt(
         date_local=clock.date_str,
         week_summary_block=_format_week(completed),
         hours_saved=hours_saved,
-        streak_days=streak,
-        awards_block=_format_awards(badge_labels),
     )
 
     # Bounded: a stalled agent run must fail the cron loudly, not hang the

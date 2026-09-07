@@ -219,10 +219,6 @@ async def _core_agent_logic(
         )
         configurable["playbook_fallback"] = trigger_context.get(PLAYBOOK_FALLBACK_CONTEXT_KEY)
 
-    # Night-shift prep runs work silently: their result is reported by the
-    # morning briefing, not pinged per-todo as it finishes.
-    if trigger_context and trigger_context.get("suppress_platform_delivery"):
-        config["configurable"]["suppress_platform_delivery"] = True
 
     log.set(
         agent={

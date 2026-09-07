@@ -40,7 +40,6 @@ from app.constants.agents import (
 )
 from app.constants.briefing import (
     DAILY_BRIEFING_WORKFLOW_KEY,
-    OVERNIGHT_WORK_WORKFLOW_KEY,
     WEEKLY_DIGEST_WORKFLOW_KEY,
 )
 from app.constants.cache import EXECUTOR_BUSY_PREFIX
@@ -1065,11 +1064,7 @@ async def _drain_trigger_events(
     return merged, None
 
 
-_BRIEFING_WORKFLOW_KEYS = {
-    DAILY_BRIEFING_WORKFLOW_KEY,
-    OVERNIGHT_WORK_WORKFLOW_KEY,
-    WEEKLY_DIGEST_WORKFLOW_KEY,
-}
+_BRIEFING_WORKFLOW_KEYS = {DAILY_BRIEFING_WORKFLOW_KEY, WEEKLY_DIGEST_WORKFLOW_KEY}
 
 
 async def _run_briefing_workflow(workflow: Workflow) -> str:
@@ -1082,14 +1077,11 @@ async def _run_briefing_workflow(workflow: Workflow) -> str:
     """
     from app.services.briefing.service import (  # noqa: PLC0415 -- agent cycle
         run_daily_briefing,
-        run_overnight_work,
         run_weekly_digest,
     )
 
     if workflow.system_workflow_key == DAILY_BRIEFING_WORKFLOW_KEY:
         await run_daily_briefing(workflow.user_id)
-    elif workflow.system_workflow_key == OVERNIGHT_WORK_WORKFLOW_KEY:
-        await run_overnight_work(workflow.user_id)
     else:
         await run_weekly_digest(workflow.user_id)
     return "Briefing delivered"

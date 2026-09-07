@@ -7,7 +7,6 @@ memory arrives or the grace window elapses. The user-facing announcement is a
 manual email, not an in-app notification, so this only provisions and gates.
 """
 
-from app.db.repositories.todos import todo_repository
 from app.db.repositories.user_integrations import user_integration_repository
 from app.db.repositories.users import user_repository
 from app.services.briefing import context
@@ -16,17 +15,9 @@ from app.services.user_service import get_user_by_id
 from app.utils.analytics import track
 from shared.py.wide_events import log
 
-# When we can't derive a goal AND the account is this sparse, hold for bootstrap
-# instead of guessing a goal.
+# When we can't derive a goal AND the account has at most this many integrations,
+# hold for bootstrap instead of guessing a goal.
 _SPARSE_INTEGRATION_MAX = 1
-
-
-async def _is_sparse_account(user_id: str) -> bool:
-    integrations = await user_integration_repository.count_for_user(user_id)
-    if integrations > _SPARSE_INTEGRATION_MAX:
-        return False
-    gaia_todos = await todo_repository.count_gaia_assigned(user_id)
-    return gaia_todos == 0
 
 
 async def provision_existing_user(user_id: str) -> str:
@@ -46,7 +37,8 @@ async def provision_existing_user(user_id: str) -> str:
     await provision_briefing_workflows(user_id)
 
     _, has_goal = await context.format_goal_block(user_id, user)
-    if not has_goal and await _is_sparse_account(user_id):
+    integrations = await user_integration_repository.count_for_user(user_id)
+    if not has_goal and integrations <= _SPARSE_INTEGRATION_MAX:
         await user_repository.set_briefing_bootstrap_pending(user_id)
         track(user_id, "briefing_provisioned", {"path": "bootstrap"})
         return "bootstrap"

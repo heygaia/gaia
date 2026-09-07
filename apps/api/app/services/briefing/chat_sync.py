@@ -6,7 +6,7 @@ it never reach the next run. This module closes the loop in both directions:
 ``persist_delivered_brief`` writes the delivered bubbles into each platform's
 bot conversation as an assistant turn (so "yeah send them" lands with real
 context), and ``format_replies_block`` reads the user's bot-chat messages back
-into the next briefing/night-shift context.
+into the next briefing context.
 
 Web/mobile conversations are deliberately excluded from the reply read: bot
 chats are short reactions to GAIA's outbound, while UI chats are long working

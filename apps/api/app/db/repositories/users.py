@@ -874,21 +874,6 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             return_document=False,
         )
 
-    async def has_first_approve(self, user_id: str) -> bool:
-        user = await self.get(user_id)
-        return bool((user.first_steps or {}).get("first_approve")) if user else False
-
-    async def set_first_step(self, user_id: str, step: str) -> bool:
-        """Idempotently mark ``first_steps.<step>`` done. Returns whether this call
-        was the one that set it (False on a repeat)."""
-        matched = await self._apply_raw_update_unfetched(
-            {"_id": self._id_value(user_id), f"first_steps.{step}": {"$exists": False}},
-            {"$set": {f"first_steps.{step}": datetime.now(UTC)}},
-            scope=REPO_GLOBAL_SCOPE,
-            doc_id=user_id,
-        )
-        return matched > 0
-
     async def mark_day_zero_hello_sent(self, user_id: str, platform: str) -> None:
         await self._apply_raw_update(
             {"_id": self._id_value(user_id)},

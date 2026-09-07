@@ -1,5 +1,5 @@
-"""Cross-cutting timezone matrix: cron scheduling, ``Timezone.parse``,
-waking-hour windows, and briefing-clock date derivation, all exercised
+"""Cross-cutting timezone matrix: cron scheduling, ``Timezone.parse``, and
+briefing-clock date derivation, all exercised
 against real-world IANA zones (half-hour/45-minute offsets, +14/-11 extremes,
 and DST transitions including the unusual 30-minute Lord Howe shift).
 
@@ -22,7 +22,6 @@ from datetime import UTC, datetime
 from freezegun import freeze_time as _freeze_time
 import pytest
 
-from app.constants.todos import is_waking_hour
 from app.services.briefing.context import day_start_utc, resolve_clock
 from app.utils.cron_utils import get_next_run_time
 from app.utils.timezone import Timezone
@@ -209,40 +208,6 @@ class TestTimezoneParseContract:
 
     def test_none_falls_back_to_utc(self) -> None:
         assert Timezone.parse(None).is_utc
-
-
-# ---------------------------------------------------------------------------
-# is_waking_hour — hour-granularity boundary in a non-UTC zone (Asia/Kolkata,
-# +5:30). The function reads only ``.hour``, so the boundary is exactly on
-# the hour regardless of minute.
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-class TestIsWakingHourBoundaries:
-    def test_08_59_ist_is_not_yet_waking(self) -> None:
-        # 2026-06-15T03:29Z = 08:59 IST (hour=8, before WAKING_HOUR_START=9).
-        # Fails if the start boundary check used "<=" instead of the correct
-        # "<" against WAKING_HOUR_START, or ignored the user's own zone.
-        with freeze_time(datetime(2026, 6, 15, 3, 29, tzinfo=UTC)):
-            assert is_waking_hour("Asia/Kolkata") is False
-
-    def test_09_00_ist_is_waking(self) -> None:
-        # 2026-06-15T03:30Z = 09:00 IST (hour=9, the start boundary itself).
-        with freeze_time(datetime(2026, 6, 15, 3, 30, tzinfo=UTC)):
-            assert is_waking_hour("Asia/Kolkata") is True
-
-    def test_21_59_ist_is_still_waking(self) -> None:
-        # 2026-06-15T16:29Z = 21:59 IST (hour=21, still under WAKING_HOUR_END=22).
-        with freeze_time(datetime(2026, 6, 15, 16, 29, tzinfo=UTC)):
-            assert is_waking_hour("Asia/Kolkata") is True
-
-    def test_22_00_ist_is_no_longer_waking(self) -> None:
-        # 2026-06-15T16:30Z = 22:00 IST (hour=22, the end boundary itself —
-        # the window is a half-open [9, 22) interval).
-        # Fails if the end boundary check used "<=" instead of "<".
-        with freeze_time(datetime(2026, 6, 15, 16, 30, tzinfo=UTC)):
-            assert is_waking_hour("Asia/Kolkata") is False
 
 
 # ---------------------------------------------------------------------------
