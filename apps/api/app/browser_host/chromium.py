@@ -24,7 +24,10 @@ import contextlib
 from dataclasses import dataclass, field
 import json
 from pathlib import Path
-import subprocess
+
+# spawns the Obscura/Chromium CDP server via create_subprocess_exec with a fixed
+# argv from settings, never a shell; import is an intended, confirmed use.
+import subprocess  # nosec B404
 import tempfile
 import time
 from typing import Any
@@ -715,7 +718,8 @@ class ChromiumHost:
 
     def _chromium_command(self) -> list[str]:
         """The full headless-shell argv, incl. the fresh user-data-dir it needs."""
-        assert self._chromium_path is not None
+        if self._chromium_path is None:
+            raise RuntimeError("chromium_path not set")
         self._user_data_dir = tempfile.mkdtemp(prefix="gaia-browser-host-")
         args = [
             self._chromium_path,
@@ -771,7 +775,8 @@ class ChromiumHost:
         raise RuntimeError(f"{engine} did not expose its CDP endpoint in time")
 
     async def _read_devtools_port(self) -> int:
-        assert self._user_data_dir is not None
+        if self._user_data_dir is None:
+            raise RuntimeError("user_data_dir not set")
 
         port_file = Path(self._user_data_dir) / "DevToolsActivePort"
         deadline = time.monotonic() + _CDP_READY_TIMEOUT_SECONDS

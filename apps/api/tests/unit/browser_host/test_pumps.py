@@ -51,18 +51,14 @@ class TestIsDisconnect:
         # Starlette raises this bare RuntimeError when a socket is read after it
         # closed / before accept — normal during teardown, not a real error.
         assert (
-            is_disconnect(
-                RuntimeError('WebSocket is not connected. Need to call "accept" first.')
-            )
+            is_disconnect(RuntimeError('WebSocket is not connected. Need to call "accept" first.'))
             is True
         )
 
     def test_receive_after_disconnect_runtimeerror_is_a_disconnect(self) -> None:
         assert (
             is_disconnect(
-                RuntimeError(
-                    'Cannot call "receive" once a disconnect message has been received.'
-                )
+                RuntimeError('Cannot call "receive" once a disconnect message has been received.')
             )
             is True
         )
@@ -100,9 +96,7 @@ class TestPumpUntilFirstClose:
         # A viewer socket read during teardown must not blow up the pump.
         err = RuntimeError('WebSocket is not connected. Need to call "accept" first.')
         # returns None (no raise) — the whole point of the fix.
-        assert (
-            await pump_until_first_close(_instant_raise(err), _blocks_forever())
-        ) is None
+        assert (await pump_until_first_close(_instant_raise(err), _blocks_forever())) is None
 
     async def test_ordinary_disconnect_is_swallowed_not_raised(self) -> None:
         disconnect = websockets.exceptions.ConnectionClosed(None, None)

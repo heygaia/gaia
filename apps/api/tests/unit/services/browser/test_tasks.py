@@ -17,6 +17,7 @@ from app.constants.browser import BrowserSessionStatus
 from app.models.browser_task_models import BrowserTaskDocument
 from app.schemas.browser import BrowserResultSnapshot
 from app.services.browser.tasks import (
+    BrowserTaskRecord,
     delete_browser_task,
     list_browser_tasks,
     record_browser_task,
@@ -60,11 +61,14 @@ async def test_record_browser_task_persists_every_field(monkeypatch: pytest.Monk
     monkeypatch.setattr("app.services.browser.tasks.browser_task_repository.create", mock_create)
 
     await record_browser_task(
-        user_id="u1",
-        conversation_id="c1",
-        task="find a keyboard",
-        session_id="sess1",
-        result=_result(
+        BrowserTaskRecord(
+            user_id="u1",
+            conversation_id="c1",
+            task="find a keyboard",
+            session_id="sess1",
+            source="telegram",
+        ),
+        _result(
             status=BrowserSessionStatus.FAILED,
             success=False,
             steps=4,
@@ -72,7 +76,6 @@ async def test_record_browser_task_persists_every_field(monkeypatch: pytest.Monk
         ),
         step_goals=["Opening", "Typing"],
         step_screenshots=["https://cdn/1.png", ""],
-        source="telegram",
     )
 
     saved = mock_create.await_args.args[0]
@@ -98,11 +101,13 @@ async def test_record_browser_task_defaults_goals_screenshots_and_source(
     monkeypatch.setattr("app.services.browser.tasks.browser_task_repository.create", mock_create)
 
     await record_browser_task(
-        user_id="u1",
-        conversation_id="c1",
-        task="find a keyboard",
-        session_id="sess1",
-        result=_result(),
+        BrowserTaskRecord(
+            user_id="u1",
+            conversation_id="c1",
+            task="find a keyboard",
+            session_id="sess1",
+        ),
+        _result(),
     )
 
     saved = mock_create.await_args.args[0]

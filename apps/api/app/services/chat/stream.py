@@ -627,49 +627,58 @@ async def _consume_agent_stream(
             state.is_cancelled = state.is_cancelled or was_cancelled
             continue
 
-        if chunk.startswith("data: ") and '"error"' in chunk:
-            # Errors reach this loop two ways: raised exceptions (caught by the
-            # orchestrator, which sets state.error) and error frames YIELDED by
-            # call_agent's setup guard. Record the latter so the persisted bot
-            # message carries the failure instead of an empty bubble.
-            with contextlib.suppress(json.JSONDecodeError):
-                payload = json.loads(chunk[len("data: ") :])
-                if isinstance(payload, dict) and payload.get("error"):
-                    state.error = str(payload["error"])
-
-        if chunk.startswith("data: "):
-            # Comms' own thinking arrives as a plain `reasoning` frame (the
-            # executor's rides the tool-event collector, which absorbs it
-            # already). Fold it into tool_data with the SAME helper, so a
-            # reloaded turn keeps the thinking block and both agents produce one
-            # identical shape instead of two.
-            if '"reasoning"' in chunk:
-                with contextlib.suppress(json.JSONDecodeError):
-                    reasoning_payload = json.loads(chunk[len("data: ") :])
-                    if isinstance(reasoning_payload, dict) and "reasoning" in reasoning_payload:
-                        absorb_reasoning(
-                            reasoning_payload["reasoning"], state.tool_data["tool_data"]
-                        )
-            try:
-                state.follow_up_actions, _ = await process_data_chunk(
-                    stream_id,
-                    chunk,
-                    state.tool_data,
-                    state.tool_outputs,
-                    state.todo_progress_accumulated,
-                    state.follow_up_actions,
-                )
-            except Exception as e:  # fall back to passthrough
-                log.error(
-                    f"{LogTag.CHAT} Error processing chunk",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    conversation_id=turn.conversation_id,
-                )
-                await stream_manager.publish_chunk(stream_id, chunk)
-        else:
-            await stream_manager.publish_chunk(stream_id, chunk)
+        await _dispatch_stream_chunk(chunk, stream_id, turn, state)
     return description_task
+
+
+async def _dispatch_stream_chunk(
+    chunk: str,
+    stream_id: str,
+    turn: _TurnContext,
+    state: _StreamState,
+) -> None:
+    """Route one non-control chunk: parse a ``data:`` frame into tool_data, or
+    pass any other frame straight through to the client."""
+    if not chunk.startswith("data: "):
+        await stream_manager.publish_chunk(stream_id, chunk)
+        return
+
+    if '"error"' in chunk:
+        # Errors reach this loop two ways: raised exceptions (caught by the
+        # orchestrator, which sets state.error) and error frames YIELDED by
+        # call_agent's setup guard. Record the latter so the persisted bot
+        # message carries the failure instead of an empty bubble.
+        with contextlib.suppress(json.JSONDecodeError):
+            payload = json.loads(chunk[len("data: ") :])
+            if isinstance(payload, dict) and payload.get("error"):
+                state.error = str(payload["error"])
+
+    # Comms' own thinking arrives as a plain `reasoning` frame (the executor's
+    # rides the tool-event collector, which absorbs it already). Fold it into
+    # tool_data with the SAME helper, so a reloaded turn keeps the thinking
+    # block and both agents produce one identical shape instead of two.
+    if '"reasoning"' in chunk:
+        with contextlib.suppress(json.JSONDecodeError):
+            reasoning_payload = json.loads(chunk[len("data: ") :])
+            if isinstance(reasoning_payload, dict) and "reasoning" in reasoning_payload:
+                absorb_reasoning(reasoning_payload["reasoning"], state.tool_data["tool_data"])
+    try:
+        state.follow_up_actions, _ = await process_data_chunk(
+            stream_id,
+            chunk,
+            state.tool_data,
+            state.tool_outputs,
+            state.todo_progress_accumulated,
+            state.follow_up_actions,
+        )
+    except Exception as e:  # fall back to passthrough
+        log.error(
+            f"{LogTag.CHAT} Error processing chunk",
+            error=str(e),
+            error_type=type(e).__name__,
+            conversation_id=turn.conversation_id,
+        )
+        await stream_manager.publish_chunk(stream_id, chunk)
 
 
 def _parse_complete_message(chunk: str) -> tuple[str, bool]:

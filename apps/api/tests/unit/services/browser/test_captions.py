@@ -251,18 +251,14 @@ class TestCaptionFromActionList:
         assert caption_from_action_list(actions) == 'Clicking "Add to cart"'
 
     def test_click_without_a_target_names_the_coordinates(self):
-        actions = [
-            BrowserAction(name="click", inputs={"coordinate_x": 412, "coordinate_y": 680})
-        ]
+        actions = [BrowserAction(name="click", inputs={"coordinate_x": 412, "coordinate_y": 680})]
         assert caption_from_action_list(actions) == "Clicking at 412, 680"
 
     def test_click_with_neither_falls_back_to_the_verb(self):
         assert caption_from_action_list([BrowserAction(name="click")]) == "Clicking"
 
     def test_typing_names_the_field(self):
-        actions = [
-            BrowserAction(name="input", inputs={"text": "Aryan"}, target="Full name")
-        ]
+        actions = [BrowserAction(name="input", inputs={"text": "Aryan"}, target="Full name")]
         assert caption_from_action_list(actions) == 'Typing "Aryan" into "Full name"'
 
     def test_long_target_is_truncated(self):

@@ -9,8 +9,12 @@ session context manager owns capacity limits, saved-login persistence, live-view
 registration, and always releasing the browser context.
 """
 
+import asyncio
+from collections.abc import Awaitable, Callable, Mapping
+from dataclasses import dataclass
+from functools import partial
 from time import perf_counter
-from typing import Annotated
+from typing import Annotated, Any
 import uuid
 
 from langchain_core.runnables.config import RunnableConfig
@@ -47,13 +51,18 @@ from app.services.browser.exceptions import BrowserConcurrencyLimit, BrowserUnav
 from app.services.browser.fingerprint import reset_fingerprint_seed, set_fingerprint_seed
 from app.services.browser.handoff import await_handoff, create_pending_handoff
 from app.services.browser.llm import build_browser_llm, resolve_use_vision
-from app.services.browser.runner import BrowserTaskRunner
+from app.services.browser.runner import (
+    BrowserRunConfig,
+    BrowserRunnerCallbacks,
+    BrowserTaskRunner,
+)
 from app.services.browser.session import (
+    BrowserHostSession,
     auto_resolve_handoff_on_navigation,
     browser_session,
     keep_session_alive,
 )
-from app.services.browser.tasks import record_browser_task
+from app.services.browser.tasks import BrowserTaskRecord, record_browser_task
 from app.templates.docstrings.browser_tool_docs import BROWSER_TASK
 from app.utils.agent_utils import (
     SubagentStartDetails,
@@ -183,7 +192,7 @@ class _BrowserThreadMirror:
             output=output,
             subagent_id=self._group_id,
         )
-        self._writer({"tool_output": payload.model_dump(exclude_none=True)})
+        self._writer({"tool_output": payload.model_dump(mode="json", exclude_none=True)})
 
     def _close(self) -> None:
         if not self._group_id:
@@ -199,6 +208,220 @@ class _BrowserThreadMirror:
         self._group_id = None
 
 
+@dataclass(frozen=True)
+class _RunParams:
+    """The run's identity and provenance, read once from the tool's config."""
+
+    user_id: str
+    conversation_id: str
+    stream_id: str | None
+    root_request_id: str | None
+    source_category: str | None
+    is_bot: bool
+    conversation_source: ConversationSource | None
+    task_source: str
+
+
+def _run_params(configurable: Mapping[str, Any]) -> _RunParams:
+    source_category = configurable.get("source_category")
+    conv_source = ConversationSource.coerce(configurable.get("conversation_source"))
+    return _RunParams(
+        user_id=configurable.get("user_id") or "",
+        # The USER-facing conversation, never the executor's derived `thread_id`
+        # (`executor_<conv>`). A handoff registered here is resolved by a chat
+        # reply ("done"/"stop") that arrives on the comms conversation id —
+        # keying it by the prefixed thread_id would make that lookup miss and
+        # the handoff never resume.
+        conversation_id=(
+            configurable.get("conversation_id") or configurable.get("thread_id") or ""
+        ),
+        stream_id=configurable.get("stream_id"),
+        root_request_id=configurable.get("root_request_id"),
+        source_category=source_category,
+        is_bot=source_category == SourceCategory.BOT.value,
+        conversation_source=conv_source,
+        task_source=conv_source.value if conv_source else "",
+    )
+
+
+def _build_bot_delivery(params: _RunParams) -> BotProgressDelivery | None:
+    if not (params.is_bot and params.user_id and params.conversation_id):
+        return None
+    if params.conversation_source is None:
+        return None
+    return BotProgressDelivery(
+        platform=params.conversation_source,
+        user_id=params.user_id,
+        conversation_id=params.conversation_id,
+        stream_screenshots=settings.BROWSER_USE_STREAM_SCREENSHOTS,
+    )
+
+
+async def _deliver_snapshot_to_bot(
+    bot_delivery: BotProgressDelivery, snapshot: BrowserCardSnapshot
+) -> None:
+    """Best-effort mirror of a card to the bot platform. The card has already
+    been written to the chat, so a messaging/queue outage is logged and
+    swallowed — never a reason to abort the in-flight browser run."""
+    try:
+        if isinstance(snapshot, BrowserStepSnapshot):
+            await bot_delivery.step(snapshot)
+        elif isinstance(snapshot, BrowserResultSnapshot):
+            await bot_delivery.result(snapshot)
+        elif isinstance(snapshot, BrowserHandoffSnapshot):
+            await bot_delivery.handoff(snapshot)
+        elif isinstance(snapshot, BrowserSessionSnapshot):
+            await bot_delivery.session(snapshot)
+    except Exception as exc:
+        log.error(
+            f"{LogTag.BROWSER} Bot delivery failed; continuing browser task",
+            error_type=type(exc).__name__,
+            browser={"snapshot_type": type(snapshot).__name__},
+        )
+
+
+class _ProgressEmitter:
+    """Streams each card snapshot into the chat and mirrors it to the bot
+    platform, recording the CDN screenshots and captions the history recap
+    reads back once the run finishes."""
+
+    def __init__(
+        self,
+        writer: StreamWriter,
+        thread_mirror: _BrowserThreadMirror,
+        bot_delivery: BotProgressDelivery | None,
+    ) -> None:
+        self._writer = writer
+        self._thread_mirror = thread_mirror
+        self._bot_delivery = bot_delivery
+        # Captions for the recap ("what's going on" per step), keyed by step index.
+        self.step_goals: dict[int, str] = {}
+        # Only the screenshots that actually reached the CDN. A step whose upload
+        # failed falls back to an inline data URL, which must not be stored as a
+        # history frame — it would render as a permanently broken image.
+        self.step_shots: dict[int, str] = {}
+
+    async def emit(self, snapshot: BrowserCardSnapshot) -> None:
+        self._writer({BROWSER_TASK_EVENT: snapshot.model_dump(mode="json")})
+        self._thread_mirror.mirror(snapshot)
+        if isinstance(snapshot, BrowserStepSnapshot):
+            if snapshot.goal:
+                self.step_goals[snapshot.index] = snapshot.goal
+            if snapshot.screenshot and snapshot.screenshot.startswith("http"):
+                self.step_shots[snapshot.index] = snapshot.screenshot
+        if self._bot_delivery is not None:
+            await _deliver_snapshot_to_bot(self._bot_delivery, snapshot)
+
+
+def _handoff_snapshot(
+    handoff_id: str,
+    req: HandoffRequest,
+    session: BrowserHostSession,
+    status: HandoffStatus,
+) -> BrowserHandoffSnapshot:
+    return BrowserHandoffSnapshot(
+        handoff_id=handoff_id,
+        category=req.category,
+        reason=req.reason,
+        session_id=session.session_id,
+        live_view_url=session.live_view_url,
+        status=status,
+    )
+
+
+def _spawn_handoff_watchers(
+    handoff_id: str, req: HandoffRequest, session_id: str, user_id: str
+) -> list[asyncio.Task[Any]]:
+    # The paused session produces no CDP/live-view traffic, so keep its idle
+    # clock fresh until the user decides — otherwise the host reaps the browser
+    # they were asked to come back to.
+    watchers = [
+        spawn_background_task(keep_session_alive(session_id), name="browser_handoff_keepalive")
+    ]
+    # A login handoff can auto-complete when the page navigates off the sign-in
+    # URL — the user just signs in, no extra tap. Only for credentials; a
+    # payment/confirmation has no such signal.
+    if req.category == SensitiveCategory.CREDENTIALS:
+        watchers.append(
+            spawn_background_task(
+                auto_resolve_handoff_on_navigation(handoff_id, session_id, user_id),
+                name="browser_handoff_autoresolve",
+            )
+        )
+    return watchers
+
+
+async def _run_handoff(
+    req: HandoffRequest,
+    *,
+    emit: Callable[[BrowserCardSnapshot], Awaitable[None]],
+    session: BrowserHostSession,
+    user_id: str,
+    conversation_id: str,
+) -> HandoffOutcome:
+    """Pause the run and hand the user a live view to complete the step
+    themselves. Returns the outcome (completed with optional note, cancelled,
+    or timed out) so the loop resumes natively."""
+    handoff_id = uuid.uuid4().hex
+    await create_pending_handoff(handoff_id, user_id, conversation_id, req.reason)
+    await emit(_handoff_snapshot(handoff_id, req, session, HandoffStatus.PENDING))
+    watchers = _spawn_handoff_watchers(handoff_id, req, session.session_id, user_id)
+    try:
+        outcome = await await_handoff(handoff_id, settings.BROWSER_USE_HANDOFF_TIMEOUT_SECONDS)
+    finally:
+        for watcher in watchers:
+            watcher.cancel()
+    await emit(_handoff_snapshot(handoff_id, req, session, outcome.status))
+    return outcome
+
+
+def _persist_run_outcome(
+    params: _RunParams,
+    *,
+    task: str,
+    session_id: str,
+    result: BrowserResultSnapshot,
+    run_t0: float,
+    emitter: _ProgressEmitter,
+) -> None:
+    """Record analytics + the browser-history row for a finished run.
+
+    Graph-background execution has no authenticated request context, so the id
+    must be explicit or the event lands on an anonymous profile (see analytics
+    conventions in CLAUDE.md).
+    """
+    if not params.user_id:
+        return
+    capture_event(
+        params.user_id,
+        AnalyticsEvents.BROWSER_TASK_FINISHED,
+        {
+            "status": result.status.value,
+            "success": result.success,
+            "steps": result.steps,
+            "duration_ms": round((perf_counter() - run_t0) * 1000),
+            "source": params.source_category or "web",
+        },
+    )
+    # Best-effort background write: a completed task must still return its result
+    # even if history persistence hiccups.
+    spawn_background_task(
+        record_browser_task(
+            BrowserTaskRecord(
+                user_id=params.user_id,
+                conversation_id=params.conversation_id,
+                task=task,
+                session_id=session_id,
+                source=params.task_source,
+            ),
+            result,
+            step_goals=[emitter.step_goals.get(i, "") for i in range(1, result.steps + 1)],
+            step_screenshots=[emitter.step_shots.get(i, "") for i in range(1, result.steps + 1)],
+        ),
+        name="record_browser_task",
+    )
+
+
 @tool
 @with_rate_limiting("browser_task")
 @with_doc(BROWSER_TASK)
@@ -211,90 +434,21 @@ async def browser_task(
     and stream progress/result cards. Returns the outcome guidance message the
     executor surfaces to the user (never a fabricated success).
     """
-    configurable = config.get("configurable", {})
-    user_id: str = configurable.get("user_id") or ""
-    # The USER-facing conversation, never the executor's derived `thread_id`
-    # (`executor_<conv>`). A handoff registered here is resolved by a chat reply
-    # ("done"/"stop") that arrives on the comms conversation id — keying it by the
-    # prefixed thread_id would make that lookup miss and the handoff never resume.
-    conversation_id: str = (
-        configurable.get("conversation_id") or configurable.get("thread_id") or ""
-    )
-    stream_id: str | None = configurable.get("stream_id")
-    root_request_id: str | None = configurable.get("root_request_id")
-    source_category = configurable.get("source_category")
-    is_bot = source_category == SourceCategory.BOT.value
-    _conv_source = ConversationSource.coerce(configurable.get("conversation_source"))
-    task_source = _conv_source.value if _conv_source else ""
-
-    log.set(browser={"operation": "task", "source_category": source_category})
+    params = _run_params(config.get("configurable", {}))
+    log.set(browser={"operation": "task", "source_category": params.source_category})
 
     if not settings.BROWSER_USE_ENABLED:
         return "Browser automation is currently disabled."
 
     writer = get_stream_writer()
     thread_mirror = _BrowserThreadMirror(writer)
-
-    bot_delivery: BotProgressDelivery | None = None
-    if is_bot and user_id and conversation_id:
-        platform = ConversationSource.coerce(configurable.get("conversation_source"))
-        if platform is not None:
-            bot_delivery = BotProgressDelivery(
-                platform=platform,
-                user_id=user_id,
-                conversation_id=conversation_id,
-                stream_screenshots=settings.BROWSER_USE_STREAM_SCREENSHOTS,
-            )
-
-    # Captions for the recap ("what's going on" per step), keyed by step index.
-    step_goals: dict[int, str] = {}
-    # Only the screenshots that actually reached the CDN. A step whose upload
-    # failed falls back to an inline data URL, which must not be stored as a
-    # history frame — it would render as a permanently broken image.
-    step_shots: dict[int, str] = {}
-
-    async def emit(snapshot: BrowserCardSnapshot) -> None:
-        """Stream a card snapshot into the chat (progress/step/result).
-
-        Emits into the conversation so the user sees the live browser card;
-        failures here are logged and swallowed — a card hiccup must never kill
-        the browser run itself.
-        """
-        writer({BROWSER_TASK_EVENT: snapshot.model_dump(mode="json")})
-        thread_mirror.mirror(snapshot)
-        if isinstance(snapshot, BrowserStepSnapshot):
-            if snapshot.goal:
-                step_goals[snapshot.index] = snapshot.goal
-            if snapshot.screenshot and snapshot.screenshot.startswith("http"):
-                step_shots[snapshot.index] = snapshot.screenshot
-        if bot_delivery is None:
-            return
-        try:
-            # The platform mirror is best-effort: the card has already been
-            # written above, so a messaging/queue outage must never abort the
-            # in-flight browser run — the user keeps seeing progress regardless.
-            if isinstance(snapshot, BrowserStepSnapshot):
-                await bot_delivery.step(snapshot)
-            elif isinstance(snapshot, BrowserResultSnapshot):
-                await bot_delivery.result(snapshot)
-            elif isinstance(snapshot, BrowserHandoffSnapshot):
-                await bot_delivery.handoff(snapshot)
-            elif isinstance(snapshot, BrowserSessionSnapshot):
-                await bot_delivery.session(snapshot)
-        except Exception as exc:
-            # Swallowed by design (see the emit() docstring): a failed mirror is
-            # a logged warning, never a reason to kill the task.
-            log.error(
-                f"{LogTag.BROWSER} Bot delivery failed; continuing browser task",
-                error_type=type(exc).__name__,
-                browser={"snapshot_type": type(snapshot).__name__},
-            )
+    emitter = _ProgressEmitter(writer, thread_mirror, _build_bot_delivery(params))
 
     async def is_cancelled() -> bool:
         """Check whether the user cancelled this task mid-run (via the card or
         chat), so the agent loop can stop early instead of finishing unprompted.
         """
-        return bool(stream_id) and await stream_manager.is_cancelled(stream_id)
+        return bool(params.stream_id) and await stream_manager.is_cancelled(params.stream_id)
 
     try:
         llm = build_browser_llm()
@@ -304,134 +458,60 @@ async def browser_task(
 
     # Pin this run's canvas/audio fingerprint to the user, so the same person
     # always presents the same device rather than a new one per task.
-    seed_token = set_fingerprint_seed(user_id)
+    seed_token = set_fingerprint_seed(params.user_id)
 
     full_task = task if not start_url else f"{task}\n\nStart at: {start_url}"
     use_vision = await resolve_use_vision()
 
     try:
-        async with browser_session(user_id=user_id, start_url=start_url) as session:
+        async with browser_session(user_id=params.user_id, start_url=start_url) as session:
             log.set(browser={"session_id": session.session_id})
-
-            async def request_handoff(req: HandoffRequest) -> HandoffOutcome:
-                """Pause the run and hand the user a live view to complete the
-                step themselves. Returns the outcome (completed with optional
-                note, cancelled, or timed out) so the loop resumes natively.
-                """
-                handoff_id = uuid.uuid4().hex
-                await create_pending_handoff(handoff_id, user_id, conversation_id, req.reason)
-                await emit(
-                    BrowserHandoffSnapshot(
-                        handoff_id=handoff_id,
-                        category=req.category,
-                        reason=req.reason,
-                        session_id=session.session_id,
-                        live_view_url=session.live_view_url,
-                        status=HandoffStatus.PENDING,
-                    )
-                )
-                # The paused session produces no CDP/live-view traffic, so keep
-                # its idle clock fresh until the user decides — otherwise the
-                # host reaps the browser they were asked to come back to.
-                watchers = [
-                    spawn_background_task(
-                        keep_session_alive(session.session_id),
-                        name="browser_handoff_keepalive",
-                    )
-                ]
-                # A login handoff can auto-complete when the page navigates off
-                # the sign-in URL — the user just signs in, no extra tap. Only
-                # for credentials; a payment/confirmation has no such signal.
-                if req.category == SensitiveCategory.CREDENTIALS:
-                    watchers.append(
-                        spawn_background_task(
-                            auto_resolve_handoff_on_navigation(
-                                handoff_id, session.session_id, user_id
-                            ),
-                            name="browser_handoff_autoresolve",
-                        )
-                    )
-                try:
-                    outcome = await await_handoff(
-                        handoff_id, settings.BROWSER_USE_HANDOFF_TIMEOUT_SECONDS
-                    )
-                finally:
-                    for watcher in watchers:
-                        watcher.cancel()
-                await emit(
-                    BrowserHandoffSnapshot(
-                        handoff_id=handoff_id,
-                        category=req.category,
-                        reason=req.reason,
-                        session_id=session.session_id,
-                        live_view_url=session.live_view_url,
-                        status=outcome.status,
-                    )
-                )
-                return outcome
 
             runner = BrowserTaskRunner(
                 session=session,
-                conversation_id=conversation_id,
                 llm=llm,
-                emit=emit,
-                request_handoff=request_handoff,
-                is_cancelled=is_cancelled,
-                action_results=thread_mirror.results,
-                max_steps=settings.BROWSER_USE_MAX_STEPS,
-                max_actions_per_step=settings.BROWSER_USE_MAX_ACTIONS_PER_STEP,
-                task_timeout_seconds=settings.BROWSER_USE_TASK_TIMEOUT_SECONDS,
-                step_timeout_seconds=settings.BROWSER_USE_STEP_TIMEOUT_SECONDS,
-                handoff_timeout_seconds=settings.BROWSER_USE_HANDOFF_TIMEOUT_SECONDS,
-                stream_screenshots=settings.BROWSER_USE_STREAM_SCREENSHOTS,
-                use_vision=use_vision,
-                solve_captcha=settings.BROWSER_USE_SOLVE_CAPTCHA,
-                flash_mode=settings.BROWSER_USE_FLASH_MODE,
-                user_id=user_id or None,
-                root_request_id=root_request_id,
+                callbacks=BrowserRunnerCallbacks(
+                    emit=emitter.emit,
+                    request_handoff=partial(
+                        _run_handoff,
+                        emit=emitter.emit,
+                        session=session,
+                        user_id=params.user_id,
+                        conversation_id=params.conversation_id,
+                    ),
+                    is_cancelled=is_cancelled,
+                    action_results=thread_mirror.results,
+                ),
+                config=BrowserRunConfig(
+                    max_steps=settings.BROWSER_USE_MAX_STEPS,
+                    max_actions_per_step=settings.BROWSER_USE_MAX_ACTIONS_PER_STEP,
+                    task_timeout_seconds=settings.BROWSER_USE_TASK_TIMEOUT_SECONDS,
+                    step_timeout_seconds=settings.BROWSER_USE_STEP_TIMEOUT_SECONDS,
+                    handoff_timeout_seconds=settings.BROWSER_USE_HANDOFF_TIMEOUT_SECONDS,
+                    stream_screenshots=settings.BROWSER_USE_STREAM_SCREENSHOTS,
+                    use_vision=use_vision,
+                    solve_captcha=settings.BROWSER_USE_SOLVE_CAPTCHA,
+                    flash_mode=settings.BROWSER_USE_FLASH_MODE,
+                ),
+                user_id=params.user_id or None,
+                root_request_id=params.root_request_id,
             )
             run_t0 = perf_counter()
             result = await runner.run(full_task)
-            if user_id:
-                # Graph-background execution has no authenticated request context,
-                # so the id must be explicit or the event lands on an anonymous
-                # profile (see analytics conventions in CLAUDE.md).
-                capture_event(
-                    user_id,
-                    AnalyticsEvents.BROWSER_TASK_FINISHED,
-                    {
-                        "status": result.status.value,
-                        "success": result.success,
-                        "steps": result.steps,
-                        "duration_ms": round((perf_counter() - run_t0) * 1000),
-                        "source": source_category or "web",
-                    },
-                )
-            if user_id:
-                # Record the finished task for the user's browser history (settings).
-                # Best-effort background write: a completed task must still return
-                # its result even if history persistence hiccups.
-                spawn_background_task(
-                    record_browser_task(
-                        user_id=user_id,
-                        conversation_id=conversation_id,
-                        task=task,
-                        session_id=session.session_id,
-                        result=result,
-                        step_goals=[step_goals.get(i, "") for i in range(1, result.steps + 1)],
-                        step_screenshots=[
-                            step_shots.get(i, "") for i in range(1, result.steps + 1)
-                        ],
-                        source=task_source,
-                    ),
-                    name="record_browser_task",
-                )
+            _persist_run_outcome(
+                params,
+                task=task,
+                session_id=session.session_id,
+                result=result,
+                run_t0=run_t0,
+                emitter=emitter,
+            )
             return _agent_result_message(result)
     except BrowserConcurrencyLimit as exc:
         return str(exc)
     except BrowserUnavailableError as exc:
         log.warning(f"{LogTag.BROWSER} Browser session unavailable", error_type=type(exc).__name__)
-        await emit(
+        await emitter.emit(
             BrowserResultSnapshot(
                 status=BrowserSessionStatus.FAILED, success=False, summary=str(exc)
             )

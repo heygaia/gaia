@@ -39,7 +39,7 @@ class TestBatchFetchWithCrawl4ai:
         crawler_inst.arun_many = AsyncMock(return_value=[result_httpbin, result_example])
         mock_crawler_cls.return_value = crawler_inst
 
-        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
 
         urls = [
             "https://example.com",
@@ -47,10 +47,12 @@ class TestBatchFetchWithCrawl4ai:
         ]
         contents, errors = await batch_fetch_with_crawl4ai(
             urls,
-            page_timeout_ms=30_000,
-            total_timeout_seconds=60.0,
-            semaphore_count=3,
-            context_name="test",
+            CrawlBatchParams(
+                page_timeout_ms=30_000,
+                total_timeout_seconds=60.0,
+                semaphore_count=3,
+                context_name="test",
+            ),
         )
 
         assert errors == {}
@@ -83,15 +85,17 @@ class TestBatchFetchWithCrawl4ai:
         )
         mock_crawler_cls.return_value = crawler_inst
 
-        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
 
         urls = ["https://good.example", "https://bad.example"]
         contents, errors = await batch_fetch_with_crawl4ai(
             urls,
-            page_timeout_ms=30_000,
-            total_timeout_seconds=20.0,
-            semaphore_count=5,
-            context_name="test",
+            CrawlBatchParams(
+                page_timeout_ms=30_000,
+                total_timeout_seconds=20.0,
+                semaphore_count=5,
+                context_name="test",
+            ),
         )
 
         assert contents["https://good.example"] == "ok"
@@ -128,15 +132,17 @@ class TestBatchFetchObscura:
         crawler_inst.arun = AsyncMock(side_effect=lambda url, config: make_result(url))
         mock_crawler_cls.return_value = crawler_inst
 
-        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
 
         urls = ["https://a.example", "https://b.example", "https://c.example"]
         contents, errors = await batch_fetch_with_crawl4ai(
             urls,
-            page_timeout_ms=20_000,
-            total_timeout_seconds=30.0,
-            semaphore_count=3,
-            context_name="test",
+            CrawlBatchParams(
+                page_timeout_ms=20_000,
+                total_timeout_seconds=30.0,
+                semaphore_count=3,
+                context_name="test",
+            ),
         )
 
         assert errors == {}
@@ -177,14 +183,16 @@ class TestBatchFetchObscura:
         crawler_inst.arun = AsyncMock(side_effect=arun)
         mock_crawler_cls.return_value = crawler_inst
 
-        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
 
         contents, errors = await batch_fetch_with_crawl4ai(
             ["https://good.example", "https://bad.example"],
-            page_timeout_ms=20_000,
-            total_timeout_seconds=30.0,
-            semaphore_count=3,
-            context_name="test",
+            CrawlBatchParams(
+                page_timeout_ms=20_000,
+                total_timeout_seconds=30.0,
+                semaphore_count=3,
+                context_name="test",
+            ),
         )
 
         assert contents["https://good.example"] == "ok"

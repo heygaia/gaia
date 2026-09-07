@@ -176,9 +176,7 @@ def _register_nav_handler(
     def on_nav(params: dict[str, Any], _session_id: str | None) -> None:
         frame = params.get("frame", {})
         if frame.get("parentId") is None:
-            refresh = asyncio.ensure_future(
-                _refresh_meta(cdp, target_id, meta, page_session)
-            )
+            refresh = asyncio.ensure_future(_refresh_meta(cdp, target_id, meta, page_session))
             background.add(refresh)
             refresh.add_done_callback(background.discard)
 
@@ -217,7 +215,13 @@ async def _read_favicon(cdp: CDPClient, page_session: str) -> str | None:
             {"expression": _FAVICON_JS, "returnByValue": True},
             session_id=page_session,
         )
-    except Exception:
+    except Exception as exc:
+        # A favicon is decoration — a page that blocks evaluation or is mid-navigation
+        # must not break the tab's real metadata. Logged so a persistent failure shows up.
+        log.warning(
+            f"{LogTag.BROWSER} Could not read page favicon",
+            error_type=type(exc).__name__,
+        )
         return None
     value = result.get("result", {}).get("value")
     return value if isinstance(value, str) else None

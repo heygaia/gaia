@@ -55,16 +55,20 @@ class ApprovalOutcome:
     scope: str = "once"
 
 
-async def publish_approval_request(
-    *,
-    approval_id: str,
-    stream_id: str,
-    user_id: str,
-    conversation_id: str,
-    tool_call: GatedCall,
-    summary: str,
-    integration_name: str | None,
-) -> None:
+@dataclass(frozen=True)
+class GatedApproval:
+    """Identity of a gated call being surfaced — shared by request and receipt."""
+
+    approval_id: str
+    stream_id: str
+    user_id: str
+    conversation_id: str
+    tool_call: GatedCall
+    summary: str
+    integration_name: str | None
+
+
+async def publish_approval_request(approval: GatedApproval) -> None:
     """Record the pending approval and surface its card — exactly once.
 
     The gate re-enters this on every resume replay (the node re-runs from the
@@ -72,27 +76,33 @@ async def publish_approval_request(
     actually created the record. A replay is a no-op.
     """
     created = await upsert_pending_approval(
-        approval_id=approval_id,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        stream_id=stream_id,
-        tool_name=tool_call.name,
-        tool_call_id=tool_call.id,
-        args=tool_call.args,
-        summary=summary,
-        integration_name=integration_name,
+        approval_id=approval.approval_id,
+        user_id=approval.user_id,
+        conversation_id=approval.conversation_id,
+        stream_id=approval.stream_id,
+        tool_name=approval.tool_call.name,
+        tool_call_id=approval.tool_call.id,
+        args=approval.tool_call.args,
+        summary=approval.summary,
+        integration_name=approval.integration_name,
     )
     if not created:
         return
 
-    log.set(hil={"approval_id": approval_id, "tool": tool_call.name, "stream_id": stream_id})
-    await _publish_entry(
-        stream_id,
-        _approval_entry(
-            approval_id, tool_call, HILApprovalStatus.PENDING, summary, integration_name
-        ),
+    log.set(
+        hil={
+            "approval_id": approval.approval_id,
+            "tool": approval.tool_call.name,
+            "stream_id": approval.stream_id,
+        }
     )
-    _schedule_pending_notification(user_id, conversation_id, approval_id, summary)
+    await _publish_entry(
+        approval.stream_id,
+        _approval_entry(approval, HILApprovalStatus.PENDING),
+    )
+    _schedule_pending_notification(
+        approval.user_id, approval.conversation_id, approval.approval_id, approval.summary
+    )
 
 
 async def publish_decision(
@@ -105,17 +115,16 @@ async def publish_decision(
     closed. The client follows the new stream via ``executor.stream_started``, so a card
     settled on the old one resolves where nobody is looking.
     """
-    await _publish_entry(
-        stream_id,
-        _approval_entry(
-            record.approval_id,
-            GatedCall(name=record.tool_name, id=record.tool_call_id, args=record.args),
-            status,
-            record.summary,
-            record.integration_name,
-            feedback,
-        ),
+    approval = GatedApproval(
+        approval_id=record.approval_id,
+        stream_id=stream_id,
+        user_id=record.user_id,
+        conversation_id=record.conversation_id,
+        tool_call=GatedCall(name=record.tool_name, id=record.tool_call_id, args=record.args),
+        summary=record.summary,
+        integration_name=record.integration_name,
     )
+    await _publish_entry(stream_id, _approval_entry(approval, status, feedback=feedback))
     # Also settle the PERSISTED frame right now. Final delivery reconciles too,
     # but the run may pause again on a later gate first — a revisit in that
     # window would otherwise render a dead pending card for a decided approval.
@@ -138,17 +147,7 @@ async def publish_decision(
         )
 
 
-async def publish_auto_approval(
-    *,
-    approval_id: str,
-    stream_id: str,
-    user_id: str,
-    conversation_id: str,
-    tool_call: GatedCall,
-    summary: str,
-    integration_name: str | None,
-    reason: str,
-) -> None:
+async def publish_auto_approval(approval: GatedApproval, *, reason: str) -> None:
     """Record and surface an action auto mode ran without asking.
 
     The card is published already settled, so it needs no decision and wakes nobody — it
@@ -156,27 +155,20 @@ async def publish_auto_approval(
     done in their name.
     """
     await record_auto_approval(
-        approval_id=approval_id,
-        user_id=user_id,
-        conversation_id=conversation_id,
-        stream_id=stream_id,
-        tool_name=tool_call.name,
-        tool_call_id=tool_call.id,
-        args=tool_call.args,
-        summary=summary,
-        integration_name=integration_name,
+        approval_id=approval.approval_id,
+        user_id=approval.user_id,
+        conversation_id=approval.conversation_id,
+        stream_id=approval.stream_id,
+        tool_name=approval.tool_call.name,
+        tool_call_id=approval.tool_call.id,
+        args=approval.tool_call.args,
+        summary=approval.summary,
+        integration_name=approval.integration_name,
         reason=reason,
     )
     await _publish_entry(
-        stream_id,
-        _approval_entry(
-            approval_id,
-            tool_call,
-            HILApprovalStatus.AUTO_APPROVED,
-            summary,
-            integration_name,
-            auto_reason=reason,
-        ),
+        approval.stream_id,
+        _approval_entry(approval, HILApprovalStatus.AUTO_APPROVED, auto_reason=reason),
     )
 
 
@@ -283,23 +275,21 @@ async def _publish_entry(stream_id: str, entry: ApprovalRequestEntry) -> None:
 
 
 def _approval_entry(
-    approval_id: str,
-    tool_call: GatedCall,
+    approval: GatedApproval,
     status: HILApprovalStatus,
-    summary: str,
-    integration_name: str | None,
     feedback: str | None = None,
     auto_reason: str | None = None,
 ) -> ApprovalRequestEntry:
+    tool_call = approval.tool_call
     return ApprovalRequestEntry(
         tool_name=APPROVAL_REQUEST_TOOL_NAME,
         tool_category=APPROVAL_TOOL_CATEGORY,
         data=ApprovalRequestEntryData(
-            approval_id=approval_id,
+            approval_id=approval.approval_id,
             tool_call_id=tool_call.id,
             gated_tool_name=tool_call.name,
-            integration_name=integration_name,
-            summary=summary,
+            integration_name=approval.integration_name,
+            summary=approval.summary,
             args_preview=tool_call.args,
             status=status,
             feedback=feedback,

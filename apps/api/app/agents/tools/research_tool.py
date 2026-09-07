@@ -5,6 +5,7 @@ from typing import Annotated, Any, TypedDict, cast
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
+from langgraph.types import StreamWriter
 
 from app.constants.cache import ONE_HOUR_TTL
 from app.constants.log_tags import LogTag
@@ -21,7 +22,7 @@ from app.templates.docstrings.research_tool_docs import (
     RESEARCH_INSTRUCTIONS,
 )
 from app.utils.chat_utils import get_user_id_from_config
-from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
 from app.utils.research_utils import (
     build_research_cache_key,
     decompose_research_queries,
@@ -54,6 +55,62 @@ class ResearchResult(TypedDict):
     failed_sources: int
     error: str | None
     integrity_note: str
+
+
+async def _fetch_source_contents(
+    ranked_urls: list[dict[str, Any]],
+    crawl4ai_contents: dict[str, str],
+    crawl4ai_errors: dict[str, str],
+    writer: StreamWriter,
+) -> list[dict[str, Any]]:
+    """Resolve each ranked URL to page content, tiered: batch crawl4ai, then httpx, then snippet."""
+    semaphore = asyncio.Semaphore(DEEP_RESEARCH_FALLBACK_SEMAPHORE_COUNT)
+    fetch_counter = 0
+    total_urls = len(ranked_urls)
+
+    async def _bounded_fetch(url_info: dict[str, Any]) -> dict[str, Any]:
+        nonlocal fetch_counter
+        async with semaphore:
+            url = url_info["url"]
+            errors: list[str] = []
+
+            batch_content = crawl4ai_contents.get(url)
+            if batch_content and batch_content.strip():
+                fetch_counter += 1
+                writer({"progress": f"Fetched source {fetch_counter}/{total_urls}..."})
+                return {**url_info, "content": batch_content, "fetch_error": None}
+
+            crawl_error = crawl4ai_errors.get(url)
+            if crawl_error:
+                errors.append(f"crawl4ai: {crawl_error}")
+            else:
+                errors.append("crawl4ai: returned no content")
+
+            # Tier 2: httpx + BeautifulSoup (always available)
+            try:
+                content = await fetch_with_httpx(url)
+                fetch_counter += 1
+                writer({"progress": f"Fetched source {fetch_counter}/{total_urls}..."})
+                return {**url_info, "content": content, "fetch_error": None}
+            except Exception as e:
+                errors.append(f"httpx: {e}")
+
+            # Tier 3: fall back to search snippet
+            fetch_counter += 1
+            snippet = url_info.get("snippet", "").strip()
+            if snippet:
+                log.warning(f"{LogTag.TOOL} All fetchers failed, using search snippet", url=url)
+                return {
+                    **url_info,
+                    "content": f"[Snippet only: full page unavailable]\n\n{snippet}",
+                    "fetch_error": "; ".join(errors),
+                }
+            return {**url_info, "content": None, "fetch_error": "; ".join(errors)}
+
+    sources: list[dict[str, Any]] = await asyncio.gather(
+        *[_bounded_fetch(u) for u in ranked_urls], return_exceptions=False
+    )
+    return sources
 
 
 # The return stays dict[str, Any]: the five exit branches return genuinely
@@ -179,58 +236,18 @@ async def deep_research(
         urls_to_fetch = [u["url"] for u in ranked_urls]
         crawl4ai_contents, crawl4ai_errors = await batch_fetch_with_crawl4ai(
             urls_to_fetch,
-            page_timeout_ms=CRAWL4AI_PAGE_TIMEOUT_MS,
-            total_timeout_seconds=DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS,
-            semaphore_count=DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT,
-            context_name="crawl4ai",
-            content_query=query,
+            CrawlBatchParams(
+                page_timeout_ms=CRAWL4AI_PAGE_TIMEOUT_MS,
+                total_timeout_seconds=DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS,
+                semaphore_count=DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT,
+                context_name="crawl4ai",
+                content_query=query,
+            ),
         )
 
-        semaphore = asyncio.Semaphore(DEEP_RESEARCH_FALLBACK_SEMAPHORE_COUNT)
-        fetch_counter = 0
-        total_urls = len(ranked_urls)
-
-        async def _bounded_fetch(url_info: dict[str, Any]) -> dict[str, Any]:
-            nonlocal fetch_counter
-            async with semaphore:
-                url = url_info["url"]
-                errors: list[str] = []
-
-                batch_content = crawl4ai_contents.get(url)
-                if batch_content and batch_content.strip():
-                    fetch_counter += 1
-                    writer({"progress": f"Fetched source {fetch_counter}/{total_urls}..."})
-                    return {**url_info, "content": batch_content, "fetch_error": None}
-
-                crawl_error = crawl4ai_errors.get(url)
-                if crawl_error:
-                    errors.append(f"crawl4ai: {crawl_error}")
-                else:
-                    errors.append("crawl4ai: returned no content")
-
-                # Tier 2: httpx + BeautifulSoup (always available)
-                try:
-                    content = await fetch_with_httpx(url)
-                    fetch_counter += 1
-                    writer({"progress": f"Fetched source {fetch_counter}/{total_urls}..."})
-                    return {**url_info, "content": content, "fetch_error": None}
-                except Exception as e:
-                    errors.append(f"httpx: {e}")
-
-                # Tier 3: fall back to search snippet
-                fetch_counter += 1
-                snippet = url_info.get("snippet", "").strip()
-                if snippet:
-                    log.warning(f"{LogTag.TOOL} All fetchers failed, using search snippet", url=url)
-                    return {
-                        **url_info,
-                        "content": f"[Snippet only: full page unavailable]\n\n{snippet}",
-                        "fetch_error": "; ".join(errors),
-                    }
-                return {**url_info, "content": None, "fetch_error": "; ".join(errors)}
-
-        fetch_tasks = [_bounded_fetch(u) for u in ranked_urls]
-        sources: list[dict[str, Any]] = await asyncio.gather(*fetch_tasks, return_exceptions=False)
+        sources = await _fetch_source_contents(
+            ranked_urls, crawl4ai_contents, crawl4ai_errors, writer
+        )
 
         valid_sources = [s for s in sources if s.get("content")]
         failed_count = len(sources) - len(valid_sources)

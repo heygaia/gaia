@@ -29,6 +29,8 @@ from app.schemas.browser import (
     HandoffRequest,
 )
 from app.services.browser.exceptions import BrowserConcurrencyLimit, BrowserUnavailableError
+from app.services.browser.runner import BrowserRunConfig, BrowserRunnerCallbacks
+from app.services.browser.tasks import BrowserTaskRecord
 
 UI_CONFIG: RunnableConfig = {
     "configurable": {"user_id": "u1", "thread_id": "c1", "stream_id": "s1", "source_category": "ui"}
@@ -42,8 +44,6 @@ BOT_CONFIG: RunnableConfig = {
         "conversation_source": "discord",
     }
 }
-
-EmitFn = Callable[[object], Awaitable[None]]
 
 
 @pytest.fixture(autouse=True)
@@ -148,8 +148,8 @@ async def test_bot_delivery_outage_does_not_abort_run(
             raise RuntimeError("rabbitmq down")
 
     class _Runner:
-        def __init__(self, *, emit: EmitFn, **kwargs: object) -> None:
-            self._emit = emit
+        def __init__(self, *, callbacks: BrowserRunnerCallbacks, **kwargs: object) -> None:
+            self._emit = callbacks.emit
 
         async def run(self, task: str) -> BrowserResultSnapshot:
             await self._emit(
@@ -301,21 +301,28 @@ class Harness:
         """The card payloads written onto the SSE stream, in order."""
         return [w[BROWSER_TASK_EVENT] for w in self.writes]
 
+    @property
+    def callbacks(self) -> BrowserRunnerCallbacks:
+        """The seam bundle the tool handed the runner."""
+        cb: BrowserRunnerCallbacks = self.runner_kwargs["callbacks"]
+        return cb
+
     async def emit(self, snapshot: object) -> None:
-        await self.runner_kwargs["emit"](snapshot)
+        await self.callbacks.emit(snapshot)
 
     async def is_cancelled(self) -> bool:
-        result: bool = await self.runner_kwargs["is_cancelled"]()
+        result: bool = await self.callbacks.is_cancelled()
         return result
 
     async def request_handoff(self, req: HandoffRequest) -> HandoffOutcome:
-        outcome: HandoffOutcome = await self.runner_kwargs["request_handoff"](req)
+        outcome: HandoffOutcome = await self.callbacks.request_handoff(req)
         return outcome
 
     def action_results(self, step_index: int, outputs: object) -> None:
         # The tool wires this to the mirror's `results`; the runner calls it from
         # `on_step_end`. Driving it directly mirrors that call.
-        self.runner_kwargs["action_results"](step_index, outputs)
+        assert self.callbacks.action_results is not None
+        self.callbacks.action_results(step_index, outputs)
 
 
 class RecordingDelivery:
@@ -377,8 +384,21 @@ def _install(
 
     monkeypatch.setattr(tool_mod, "BrowserTaskRunner", _Runner)
 
-    def _record(**kwargs: Any) -> Any:
-        h.record_calls.append(kwargs)
+    def _record(
+        record: BrowserTaskRecord,
+        result: BrowserResultSnapshot,
+        *,
+        step_goals: list[str] | None = None,
+        step_screenshots: list[str] | None = None,
+    ) -> Any:
+        h.record_calls.append(
+            {
+                "record": record,
+                "result": result,
+                "step_goals": step_goals,
+                "step_screenshots": step_screenshots,
+            }
+        )
         return _noop()
 
     monkeypatch.setattr(tool_mod, "record_browser_task", _record)
@@ -552,21 +572,23 @@ async def test_runner_is_configured_from_settings_and_config(
     await browser_task.ainvoke({"task": "x"}, config=config)
 
     kwargs = dict(h.runner_kwargs)
+    callbacks = kwargs.pop("callbacks")
     for seam in ("emit", "request_handoff", "is_cancelled", "action_results"):
-        assert callable(kwargs.pop(seam))
+        assert callable(getattr(callbacks, seam))
+    assert kwargs.pop("config") == BrowserRunConfig(
+        max_steps=7,
+        max_actions_per_step=3,
+        task_timeout_seconds=111,
+        step_timeout_seconds=22,
+        handoff_timeout_seconds=333,
+        stream_screenshots=False,
+        use_vision=False,
+        solve_captcha=False,
+        flash_mode=True,
+    )
     assert kwargs == {
         "session": h.session,
-        "conversation_id": "conv-9",
         "llm": LLM_SENTINEL,
-        "max_steps": 7,
-        "max_actions_per_step": 3,
-        "task_timeout_seconds": 111,
-        "step_timeout_seconds": 22,
-        "handoff_timeout_seconds": 333,
-        "stream_screenshots": False,
-        "use_vision": False,
-        "solve_captcha": False,
-        "flash_mode": True,
         "user_id": "u1",
         "root_request_id": "req-42",
     }
@@ -586,7 +608,8 @@ async def test_conversation_id_prefers_the_user_facing_conversation(
         }
     }
     await browser_task.ainvoke({"task": "x"}, config=config)
-    assert h.runner_kwargs["conversation_id"] == "conv-9"
+    await asyncio.sleep(0)
+    assert h.record_calls[0]["record"].conversation_id == "conv-9"
 
 
 async def test_conversation_id_falls_back_to_thread_id(
@@ -595,7 +618,8 @@ async def test_conversation_id_falls_back_to_thread_id(
     h = _install(monkeypatch)
     config: RunnableConfig = {"configurable": {"user_id": "u1", "thread_id": "t-7"}}
     await browser_task.ainvoke({"task": "x"}, config=config)
-    assert h.runner_kwargs["conversation_id"] == "t-7"
+    await asyncio.sleep(0)
+    assert h.record_calls[0]["record"].conversation_id == "t-7"
 
 
 async def test_missing_identifiers_degrade_to_blank_and_none(
@@ -603,7 +627,6 @@ async def test_missing_identifiers_degrade_to_blank_and_none(
 ) -> None:
     h = _install(monkeypatch)
     await browser_task.ainvoke({"task": "x"}, config={"configurable": {}})
-    assert h.runner_kwargs["conversation_id"] == ""
     assert h.runner_kwargs["user_id"] is None
     assert h.runner_kwargs["root_request_id"] is None
     assert h.session_kwargs == {"user_id": "", "start_url": None}
@@ -624,7 +647,6 @@ async def test_a_config_with_no_configurable_key_still_degrades_cleanly(
 
     await browser_task.coroutine(config={}, task="x")
 
-    assert h.runner_kwargs["conversation_id"] == ""
     assert h.runner_kwargs["user_id"] is None
     assert h.session_kwargs == {"user_id": "", "start_url": None}
 
@@ -1017,16 +1039,16 @@ async def test_history_records_step_captions_and_uploaded_screenshots_in_order(
 
     assert h.spawn_names == ["record_browser_task"]
     (call,) = h.record_calls
-    assert call == {
-        "user_id": "u1",
-        "conversation_id": "conv-9",
-        "task": "book a table",
-        "session_id": "sess-1",
-        "result": _result(BrowserSessionStatus.COMPLETED, True, "done", steps=4),
-        "step_goals": ["open", "", "submit", "done"],
-        "step_screenshots": ["https://cdn/1.png", "", "", "http://cdn/4.png"],
-        "source": "web",
-    }
+    assert call["record"] == BrowserTaskRecord(
+        user_id="u1",
+        conversation_id="conv-9",
+        task="book a table",
+        session_id="sess-1",
+        source="web",
+    )
+    assert call["result"] == _result(BrowserSessionStatus.COMPLETED, True, "done", steps=4)
+    assert call["step_goals"] == ["open", "", "submit", "done"]
+    assert call["step_screenshots"] == ["https://cdn/1.png", "", "", "http://cdn/4.png"]
 
 
 async def test_history_lists_are_sized_by_the_reported_step_count(
@@ -1053,7 +1075,7 @@ async def test_history_source_is_blank_for_an_unknown_conversation_source(
     }
     await browser_task.ainvoke({"task": "x"}, config=config)
     await asyncio.sleep(0)
-    assert h.record_calls[0]["source"] == ""
+    assert h.record_calls[0]["record"].source == ""
 
 
 async def test_no_history_is_recorded_for_an_anonymous_run(

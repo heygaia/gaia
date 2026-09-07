@@ -12,7 +12,7 @@ from pathlib import Path
 import subprocess
 import time
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -2149,6 +2149,17 @@ async def test_reaper_loop_propagates_cancelled_from_recover() -> None:
 class _LowLevelCDPFake:
     """Fake at send_raw level so real cdp_call/_cdp_call are exercised."""
 
+    # Sensible per-method defaults; any method not listed replies with an empty
+    # object, matching what the real CDP layer treats as a no-payload ack.
+    _DEFAULT_RESPONSES: ClassVar[dict[str, dict[str, object]]] = {
+        "Target.createBrowserContext": {"browserContextId": "ctx-low"},
+        "Target.createTarget": {"targetId": "t-low"},
+        "Target.getTargets": {"targetInfos": []},
+        "Storage.getCookies": {"cookies": []},
+        "Target.attachToTarget": {"sessionId": "sess-attach"},
+        "Runtime.evaluate": {"result": {"value": None}},
+    }
+
     def __init__(self, responses: dict[str, dict[str, object]] | None = None) -> None:
         self.responses: dict[str, dict[str, object]] = responses or {}
         self.calls: list[tuple[str, dict[str, object] | None, str | None]] = []
@@ -2159,28 +2170,7 @@ class _LowLevelCDPFake:
         self.calls.append((method, params, session_id))
         if method in self.responses:
             return self.responses[method]
-        # sensible defaults per method
-        if method == "Target.createBrowserContext":
-            return {"browserContextId": "ctx-low"}
-        if method == "Target.createTarget":
-            return {"targetId": "t-low"}
-        if method == "Target.getTargets":
-            return {"targetInfos": []}
-        if method == "Storage.getCookies":
-            return {"cookies": []}
-        if method == "Browser.setDownloadBehavior":
-            return {}
-        if method == "Storage.setCookies":
-            return {}
-        if method == "Target.disposeBrowserContext":
-            return {}
-        if method == "Target.attachToTarget":
-            return {"sessionId": "sess-attach"}
-        if method == "Runtime.evaluate":
-            return {"result": {"value": None}}
-        if method == "Target.detachFromTarget":
-            return {}
-        return {}
+        return self._DEFAULT_RESPONSES.get(method, {})
 
 
 def _host_with_low_fake(responses: dict[str, dict[str, object]] | None = None) -> ChromiumHost:

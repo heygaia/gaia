@@ -26,7 +26,7 @@ def _doc(**kw: object) -> BrowserTaskDocument:
         "step_goals": ["Opening", "Typing", "Reading"],
     }
     base.update(kw)
-    return BrowserTaskDocument(**base)  # type: ignore[arg-type]
+    return BrowserTaskDocument(**base)  # type: ignore[arg-type]  # unpacks a dict[str, object] kwargs bag into the typed BrowserTaskDocument fields
 
 
 @pytest.mark.unit

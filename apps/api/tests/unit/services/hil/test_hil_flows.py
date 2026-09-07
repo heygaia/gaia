@@ -71,10 +71,10 @@ def gate():
         patch(f"{MODULE}.publish_auto_approval", new=AsyncMock()) as receipt,
     ):
 
-        async def _record_card(**kwargs: Any) -> None:
+        async def _record_card(*args: Any, **kwargs: Any) -> None:
             log.append("card")
 
-        async def _record_receipt(**kwargs: Any) -> None:
+        async def _record_receipt(*args: Any, **kwargs: Any) -> None:
             log.append("receipt")
 
         request_card.side_effect = _record_card

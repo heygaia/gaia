@@ -146,7 +146,7 @@ BROWSER_LIVE_CODE_ENTROPY_BYTES = 9
 # web user that the local `gaia connect` CLI presents to upload the browser
 # profile it extracted. Short TTL because it is redeemed within seconds of being
 # shown; single-use because it authorises writing the user's whole login state.
-BROWSER_IMPORT_TOKEN_KEY_PREFIX = "browser:import:"
+BROWSER_IMPORT_TOKEN_KEY_PREFIX = "browser:import:"  # nosec B105 -- Redis key prefix, not a credential
 BROWSER_IMPORT_TOKEN_TTL_SECONDS = 600
 BROWSER_IMPORT_TOKEN_ENTROPY_BYTES = 32
 

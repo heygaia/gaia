@@ -199,6 +199,7 @@ async def mint_browser_import_token(
     """Mint the short-lived, single-use code the local ``gaia connect`` CLI
     presents to upload this user's browser profile. Authorised by the web
     session; the CLI, which has no cookie, authenticates with the returned code."""
+    log.set(user={"id": user.get("user_id")}, browser={"operation": "mint_import_token"})
     user_id = user.get("user_id")
     if not user_id:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User id required")

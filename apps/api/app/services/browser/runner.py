@@ -18,6 +18,7 @@ from __future__ import annotations
 import asyncio
 import base64
 from collections.abc import Awaitable, Callable
+from dataclasses import dataclass
 from time import perf_counter
 from typing import TYPE_CHECKING, Any
 
@@ -64,6 +65,45 @@ IsCancelledFn = Callable[[], Awaitable[bool]]
 ActionResultsFn = Callable[[int, list[BrowserActionOutput]], None]
 
 
+@dataclass(frozen=True)
+class BrowserRunnerCallbacks:
+    """The runner's injected seams — how it streams progress, pauses for the
+    human, checks cancellation, and mirrors per-action results into the thread."""
+
+    emit: EmitFn
+    request_handoff: RequestHandoffFn
+    is_cancelled: IsCancelledFn
+    action_results: ActionResultsFn | None = None
+
+
+@dataclass(frozen=True)
+class BrowserRunConfig:
+    """One browser run's tuning knobs — every field is a ``BROWSER_USE_*`` setting."""
+
+    max_steps: int
+    max_actions_per_step: int
+    task_timeout_seconds: int
+    step_timeout_seconds: int
+    handoff_timeout_seconds: int
+    stream_screenshots: bool
+    use_vision: bool
+    solve_captcha: bool
+    flash_mode: bool = True
+
+
+@dataclass(frozen=True)
+class _StepFrame:
+    """One step's data, captured off Browser-Use's callback for a deferred emit."""
+
+    index: int
+    goal: str
+    actions: list[BrowserAction]
+    url: str | None
+    title: str | None
+    raw_screenshot: str | None
+    since_prev_ms: int
+
+
 # Attributes worth naming an otherwise-unlabelled control by, in the order a
 # person would recognise it. `value` covers <input type="submit" value="Submit">.
 _LABEL_ATTRIBUTES = ("aria-label", "value", "title", "placeholder", "alt", "name", "id")
@@ -100,7 +140,13 @@ def _element_label(state: BrowserStateSummary, index: object) -> str | None:
         # Last resort: the tag itself ("Clicking BUTTON" still beats "Clicking").
         tag = (getattr(node, "node_name", "") or "").strip()
         return tag.lower() or None
-    except Exception:  # a DOM node shape we don't recognise must not kill the step
+    except Exception as exc:
+        # A DOM node shape we don't recognise must not kill the step — the caption
+        # just loses this element's name. Logged so a systematic shape change shows up.
+        log.warning(
+            f"{LogTag.BROWSER} Could not resolve element label from DOM node",
+            error_type=type(exc).__name__,
+        )
         return None
 
 
@@ -187,46 +233,33 @@ class BrowserTaskRunner:
         self,
         *,
         session: BrowserHostSession,
-        conversation_id: str,
         llm: BaseChatModel,
-        emit: EmitFn,
-        request_handoff: RequestHandoffFn,
-        is_cancelled: IsCancelledFn,
-        action_results: ActionResultsFn | None = None,
-        max_steps: int,
-        max_actions_per_step: int,
-        task_timeout_seconds: int,
-        step_timeout_seconds: int,
-        handoff_timeout_seconds: int,
-        stream_screenshots: bool,
-        use_vision: bool,
-        solve_captcha: bool,
-        flash_mode: bool = True,
+        callbacks: BrowserRunnerCallbacks,
+        config: BrowserRunConfig,
         user_id: str | None = None,
         root_request_id: str | None = None,
     ) -> None:
         self._session = session
-        self._conversation_id = conversation_id
         self._llm = llm
-        self._emit = emit
-        self._request_handoff = request_handoff
-        self._is_cancelled = is_cancelled
-        self._action_results = action_results
-        self._max_steps = max_steps
-        self._max_actions_per_step = max_actions_per_step
-        self._task_timeout = task_timeout_seconds
+        self._emit = callbacks.emit
+        self._request_handoff = callbacks.request_handoff
+        self._is_cancelled = callbacks.is_cancelled
+        self._action_results = callbacks.action_results
+        self._max_steps = config.max_steps
+        self._max_actions_per_step = config.max_actions_per_step
+        self._task_timeout = config.task_timeout_seconds
         # A step that hands off waits on the human for up to the handoff timeout, so
         # its budget is active-work time PLUS a full handoff; the overall wall-clock
         # likewise allows every permitted handoff to run its full duration on top of
         # the active-work budget, so live-view takeovers are never starved by a timeout.
-        self._step_timeout = step_timeout_seconds + handoff_timeout_seconds
+        self._step_timeout = config.step_timeout_seconds + config.handoff_timeout_seconds
         self._wall_clock_timeout = (
-            task_timeout_seconds + MAX_HANDOFFS_PER_TASK * handoff_timeout_seconds
+            config.task_timeout_seconds + MAX_HANDOFFS_PER_TASK * config.handoff_timeout_seconds
         )
-        self._stream_screenshots = stream_screenshots
-        self._use_vision = use_vision
-        self._solve_captcha = solve_captcha
-        self._flash_mode = flash_mode
+        self._stream_screenshots = config.stream_screenshots
+        self._use_vision = config.use_vision
+        self._solve_captcha = config.solve_captcha
+        self._flash_mode = config.flash_mode
         self._user_id = user_id
         self._root_request_id = root_request_id
         self._agent: Any = None
@@ -244,7 +277,7 @@ class BrowserTaskRunner:
 
     async def run(self, task: str) -> BrowserResultSnapshot:
         """Run the task to completion and return the final result snapshot."""
-        from browser_use import Agent, Browser  # noqa: PLC0415
+        from browser_use import Agent, Browser  # noqa: PLC0415 -- heavy optional dep
 
         await self._emit(
             BrowserSessionSnapshot(
@@ -423,13 +456,15 @@ class BrowserTaskRunner:
         # off for itself (see _handle_takeover). This callback only streams progress.
         task = spawn_background_task(
             self._emit_step(
-                n_steps,
-                goal,
-                step_actions,
-                getattr(browser_state_summary, "url", None),
-                getattr(browser_state_summary, "title", None),
-                raw_screenshot,
-                since_prev_ms,
+                _StepFrame(
+                    index=n_steps,
+                    goal=goal,
+                    actions=step_actions,
+                    url=getattr(browser_state_summary, "url", None),
+                    title=getattr(browser_state_summary, "title", None),
+                    raw_screenshot=raw_screenshot,
+                    since_prev_ms=since_prev_ms,
+                )
             ),
             name="browser_step_emit",
         )
@@ -458,38 +493,29 @@ class BrowserTaskRunner:
         if outputs:
             self._action_results(self._last_step, outputs)
 
-    async def _emit_step(
-        self,
-        n_steps: int,
-        goal: str,
-        actions: list[BrowserAction],
-        url: str | None,
-        title: str | None,
-        raw_screenshot: str | None,
-        since_prev_ms: int,
-    ) -> None:
+    async def _emit_step(self, frame: _StepFrame) -> None:
         async with self._emit_lock:
             shot_t0 = perf_counter()
-            screenshot = await self._render_screenshot(raw_screenshot, n_steps)
+            screenshot = await self._render_screenshot(frame.raw_screenshot, frame.index)
             if screenshot and screenshot.startswith("http"):
                 self._shots.append(screenshot)
             screenshot_ms = round((perf_counter() - shot_t0) * 1000)
             emit_t0 = perf_counter()
             await self._emit(
                 BrowserStepSnapshot(
-                    index=n_steps,
-                    goal=goal,
-                    actions=actions,
-                    url=url,
-                    title=title,
+                    index=frame.index,
+                    goal=frame.goal,
+                    actions=frame.actions,
+                    url=frame.url,
+                    title=frame.title,
                     screenshot=screenshot,
-                    elapsed_ms=since_prev_ms or None,
+                    elapsed_ms=frame.since_prev_ms or None,
                 )
             )
             log.info(
                 f"{LogTag.BROWSER} step timing",
-                step=n_steps,
-                since_prev_ms=since_prev_ms,
+                step=frame.index,
+                since_prev_ms=frame.since_prev_ms,
                 screenshot_ms=screenshot_ms,
                 emit_ms=round((perf_counter() - emit_t0) * 1000),
             )

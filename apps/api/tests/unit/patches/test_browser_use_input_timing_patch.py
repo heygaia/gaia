@@ -36,12 +36,12 @@ async def _record(delays: list[float], requested: list[float]) -> None:
         requested.append(delay)
         return await real_sleep(0)
 
-    asyncio.sleep = spy  # type: ignore[assignment]
+    asyncio.sleep = spy  # type: ignore[assignment]  # swaps asyncio.sleep for a spy to capture requested delays
     try:
         for delay in delays:
             await watchdog_module.asyncio.sleep(delay)
     finally:
-        asyncio.sleep = real_sleep  # type: ignore[assignment]
+        asyncio.sleep = real_sleep  # type: ignore[assignment]  # restores the real asyncio.sleep after the spy
 
 
 async def _armed_record(delays: list[float]) -> list[float]:

@@ -132,9 +132,7 @@ const TOOL_RENDERERS: Partial<RendererMap> = {
   screenshot_data: (data) => <ScreenshotSection screenshot_data={data} />,
 
   // Browser automation (Browser-Use)
-  browser_task_data: (data, index) => (
-    <BrowserTaskSection key={`tool-browser-${index}`} data={data} />
-  ),
+  browser_task_data: (data) => <BrowserTaskSection data={data} />,
 
   // Email
   email_thread_data: (data) => <EmailThreadCard emailThreadData={data} />,

@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
+from app.agents.llm.model_catalog import get_openrouter_catalog
 from app.config.settings import settings
 from app.constants.llm import DEFAULT_MODEL_NAME
 from app.services.browser.exceptions import BrowserUnavailableError
@@ -80,12 +81,12 @@ def build_browser_llm() -> BaseChatModel:
         )
 
     if provider == "anthropic":
-        from browser_use import ChatAnthropic  # noqa: PLC0415
+        from browser_use import ChatAnthropic  # noqa: PLC0415 -- heavy optional dep
 
         return ChatAnthropic(model=model, api_key=api_key)
 
     if provider == "google":
-        from browser_use import ChatGoogle  # noqa: PLC0415
+        from browser_use import ChatGoogle  # noqa: PLC0415 -- heavy optional dep
 
         return ChatGoogle(model=model, api_key=api_key)
 
@@ -93,7 +94,7 @@ def build_browser_llm() -> BaseChatModel:
         # Browser-Use's DeepSeek wrapper is NOT re-exported from the top-level
         # `browser_use` package (absent from its `_LAZY_IMPORTS`/`__all__`, unlike
         # ChatOpenAI/ChatGoogle/ChatAnthropic) — import it from its real module.
-        from browser_use.llm.deepseek.chat import ChatDeepSeek  # noqa: PLC0415
+        from browser_use.llm.deepseek.chat import ChatDeepSeek  # noqa: PLC0415 -- heavy dep
 
         # Only override base_url when set — ChatDeepSeek's own default already
         # points at DeepSeek's official endpoint.
@@ -102,7 +103,7 @@ def build_browser_llm() -> BaseChatModel:
         return ChatDeepSeek(model=model, api_key=api_key)
 
     if provider in ("openai", "openrouter"):
-        from browser_use import ChatOpenAI  # noqa: PLC0415
+        from browser_use import ChatOpenAI  # noqa: PLC0415 -- heavy optional dep
 
         base_url = override_base_url or (_OPENROUTER_BASE_URL if provider == "openrouter" else None)
         # When the endpoint cannot serve `json_schema`, hand Browser-Use its own
@@ -155,8 +156,6 @@ async def resolve_use_vision() -> bool:
     # (e.g. a GLM flash) keeps it on. A bare id (an OpenAI model like gpt-4o) is
     # assumed vision-capable, as those lanes are.
     if provider == "openrouter" or "/" in model:
-        from app.agents.llm.model_catalog import get_openrouter_catalog  # noqa: PLC0415
-
         catalog = await get_openrouter_catalog()
         return await catalog.accepts_images(model)
 

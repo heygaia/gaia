@@ -352,7 +352,7 @@ async def test_process_watcher_relaunches_engine_the_instant_it_dies() -> None:
     """A segfault must trigger recovery immediately, not wait for the 15s reaper."""
     host = _make_host(_FakeCDP())
     proc = _FakeProc()
-    host._proc = proc  # type: ignore[assignment]
+    host._proc = proc  # type: ignore[assignment]  # assigns a _FakeProc stub to the typed asyncio Process attribute
 
     async def recover() -> None:
         host._stopping.set()  # one recovery, then the loop exits
@@ -373,7 +373,7 @@ async def test_process_watcher_treats_deliberate_stop_as_shutdown_not_crash() ->
     host = _make_host(_FakeCDP())
     host._recover_crash = AsyncMock()
     proc = _FakeProc()
-    host._proc = proc  # type: ignore[assignment]
+    host._proc = proc  # type: ignore[assignment]  # assigns a _FakeProc stub to the typed asyncio Process attribute
 
     task = asyncio.create_task(host._watch_loop())
     await asyncio.sleep(0)  # park the watcher on proc.wait()

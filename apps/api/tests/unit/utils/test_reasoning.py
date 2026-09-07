@@ -31,9 +31,7 @@ class TestExtractReasoningDelta:
 
         from app.utils.reasoning import extract_reasoning_delta
 
-        chunk = AIMessageChunk(
-            content="", additional_kwargs={"reasoning_content": "thinking"}
-        )
+        chunk = AIMessageChunk(content="", additional_kwargs={"reasoning_content": "thinking"})
         assert extract_reasoning_delta(chunk) == "thinking"
 
     def test_the_additional_kwargs_fallback_still_works(self) -> None:
@@ -44,10 +42,8 @@ class TestExtractReasoningDelta:
 
         from app.utils.reasoning import extract_reasoning_delta
 
-        raw = SimpleNamespace(
-            content_blocks=[], additional_kwargs={"reasoning_content": "raw"}
-        )
-        assert extract_reasoning_delta(raw) == "raw"  # type: ignore[arg-type]
+        raw = SimpleNamespace(content_blocks=[], additional_kwargs={"reasoning_content": "raw"})
+        assert extract_reasoning_delta(raw) == "raw"  # type: ignore[arg-type]  # passes a SimpleNamespace stub in place of the real AIMessageChunk
 
     def test_a_non_reasoning_chunk_yields_nothing(self) -> None:
         """Returns "" rather than None so the caller emits no frame at all for a

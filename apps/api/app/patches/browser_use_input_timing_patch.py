@@ -75,8 +75,7 @@ class _AsyncioProxy:
 
     sleep = staticmethod(_sleep)
 
-    # Delegating to an arbitrary module attribute — Any is the honest type here.
-    def __getattr__(self, name: str) -> Any:  # noqa: ANN401
+    def __getattr__(self, name: str) -> Any:  # noqa: ANN401 -- delegates to an arbitrary asyncio module attribute, so Any is the honest return type
         return getattr(asyncio, name)
 
 
@@ -97,10 +96,10 @@ def _arm_typing_rhythm(
     return wrapper
 
 
-watchdog_module.asyncio = _AsyncioProxy()  # type: ignore[assignment, attr-defined]
-DefaultActionWatchdog._input_text_element_node_impl = _arm_typing_rhythm(  # type: ignore[method-assign, assignment]
+watchdog_module.asyncio = _AsyncioProxy()  # type: ignore[assignment, attr-defined]  # inject an asyncio proxy into browser-use's watchdog module so its sleeps carry the typing rhythm
+DefaultActionWatchdog._input_text_element_node_impl = _arm_typing_rhythm(  # type: ignore[method-assign, assignment]  # rebind browser-use's watchdog method with the rhythm-armed wrapper
     DefaultActionWatchdog._input_text_element_node_impl
 )
-DefaultActionWatchdog._type_to_page = _arm_typing_rhythm(  # type: ignore[method-assign, assignment]
+DefaultActionWatchdog._type_to_page = _arm_typing_rhythm(  # type: ignore[method-assign, assignment]  # rebind browser-use's watchdog method with the rhythm-armed wrapper
     DefaultActionWatchdog._type_to_page
 )

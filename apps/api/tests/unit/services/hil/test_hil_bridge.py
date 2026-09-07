@@ -25,6 +25,7 @@ from app.constants.log_tags import LogTag
 from app.models.hil_models import HILApprovalStatus
 from app.services.hil.bridge import (
     ApprovalOutcome,
+    GatedApproval,
     build_summary,
     publish_approval_request,
     publish_decision,
@@ -71,13 +72,15 @@ def bridge():
 
 async def publish(bridge: dict) -> None:
     await publish_approval_request(
-        approval_id="appr-1",
-        stream_id=STREAM_ID,
-        user_id=USER_ID,
-        conversation_id=CONVERSATION_ID,
-        tool_call=TOOL_CALL,
-        summary="Send email — to: bob@example.com",
-        integration_name="Gmail",
+        GatedApproval(
+            approval_id="appr-1",
+            stream_id=STREAM_ID,
+            user_id=USER_ID,
+            conversation_id=CONVERSATION_ID,
+            tool_call=TOOL_CALL,
+            summary="Send email — to: bob@example.com",
+            integration_name="Gmail",
+        )
     )
     await asyncio.sleep(0)  # let the fire-and-forget notify task start
 

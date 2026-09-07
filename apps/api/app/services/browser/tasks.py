@@ -8,36 +8,49 @@ renders as a permanently broken thumbnail whenever that happens. Store what
 happened; do not recompute what might not exist.
 """
 
+from dataclasses import dataclass
+
 from app.config.settings import settings
 from app.db.repositories.browser_tasks import browser_task_repository
 from app.models.browser_task_models import BrowserTaskDocument
 from app.schemas.browser import BrowserResultSnapshot, BrowserTaskFrame, BrowserTaskResponse
 
 
+@dataclass(frozen=True)
+class BrowserTaskRecord:
+    """Identity and provenance of a finished browser run — which run this was and
+    who owns it, as opposed to how it went (``result``) or what it showed per step
+    (``step_goals``/``step_screenshots``). Grouped into one object because these
+    fields always travel together and the seam already sits at the argument ceiling.
+    """
+
+    user_id: str
+    conversation_id: str
+    task: str
+    session_id: str
+    source: str = ""
+
+
 async def record_browser_task(
-    *,
-    user_id: str,
-    conversation_id: str,
-    task: str,
-    session_id: str,
+    record: BrowserTaskRecord,
     result: BrowserResultSnapshot,
+    *,
     step_goals: list[str] | None = None,
     step_screenshots: list[str] | None = None,
-    source: str = "",
 ) -> None:
     """Persist a finished browser task (any outcome) so it appears in the user's history."""
     await browser_task_repository.create(
         BrowserTaskDocument(
-            user_id=user_id,
-            conversation_id=conversation_id,
-            task=task,
+            user_id=record.user_id,
+            conversation_id=record.conversation_id,
+            task=record.task,
             status=result.status,
             success=result.success,
-            session_id=session_id,
+            session_id=record.session_id,
             steps=result.steps,
             step_goals=step_goals or [],
             step_screenshots=step_screenshots or [],
-            source=source,
+            source=record.source,
             replay_url=result.replay_url,
         )
     )

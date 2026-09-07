@@ -9,8 +9,9 @@ actions), which is what the takeover tests below exercise directly.
 """
 
 import asyncio
+from dataclasses import dataclass
 from types import SimpleNamespace
-from typing import ClassVar
+from typing import Any, ClassVar
 from unittest.mock import AsyncMock, MagicMock, Mock, call
 
 import browser_use
@@ -20,7 +21,11 @@ from app.constants.browser import BrowserEventKind, BrowserSessionStatus, Handof
 from app.constants.log_tags import LogTag
 from app.schemas.browser import BrowserAction, HandoffOutcome
 from app.services.browser import runner as runner_mod
-from app.services.browser.runner import BrowserTaskRunner
+from app.services.browser.runner import (
+    BrowserRunConfig,
+    BrowserRunnerCallbacks,
+    BrowserTaskRunner,
+)
 from app.services.browser.session import BrowserHostSession
 from app.services.llm_metering import LLMCallContext, TokenUsage
 
@@ -148,37 +153,41 @@ def _session() -> BrowserHostSession:
     )
 
 
-def _make_runner(
-    *,
-    emit,
-    request_handoff=None,
-    is_cancelled=None,
-    task_timeout=30,
-    stream_screenshots=True,
-    user_id=None,
-    root_request_id=None,
-    llm=None,
-):
+@dataclass(frozen=True)
+class _RunnerOverrides:
+    """The tuning knobs and identity a runner test may vary beyond its callbacks."""
+
+    task_timeout: float = 30
+    stream_screenshots: bool = True
+    user_id: str | None = None
+    root_request_id: str | None = None
+    llm: Any = None
+
+
+def _make_runner(*, emit, request_handoff=None, is_cancelled=None, overrides=_RunnerOverrides()):
     return BrowserTaskRunner(
         session=_session(),
-        conversation_id="c1",
-        llm=llm if llm is not None else object(),
-        emit=emit,
-        request_handoff=request_handoff
-        or AsyncMock(return_value=HandoffOutcome(status=HandoffStatus.COMPLETED)),
-        is_cancelled=is_cancelled or AsyncMock(return_value=False),
-        max_steps=10,
-        max_actions_per_step=5,
-        task_timeout_seconds=task_timeout,
-        step_timeout_seconds=180,
-        # 0 so the wall-clock stays equal to task_timeout in these tests (the real
-        # runner adds a per-handoff allowance on top).
-        handoff_timeout_seconds=0,
-        stream_screenshots=stream_screenshots,
-        use_vision=True,
-        solve_captcha=False,
-        user_id=user_id,
-        root_request_id=root_request_id,
+        llm=overrides.llm if overrides.llm is not None else object(),
+        callbacks=BrowserRunnerCallbacks(
+            emit=emit,
+            request_handoff=request_handoff
+            or AsyncMock(return_value=HandoffOutcome(status=HandoffStatus.COMPLETED)),
+            is_cancelled=is_cancelled or AsyncMock(return_value=False),
+        ),
+        config=BrowserRunConfig(
+            max_steps=10,
+            max_actions_per_step=5,
+            task_timeout_seconds=overrides.task_timeout,
+            step_timeout_seconds=180,
+            # 0 so the wall-clock stays equal to task_timeout in these tests (the real
+            # runner adds a per-handoff allowance on top).
+            handoff_timeout_seconds=0,
+            stream_screenshots=overrides.stream_screenshots,
+            use_vision=True,
+            solve_captcha=False,
+        ),
+        user_id=overrides.user_id,
+        root_request_id=overrides.root_request_id,
     )
 
 
@@ -290,7 +299,7 @@ async def test_timeout_marks_failed(patch_browser, monkeypatch):
 
     monkeypatch.setattr(FakeAgent, "run", _slow_run)
     events, emit = _collector()
-    result = await _make_runner(emit=emit, task_timeout=0.01).run("x")
+    result = await _make_runner(emit=emit, overrides=_RunnerOverrides(task_timeout=0.01)).run("x")
     assert result.status == BrowserSessionStatus.FAILED
     assert "timed out" in result.summary
 
@@ -379,26 +388,28 @@ def test_init_derives_timeouts_and_starts_from_a_clean_slate() -> None:
     _, emit = _collector()
     runner = BrowserTaskRunner(
         session=_session(),
-        conversation_id="c1",
         llm=object(),
-        emit=emit,
-        request_handoff=AsyncMock(),
-        is_cancelled=AsyncMock(return_value=False),
-        max_steps=7,
-        max_actions_per_step=3,
-        task_timeout_seconds=300,
-        step_timeout_seconds=180,
-        handoff_timeout_seconds=60,
-        stream_screenshots=True,
-        use_vision=True,
-        solve_captcha=True,
+        callbacks=BrowserRunnerCallbacks(
+            emit=emit,
+            request_handoff=AsyncMock(),
+            is_cancelled=AsyncMock(return_value=False),
+        ),
+        config=BrowserRunConfig(
+            max_steps=7,
+            max_actions_per_step=3,
+            task_timeout_seconds=300,
+            step_timeout_seconds=180,
+            handoff_timeout_seconds=60,
+            stream_screenshots=True,
+            use_vision=True,
+            solve_captcha=True,
+        ),
     )
 
     # A step that hands off waits on the human on top of its own work budget, and
     # the wall clock allows every permitted handoff to run its full duration.
     assert runner._step_timeout == 240
     assert runner._wall_clock_timeout == 300 + MAX_HANDOFFS_PER_TASK * 60
-    assert runner._conversation_id == "c1"
     assert runner._max_steps == 7
     assert runner._max_actions_per_step == 3
     assert runner._task_timeout == 300
@@ -603,19 +614,22 @@ async def test_run_bounds_the_agent_by_the_wall_clock_budget(patch_browser, monk
     # budget the runner holds (task 42, step 180 + 60).
     runner = BrowserTaskRunner(
         session=_session(),
-        conversation_id="c1",
         llm=object(),
-        emit=emit,
-        request_handoff=AsyncMock(),
-        is_cancelled=AsyncMock(return_value=False),
-        max_steps=10,
-        max_actions_per_step=5,
-        task_timeout_seconds=42,
-        step_timeout_seconds=180,
-        handoff_timeout_seconds=60,
-        stream_screenshots=True,
-        use_vision=True,
-        solve_captcha=False,
+        callbacks=BrowserRunnerCallbacks(
+            emit=emit,
+            request_handoff=AsyncMock(),
+            is_cancelled=AsyncMock(return_value=False),
+        ),
+        config=BrowserRunConfig(
+            max_steps=10,
+            max_actions_per_step=5,
+            task_timeout_seconds=42,
+            step_timeout_seconds=180,
+            handoff_timeout_seconds=60,
+            stream_screenshots=True,
+            use_vision=True,
+            solve_captcha=False,
+        ),
     )
     await runner.run("x")
 
@@ -682,7 +696,7 @@ async def test_timeout_stops_the_agent_and_names_the_task_budget(
 
     monkeypatch.setattr(FakeAgent, "run", _slow_run)
     _, emit = _collector()
-    result = await _make_runner(emit=emit, task_timeout=0.01).run("x")
+    result = await _make_runner(emit=emit, overrides=_RunnerOverrides(task_timeout=0.01)).run("x")
 
     assert result.status == BrowserSessionStatus.FAILED
     assert result.success is False
@@ -959,7 +973,7 @@ async def test_step_cards_are_flushed_before_the_result(patch_browser) -> None:
 
 async def test_no_screenshot_when_streaming_is_off() -> None:
     _, emit = _collector()
-    runner = _make_runner(emit=emit, stream_screenshots=False)
+    runner = _make_runner(emit=emit, overrides=_RunnerOverrides(stream_screenshots=False))
     assert await runner._render_screenshot("ZmFrZQ==", 1) is None
 
 
@@ -1159,7 +1173,9 @@ async def test_each_models_tokens_are_charged_to_the_users_budget(monkeypatch) -
     record = AsyncMock()
     monkeypatch.setattr(runner_mod, "record_llm_call", record)
     _, emit = _collector()
-    runner = _make_runner(emit=emit, user_id="u1", root_request_id="req-1")
+    runner = _make_runner(
+        emit=emit, overrides=_RunnerOverrides(user_id="u1", root_request_id="req-1")
+    )
 
     await runner._record_usage(
         _History(usage=_Usage({"gemini-flash": _Stats(1200, 34), "claude-sonnet": _Stats(90, 7)}))
@@ -1187,7 +1203,7 @@ async def test_a_completed_run_charges_its_llm_usage(patch_browser, monkeypatch)
     monkeypatch.setattr(runner_mod, "record_llm_call", record)
     FakeAgent.history = _History(usage=_Usage({"gemini-flash": _Stats(10, 2)}))
     _, emit = _collector()
-    await _make_runner(emit=emit, user_id="u1").run("x")
+    await _make_runner(emit=emit, overrides=_RunnerOverrides(user_id="u1")).run("x")
 
     assert record.await_args.kwargs["model_name"] == "gemini-flash"
     assert record.await_args.kwargs["user_id"] == "u1"
@@ -1223,7 +1239,7 @@ async def test_run_hands_browser_use_exactly_the_expected_agent_keys(patch_brows
 async def test_run_gives_the_agent_the_llm_it_was_constructed_with(patch_browser) -> None:
     sentinel = object()
     _, emit = _collector()
-    await _make_runner(emit=emit, llm=sentinel).run("x")
+    await _make_runner(emit=emit, overrides=_RunnerOverrides(llm=sentinel)).run("x")
 
     assert FakeAgent.last_kwargs["llm"] is sentinel
 
@@ -1346,22 +1362,26 @@ async def test_each_step_reports_the_wall_clock_since_the_previous_one(
     # The first step has no predecessor to measure against; the second reports 2.5s.
     assert emit_step.await_args_list == [
         call(
-            1,
-            "Check out",
-            [BrowserAction(name="click", inputs={"index": 4})],
-            "https://example.com/cart",
-            "Page",
-            "ZmFrZQ==",
-            0,
+            runner_mod._StepFrame(
+                index=1,
+                goal="Check out",
+                actions=[BrowserAction(name="click", inputs={"index": 4})],
+                url="https://example.com/cart",
+                title="Page",
+                raw_screenshot="ZmFrZQ==",
+                since_prev_ms=0,
+            )
         ),
         call(
-            2,
-            "Check out",
-            [BrowserAction(name="click", inputs={"index": 4})],
-            "https://example.com/cart",
-            "Page",
-            "ZmFrZQ==",
-            2500,
+            runner_mod._StepFrame(
+                index=2,
+                goal="Check out",
+                actions=[BrowserAction(name="click", inputs={"index": 4})],
+                url="https://example.com/cart",
+                title="Page",
+                raw_screenshot="ZmFrZQ==",
+                since_prev_ms=2500,
+            )
         ),
     ]
 
@@ -1405,7 +1425,15 @@ async def test_the_step_frame_is_uploaded_under_that_steps_index(
     runner = _make_runner(emit=emit)
 
     await runner._emit_step(
-        7, "goal", [BrowserAction(name="click")], "https://x", "Page", "ZmFrZQ==", 12
+        runner_mod._StepFrame(
+            index=7,
+            goal="goal",
+            actions=[BrowserAction(name="click")],
+            url="https://x",
+            title="Page",
+            raw_screenshot="ZmFrZQ==",
+            since_prev_ms=12,
+        )
     )
 
     assert upload.await_args.args == (b"fake", "s1", 7)
@@ -1422,7 +1450,15 @@ async def test_the_step_timing_log_reports_the_screenshot_and_emit_cost(
     runner = _make_runner(emit=emit)
 
     await runner._emit_step(
-        7, "goal", [BrowserAction(name="click")], "https://x", "Page", "ZmFrZQ==", 12
+        runner_mod._StepFrame(
+            index=7,
+            goal="goal",
+            actions=[BrowserAction(name="click")],
+            url="https://x",
+            title="Page",
+            raw_screenshot="ZmFrZQ==",
+            since_prev_ms=12,
+        )
     )
 
     logger.info.assert_called_once_with(

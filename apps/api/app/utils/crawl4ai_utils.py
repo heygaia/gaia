@@ -2,6 +2,7 @@ import asyncio
 from collections import defaultdict, deque
 from collections.abc import AsyncIterator, Sequence
 from contextlib import asynccontextmanager
+from dataclasses import dataclass, replace
 from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
@@ -25,6 +26,19 @@ from shared.py.wide_events import log
 # Tags that are almost never primary content; dropped before markdown conversion.
 _EXCLUDED_TAGS = ["nav", "header", "footer", "aside", "form", "script", "style", "noscript"]
 _BM25_THRESHOLD = 1.0
+
+
+@dataclass(frozen=True)
+class CrawlBatchParams:
+    """The shared tuning knobs for a crawl4ai batch fetch, threaded as one bundle."""
+
+    page_timeout_ms: int
+    total_timeout_seconds: float
+    semaphore_count: int
+    max_content_chars: int | None = None
+    context_name: str = "crawl4ai"
+    content_query: str | None = None
+    thorough: bool = False
 
 
 def _build_markdown_generator(content_query: str | None = None) -> DefaultMarkdownGenerator:
@@ -54,13 +68,7 @@ def _build_markdown_generator(content_query: str | None = None) -> DefaultMarkdo
     )
 
 
-def _build_run_config(
-    *,
-    page_timeout_ms: int,
-    semaphore_count: int,
-    content_query: str | None,
-    thorough: bool,
-) -> CrawlerRunConfig:
+def _build_run_config(params: CrawlBatchParams) -> CrawlerRunConfig:
     """Build a crawl run config.
 
     ``thorough`` (single-page fetch) scrolls the whole page, lets late JS and
@@ -70,16 +78,16 @@ def _build_run_config(
     deliberately not used — it hangs on SPAs that hold persistent connections.
     """
     kwargs: dict[str, Any] = {
-        "page_timeout": page_timeout_ms,
+        "page_timeout": params.page_timeout_ms,
         "wait_until": CRAWL4AI_WAIT_UNTIL,
-        "semaphore_count": semaphore_count,
-        "markdown_generator": _build_markdown_generator(content_query),
+        "semaphore_count": params.semaphore_count,
+        "markdown_generator": _build_markdown_generator(params.content_query),
         "excluded_tags": _EXCLUDED_TAGS,
         "word_count_threshold": 10,
         "remove_overlay_elements": True,
         "verbose": False,
     }
-    if thorough:
+    if params.thorough:
         kwargs.update(scan_full_page=True, magic=True, delay_before_return_html=1.0)
     return CrawlerRunConfig(**kwargs)
 
@@ -266,26 +274,19 @@ def _extract_content_or_error(
 
 async def _recover_with_single_url_crawls(
     urls: Sequence[str],
-    *,
-    page_timeout_ms: int,
-    total_timeout_seconds: float,
-    context_name: str,
-    max_content_chars: int | None,
-    content_query: str | None = None,
-    thorough: bool = False,
+    params: CrawlBatchParams,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Best-effort recovery path after batch timeout to avoid all-or-nothing failures."""
+    context_name = params.context_name
     recovery_timeout = max(
         10.0,
-        min(total_timeout_seconds, page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS),
+        min(
+            params.total_timeout_seconds,
+            params.page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS,
+        ),
     )
 
-    run_config = _build_run_config(
-        page_timeout_ms=page_timeout_ms,
-        semaphore_count=1,
-        content_query=content_query,
-        thorough=thorough,
-    )
+    run_config = _build_run_config(replace(params, semaphore_count=1))
     browser_config = await _build_browser_config()
 
     contents: dict[str, str] = {}
@@ -304,7 +305,7 @@ async def _recover_with_single_url_crawls(
                     )
                 except TimeoutError:
                     errors[url] = (
-                        f"{context_name} timed out after {total_timeout_seconds:.0f}s "
+                        f"{context_name} timed out after {params.total_timeout_seconds:.0f}s "
                         "(recovery: single URL timeout)"
                     )
                     continue
@@ -319,7 +320,7 @@ async def _recover_with_single_url_crawls(
                 content, error = _extract_content_or_error(
                     result=single_results[0],
                     context_name=context_name,
-                    max_content_chars=max_content_chars,
+                    max_content_chars=params.max_content_chars,
                 )
                 if content is not None:
                     contents[url] = content
@@ -327,7 +328,8 @@ async def _recover_with_single_url_crawls(
                     errors[url] = error
     except Exception as e:
         fallback_error = (
-            f"{context_name} timed out after {total_timeout_seconds:.0f}s and recovery failed: {e}"
+            f"{context_name} timed out after {params.total_timeout_seconds:.0f}s "
+            f"and recovery failed: {e}"
         )
         return {}, dict.fromkeys(urls, fallback_error)
 
@@ -338,11 +340,7 @@ async def _batch_fetch_per_url(
     urls: Sequence[str],
     *,
     run_config: CrawlerRunConfig,
-    page_timeout_ms: int,
-    total_timeout_seconds: float,
-    semaphore_count: int,
-    context_name: str,
-    max_content_chars: int | None,
+    params: CrawlBatchParams,
 ) -> tuple[dict[str, str], dict[str, str]]:
     """Fetch each URL with its own crawler+context, concurrently (the Obscura path).
 
@@ -353,11 +351,16 @@ async def _batch_fetch_per_url(
     ``total_timeout_seconds``, after which any URL not yet done is marked
     timed-out (results already collected are kept — never all-or-nothing).
     """
+    context_name = params.context_name
+    total_timeout_seconds = params.total_timeout_seconds
     per_url_timeout = max(
         10.0,
-        min(total_timeout_seconds, page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS),
+        min(
+            total_timeout_seconds,
+            params.page_timeout_ms / 1000 + CRAWL4AI_PROCESSING_MARGIN_SECONDS,
+        ),
     )
-    sem = asyncio.Semaphore(max(1, semaphore_count))
+    sem = asyncio.Semaphore(max(1, params.semaphore_count))
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}
 
@@ -375,10 +378,17 @@ async def _batch_fetch_per_url(
             except asyncio.CancelledError:
                 raise
             except Exception as e:
+                log.warning(
+                    f"{LogTag.TOOL} per-URL fetch failed",
+                    context_name=context_name,
+                    error_type=type(e).__name__,
+                )
                 errors[url] = f"{context_name} error: {e}"
                 return
             content, error = _extract_content_or_error(
-                result=result, context_name=context_name, max_content_chars=max_content_chars
+                result=result,
+                context_name=context_name,
+                max_content_chars=params.max_content_chars,
             )
             if content is not None:
                 contents[url] = content
@@ -397,86 +407,11 @@ async def _batch_fetch_per_url(
     return contents, errors
 
 
-async def batch_fetch_with_crawl4ai(
+def _map_results_to_urls(
     urls: Sequence[str],
-    *,
-    page_timeout_ms: int,
-    total_timeout_seconds: float,
-    semaphore_count: int,
-    max_content_chars: int | None = None,
-    context_name: str = "crawl4ai",
-    content_query: str | None = None,
-    thorough: bool = False,
-) -> tuple[dict[str, str], dict[str, str]]:
-    """Fetch multiple URLs with crawl4ai.
-
-    Chromium runs them through one crawler's ``arun_many``; Obscura fans out to
-    one crawler+context per URL (``arun_many``'s shared-context multi-page mode
-    breaks on Obscura — see ``_batch_fetch_per_url``). Pass ``content_query`` to
-    rank each page's content by relevance to a topic (BM25) instead of returning
-    the full raw markdown — used by deep research. Pass ``thorough`` to scroll +
-    settle + handle overlays for richer single-page captures.
-    """
-    if not urls:
-        return {}, {}
-
-    run_config = _build_run_config(
-        page_timeout_ms=page_timeout_ms,
-        semaphore_count=semaphore_count,
-        content_query=content_query,
-        thorough=thorough,
-    )
-
-    # Obscura can't serve crawl4ai's ``arun_many`` (concurrent pages in one shared
-    # context break its per-page evaluation); it drives concurrent *contexts*
-    # cleanly, so fan out to one crawler per URL instead. Verified: arun_many
-    # fails 3/4 URLs on Obscura, per-URL crawlers succeed 4/4.
-    if _is_obscura():
-        return await _batch_fetch_per_url(
-            urls,
-            run_config=run_config,
-            page_timeout_ms=page_timeout_ms,
-            total_timeout_seconds=total_timeout_seconds,
-            semaphore_count=semaphore_count,
-            context_name=context_name,
-            max_content_chars=max_content_chars,
-        )
-
-    browser_config = await _build_browser_config()
-
-    try:
-        async with (
-            get_browser_semaphore(),
-            managed_crawler(browser_config, context_name=context_name) as crawler,
-        ):
-            results = await asyncio.wait_for(
-                crawler.arun_many(urls=list(urls), config=run_config),
-                timeout=total_timeout_seconds,
-            )
-    except TimeoutError:
-        log.warning(
-            f"{LogTag.TOOL} batch timed out ; retrying URLs individually",
-            context_name=context_name,
-            total_timeout_seconds=total_timeout_seconds,
-        )
-        return await _recover_with_single_url_crawls(
-            urls,
-            page_timeout_ms=page_timeout_ms,
-            total_timeout_seconds=total_timeout_seconds,
-            context_name=context_name,
-            max_content_chars=max_content_chars,
-            content_query=content_query,
-            thorough=thorough,
-        )
-    except asyncio.CancelledError:
-        raise
-    except Exception as e:
-        error = f"{context_name} batch error: {e}"
-        log.warning(
-            f"{LogTag.TOOL} batch error", context_name=context_name, error_type=type(e).__name__
-        )
-        return {}, dict.fromkeys(urls, error)
-
+    results: Sequence[object],
+) -> tuple[dict[int, object], int]:
+    """Map each crawl result back to its requested-URL index; return (matched, unmatched_count)."""
     requested_by_exact: dict[str, deque[int]] = defaultdict(deque)
     requested_by_normalized: dict[str, deque[int]] = defaultdict(deque)
     for idx, requested_url in enumerate(urls):
@@ -507,6 +442,20 @@ async def batch_fetch_with_crawl4ai(
             matched_results[index] = result
             remaining_indices.discard(index)
 
+    unmatched_count = max(len(unmatched_results) - len(matched_results), 0)
+    return matched_results, unmatched_count
+
+
+def _assemble_batch_results(
+    urls: Sequence[str],
+    results: Sequence[object],
+    *,
+    params: CrawlBatchParams,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Extract per-URL content/errors from matched ``arun_many`` results (Chromium path)."""
+    context_name = params.context_name
+    matched_results, unmatched_count = _map_results_to_urls(urls, results)
+
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}
 
@@ -518,7 +467,7 @@ async def batch_fetch_with_crawl4ai(
         extracted_content, extracted_error = _extract_content_or_error(
             result=result,
             context_name=context_name,
-            max_content_chars=max_content_chars,
+            max_content_chars=params.max_content_chars,
         )
         if extracted_content is not None:
             contents[requested_url] = extracted_content
@@ -533,7 +482,6 @@ async def batch_fetch_with_crawl4ai(
             urls_count=len(urls),
         )
 
-    unmatched_count = max(len(unmatched_results) - len(matched_results), 0)
     if unmatched_count:
         log.warning(
             f"{LogTag.TOOL} could not map results to requested URLs",
@@ -546,3 +494,59 @@ async def batch_fetch_with_crawl4ai(
             errors[url] = f"{context_name} returned no result"
 
     return contents, errors
+
+
+async def batch_fetch_with_crawl4ai(
+    urls: Sequence[str],
+    params: CrawlBatchParams,
+) -> tuple[dict[str, str], dict[str, str]]:
+    """Fetch multiple URLs with crawl4ai.
+
+    Chromium runs them through one crawler's ``arun_many``; Obscura fans out to
+    one crawler+context per URL (``arun_many``'s shared-context multi-page mode
+    breaks on Obscura — see ``_batch_fetch_per_url``). Pass ``content_query`` to
+    rank each page's content by relevance to a topic (BM25) instead of returning
+    the full raw markdown — used by deep research. Pass ``thorough`` to scroll +
+    settle + handle overlays for richer single-page captures.
+    """
+    if not urls:
+        return {}, {}
+
+    context_name = params.context_name
+    run_config = _build_run_config(params)
+
+    # Obscura can't serve crawl4ai's ``arun_many`` (concurrent pages in one shared
+    # context break its per-page evaluation); it drives concurrent *contexts*
+    # cleanly, so fan out to one crawler per URL instead. Verified: arun_many
+    # fails 3/4 URLs on Obscura, per-URL crawlers succeed 4/4.
+    if _is_obscura():
+        return await _batch_fetch_per_url(urls, run_config=run_config, params=params)
+
+    browser_config = await _build_browser_config()
+
+    try:
+        async with (
+            get_browser_semaphore(),
+            managed_crawler(browser_config, context_name=context_name) as crawler,
+        ):
+            results = await asyncio.wait_for(
+                crawler.arun_many(urls=list(urls), config=run_config),
+                timeout=params.total_timeout_seconds,
+            )
+    except TimeoutError:
+        log.warning(
+            f"{LogTag.TOOL} batch timed out ; retrying URLs individually",
+            context_name=context_name,
+            total_timeout_seconds=params.total_timeout_seconds,
+        )
+        return await _recover_with_single_url_crawls(urls, params)
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        error = f"{context_name} batch error: {e}"
+        log.warning(
+            f"{LogTag.TOOL} batch error", context_name=context_name, error_type=type(e).__name__
+        )
+        return {}, dict.fromkeys(urls, error)
+
+    return _assemble_batch_results(urls, results, params=params)

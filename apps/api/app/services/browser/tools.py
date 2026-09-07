@@ -36,7 +36,7 @@ def build_browser_tools(
     returns a result string to feed back to the agent (or raises to stop the run
     when the user cancels).
     """
-    from browser_use import Tools  # noqa: PLC0415
+    from browser_use import Tools  # noqa: PLC0415 -- heavy optional dep
 
     tools: Tools[None] = Tools()
 

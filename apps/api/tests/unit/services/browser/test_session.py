@@ -386,7 +386,9 @@ class TestAutoResolveHandoffOnNavigation:
         monkeypatch.setattr(
             session_mod.host_client,
             "get_session",
-            AsyncMock(side_effect=[_info("https://x/login"), _info("https://x/"), _info("https://x/")]),
+            AsyncMock(
+                side_effect=[_info("https://x/login"), _info("https://x/"), _info("https://x/")]
+            ),
         )
         resolve = AsyncMock()
         monkeypatch.setattr(session_mod, "resolve_handoff", resolve)
@@ -421,9 +423,7 @@ class TestAutoResolveHandoffOnNavigation:
         await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
         resolve.assert_not_awaited()
 
-    async def test_transient_redirect_is_debounced(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
+    async def test_transient_redirect_is_debounced(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A single off-login blip that snaps back must NOT resolve — the stable
         counter resets, so a mid-login redirect can't complete the handoff early."""
         monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())

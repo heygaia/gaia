@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import sys
 import types
 from unittest.mock import AsyncMock, MagicMock
@@ -9,6 +10,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from app.services.browser.exceptions import BrowserUnavailableError
+
+
+@dataclass(frozen=True)
+class _ProviderOpts:
+    """The optional ``BROWSER_USE_LLM_*`` knobs a provider test may vary."""
+
+    model: str = "test-model"
+    api_key: str | None = "test-key"
+    base_url: str | None = None
+    schema_in_prompt: bool = False
+    reasoning_effort: str | None = None
 
 
 @pytest.fixture(autouse=True)
@@ -59,25 +71,22 @@ def _fake_browser_use_modules(monkeypatch: pytest.MonkeyPatch) -> dict[str, Magi
 
 
 class TestBuildBrowserLlm:
-    def _set_provider(
-        self,
-        monkeypatch,
-        provider,
-        model="test-model",
-        api_key="test-key",
-        base_url=None,
-        schema_in_prompt=False,
-        reasoning_effort=None,
-    ):
+    def _set_provider(self, monkeypatch, provider, opts=_ProviderOpts()):
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_PROVIDER", provider)
-        monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_MODEL", model)
-        monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_API_KEY", api_key)
-        monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_BASE_URL", base_url)
+        monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_MODEL", opts.model)
         monkeypatch.setattr(
-            "app.services.browser.llm.settings.BROWSER_USE_LLM_SCHEMA_IN_PROMPT", schema_in_prompt
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_API_KEY", opts.api_key
         )
         monkeypatch.setattr(
-            "app.services.browser.llm.settings.BROWSER_USE_LLM_REASONING_EFFORT", reasoning_effort
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_BASE_URL", opts.base_url
+        )
+        monkeypatch.setattr(
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_SCHEMA_IN_PROMPT",
+            opts.schema_in_prompt,
+        )
+        monkeypatch.setattr(
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_REASONING_EFFORT",
+            opts.reasoning_effort,
         )
 
     def test_anthropic(self, monkeypatch):
@@ -108,7 +117,7 @@ class TestBuildBrowserLlm:
 
     def test_deepseek_without_base_url(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "deepseek", base_url=None)
+        self._set_provider(monkeypatch, "deepseek", _ProviderOpts(base_url=None))
         from app.services.browser.llm import build_browser_llm
 
         result = build_browser_llm()
@@ -117,7 +126,9 @@ class TestBuildBrowserLlm:
 
     def test_deepseek_with_base_url(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "deepseek", base_url="https://custom.deepseek.com")
+        self._set_provider(
+            monkeypatch, "deepseek", _ProviderOpts(base_url="https://custom.deepseek.com")
+        )
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -127,7 +138,7 @@ class TestBuildBrowserLlm:
 
     def test_openai_without_base_url(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "openai", base_url=None)
+        self._set_provider(monkeypatch, "openai", _ProviderOpts(base_url=None))
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -141,7 +152,9 @@ class TestBuildBrowserLlm:
 
     def test_openai_with_base_url(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "openai", base_url="https://my.openai.com/v1")
+        self._set_provider(
+            monkeypatch, "openai", _ProviderOpts(base_url="https://my.openai.com/v1")
+        )
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -159,7 +172,9 @@ class TestBuildBrowserLlm:
         moves the schema into the system prompt instead."""
         mocks = _fake_browser_use_modules(monkeypatch)
         self._set_provider(
-            monkeypatch, "openai", base_url="https://gw.example/v1", schema_in_prompt=True
+            monkeypatch,
+            "openai",
+            _ProviderOpts(base_url="https://gw.example/v1", schema_in_prompt=True),
         )
         from app.services.browser.llm import build_browser_llm
 
@@ -178,7 +193,9 @@ class TestBuildBrowserLlm:
         naming our own model there, a thinking model thinks unthrottled."""
         mocks = _fake_browser_use_modules(monkeypatch)
         self._set_provider(
-            monkeypatch, "openai", base_url="https://gw.example/v1", reasoning_effort="low"
+            monkeypatch,
+            "openai",
+            _ProviderOpts(base_url="https://gw.example/v1", reasoning_effort="low"),
         )
         from app.services.browser.llm import build_browser_llm
 
@@ -189,7 +206,7 @@ class TestBuildBrowserLlm:
 
     def test_no_reasoning_effort_leaves_the_kwargs_off(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "openai", base_url=None)
+        self._set_provider(monkeypatch, "openai", _ProviderOpts(base_url=None))
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -199,7 +216,7 @@ class TestBuildBrowserLlm:
 
     def test_openrouter_uses_default_base_url(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "openrouter", base_url=None)
+        self._set_provider(monkeypatch, "openrouter", _ProviderOpts(base_url=None))
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -213,7 +230,9 @@ class TestBuildBrowserLlm:
 
     def test_openrouter_custom_base_url_overrides(self, monkeypatch):
         mocks = _fake_browser_use_modules(monkeypatch)
-        self._set_provider(monkeypatch, "openrouter", base_url="https://custom.openrouter.ai/v1")
+        self._set_provider(
+            monkeypatch, "openrouter", _ProviderOpts(base_url="https://custom.openrouter.ai/v1")
+        )
         from app.services.browser.llm import build_browser_llm
 
         build_browser_llm()
@@ -250,6 +269,7 @@ class TestBuildBrowserLlm:
         with pytest.raises(BrowserUnavailableError, match="Unknown browser LLM provider"):
             build_browser_llm()
 
+
 class TestResolveUseVision:
     async def test_vision_disabled_returns_false(self, monkeypatch):
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_VISION", False)
@@ -285,9 +305,10 @@ class TestResolveUseVision:
         )
         fake_catalog = AsyncMock()
         fake_catalog.accepts_images = AsyncMock(return_value=True)
-        fake_module = types.ModuleType("app.agents.llm.model_catalog")
-        fake_module.get_openrouter_catalog = AsyncMock(return_value=fake_catalog)
-        monkeypatch.setitem(sys.modules, "app.agents.llm.model_catalog", fake_module)
+        monkeypatch.setattr(
+            "app.services.browser.llm.get_openrouter_catalog",
+            AsyncMock(return_value=fake_catalog),
+        )
 
         from app.services.browser.llm import resolve_use_vision as ruv
 
@@ -305,9 +326,10 @@ class TestResolveUseVision:
         )
         fake_catalog = AsyncMock()
         fake_catalog.accepts_images = AsyncMock(return_value=False)
-        fake_module = types.ModuleType("app.agents.llm.model_catalog")
-        fake_module.get_openrouter_catalog = AsyncMock(return_value=fake_catalog)
-        monkeypatch.setitem(sys.modules, "app.agents.llm.model_catalog", fake_module)
+        monkeypatch.setattr(
+            "app.services.browser.llm.get_openrouter_catalog",
+            AsyncMock(return_value=fake_catalog),
+        )
 
         from app.services.browser.llm import resolve_use_vision
 
@@ -418,9 +440,6 @@ class TestVisionFollowsResolvedModel:
     async def test_text_only_inherited_model_disables_vision(self, monkeypatch):
         """A text-only model inherited from comms (deepseek via the custom lane,
         routed as provider 'openai') must turn vision OFF by itself, not error."""
-        import sys
-        import types
-
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_VISION", True)
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_API_KEY", None)
         monkeypatch.setattr("app.services.browser.llm.settings.DEV_LLM_BASE_URL", "https://gw/v1")
@@ -430,9 +449,9 @@ class TestVisionFollowsResolvedModel:
         )
         cat = AsyncMock()
         cat.accepts_images = AsyncMock(return_value=False)
-        mod = types.ModuleType("app.agents.llm.model_catalog")
-        mod.get_openrouter_catalog = AsyncMock(return_value=cat)
-        monkeypatch.setitem(sys.modules, "app.agents.llm.model_catalog", mod)
+        monkeypatch.setattr(
+            "app.services.browser.llm.get_openrouter_catalog", AsyncMock(return_value=cat)
+        )
 
         from app.services.browser.llm import resolve_use_vision
 
@@ -440,9 +459,6 @@ class TestVisionFollowsResolvedModel:
         cat.accepts_images.assert_awaited_once_with("deepseek/deepseek-v4-flash-0731")
 
     async def test_vision_model_inherited_keeps_vision_on(self, monkeypatch):
-        import sys
-        import types
-
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_VISION", True)
         monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_LLM_API_KEY", None)
         monkeypatch.setattr("app.services.browser.llm.settings.DEV_LLM_BASE_URL", "https://gw/v1")
@@ -450,9 +466,9 @@ class TestVisionFollowsResolvedModel:
         monkeypatch.setattr("app.services.browser.llm.settings.DEV_LLM_MODEL", "zai/glm-5.3-flash")
         cat = AsyncMock()
         cat.accepts_images = AsyncMock(return_value=True)
-        mod = types.ModuleType("app.agents.llm.model_catalog")
-        mod.get_openrouter_catalog = AsyncMock(return_value=cat)
-        monkeypatch.setitem(sys.modules, "app.agents.llm.model_catalog", mod)
+        monkeypatch.setattr(
+            "app.services.browser.llm.get_openrouter_catalog", AsyncMock(return_value=cat)
+        )
 
         from app.services.browser.llm import resolve_use_vision
 

@@ -167,7 +167,7 @@ class TestSplitStorageStateByHost:
             "cookies": [{"name": "s", "value": "1", "domain": ".github.com"}],
             "origins": [{"origin": "https://github.com", "localStorage": []}],
         }
-        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]
+        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
         assert set(slices) == {"github.com"}
         assert slices["github.com"]["cookies"][0]["name"] == "s"
         assert slices["github.com"]["origins"][0]["origin"] == "https://github.com"
@@ -183,7 +183,7 @@ class TestSplitStorageStateByHost:
                 {"origin": "https://mail.google.com", "localStorage": []},
             ],
         }
-        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]
+        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
         assert set(slices) == {"google.com", "accounts.google.com", "mail.google.com"}
 
         # The shared .google.com session cookie must be seeded on every host a
@@ -199,7 +199,7 @@ class TestSplitStorageStateByHost:
 
     def test_a_host_with_neither_cookie_nor_origin_is_dropped(self) -> None:
         state = {"cookies": [], "origins": []}
-        assert sp.split_storage_state_by_host(state) == {}  # type: ignore[arg-type]
+        assert sp.split_storage_state_by_host(state) == {}  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
 
 
 @pytest.mark.unit
@@ -218,7 +218,7 @@ class TestImportBrowserProfile:
             ],
             "origins": [],
         }
-        imported = await sp.import_browser_profile("user-1", state)  # type: ignore[arg-type]
+        imported = await sp.import_browser_profile("user-1", state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
 
         assert {host for host, _ in imported} == {"github.com", "x.com"}
         assert {d for _, d in saved} == {"github.com", "x.com"}
@@ -228,7 +228,7 @@ class TestImportBrowserProfile:
         upsert = AsyncMock()
         monkeypatch.setattr(sp.browser_profile_repository, "upsert_storage_state_blob", upsert)
         state = {"cookies": [{"name": "a", "value": "1", "domain": ".github.com"}], "origins": []}
-        await sp.import_browser_profile("user-1", state)  # type: ignore[arg-type]
+        await sp.import_browser_profile("user-1", state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
         upsert.assert_not_awaited()
 
     async def test_records_provenance_on_each_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -243,7 +243,7 @@ class TestImportBrowserProfile:
         }
         await sp.import_browser_profile(
             "user-1",
-            state,  # type: ignore[arg-type]
+            state,  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
             source_browser="Arc",
             source_ip="203.0.113.7",
         )

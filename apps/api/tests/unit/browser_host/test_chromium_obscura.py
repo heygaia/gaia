@@ -34,7 +34,7 @@ async def test_launch_obscura_builds_the_serve_command(
     proc = MagicMock(returncode=None)
     spawn = AsyncMock(return_value=proc)
     monkeypatch.setattr(chromium.asyncio, "create_subprocess_exec", spawn)
-    host._await_cdp_ready = AsyncMock(return_value="ws://ready")  # type: ignore[method-assign]
+    host._await_cdp_ready = AsyncMock(return_value="ws://ready")  # type: ignore[method-assign]  # rebinds the _await_cdp_ready method with an AsyncMock fake
     cdp = MagicMock()
     cdp.start = AsyncMock()
 
@@ -79,7 +79,7 @@ async def test_await_cdp_ready_obscura_derives_endpoint_from_json_version(
     monkeypatch.setattr(settings, "OBSCURA_PORT", 9931)
     host = ChromiumHost()
     # Obscura writes no DevToolsActivePort — reaching for it would be the bug.
-    host._read_devtools_port = AsyncMock(side_effect=AssertionError("obscura has no port file"))  # type: ignore[method-assign]
+    host._read_devtools_port = AsyncMock(side_effect=AssertionError("obscura has no port file"))  # type: ignore[method-assign]  # rebinds the _read_devtools_port method with an AsyncMock fake
     resp = MagicMock()
     resp.json.return_value = {"webSocketDebuggerUrl": "ws://127.0.0.1:9931/devtools/browser"}
     resp.raise_for_status = MagicMock()
@@ -124,7 +124,7 @@ async def test_start_skips_chromium_path_resolution_for_obscura(
     resolve = MagicMock(side_effect=AssertionError("resolved chromium under obscura"))
     monkeypatch.setattr(chromium, "_resolve_chromium_path", resolve)
     host = ChromiumHost()
-    host._launch = AsyncMock()  # type: ignore[method-assign]
+    host._launch = AsyncMock()  # type: ignore[method-assign]  # rebinds the _launch method with an AsyncMock fake
 
     with patch.object(chromium.asyncio, "create_task", MagicMock()):
         await host.start()

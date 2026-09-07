@@ -686,7 +686,15 @@ async def test_run_live_view_registers_handlers_with_expected_args() -> None:
         patch.object(
             screencast,
             "cdp_call",
-            new=AsyncMock(side_effect=[{"sessionId": "page-sess"}, {}, {"targetInfo": {}}, {"result": {"value": None}}, {}]),
+            new=AsyncMock(
+                side_effect=[
+                    {"sessionId": "page-sess"},
+                    {},
+                    {"targetInfo": {}},
+                    {"result": {"value": None}},
+                    {},
+                ]
+            ),
         ),
         patch.object(screencast, "_register_frame_handler") as mock_frame,
         patch.object(screencast, "_register_nav_handler") as mock_nav,
@@ -726,7 +734,15 @@ async def test_run_live_view_pump_uses_send_frames_and_apply_input_with_correct_
         patch.object(
             screencast,
             "cdp_call",
-            new=AsyncMock(side_effect=[{"sessionId": "page-sess"}, {}, {"targetInfo": {}}, {"result": {"value": None}}, {}]),
+            new=AsyncMock(
+                side_effect=[
+                    {"sessionId": "page-sess"},
+                    {},
+                    {"targetInfo": {}},
+                    {"result": {"value": None}},
+                    {},
+                ]
+            ),
         ),
         patch.object(screencast, "_send_frames", new=AsyncMock()) as mock_send,
         patch.object(screencast, "_apply_input", new=AsyncMock()) as mock_apply,
@@ -774,7 +790,15 @@ async def test_run_live_view_logs_closed_event_with_session_id() -> None:
         patch.object(
             screencast,
             "cdp_call",
-            new=AsyncMock(side_effect=[{"sessionId": "page-sess"}, {}, {"targetInfo": {}}, {"result": {"value": None}}, {}]),
+            new=AsyncMock(
+                side_effect=[
+                    {"sessionId": "page-sess"},
+                    {},
+                    {"targetInfo": {}},
+                    {"result": {"value": None}},
+                    {},
+                ]
+            ),
         ),
         patch.object(screencast, "pump_until_first_close", new=AsyncMock()),
         patch.object(screencast, "log") as mock_log,
@@ -799,7 +823,15 @@ async def test_run_live_view_teardown_warning_has_exact_error_type() -> None:
         patch.object(
             screencast,
             "cdp_call",
-            new=AsyncMock(side_effect=[{"sessionId": "page-sess"}, {}, {"targetInfo": {}}, {"result": {"value": None}}, {}]),
+            new=AsyncMock(
+                side_effect=[
+                    {"sessionId": "page-sess"},
+                    {},
+                    {"targetInfo": {}},
+                    {"result": {"value": None}},
+                    {},
+                ]
+            ),
         ),
         patch.object(screencast, "pump_until_first_close", new=AsyncMock()),
         patch.object(screencast, "log") as mock_log,

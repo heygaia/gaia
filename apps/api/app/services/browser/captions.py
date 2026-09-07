@@ -8,6 +8,7 @@ the SSE step card (``runner.py``) and the bot's photo caption
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlparse
 
@@ -27,53 +28,82 @@ def _shorten(text: str) -> str:
     return collapsed[: _TARGET_MAX_CHARS - 1].rstrip() + "…"
 
 
+def _navigate_caption(params: dict[str, Any], _target: str | None) -> str:
+    # No empty-string fallback: str() of a missing url is "None", which
+    # urlparse reports no hostname for — same result, one less dead literal.
+    host = urlparse(str(params.get("url"))).hostname or ""
+    return f"Opening {host.removeprefix('www.')}" if host else "Opening the page"
+
+
+def _search_caption(params: dict[str, Any], _target: str | None) -> str:
+    q = str(params.get("query") or params.get("text") or "").strip()
+    return f'Searching "{q}"' if q else "Searching"
+
+
+def _typing_caption(params: dict[str, Any], target: str | None) -> str:
+    text = str(params.get("text") or "").strip()
+    if text and target:
+        return f'Typing "{_shorten(text)}" into "{_shorten(target)}"'
+    if text:
+        return f'Typing "{_shorten(text)}"'
+    return f'Typing into "{_shorten(target)}"' if target else "Typing"
+
+
+def _select_dropdown_caption(params: dict[str, Any], target: str | None) -> str:
+    text = str(params.get("text") or "").strip()
+    if text:
+        return f'Choosing "{text}"'
+    return f'Choosing in "{_shorten(target)}"' if target else "Choosing an option"
+
+
+def _click_caption(params: dict[str, Any], target: str | None) -> str:
+    if target:
+        return f'Clicking "{_shorten(target)}"'
+    # A coordinate click resolves no element, so name the point it hit
+    # rather than leaving a bare verb with no object at all.
+    x, y = params.get("coordinate_x"), params.get("coordinate_y")
+    if isinstance(x, int) and isinstance(y, int):
+        return f"Clicking at {x}, {y}"
+    return "Clicking"
+
+
+# Actions whose caption depends on the step's params/target.
+_DYNAMIC_CAPTIONS: dict[str, Callable[[dict[str, Any], str | None], str]] = {
+    "navigate": _navigate_caption,
+    "search": _search_caption,
+    "search_page": _search_caption,
+    "input": _typing_caption,
+    "send_keys": _typing_caption,
+    "select_dropdown": _select_dropdown_caption,
+    "click": _click_caption,
+}
+
+# Actions whose caption is the same verb every time, regardless of params.
+_STATIC_CAPTIONS: dict[str, str] = {
+    "scroll": "Scrolling",
+    "scroll_to_text": "Scrolling",
+    "extract": "Reading the page",
+    "read_file": "Reading the page",
+    "read_long_content": "Reading the page",
+    "find_text": "Reading the page",
+    "find_elements": "Reading the page",
+    "upload_file": "Uploading a file",
+    "go_back": "Going back",
+    "wait": "Waiting for the page",
+    "request_human_takeover": "Handing this step to you",
+    "solve_captcha_with_help": "Handing this step to you",
+    "done": "Wrapping up",
+}
+
+
 def describe_action(name: str, params: dict[str, Any], target: str | None = None) -> str:
     """A plain-language phrase for one action, using its real target (the URL it
     opens, the text it types, the query it searches) so a caption reads like intent,
     not "Clicking" five times."""
-    text = str(params.get("text") or "").strip()
-    if name == "navigate":
-        # No empty-string fallback: str() of a missing url is "None", which
-        # urlparse reports no hostname for — same result, one less dead literal.
-        host = urlparse(str(params.get("url"))).hostname or ""
-        return f"Opening {host.removeprefix('www.')}" if host else "Opening the page"
-    if name in ("search", "search_page"):
-        q = str(params.get("query") or params.get("text") or "").strip()
-        return f'Searching "{q}"' if q else "Searching"
-    if name in ("input", "send_keys"):
-        if text and target:
-            return f'Typing "{_shorten(text)}" into "{_shorten(target)}"'
-        if text:
-            return f'Typing "{_shorten(text)}"'
-        return f'Typing into "{_shorten(target)}"' if target else "Typing"
-    if name == "select_dropdown":
-        if text:
-            return f'Choosing "{text}"'
-        return f'Choosing in "{_shorten(target)}"' if target else "Choosing an option"
-    if name == "click":
-        if target:
-            return f'Clicking "{_shorten(target)}"'
-        # A coordinate click resolves no element, so name the point it hit
-        # rather than leaving a bare verb with no object at all.
-        x, y = params.get("coordinate_x"), params.get("coordinate_y")
-        if isinstance(x, int) and isinstance(y, int):
-            return f"Clicking at {x}, {y}"
-        return "Clicking"
-    if name in ("scroll", "scroll_to_text"):
-        return "Scrolling"
-    if name in ("extract", "read_file", "read_long_content", "find_text", "find_elements"):
-        return "Reading the page"
-    if name == "upload_file":
-        return "Uploading a file"
-    if name == "go_back":
-        return "Going back"
-    if name == "wait":
-        return "Waiting for the page"
-    if name in ("request_human_takeover", "solve_captcha_with_help"):
-        return "Handing this step to you"
-    if name == "done":
-        return "Wrapping up"
-    return name.replace("_", " ")
+    dynamic = _DYNAMIC_CAPTIONS.get(name)
+    if dynamic is not None:
+        return dynamic(params, target)
+    return _STATIC_CAPTIONS.get(name) or name.replace("_", " ")
 
 
 def caption_from_action_list(actions: list[BrowserAction]) -> str:
