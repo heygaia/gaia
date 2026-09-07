@@ -3,7 +3,7 @@
 import { useQueryClient } from "@tanstack/react-query";
 import * as m from "motion/react-m";
 import { useEffect, useState } from "react";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { useElectron } from "@/hooks/useElectron";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { useChatStore, useChatStoreSync } from "@/stores/chatStore";
@@ -27,7 +27,7 @@ export default function AssistantPopup() {
   // entrance animation on an already-mounted panel.
   const [activationCount, setActivationCount] = useState(0);
   const queryClient = useQueryClient();
-  const user = useUser();
+  const user = useCurrentUser();
   const isAuthenticated = Boolean(user?.email);
 
   useChatStoreSync();

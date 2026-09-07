@@ -12,7 +12,7 @@ import type { Dispatch } from "react";
 import { useState } from "react";
 import { PhoneLinkModal } from "@/components/shared/PhoneLinkModal";
 import { BOT_PLATFORM_LABELS } from "@/config/botPlatforms";
-import { useUserStore } from "@/stores/userStore";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { FIELD_NAMES } from "../../constants";
 import { PLATFORM_INTRO_LINES } from "../../constants/messages";
 import { MOTION_FADE_UP } from "../../constants/motion";
@@ -39,8 +39,7 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
     useState<PlatformPreviewPlatform | null>(null);
 
   const profession = state.responses[FIELD_NAMES.PROFESSION];
-  const userName = useUserStore((s) => s.name);
-  const userAvatar = useUserStore((s) => s.profilePicture);
+  const { name: userName, profilePicture: userAvatar } = useCurrentUser();
 
   const {
     connect,

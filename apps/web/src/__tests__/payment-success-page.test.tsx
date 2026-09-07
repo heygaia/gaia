@@ -33,8 +33,8 @@ vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams("subscription_id=sub_123"),
 }));
 
-vi.mock("@/features/auth/hooks/useUser", () => ({
-  useUser: () => ({ onboarding }),
+vi.mock("@/features/auth/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => ({ onboarding }),
 }));
 
 vi.mock("@/features/pricing/hooks/usePricing", () => ({

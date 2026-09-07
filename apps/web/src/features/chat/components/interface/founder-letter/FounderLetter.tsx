@@ -14,10 +14,10 @@ import { type CSSProperties, useCallback, useEffect, useState } from "react";
 
 import { RaisedButton } from "@/components/ui/raised-button";
 import { isOfferLive } from "@/config/offer";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
-import { useUserStore } from "@/stores/userStore";
 
 import {
   BODY_FONT,
@@ -270,7 +270,7 @@ export function FounderLetter({ hidden = false }: FounderLetterProps) {
   // offering it rather than sending readers into a 500.
   const [offerLive, setOfferLive] = useState(false);
   const [copied, setCopied] = useState(false);
-  const userName = useUserStore((s) => s.name);
+  const userName = useCurrentUser().name;
   const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const reduceMotion = useReducedMotion();
 

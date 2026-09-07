@@ -1,10 +1,13 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { useQueryClient } from "@tanstack/react-query";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
-import { useUserActions } from "@/features/auth/hooks/useUser";
-import { userInfoToStoreUser } from "@/features/auth/utils/userInfoToStoreUser";
+import {
+  patchCurrentUser,
+  setCurrentUser,
+} from "@/features/auth/hooks/useCurrentUser";
 import { completeOnboarding } from "@/features/onboarding/api/onboardingApi";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { isDevelopment } from "@/lib/fetchAll";
@@ -17,7 +20,7 @@ import { toast } from "@/lib/toast";
  */
 export function DevSkipOnboarding() {
   const router = useRouter();
-  const { setUser, updateUser } = useUserActions();
+  const queryClient = useQueryClient();
   const [loading, setLoading] = useState(false);
 
   if (!isDevelopment()) return null;
@@ -31,8 +34,10 @@ export function DevSkipOnboarding() {
         needs: ["inbox", "engineering_prs"],
         timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
       });
-      if (res.user) setUser(userInfoToStoreUser(res.user));
-      updateUser({ onboarding: { completed: true, phase: "completed" } });
+      if (res.user) setCurrentUser(queryClient, res.user);
+      patchCurrentUser(queryClient, {
+        onboarding: { completed: true, phase: "completed" },
+      });
       router.push("/c");
     } catch (error) {
       console.error("[DevSkipOnboarding] skip failed:", error);

@@ -15,7 +15,7 @@ import {
 import { formatDistanceToNow } from "date-fns";
 import { memo, useMemo } from "react";
 import { ChevronRight } from "@/components/shared/icons";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
 import { getBrowserTimezone } from "@/lib/timezone";
 import { cn } from "@/lib/utils";
@@ -140,7 +140,7 @@ export default memo(function TodoItem({
     onUpdate(todo.id, { completed: newCompletedState });
   };
 
-  const user = useUser();
+  const user = useCurrentUser();
   // Format scheduled time in the user's preferred timezone so it matches the
   // task-edit modal / ScheduledFieldChip instead of the browser's local timezone.
   const scheduledLabel = useMemo(

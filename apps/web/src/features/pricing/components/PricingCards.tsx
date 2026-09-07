@@ -1,7 +1,7 @@
 "use client";
 
 import { Skeleton } from "@heroui/skeleton";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 
 import type { CheckoutSource, Plan } from "../api/pricingApi";
 import { ANNUAL_PRICE_RETENTION } from "../constants";
@@ -66,7 +66,7 @@ export function PricingCards({
 }: PricingCardsProps) {
   const { plans, isLoading, error, subscriptionStatus } =
     usePricing(initialPlans);
-  const user = useUser();
+  const user = useCurrentUser();
   // Whether the signed-in user's plan status is genuinely not yet known
   // (cold cache / user store still rehydrating). While true, `isCurrentPlan`
   // / `hasActiveSubscription` below are unresolvable — never infer "on free

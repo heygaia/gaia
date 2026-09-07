@@ -13,7 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const redirect = vi.fn();
 const usePathname = vi.fn();
-const useUser = vi.fn();
+const useCurrentUser = vi.fn();
 const readPendingCheckout = vi.fn();
 
 vi.mock("next/navigation", () => ({
@@ -25,8 +25,8 @@ vi.mock("@/i18n/navigation", () => ({
   usePathname: () => usePathname(),
 }));
 
-vi.mock("@/features/auth/hooks/useUser", () => ({
-  useUser: () => useUser(),
+vi.mock("@/features/auth/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => useCurrentUser(),
 }));
 
 vi.mock("@/features/pricing/lib/pendingCheckout", () => ({
@@ -53,7 +53,7 @@ describe("useOnboardingGuard", () => {
   });
 
   it("lands the user in the seeded conversation on completion", () => {
-    useUser.mockReturnValue(completedUser("conv-123"));
+    useCurrentUser.mockReturnValue(completedUser("conv-123"));
 
     renderHook(() => useOnboardingGuard());
 
@@ -61,7 +61,7 @@ describe("useOnboardingGuard", () => {
   });
 
   it("falls back to the chat home when no conversation was seeded", () => {
-    useUser.mockReturnValue(completedUser());
+    useCurrentUser.mockReturnValue(completedUser());
 
     renderHook(() => useOnboardingGuard());
 
@@ -70,7 +70,7 @@ describe("useOnboardingGuard", () => {
 
   it("still sends an unfinished user back to onboarding", () => {
     usePathname.mockReturnValue("/c");
-    useUser.mockReturnValue({
+    useCurrentUser.mockReturnValue({
       email: "a@b.com",
       onboarding: { completed: false },
     });
@@ -82,7 +82,7 @@ describe("useOnboardingGuard", () => {
 
   it("does not redirect while a checkout is pending", () => {
     readPendingCheckout.mockReturnValue({ planId: "pro" });
-    useUser.mockReturnValue(completedUser("conv-123"));
+    useCurrentUser.mockReturnValue(completedUser("conv-123"));
 
     renderHook(() => useOnboardingGuard());
 

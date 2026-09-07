@@ -3,9 +3,9 @@
 import { useEffect, useRef } from "react";
 
 import type { UserInfo } from "@/features/auth/api/authApi";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { getBrowserTimezone } from "@/lib/timezone";
 import { toast } from "@/lib/toast";
-import { useUserStore } from "@/stores/userStore";
 
 import { completeOnboarding } from "../api/onboardingApi";
 import { FIELD_NAMES } from "../constants";
@@ -30,9 +30,7 @@ export function useOnboardingSubmission(
   onSuccess?: (user: UserInfo) => void,
 ): void {
   const inFlightRef = useRef(false);
-  const alreadyCompleted = useUserStore(
-    (s) => s.onboarding?.completed === true,
-  );
+  const alreadyCompleted = useCurrentUser().onboarding?.completed === true;
   const otherNeed = state.otherNeed.trim();
 
   useEffect(() => {

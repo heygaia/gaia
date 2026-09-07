@@ -2,10 +2,11 @@
 
 import { Spinner } from "@heroui/spinner";
 import { CheckmarkCircle02Icon, Link01Icon } from "@icons";
+import { useIsRestoring } from "@tanstack/react-query";
 import confetti from "canvas-confetti";
 import Image from "next/image";
 import { RedirectType, redirect } from "next/navigation";
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { RaisedButton } from "@/components/ui/raised-button";
 import {
   BOT_PLATFORM_ICONS,
@@ -15,7 +16,6 @@ import {
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { apiService } from "@/lib/api/service";
 import { toast } from "@/lib/toast";
-import { useUserStore } from "@/stores/userStore";
 
 /** Shared card shell: rounded, flat, no outline, no shadow — matches GAIA surfaces. */
 function Card({ children }: { children: React.ReactNode }) {
@@ -33,24 +33,6 @@ interface LinkPlatformClientProps {
   token: string | null;
 }
 
-// The auth store rehydrates from persisted storage asynchronously (zustand
-// persist), so every auth decision must wait for hydration. Reading the status
-// with useSyncExternalStore is render-safe: no post-paint flash, and the
-// component re-renders the moment hydration finishes.
-function subscribeToUserStoreHydration(onStoreChange: () => void): () => void {
-  return useUserStore.persist.onFinishHydration(onStoreChange);
-}
-
-function getUserStoreHydrationSnapshot(): boolean {
-  return useUserStore.persist.hasHydrated();
-}
-
-// Server render has no storage — treat as unhydrated so it renders nothing,
-// matching the client's first paint.
-function getServerHydrationSnapshot(): boolean {
-  return false;
-}
-
 export default function LinkPlatformClient({
   platform,
   token,
@@ -65,11 +47,9 @@ export default function LinkPlatformClient({
     displayName?: string;
   } | null>(null);
 
-  const hasHydrated = useSyncExternalStore(
-    subscribeToUserStoreHydration,
-    getUserStoreHydrationSnapshot,
-    getServerHydrationSnapshot,
-  );
+  // The persisted query cache restores asynchronously, so every auth decision
+  // must wait for it — otherwise a signed-in user is briefly judged signed out.
+  const hasHydrated = !useIsRestoring();
 
   const config =
     platform && isBotPlatform(platform)
@@ -134,7 +114,7 @@ export default function LinkPlatformClient({
     return null;
   }
 
-  // Unauthenticated once the store has rehydrated — go sign in and come back.
+  // Unauthenticated once the cache has restored — go sign in and come back.
   // Resolved during render (not in an effect) so this page never paints before
   // navigating; `redirect` performs the same client-side navigation
   // router.replace did.

@@ -3,7 +3,7 @@ import { RedoIcon } from "@icons";
 import Image from "next/image";
 
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import SelectedCalendarEventIndicator from "@/features/chat/components/composer/SelectedCalendarEventIndicator";
 import SelectedReplyIndicator from "@/features/chat/components/composer/SelectedReplyIndicator";
 import SelectedToolIndicator from "@/features/chat/components/composer/SelectedToolIndicator";
@@ -134,7 +134,7 @@ export default function ChatBubbleUser({
     !!selectedWorkflow ||
     !!selectedCalendarEvent;
 
-  const user = useUser();
+  const user = useCurrentUser();
 
   if (!hasContent) return null;
 

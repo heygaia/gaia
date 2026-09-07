@@ -3,14 +3,14 @@
 // Regression coverage for the "paying user sees paid-only UI on reload" bug:
 // useIsPaid() must expose a signal that is true whenever the plan status is
 // genuinely not yet known — including while the subscription-status query is
-// disabled (persisted user store not yet rehydrated with a real userId) or
+// disabled (persisted query cache not yet restored with a real userId) or
 // still pending — and no consumer may treat that "unknown" state as "free".
 //
 // These tests exercise the REAL useIsPaid / useUserSubscriptionStatus /
 // useIsSubscriptionStatusUnknown hooks (nothing is mocked away except the
-// network call itself and the user store), because the bug was in how those
+// network call itself), because the bug was in how those
 // hooks composed TanStack Query's disabled-query semantics with user
-// hydration — mocking useIsPaid itself (as the other paywall tests do, to
+// cache restoration — mocking useIsPaid itself (as the other paywall tests do, to
 // isolate their consumer under test) would hide exactly the code under test
 // here.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -20,6 +20,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const getSubscriptionStatus = vi.fn();
 
+// The user is seeded into the cache directly; nothing here should hit the
+// network for it, and an unseeded test must stay in the "never answered" state.
+vi.mock("@/features/auth/api/authApi", () => ({
+  authApi: {
+    fetchUserInfo: () =>
+      new Promise(() => {
+        // Intentionally never settles.
+      }),
+  },
+}));
+
 vi.mock("@/features/pricing/api/pricingApi", () => ({
   pricingApi: {
     getSubscriptionStatus: (...args: unknown[]) =>
@@ -27,13 +38,22 @@ vi.mock("@/features/pricing/api/pricingApi", () => ({
   },
 }));
 
+import { CURRENT_USER_QUERY_KEY } from "@/features/auth/hooks/useCurrentUser";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
-import { useUserStore } from "@/stores/userStore";
+
+let queryClient: QueryClient;
+
+/** Seeds the `["current-user"]` cache the way a restored/fetched user would. */
+function seedCurrentUser(userId: string) {
+  queryClient.setQueryData(CURRENT_USER_QUERY_KEY, {
+    user_id: userId,
+    name: "Test",
+    email: "test@example.com",
+    picture: "",
+  });
+}
 
 function withProviders(ui: React.ReactNode) {
-  const queryClient = new QueryClient({
-    defaultOptions: { queries: { retry: false } },
-  });
   return render(
     <QueryClientProvider client={queryClient}>{ui}</QueryClientProvider>,
   );
@@ -51,13 +71,15 @@ function Probe() {
 
 describe("useIsPaid — plan status unknown vs. known-free", () => {
   beforeEach(() => {
-    useUserStore.getState().clearUser();
+    queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    });
     getSubscriptionStatus.mockReset();
   });
 
-  it("reports isUnknown === true (never a bare 'not paid') before the user store has rehydrated with a real userId", () => {
+  it("reports isUnknown === true (never a bare 'not paid') before the current-user cache has a real userId", () => {
     // Simulates the exact pre-hydration window from the bug report: the
-    // persisted user store hasn't rehydrated yet, so userId is still "" and
+    // persisted query cache hasn't restored yet, so userId is still "" and
     // the subscription-status query is disabled — it has never fetched and
     // never will until userId appears. TanStack Query v5 reports
     // isLoading === false for a disabled query even though it has no data,
@@ -78,12 +100,7 @@ describe("useIsPaid — plan status unknown vs. known-free", () => {
   });
 
   it("reports isUnknown === true while the query is enabled but still in flight (data === undefined)", async () => {
-    useUserStore.getState().setUser({
-      userId: "user_1",
-      profilePicture: "",
-      name: "Test",
-      email: "test@example.com",
-    });
+    seedCurrentUser("user_1");
     // Never resolves within the test — pins the "in flight" state.
     getSubscriptionStatus.mockReturnValue(
       new Promise(() => {
@@ -98,12 +115,7 @@ describe("useIsPaid — plan status unknown vs. known-free", () => {
   });
 
   it("reports isUnknown === false and isPaid === true once the server actually answers 'pro'", async () => {
-    useUserStore.getState().setUser({
-      userId: "user_1",
-      profilePicture: "",
-      name: "Test",
-      email: "test@example.com",
-    });
+    seedCurrentUser("user_1");
     getSubscriptionStatus.mockResolvedValue({
       user_id: "user_1",
       is_subscribed: true,
@@ -121,12 +133,7 @@ describe("useIsPaid — plan status unknown vs. known-free", () => {
   });
 
   it("reports isUnknown === false and isPaid === false once the server actually answers 'free'", async () => {
-    useUserStore.getState().setUser({
-      userId: "user_1",
-      profilePicture: "",
-      name: "Test",
-      email: "test@example.com",
-    });
+    seedCurrentUser("user_1");
     getSubscriptionStatus.mockResolvedValue({
       user_id: "user_1",
       is_subscribed: false,

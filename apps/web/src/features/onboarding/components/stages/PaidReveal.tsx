@@ -10,7 +10,7 @@
 import * as m from "motion/react-m";
 import type { Dispatch } from "react";
 import { useEffect } from "react";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { PostPaymentReceipt } from "@/features/pricing/components/PostPaymentReceipt";
 import { usePricing } from "@/features/pricing/hooks/usePricing";
 import { useReceiptPrinterStage } from "@/features/pricing/hooks/useReceiptPrinterStage";
@@ -25,7 +25,7 @@ const CONFETTI_DURATION_MS = 3500;
 
 export function PaidReveal() {
   const { subscriptionStatus } = usePricing();
-  const user = useUser();
+  const user = useCurrentUser();
   const printerStage = useReceiptPrinterStage(true);
   const receipt = buildReceiptDetails(subscriptionStatus, undefined);
 

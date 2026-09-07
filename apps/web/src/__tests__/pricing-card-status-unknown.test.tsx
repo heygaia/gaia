@@ -20,8 +20,8 @@ vi.mock("@/lib/analytics", () => ({
   trackEvent: vi.fn(),
 }));
 
-vi.mock("@/features/auth/hooks/useUser", () => ({
-  useUser: () => ({ userId: "user_1" }),
+vi.mock("@/features/auth/hooks/useCurrentUser", () => ({
+  useCurrentUser: () => ({ userId: "user_1" }),
 }));
 
 vi.mock("next/navigation", () => ({

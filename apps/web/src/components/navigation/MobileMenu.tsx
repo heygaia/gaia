@@ -21,7 +21,7 @@ import {
   product,
   resources,
 } from "@/config/appConfig";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 const LINK_CLASS =
@@ -69,7 +69,7 @@ const GENERAL_LINKS: AppLink[] = [
 
 export default function MobileMenu() {
   const [sheetOpen, setSheetOpen] = useState(false);
-  const user = useUser();
+  const user = useCurrentUser();
   const isAuthenticated = user?.email;
   const router = useRouter();
   const closeSheet = () => setSheetOpen(false);
