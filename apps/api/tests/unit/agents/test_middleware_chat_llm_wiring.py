@@ -18,6 +18,7 @@ from langchain_core.tools import BaseTool, tool
 
 from app.agents.middleware.accounting import LLMAccountingMiddleware
 from app.agents.middleware.compaction import WorkspaceCompactionMiddleware
+from app.agents.middleware.empty_completion import EmptyCompletionRetryMiddleware
 from app.agents.middleware.factory import (
     CODING_TOOL_NAMES,
     SELF_OFFLOADING_TOOL_NAMES,
@@ -136,15 +137,27 @@ class TestCommsStackComposition:
     delegates instead of acting — so what is and is not in its stack is the
     contract, not an implementation detail."""
 
-    def test_the_style_guard_is_the_innermost_middleware(self) -> None:
-        """Position is load-bearing: innermost of the wrap_model_call chain means
-        it scores the response the model actually produced, not one an outer
-        middleware already substituted (the budget wall's stop text, for one, is
-        not the model's prose and must not be rewritten)."""
+    def test_the_style_guard_scores_the_model_and_nothing_above_it(self) -> None:
+        """Position is load-bearing: near-innermost of the wrap_model_call chain
+        means it scores the response the model actually produced, not one an
+        outer middleware already substituted (the budget wall's stop text, for
+        one, is not the model's prose and must not be rewritten). Only the
+        empty-completion retry sits below it, and that one returns the model's
+        own words too."""
         stack = create_comms_middleware(chat_llm=_fake_llm())
 
-        assert isinstance(stack[-1], StyleGuardMiddleware)
+        assert isinstance(stack[-2], StyleGuardMiddleware)
+        assert isinstance(stack[-1], EmptyCompletionRetryMiddleware)
         assert sum(isinstance(mw, StyleGuardMiddleware) for mw in stack) == 1
+
+    def test_the_empty_completion_retry_is_the_innermost_middleware(self) -> None:
+        """It has to see the raw completion: a retry above the style guard would
+        re-ask on a reply the guard had already substituted, and would let the
+        guard score silence."""
+        stack = create_comms_middleware(chat_llm=_fake_llm())
+
+        assert isinstance(stack[-1], EmptyCompletionRetryMiddleware)
+        assert sum(isinstance(mw, EmptyCompletionRetryMiddleware) for mw in stack) == 1
 
     def test_comms_can_never_spawn_a_subagent(self) -> None:
         """Comms has no work tools by design — it hands everything to the
@@ -603,6 +616,9 @@ class TestCommsAndSubagentDelegation:
             MediaDescriptionMiddleware,
             LoopGuardMiddleware,
             StyleGuardMiddleware,
+            # Innermost: the empty-completion retry runs before the style guard
+            # scores anything, so the guard reads the reply the user will get.
+            EmptyCompletionRetryMiddleware,
         ]
 
     def test_a_subagent_summarizes_its_own_history(self) -> None:

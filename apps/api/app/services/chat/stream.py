@@ -701,6 +701,11 @@ async def _handle_stream_error(
 async def _substitute_empty_completion(stream_id: str, state: _StreamState) -> None:
     """Replace a contentless turn with one honest line, and record why.
 
+    The LAST resort, not the first. ``EmptyCompletionRetryMiddleware`` has
+    already repeated the model call once by the time a turn gets here, so this
+    only fires when the model went silent twice — the persisted turn still needs
+    a body, because every renderer drops an empty one.
+
     A turn reaches persistence with no text whenever the model returned no
     content — reasoning-only output, ``max_tokens`` spent before the first
     visible token, a content filter — and neither an error nor a cancellation
