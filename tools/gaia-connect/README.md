@@ -8,13 +8,24 @@ prompt = your consent), lets you choose which sites to sync, and uploads them to
 macOS + Chromium family (Arc, Chrome, Helium, Brave, Edge) for now. Linux and
 Windows detect but don't decrypt yet — the binary still builds and runs there.
 
-## Interactive
+## Users: run it via the CLI
+
+Mint a single-use import code in GAIA → Settings → Browser → Import, then:
+
+    npx @heygaia/cli connect --token <code>
+
+`gaia connect` downloads the matching `gaia-connect` binary for your OS from the
+`cli-v<version>` GitHub release, verifies its SHA-256, caches it in
+`~/.gaia/bin/`, and forwards every flag below to it untouched.
+
+## Interactive (from source)
 
     go run .            # or: ./gaia-connect
     # pick a browser → approve the keychain prompt → search/toggle sites → sync
 
-On localhost the import code is auto-minted (dev bypass). Against a real
-deployment, mint one in GAIA → Settings → Connect browser and pass `--token`.
+`--api` defaults to `https://api.heygaia.io`. For dev or self-hosting pass
+`--api http://localhost:8510`, where the import code is auto-minted (dev bypass)
+so `--token` can be omitted.
 
 ## Robot mode (agents)
 
