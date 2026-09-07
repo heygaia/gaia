@@ -1,6 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { usePathname } from "next/navigation";
+import { useEffect } from "react";
 import { firstStepsApi } from "@/features/first-steps/api/firstStepsApi";
-import { FIRST_STEPS_QUERY_KEY } from "@/features/first-steps/constants";
+import {
+  FIRST_STEPS_POLL_INTERVAL_MS,
+  FIRST_STEPS_QUERY_KEY,
+} from "@/features/first-steps/constants";
 import { toast } from "@/lib/toast";
 import type {
   FirstStepStatus,
@@ -17,17 +22,37 @@ interface UseFirstSteps {
   dismiss: () => void;
 }
 
+/** Whether the checklist still has something to show the user. */
+const isChecklistOpen = (data: FirstStepsResponse): boolean =>
+  !data.dismissed && data.steps.some((step) => !step.done);
+
 /**
  * The activation checklist, shared by the banner and the widget through one
  * react-query cache so both surfaces retire together.
+ *
+ * Every `done` is server-derived, so the cache only goes stale when the user
+ * completes a step somewhere else in the app. Window-focus refetching is off
+ * globally and the widget stays mounted across routes, so freshness comes from
+ * three places instead: arriving at a new route, mounting a surface, and — only
+ * while the checklist is still open — a slow poll.
  */
 export function useFirstSteps(): UseFirstSteps {
   const qc = useQueryClient();
+  const pathname = usePathname();
 
   const { data } = useQuery({
     queryKey: FIRST_STEPS_QUERY_KEY,
     queryFn: firstStepsApi.fetch,
+    refetchOnMount: "always",
+    refetchInterval: ({ state }) =>
+      state.data && isChecklistOpen(state.data)
+        ? FIRST_STEPS_POLL_INTERVAL_MS
+        : false,
   });
+
+  useEffect(() => {
+    qc.invalidateQueries({ queryKey: FIRST_STEPS_QUERY_KEY });
+  }, [pathname, qc]);
 
   const dismissMutation = useMutation({
     mutationFn: firstStepsApi.dismiss,
@@ -42,15 +67,12 @@ export function useFirstSteps(): UseFirstSteps {
   });
 
   const steps = data?.steps ?? [];
-  const doneCount = steps.filter((step) => step.done).length;
-  const isVisible =
-    data !== undefined && !data.dismissed && doneCount < steps.length;
 
   return {
     steps,
-    doneCount,
+    doneCount: steps.filter((step) => step.done).length,
     totalCount: steps.length,
-    isVisible,
+    isVisible: data !== undefined && isChecklistOpen(data),
     isDismissing: dismissMutation.isPending,
     dismiss: () => dismissMutation.mutate(),
   };

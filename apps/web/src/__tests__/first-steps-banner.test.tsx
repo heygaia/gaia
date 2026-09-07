@@ -13,6 +13,7 @@ const dismissFirstSteps = vi.fn();
 const push = vi.fn();
 const appendToInput = vi.fn();
 const trackEvent = vi.fn();
+let pathname = "/c";
 
 vi.mock("@/features/first-steps/api/firstStepsApi", () => ({
   firstStepsApi: {
@@ -23,6 +24,7 @@ vi.mock("@/features/first-steps/api/firstStepsApi", () => ({
 
 vi.mock("next/navigation", () => ({
   useRouter: () => ({ push }),
+  usePathname: () => pathname,
 }));
 
 vi.mock("@/stores/composerStore", () => ({
@@ -58,6 +60,7 @@ describe("FirstStepsBanner", () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    pathname = "/c";
     fetchFirstSteps.mockResolvedValue(TWO_DONE);
     queryClient = new QueryClient({
       defaultOptions: {
@@ -115,7 +118,25 @@ describe("FirstStepsBanner", () => {
     fireEvent.click(screen.getByText("Say hi"));
 
     expect(appendToInput).toHaveBeenCalledWith(SAY_HI_PROMPT);
-    expect(push).toHaveBeenCalledWith("/c");
+    // `appendToInput` owns the hop to /c; a router push here would be a
+    // second navigation for one click.
+    expect(push).not.toHaveBeenCalled();
+  });
+
+  it("refetches when the user navigates to another route", async () => {
+    const { rerender } = renderBanner();
+    await waitFor(() => expect(fetchFirstSteps).toHaveBeenCalledTimes(1));
+
+    // A step is completed by visiting another page, so arriving there is the
+    // signal that the server-derived checklist may have changed.
+    pathname = "/integrations";
+    rerender(
+      <QueryClientProvider client={queryClient}>
+        <FirstStepsBanner />
+      </QueryClientProvider>,
+    );
+
+    await waitFor(() => expect(fetchFirstSteps).toHaveBeenCalledTimes(2));
   });
 
   it("dismisses through the server and disappears", async () => {
