@@ -21,7 +21,6 @@ from app.models.platform_models import (
     PendingPlatformRegistrationDocument,
 )
 from app.models.user_models import UserDocument
-from app.services import first_steps_service
 from app.services.analytics_service import AnalyticsEvents
 from app.services.platform_link_service import (
     Platform,
@@ -48,9 +47,7 @@ def mock_repo():
         repo.link_platform = AsyncMock()
         repo.unlink_platform = AsyncMock()
         repo.list_platform_user_ids = AsyncMock(return_value=[])
-        with patch("app.services.first_steps_service.user_repository") as first_steps_repo:
-            first_steps_repo.set_first_step = AsyncMock(return_value=False)
-            yield repo
+        yield repo
 
 
 @pytest.fixture
@@ -304,36 +301,6 @@ class TestLinkSideEffects:
         await PlatformLinkService.link_account(sample_user_id, "discord", "discord123")
 
         assert day_zero_pool.jobs == []
-
-    async def test_any_chat_link_marks_the_platform_activation_step(
-        self, mock_repo, sample_user_id, day_zero_pool
-    ):
-        mock_repo.get.return_value = _user(id=sample_user_id, platform_links={})
-        mock_repo.link_platform.return_value = _user(id=sample_user_id)
-
-        with patch("app.services.first_steps_service.user_repository") as first_steps_repo:
-            first_steps_repo.set_first_step = AsyncMock(return_value=True)
-            await PlatformLinkService.link_account(sample_user_id, "telegram", "tg-1")
-
-        first_steps_repo.set_first_step.assert_awaited_once_with(
-            sample_user_id, first_steps_service.STEP_LINK_PLATFORM
-        )
-
-    async def test_the_hello_survives_the_activation_step_failing(
-        self, mock_repo, sample_user_id, day_zero_pool
-    ):
-        """A retry of this link sees the platform already linked and never
-        greets, so the hello must be on the queue before the first-steps write
-        gets a chance to fail — otherwise it is lost for good."""
-        mock_repo.get.return_value = _user(id=sample_user_id, platform_links={})
-        mock_repo.link_platform.return_value = _user(id=sample_user_id)
-
-        with patch("app.services.first_steps_service.user_repository") as first_steps_repo:
-            first_steps_repo.set_first_step = AsyncMock(side_effect=RuntimeError("mongo is down"))
-            with pytest.raises(RuntimeError, match="mongo is down"):
-                await PlatformLinkService.link_account(sample_user_id, "discord", "discord456")
-
-        assert day_zero_pool.jobs == [("send_day_zero_hello", sample_user_id, "discord")]
 
     async def test_the_hello_carries_the_link_requests_trace_id(
         self, mock_repo, sample_user_id, day_zero_pool

@@ -14,7 +14,6 @@ import secrets
 from pymongo.errors import DuplicateKeyError
 
 from app.config.settings import settings
-from app.constants.todos import FACET_DELIVERABLE, facet_from_doc
 from app.db.repositories.short_links import (
     LIVE_TARGET_UNIQUE_INDEX,
     SLUG_UNIQUE_INDEX,
@@ -26,7 +25,6 @@ from app.models.short_link_models import (
     ShortLink,
     ShortLinkTarget,
 )
-from app.models.todo_models import ExecutionStatus
 from shared.py.wide_events import log
 
 # Slug namespace: a–z + A–Z + digits, 11 chars → 62¹¹ ≈ 5.2×10¹⁹, about 65 bits.
@@ -159,10 +157,8 @@ async def resolve_public_short_link(slug: str) -> ShortLink | None:
 async def get_public_artifact(slug: str) -> PublicArtifactResponse | None:
     """Read-only artifact content behind a capability slug, or ``None``.
 
-    The read is scoped by the OWNER stored on the link doc, never a viewer.
-    Only the deliverable facet is exposed (notes/log are GAIA's working
-    memory); a still-proposed todo may fall back to its legacy canvas, exactly
-    like the briefing's artifact summary does.
+    The read is scoped by the OWNER stored on the link doc, never a viewer, and
+    exposes the item's canvas — the same content the briefing summarises.
     """
     link = await resolve_public_short_link(slug)
     if link is None or link.target_type != "todo_canvas":
@@ -170,13 +166,9 @@ async def get_public_artifact(slug: str) -> PublicArtifactResponse | None:
     todo = await todo_repository.get(link.target_id, user_id=link.user_id)
     if not todo:
         return None
-    allow_fallback = todo.execution_status == ExecutionStatus.PROPOSED
-    content = facet_from_doc(
-        todo.model_dump(), FACET_DELIVERABLE, allow_canvas_fallback=allow_fallback
-    )
     return PublicArtifactResponse(
         title=todo.title or "Artifact",
-        content=content or "",
+        content=todo.canvas_content or "",
         todo_id=link.target_id,
         target_type=link.target_type,
     )

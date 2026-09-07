@@ -31,7 +31,6 @@ from app.models.platform_models import (
     PlatformLinkResult,
 )
 from app.models.user_models import PlatformLinkRecord, user_to_legacy_dict
-from app.services import first_steps_service
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.oauth.oauth_state_service import create_oauth_state
 from app.services.payments.payment_service import payment_service
@@ -60,20 +59,6 @@ async def _enqueue_day_zero_hello(user_id: str, platform: str) -> None:
             platform=platform,
             error=str(e),
         )
-
-
-async def _after_link(user_id: str, platform: str, previously_linked_same: bool) -> None:
-    """Run the activation side effects that follow a successful chat platform link."""
-    # A brand-new chat link is the day-zero moment: greet the user once. The
-    # task guards itself (once ever, young account, still linked), so a
-    # same-id relink never re-greets. This goes first: a retry of the link sees
-    # the platform already linked and never greets, so if the first-steps write
-    # below failed before the enqueue the hello would be lost for good.
-    if not previously_linked_same:
-        await _enqueue_day_zero_hello(user_id, platform)
-
-    # Any chat platform link satisfies the "link a platform" activation step.
-    await first_steps_service.mark_step(user_id, first_steps_service.STEP_LINK_PLATFORM)
 
 
 class Platform(str, Enum):
@@ -485,7 +470,11 @@ class PlatformLinkService:
             isinstance(prior_link, dict) and prior_link.get("id") == platform_user_id
         )
 
-        await _after_link(user_id, platform, previously_linked_same)
+        # A brand-new chat link is the day-zero moment: greet the user once. The
+        # task guards itself (once ever, young account, still linked), so a
+        # same-id relink never re-greets.
+        if not previously_linked_same:
+            await _enqueue_day_zero_hello(user_id, platform)
 
         return PlatformLinkResult(
             status="linked",
