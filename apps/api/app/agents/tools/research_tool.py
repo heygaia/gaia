@@ -112,7 +112,9 @@ async def deep_research(
         # ── Phase 1: Query decomposition ────────────────────────────────────
         writer({"progress": "Planning research strategy..."})
         focus_areas_str = " | ".join(focus_areas) if focus_areas else ""
-        sub_queries = await decompose_research_queries(query, scope, focus_areas_str, depth)
+        sub_queries = await decompose_research_queries(
+            query, scope, focus_areas_str, depth, user_id=user_id
+        )
         writer(
             {
                 "progress": f"Generated {len(sub_queries)} targeted search queries",

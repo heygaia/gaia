@@ -72,7 +72,7 @@ class TestInferIntegrationCategory:
         mock_llm.invoke.return_value = SimpleNamespace(text="Productivity")
 
         category = await infer_integration_category(
-            "My Tool", "desc", [{"name": "a"}], "https://x.example"
+            "My Tool", "desc", [{"name": "a"}], "https://x.example", user_id="u1"
         )
 
         assert category == "productivity"
@@ -88,14 +88,19 @@ class TestInferIntegrationCategory:
         mock_llm.invoke.return_value = SimpleNamespace(text="flying-spaghetti")
 
         assert (
-            await infer_integration_category("My Tool", "desc", [], "https://x.example") == "other"
+            await infer_integration_category(
+                "My Tool", "desc", [], "https://x.example", user_id="u1"
+            )
+            == "other"
         )
 
     async def test_case_insensitive_match(self, mock_llm):
         mock_llm.invoke.return_value = SimpleNamespace(text="  Developer  ")
 
         assert (
-            await infer_integration_category("My Tool", "desc", [], "https://x.example")
+            await infer_integration_category(
+                "My Tool", "desc", [], "https://x.example", user_id="u1"
+            )
             == "developer"
         )
 
@@ -103,14 +108,20 @@ class TestInferIntegrationCategory:
         mock_llm.invoke.side_effect = RuntimeError("llm down")
 
         assert (
-            await infer_integration_category("My Tool", "desc", [], "https://x.example") == "other"
+            await infer_integration_category(
+                "My Tool", "desc", [], "https://x.example", user_id="u1"
+            )
+            == "other"
         )
 
     async def test_timeout_falls_back_to_other(self, mock_llm):
         mock_llm.invoke.side_effect = TimeoutError()
 
         assert (
-            await infer_integration_category("My Tool", "desc", [], "https://x.example") == "other"
+            await infer_integration_category(
+                "My Tool", "desc", [], "https://x.example", user_id="u1"
+            )
+            == "other"
         )
 
 
