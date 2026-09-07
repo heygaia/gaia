@@ -6,7 +6,12 @@ retried once with the reason; a second repeat, or a failed call, means the day
 is skipped. Sending nothing is strictly better than sending yesterday again.
 """
 
-from app.agents.llm.client import LLMInvokeOptions, ainvoke_llm, background_structured_runnable
+from app.agents.llm.client import (
+    LLMInvokeOptions,
+    ainvoke_llm,
+    background_structured_runnable,
+    metered_config,
+)
 from app.agents.prompts.activation_prompts import build_activation_prompt
 from app.models.activation_models import MAX_WORDS_PER_BUBBLE, ActivationDraft
 from app.services.activation.policy import ActivationBrief
@@ -31,21 +36,24 @@ def _too_long(draft: ActivationDraft) -> bool:
 
 
 async def draft_message(
-    brief: ActivationBrief, *, earlier: list[tuple[str, str]]
+    brief: ActivationBrief, *, earlier: list[tuple[str, str]], user_id: str | None
 ) -> ActivationDraft:
     """One day's message, or raise :class:`ActivationCopyError`.
 
     ``earlier`` is ``(first bubble, suggestion)`` per earlier day; it is both
     shown to the model and used to reject the answer, because the second is what
-    actually holds.
+    actually holds. ``user_id`` is who the model spend is attributed to; the
+    simulator, which writes for nobody, passes ``None``.
     """
+    config = metered_config(user_id) if user_id else None
     reason: str | None = None
     for attempt in range(MAX_DRAFTS):
         prompt = build_activation_prompt(brief, retry_reason=reason)
         draft: ActivationDraft = await ainvoke_llm(
-            background_structured_runnable(ActivationDraft),
+            background_structured_runnable(ActivationDraft, config=config),
             prompt,
             label="activation_sequence",
+            config=config,
             options=LLMInvokeOptions(max_attempts=2, timeout=DRAFT_TIMEOUT_SECONDS),
         )
         reason = repeats_earlier(draft.bubbles[0], draft.suggestion, earlier)

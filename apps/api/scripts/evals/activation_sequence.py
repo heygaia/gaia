@@ -311,7 +311,7 @@ async def _run_persona(persona: Persona) -> tuple[str, list[Day], _RunVerdict | 
                     who=who, integrations=integrations, yesterday=yesterday, already_sent=already
                 ),
             )
-            row.draft = await draft_message(brief, earlier=earlier)
+            row.draft = await draft_message(brief, earlier=earlier, user_id=None)
             earlier.append((row.draft.bubbles[0], row.draft.suggestion))
             state = ActivationSequenceState(
                 day_sent=state.day_sent + 1,

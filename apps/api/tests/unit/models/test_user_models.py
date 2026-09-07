@@ -3,7 +3,7 @@
 from pydantic import ValidationError
 import pytest
 
-from app.models.user_models import OnboardingRequest
+from app.models.user_models import OnboardingNeed, OnboardingPreferences, OnboardingRequest
 
 # ---------------------------------------------------------------------------
 # OnboardingRequest.validate_timezone
@@ -49,3 +49,35 @@ class TestOnboardingRequestTimezone:
     def test_empty_timezone_allowed(self):
         m = self._build("")
         assert m.timezone == ""
+
+
+@pytest.mark.unit
+class TestStoredPreferencesFromBeforeTheQ2Rewrite:
+    """Users who onboarded before the pain-based Q2 hold need values that no
+    longer exist ("todos", "briefings", "reach") and up to seven picks. Their
+    document is read back on every /user/me, at seeding, in the activation
+    context and by account_fs, so it must always load; strictness belongs to
+    the request model, not the stored one."""
+
+    def test_unknown_need_values_are_dropped_in_order(self) -> None:
+        prefs = OnboardingPreferences.model_validate(
+            {"profession": "founder", "needs": ["todos", "inbox", "briefings", "calendar"]}
+        )
+
+        assert prefs.needs == [OnboardingNeed.INBOX, OnboardingNeed.CALENDAR]
+
+    def test_more_picks_than_the_cap_keep_the_first_ones(self) -> None:
+        prefs = OnboardingPreferences.model_validate(
+            {"profession": "founder", "needs": ["inbox", "calendar", "reminders", "tools"]}
+        )
+
+        assert prefs.needs == [OnboardingNeed.INBOX, OnboardingNeed.CALENDAR]
+
+    def test_only_unknown_values_leaves_no_picks(self) -> None:
+        prefs = OnboardingPreferences.model_validate({"profession": "founder", "needs": ["memory"]})
+
+        assert prefs.needs == []
+
+    def test_the_request_model_still_rejects_an_unknown_need(self) -> None:
+        with pytest.raises(ValidationError):
+            OnboardingRequest(profession="founder", needs=["todos"])

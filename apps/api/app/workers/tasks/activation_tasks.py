@@ -121,6 +121,7 @@ async def send_activation_message(ctx: dict[str, Any], user_id: str, day: int) -
         draft = await draft_message(
             ActivationBrief(day=day, direction=today, blocks=run.blocks),
             earlier=run.state.earlier_drafts(),
+            user_id=user_id,
         )
     except ActivationCopyError as e:
         # The claim stays: a day whose copy could not be written is spent, not
@@ -147,7 +148,7 @@ async def send_activation_message(ctx: dict[str, Any], user_id: str, day: int) -
     )
     # The bot never sees GAIA's outbound in its own history, so the reply to
     # this message would otherwise arrive with no context at all.
-    await chat_sync.persist_bot_message(user_id, user.model_dump(), platform, draft.bubbles)
+    await chat_sync.persist_bot_message(user, platform, draft.bubbles)
     await user_repository.record_activation_message(user_id, message)
     capture_event(
         user_id,

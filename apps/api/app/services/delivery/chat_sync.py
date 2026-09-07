@@ -10,16 +10,14 @@ from datetime import UTC, datetime
 from typing import cast
 
 from app.models.chat_models import MessageModel, UpdateMessagesRequest
-from app.models.user_models import AuthenticatedUser
+from app.models.user_models import AuthenticatedUser, UserDocument, user_to_legacy_dict
 from app.services.bot_service import BotService
 from app.services.conversation_service import update_messages
 from app.services.platform_link_service import PlatformLinkService
 from shared.py.wide_events import log
 
 
-async def persist_bot_message(
-    user_id: str, user: dict[str, object], platform: str, parts: list[str]
-) -> None:
+async def persist_bot_message(user: UserDocument, platform: str, parts: list[str]) -> None:
     """Append one assistant turn (``parts``, joined) to a platform's bot conversation.
 
     Best-effort: the message is already delivered by the time this runs, so a
@@ -29,15 +27,19 @@ async def persist_bot_message(
     """
     if not parts:
         return
+    user_id = user.id
     linked = await PlatformLinkService.get_linked_platforms(user_id)
     entry = linked.get(platform)
     if not entry:
         return
+    # The session and conversation services read ``user_id`` off the caller,
+    # which a stored document does not carry; the bot path also wants ``_id``.
+    actor = cast(AuthenticatedUser, {**user_to_legacy_dict(user), "user_id": user_id})
     try:
         # Resolved through bot_sessions every time, never cached: /new re-mints
         # the conversation id, and a stale one writes into a dead thread.
         conversation_id = await BotService.get_or_create_session(
-            platform, str(entry["platformUserId"]), None, cast(AuthenticatedUser, user)
+            platform, str(entry["platformUserId"]), None, actor
         )
         await update_messages(
             UpdateMessagesRequest(
@@ -50,7 +52,7 @@ async def persist_bot_message(
                     )
                 ],
             ),
-            {"user_id": user_id},
+            actor,
         )
     except Exception as e:
         log.warning("delivery.chat_sync_failed", user_id=user_id, platform=platform, error=str(e))

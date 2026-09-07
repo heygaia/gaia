@@ -153,6 +153,20 @@ class OnboardingPreferences(BaseModel):
         max_length=NEEDS_MAX_SELECTION,
         description="The jobs the user handed GAIA (onboarding Q2, up to two)",
     )
+
+    @field_validator("needs", mode="before")
+    @classmethod
+    def keep_the_needs_that_still_exist(cls, v: object) -> object:
+        """A stored document must always load: users who onboarded before the
+        pain-based Q2 hold values the enum no longer has and up to seven picks.
+        Unknown values are dropped and the list is cut to the cap, first picks
+        first. The strict check lives on ``OnboardingRequest``."""
+        if not isinstance(v, list):
+            return v
+        known = {need.value for need in OnboardingNeed}
+        kept = [need for need in dict.fromkeys(v) if need in known]
+        return kept[:NEEDS_MAX_SELECTION]
+
     response_style: str | None = Field(
         default=None,
         description="Preferred communication style: brief, detailed, casual, professional",

@@ -349,7 +349,7 @@ class TestWhatTheTaskPassesOnAfterTheClaim:
         assert seams["draft"].await_args.args == (
             ActivationBrief(day=1, direction=Direction.HANDOVER, blocks=_context().blocks),
         )
-        assert seams["draft"].await_args.kwargs == {"earlier": []}
+        assert seams["draft"].await_args.kwargs == {"earlier": [], "user_id": USER_ID}
 
     async def test_a_lost_claim_is_skipped_under_the_users_id_and_day(self, seams) -> None:
         seams["claim"].return_value = False
@@ -414,5 +414,5 @@ class TestWhatTheTaskPassesOnAfterTheClaim:
                 connect_target="gmail",
             ),
         )
-        seams["sync"].assert_awaited_once_with(USER_ID, user.model_dump(), "telegram", ["morning"])
+        seams["sync"].assert_awaited_once_with(user, "telegram", ["morning"])
         seams["log"].set.assert_any_call(bubbles=1)
