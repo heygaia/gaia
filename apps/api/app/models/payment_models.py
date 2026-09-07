@@ -281,9 +281,14 @@ class ProcessedWebhookDocument(MongoDocument):
 
 
 class ProcessedWebhookUpdate(BaseModel):
+    """The outcome written onto a claimed webhook once its handler has run."""
+
     model_config = ConfigDict(extra="forbid")
 
     status: str | None = None
+    message: str | None = None
+    payment_id: str | None = None
+    subscription_id: str | None = None
 
 
 class VerifyPaymentRequest(BaseModel):

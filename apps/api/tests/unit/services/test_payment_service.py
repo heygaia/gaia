@@ -314,8 +314,9 @@ def mock_processed_webhook_repository():
     with patch(
         "app.services.payments.payment_webhook_service.processed_webhook_repository"
     ) as mock_repo:
-        mock_repo.is_processed = AsyncMock(return_value=False)
-        mock_repo.mark_processed = AsyncMock()
+        mock_repo.claim = AsyncMock(return_value=True)
+        mock_repo.record_outcome = AsyncMock()
+        mock_repo.release = AsyncMock()
         yield mock_repo
 
 
@@ -2469,10 +2470,8 @@ class TestProcessWebhookIdempotency:
         webhook_service,
         mock_processed_webhook_repository,
     ):
-        """If webhook_id was already processed, returns 'ignored' immediately."""
-        mock_processed_webhook_repository.is_processed = AsyncMock(
-            return_value={"webhook_id": "wh_dup"}
-        )
+        """A delivery whose id is already claimed returns 'ignored' before any handler runs."""
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
 
         event_data = _make_webhook_event("payment.succeeded", PAYMENT_DATA_PAYLOAD)
         result = await webhook_service.process_webhook(event_data, "wh_dup")
@@ -2496,8 +2495,8 @@ class TestProcessWebhookIdempotency:
         assert first.status == "processed"
         mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
 
-        # Second delivery of the identical webhook id: it is now "processed".
-        mock_processed_webhook_repository.is_processed = AsyncMock(return_value=True)
+        # Second delivery of the identical webhook id: the claim is taken.
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
         second = await webhook_service.process_webhook(event_data, "wh_cancel_replay")
 
         assert second.status == "ignored"
@@ -2523,7 +2522,7 @@ class TestProcessWebhookIdempotency:
 
         assert result.status == "ignored"
         assert "No handler" in result.message
-        mock_processed_webhook_repository.mark_processed.assert_awaited()
+        mock_processed_webhook_repository.record_outcome.assert_awaited()
         webhook_service.handlers = original_handlers
 
     async def test_every_event_type_dodo_can_send_parses(self) -> None:
@@ -2545,17 +2544,21 @@ class TestProcessWebhookIdempotency:
         result = await webhook_service.process_webhook(event_data, "wh_updated")
         assert result.status == "ignored"
         assert "No handler" in result.message
-        mock_processed_webhook_repository.mark_processed.assert_awaited()
+        mock_processed_webhook_repository.record_outcome.assert_awaited()
 
     async def test_processing_failure_returns_failed_result(
         self,
         webhook_service,
         mock_processed_webhook_repository,
     ):
-        """When event parsing fails, returns a 'failed' result."""
+        """When event parsing fails, returns a 'failed' result and hands the
+        claim back so the sender's retry is not turned away as a replay."""
         bad_data = {"type": "INVALID_TYPE", "data": {}}
 
         result = await webhook_service.process_webhook(bad_data, "wh_bad")
+
+        mock_processed_webhook_repository.release.assert_awaited_once_with("wh_bad")
+        mock_processed_webhook_repository.record_outcome.assert_not_awaited()
 
         assert result.status == "failed"
         assert "Processing error" in result.message
@@ -3355,76 +3358,6 @@ class TestGetUserIdFromMetadata:
     async def test_stringifies_non_string_user_id(self, webhook_service):
         user_id = await webhook_service._get_user_id_from_metadata({"user_id": 12345})
         assert user_id == "12345"
-
-
-class TestIsWebhookProcessed:
-    """Tests for _is_webhook_processed."""
-
-    async def test_returns_true_when_found(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        mock_processed_webhook_repository.is_processed = AsyncMock(return_value=True)
-
-        result = await webhook_service._is_webhook_processed("wh_exists")
-        assert result is True
-
-    async def test_returns_false_when_not_found(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        mock_processed_webhook_repository.is_processed = AsyncMock(return_value=False)
-
-        result = await webhook_service._is_webhook_processed("wh_new")
-        assert result is False
-
-
-class TestMarkWebhookAsProcessed:
-    """Tests for _mark_webhook_as_processed."""
-
-    async def test_inserts_processed_record(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        result = DodoWebhookProcessingResult(
-            event_type="payment.succeeded",
-            status="processed",
-            message="OK",
-            payment_id="pay_001",
-            subscription_id="sub_001",
-        )
-
-        await webhook_service._mark_webhook_as_processed("wh_mark_001", "payment.succeeded", result)
-
-        mock_processed_webhook_repository.mark_processed.assert_awaited_once()
-        call = mock_processed_webhook_repository.mark_processed.call_args
-        assert call.args[0] == "wh_mark_001"
-        assert call.kwargs["event_type"] == "payment.succeeded"
-        assert call.kwargs["status"] == "processed"
-        assert call.kwargs["payment_id"] == "pay_001"
-        assert call.kwargs["subscription_id"] == "sub_001"
-
-    async def test_insert_error_is_swallowed(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        """If storing webhook record fails, it's logged not propagated."""
-        mock_processed_webhook_repository.mark_processed = AsyncMock(
-            side_effect=Exception("DB write failed")
-        )
-
-        result = DodoWebhookProcessingResult(
-            event_type="payment.succeeded",
-            status="processed",
-            message="OK",
-        )
-
-        # Should not raise
-        await webhook_service._mark_webhook_as_processed("wh_mark_002", "payment.succeeded", result)
 
 
 # ============================================================================

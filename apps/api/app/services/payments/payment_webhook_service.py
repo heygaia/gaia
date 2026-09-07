@@ -11,7 +11,7 @@ from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from app.db.repositories.processed_webhooks import processed_webhook_repository
 from app.db.repositories.subscriptions import subscription_repository
-from app.models.payment_models import SubscriptionUpdate
+from app.models.payment_models import ProcessedWebhookUpdate, SubscriptionUpdate
 from app.models.webhook_models import (
     DodoWebhookEvent,
     DodoWebhookEventType,
@@ -33,6 +33,15 @@ from app.services.workflow.subscription_pause import (
     deactivate_workflows_for_lapsed_subscription,
 )
 from shared.py.wide_events import log
+
+
+def _outcome_of(result: DodoWebhookProcessingResult) -> ProcessedWebhookUpdate:
+    return ProcessedWebhookUpdate(
+        status=result.status,
+        message=result.message,
+        payment_id=result.payment_id,
+        subscription_id=result.subscription_id,
+    )
 
 
 class PaymentWebhookService:
@@ -112,35 +121,16 @@ class PaymentWebhookService:
             )
             return False
 
-    async def _is_webhook_processed(self, webhook_id: str) -> bool:
-        """Check if webhook has already been processed."""
-        return await processed_webhook_repository.is_processed(webhook_id)
-
-    async def _mark_webhook_as_processed(
-        self, webhook_id: str, event_type: str, result: DodoWebhookProcessingResult
-    ) -> None:
-        """Store webhook ID as processed in database."""
-        try:
-            await processed_webhook_repository.mark_processed(
-                webhook_id,
-                event_type=event_type,
-                status=result.status,
-                message=result.message,
-                payment_id=result.payment_id,
-                subscription_id=result.subscription_id,
-            )
-        except Exception as e:
-            log.error(
-                f"{LogTag.PAYMENT} Failed to store processed webhook ID",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
     async def process_webhook(
         self, webhook_data: dict[str, Any], webhook_id: str
     ) -> DodoWebhookProcessingResult:
         """
-        Process Dodo payment webhook with idempotency check.
+        Process a Dodo payment webhook exactly once.
+
+        The delivery is claimed (inserted under the unique ``webhook_id``)
+        before its handler runs, so a replay or a racing duplicate is turned
+        away at the claim, never after the side effects. A handler failure
+        releases the claim so Dodo's retry is a clean run.
 
         Args:
             webhook_data: The webhook payload
@@ -149,8 +139,15 @@ class PaymentWebhookService:
         Returns:
             Processing result
         """
+        event_type_raw = str(webhook_data.get("type", "unknown"))
+        if not await processed_webhook_repository.claim(webhook_id, event_type=event_type_raw):
+            log.info(f"{LogTag.PAYMENT} Webhook already processed, skipping", webhook_id=webhook_id)
+            return DodoWebhookProcessingResult(
+                event_type=event_type_raw,
+                status="ignored",
+                message="Webhook already processed",
+            )
         try:
-            event_type_raw = webhook_data.get("type", "unknown")
             # Extract financial fields from the nested payload (Dodo wraps data under "data")
             payload_data: dict[str, Any] = webhook_data.get("data", webhook_data)
             customer_field = payload_data.get("customer")
@@ -172,17 +169,6 @@ class PaymentWebhookService:
                 }
             )
 
-            # Check if webhook has already been processed
-            if await self._is_webhook_processed(webhook_id):
-                log.info(
-                    f"{LogTag.PAYMENT} Webhook already processed, skipping", webhook_id=webhook_id
-                )
-                return DodoWebhookProcessingResult(
-                    event_type=webhook_data.get("type", "unknown"),
-                    status="ignored",
-                    message="Webhook already processed",
-                )
-
             event = DodoWebhookEvent(**webhook_data)
 
             handler = self.handlers.get(event.type)
@@ -192,8 +178,8 @@ class PaymentWebhookService:
                     status="ignored",
                     message=f"No handler for {event.type}",
                 )
-                # Store even ignored webhooks to prevent reprocessing
-                await self._mark_webhook_as_processed(webhook_id, event.type.value, result)
+                # The claim already blocks a replay; the outcome is for the record.
+                await processed_webhook_repository.record_outcome(webhook_id, _outcome_of(result))
                 return result
 
             result = await handler(event)
@@ -211,8 +197,7 @@ class PaymentWebhookService:
                 if isinstance(webhook_user_id, str) and webhook_user_id:
                     schedule_account_sync(webhook_user_id)
 
-            # Store webhook as processed after successful handler execution
-            await self._mark_webhook_as_processed(webhook_id, event.type.value, result)
+            await processed_webhook_repository.record_outcome(webhook_id, _outcome_of(result))
             return result
 
         except Exception as e:
@@ -221,8 +206,9 @@ class PaymentWebhookService:
                 error=str(e),
                 error_type=type(e).__name__,
             )
+            await processed_webhook_repository.release(webhook_id)
             return DodoWebhookProcessingResult(
-                event_type=webhook_data.get("type", "unknown"),
+                event_type=event_type_raw,
                 status="failed",
                 message=f"Processing error: {e!s}",
             )
