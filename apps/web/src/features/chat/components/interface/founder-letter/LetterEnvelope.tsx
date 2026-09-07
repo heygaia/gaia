@@ -26,7 +26,7 @@ export function LetterEnvelope({
   const still = reduceMotion || hasOpened;
 
   return (
-    <div className="fixed right-4 bottom-24 z-40 flex flex-col items-end gap-1">
+    <div className="fixed right-4 bottom-[calc(9.5rem+env(safe-area-inset-bottom))] z-40 flex flex-col items-end gap-1 sm:bottom-24">
       <m.button
         type="button"
         onClick={onOpen}
@@ -60,7 +60,7 @@ export function LetterEnvelope({
           width={ENVELOPE_WIDTH}
           height={ENVELOPE_HEIGHT}
           priority
-          className="block w-20 rotate-[-3deg]"
+          className="block w-14 rotate-[-3deg] sm:w-20"
         />
       </m.button>
       {hasOpened && (
