@@ -29,7 +29,7 @@ const GlobalIntegrationModal = dynamic(
 );
 
 export default function ProvidersLayout({ children }: { children: ReactNode }) {
-  // Populate the notification store on app load
+  // Warm the notification query cache on app load
   useNotifications({ limit: 100 });
 
   // Initialize global WebSocket connection
