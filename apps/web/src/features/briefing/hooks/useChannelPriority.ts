@@ -1,7 +1,7 @@
 "use client";
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { useEffect, useMemo, useState } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   type BriefingPreferences,
   briefingApi,
@@ -16,8 +16,8 @@ const BRIEFING_PREFERENCES_QUERY_KEY = ["briefing-preferences"];
 
 /**
  * Coerce a server-provided order into a full, de-duplicated permutation of the
- * four known platforms — the UI always renders every platform, so drift or a
- * partial list can't drop one.
+ * known platforms — the UI always renders every platform, so drift or a partial
+ * list can't drop one.
  */
 function normalizeOrder(raw?: NotificationPlatform[]): NotificationPlatform[] {
   const known = new Set<NotificationPlatform>(NOTIFICATION_PLATFORMS);
@@ -45,6 +45,8 @@ interface UseChannelPriorityResult {
   reorderLinked: (next: NotificationPlatform[]) => void;
   /** Persist the current order (fired on drop); reverts + toasts on failure. */
   persist: () => void;
+  /** Move one linked platform up (-1) or down (+1) and persist — the keyboard path. */
+  moveLinked: (platform: NotificationPlatform, delta: -1 | 1) => void;
 }
 
 /**
@@ -75,31 +77,70 @@ export function useChannelPriority(
   const linkedOrder = order.filter((platform) => linkedMap[platform]);
   const unlinkedOrder = order.filter((platform) => !linkedMap[platform]);
 
-  const save = useMutation({
-    mutationFn: (next: NotificationPlatform[]) =>
-      briefingApi.updateChannelPriority(next),
-    onSuccess: (_data, next) => {
-      queryClient.setQueryData<BriefingPreferences>(
-        BRIEFING_PREFERENCES_QUERY_KEY,
-        { chat_channel_priority: next },
-      );
-    },
-    onError: () => {
-      setOrder(serverOrder);
-      toast.error("Couldn't save your briefing channel order.");
-    },
-  });
+  // Saves are serialized, never concurrent: a drag can land several drops in a
+  // row, and two in-flight PUTs can settle out of order, leaving the server and
+  // the cache on an order the user already moved away from. Each save waits for
+  // the previous one and then sends whatever the LATEST pending order is, so
+  // intermediate orders are coalesced away rather than queued one request each.
+  const pendingOrder = useRef<NotificationPlatform[] | null>(null);
+  const saveChain = useRef<Promise<void>>(Promise.resolve());
+
+  const save = (
+    next: NotificationPlatform[],
+    revertTo: NotificationPlatform[],
+  ) => {
+    pendingOrder.current = next;
+    saveChain.current = saveChain.current.then(async () => {
+      const latest = pendingOrder.current;
+      // A save earlier in the chain already sent this order (or a newer one).
+      if (!latest) return;
+      pendingOrder.current = null;
+      try {
+        await briefingApi.updateChannelPriority(latest);
+        queryClient.setQueryData<BriefingPreferences>(
+          BRIEFING_PREFERENCES_QUERY_KEY,
+          { chat_channel_priority: latest },
+        );
+      } catch {
+        setOrder(revertTo);
+        toast.error("Couldn't save your briefing channel order.");
+      }
+    });
+  };
 
   // Reordering only moves the linked rows among themselves; unlinked platforms
   // keep their relative order at the tail so the stored list stays a full
   // permutation.
+  const commit = (nextLinked: NotificationPlatform[]) => {
+    const next = [...nextLinked, ...unlinkedOrder];
+    setOrder(next);
+    save(next, serverOrder);
+  };
+
   const reorderLinked = (next: NotificationPlatform[]) => {
     setOrder([...next, ...unlinkedOrder]);
   };
 
   const persist = () => {
-    save.mutate([...linkedOrder, ...unlinkedOrder]);
+    commit(linkedOrder);
   };
 
-  return { isLoading, linkedOrder, unlinkedOrder, reorderLinked, persist };
+  const moveLinked = (platform: NotificationPlatform, delta: -1 | 1) => {
+    const from = linkedOrder.indexOf(platform);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= linkedOrder.length) return;
+    const next = [...linkedOrder];
+    next[from] = linkedOrder[to];
+    next[to] = platform;
+    commit(next);
+  };
+
+  return {
+    isLoading,
+    linkedOrder,
+    unlinkedOrder,
+    reorderLinked,
+    persist,
+    moveLinked,
+  };
 }
