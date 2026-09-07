@@ -43,7 +43,9 @@ export default function RightSidebarPanel({
   // Read through a ref so the subscription below is set up once and never
   // resubscribes just because the page passed a new closure.
   const onCloseRef = useRef(onClose);
-  onCloseRef.current = onClose;
+  useEffect(() => {
+    onCloseRef.current = onClose;
+  }, [onClose]);
 
   // Declared before the open/close effect so that on unmount React runs this
   // cleanup (unsubscribe) first — the store close below then can't be mistaken

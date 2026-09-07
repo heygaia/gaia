@@ -1,12 +1,12 @@
 /**
- * Maps the API `UserInfo` shape (snake_case fields, `picture`) to the user
- * store shape (camelCase, `profilePicture`). Single conversion site so any
- * caller hydrating the store from a server response stays consistent.
+ * Maps the API `UserInfo` shape (snake_case fields, `picture`) to the shape the
+ * UI reads (camelCase, `profilePicture`). Single conversion site, used as the
+ * `select` of the `["current-user"]` query.
  */
 
 import type { UserInfo } from "../api/authApi";
 
-export interface StoreUser {
+export interface CurrentUser {
   userId: string;
   name: string;
   email: string;
@@ -16,7 +16,7 @@ export interface StoreUser {
   selected_model: string | undefined;
 }
 
-export function userInfoToStoreUser(info: UserInfo): StoreUser {
+export function toCurrentUser(info: UserInfo): CurrentUser {
   return {
     userId: info.user_id,
     name: info.name,

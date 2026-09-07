@@ -18,10 +18,7 @@ import pytest
 
 from app.constants.log_tags import LogTag
 from app.constants.notifications import MEMORY_SETTINGS_URL
-from app.constants.onboarding import (
-    GMAIL_PERSONALIZATION_MARKER,
-    LEGACY_PERSONALIZATION_MARKER,
-)
+from app.constants.onboarding import GMAIL_PERSONALIZATION_MARKER
 from app.models.notification.notification_models import (
     ActionStyle,
     ActionType,
@@ -231,7 +228,7 @@ class TestProcessOnboardingIntelligenceGuards:
     async def test_the_legacy_marker_also_short_circuits(self, pipeline_stack: Any) -> None:
         # Users who finished the pre-relocation onboarding carry holo-card fields
         # but no marker; re-running for them would duplicate everything they have.
-        user = _user(onboarding={LEGACY_PERSONALIZATION_MARKER: "mistgrove"})
+        user = _user(onboarding={"house": "mistgrove"})
         pipeline_stack["repo"].get = AsyncMock(return_value=user)
 
         await process_onboarding_intelligence(USER)

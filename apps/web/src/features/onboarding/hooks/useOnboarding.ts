@@ -10,15 +10,18 @@
 
 "use client";
 
+import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useReducer } from "react";
 
 import type { UserInfo } from "@/features/auth/api/authApi";
-import { useUserActions } from "@/features/auth/hooks/useUser";
-import { userInfoToStoreUser } from "@/features/auth/utils/userInfoToStoreUser";
+import {
+  patchCurrentUser,
+  setCurrentUser,
+  useCurrentUser,
+} from "@/features/auth/hooks/useCurrentUser";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
-import { useUserStore } from "@/stores/userStore";
 
 import { resetOnboarding } from "../api/onboardingApi";
 import { useOnboardingAnalytics } from "../effects/useOnboardingAnalytics";
@@ -47,8 +50,8 @@ interface UseOnboardingReturn {
 }
 
 export function useOnboarding(): UseOnboardingReturn {
-  const { setUser, updateUser } = useUserActions();
-  const userId = useUserStore((s) => s.userId);
+  const queryClient = useQueryClient();
+  const { userId } = useCurrentUser();
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isPaid } = useIsPaid();
   const stage = getStage(state, isPaid);
@@ -58,9 +61,9 @@ export function useOnboarding(): UseOnboardingReturn {
 
   const handleSubmissionSuccess = useCallback(
     (info: UserInfo) => {
-      setUser(userInfoToStoreUser(info));
+      setCurrentUser(queryClient, info);
     },
-    [setUser],
+    [queryClient],
   );
   useOnboardingSubmission(state, stage, handleSubmissionSuccess);
 
@@ -82,7 +85,7 @@ export function useOnboarding(): UseOnboardingReturn {
     clearIntroSeen(userId);
     usePaceStore.getState().reset();
     dispatch({ type: "restartStart" });
-    updateUser({ onboarding: undefined });
+    patchCurrentUser(queryClient, { onboarding: undefined });
 
     try {
       await resetOnboarding();
@@ -94,7 +97,7 @@ export function useOnboarding(): UseOnboardingReturn {
     } finally {
       dispatch({ type: "restartDone" });
     }
-  }, [state.isRestarting, stage, userId, updateUser]);
+  }, [state.isRestarting, stage, userId, queryClient]);
 
   return {
     state,

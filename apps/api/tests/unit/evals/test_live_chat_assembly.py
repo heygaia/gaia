@@ -153,7 +153,7 @@ class TestTurnOptions:
 
     def test_is_frozen_so_one_run_cannot_change_shape_mid_flight(self) -> None:
         with pytest.raises(dataclasses.FrozenInstanceError):
-            TurnOptions().collect_frame_kinds = True  # type: ignore[misc]
+            TurnOptions().collect_frame_kinds = True  # type: ignore[misc] -- the assignment to a frozen field is the behaviour under test
 
     def test_overrides_leave_the_other_fields_alone(self) -> None:
         options = TurnOptions(poll_for_delivery=False, timeout=12.0)

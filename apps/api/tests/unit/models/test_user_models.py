@@ -1,9 +1,18 @@
 """Unit tests for user Pydantic models."""
 
+from datetime import UTC, datetime
+
 from pydantic import ValidationError
 import pytest
 
-from app.models.user_models import OnboardingNeed, OnboardingPreferences, OnboardingRequest
+from app.models.user_models import (
+    BioStatus,
+    OnboardingNeed,
+    OnboardingPhase,
+    OnboardingPreferences,
+    OnboardingRequest,
+    UserDocument,
+)
 
 # ---------------------------------------------------------------------------
 # OnboardingRequest.validate_timezone
@@ -85,3 +94,83 @@ class TestStoredPreferencesFromBeforeTheQ2Rewrite:
     def test_the_request_model_still_rejects_an_unknown_need(self) -> None:
         with pytest.raises(ValidationError):
             OnboardingRequest(profession="founder", needs=["todos"])
+
+
+# ---------------------------------------------------------------------------
+# OnboardingSubdocument
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestOnboardingSubdocument:
+    """``users.onboarding`` typed but still open: declared keys are coerced to
+    real types, and keys written by onboarding flows that no longer exist have
+    to survive a load/dump round trip untouched."""
+
+    def test_unknown_historical_keys_round_trip(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "_id": "user-1",
+                "onboarding": {
+                    "completed": True,
+                    "retired_wizard_step": 4,
+                    "clarify_questions": [{"id": "q1"}],
+                },
+            }
+        )
+
+        assert doc.onboarding is not None
+        dumped = doc.onboarding.model_dump()
+        assert dumped["retired_wizard_step"] == 4
+        assert dumped["clarify_questions"] == [{"id": "q1"}]
+
+    def test_declared_keys_are_coerced_to_their_real_types(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "_id": "user-1",
+                "onboarding": {
+                    "phase": "getting_started",
+                    "bio_status": "processing",
+                    "completed_at": "2026-01-02T03:04:05Z",
+                    "gmail_personalization_at": "2026-01-02T03:04:06Z",
+                    "preferences": {"profession": "Engineer", "needs": ["inbox"]},
+                },
+            }
+        )
+
+        onboarding = doc.onboarding
+        assert onboarding is not None
+        assert onboarding.phase is OnboardingPhase.GETTING_STARTED
+        assert onboarding.bio_status is BioStatus.PROCESSING
+        assert onboarding.completed_at == datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+        assert onboarding.gmail_personalization_at == datetime(2026, 1, 2, 3, 4, 6, tzinfo=UTC)
+        assert onboarding.preferences is not None
+        assert onboarding.preferences.needs == [OnboardingNeed.INBOX]
+
+    def test_a_missing_subdocument_stays_none(self) -> None:
+        assert UserDocument.model_validate({"_id": "user-1"}).onboarding is None
+
+
+class TestOnboardingSubdocumentToleratesOldRows:
+    def test_an_unknown_phase_or_bio_status_reads_as_unset(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "old@example.com",
+                "onboarding": {"phase": "retired_phase", "bio_status": "weird"},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is None
+        assert doc.onboarding.bio_status is None
+
+    def test_a_known_phase_still_coerces_to_the_enum(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "new@example.com",
+                "onboarding": {"phase": OnboardingPhase.COMPLETED.value},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is OnboardingPhase.COMPLETED

@@ -2,10 +2,10 @@ import { RedirectType, redirect } from "next/navigation";
 import { readPendingCheckout } from "@/features/pricing/lib/pendingCheckout";
 import { usePathname } from "@/i18n/navigation";
 
-import { useUser } from "./useUser";
+import { useCurrentUser } from "./useCurrentUser";
 
 export const useOnboardingGuard = () => {
-  const user = useUser();
+  const user = useCurrentUser();
   const pathname = usePathname();
 
   // A pending checkout must resume before onboarding routing kicks in.

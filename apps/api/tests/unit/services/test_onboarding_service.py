@@ -31,7 +31,6 @@ from app.constants.onboarding import (
     GMAIL_PERSONALIZATION_MARKER,
     HOLO_CONVERSATION_ID_FIELD,
     INTELLIGENCE_TASK,
-    LEGACY_PERSONALIZATION_MARKER,
 )
 from app.models.user_models import (
     BioStatus,
@@ -290,8 +289,9 @@ class TestCompleteOnboarding:
         mock_repo.set_first_conversation_id.assert_awaited_once_with(sample_user_id, "conv-1")
         assert result["onboarding"][GETTING_STARTED_CONVERSATION_ID_FIELD] == "conv-1"
         # The legacy holo-card field is a different conversation; the seed must
-        # not squat on it.
-        assert FIRST_CONVERSATION_ID_FIELD not in result["onboarding"]
+        # not squat on it. It is now a declared field on OnboardingSubdocument,
+        # so it serializes as null rather than being absent.
+        assert result["onboarding"][FIRST_CONVERSATION_ID_FIELD] is None
 
     async def test_the_closing_question_is_resolved_for_this_user_and_these_answers(
         self,
@@ -969,7 +969,7 @@ class TestEnqueueGmailPersonalization:
     ) -> None:
         """Users who finished the pre-relocation onboarding already have their
         card; they carry `house` and no marker, and must not be re-run."""
-        store[LEGACY_PERSONALIZATION_MARKER] = "explorer"
+        store["house"] = "explorer"
 
         job_id = await enqueue_gmail_personalization(sample_user_id)
 

@@ -325,7 +325,7 @@ async def process_workflow_generation_task(
 async def _completed_onboarding(user_id: str) -> bool:
     """Whether the user submitted the onboarding wizard (``onboarding.completed``)."""
     user = await user_repository.get(user_id)
-    return bool(user and (user.onboarding or {}).get("completed"))
+    return bool(user and user.onboarding and user.onboarding.completed)
 
 
 async def _rearm_if_scheduled(

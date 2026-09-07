@@ -69,9 +69,6 @@ apps/api/app/services/mcp/token_management.py	PLR0912
 apps/api/app/services/onboarding/social_profile_service.py	PLR0912
 apps/api/app/services/onboarding/social_profile_service.py	PLR0915
 apps/api/app/services/tools/tools_service.py	PLR0912
-apps/api/app/services/workflow/generation_service.py	PLR0912
-apps/api/app/services/workflow/generation_service.py	PLR0913
-apps/api/app/services/workflow/generation_service.py	PLR0915
 apps/api/app/utils/auth_utils.py	PLR0911
 apps/api/app/utils/auth_utils.py	PLR0912
 apps/api/app/utils/chat_utils.py	PLR0913

@@ -1,7 +1,7 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import type { CheckoutSource } from "../api/pricingApi";
@@ -53,7 +53,7 @@ export function usePricingCardCta({
     checkoutPhase,
     error: paymentError,
   } = useDodoPayments();
-  const user = useUser();
+  const user = useCurrentUser();
   const router = useRouter();
 
   const onGetStarted = async () => {

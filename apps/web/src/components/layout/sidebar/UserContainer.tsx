@@ -3,7 +3,7 @@ import { Skeleton } from "@heroui/skeleton";
 import Image from "next/image";
 import React from "react";
 import { ChevronsDownUp, ChevronsUpDown } from "@/components/shared/icons";
-import { useUser } from "@/features/auth/hooks/useUser";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
 import { paywallCopyFor } from "@/features/pricing/constants";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import SettingsMenu from "@/features/settings/components/SettingsMenu";
@@ -11,7 +11,7 @@ import SettingsMenu from "@/features/settings/components/SettingsMenu";
 import { Avatar, AvatarFallback, AvatarImage } from "../../ui/avatar";
 
 export default function UserContainer() {
-  const user = useUser();
+  const user = useCurrentUser();
   const { isPaid, isUnknown, hasEverSubscribed } = useIsPaid();
   const [isOpen, setIsOpen] = React.useState(false);
 

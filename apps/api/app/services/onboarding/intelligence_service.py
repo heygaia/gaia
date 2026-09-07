@@ -20,7 +20,7 @@ import asyncio
 from dataclasses import dataclass, field, replace
 from enum import Enum
 import time
-from typing import Any
+from typing import Any, cast
 
 from app.agents.memory.email_processor import (
     OnboardingFetchOptions,
@@ -57,7 +57,7 @@ from app.models.onboarding_models import (
     WritingStyleProfile,
     WritingStyleReadyPayload,
 )
-from app.models.user_models import PersonalizationBundle, UserDocument
+from app.models.user_models import OnboardingSubdocument, PersonalizationBundle, UserDocument
 from app.services.composio.composio_service import get_composio_service
 from app.services.notification_service import notification_service
 from app.services.onboarding import inbox_scan_cache
@@ -200,7 +200,7 @@ async def process_onboarding_intelligence(user_id: str) -> None:
         )
         return
 
-    onboarding = user.onboarding or {}
+    onboarding = user.onboarding or OnboardingSubdocument()
     # Re-check at run time, not just at enqueue time: a queued job can outlive a
     # second connect that already completed the pipeline.
     if personalization_already_ran(onboarding):
@@ -226,11 +226,11 @@ async def process_onboarding_intelligence(user_id: str) -> None:
     base_ctx = OnboardingContext(
         user_id=user_id,
         name=user.name or "there",
-        profession=(onboarding.get("preferences") or {}).get("profession")
+        profession=(onboarding.preferences.profession if onboarding.preferences else None)
         or "",  # pragma: no mutate — the default for a missing answer
-        focus=onboarding.get("focus") or "",  # pragma: no mutate — the default for a missing answer
+        focus=onboarding.focus,
         user_email=user.email,
-        clarify_answers=onboarding.get("clarify_answers") or [],
+        clarify_answers=cast(list[ClarifyAnswerRecord], onboarding.clarify_answers),
     )
 
     inbox_ctx = InboxScanContext()
