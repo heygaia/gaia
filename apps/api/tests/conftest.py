@@ -579,7 +579,7 @@ def pro_plan() -> Iterator[MagicMock]:
     """Make the paid-only gate see a PRO caller for the duration of a test.
 
     Patches the single seam every gate reads — ``get_cached_plan_type`` — so it
-    covers the ``EntitlementMiddleware``, the ``@require_subscription()``
+    covers the ``EntitlementMiddleware``, the imperative ``require_active_subscription``
     decorator and the imperative ``is_subscription_active`` helper at once.
 
     Deliberately NOT autouse. The suite's default caller is FREE (the global

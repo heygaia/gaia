@@ -70,7 +70,7 @@ _ASGI_SPEC_VERSION = "2.3"  # what uvicorn advertises (uvicorn/protocols/http/h1
 def _pro_subscription() -> Iterator[None]:
     """These tests exercise SSE transport mechanics (ownership, replay, dedup,
     disconnect) — not the paywall. ``POST /chat-stream`` now runs through
-    ``@require_subscription``, so the root conftest's global FREE-plan default
+    the entitlement gate, so the root conftest's global FREE-plan default
     would 402 every POST before any of the transport machinery under test runs.
     Same pattern as ``tests/integration/api/test_chat_endpoints.py`` post-gate.
     """

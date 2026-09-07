@@ -16,7 +16,7 @@ from app.api.v1.dependencies.oauth_dependencies import (
 from app.api.v1.middleware.rate_limiter import limiter
 from app.constants.log_tags import LogTag
 from app.db.repositories.workflows import workflow_repository
-from app.decorators import require_subscription, tiered_rate_limit
+from app.decorators import tiered_rate_limit
 from app.models.user_models import AuthenticatedUser
 from app.models.workflow_execution_models import WorkflowExecutionsResponse
 from app.models.workflow_models import (
@@ -58,7 +58,6 @@ router = APIRouter()
 
 
 @router.post("/workflows", response_model=WorkflowResponse)
-@require_subscription()
 @tiered_rate_limit("workflow_operations")
 async def create_workflow(
     request: CreateWorkflowRequest,
@@ -173,7 +172,6 @@ async def list_workflows(
 
 
 @router.post("/workflows/{workflow_id}/execute", response_model=WorkflowExecutionResponse)
-@require_subscription()
 @tiered_rate_limit("workflow_operations")
 async def execute_workflow(
     workflow_id: str,
@@ -301,7 +299,6 @@ async def get_workflow_status(
 
 
 @router.post("/workflows/{workflow_id}/activate", response_model=WorkflowResponse)
-@require_subscription()
 async def activate_workflow(
     workflow_id: str,
     user: AuthenticatedUser = Depends(get_current_user),
@@ -397,7 +394,6 @@ async def deactivate_workflow(
 
 
 @router.post("/workflows/{workflow_id}/regenerate-steps", response_model=WorkflowResponse)
-@require_subscription()
 async def regenerate_workflow_steps(
     workflow_id: str,
     request: RegenerateStepsRequest,
@@ -443,7 +439,6 @@ async def regenerate_workflow_steps(
 
 
 @router.post("/workflows/from-todo", response_model=WorkflowResponse)
-@require_subscription()
 @tiered_rate_limit("workflow_operations")
 async def create_workflow_from_todo(
     request: CreateWorkflowFromTodoRequest,
@@ -743,7 +738,6 @@ async def get_public_workflow(request: Request, workflow_ref: str) -> WorkflowRe
 
 
 @router.post("/workflows/generate-prompt", response_model=GenerateWorkflowPromptResponse)
-@require_subscription()
 async def generate_workflow_prompt_endpoint(
     request: GenerateWorkflowPromptRequest,
     user: AuthenticatedUser = Depends(get_current_user),

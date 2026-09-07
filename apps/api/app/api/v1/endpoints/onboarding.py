@@ -15,7 +15,7 @@ from app.core.websocket_manager import websocket_manager
 from app.db.repositories.todos import todo_repository
 from app.db.repositories.users import user_repository
 from app.db.repositories.workflows import workflow_repository
-from app.decorators import require_subscription, tiered_rate_limit
+from app.decorators import require_active_subscription, tiered_rate_limit
 from app.models.onboarding_models import (
     OnboardingPhaseUpdateResponse,
     OnboardingResetResponse,
@@ -522,7 +522,6 @@ async def save_writing_style(
         500: {"description": "Failed to regenerate writing style example"},
     },
 )
-@require_subscription()
 @tiered_rate_limit("onboarding_generation")
 async def regenerate_writing_style_example(
     request: WritingStyleRegenerateRequest,
@@ -531,6 +530,9 @@ async def regenerate_writing_style_example(
     """Generate a new example email from an edited writing style summary."""
     user_id: str = user["user_id"]
     log.set(user={"id": user_id}, onboarding={"operation": "regenerate_style_example"})
+    # /api/v1/onboarding is a free prefix, so this LLM route gates itself with
+    # the same fail-closed check the middleware runs everywhere else.
+    await require_active_subscription(user_id, feature="regenerate_writing_style_example")
     try:
         example = await regenerate_example_for_style(
             summary=request.edited_summary.strip(),

@@ -1,4 +1,4 @@
-"""The paywall gate: require_active_subscription / require_subscription.
+"""The paywall gate: require_active_subscription and its helpers.
 
 Distinct from tiered rate limiting — this blocks access outright for a plan
 with none at all, rather than capping usage. The 402 wire shape is fixed (the
@@ -16,7 +16,6 @@ from app.decorators.entitlements import (
     get_checkout_url,
     is_subscription_active,
     require_active_subscription,
-    require_subscription,
 )
 from app.models.payment_models import PlanType
 from app.services.analytics_service import AnalyticsEvents
@@ -173,149 +172,6 @@ class TestRequireActiveSubscription:
             await require_active_subscription("u1", feature="get_token")
 
         mock_capture.assert_not_called()
-
-
-class TestRequireSubscriptionDecorator:
-    async def test_free_user_never_reaches_the_handler(self) -> None:
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-        plan_lookup = AsyncMock(return_value=PlanType.FREE)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value={"user_id": "u1"}),
-            patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup),
-            patch(
-                f"{ENT}.payment_service.create_pro_checkout",
-                new=AsyncMock(return_value=_checkout(None)),
-            ),
-        ):
-            with pytest.raises(SubscriptionRequiredException):
-                await wrapped()
-
-        plan_lookup.assert_awaited_once_with("u1")
-        handler.assert_not_called()
-
-    async def test_block_is_attributed_to_the_handler_it_blocked(self) -> None:
-        """`feature` is the decorated handler's name, so a funnel can tell a
-        voice-token block from a chat one without a per-route argument."""
-
-        async def get_token() -> str:
-            return "ok"
-
-        wrapped = require_subscription()(get_token)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value={"user_id": "u1"}),
-            patch(
-                f"{ENT}.payment_service.get_cached_plan_type",
-                new=AsyncMock(return_value=PlanType.FREE),
-            ),
-            patch(
-                f"{ENT}.payment_service.create_pro_checkout",
-                new=AsyncMock(return_value=_checkout(None)),
-            ),
-            patch(f"{ENT}.capture_event") as mock_capture,
-        ):
-            with pytest.raises(SubscriptionRequiredException):
-                await wrapped()
-
-        assert mock_capture.call_args.args[0] == "u1"
-        assert mock_capture.call_args.args[2]["feature"] == "get_token"
-
-    async def test_pro_user_reaches_the_handler_with_its_result_unchanged(self) -> None:
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-        plan_lookup = AsyncMock(return_value=PlanType.PRO)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value={"user_id": "u1"}),
-            patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup),
-        ):
-            result = await wrapped(1, 2, keyword="value")
-
-        assert result == "ok"
-        plan_lookup.assert_awaited_once_with("u1")
-        handler.assert_called_once_with(1, 2, keyword="value")
-
-    async def test_unauthenticated_request_is_left_to_the_routes_own_auth(self) -> None:
-        """No user to gate — same rule tiered_rate_limit follows for public routes."""
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value=None),
-            patch(f"{ENT}.log") as mock_log,
-        ):
-            result = await wrapped()
-
-        assert result == "ok"
-        handler.assert_called_once()
-        mock_log.warning.assert_called_once_with(
-            "require_subscription could not resolve a caller — paywall bypassed",
-            payment={"operation": "paywall_gate_unresolved_user"},
-        )
-
-    async def test_unauthenticated_request_forwards_positional_args_and_kwargs_unchanged(
-        self,
-    ) -> None:
-        """The fail-open path must call through with the caller's exact args —
-        dropping either positionals or kwargs here would silently corrupt the
-        wrapped handler's invocation for every unauthenticated caller."""
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-
-        with patch(f"{RCX}.get_authenticated_user", return_value=None):
-            result = await wrapped("pos1", "pos2", keyword="value")
-
-        assert result == "ok"
-        handler.assert_called_once_with("pos1", "pos2", keyword="value")
-
-    async def test_authenticated_user_with_no_user_id_is_a_401(self) -> None:
-        """A truthy but user_id-less auth dict — distinct from no user at all
-        (falsy, handled by the fallthrough test above)."""
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-
-        with patch(f"{RCX}.get_authenticated_user", return_value={"email": "x@example.com"}):
-            with pytest.raises(Exception) as exc_info:
-                await wrapped()
-
-        assert getattr(exc_info.value, "status_code", None) == 401
-        assert getattr(exc_info.value, "detail", None) == "User ID not found"
-        handler.assert_not_called()
-
-    async def test_falls_back_to_an_explicit_user_kwarg_with_no_request_context(self) -> None:
-        """A bot resolving its own user via an explicit ``user=`` kwarg — no
-        request-scoped auth context at all (direct, non-HTTP invocation)."""
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-        plan_lookup = AsyncMock(return_value=PlanType.PRO)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value=None),
-            patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup),
-        ):
-            result = await wrapped(user={"user_id": "kwarg-user"})
-
-        assert result == "ok"
-        plan_lookup.assert_awaited_once_with("kwarg-user")
-        handler.assert_called_once_with(user={"user_id": "kwarg-user"})
-
-    async def test_falls_back_to_a_positional_dict_with_no_request_context(self) -> None:
-        """A bot passing its resolved user as a positional dict arg."""
-        handler = AsyncMock(return_value="ok")
-        wrapped = require_subscription()(handler)
-        plan_lookup = AsyncMock(return_value=PlanType.PRO)
-
-        with (
-            patch(f"{RCX}.get_authenticated_user", return_value=None),
-            patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup),
-        ):
-            result = await wrapped("unrelated-positional", {"user_id": "positional-user"})
-
-        assert result == "ok"
-        plan_lookup.assert_awaited_once_with("positional-user")
-        handler.assert_called_once_with("unrelated-positional", {"user_id": "positional-user"})
 
 
 class TestConfirmSubscriptionActive:

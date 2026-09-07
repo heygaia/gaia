@@ -1,6 +1,6 @@
 """Deny-by-default paid-only gate for every authenticated HTTP request.
 
-The ``@require_subscription()`` decorator this replaces was opt-in: a route was
+The per-route ``@require_subscription()`` decorator this replaced was opt-in: a route was
 paywalled only if someone remembered to decorate it, and it failed *open* when
 it could not resolve a caller. Every new endpoint was free until noticed. This
 middleware inverts that — a route is paywalled unless it is named in

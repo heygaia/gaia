@@ -220,18 +220,25 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
     ]
 
 
-def test_llm_spend_under_a_free_prefix_keeps_its_own_gate() -> None:
+async def test_llm_spend_under_a_free_prefix_keeps_its_own_gate(gated_client: AsyncClient) -> None:
     """``/api/v1/onboarding`` is free, so its one LLM route gates itself.
 
     An allowlisted prefix is a blunt instrument. Where a paid action lives
-    inside a free subtree, ``@require_subscription()`` is still the mechanism —
-    this test exists so removing that decorator fails loudly rather than
-    handing free users an LLM endpoint.
+    inside a free subtree, the handler calls the same fail-closed gate the
+    middleware runs everywhere else; this test exists so removing that call
+    hands the failure to CI rather than to free users.
     """
-    from app.api.v1.endpoints import onboarding
-
     assert is_free_path("/api/v1/onboarding/writing-style/regenerate-example")
-    assert hasattr(onboarding.regenerate_writing_style_example, "__wrapped__")
+    with patch(
+        "app.decorators.entitlements.payment_service.get_cached_plan_type",
+        new_callable=AsyncMock,
+        return_value=PlanType.FREE,
+    ):
+        response = await gated_client.post(
+            "/api/v1/onboarding/writing-style/regenerate-example",
+            json={"edited_summary": "short and warm", "profession": "founder"},
+        )
+    assert response.status_code == 402
 
 
 @pytest.mark.parametrize(("method", "path"), PRO_SAMPLE)

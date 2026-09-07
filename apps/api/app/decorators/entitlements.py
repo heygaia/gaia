@@ -6,14 +6,11 @@ use; this blocks access outright for a plan with none at all. Mirrors the
 split so callers that resolve their own user (bots) can still gate.
 """
 
-from collections.abc import Awaitable, Callable
-from functools import wraps
 from typing import ParamSpec, TypedDict, TypeVar
 
 from fastapi import HTTPException
 
 from app.config.settings import settings
-from app.core.request_context import resolve_caller
 from app.models.payment_models import PlanType
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.payments.payment_service import payment_service
@@ -118,40 +115,3 @@ async def require_active_subscription(user_id: str, feature: str) -> None:
         {"feature": feature, "has_checkout_url": checkout_url is not None},
     )
     raise SubscriptionRequiredException(checkout_url=checkout_url)
-
-
-def require_subscription() -> Callable[[Callable[P, Awaitable[R]]], Callable[P, Awaitable[R]]]:
-    """Endpoint decorator: 402s a non-PRO user before the handler runs.
-
-    Resolves the caller the same way ``tiered_rate_limit`` does — from
-    request-scoped auth context first, falling back to an explicit ``user``
-    kwarg/arg for direct (non-HTTP) invocation. A genuinely unauthenticated
-    request is left to the route's own auth dependency.
-    """
-
-    def decorator(func: Callable[P, Awaitable[R]]) -> Callable[P, Awaitable[R]]:
-        @wraps(func)
-        async def wrapper(*args: P.args, **kwargs: P.kwargs) -> R:
-            user = resolve_caller(args, kwargs)
-            if not user:
-                # Fail-open: an endpoint we can't identify a caller for is left
-                # to its own auth dependency rather than 401ing here. That means
-                # a genuinely paid-only route silently bypasses the paywall if
-                # its caller ever fails to resolve — kept observable so that
-                # bypass shows up rather than vanishing.
-                log.warning(
-                    "require_subscription could not resolve a caller — paywall bypassed",
-                    payment={"operation": "paywall_gate_unresolved_user"},
-                )
-                return await func(*args, **kwargs)
-
-            user_id = user.get("user_id")
-            if not user_id:
-                raise HTTPException(status_code=401, detail="User ID not found")
-
-            await require_active_subscription(user_id, feature=func.__name__)
-            return await func(*args, **kwargs)
-
-        return wrapper
-
-    return decorator

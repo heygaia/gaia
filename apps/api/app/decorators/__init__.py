@@ -9,7 +9,6 @@ from .entitlements import (
     get_checkout_url,
     is_subscription_active,
     require_active_subscription,
-    require_subscription,
 )
 from .rate_limiting import (
     LangChainRateLimitError,
@@ -44,5 +43,4 @@ __all__ = [
     "get_checkout_url",
     "is_subscription_active",
     "require_active_subscription",
-    "require_subscription",
 ]
