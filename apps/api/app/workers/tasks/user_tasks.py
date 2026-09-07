@@ -7,7 +7,7 @@ from typing import Any
 
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
-from app.constants.notifications import CHANNEL_TYPE_EMAIL
+from app.constants.notifications import NotificationChannel
 from app.db.repositories.users import user_repository
 from app.models.user_models import UserDocument
 from app.utils.notification.channel_preferences import normalize_channel_preferences
@@ -30,7 +30,9 @@ def _emails_sent_this_episode(user: UserDocument) -> int:
 
 def _should_send_inactive_email(user: UserDocument) -> bool:
     """Throttle policy: per inactivity episode, first email after 7 days, second 7+ days later, max 2."""
-    if not normalize_channel_preferences(user.notification_channel_prefs)[CHANNEL_TYPE_EMAIL]:
+    if not normalize_channel_preferences(user.notification_channel_prefs)[
+        NotificationChannel.EMAIL
+    ]:
         return False
 
     now = datetime.now(UTC)

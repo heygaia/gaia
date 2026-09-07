@@ -275,6 +275,41 @@ class TestUpdateChannelPreferences:
         "app.api.v1.endpoints.notification.user_repository.set_channel_preferences",
         new_callable=AsyncMock,
     )
+    async def test_update_imessage_preference_persists_and_is_returned(
+        self,
+        mock_set_prefs: AsyncMock,
+        mock_fetch: AsyncMock,
+        client: AsyncClient,
+    ):
+        """iMessage and email are stored and honoured by delivery, so the API must
+        accept and return them — not silently drop them like it used to."""
+        mock_fetch.return_value = {
+            "telegram": True,
+            "discord": True,
+            "whatsapp": True,
+            "slack": True,
+            "imessage": False,
+            "email": False,
+        }
+        with patch("app.api.v1.endpoints.notification.schedule_account_sync"):
+            response = await client.put(
+                f"{NOTIF_BASE}/preferences/channels",
+                json={"imessage": False, "email": False},
+            )
+
+        assert response.status_code == 200
+        assert response.json()["imessage"] is False
+        assert response.json()["email"] is False
+        mock_set_prefs.assert_awaited_once_with(FAKE_USER_ID, {"imessage": False, "email": False})
+
+    @patch(
+        "app.api.v1.endpoints.notification.fetch_channel_preferences",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "app.api.v1.endpoints.notification.user_repository.set_channel_preferences",
+        new_callable=AsyncMock,
+    )
     async def test_update_channel_preferences_error(
         self,
         mock_set_prefs: AsyncMock,

@@ -47,6 +47,7 @@ import type {
   PlatformLinksResponse,
   QuietHours,
 } from "../types/inapp-notification-types";
+import { NOTIFICATION_CHANNELS } from "../types/inapp-notification-types";
 
 const SNAP_POINTS: Array<string | number> = ["90%"];
 
@@ -701,12 +702,11 @@ export const NotificationPreferencesSheet =
       const channelMutation = useChannelMutation(queryClient);
 
       const prefs = prefsQuery.data ?? null;
-      const channels = channelsQuery.data ?? {
-        telegram: false,
-        discord: false,
-        whatsapp: false,
-        slack: false,
-      };
+      const channels =
+        channelsQuery.data ??
+        (Object.fromEntries(
+          NOTIFICATION_CHANNELS.map((channel) => [channel, false]),
+        ) as ChannelPreferences);
       const platformLinks = platformLinksQuery.data?.platform_links ?? {};
 
       const isLoading =

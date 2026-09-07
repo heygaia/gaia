@@ -77,14 +77,21 @@ export interface PlatformLinksResponse {
   platform_links: Record<string, PlatformLink>;
 }
 
-export type ChannelPlatform = "telegram" | "discord" | "whatsapp" | "slack";
+// Mirrors USER_CONFIGURABLE_CHANNELS in apps/api/app/constants/notifications.py:
+// every channel the user can switch on or off. `inapp` is absent on purpose — it
+// is always delivered, so it has no preference to store.
+export const NOTIFICATION_CHANNELS = [
+  "telegram",
+  "discord",
+  "whatsapp",
+  "slack",
+  "imessage",
+  "email",
+] as const;
 
-export interface ChannelPreferences {
-  telegram: boolean;
-  discord: boolean;
-  whatsapp: boolean;
-  slack: boolean;
-}
+export type ChannelPlatform = (typeof NOTIFICATION_CHANNELS)[number];
+
+export type ChannelPreferences = Record<ChannelPlatform, boolean>;
 
 export interface QuietHours {
   from: string;

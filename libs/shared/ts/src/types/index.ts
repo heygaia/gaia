@@ -48,6 +48,7 @@ export type {
   QuietHours,
 } from "./notification";
 export {
+  NOTIFICATION_CHANNELS,
   NotificationActionStyle,
   NotificationActionType,
   NotificationStatus,

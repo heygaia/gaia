@@ -390,6 +390,7 @@ export {
   Priority,
   WorkflowStatus,
 } from "./types";
+export { NOTIFICATION_CHANNELS } from "./types/notification";
 export type {
   ContentSegment,
   DueChipTone,

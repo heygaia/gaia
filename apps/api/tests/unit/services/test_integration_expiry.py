@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.constants.notifications import CHANNEL_TYPE_INAPP
+from app.constants.notifications import NotificationChannel
 from app.models.integration_models import UserIntegrationDocument
 from app.models.notification.notification_models import ActionStyle, NotificationType
 from app.services.integrations.integration_expiry import (
@@ -472,7 +472,7 @@ class TestTheReconnectNotificationIsActionable:
 
         request = s.mocks["notify"].create_notification.await_args.args[0]
         assert request.type == NotificationType.WARNING
-        assert [c.channel_type for c in request.channels] == [CHANNEL_TYPE_INAPP]
+        assert [c.channel_type for c in request.channels] == [NotificationChannel.INAPP]
 
     async def test_the_reconnect_button_is_primary_and_opens_in_place(self) -> None:
         """Opening a new tab or leaving the notification up after the click both
