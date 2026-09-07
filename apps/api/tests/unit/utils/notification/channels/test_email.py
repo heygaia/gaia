@@ -20,9 +20,9 @@ import respx
 
 from app.config.settings import settings
 from app.constants.notifications import (
-    CHANNEL_TYPE_EMAIL,
     NOTIFICATION_KIND_BRIEFING_DAILY,
     NOTIFICATION_KIND_BRIEFING_WEEKLY,
+    NotificationChannel,
 )
 from app.db.repositories.users import user_repository
 from app.models.notification.notification_models import (
@@ -129,7 +129,7 @@ def _sent_body(route: respx.Route) -> dict[str, Any]:
 
 class TestEmailChannelAdapterContract:
     def test_channel_type(self) -> None:
-        assert EmailChannelAdapter().channel_type == CHANNEL_TYPE_EMAIL
+        assert EmailChannelAdapter().channel_type == NotificationChannel.EMAIL
 
     def test_can_handle_is_unconditional(self) -> None:
         adapter = EmailChannelAdapter()
@@ -171,7 +171,7 @@ def _make_request(
         source=NotificationSourceEnum.AI_TODO_ADDED,
         type=NotificationType.INFO,
         priority=2,
-        channels=[ChannelConfig(channel_type=CHANNEL_TYPE_EMAIL, enabled=True)],
+        channels=[ChannelConfig(channel_type=NotificationChannel.EMAIL, enabled=True)],
         content=NotificationContent(
             title="Reminder",
             body="Stand-up in 10 minutes",
@@ -239,7 +239,7 @@ class TestDeliverSkips:
         assert status.skipped is True
         assert status.status == NotificationStatus.FAILED
         assert status.error_message == "email: no email address on file"
-        assert status.channel_type == CHANNEL_TYPE_EMAIL
+        assert status.channel_type == NotificationChannel.EMAIL
         assert not route.called
 
     @respx.mock
@@ -314,7 +314,7 @@ class TestDeliverRequestShape:
         }
         assert status.status == NotificationStatus.DELIVERED
         assert status.skipped is False
-        assert status.channel_type == CHANNEL_TYPE_EMAIL
+        assert status.channel_type == NotificationChannel.EMAIL
         assert status.delivered_at is not None
         assert status.error_message is None
 

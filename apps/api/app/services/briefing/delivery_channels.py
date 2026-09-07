@@ -8,9 +8,8 @@ triple-delivery bug); generic notifications keep the auto-inject fan-out.
 """
 
 from app.constants.notifications import (
-    CHANNEL_TYPE_EMAIL,
-    CHANNEL_TYPE_INAPP,
     DEFAULT_CHAT_CHANNEL_PRIORITY,
+    NotificationChannel,
 )
 from app.db.repositories.users import user_repository
 from app.services.platform_link_service import PlatformLinkService
@@ -41,7 +40,7 @@ async def resolve_briefing_channels(user_id: str, user: dict) -> list[str]:
     is both linked and preference-enabled; plus email when enabled and the user
     has an address on file.
     """
-    channels = [CHANNEL_TYPE_INAPP]
+    channels: list[str] = [NotificationChannel.INAPP]
 
     prefs = await fetch_channel_preferences(user_id)
     linked = await PlatformLinkService.get_linked_platforms(user_id)
@@ -50,8 +49,8 @@ async def resolve_briefing_channels(user_id: str, user: dict) -> list[str]:
             channels.append(platform)
             break
 
-    if prefs.get(CHANNEL_TYPE_EMAIL, True) and (user.get("email") or "").strip():
-        channels.append(CHANNEL_TYPE_EMAIL)
+    if prefs.get(NotificationChannel.EMAIL, True) and (user.get("email") or "").strip():
+        channels.append(NotificationChannel.EMAIL)
 
     return channels
 

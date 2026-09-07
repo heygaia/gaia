@@ -7,8 +7,8 @@ from fastapi import Request
 from app.constants.log_tags import LogTag
 from app.constants.notifications import (
     ALL_AUTO_INJECTED_CHANNELS,
-    CHANNEL_TYPE_INAPP,
     DEFAULT_CHANNEL_PREFERENCES,
+    NotificationChannel,
 )
 from app.core.websocket_manager import websocket_manager
 from app.models.notification.notification_models import (
@@ -139,7 +139,7 @@ class NotificationOrchestrator:
         if not explicitly_requested:
             channel_prefs = await self._get_channel_prefs(notification.user_id)
             for platform in ALL_AUTO_INJECTED_CHANNELS:
-                if platform != CHANNEL_TYPE_INAPP and not channel_prefs.get(platform, True):
+                if platform != NotificationChannel.INAPP and not channel_prefs.get(platform, True):
                     log.info(
                         f"{LogTag.NOTIFICATION} Skipping delivery: disabled by preference",
                         platform=platform,

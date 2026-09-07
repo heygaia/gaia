@@ -342,20 +342,27 @@ class BulkActions(str, Enum):
 
 
 class ChannelPreferences(BaseModel):
-    """User notification channel preferences."""
+    """User notification channel preferences.
+
+    One field per ``USER_CONFIGURABLE_CHANNELS`` member; the fields are spelled out
+    so FastAPI and mypy see real types, and a unit test pins the set against the
+    enum so the two cannot drift.
+    """
 
     telegram: bool = True
     discord: bool = True
     whatsapp: bool = True
     slack: bool = True
+    imessage: bool = True
     email: bool = True
 
 
 class ChannelPreferencesUpdate(BaseModel):
-    """Request body for updating channel preferences."""
+    """Request body for updating channel preferences; omitted channels are untouched."""
 
     telegram: bool | None = None
     discord: bool | None = None
     whatsapp: bool | None = None
     slack: bool | None = None
+    imessage: bool | None = None
     email: bool | None = None

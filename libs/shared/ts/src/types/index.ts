@@ -48,6 +48,7 @@ export type {
   QuietHours,
 } from "./notification";
 export {
+  NOTIFICATION_CHANNELS,
   NotificationActionStyle,
   NotificationActionType,
   NotificationStatus,
@@ -84,7 +85,6 @@ export type {
   SubscriptionCondition,
   SubTask,
   Todo,
-  TodoAssignee,
   TodoCounts,
   TodoCreate,
   TodoFilters,
