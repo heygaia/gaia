@@ -18,10 +18,10 @@ from app.api.v1.middleware.rate_limiter import limiter
 from app.services.short_link_service import get_public_artifact, revoke_short_link
 from shared.py.wide_events import log
 
-router = APIRouter()
+router = APIRouter(prefix="/l", tags=["Short Links"])
 
 
-@router.get("/l/{slug}")
+@router.get("/{slug}")
 @limiter.limit("60/minute")
 @limiter.limit("600/hour")
 async def resolve_short_link_route(request: Request, slug: str) -> JSONResponse:
@@ -30,10 +30,12 @@ async def resolve_short_link_route(request: Request, slug: str) -> JSONResponse:
     artifact = await get_public_artifact(slug)
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short link not found")
-    return JSONResponse(content=artifact)
+    # A capability URL can be revoked at any moment, so no browser or
+    # intermediary may keep serving content the owner has already taken back.
+    return JSONResponse(content=artifact, headers={"Cache-Control": "no-store"})
 
 
-@router.delete("/l/{slug}", status_code=status.HTTP_204_NO_CONTENT)
+@router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)
 async def revoke_short_link_route(
     slug: str, user: Annotated[dict, Depends(get_current_user)]
 ) -> Response:
