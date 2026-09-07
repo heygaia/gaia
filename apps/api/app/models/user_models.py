@@ -5,6 +5,7 @@ from typing import Any, TypedDict
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.db.repositories.base import MongoDocument
+from app.models.first_steps_models import FirstStepsState
 from app.utils.timezone import is_valid_timezone
 
 # Shared field doc for the `message` field on the success/message response models.
@@ -374,6 +375,8 @@ class AuthenticatedUser(TypedDict, total=False):
     highest_activity_tier_at: datetime | None
     # Nurture email sequence state (workers) — completed_steps + send history.
     nurture: dict[str, Any] | None
+    # Activation checklist dismissal (first_steps_service).
+    first_steps: FirstStepsState | None
 
 
 class PlatformLinkRecord(TypedDict, total=False):
@@ -452,6 +455,8 @@ class UserDocument(MongoDocument):
     highest_activity_tier_at: datetime | None = None
     # Nurture email sequence state (workers): completed_steps + send history.
     nurture: dict[str, Any] | None = None
+    # Activation checklist dismissal (first_steps_service).
+    first_steps: FirstStepsState | None = None
 
 
 class OnboardingStatusResponse(BaseModel):
@@ -531,6 +536,7 @@ class AuthenticatedUserResponse(BaseModel):
     memory_backfilled: datetime | None = None
     last_inactive_email_sent: datetime | None = None
     inactive_email_count: int | None = None
+    first_steps: FirstStepsState | None = None
 
 
 class HoloCardOnboardingFields(BaseModel):
