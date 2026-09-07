@@ -531,10 +531,13 @@ class WorkflowGenerationService:
             last_error=last_error,
             user_id=user_id,
         )
-        raise WorkflowStepGenerationError(
-            f"the model returned no usable steps after {_MAX_GENERATION_ATTEMPTS} attempts"
-            + (f" ({_failure_reason(last_error)})" if last_error else "")
-        ) from last_error
+        # Every exhausted attempt returned a reason, so there is always one to
+        # show: `_run_generation_attempt` only yields no steps together with the
+        # error that explains why.
+        reason = f"the model returned no usable steps after {_MAX_GENERATION_ATTEMPTS} attempts"
+        if last_error:
+            reason += f" ({_failure_reason(last_error)})"
+        raise WorkflowStepGenerationError(reason) from last_error
 
     @staticmethod
     async def generate_workflow_prompt(
