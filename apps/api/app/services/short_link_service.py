@@ -21,7 +21,11 @@ from app.db.repositories.short_links import (
     short_link_repository,
 )
 from app.db.repositories.todos import todo_repository
-from app.models.short_link_models import ShortLink, ShortLinkTarget
+from app.models.short_link_models import (
+    PublicArtifactResponse,
+    ShortLink,
+    ShortLinkTarget,
+)
 from app.models.todo_models import ExecutionStatus
 from shared.py.wide_events import log
 
@@ -152,7 +156,7 @@ async def resolve_public_short_link(slug: str) -> ShortLink | None:
     return link
 
 
-async def get_public_artifact(slug: str) -> dict | None:
+async def get_public_artifact(slug: str) -> PublicArtifactResponse | None:
     """Read-only artifact content behind a capability slug, or ``None``.
 
     The read is scoped by the OWNER stored on the link doc, never a viewer.
@@ -170,12 +174,12 @@ async def get_public_artifact(slug: str) -> dict | None:
     content = facet_from_doc(
         todo.model_dump(), FACET_DELIVERABLE, allow_canvas_fallback=allow_fallback
     )
-    return {
-        "title": todo.title or "Artifact",
-        "content": content or "",
-        "todo_id": link.target_id,
-        "target_type": link.target_type,
-    }
+    return PublicArtifactResponse(
+        title=todo.title or "Artifact",
+        content=content or "",
+        todo_id=link.target_id,
+        target_type=link.target_type,
+    )
 
 
 async def revoke_short_link(user_id: str, slug: str) -> bool:

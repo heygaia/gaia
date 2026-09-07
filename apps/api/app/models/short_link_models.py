@@ -41,3 +41,14 @@ class ShortLinkUpdate(BaseModel):
 
     expires_at: datetime | None = None
     revoked: bool | None = None
+
+
+class PublicArtifactResponse(BaseModel):
+    """The read-only artifact payload served for a capability slug."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str
+    content: str
+    todo_id: str
+    target_type: ShortLinkTarget

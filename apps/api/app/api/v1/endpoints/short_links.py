@@ -11,10 +11,10 @@ hopeless.
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
-from fastapi.responses import JSONResponse
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.api.v1.middleware.rate_limiter import limiter
+from app.models.short_link_models import PublicArtifactResponse
 from app.services.short_link_service import get_public_artifact, revoke_short_link
 from shared.py.wide_events import log
 
@@ -24,15 +24,18 @@ router = APIRouter(prefix="/l", tags=["Short Links"])
 @router.get("/{slug}")
 @limiter.limit("60/minute")
 @limiter.limit("600/hour")
-async def resolve_short_link_route(request: Request, slug: str) -> JSONResponse:
+async def resolve_short_link_route(
+    request: Request, response: Response, slug: str
+) -> PublicArtifactResponse:
     """Resolve a capability slug to its read-only artifact content. No auth."""
     log.set(short_link={"operation": "resolve", "slug": slug})
+    # A capability URL can be revoked at any moment, so no browser or
+    # intermediary may keep serving content the owner has already taken back.
+    response.headers["Cache-Control"] = "no-store"
     artifact = await get_public_artifact(slug)
     if artifact is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Short link not found")
-    # A capability URL can be revoked at any moment, so no browser or
-    # intermediary may keep serving content the owner has already taken back.
-    return JSONResponse(content=artifact, headers={"Cache-Control": "no-store"})
+    return artifact
 
 
 @router.delete("/{slug}", status_code=status.HTTP_204_NO_CONTENT)

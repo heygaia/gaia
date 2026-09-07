@@ -5,6 +5,8 @@ from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
 import pytest
 
+from app.models.short_link_models import PublicArtifactResponse
+
 # routes.py mounts the short-links router at its own "/l" prefix.
 BASE = "/api/v1/l"
 
@@ -19,17 +21,14 @@ class TestResolveShortLink:
         """A capability URL can be revoked at any moment; a cached 200 in a
         browser or an intermediary would keep serving content the owner has
         already taken back."""
-        artifact = {
-            "title": "Q3 plan",
-            "content": "body",
-            "todo_id": "todo-1",
-            "target_type": "todo_canvas",
-        }
+        artifact = PublicArtifactResponse(
+            title="Q3 plan", content="body", todo_id="todo-1", target_type="todo_canvas"
+        )
         with patch(f"{_ENDPOINT}.get_public_artifact", AsyncMock(return_value=artifact)):
             response = await client.get(f"{BASE}/abcdefghijk")
 
         assert response.status_code == 200
-        assert response.json() == artifact
+        assert response.json() == artifact.model_dump()
         assert response.headers["cache-control"] == "no-store"
 
     @pytest.mark.asyncio
