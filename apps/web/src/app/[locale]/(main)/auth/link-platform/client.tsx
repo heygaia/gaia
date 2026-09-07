@@ -1,32 +1,15 @@
 "use client";
 
 import { Spinner } from "@heroui/spinner";
-import { CheckmarkCircle02Icon, Link01Icon } from "@icons";
-import { useIsRestoring } from "@tanstack/react-query";
-import confetti from "canvas-confetti";
+import { Link01Icon } from "@icons";
 import Image from "next/image";
 import { RedirectType, redirect } from "next/navigation";
-import { useEffect, useState } from "react";
-import { RaisedButton } from "@/components/ui/raised-button";
-import {
-  BOT_PLATFORM_ICONS,
-  BOT_PLATFORM_LABELS,
-  isBotPlatform,
-} from "@/config/botPlatforms";
-import { useAuth } from "@/features/auth/hooks/useAuth";
-import { apiService } from "@/lib/api/service";
-import { toast } from "@/lib/toast";
 
-/** Shared card shell: rounded, flat, no outline, no shadow — matches GAIA surfaces. */
-function Card({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="flex h-full items-center justify-center p-4">
-      <div className="w-full max-w-md rounded-3xl bg-zinc-900 p-8 text-center">
-        {children}
-      </div>
-    </div>
-  );
-}
+import { RaisedButton } from "@/components/ui/raised-button";
+import { useLinkPlatform } from "@/features/auth/hooks/useLinkPlatform";
+
+import { LinkCard } from "./LinkCard";
+import { InvalidLinkCard, LinkedSuccessCard } from "./LinkPlatformStates";
 
 interface LinkPlatformClientProps {
   platform: string | null;
@@ -37,77 +20,19 @@ export default function LinkPlatformClient({
   platform,
   token,
 }: Readonly<LinkPlatformClientProps>) {
-  const { isAuthenticated } = useAuth();
-
-  const [isLinking, setIsLinking] = useState(false);
-  const [isLinked, setIsLinked] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [accountInfo, setAccountInfo] = useState<{
-    username?: string;
-    displayName?: string;
-  } | null>(null);
-
-  // The persisted query cache restores asynchronously, so every auth decision
-  // must wait for it — otherwise a signed-in user is briefly judged signed out.
-  const hasHydrated = !useIsRestoring();
-
-  const config =
-    platform && isBotPlatform(platform)
-      ? {
-          name: BOT_PLATFORM_LABELS[platform],
-          iconSrc: BOT_PLATFORM_ICONS[platform],
-        }
-      : null;
-
-  useEffect(() => {
-    if (token) {
-      apiService
-        .get(`/bot/link-token-info/${encodeURIComponent(token)}`, {
-          silent: true,
-        })
-        .then((data) => {
-          const { username, display_name } = data as {
-            username?: string;
-            display_name?: string;
-          };
-          setAccountInfo({
-            username,
-            displayName: display_name,
-          });
-        })
-        .catch((err) => {
-          // Non-critical enrichment (account display name only). Log without
-          // surfacing a toast — the link flow works fine without it.
-          console.error("Failed to load link-token info:", err);
-        });
-    }
-  }, [token]);
-
-  // Celebrate a successful link with a quick confetti burst.
-  useEffect(() => {
-    if (!isLinked) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
-    const defaults = {
-      spread: 70,
-      ticks: 90,
-      gravity: 1,
-      decay: 0.92,
-      startVelocity: 32,
-      colors: ["#00bbff", "#3effa6", "#ffffff", "#a78bfa"],
-    };
-    confetti({ ...defaults, particleCount: 60, origin: { x: 0.5, y: 0.45 } });
-    confetti({ ...defaults, particleCount: 30, origin: { x: 0.5, y: 0.45 } });
-  }, [isLinked]);
+  const {
+    isAuthenticated,
+    hasHydrated,
+    config,
+    accountInfo,
+    error,
+    isLinking,
+    isLinked,
+    handleLink,
+  } = useLinkPlatform(platform, token);
 
   if (!token || !platform || !config) {
-    return (
-      <Card>
-        <p className="text-zinc-400">
-          Invalid or expired link. Request a new one from your bot with{" "}
-          <span className="font-mono text-zinc-300">/auth</span>.
-        </p>
-      </Card>
-    );
+    return <InvalidLinkCard />;
   }
 
   if (!hasHydrated) {
@@ -126,57 +51,12 @@ export default function LinkPlatformClient({
     );
   }
 
-  const handleLink = async () => {
-    setIsLinking(true);
-    setError(null);
-    try {
-      await apiService.post(
-        `/platform-links/${platform}`,
-        { token },
-        { silent: true },
-      );
-      setIsLinked(true);
-      toast.success("Account linked successfully!");
-    } catch (err: unknown) {
-      const status = (err as { response?: { status?: number } })?.response
-        ?.status;
-      const detail = (err as { response?: { data?: { detail?: string } } })
-        ?.response?.data?.detail;
-
-      if (status === 409) {
-        setError(detail || "This account is already linked.");
-      } else if (status === 400) {
-        setError(
-          detail ||
-            "Invalid or expired link. Please request a new one from the bot.",
-        );
-      } else {
-        setError("Failed to link account. Please try again.");
-      }
-    } finally {
-      setIsLinking(false);
-    }
-  };
-
   if (isLinked) {
-    return (
-      <Card>
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full bg-success/15">
-          <CheckmarkCircle02Icon className="h-9 w-9 text-success" />
-        </div>
-        <h2 className="mb-2 text-xl font-semibold text-white">
-          You&apos;re connected!
-        </h2>
-        <p className="text-sm text-zinc-400">
-          Your {config.name} account is linked. Head back to {config.name} and
-          say hi — GAIA&apos;s ready when you are.
-        </p>
-      </Card>
-    );
+    return <LinkedSuccessCard platformName={config.name} />;
   }
 
   return (
-    <Card>
+    <LinkCard>
       <Image
         src={config.iconSrc}
         alt={`${config.name} icon`}
@@ -216,6 +96,6 @@ export default function LinkPlatformClient({
         )}
         Connect {config.name}
       </RaisedButton>
-    </Card>
+    </LinkCard>
   );
 }
