@@ -10,6 +10,10 @@ import type { FirstStepKey } from "@/types/features/firstStepsTypes";
 
 export const FIRST_STEPS_QUERY_KEY = ["first-steps"] as const;
 
+/** Slow poll that runs only while the checklist is still open, so a step
+ * completed in another tab or on a bot shows up without a reload. */
+export const FIRST_STEPS_POLL_INTERVAL_MS = 60_000;
+
 /** Routes where the floating widget must stay hidden: the onboarding wizard,
  * and the dashboard, which already shows the full-width banner. */
 export const FIRST_STEPS_WIDGET_HIDDEN_PATHS: readonly string[] = [

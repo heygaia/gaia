@@ -28,8 +28,9 @@ export function useFirstStepAction(
         surface,
       });
       if (action.kind === "chat") {
+        // `appendToInput` seeds the composer and navigates to /c itself when
+        // the user is not already there; a push here would double-navigate.
         appendToInput(action.prompt);
-        router.push("/c");
         return;
       }
       router.push(action.href);
