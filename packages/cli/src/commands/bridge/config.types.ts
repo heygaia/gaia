@@ -19,6 +19,9 @@ export interface UrlServer {
   key: string;
   name: string;
   url: string;
+  // Sent on every request to the local server (e.g. Authorization). Stored 0600
+  // like stdio env; never leaves this machine.
+  headers?: Record<string, string>;
 }
 
 export interface StdioServer {

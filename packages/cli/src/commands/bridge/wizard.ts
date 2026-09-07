@@ -9,8 +9,8 @@ import type { ServerConfig } from "./config.types.js";
 import { FILESYSTEM_SERVER_KEY } from "./constants.js";
 import { isPaired, runLogin } from "./login.js";
 import { ask, askSecret, choose, confirm } from "./prompt.js";
-import { testServer } from "./servers.js";
-import { runUp } from "./up.js";
+import { assertLoopbackUrl, testServer } from "./servers.js";
+import { registerConfiguredServers, runUp } from "./up.js";
 
 function slugify(name: string): string {
   return name
@@ -167,11 +167,43 @@ async function buildStdioConfig(): Promise<ServerConfig> {
   return { type: "stdio", key, name, command, args, env };
 }
 
+async function collectHeaders(): Promise<Record<string, string>> {
+  const headers: Record<string, string> = {};
+  if (
+    !(await confirm(
+      "Does the server need request headers (e.g. Authorization)?",
+      false,
+    ))
+  ) {
+    return headers;
+  }
+  console.info("Enter each header's name; leave blank when done.");
+  for (;;) {
+    const name = (await ask("  Header name")).trim();
+    if (!name) break;
+    if (name in headers) {
+      console.info("  Already added.");
+      continue;
+    }
+    headers[name] = await promptForVar(name);
+  }
+  return headers;
+}
+
 async function buildUrlConfig(): Promise<ServerConfig> {
   const url = await ask("Server URL (e.g. http://localhost:3000/mcp)");
   if (!url) throw new Error("a URL is required");
+  // Fail before naming: a url server must point at this machine.
+  assertLoopbackUrl(url);
+  const headers = await collectHeaders();
   const { name, key } = await askName(suggestNameFromUrl(url));
-  return { type: "url", key, name, url };
+  return {
+    type: "url",
+    key,
+    name,
+    url,
+    ...(Object.keys(headers).length ? { headers } : {}),
+  };
 }
 
 async function verifyServer(config: ServerConfig): Promise<boolean> {
@@ -228,7 +260,22 @@ export async function runAdd(): Promise<void> {
   upsertServer(config);
   console.info(`\nSaved '${config.key}'.`);
 
-  if (await confirm("Connect to GAIA now (gaia bridge up)?")) {
+  // Register with the cloud now so the integration is created and its tools get
+  // warm-connected — even if the user doesn't start a tunnel from here.
+  try {
+    await registerConfiguredServers();
+    console.info("Registered with GAIA.");
+  } catch (e) {
+    console.error(
+      `Could not register with GAIA (will retry on \`gaia bridge up\`): ${e instanceof Error ? e.message : e}`,
+    );
+  }
+
+  if (
+    await confirm(
+      "Start the tunnel now? (skip if `gaia bridge up` is already running)",
+    )
+  ) {
     await runUp();
   } else {
     console.info("Run `gaia bridge up` whenever you're ready.");

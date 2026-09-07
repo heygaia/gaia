@@ -64,6 +64,9 @@ function cmdList(): void {
       if (names.length) console.info(`  env: ${names.join(", ")}`);
     } else {
       console.info(`  [${s.key}] ${s.name}: ${s.url}`);
+      const headerNames = s.headers ? Object.keys(s.headers) : [];
+      if (headerNames.length)
+        console.info(`  headers: ${headerNames.join(", ")}`);
     }
   }
 }

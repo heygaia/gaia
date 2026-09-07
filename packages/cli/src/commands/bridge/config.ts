@@ -10,6 +10,7 @@ import type {
   ServerConfig,
 } from "./config.types.js";
 import { DEFAULT_API_URL, FILESYSTEM_SERVER_KEY } from "./constants.js";
+import { assertLoopbackUrl } from "./servers.js";
 
 interface BridgeConfig {
   servers: ServerConfig[];
@@ -66,6 +67,7 @@ function saveConfig(config: BridgeConfig): void {
 }
 
 export function upsertServer(server: ServerConfig): void {
+  if (server.type === "url") assertLoopbackUrl(server.url);
   const config = loadConfig();
   const idx = config.servers.findIndex((s) => s.key === server.key);
   if (idx >= 0) config.servers[idx] = server;

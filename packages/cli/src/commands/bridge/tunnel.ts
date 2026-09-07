@@ -7,7 +7,7 @@ import { randomInt } from "node:crypto";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
 import { ApiError, exchangeToken } from "./api.js";
-import { loadConfig, saveCredentials } from "./config.js";
+import { loadConfig, loadCredentials, saveCredentials } from "./config.js";
 import type { Credentials } from "./config.types.js";
 import {
   FRAME,
@@ -71,12 +71,16 @@ export class Tunnel {
   }
 
   private async connectOnce(): Promise<void> {
-    const token = await exchangeToken(
-      this.creds.apiUrl,
-      this.creds.refreshToken,
-    );
+    // Reload the refresh token from disk before every exchange. Another process
+    // (e.g. `gaia bridge add`) may have rotated it; using our in-memory copy would
+    // present a stale token and trip reuse-detection, revoking the device.
+    const stored = loadCredentials();
+    if (!stored?.refreshToken) {
+      throw new ApiError("not paired — run: gaia bridge login", 401);
+    }
+    const token = await exchangeToken(stored.apiUrl, stored.refreshToken);
     // Persist the rotated refresh credential immediately — the old one is dead.
-    this.creds = { ...this.creds, refreshToken: token.refresh_token };
+    this.creds = { ...stored, refreshToken: token.refresh_token };
     saveCredentials(this.creds);
 
     const wsUrl = `${this.creds.apiUrl.replace(/^http/, "ws")}/api/v1/ws/device`;

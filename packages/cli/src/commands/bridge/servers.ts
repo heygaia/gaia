@@ -21,11 +21,33 @@ export interface ServerSession {
   close: () => Promise<void>;
 }
 
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "::1"]);
+
+/** A url server must point at THIS machine, or the cloud could drive the daemon
+ * into the user's LAN (SSRF pivot). Config is user-editable, so guard on open. */
+export function assertLoopbackUrl(raw: string): URL {
+  const url = new URL(raw);
+  if (url.protocol !== "http:" && url.protocol !== "https:") {
+    throw new Error(`url servers must be http(s), got ${url.protocol}`);
+  }
+  const host = url.hostname.replace(/^\[|\]$/g, "");
+  if (!LOOPBACK_HOSTS.has(host)) {
+    throw new Error(
+      "url servers must point at this machine (localhost / 127.0.0.1 / ::1)",
+    );
+  }
+  return url;
+}
+
 export async function openServerSession(
   config: ServerConfig,
 ): Promise<ServerSession> {
   if (config.type === "url") {
-    const transport = new StreamableHTTPClientTransport(new URL(config.url));
+    const url = assertLoopbackUrl(config.url);
+    const transport = new StreamableHTTPClientTransport(
+      url,
+      config.headers ? { requestInit: { headers: config.headers } } : undefined,
+    );
     // StreamableHTTPClientTransport declares `get sessionId(): string | undefined`
     // where the SDK's own Transport interface types it as the optional `sessionId?:
     // string` — a mismatch that only surfaces under exactOptionalPropertyTypes, not

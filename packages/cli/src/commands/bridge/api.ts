@@ -1,5 +1,7 @@
 // Thin HTTP client for the device-bridge REST endpoints.
 
+import type { ServerConfig } from "./config.types.js";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -90,11 +92,12 @@ export function registerServer(
   accessToken: string,
   serverKey: string,
   displayName: string,
+  kind: ServerConfig["type"],
 ): Promise<{ integration_id: string; server_key: string }> {
   return post(
     apiUrl,
     "/device/servers",
-    { server_key: serverKey, display_name: displayName },
+    { server_key: serverKey, display_name: displayName, kind },
     accessToken,
   );
 }

@@ -41,6 +41,7 @@ import time
 import httpx
 import pytest
 
+from app.workers.tasks.device_tasks import warm_device_servers
 from tests.helpers import pick_free_port
 
 pytestmark = [pytest.mark.service, pytest.mark.slow]
@@ -66,7 +67,7 @@ EVERYTHING_PACKAGE = "@modelcontextprotocol/server-everything"
 # cache — 15-19s on the CI box's residential uplink under load. To bump, run
 # `npx -y @modelcontextprotocol/server-everything@<new> stdio </dev/null` once
 # and set the new version here.
-EVERYTHING_VERSION = "2026.8.18"
+EVERYTHING_VERSION = "2026.8.31"
 
 
 @cache
@@ -437,6 +438,21 @@ class TestFullDeviceLifecycle:
             server = devices[0]["servers"][0]
             assert server["server_key"] == "everything"
             daemon.mark("device listed online")
+            assert server["tools_synced_at"] is None, "not warmed yet"
+
+            # 5b. Warm-connect is what registration enqueues to make the server's
+            #     tools discoverable without anyone hitting /mcp/test. No ARQ
+            #     worker runs in this harness, so the task is invoked inline — this
+            #     still exercises the real tunnel connect + Chroma index + DB
+            #     record, just not the queue hop itself.
+            summary = await warm_device_servers({}, device_id)
+            assert summary == "warmed=1 failed=0", summary
+            relisted = (await owner.get("/api/v1/device/list")).json()["devices"]
+            warmed = relisted[0]["servers"][0]
+            assert warmed["tools_synced_at"] is not None
+            assert warmed["status"] == "connected"
+            assert warmed["kind"] == "stdio"
+            daemon.mark("warm-connect indexed tools (tools_synced_at set)")
 
             # 6. Trigger a real MCP round trip through the whole tunnel — the
             #    same endpoint Settings uses to test/retry a connection. No
