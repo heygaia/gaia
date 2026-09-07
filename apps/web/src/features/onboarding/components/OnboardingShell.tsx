@@ -2,7 +2,10 @@
  * Full-screen layout wrapper for the onboarding page. Three regions: top
  * progress bar, scrollable content (caller-supplied children), and an
  * optional pinned composer at the bottom. Auto-scrolls the content region
- * to bottom whenever stage- or content-bearing state changes.
+ * to bottom whenever stage- or content-bearing state changes, and again as
+ * the content itself grows: chips arrive staggered after the state change,
+ * so a scroll taken at the change alone leaves the last row of a tall stage
+ * under the composer on a phone.
  */
 
 "use client";
@@ -56,6 +59,7 @@ export function OnboardingShell({
   composer,
 }: OnboardingShellProps) {
   const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLDivElement>(null);
   const [composerHeight, setComposerHeight] = useState(0);
   const progressStep = getProgress(state, stage);
@@ -79,10 +83,15 @@ export function OnboardingShell({
   }, [hasComposer, stage]);
 
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const scroller = scrollRef.current;
+    const content = contentRef.current;
+    if (!scroller || !content) return;
+    const toBottom = () =>
+      scroller.scrollTo({ top: scroller.scrollHeight, behavior: "smooth" });
+    toBottom();
+    const obs = new ResizeObserver(toBottom);
+    obs.observe(content);
+    return () => obs.disconnect();
   }, [fingerprint, composerHeight]);
 
   return (
@@ -106,6 +115,7 @@ export function OnboardingShell({
         className="relative z-10 flex-1 overflow-y-auto px-4 pt-20 sm:pt-36"
       >
         <div
+          ref={contentRef}
           className="relative mx-auto w-full max-w-3xl"
           style={{
             paddingBottom:
