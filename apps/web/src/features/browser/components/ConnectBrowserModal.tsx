@@ -11,7 +11,7 @@ import {
 } from "@heroui/modal";
 import { Skeleton } from "@heroui/skeleton";
 import { ArcBrowserIcon, ChromeIcon, EdgeStyleIcon, GlobalIcon } from "@icons";
-import { type ComponentType, useEffect, useState } from "react";
+import { type ComponentType, type ReactNode, useEffect, useState } from "react";
 import CopyButton from "@/components/ui/CopyButton";
 import {
   type ConnectableBrowser,
@@ -41,20 +41,31 @@ const BROWSER_OPTIONS: readonly BrowserOption[] = [
   { label: "Other", value: null, icon: GlobalIcon },
 ];
 
-const WHAT_HAPPENS: readonly { heading: string; body: string }[] = [
-  {
-    heading: "Your browser asks once",
-    body: "The tool reads your browser's own encrypted cookies. macOS asks for permission one time; that prompt is your consent.",
-  },
-  {
-    heading: "You choose the sites",
-    body: "Pick exactly which sites to sync. Only their sign-in sessions are uploaded, never your passwords.",
-  },
-  {
-    heading: "Encrypted, and yours to forget",
-    body: `Saved sites are stored encrypted and expire ${SAVED_LOGIN_TTL_DAYS} days after last use. Forget any site from this page whenever you like.`,
-  },
+const FACTS: readonly string[] = [
+  "Cookies only, never passwords. macOS asks permission once.",
+  "You pick which sites to sync.",
+  `Encrypted. Expires ${SAVED_LOGIN_TTL_DAYS} days after last use; forget any site here.`,
 ];
+
+/** A tonal card: zinc-800 on the modal, per the dark-card contract. */
+function Surface({
+  label,
+  children,
+  glass = false,
+}: {
+  label?: string;
+  children: ReactNode;
+  glass?: boolean;
+}) {
+  return (
+    <section
+      className={`flex flex-col gap-3 rounded-2xl p-4 ${glass ? "bg-zinc-800/40" : "bg-zinc-800"}`}
+    >
+      {label && <p className="text-xs text-zinc-500">{label}</p>}
+      {children}
+    </section>
+  );
+}
 
 function BrowserPicker({
   value,
@@ -74,6 +85,7 @@ function BrowserPicker({
             radius="full"
             variant={selected ? "solid" : "flat"}
             color={selected ? "primary" : "default"}
+            className={selected ? undefined : "bg-zinc-900"}
             startContent={<Icon className="size-4" />}
             onPress={() => onChange(option)}
           >
@@ -85,13 +97,46 @@ function BrowserPicker({
   );
 }
 
+/** Flags stay whole (a hyphen is a soft-wrap point, so `--token` would split
+ * as `-` / `-token`); only the opaque code may break mid-word. */
 function CommandBlock({ command }: { command: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-2xl bg-zinc-900 py-2 pr-2 pl-4">
-      <code className="min-w-0 flex-1 break-all text-primary text-sm">
-        {command}
+    <div className="flex items-center gap-3 rounded-xl bg-zinc-900 py-2 pr-2 pl-3">
+      <code className="min-w-0 flex-1 text-primary text-sm">
+        {command.split(" ").map((part, index, parts) => (
+          <span
+            key={part}
+            className={
+              parts[index - 1] === "--token"
+                ? "wrap-anywhere"
+                : "whitespace-nowrap"
+            }
+          >
+            {index > 0 ? " " : ""}
+            {part}
+          </span>
+        ))}
       </code>
       <CopyButton textToCopy={command} />
+    </div>
+  );
+}
+
+function CodeStatus({
+  text,
+  action,
+  onAction,
+}: {
+  text: string;
+  action: string;
+  onAction: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-xl bg-zinc-900 p-3 text-sm text-zinc-400">
+      <span>{text}</span>
+      <Button size="sm" color="primary" onPress={onAction}>
+        {action}
+      </Button>
     </div>
   );
 }
@@ -121,84 +166,62 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
 
   return (
     <>
-      <ModalHeader>Connect your browser</ModalHeader>
-      <ModalBody className="gap-5">
-        <p className="text-sm text-zinc-400">
-          Bring over the sites you're already signed into. GAIA's browser then
-          starts each task signed in, instead of asking you to log in again.
-        </p>
-
-        <section className="flex flex-col gap-2">
-          <h4 className="font-medium text-sm text-zinc-200">Which browser?</h4>
+      <ModalHeader>Import browser logins</ModalHeader>
+      <ModalBody className="gap-3">
+        <Surface label="Browser">
           <BrowserPicker value={browser} onChange={setBrowser} />
-        </section>
+        </Surface>
 
-        <section className="flex flex-col gap-2">
-          <h4 className="font-medium text-sm text-zinc-200">
-            Run this in Terminal
-          </h4>
+        <Surface label="Run in Terminal">
           {isMinting || (!command && !error && !isExpired) ? (
-            <Skeleton className="h-10 w-full rounded-2xl" />
+            <Skeleton className="h-10 w-full rounded-xl" />
           ) : error ? (
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-800/40 p-3 text-sm text-zinc-400">
-              <span>Couldn't get a code.</span>
-              <Button size="sm" variant="flat" onPress={mint}>
-                Try again
-              </Button>
-            </div>
+            <CodeStatus
+              text="Couldn't get a code."
+              action="Try again"
+              onAction={mint}
+            />
           ) : isExpired || !command ? (
-            <div className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-800/40 p-3 text-sm text-zinc-400">
-              <span>This code expired.</span>
-              <Button size="sm" color="primary" onPress={mint}>
-                Get a new code
-              </Button>
-            </div>
+            <CodeStatus
+              text="Code expired."
+              action="New code"
+              onAction={mint}
+            />
           ) : (
             <>
               <CommandBlock command={command} />
               <p
                 className={`text-xs ${secondsLeft <= EXPIRY_WARNING_SECONDS ? "text-amber-400/80" : "text-zinc-500"}`}
               >
-                It'll ask which sites to sync, then upload only those. Code
-                expires in {formatCountdown(secondsLeft)}.
+                Expires in {formatCountdown(secondsLeft)}
               </p>
             </>
           )}
-        </section>
+        </Surface>
 
-        <section className="flex flex-col gap-3">
-          <h4 className="font-medium text-sm text-zinc-200">What happens</h4>
-          <ol className="flex flex-col gap-3">
-            {WHAT_HAPPENS.map(({ heading, body }, index) => (
-              <li key={heading} className="flex gap-3">
-                <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-zinc-800 font-medium text-xs text-zinc-300">
-                  {index + 1}
-                </span>
-                <div className="min-w-0">
-                  <p className="text-sm text-zinc-200">{heading}</p>
-                  <p className="mt-0.5 text-xs text-zinc-500 leading-relaxed">
-                    {body}
-                  </p>
-                </div>
+        <Surface glass>
+          <ul className="flex flex-col gap-2">
+            {FACTS.map((fact) => (
+              <li key={fact} className="flex items-center gap-2.5">
+                <span className="size-1.5 shrink-0 rounded-full bg-zinc-600" />
+                <span className="text-xs text-zinc-400">{fact}</span>
               </li>
             ))}
-          </ol>
-        </section>
-
-        <p className="text-xs text-zinc-500">
-          Works on macOS with Arc, Chrome, Edge, Brave, and other Chromium
-          browsers. Windows and Linux are coming. Don't have gaia-connect yet?{" "}
+          </ul>
+        </Surface>
+      </ModalBody>
+      <ModalFooter className="items-center justify-between">
+        <p className="min-w-0 text-xs text-zinc-500">
+          macOS, Chromium browsers.{" "}
           <Link
             href={GAIA_CONNECT_README_URL}
             isExternal
             size="sm"
             className="text-xs"
           >
-            Get it here
+            Get gaia-connect
           </Link>
         </p>
-      </ModalBody>
-      <ModalFooter>
         <Button color="primary" size="sm" onPress={onClose}>
           Done
         </Button>

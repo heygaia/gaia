@@ -264,12 +264,9 @@ export function SavedLogins() {
         )}
       </div>
 
-      {!isLoading && !error && (
+      {!isLoading && !error && logins.length > 0 && (
         <div className="mb-3">
-          <ConnectBrowserBanner
-            hasLogins={logins.length > 0}
-            onConnect={() => setConnectOpen(true)}
-          />
+          <ConnectBrowserBanner onConnect={() => setConnectOpen(true)} />
         </div>
       )}
 
@@ -306,10 +303,16 @@ export function SavedLogins() {
             <GlobalIcon className="size-5 text-zinc-500" />
           </div>
           <p className="text-sm text-zinc-400">Nothing saved yet</p>
-          <p className="max-w-xs text-xs text-zinc-500">
-            As GAIA browses on your behalf, the sites it visits appear here so
-            you can review or forget them.
+          <p className="truncate text-xs text-zinc-500">
+            Import logins from your computer's browser to get started.
           </p>
+          <Button
+            size="sm"
+            color="primary"
+            onPress={() => setConnectOpen(true)}
+          >
+            Import
+          </Button>
         </div>
       ) : (
         <ScrollShadow className="max-h-[540px]">
