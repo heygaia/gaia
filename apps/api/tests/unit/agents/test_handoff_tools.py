@@ -818,52 +818,6 @@ def _resolved_subagent(agent_name: str, integration_id: str) -> Iterator[MagicMo
 
 
 @pytest.mark.unit
-class TestHandoffRejectsAForeignProviderInTheTask:
-    """A task that names one provider while being routed to another produces a
-    result claiming work the target never did — eight GAIA todos were reported
-    to the user as "8 tasks created (Todoist)" from exactly this input."""
-
-    PROD_TASK = (
-        "Create these 8 separate tasks on Aryan's todo list (Todoist). Each one is its "
-        "own task. Use clear, actionable titles:\n\n1. Buy Resend Pro to send emails"
-    )
-
-    async def test_the_prod_task_is_rejected_before_the_subagent_runs(self) -> None:
-        with _resolved_subagent("todo_agent", "todos") as dispatch:
-            result = await handoff.coroutine(
-                subagent_id="todos",
-                task=self.PROD_TASK,
-                config={"configurable": {"user_id": "u1", "thread_id": "t1"}},
-            )
-
-        dispatch.assert_not_awaited()
-        assert "Todoist" in result
-        assert "subagent:todoist" in result
-
-    async def test_the_same_task_without_the_provider_name_dispatches(self) -> None:
-        with _resolved_subagent("todo_agent", "todos") as dispatch:
-            result = await handoff.coroutine(
-                subagent_id="todos",
-                task="Create these 8 separate tasks on Aryan's todo list.",
-                config={"configurable": {"user_id": "u1", "thread_id": "t1"}},
-            )
-
-        dispatch.assert_awaited_once()
-        assert result == "subagent ran"
-
-    async def test_the_provider_named_is_free_to_be_the_target(self) -> None:
-        with _resolved_subagent("todoist_agent", "todoist") as dispatch:
-            result = await handoff.coroutine(
-                subagent_id="todoist",
-                task="Create 8 tasks in Todoist.",
-                config={"configurable": {"user_id": "u1", "thread_id": "t1"}},
-            )
-
-        dispatch.assert_awaited_once()
-        assert result == "subagent ran"
-
-
-@pytest.mark.unit
 class TestBackgroundHandoffWithoutAStream:
     """``background=True`` needs a stream_id to route the result back. Without
     one the handoff still runs, but blocking — and the executor has to be told,
@@ -1437,14 +1391,6 @@ class TestHandoffRejectionMessages:
     behaviour, not decoration. Dropping the name gives the model "the None
     subagent is paused" to act on."""
 
-    @staticmethod
-    @contextmanager
-    def _no_foreign_provider() -> Iterator[None]:
-        with patch(
-            "app.agents.core.subagents.handoff_tools.foreign_provider_named_in", return_value=None
-        ):
-            yield
-
     async def test_a_parked_subagent_refuses_new_work_with_the_collect_instruction(self):
         ctx = SimpleNamespace(agent_name="gmail_agent", integration_id="gmail")
         probed: list[object] = []
@@ -1453,11 +1399,8 @@ class TestHandoffRejectionMessages:
             probed.append(candidate)
             return candidate is ctx
 
-        with (
-            self._no_foreign_provider(),
-            patch("app.agents.core.subagents.handoff_tools._has_parked_subagent", new=_parked),
-        ):
-            rejection = await _handoff_rejection(ctx, "Fetch the unread messages.", False, "s1")
+        with patch("app.agents.core.subagents.handoff_tools._has_parked_subagent", new=_parked):
+            rejection = await _handoff_rejection(ctx, False, "s1")
 
         assert rejection == (
             "The gmail_agent subagent is paused waiting for the user's approval. "
@@ -1476,7 +1419,6 @@ class TestHandoffRejectionMessages:
             return (stream_id, integration_id) == ("", "gmail")
 
         with (
-            self._no_foreign_provider(),
             patch(
                 "app.agents.core.subagents.handoff_tools._has_parked_subagent",
                 new_callable=AsyncMock,
@@ -1486,7 +1428,7 @@ class TestHandoffRejectionMessages:
                 "app.agents.core.subagents.handoff_tools.has_bg_integration", side_effect=_has_bg
             ),
         ):
-            rejection = await _handoff_rejection(ctx, "Fetch the unread messages.", False, None)
+            rejection = await _handoff_rejection(ctx, False, None)
 
         assert rejection == (
             "A background gmail_agent subagent is already running on this "
@@ -1499,7 +1441,6 @@ class TestHandoffRejectionMessages:
         dispatch that follows a live one, instead of falling back cleanly."""
         ctx = SimpleNamespace(agent_name="gmail_agent", integration_id="gmail")
         with (
-            self._no_foreign_provider(),
             patch(
                 "app.agents.core.subagents.handoff_tools._has_parked_subagent",
                 new_callable=AsyncMock,
@@ -1507,7 +1448,7 @@ class TestHandoffRejectionMessages:
             ),
             patch("app.agents.core.subagents.handoff_tools.has_bg_integration", return_value=True),
         ):
-            assert await _handoff_rejection(ctx, "Fetch the unread messages.", True, "s1") is None
+            assert await _handoff_rejection(ctx, True, "s1") is None
 
 
 # ---------------------------------------------------------------------------
