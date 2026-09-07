@@ -16,6 +16,7 @@ from app.models.notification.notification_models import (
     ChannelDeliveryStatus,
     NotificationAction,
     NotificationContent,
+    NotificationQuery,
     NotificationRecord,
     NotificationRequest,
     NotificationSourceEnum,
@@ -803,12 +804,14 @@ class TestGetNotifications:
 
         await orch.get_user_notifications(
             "user-1",
-            status=NotificationStatus.DELIVERED,
-            limit=10,
-            offset=5,
-            channel_type="inapp",
-            notification_type=NotificationType.WARNING,
-            source=NotificationSourceEnum.AI_REMINDER,
+            NotificationQuery(
+                status=NotificationStatus.DELIVERED,
+                limit=10,
+                offset=5,
+                channel_type="inapp",
+                notification_type=NotificationType.WARNING,
+                source=NotificationSourceEnum.AI_REMINDER,
+            ),
         )
 
         storage.get_user_notifications.assert_awaited_once_with(

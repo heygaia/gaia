@@ -16,11 +16,10 @@ from app.models.notification.notification_models import (
     NotificationActionView,
     NotificationChannelView,
     NotificationContentView,
+    NotificationQuery,
     NotificationRecord,
     NotificationRequest,
-    NotificationSourceEnum,
     NotificationStatus,
-    NotificationType,
     NotificationView,
 )
 from app.services.delivery.chat_channel import resolve_chat_channel
@@ -389,18 +388,12 @@ class NotificationOrchestrator:
 
     # NOTIFICATION RETRIEVAL & QUERIES
     async def get_user_notifications(
-        self,
-        user_id: str,
-        status: NotificationStatus | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        channel_type: str | None = None,
-        notification_type: NotificationType | None = None,
-        source: NotificationSourceEnum | None = None,
+        self, user_id: str, query: NotificationQuery | None = None
     ) -> list[NotificationView]:
-        """Get a user's notifications with optional filtering and pagination."""
+        """A user's notifications, filtered and paged by ``query``."""
+        q = query or NotificationQuery()
         notifications = await self.storage.get_user_notifications(
-            user_id, status, limit, offset, channel_type, notification_type, source
+            user_id, q.status, q.limit, q.offset, q.channel_type, q.notification_type, q.source
         )
         return [self._serialize_notification(n) for n in notifications]
 

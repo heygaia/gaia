@@ -41,9 +41,6 @@ apps/api/app/api/v1/endpoints/integrations/config.py	PLR0912
 apps/api/app/api/v1/endpoints/mcp.py	PLR0912
 apps/api/app/api/v1/endpoints/mcp.py	PLR0915
 apps/api/app/api/v1/endpoints/oauth.py	PLR0911
-apps/api/app/api/v1/endpoints/platform_auth.py	PLR0911
-apps/api/app/api/v1/endpoints/platform_auth.py	PLR0912
-apps/api/app/api/v1/endpoints/platform_auth.py	PLR0913
 apps/api/app/api/v1/endpoints/todos.py	PLR0912
 apps/api/app/api/v1/endpoints/todos.py	PLR0913
 apps/api/app/core/lazy_loader.py	PLR0912
@@ -70,7 +67,6 @@ apps/api/app/services/mcp/langchain_adapter.py	PLR0912
 apps/api/app/services/mcp/resilient_adapter.py	PLR0912
 apps/api/app/services/mcp/resilient_adapter.py	PLR0915
 apps/api/app/services/mcp/token_management.py	PLR0912
-apps/api/app/services/notification_service.py	PLR0913
 apps/api/app/services/onboarding/social_profile_service.py	PLR0912
 apps/api/app/services/onboarding/social_profile_service.py	PLR0915
 apps/api/app/services/tools/tools_service.py	PLR0912
@@ -84,7 +80,6 @@ apps/api/app/utils/composio_hooks/reddit_hooks.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0913
 apps/api/app/utils/linkedin_utils.py	PLR0913
-apps/api/app/utils/notification/orchestrator.py	PLR0913
 apps/api/app/utils/notification/storage.py	PLR0913
 apps/api/app/utils/notion_md.py	PLR0911
 apps/api/app/utils/notion_md.py	PLR0912
