@@ -164,6 +164,18 @@ class TestOnboardingSubdocumentToleratesOldRows:
         assert doc.onboarding.phase is None
         assert doc.onboarding.bio_status is None
 
+    def test_a_non_string_phase_reads_as_unset_instead_of_failing(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "old@example.com",
+                "onboarding": {"phase": {"step": 3}, "bio_status": 7},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is None
+        assert doc.onboarding.bio_status is None
+
     def test_a_known_phase_still_coerces_to_the_enum(self) -> None:
         doc = UserDocument.model_validate(
             {

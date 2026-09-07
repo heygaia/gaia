@@ -22,9 +22,11 @@ from app.api.v1.endpoints.bot import (
     _bot_stream_payload_frame,
     _notice_only_stream,
     _paywall_notice,
+    _refusal_stream,
 )
 from app.models.bot_models import BotChatRequest
 from app.models.message_models import FileData
+from app.services.bot.stream_frames import sse_frame
 from app.services.bot_service import build_bot_message_request
 
 
@@ -348,6 +350,22 @@ class TestPaywallNoticeStream:
             'data: {"done": true, "conversation_id": ""}\n\n',
         ]
         assert response.media_type == "text/event-stream"
+
+
+class TestRefusalStream:
+    """``_refusal_stream`` — the one-frame SSE refusal, and the media type it rides on."""
+
+    async def test_yields_exactly_one_error_frame_carrying_the_code(self):
+        response = _refusal_stream(BOT_STREAM_ERROR_PLAN_REQUIRED)
+        chunks = [chunk async for chunk in response.body_iterator]
+        assert chunks == [sse_frame({"error": BOT_STREAM_ERROR_PLAN_REQUIRED})]
+
+    async def test_is_served_as_event_stream_so_the_bot_can_read_the_body(self):
+        """Not decoration: a bot reads this endpoint with a streaming parser and
+        will not read a refusal served under any other (or no) media type."""
+        response = _refusal_stream(BOT_STREAM_ERROR_PLAN_REQUIRED)
+        assert response.media_type == "text/event-stream"
+        assert response.headers["content-type"] == "text/event-stream; charset=utf-8"
 
 
 class TestBotStreamEntitlementGate:

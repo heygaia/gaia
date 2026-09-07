@@ -1087,19 +1087,24 @@ class TestBotChatStreamBody:
             )
             yield "data: [DONE]\n\n"
 
-        mint = AsyncMock(return_value="upgrade-link-notice")
-        with patch("app.api.v1.endpoints.bot._bot_rate_limit_notice", mint):
+        mint = AsyncMock(return_value="https://pay.example/checkout")
+        with patch("app.api.v1.endpoints.bot._bot_upgrade_url", mint):
             body = await self._collect(client, walled())
 
-        card, upgrade_url = mint.await_args.args
-        assert card == {
-            "tool_data": {
-                "tool_name": "rate_limit_data",
-                "data": {"feature": "chat_messages", "current_plan": "free"},
+        # The checkout is minted for the user the request resolved to — a wrong
+        # id here bills (or credits) somebody else's account.
+        mint.assert_awaited_once_with("uid1")
+        frames = [
+            json.loads(line[len("data: ") :])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert {
+            "notice": {
+                "text": "\u23f3 You've reached your chat messages limit. Please try again "
+                "later. [Upgrade to Pro](https://pay.example/checkout) for higher limits."
             }
-        }
-        assert callable(upgrade_url)
-        assert 'data: {"notice": {"text": "upgrade-link-notice"}}' in body
+        } in frames
         assert 'data: {"text"' not in body
 
     async def test_a_non_rate_limit_card_yields_no_notice_frame(self, client: AsyncClient):
