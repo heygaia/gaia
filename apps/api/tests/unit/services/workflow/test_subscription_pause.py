@@ -18,14 +18,36 @@ MODULE = "app.services.workflow.subscription_pause"
 USER_ID = "507f1f77bcf86cd799439011"
 
 
-def _workflow(workflow_id: str, *, activated: bool = True) -> MagicMock:
+def _workflow(workflow_id: str, *, activated: bool = True, is_public: bool = False) -> MagicMock:
     w = MagicMock()
     w.id = workflow_id
     w.activated = activated
+    w.is_public = is_public
     return w
 
 
 class TestDeactivateWorkflowsForLapsedSubscription:
+    async def test_a_public_template_stays_live_when_its_owner_lapses(self) -> None:
+        """Everyone who copied the template runs their own copy; pausing the
+        original would break the marketplace listing for a billing event that is
+        the owner's alone. The migration script lists the same set, so dry run
+        and execute cannot disagree."""
+        template = _workflow("tmpl", is_public=True)
+        own = _workflow("wf-1")
+        with (
+            patch(f"{MODULE}.workflow_repository") as repo,
+            patch(
+                f"{MODULE}.WorkflowService.deactivate_workflow", new_callable=AsyncMock
+            ) as deactivate,
+        ):
+            repo.find_activated_for_user = AsyncMock(return_value=[template, own])
+            count = await deactivate_workflows_for_lapsed_subscription("user-1")
+
+        assert count == 1
+        deactivate.assert_awaited_once_with(
+            "wf-1", "user-1", reason=DeactivationReason.SUBSCRIPTION_LAPSED
+        )
+
     async def test_deactivates_every_activated_workflow_the_user_owns(self) -> None:
         first = _workflow("wf-1")
         second = _workflow("wf-2")

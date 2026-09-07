@@ -80,6 +80,43 @@ def _event(event_type: DodoWebhookEventType, **overrides: object) -> DodoWebhook
 
 @pytest.mark.unit
 class TestSubscriptionActiveReactivatesWorkflows:
+    async def test_activation_drops_the_cached_plan_tier_on_both_branches(self) -> None:
+        """The gate caches the plan for five minutes. A user who just paid must
+        not be told to pay again until it expires, whichever branch the
+        activation takes: a fresh row, or a row a recovery path created moments
+        earlier while the cache still said FREE."""
+        service = PaymentWebhookService()
+        with (
+            patch(f"{ACTIVATION}.subscription_repository") as sub_repo,
+            patch(f"{ACTIVATION}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+            patch(
+                f"{PAUSE}.reactivate_workflows_for_restored_subscription", new_callable=AsyncMock
+            ),
+        ):
+            sub_repo.get_by_dodo_id = AsyncMock(return_value=MagicMock(user_id=USER_ID))
+            await service._handle_subscription_active(
+                _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
+            )
+        invalidate.assert_awaited_once_with(USER_ID)
+
+        with (
+            patch(f"{ACTIVATION}.subscription_repository") as sub_repo,
+            patch(f"{ACTIVATION}.user_repository") as user_repo,
+            patch(f"{ACTIVATION}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+            patch(f"{ACTIVATION}.track_subscription_event"),
+            patch(f"{ACTIVATION}.send_welcome_email_safely", new_callable=AsyncMock),
+            patch(
+                f"{PAUSE}.reactivate_workflows_for_restored_subscription", new_callable=AsyncMock
+            ),
+        ):
+            sub_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            sub_repo.create = AsyncMock()
+            user_repo.get_by_email = AsyncMock(return_value=MagicMock(id=USER_ID))
+            await service._handle_subscription_active(
+                _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
+            )
+        invalidate.assert_awaited_once_with(USER_ID)
+
     async def test_existing_subscription_reactivates_paused_workflows(self) -> None:
         """The common resubscribe path: Dodo re-fires `subscription.active` for a
         subscription row that already exists (early-return branch)."""

@@ -13,13 +13,21 @@ so a workflow the user switched off themselves is never silently re-enabled.
 
 from app.constants.log_tags import LogTag
 from app.db.repositories.workflows import workflow_repository
-from app.models.workflow_models import DeactivationReason
+from app.models.workflow_models import DeactivationReason, WorkflowDocument
 from app.services.workflow.service import WorkflowService
 from shared.py.wide_events import log
 
 
+async def lapsable_workflows(user_id: str) -> list[WorkflowDocument]:
+    """The workflows a lapsed subscription pauses: every activated one the user
+    owns except public templates, which stay live for everyone who copied them."""
+    return [
+        w for w in await workflow_repository.find_activated_for_user(user_id) if not w.is_public
+    ]
+
+
 async def deactivate_workflows_for_lapsed_subscription(user_id: str) -> int:
-    """Deactivate every activated workflow ``user_id`` owns. Returns the count
+    """Deactivate every lapsable workflow ``user_id`` owns. Returns the count
     deactivated. Idempotent — a user with no activated workflows is a no-op, and
     re-running against an already-deactivated workflow finds nothing to do. One
     workflow that fails to deactivate is logged and skipped rather than aborting
@@ -27,7 +35,7 @@ async def deactivate_workflows_for_lapsed_subscription(user_id: str) -> int:
     """
     deactivated = 0
 
-    for workflow in await workflow_repository.find_activated_for_user(user_id):
+    for workflow in await lapsable_workflows(user_id):
         try:
             await WorkflowService.deactivate_workflow(
                 workflow.id, user_id, reason=DeactivationReason.SUBSCRIPTION_LAPSED

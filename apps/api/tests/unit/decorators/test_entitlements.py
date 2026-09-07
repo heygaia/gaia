@@ -12,6 +12,7 @@ import pytest
 from app.decorators.entitlements import (
     PAYWALL_MESSAGE,
     SubscriptionRequiredException,
+    confirm_subscription_active,
     get_checkout_url,
     is_subscription_active,
     require_active_subscription,
@@ -315,3 +316,32 @@ class TestRequireSubscriptionDecorator:
         assert result == "ok"
         plan_lookup.assert_awaited_once_with("positional-user")
         handler.assert_called_once_with("unrelated-positional", {"user_id": "positional-user"})
+
+
+class TestConfirmSubscriptionActive:
+    async def test_a_live_subscription_is_confirmed_from_the_database_and_drops_the_stale_key(
+        self,
+    ) -> None:
+        status = MagicMock(plan_type=PlanType.PRO)
+        with (
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=status),
+            ) as fresh,
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await confirm_subscription_active("u1") is True
+        fresh.assert_awaited_once_with("u1")
+        invalidate.assert_awaited_once_with("u1")
+
+    async def test_a_free_user_is_not_confirmed_and_the_cache_is_left_alone(self) -> None:
+        status = MagicMock(plan_type=PlanType.FREE)
+        with (
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=status),
+            ),
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await confirm_subscription_active("u1") is False
+        invalidate.assert_not_awaited()

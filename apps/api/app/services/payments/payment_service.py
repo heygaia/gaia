@@ -54,6 +54,7 @@ from app.services.analytics_service import (
     track_subscription_event,
 )
 from app.services.email import send_pro_subscription_email
+from app.services.payments.plan_cache import invalidate_plan_cache
 from app.services.payments.subscription_activation import (
     activate_subscription,
     resolve_subscription_owner,
@@ -745,7 +746,7 @@ class DodoPaymentService:
             return
         user_id = await subscription_repository.get_user_id_by_dodo_id(dodo_subscription_id)
         if user_id:
-            await redis_cache.delete(f"{SUBSCRIPTION_PLAN_CACHE_PREFIX}{user_id}")
+            await invalidate_plan_cache(user_id)
 
 
 payment_service = DodoPaymentService()

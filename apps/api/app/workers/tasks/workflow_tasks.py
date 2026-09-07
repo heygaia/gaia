@@ -47,7 +47,7 @@ from app.db.repositories.todos import todo_repository
 from app.db.repositories.users import user_repository
 from app.db.repositories.workflows import workflow_repository
 from app.decorators import enforce_daily_cost_budget
-from app.decorators.entitlements import is_subscription_active
+from app.decorators.entitlements import confirm_subscription_active, is_subscription_active
 from app.decorators.rate_limiting import enforce_tiered_limit
 from app.models.chat_models import MessageModel, ToolDataEntry
 from app.models.message_models import MessageRequestWithHistory
@@ -120,9 +120,6 @@ from app.services.workflow.playbook.workflow_hash import workflow_hash
 from app.services.workflow.run_trace import build_trace
 from app.services.workflow.scheduler import WorkflowScheduler, workflow_scheduler
 from app.services.workflow.service import WorkflowService
-from app.services.workflow.subscription_pause import (
-    deactivate_workflows_for_lapsed_subscription,
-)
 from app.services.workflow.thread_reset import reset_workflow_threads
 from app.utils.errors import create_error
 from app.utils.occurrence import parse_occurrence_stamp
@@ -1483,15 +1480,20 @@ async def execute_workflow_by_id(
         # Paid-only gate: no workflow may run for a lapsed/free user, regardless
         # of trigger type (schedule, manual run-now, or a Composio/email trigger
         # fire) — every one of those paths enqueues this same ARQ task, so this
-        # is the single choke point that covers all of them. Deactivate the
-        # user's workflows so the trigger stops re-enqueuing this task.
-        if not await is_subscription_active(workflow.user_id):
+        # is the single choke point that covers all of them. The gate only
+        # skips: the cached tier can lag a payment by minutes, so a cached FREE
+        # gets one fresh read, and deactivating a user's workflows belongs to
+        # the billing webhook, which acts on a real Dodo event. A recurring
+        # workflow is re-armed so it resumes the moment the subscription is back.
+        if not await is_subscription_active(workflow.user_id) and not (
+            await confirm_subscription_active(workflow.user_id)
+        ):
             log.warning(
-                f"{LogTag.WORKER} Workflow skipped — subscription required, deactivating",
+                f"{LogTag.WORKER} Workflow skipped — subscription required",
                 workflow_id=workflow_id,
                 user_id=workflow.user_id,
             )
-            await deactivate_workflows_for_lapsed_subscription(workflow.user_id)
+            await _rearm_quietly(scheduler, workflow, context, workflow_id)
             return f"Workflow {workflow_id} skipped — subscription required"
 
         # A coalesced trigger run carries its events (keyed by batch_key) in

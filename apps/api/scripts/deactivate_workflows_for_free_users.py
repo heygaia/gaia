@@ -39,6 +39,7 @@ from app.db.repositories.subscriptions import subscription_repository
 from app.db.repositories.workflows import workflow_repository
 from app.services.workflow.subscription_pause import (
     deactivate_workflows_for_lapsed_subscription,
+    lapsable_workflows,
 )
 
 
@@ -73,9 +74,7 @@ async def find_free_user_candidates() -> list[FreeUserWorkflows]:
             continue
         if await subscription_repository.get_active_for_user(user_id):
             continue
-        workflows = [
-            w for w in await workflow_repository.find_activated_for_user(user_id) if not w.is_public
-        ]
+        workflows = await lapsable_workflows(user_id)
         if not workflows:
             continue
         candidates.append(

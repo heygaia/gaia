@@ -21,6 +21,7 @@ from app.services.analytics_service import (
     track_subscription_event,
 )
 from app.services.email import send_pro_subscription_email
+from app.services.payments.plan_cache import invalidate_plan_cache
 from shared.py.wide_events import log
 
 CENTS_PER_UNIT = 100
@@ -105,6 +106,9 @@ async def activate_subscription(sub_data: DodoSubscriptionData) -> SubscriptionA
             subscription_id=sub_data.subscription_id,
         )
         await reactivate_workflows_safely(existing.user_id)
+        # A row can exist while the gate still caches the pre-payment tier (a
+        # recovery path created it moments ago); drop the key on this branch too.
+        await invalidate_plan_cache(existing.user_id)
         return SubscriptionActivation(user_id=existing.user_id, created=False)
 
     user_id = await resolve_subscription_owner(sub_data)
@@ -155,6 +159,7 @@ async def activate_subscription(sub_data: DodoSubscriptionData) -> SubscriptionA
         ),
     )
 
+    await invalidate_plan_cache(user_id)
     await send_welcome_email_safely(user_id)
     await reactivate_workflows_safely(user_id)
 

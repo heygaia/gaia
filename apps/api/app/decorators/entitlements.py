@@ -17,6 +17,7 @@ from app.core.request_context import resolve_caller
 from app.models.payment_models import PlanType
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.payments.payment_service import payment_service
+from app.services.payments.plan_cache import invalidate_plan_cache
 from shared.py.wide_events import log
 
 P = ParamSpec("P")
@@ -58,6 +59,21 @@ async def is_subscription_active(user_id: str) -> bool:
     """Whether ``user_id`` currently has paid chat access."""
     plan = await payment_service.get_cached_plan_type(user_id)
     return plan == PlanType.PRO
+
+
+async def confirm_subscription_active(user_id: str) -> bool:
+    """A fresh read of the subscription, for a decision the cache must not make.
+
+    The cached tier lags a payment by up to its TTL. Refusing one request on a
+    stale FREE is fine; skipping a scheduled workflow run on it is not, so the
+    worker asks the database once before it skips. A live subscription found
+    here also drops the stale key, so the next gate read is right.
+    """
+    status = await payment_service.get_user_subscription_status(user_id)
+    if status.plan_type == PlanType.PRO:
+        await invalidate_plan_cache(user_id)
+        return True
+    return False
 
 
 async def get_checkout_url(user_id: str) -> str | None:

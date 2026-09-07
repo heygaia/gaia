@@ -13,6 +13,8 @@ from scripts.deactivate_workflows_for_free_users import (
 )
 
 MODULE = "scripts.deactivate_workflows_for_free_users"
+# The script lists what a lapse may pause through the pause module's own finder.
+PAUSE = "app.services.workflow.subscription_pause"
 
 FREE_USER = "free-user-1"
 PRO_USER = "pro-user-1"
@@ -42,6 +44,7 @@ class TestFindFreeUserCandidates:
         workflow_repo, subscription_repo = _repos(["system", FREE_USER], [_workflow("wf-1")])
         with (
             patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository", subscription_repo),
         ):
             candidates = await find_free_user_candidates()
@@ -55,6 +58,7 @@ class TestFindFreeUserCandidates:
         )
         with (
             patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository", subscription_repo),
         ):
             candidates = await find_free_user_candidates()
@@ -65,13 +69,16 @@ class TestFindFreeUserCandidates:
         workflow_repo, subscription_repo = _repos([FREE_USER], [_workflow("tmpl", is_public=True)])
         with (
             patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository", subscription_repo),
         ):
             assert await find_free_user_candidates() == []
 
     async def test_skips_users_with_an_active_subscription(self) -> None:
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository") as subscription_repo,
         ):
             workflow_repo.distinct_users_with_activated_workflows = AsyncMock(
@@ -90,8 +97,10 @@ class TestFindFreeUserCandidates:
         """distinct_users_with_activated_workflows already filters this, but the
         candidate build must not blow up or fabricate an entry if it ever returns
         a user whose workflows were deactivated between the two reads."""
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository") as subscription_repo,
         ):
             workflow_repo.distinct_users_with_activated_workflows = AsyncMock(
@@ -105,8 +114,10 @@ class TestFindFreeUserCandidates:
         assert candidates == []
 
     async def test_candidate_carries_every_activated_workflow_id(self) -> None:
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository") as subscription_repo,
         ):
             workflow_repo.distinct_users_with_activated_workflows = AsyncMock(
@@ -124,8 +135,10 @@ class TestFindFreeUserCandidates:
 
 class TestRunMigration:
     async def test_dry_run_writes_nothing(self) -> None:
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository") as subscription_repo,
             patch(f"{MODULE}.deactivate_workflows_for_lapsed_subscription") as deactivate,
         ):
@@ -144,8 +157,10 @@ class TestRunMigration:
         deactivate.assert_not_awaited()
 
     async def test_execute_deactivates_exactly_the_free_users_workflows(self) -> None:
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository") as subscription_repo,
             patch(f"{MODULE}.deactivate_workflows_for_lapsed_subscription") as deactivate,
         ):
@@ -167,8 +182,10 @@ class TestRunMigration:
         deactivate.assert_awaited_once_with(FREE_USER)
 
     async def test_no_free_users_deactivates_nothing(self) -> None:
+        workflow_repo = MagicMock()
         with (
-            patch(f"{MODULE}.workflow_repository") as workflow_repo,
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
             patch(f"{MODULE}.subscription_repository"),
             patch(f"{MODULE}.deactivate_workflows_for_lapsed_subscription") as deactivate,
         ):
