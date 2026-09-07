@@ -7,7 +7,7 @@ import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { syncSingleConversation } from "@/services/syncService";
 import { useChatStore } from "@/stores/chatStore";
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import {
   useVoiceModeActions,
   useVoiceModeActive,
@@ -29,7 +29,7 @@ export const useVoiceModeControls = (
   const router = useRouter();
   const voiceModeActive = useVoiceModeActive();
   const { enterVoiceMode, exitVoiceMode } = useVoiceModeActions();
-  const openPricingModal = usePricingModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
   const prefetchConnectionDetails = usePrefetchConnectionDetails(
     convoIdParam || undefined,
@@ -55,7 +55,7 @@ export const useVoiceModeControls = (
         conversation_id: convoIdParam,
         blocked_reason: "upgrade_required",
       });
-      openPricingModal();
+      openUpgradeModal(undefined, { dismissible: true });
       return;
     }
     trackEvent(ANALYTICS_EVENTS.CHAT_VOICE_MODE_TOGGLED, {

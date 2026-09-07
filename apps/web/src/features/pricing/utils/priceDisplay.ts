@@ -1,5 +1,3 @@
-import type { PricingOffer } from "@/stores/pricingModalStore";
-
 import { CENTS_PER_DOLLAR, MONTHS_PER_YEAR } from "../constants";
 import { getAnnualSavingsPercent } from "./annualSavings";
 
@@ -47,6 +45,6 @@ export function getPriceDisplay(
 }
 
 /** What the tier costs once the offer's percentage comes off. */
-export function getOfferPrice(price: number, offer: PricingOffer): number {
-  return Math.round(price * (1 - offer.discountPercent / 100));
+export function getOfferPrice(price: number, discountPercent: number): number {
+  return Math.round(price * (1 - discountPercent / 100));
 }

@@ -13,7 +13,7 @@ export function isEnterprisePlan(plan: Plan): boolean {
  * backend (`apps/api/app/models/payment_models.py`) has no typed
  * `plan_type` field the way a resolved `UserSubscriptionStatus` does — only
  * `name`/`amount`/`duration` — so this is the single place that infers it,
- * shared by `PaywallModal` and `PricingCards` so the two can never
+ * shared by `UpgradeModal` and `PricingCards` so the two can never
  * independently disagree on which card is "Pro".
  *
  * Primary check is an exact (trimmed, case-insensitive) name match rather

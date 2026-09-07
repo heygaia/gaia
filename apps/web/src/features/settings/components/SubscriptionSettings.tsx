@@ -14,7 +14,7 @@ import {
   formatDate,
   getSubscriptionSummary,
 } from "@/features/settings/utils/subscriptionSummary";
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { CancelSubscriptionAction } from "./CancelSubscriptionAction";
 import { SubscriptionBillingSection } from "./SubscriptionBillingSection";
 import { SubscriptionUpsell } from "./SubscriptionUpsell";
@@ -29,7 +29,7 @@ export function SubscriptionSettings() {
   const isUnknown = useIsSubscriptionStatusUnknown();
   // Managing an existing Pro plan (monthly <-> yearly) is a different job
   // than subscribing for the first time — see the branches below.
-  const openPricingModal = usePricingModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 
   if (isUnknown) {
     return (
@@ -139,7 +139,7 @@ export function SubscriptionSettings() {
           <Button
             color="primary"
             variant="flat"
-            onPress={() => openPricingModal()}
+            onPress={() => openUpgradeModal(undefined, { dismissible: true })}
             size="sm"
             className="w-full"
           >

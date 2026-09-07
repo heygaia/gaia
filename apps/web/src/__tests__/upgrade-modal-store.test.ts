@@ -1,10 +1,10 @@
 import { beforeEach, describe, expect, it } from "vitest";
 
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
-describe("paywallModalStore", () => {
+describe("upgradeModalStore", () => {
   beforeEach(() => {
-    usePaywallModalStore.setState({
+    useUpgradeModalStore.setState({
       open: false,
       offer: null,
       dismissible: false,
@@ -12,58 +12,58 @@ describe("paywallModalStore", () => {
   });
 
   it("starts closed with no offer", () => {
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(false);
     expect(state.offer).toBeNull();
     expect(state.dismissible).toBe(false);
   });
 
   it("opens with no offer when called with none (composer/toggle call sites)", () => {
-    usePaywallModalStore.getState().openModal();
+    useUpgradeModalStore.getState().openModal();
 
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(true);
     expect(state.offer).toBeNull();
   });
 
   it("defaults to non-dismissible when no options are passed (every enforcement call site)", () => {
-    usePaywallModalStore.getState().openModal();
+    useUpgradeModalStore.getState().openModal();
 
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
   });
 
   it("defaults to non-dismissible even when an offer is passed without options (402 interceptor)", () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: "https://checkout.example/session",
       discountCode: null,
     });
 
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
   });
 
   it("opens dismissible when explicitly requested (voluntary upgrade entry points)", () => {
-    usePaywallModalStore.getState().openModal(undefined, { dismissible: true });
+    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
 
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(true);
     expect(state.dismissible).toBe(true);
   });
 
   it("resets dismissible back to false on close", () => {
-    usePaywallModalStore.getState().openModal(undefined, { dismissible: true });
-    usePaywallModalStore.getState().closeModal();
+    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
+    useUpgradeModalStore.getState().closeModal();
 
-    expect(usePaywallModalStore.getState().dismissible).toBe(false);
+    expect(useUpgradeModalStore.getState().dismissible).toBe(false);
   });
 
   it("carries the 402 payload through openModal", () => {
-    usePaywallModalStore.getState().openModal({
+    useUpgradeModalStore.getState().openModal({
       checkoutUrl: "https://checkout.example/session",
       discountCode: "LAUNCH20",
       message: "Subscribe to keep chatting",
     });
 
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(true);
     expect(state.offer).toEqual({
       checkoutUrl: "https://checkout.example/session",
@@ -73,13 +73,34 @@ describe("paywallModalStore", () => {
   });
 
   it("clears open and offer on close", () => {
-    usePaywallModalStore
-      .getState()
-      .openModal({ checkoutUrl: null, discountCode: "X" });
+    useUpgradeModalStore.getState().openModal(
+      { checkoutUrl: null, discountCode: "X" },
+      {
+        dismissible: true,
+      },
+    );
 
-    usePaywallModalStore.getState().closeModal();
+    useUpgradeModalStore.getState().closeModal();
 
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
+    expect(state.open).toBe(false);
+    expect(state.offer).toBeNull();
+  });
+
+  it("refuses to close an enforcement-mode modal", () => {
+    useUpgradeModalStore.getState().openModal({ checkoutUrl: null });
+
+    useUpgradeModalStore.getState().closeModal();
+
+    expect(useUpgradeModalStore.getState().open).toBe(true);
+  });
+
+  it("closes an enforcement-mode modal when forced (paid flip, popup mirror)", () => {
+    useUpgradeModalStore.getState().openModal({ checkoutUrl: null });
+
+    useUpgradeModalStore.getState().closeModal({ force: true });
+
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(false);
     expect(state.offer).toBeNull();
   });

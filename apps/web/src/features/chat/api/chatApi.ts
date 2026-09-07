@@ -17,7 +17,7 @@ import { getBrowserTimezone } from "@/lib/timezone";
 import { toast } from "@/lib/toast";
 import type { SelectedCalendarEventData } from "@/stores/calendarEventSelectionStore";
 import { useComposerStore } from "@/stores/composerStore";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import type { MessageType } from "@/types/features/convoTypes";
 import type { ArtifactData } from "@/types/features/toolDataTypes";
 import type { WorkflowData } from "@/types/features/workflowTypes";
@@ -394,7 +394,7 @@ export const chatApi = {
             const data: unknown = await response.json().catch(() => undefined);
             const detail = getSubscriptionRequiredDetail(data);
             if (detail) {
-              usePaywallModalStore
+              useUpgradeModalStore
                 .getState()
                 .openModal(subscriptionRequiredOfferFromDetail(detail));
             }

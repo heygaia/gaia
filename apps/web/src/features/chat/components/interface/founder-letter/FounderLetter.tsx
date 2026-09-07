@@ -16,7 +16,7 @@ import { RaisedButton } from "@/components/ui/raised-button";
 import { isOfferLive } from "@/config/offer";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
-import { usePricingModalStore } from "@/stores/pricingModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { useUserStore } from "@/stores/userStore";
 
 import {
@@ -38,6 +38,13 @@ import {
   SIGNATURE_NAME,
   SIGNATURE_ROLE,
 } from "./content";
+
+/** The letter's standing offer, as the upgrade modal takes it. */
+const LETTER_OFFER = {
+  discountCode: DISCOUNT_CODE,
+  discountPercent: DISCOUNT_PERCENT,
+};
+
 import { Signature } from "./Signature";
 
 /**
@@ -264,7 +271,7 @@ export function FounderLetter({ hidden = false }: FounderLetterProps) {
   const [offerLive, setOfferLive] = useState(false);
   const [copied, setCopied] = useState(false);
   const userName = useUserStore((s) => s.name);
-  const openPricingModal = usePricingModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   const reduceMotion = useReducedMotion();
 
   const firstName = userName.trim().split(" ")[0] || SALUTATION_FALLBACK;
@@ -495,10 +502,7 @@ export function FounderLetter({ hidden = false }: FounderLetterProps) {
                           discount_percent: DISCOUNT_PERCENT,
                         },
                       );
-                      openPricingModal({
-                        discountCode: DISCOUNT_CODE,
-                        discountPercent: DISCOUNT_PERCENT,
-                      });
+                      openUpgradeModal(LETTER_OFFER, { dismissible: true });
                       closeLetter();
                     }}
                   >

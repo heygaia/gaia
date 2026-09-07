@@ -10,7 +10,7 @@ import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreat
 import { useRouter } from "@/i18n/navigation";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import type { PublicWorkflowStep } from "@/types/features/workflowTypes";
 
 import { type Workflow, workflowApi } from "../../api/workflowApi";
@@ -97,7 +97,7 @@ export function useWorkflowModalActions({
   const { integrations, connectIntegration } = useIntegrations();
   const [connectingId, setConnectingId] = useState<string | null>(null);
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 
   const [isDeleteConfirmOpen, setIsDeleteConfirmOpen] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -461,7 +461,7 @@ export function useWorkflowModalActions({
       toast.info("Workflows require GAIA Pro", {
         action: {
           label: "Upgrade",
-          onClick: () => openPaywallModal(),
+          onClick: () => openUpgradeModal(),
         },
       });
       return;

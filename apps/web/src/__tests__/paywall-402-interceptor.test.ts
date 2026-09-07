@@ -21,12 +21,12 @@ vi.mock("@/stores/loginModalStore", () => ({
 
 import { getSubscriptionRequiredDetail } from "@shared/types/subscription";
 import { toast } from "@/lib/toast";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { processAxiosError } from "@/utils/interceptorUtils";
 
 describe("402 subscription_required handling", () => {
   beforeEach(() => {
-    usePaywallModalStore.setState({ open: false, offer: null });
+    useUpgradeModalStore.setState({ open: false, offer: null });
     vi.clearAllMocks();
   });
 
@@ -74,7 +74,7 @@ describe("402 subscription_required handling", () => {
 
     processAxiosError(error, { router: {} as never });
 
-    const state = usePaywallModalStore.getState();
+    const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(true);
     expect(state.offer).toEqual({
       checkoutUrl: "https://checkout.example/session",
@@ -114,7 +114,7 @@ describe("402 subscription_required handling", () => {
 
     processAxiosError(error, { router: {} as never });
 
-    expect(usePaywallModalStore.getState().open).toBe(false);
+    expect(useUpgradeModalStore.getState().open).toBe(false);
     // Not marking `handled` lets the caller's (service.ts) default error
     // handling show a toast instead of the request vanishing silently.
     expect(error.handled).toBe(false);
@@ -130,14 +130,14 @@ describe("402 subscription_required handling", () => {
 
     processAxiosError(error, { router: {} as never });
 
-    expect(usePaywallModalStore.getState().open).toBe(false);
+    expect(useUpgradeModalStore.getState().open).toBe(false);
     expect(error.handled).toBe(false);
   });
 });
 
 describe("chatApi chat-stream 402 handling (onopen)", () => {
   beforeEach(() => {
-    usePaywallModalStore.setState({ open: false, offer: null });
+    useUpgradeModalStore.setState({ open: false, offer: null });
     vi.clearAllMocks();
   });
 
@@ -190,8 +190,8 @@ describe("chatApi chat-stream 402 handling (onopen)", () => {
     const { chatApi, SubscriptionRequiredError } = await import(
       "@/features/chat/api/chatApi"
     );
-    const { usePaywallModalStore: freshPaywallStore } = await import(
-      "@/stores/paywallModalStore"
+    const { useUpgradeModalStore: freshPaywallStore } = await import(
+      "@/stores/upgradeModalStore"
     );
     freshPaywallStore.setState({ open: false, offer: null });
 

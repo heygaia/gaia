@@ -4,7 +4,7 @@ import { useEffect, useRef } from "react";
 
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { useSendMessage } from "@/hooks/useSendMessage";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 
 /**
@@ -22,7 +22,7 @@ export const useWorkflowAutoSend = (): void => {
   const selectedWorkflow = useWorkflowSelectionStore((s) => s.selectedWorkflow);
   const autoSend = useWorkflowSelectionStore((s) => s.autoSend);
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
-  const openPaywallModal = usePaywallModalStore((s) => s.openModal);
+  const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   // Exactly-once guard for the deferred auto-send below. Set inside the timer
   // callback (not at schedule time) so StrictMode's simulated remount and
   // dep-driven re-runs reschedule instead of assuming the send already fired.
@@ -51,7 +51,7 @@ export const useWorkflowAutoSend = (): void => {
       // send proceed — the backend's 402 is the backstop — rather than trap
       // a paying user on a not-yet-resolved "false".
       if (!isSubscriptionStatusUnknown && !isPaid) {
-        openPaywallModal();
+        openUpgradeModal();
         return;
       }
 
@@ -72,6 +72,6 @@ export const useWorkflowAutoSend = (): void => {
     sendMessage,
     isPaid,
     isSubscriptionStatusUnknown,
-    openPaywallModal,
+    openUpgradeModal,
   ]);
 };

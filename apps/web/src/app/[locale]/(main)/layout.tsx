@@ -20,17 +20,10 @@ import { useUIStoreSidebar } from "@/stores/uiStore";
 
 export const dynamic = "force-dynamic";
 
-const GlobalPricingModal = nextDynamic(
+const UpgradeModal = nextDynamic(
   () =>
-    import("@/features/pricing/components/GlobalPricingModal").then((m) => ({
-      default: m.GlobalPricingModal,
-    })),
-  { ssr: false },
-);
-const PaywallModal = nextDynamic(
-  () =>
-    import("@/features/pricing/components/PaywallModal").then((m) => ({
-      default: m.PaywallModal,
+    import("@/features/pricing/components/UpgradeModal").then((m) => ({
+      default: m.UpgradeModal,
     })),
   { ssr: false },
 );
@@ -156,11 +149,10 @@ export default function MainLayout({ children }: { children: ReactNode }) {
             </RightSidebar>
           </div>
 
-          {/* Global Pricing Modal */}
-          <GlobalPricingModal />
-
-          {/* Global Paywall Modal — non-dismissible, opened on 402 subscription_required */}
-          <PaywallModal />
+          {/* The one Pro upsell modal — non-dismissible when opened by
+              enforcement (402 subscription_required), dismissible when the
+              user opened it themselves. */}
+          <UpgradeModal />
 
           {/* What's New Modal */}
           <WhatsNewModal />

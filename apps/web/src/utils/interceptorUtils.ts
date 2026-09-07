@@ -11,10 +11,8 @@ import {
 import { API_ERROR_CODES } from "@/lib/api/errorCodes";
 import { toast } from "@/lib/toast";
 import { useLoginModalStore } from "@/stores/loginModalStore";
-import {
-  type PaywallOffer,
-  usePaywallModalStore,
-} from "@/stores/paywallModalStore";
+import type { UpgradeOffer } from "@/stores/upgradeModal.types";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 interface ErrorHandlerDependencies {
   router: AppRouterInstance;
@@ -168,7 +166,7 @@ const handleForbiddenError = (
  */
 export const subscriptionRequiredOfferFromDetail = (
   detail: SubscriptionRequiredDetail,
-): PaywallOffer => ({
+): UpgradeOffer => ({
   checkoutUrl: detail.checkout_url,
   discountCode: detail.discount_code,
   message: detail.message,
@@ -185,7 +183,7 @@ const handleSubscriptionRequiredError = (errorData: unknown): boolean => {
   const detail = getSubscriptionRequiredDetail(errorData);
   if (!detail) return false;
 
-  usePaywallModalStore
+  useUpgradeModalStore
     .getState()
     .openModal(subscriptionRequiredOfferFromDetail(detail));
   return true;

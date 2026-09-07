@@ -7,8 +7,8 @@ import { usePopupEscapeDismiss } from "@/features/desktop-popup/hooks/usePopupEs
 import { useTransparentPopupChrome } from "@/features/desktop-popup/hooks/useTransparentPopupChrome";
 import { usePopupChatConsumer } from "@/features/desktop-popup/sync";
 import { useElectron } from "@/hooks/useElectron";
-import { usePaywallModalStore } from "@/stores/paywallModalStore";
 import { useActiveLoading } from "@/stores/streamStore";
+import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 /**
  * Conversation island of the assistant popup — its own liquid-glass
@@ -32,7 +32,7 @@ export default function DesktopPopupFeedPage() {
   // A paid-only block is content too: a free user's very first send produces
   // no messages at all, so without this the window stays hidden and the
   // paywall notice never reaches the screen.
-  const isPaywalled = usePaywallModalStore((s) => s.open);
+  const isPaywalled = useUpgradeModalStore((s) => s.open);
   const hasContent =
     (convoMessages?.length ?? 0) > 0 || isLoading || isPaywalled;
   useEffect(() => {
