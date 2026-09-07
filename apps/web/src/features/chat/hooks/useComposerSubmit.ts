@@ -10,13 +10,13 @@ import {
   useComposerFiles,
   useComposerIsUploading,
   useComposerModeSelection,
+  useComposerStore,
   useComposerTextActions,
   useComposerUI,
   useInputText,
   useReplyToMessage,
 } from "@/stores/composerStore";
 import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
-import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 
 interface UseComposerSubmitParams {
   inputRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -48,7 +48,7 @@ export function useComposerSubmit({
   const { selectedCalendarEvent, clearSelectedCalendarEvent } =
     useCalendarEventSelection();
   const { replyToMessage, clearReplyToMessage } = useReplyToMessage();
-  const { autoSend } = useWorkflowSelectionStore();
+  const autoSend = useComposerStore((state) => state.workflowAutoSend);
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
   const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
 

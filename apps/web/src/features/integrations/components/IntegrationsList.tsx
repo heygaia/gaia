@@ -1,5 +1,6 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
+import { Skeleton } from "@heroui/skeleton";
 import { RedoIcon } from "@icons";
 import {
   CONNECT_ACTION_LABEL,
@@ -23,6 +24,16 @@ import { useIntegrations } from "../hooks/useIntegrations";
 import type { Integration } from "../types";
 import { CategoryFilter } from "./CategoryFilter";
 import { MarketplaceBanner } from "./MarketplaceBanner";
+
+// Distinct keys for the initial catalog placeholders (also serve as React keys).
+const INTEGRATION_SKELETON_KEYS = [
+  "int-a",
+  "int-b",
+  "int-c",
+  "int-d",
+  "int-e",
+  "int-f",
+];
 
 const IntegrationRow: React.FC<{
   integration: Integration;
@@ -162,7 +173,7 @@ export const IntegrationsList: React.FC<IntegrationsListProps> = ({
   clearFilters,
 }) => {
   const { openIntegrationModal } = useIntegrationModalActions();
-  const { integrations, connectIntegration } = useIntegrations();
+  const { integrations, isPending, connectIntegration } = useIntegrations();
   const currentUserId = useUserStore((state) => state.userId);
 
   const { filteredIntegrations } = useIntegrationSearch(
@@ -281,33 +292,47 @@ export const IntegrationsList: React.FC<IntegrationsListProps> = ({
         />
       </div>
 
-      {/* No Results State */}
-      {!hasResults && (searchQuery || selectedCategory !== ALL_CATEGORIES) && (
-        <div className="py-16 text-center space-y-2">
-          <p className="text-sm text-zinc-400">
-            {searchQuery
-              ? `No integrations found for "${searchQuery}"`
-              : `No ${getCategoryLabel(selectedCategory).toLowerCase()} integrations found`}
-          </p>
-          <Button
-            onPress={clearFilters}
-            variant="light"
-            color="primary"
-            size="sm"
-          >
-            Clear filters
-          </Button>
+      {/* The catalog is still loading — placeholders, never the empty state. */}
+      {isPending && (
+        <div className="flex flex-col gap-2">
+          {INTEGRATION_SKELETON_KEYS.map((key) => (
+            <Skeleton key={key} className="h-16 w-full rounded-2xl" />
+          ))}
         </div>
       )}
 
-      {!hasResults && !searchQuery && integrations.length === 0 && (
-        <div className="py-16 text-center">
-          <p className="text-sm text-zinc-400">No integrations available</p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Check back later for new integrations
-          </p>
-        </div>
-      )}
+      {/* No Results State */}
+      {!isPending &&
+        !hasResults &&
+        (searchQuery || selectedCategory !== ALL_CATEGORIES) && (
+          <div className="py-16 text-center space-y-2">
+            <p className="text-sm text-zinc-400">
+              {searchQuery
+                ? `No integrations found for "${searchQuery}"`
+                : `No ${getCategoryLabel(selectedCategory).toLowerCase()} integrations found`}
+            </p>
+            <Button
+              onPress={clearFilters}
+              variant="light"
+              color="primary"
+              size="sm"
+            >
+              Clear filters
+            </Button>
+          </div>
+        )}
+
+      {!isPending &&
+        !hasResults &&
+        !searchQuery &&
+        integrations.length === 0 && (
+          <div className="py-16 text-center">
+            <p className="text-sm text-zinc-400">No integrations available</p>
+            <p className="mt-1 text-xs text-zinc-500">
+              Check back later for new integrations
+            </p>
+          </div>
+        )}
 
       {/* Featured Section */}
       {featuredIntegrations.length > 0 &&

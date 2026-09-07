@@ -7,6 +7,7 @@ const deactivateWorkflow = vi.fn();
 const toastInfo = vi.fn();
 const selectWorkflow = vi.fn();
 const connectIntegration = vi.fn();
+const dispatch = vi.fn();
 
 let isPaid = false;
 let isSubscriptionStatusUnknown = false;
@@ -75,16 +76,6 @@ vi.mock("@/features/workflows/stores/workflowsStore", () => ({
   }),
 }));
 
-vi.mock("@/features/workflows/stores/workflowModalStore", () => ({
-  useWorkflowModalStore: () => ({
-    setCreationPhase: vi.fn(),
-    setIsRegeneratingSteps: vi.fn(),
-    setRegenerationError: vi.fn(),
-    setIsActivated: vi.fn(),
-    setIsTogglingActivation: vi.fn(),
-  }),
-}));
-
 vi.mock("@/features/workflows/triggers/utils", () => ({
   findTriggerSchema: () => undefined,
 }));
@@ -97,6 +88,7 @@ vi.mock("@/features/workflows/components/shared/workflowCardHelpers", () => ({
   missingIntegrationsMessage: () => "",
 }));
 
+import { initialWorkflowModalUiState } from "@/features/workflows/components/workflow-modal/modalState";
 import { useWorkflowModalActions } from "@/features/workflows/components/workflow-modal/useWorkflowModalActions";
 
 describe("workflow activation toggle paywall gate", () => {
@@ -118,6 +110,8 @@ describe("workflow activation toggle paywall gate", () => {
         hasPredefinedSteps: false,
         createAndSend: false,
         handleClose: vi.fn(),
+        ui: initialWorkflowModalUiState,
+        dispatch,
       }),
     );
 
@@ -140,6 +134,7 @@ describe("workflow activation toggle paywall gate", () => {
 
     expect(activateWorkflow).toHaveBeenCalledWith("wf_1");
     expect(toastInfo).not.toHaveBeenCalled();
+    expect(dispatch).toHaveBeenCalledWith({ type: "activated", value: true });
   });
 
   it("lets a free user deactivate a workflow (only enabling is gated)", async () => {

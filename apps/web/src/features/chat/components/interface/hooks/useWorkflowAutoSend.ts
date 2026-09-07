@@ -4,8 +4,8 @@ import { useEffect, useRef } from "react";
 
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { useSendMessage } from "@/hooks/useSendMessage";
+import { useComposerStore } from "@/stores/composerStore";
 import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
-import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
 
 /**
  * Runs a workflow the user picked outside the composer (sidebar, workflow page)
@@ -19,8 +19,8 @@ import { useWorkflowSelectionStore } from "@/stores/workflowSelectionStore";
  */
 export const useWorkflowAutoSend = (): void => {
   const sendMessage = useSendMessage();
-  const selectedWorkflow = useWorkflowSelectionStore((s) => s.selectedWorkflow);
-  const autoSend = useWorkflowSelectionStore((s) => s.autoSend);
+  const selectedWorkflow = useComposerStore((s) => s.selectedWorkflow);
+  const autoSend = useComposerStore((s) => s.workflowAutoSend);
   const { isPaid, isUnknown: isSubscriptionStatusUnknown } = useIsPaid();
   const openUpgradeModal = useUpgradeModalStore((s) => s.openModal);
   // Exactly-once guard for the deferred auto-send below. Set inside the timer
@@ -42,7 +42,7 @@ export const useWorkflowAutoSend = (): void => {
     // on supersede is harmless: firedRef makes the next pass a no-op.
     const sendTimer = setTimeout(() => {
       autoSendFiredRef.current = true;
-      useWorkflowSelectionStore.getState().clearSelectedWorkflow();
+      useComposerStore.getState().clearSelectedWorkflow();
 
       // GAIA is paid-only, and this is a real send: useComposerSubmit's own
       // pre-check never runs for this path (handleFormSubmit returns early

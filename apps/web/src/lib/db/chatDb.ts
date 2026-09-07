@@ -3,7 +3,7 @@ import { EventEmitter } from "events";
 
 import type { ToolDataEntry } from "@/config/registries/toolRegistry";
 import type { SystemPurpose } from "@/features/chat/api/chatApi";
-import type { SelectedCalendarEventData } from "@/stores/calendarEventSelectionStore";
+import type { SelectedCalendarEventData } from "@/stores/composerStore.types";
 import type { TodoProgressData } from "@/types/features/todoProgressTypes";
 import type {
   ArtifactData,

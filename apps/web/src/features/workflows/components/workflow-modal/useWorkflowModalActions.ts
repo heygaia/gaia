@@ -1,5 +1,6 @@
 "use client";
 
+import type { Dispatch } from "react";
 import { useCallback, useMemo, useState } from "react";
 
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
@@ -20,11 +21,11 @@ import {
   workflowFormSchema,
   workflowToFormData,
 } from "../../schemas/workflowFormSchema";
-import { useWorkflowModalStore } from "../../stores/workflowModalStore";
 import { useWorkflowsStore } from "../../stores/workflowsStore";
 import { findTriggerSchema } from "../../triggers/utils";
 import { mentionedIntegrationIds } from "../../utils/integrationMentions";
 import { missingIntegrationsMessage } from "../shared/workflowCardHelpers";
+import type { WorkflowModalUiAction, WorkflowModalUiState } from "./modalState";
 
 interface UseWorkflowModalActionsParams {
   mode: "create" | "edit" | "preview";
@@ -43,6 +44,13 @@ interface UseWorkflowModalActionsParams {
   onWorkflowSaved?: (workflowId: string) => void;
   onWorkflowDeleted?: (workflowId: string) => void;
   handleClose: () => void;
+  /**
+   * Modal UI state and its dispatch, owned by WorkflowModal's useReducer.
+   * No action reads `ui` today; it is part of the params so an action that
+   * needs the current phase does not have to re-plumb it.
+   */
+  ui: WorkflowModalUiState;
+  dispatch: Dispatch<WorkflowModalUiAction>;
 }
 
 /**
@@ -64,6 +72,7 @@ export function useWorkflowModalActions({
   onWorkflowSaved,
   onWorkflowDeleted,
   handleClose,
+  dispatch,
 }: UseWorkflowModalActionsParams) {
   const router = useRouter();
 
@@ -84,15 +93,6 @@ export function useWorkflowModalActions({
     fetchWorkflows,
     invalidateCache,
   } = useWorkflowsStore();
-
-  // Zustand UI state written by the actions below
-  const {
-    setCreationPhase,
-    setIsRegeneratingSteps,
-    setRegenerationError,
-    setIsActivated,
-    setIsTogglingActivation,
-  } = useWorkflowModalStore();
 
   const { integrations, connectIntegration } = useIntegrations();
   const [connectingId, setConnectingId] = useState<string | null>(null);
@@ -178,18 +178,18 @@ export function useWorkflowModalActions({
   // Create a brand-new workflow (optionally with predefined community steps).
   const handleCreate = async (data: WorkflowFormData) => {
     console.debug("[workflow:create] phase -> creating");
-    setCreationPhase("creating");
+    dispatch({ type: "phase", phase: "creating" });
 
     // Validate the trigger config before sending
     try {
       const validationResult = workflowFormSchema.safeParse(data);
       if (!validationResult.success) {
-        setCreationPhase("error");
+        dispatch({ type: "phase", phase: "error" });
         return;
       }
     } catch (validationError) {
       console.error("Form validation error:", validationError);
-      setCreationPhase("error");
+      dispatch({ type: "phase", phase: "error" });
       return;
     }
 
@@ -228,7 +228,7 @@ export function useWorkflowModalActions({
     });
 
     if (!result.success || !result.workflow) {
-      setCreationPhase("error");
+      dispatch({ type: "phase", phase: "error" });
       return;
     }
 
@@ -244,7 +244,7 @@ export function useWorkflowModalActions({
     // Update currentWorkflow with the newly created workflow
     setCurrentWorkflow(createdWorkflow);
     console.debug("[workflow:create] phase -> success");
-    setCreationPhase("success");
+    dispatch({ type: "phase", phase: "success" });
 
     // Show success toast
     toast.success("Workflow created successfully!", {
@@ -279,8 +279,8 @@ export function useWorkflowModalActions({
         id: workflow.id,
       },
     );
-    setIsRegeneratingSteps(true);
-    setRegenerationError(null);
+    dispatch({ type: "regenerating", value: true });
+    dispatch({ type: "regenerationError", message: null });
     try {
       const regenResult = await workflowApi.regenerateWorkflowSteps(
         workflow.id,
@@ -314,12 +314,12 @@ export function useWorkflowModalActions({
         regenError instanceof Error
           ? regenError.message
           : "Failed to regenerate steps";
-      setRegenerationError(message);
+      dispatch({ type: "regenerationError", message });
       toast.error("Saved, but failed to regenerate steps", {
         description: message,
       });
     } finally {
-      setIsRegeneratingSteps(false);
+      dispatch({ type: "regenerating", value: false });
     }
   };
 
@@ -476,7 +476,7 @@ export function useWorkflowModalActions({
       return;
     }
 
-    setIsTogglingActivation(true);
+    dispatch({ type: "togglingActivation", value: true });
     try {
       if (newActivated) {
         await workflowApi.activateWorkflow(currentWorkflow.id);
@@ -489,14 +489,14 @@ export function useWorkflowModalActions({
         ...currentWorkflow,
         activated: newActivated,
       });
-      setIsActivated(newActivated);
+      dispatch({ type: "activated", value: newActivated });
       updateInStore(currentWorkflow.id, { activated: newActivated });
       invalidateCache();
       await fetchWorkflows();
     } catch (error) {
       console.error("Failed to toggle workflow activation:", error);
     } finally {
-      setIsTogglingActivation(false);
+      dispatch({ type: "togglingActivation", value: false });
     }
   };
 
@@ -516,8 +516,8 @@ export function useWorkflowModalActions({
       previous_step_count: currentWorkflow.steps?.length || 0,
     });
 
-    setIsRegeneratingSteps(true);
-    setRegenerationError(null);
+    dispatch({ type: "regenerating", value: true });
+    dispatch({ type: "regenerationError", message: null });
 
     try {
       const result = await workflowApi.regenerateWorkflowSteps(
@@ -546,15 +546,15 @@ export function useWorkflowModalActions({
       invalidateCache();
       await fetchWorkflows();
 
-      setIsRegeneratingSteps(false);
+      dispatch({ type: "regenerating", value: false });
     } catch (error) {
       console.error("Failed to regenerate workflow steps:", error);
       const errorMessage =
         error instanceof Error
           ? error.message
           : "Failed to regenerate workflow steps";
-      setRegenerationError(errorMessage);
-      setIsRegeneratingSteps(false);
+      dispatch({ type: "regenerationError", message: errorMessage });
+      dispatch({ type: "regenerating", value: false });
     }
   };
 

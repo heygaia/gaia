@@ -170,6 +170,11 @@ const clearPendingPrompt = vi.fn(() => {
 vi.mock("@/stores/composerStore", () => ({
   useComposerTextActions: () => ({ clearPendingPrompt }),
   usePendingPrompt: () => pendingPrompt,
+  useComposerStore: Object.assign(
+    (selector: (s: unknown) => unknown) =>
+      selector({ selectedWorkflow: null, workflowAutoSend: false }),
+    { getState: () => ({ clearSelectedWorkflow: vi.fn() }) },
+  ),
 }));
 
 vi.mock("@/stores/upgradeModalStore", () => ({
@@ -181,14 +186,6 @@ vi.mock("@/stores/voiceModeStore", () => ({
   useDiscoveredConversationId: () => null,
   useVoiceModeActions: () => ({ enterVoiceMode, exitVoiceMode }),
   useVoiceModeActive: () => false,
-}));
-
-vi.mock("@/stores/workflowSelectionStore", () => ({
-  useWorkflowSelectionStore: Object.assign(
-    (selector: (s: unknown) => unknown) =>
-      selector({ selectedWorkflow: null, autoSend: false }),
-    { getState: () => ({ clearSelectedWorkflow: vi.fn() }) },
-  ),
 }));
 
 import ChatPage from "@/features/chat/components/interface/ChatPage";

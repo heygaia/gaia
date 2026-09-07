@@ -7,7 +7,12 @@ import {
   DEFAULT_DEV_EXECUTOR_MODEL,
 } from "@/features/chat/constants/devModels";
 import { stripLocalePrefix } from "@/i18n/config";
-import type { ReplyToMessageData } from "@/stores/composerStore.types";
+import type {
+  ReplyToMessageData,
+  SelectedCalendarEventData,
+  SelectedWorkflowData,
+  WorkflowSelectionOptions,
+} from "@/stores/composerStore.types";
 import type { FileData } from "@/types/shared/fileTypes";
 import type { SearchMode } from "@/types/shared/searchTypes";
 
@@ -32,6 +37,11 @@ interface ComposerState {
 
   // UI state
   isSlashCommandDropdownOpen: boolean;
+
+  // Selections attached to the next message
+  selectedWorkflow: SelectedWorkflowData | null;
+  workflowAutoSend: boolean;
+  selectedCalendarEvent: SelectedCalendarEventData | null;
 
   // Reply-to-message selection (never persisted: a reload must not restore a
   // reply target the user has forgotten about)
@@ -71,6 +81,15 @@ interface ComposerActions {
   // UI actions
   setIsSlashCommandDropdownOpen: (open: boolean) => void;
 
+  // Selection actions
+  selectWorkflow: (
+    workflow: SelectedWorkflowData,
+    options?: WorkflowSelectionOptions,
+  ) => void;
+  clearSelectedWorkflow: () => void;
+  selectCalendarEvent: (event: SelectedCalendarEventData) => void;
+  clearSelectedCalendarEvent: () => void;
+
   // Reply-to-message actions
   setReplyToMessage: (message: ReplyToMessageData | null) => void;
   clearReplyToMessage: () => void;
@@ -103,6 +122,11 @@ const initialState: ComposerState = {
   // UI state
   isSlashCommandDropdownOpen: false,
 
+  // Selections attached to the next message
+  selectedWorkflow: null,
+  workflowAutoSend: false,
+  selectedCalendarEvent: null,
+
   // Reply-to-message selection
   replyToMessage: null,
 
@@ -111,6 +135,66 @@ const initialState: ComposerState = {
   commsModel: DEFAULT_DEV_COMMS_MODEL,
   executorModel: DEFAULT_DEV_EXECUTOR_MODEL,
 };
+
+/** Bumped when the two selection stores were folded into this one. */
+const COMPOSER_STORAGE_VERSION = 1;
+
+const LEGACY_WORKFLOW_SELECTION_KEY = "workflow-selection-storage";
+const LEGACY_CALENDAR_SELECTION_KEY = "calendar-event-selection-storage";
+
+const readLegacySelectionState = (key: string): Record<string, unknown> => {
+  const raw = globalThis.localStorage?.getItem(key);
+  if (!raw) return {};
+  const parsed: unknown = JSON.parse(raw);
+  const state =
+    parsed && typeof parsed === "object"
+      ? (parsed as { state?: unknown }).state
+      : null;
+  return state && typeof state === "object"
+    ? (state as Record<string, unknown>)
+    : {};
+};
+
+/**
+ * One-time move of the two standalone selection stores' persisted state into
+ * this store. Runs after every rehydrate (a fresh install has no
+ * ``composer-storage`` yet, so a version-gated ``migrate`` would never fire),
+ * and is a no-op once the legacy keys are gone.
+ */
+const readLegacySelections = (): Partial<ComposerState> | null => {
+  if (typeof globalThis.localStorage === "undefined") return null;
+  const workflow = readLegacySelectionState(LEGACY_WORKFLOW_SELECTION_KEY);
+  const calendar = readLegacySelectionState(LEGACY_CALENDAR_SELECTION_KEY);
+  const hadLegacy =
+    globalThis.localStorage.getItem(LEGACY_WORKFLOW_SELECTION_KEY) !== null ||
+    globalThis.localStorage.getItem(LEGACY_CALENDAR_SELECTION_KEY) !== null;
+  if (!hadLegacy) return null;
+  globalThis.localStorage.removeItem(LEGACY_WORKFLOW_SELECTION_KEY);
+  globalThis.localStorage.removeItem(LEGACY_CALENDAR_SELECTION_KEY);
+  return {
+    selectedWorkflow:
+      (workflow.selectedWorkflow as SelectedWorkflowData | null) ?? null,
+    workflowAutoSend: workflow.autoSend === true,
+    selectedCalendarEvent:
+      (calendar.selectedCalendarEvent as SelectedCalendarEventData | null) ??
+      null,
+  };
+};
+
+const partializeComposer = (state: ComposerStore) => ({
+  inputText: state.inputText,
+  pendingPrompt: state.pendingPrompt,
+  useDefaultModels: state.useDefaultModels,
+  commsModel: state.commsModel,
+  executorModel: state.executorModel,
+  // Selections persisted here to preserve the behaviour of the two
+  // selection stores this slice replaced.
+  selectedWorkflow: state.selectedWorkflow,
+  workflowAutoSend: state.workflowAutoSend,
+  selectedCalendarEvent: state.selectedCalendarEvent,
+});
+
+type PersistedComposerState = ReturnType<typeof partializeComposer>;
 
 export const useComposerStore = create<ComposerStore>()(
   devtools(
@@ -251,6 +335,34 @@ export const useComposerStore = create<ComposerStore>()(
             "setIsSlashCommandDropdownOpen",
           ),
 
+        // Selection actions
+        selectWorkflow: (selectedWorkflow, options) =>
+          set(
+            {
+              selectedWorkflow,
+              workflowAutoSend: options?.autoSend ?? false,
+            },
+            false,
+            "selectWorkflow",
+          ),
+
+        clearSelectedWorkflow: () =>
+          set(
+            { selectedWorkflow: null, workflowAutoSend: false },
+            false,
+            "clearSelectedWorkflow",
+          ),
+
+        selectCalendarEvent: (selectedCalendarEvent) =>
+          set({ selectedCalendarEvent }, false, "selectCalendarEvent"),
+
+        clearSelectedCalendarEvent: () =>
+          set(
+            { selectedCalendarEvent: null },
+            false,
+            "clearSelectedCalendarEvent",
+          ),
+
         // Reply-to-message actions
         setReplyToMessage: (replyToMessage) =>
           set({ replyToMessage }, false, "setReplyToMessage"),
@@ -273,12 +385,18 @@ export const useComposerStore = create<ComposerStore>()(
       }),
       {
         name: "composer-storage",
-        partialize: (state) => ({
-          inputText: state.inputText,
-          pendingPrompt: state.pendingPrompt,
-          useDefaultModels: state.useDefaultModels,
-          commsModel: state.commsModel,
-          executorModel: state.executorModel,
+        version: COMPOSER_STORAGE_VERSION,
+        partialize: partializeComposer,
+        // Older persisted shapes carry nothing that needs reshaping; without
+        // a migrate, persist would drop them on a version bump.
+        migrate: (persisted) => persisted as PersistedComposerState,
+        // Runs inside hydration, before the store binding exists, so it must
+        // not reach for `useComposerStore`; it folds the legacy keys straight
+        // into the state being restored.
+        merge: (persisted, current) => ({
+          ...current,
+          ...(persisted as Partial<ComposerStore>),
+          ...(readLegacySelections() ?? {}),
         }),
       },
     ),
@@ -366,5 +484,24 @@ export const useReplyToMessage = () =>
       replyToMessage: state.replyToMessage,
       setReplyToMessage: state.setReplyToMessage,
       clearReplyToMessage: state.clearReplyToMessage,
+    })),
+  );
+
+export const useSelectedWorkflow = () =>
+  useComposerStore(
+    useShallow((state) => ({
+      selectedWorkflow: state.selectedWorkflow,
+      workflowAutoSend: state.workflowAutoSend,
+      selectWorkflow: state.selectWorkflow,
+      clearSelectedWorkflow: state.clearSelectedWorkflow,
+    })),
+  );
+
+export const useSelectedCalendarEvent = () =>
+  useComposerStore(
+    useShallow((state) => ({
+      selectedCalendarEvent: state.selectedCalendarEvent,
+      selectCalendarEvent: state.selectCalendarEvent,
+      clearSelectedCalendarEvent: state.clearSelectedCalendarEvent,
     })),
   );

@@ -36,6 +36,8 @@ vi.mock("@/features/chat/hooks/useWorkflowSelection", () => ({
 }));
 
 vi.mock("@/stores/composerStore", () => ({
+  useComposerStore: (selector: (s: unknown) => unknown) =>
+    selector({ workflowAutoSend: false }),
   useInputText: () => "Hello GAIA",
   useComposerTextActions: () => ({ clearInputText }),
   useComposerModeSelection: () => ({
@@ -56,10 +58,6 @@ vi.mock("@/stores/composerStore", () => ({
     replyToMessage: null,
     clearReplyToMessage,
   }),
-}));
-
-vi.mock("@/stores/workflowSelectionStore", () => ({
-  useWorkflowSelectionStore: () => ({ autoSend: false }),
 }));
 
 import { useComposerSubmit } from "@/features/chat/hooks/useComposerSubmit";
