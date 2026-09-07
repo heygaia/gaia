@@ -38,6 +38,8 @@ PLATFORM_TEMPLATE = " I'm on your {platform} too."
 ROUTINES_INTRO = "Two things worth switching on now."
 GMAIL_LINE = "Gmail: every morning your mail comes back sorted, replies drafted."
 CALENDAR_LINE = "Calendar: I brief you before every meeting."
+#: One bubble, skimmable: the intro line, then one bullet per routine.
+ROUTINES_BUBBLE = f"{ROUTINES_INTRO}\n- {GMAIL_LINE}\n- {CALENDAR_LINE}"
 #: The buttons under the routines bubble: rendered by the web as a plain row of
 #: buttons outside the bubble (``connect_options`` in ToolRenderers), same tab,
 #: opening the app's connect flow on arrival exactly as the old links did.
@@ -141,9 +143,7 @@ def compose_first_conversation(
         opening=[
             WELCOME,
             _handover_line(connected_platform),
-            ROUTINES_INTRO,
-            GMAIL_LINE,
-            CALENDAR_LINE,
+            ROUTINES_BUBBLE,
         ],
         question=_handover(preferences.profession),
         follow_ups=[SOMETHING_ELSE_CHIP],
