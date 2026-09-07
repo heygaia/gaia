@@ -1,5 +1,6 @@
 "use client";
 
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Dispatch } from "react";
 import { useCallback, useMemo, useState } from "react";
 
@@ -14,6 +15,7 @@ import { toast } from "@/lib/toast";
 import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import type { PublicWorkflowStep } from "@/types/features/workflowTypes";
 
+import { workflowKeys } from "../../api/queryKeys";
 import { type Workflow, workflowApi } from "../../api/workflowApi";
 import { REGENERATION_REASONS } from "../../constants/regeneration";
 import {
@@ -21,7 +23,6 @@ import {
   workflowFormSchema,
   workflowToFormData,
 } from "../../schemas/workflowFormSchema";
-import { useWorkflowsStore } from "../../stores/workflowsStore";
 import { findTriggerSchema } from "../../triggers/utils";
 import { mentionedIntegrationIds } from "../../utils/integrationMentions";
 import { missingIntegrationsMessage } from "../shared/workflowCardHelpers";
@@ -85,14 +86,71 @@ export function useWorkflowModalActions({
 
   const { selectWorkflow } = useWorkflowSelection();
 
-  // Workflows store actions for optimistic updates
-  const {
-    addWorkflow: addToStore,
-    updateWorkflow: updateInStore,
-    removeWorkflow: removeFromStore,
-    fetchWorkflows,
-    invalidateCache,
-  } = useWorkflowsStore();
+  // Optimistic writes go into the same query key useWorkflows() reads.
+  const queryClient = useQueryClient();
+
+  const patchWorkflowInCache = useCallback(
+    (workflowId: string, updates: Partial<Workflow>) => {
+      queryClient.setQueryData<Workflow[]>(workflowKeys.list(), (workflows) =>
+        workflows?.map((workflow) =>
+          workflow.id === workflowId ? { ...workflow, ...updates } : workflow,
+        ),
+      );
+    },
+    [queryClient],
+  );
+
+  const invalidateWorkflows = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: workflowKeys.all }),
+    [queryClient],
+  );
+
+  const snapshotWorkflows = useCallback(async () => {
+    await queryClient.cancelQueries({ queryKey: workflowKeys.list() });
+    return queryClient.getQueryData<Workflow[]>(workflowKeys.list());
+  }, [queryClient]);
+
+  const rollbackWorkflows = useCallback(
+    (previous: Workflow[] | undefined) => {
+      if (previous) queryClient.setQueryData(workflowKeys.list(), previous);
+    },
+    [queryClient],
+  );
+
+  const activationMutation = useMutation({
+    mutationFn: ({
+      workflowId,
+      activated,
+    }: {
+      workflowId: string;
+      activated: boolean;
+    }) =>
+      activated
+        ? workflowApi.activateWorkflow(workflowId)
+        : workflowApi.deactivateWorkflow(workflowId),
+    onMutate: async ({ workflowId, activated }) => {
+      const previous = await snapshotWorkflows();
+      patchWorkflowInCache(workflowId, { activated });
+      return { previous };
+    },
+    onError: (_error, _variables, context) =>
+      rollbackWorkflows(context?.previous),
+    onSettled: () => invalidateWorkflows(),
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: (workflowId: string) => workflowApi.deleteWorkflow(workflowId),
+    onMutate: async (workflowId) => {
+      const previous = await snapshotWorkflows();
+      queryClient.setQueryData<Workflow[]>(workflowKeys.list(), (workflows) =>
+        workflows?.filter((workflow) => workflow.id !== workflowId),
+      );
+      return { previous };
+    },
+    onError: (_error, _workflowId, context) =>
+      rollbackWorkflows(context?.previous),
+    onSettled: () => invalidateWorkflows(),
+  });
 
   const { integrations, connectIntegration } = useIntegrations();
   const [connectingId, setConnectingId] = useState<string | null>(null);
@@ -252,13 +310,15 @@ export function useWorkflowModalActions({
       duration: 3000,
     });
 
-    // Optimistic update: add to store immediately for instant UI feedback
-    addToStore(createdWorkflow);
+    // Optimistic update: show it in the list immediately
+    queryClient.setQueryData<Workflow[]>(
+      workflowKeys.list(),
+      (workflows = []) => [createdWorkflow, ...workflows],
+    );
 
     // Notify parent callbacks if provided (for backwards compatibility)
     if (onWorkflowSaved) onWorkflowSaved(createdWorkflow.id);
-    invalidateCache();
-    await fetchWorkflows();
+    await invalidateWorkflows();
 
     // In createAndSend mode, selectWorkflow navigates to /c and unmounts
     // this page (and modal). Closing here would push back to /workflows
@@ -299,10 +359,10 @@ export function useWorkflowModalActions({
           id: workflow.id,
           steps: regenResult.workflow.steps?.length ?? 0,
         });
-        // Commit the new steps locally AND to the store so the upcoming
-        // fetchWorkflows() refetch can't briefly resurface the old steps.
+        // Commit the new steps locally AND to the cache so the upcoming
+        // refetch can't briefly resurface the old steps.
         setCurrentWorkflow(regenResult.workflow);
-        updateInStore(workflow.id, regenResult.workflow);
+        patchWorkflowInCache(workflow.id, regenResult.workflow);
         toast.success("Workflow updated", {
           description: `${regenResult.workflow.steps?.length || 0} steps regenerated`,
           duration: 3000,
@@ -364,9 +424,9 @@ export function useWorkflowModalActions({
 
       if (updatedWorkflow?.workflow) {
         setCurrentWorkflow(updatedWorkflow.workflow);
-        updateInStore(currentWorkflow.id, updatedWorkflow.workflow);
+        patchWorkflowInCache(currentWorkflow.id, updatedWorkflow.workflow);
       } else {
-        updateInStore(currentWorkflow.id, updateRequest);
+        patchWorkflowInCache(currentWorkflow.id, updateRequest);
       }
 
       if (stepRelevantChanged) {
@@ -377,8 +437,7 @@ export function useWorkflowModalActions({
 
       if (onWorkflowSaved) onWorkflowSaved(currentWorkflow.id);
 
-      invalidateCache();
-      await fetchWorkflows();
+      await invalidateWorkflows();
     } catch (error) {
       console.error("Failed to update workflow:", error);
       toast.error("Failed to update workflow", {
@@ -425,13 +484,10 @@ export function useWorkflowModalActions({
         is_public: existingWorkflow.is_public,
       });
 
-      await workflowApi.deleteWorkflow(existingWorkflow.id);
-      removeFromStore(existingWorkflow.id);
+      await deleteMutation.mutateAsync(existingWorkflow.id);
 
       if (onWorkflowDeleted) onWorkflowDeleted(existingWorkflow.id);
 
-      invalidateCache();
-      await fetchWorkflows();
       setIsDeleteConfirmOpen(false);
       handleClose();
     } catch (error) {
@@ -478,11 +534,10 @@ export function useWorkflowModalActions({
 
     dispatch({ type: "togglingActivation", value: true });
     try {
-      if (newActivated) {
-        await workflowApi.activateWorkflow(currentWorkflow.id);
-      } else {
-        await workflowApi.deactivateWorkflow(currentWorkflow.id);
-      }
+      await activationMutation.mutateAsync({
+        workflowId: currentWorkflow.id,
+        activated: newActivated,
+      });
 
       // Update currentWorkflow activation state
       setCurrentWorkflow({
@@ -490,9 +545,6 @@ export function useWorkflowModalActions({
         activated: newActivated,
       });
       dispatch({ type: "activated", value: newActivated });
-      updateInStore(currentWorkflow.id, { activated: newActivated });
-      invalidateCache();
-      await fetchWorkflows();
     } catch (error) {
       console.error("Failed to toggle workflow activation:", error);
     } finally {
@@ -543,8 +595,7 @@ export function useWorkflowModalActions({
       }
 
       if (onWorkflowSaved) onWorkflowSaved(currentWorkflow.id);
-      invalidateCache();
-      await fetchWorkflows();
+      await invalidateWorkflows();
 
       dispatch({ type: "regenerating", value: false });
     } catch (error) {
@@ -577,8 +628,7 @@ export function useWorkflowModalActions({
         setCurrentWorkflow({ ...currentWorkflow, is_public: true, slug });
         if (slug) router.push(`/use-cases/${slug}`);
       }
-      invalidateCache();
-      await fetchWorkflows();
+      await invalidateWorkflows();
     } catch (error) {
       console.error("Error publishing/unpublishing workflow:", error);
     }
@@ -623,8 +673,7 @@ export function useWorkflowModalActions({
     if (!existingWorkflow?.id) return;
     try {
       await workflowApi.resetToDefault(existingWorkflow.id);
-      invalidateCache();
-      await fetchWorkflows();
+      await invalidateWorkflows();
       handleClose();
     } catch (error) {
       toast.error("Failed to reset workflow", {

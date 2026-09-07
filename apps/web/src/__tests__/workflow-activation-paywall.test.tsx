@@ -1,9 +1,12 @@
 // @vitest-environment jsdom
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { renderHook } from "@testing-library/react";
+import type React from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const activateWorkflow = vi.fn();
 const deactivateWorkflow = vi.fn();
+const deleteWorkflow = vi.fn();
 const toastInfo = vi.fn();
 const selectWorkflow = vi.fn();
 const connectIntegration = vi.fn();
@@ -63,17 +66,8 @@ vi.mock("@/features/workflows/api/workflowApi", () => ({
   workflowApi: {
     activateWorkflow: (...args: unknown[]) => activateWorkflow(...args),
     deactivateWorkflow: (...args: unknown[]) => deactivateWorkflow(...args),
+    deleteWorkflow: (...args: unknown[]) => deleteWorkflow(...args),
   },
-}));
-
-vi.mock("@/features/workflows/stores/workflowsStore", () => ({
-  useWorkflowsStore: () => ({
-    addWorkflow: vi.fn(),
-    updateWorkflow: vi.fn(),
-    removeWorkflow: vi.fn(),
-    fetchWorkflows: vi.fn(),
-    invalidateCache: vi.fn(),
-  }),
 }));
 
 vi.mock("@/features/workflows/triggers/utils", () => ({
@@ -88,31 +82,47 @@ vi.mock("@/features/workflows/components/shared/workflowCardHelpers", () => ({
   missingIntegrationsMessage: () => "",
 }));
 
+import { workflowKeys } from "@/features/workflows/api/queryKeys";
 import { initialWorkflowModalUiState } from "@/features/workflows/components/workflow-modal/modalState";
 import { useWorkflowModalActions } from "@/features/workflows/components/workflow-modal/useWorkflowModalActions";
 
 describe("workflow activation toggle paywall gate", () => {
+  let queryClient: QueryClient;
+
   beforeEach(() => {
     isPaid = false;
     isSubscriptionStatusUnknown = false;
     vi.clearAllMocks();
+    activateWorkflow.mockReset();
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
   });
 
+  const wrapper = ({ children }: { children: React.ReactNode }) => (
+    <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+  );
+
   const setup = () =>
-    renderHook(() =>
-      useWorkflowModalActions({
-        mode: "edit",
-        existingWorkflow: WORKFLOW,
-        currentWorkflow: WORKFLOW,
-        setCurrentWorkflow: vi.fn(),
-        formData: {} as never,
-        triggerSchemas: [],
-        hasPredefinedSteps: false,
-        createAndSend: false,
-        handleClose: vi.fn(),
-        ui: initialWorkflowModalUiState,
-        dispatch,
-      }),
+    renderHook(
+      () =>
+        useWorkflowModalActions({
+          mode: "edit",
+          existingWorkflow: WORKFLOW,
+          currentWorkflow: WORKFLOW,
+          setCurrentWorkflow: vi.fn(),
+          formData: {} as never,
+          triggerSchemas: [],
+          hasPredefinedSteps: false,
+          createAndSend: false,
+          handleClose: vi.fn(),
+          ui: initialWorkflowModalUiState,
+          dispatch,
+        }),
+      { wrapper },
     );
 
   it("shows an upgrade toast and never calls activateWorkflow for a free user", async () => {
@@ -135,6 +145,30 @@ describe("workflow activation toggle paywall gate", () => {
     expect(activateWorkflow).toHaveBeenCalledWith("wf_1");
     expect(toastInfo).not.toHaveBeenCalled();
     expect(dispatch).toHaveBeenCalledWith({ type: "activated", value: true });
+  });
+
+  it("rolls the optimistic activation back when the API call fails", async () => {
+    isPaid = true;
+    queryClient.setQueryData(workflowKeys.list(), [WORKFLOW]);
+
+    // Capture what the list cache looked like mid-flight: the optimistic
+    // update must already be visible before the request resolves.
+    let optimisticActivated: boolean | undefined;
+    activateWorkflow.mockImplementation(() => {
+      optimisticActivated = queryClient.getQueryData<(typeof WORKFLOW)[]>(
+        workflowKeys.list(),
+      )?.[0]?.activated;
+      return Promise.reject(new Error("boom"));
+    });
+
+    const { result } = setup();
+    await result.current.handleActivationToggle(true);
+
+    expect(optimisticActivated).toBe(true);
+    expect(
+      queryClient.getQueryData<(typeof WORKFLOW)[]>(workflowKeys.list())?.[0]
+        ?.activated,
+    ).toBe(false);
   });
 
   it("lets a free user deactivate a workflow (only enabling is gated)", async () => {
