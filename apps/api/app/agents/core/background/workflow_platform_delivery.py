@@ -102,6 +102,7 @@ async def _post_workflow_message(
             # BotService.build_session_key for how a DM keys.
             channel_id=None,
             user=user,
+            is_dm=True,
         )
         bot_message = MessageModel(
             type="bot",
@@ -113,7 +114,11 @@ async def _post_workflow_message(
             UpdateMessagesRequest(conversation_id=conversation_id, messages=[bot_message]),
             user=user,
         )
-        result = await publish_outbound_message(source, user_id, bubbles)
+        # The channel already carries the account id; a second read of the user
+        # document to recompute it is what destination_override exists to skip.
+        result = await publish_outbound_message(
+            source, user_id, bubbles, destination_override=platform_user_id
+        )
         if result is OutboundResult.FAILED:
             log.error(
                 f"{LogTag.AGENT} workflow platform publish failed",

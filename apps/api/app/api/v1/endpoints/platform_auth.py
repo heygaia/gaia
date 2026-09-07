@@ -8,9 +8,8 @@ import httpx
 
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
-from app.services.analytics_service import AnalyticsEvents, capture_event
-from app.services.outbound_delivery import notify_account_linked
-from app.services.platform_link_service import PlatformLinkService
+from app.services.platform_link_completion import complete_platform_link
+from app.utils.errors import AppError
 from shared.py.wide_events import log
 
 
@@ -217,11 +216,9 @@ async def _handle_platform_oauth_callback(
 
         # Link platform account to current user (using ObjectId)
         try:
-            link_result = await PlatformLinkService.link_account(
+            link_result = await complete_platform_link(
                 user_id, config.platform, platform_user_id, profile=profile or None
             )
-            # Audited immediately after the link lands, before the notification —
-            # a failing notification must not erase the record of the state change.
             log.audit(
                 "platform account linked",
                 actor=user_id,
@@ -229,32 +226,10 @@ async def _handle_platform_oauth_callback(
                 provider=config.platform,
                 is_new_link=bool(link_result.is_new_link),
             )
-            # capture_event, not capture_context_event: this is a third-party
-            # OAuth redirect, so the request carries no WorkOS session for the
-            # PostHog context middleware to identify. The user id comes from the
-            # signed state token — pass it explicitly or the event lands on an
-            # anonymous profile.
-            capture_event(
-                user_id,
-                AnalyticsEvents.INTEGRATION_CONNECTED,
-                {
-                    "integration_id": config.platform,
-                    "is_new_link": bool(link_result.is_new_link),
-                },
-            )
-            if link_result.is_new_link:
-                await notify_account_linked(config.platform, user_id)
-        except ValueError as e:
-            error_msg = str(e)
-            if "already linked" in error_msg:
+        except AppError as e:
+            if e.status_code == 409:
+                # complete_platform_link already audited the rejection.
                 log.set(outcome="already_linked")
-                log.audit(
-                    "platform account link rejected",
-                    actor=user_id,
-                    resource=platform_user_id,
-                    provider=config.platform,
-                    reason="already_linked",
-                )
                 return RedirectResponse(
                     url=_redirect_url(
                         settings.FRONTEND_URL,
@@ -262,6 +237,7 @@ async def _handle_platform_oauth_callback(
                         oauth_error="already_linked",
                     )
                 )
+            error_msg = str(e)
             log.error(
                 f"{LogTag.API} Failed to link account",
                 platform=config.platform,

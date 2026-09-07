@@ -125,7 +125,7 @@ export function usePricingCardCta({
     isCheckoutLate: checkoutPhase === "timeout",
     paymentError,
     isFree: price === 0,
-    isOnFreePlan: !!user && !hasActiveSubscription,
+    isOnFreePlan: !!user.userId && !hasActiveSubscription,
     onGetStarted,
   };
 }

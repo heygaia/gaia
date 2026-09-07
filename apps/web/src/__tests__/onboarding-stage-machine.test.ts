@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   FIELD_NAMES,
   needOptions,
+  needOptionsFor,
   OTHER_NEED_OPTION,
   professionOptions,
   questions,
@@ -122,9 +123,12 @@ describe("Q2 multi-select", () => {
   it("has an icon and a tint for every option the chips render", () => {
     // The chips destructure `OPTION_STYLE[value]` unconditionally — a missing
     // entry is a render crash, not a blank chip.
+    const everyNeed = professionOptions.flatMap((profession) =>
+      needOptionsFor(profession.value),
+    );
     for (const option of [
       ...professionOptions,
-      ...needOptions,
+      ...everyNeed,
       OTHER_NEED_OPTION,
     ]) {
       const style = OPTION_STYLE[option.value];

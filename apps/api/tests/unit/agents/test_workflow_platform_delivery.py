@@ -93,6 +93,9 @@ class TestDeliverWorkflowResultToPlatforms:
         assert session.await_args.kwargs["platform"] == "telegram"
         assert session.await_args.kwargs["platform_user_id"] == "tg-123"
         assert session.await_args.kwargs["user"] == USER
+        # A proactive delivery is a DM; on Discord and Slack a channel-keyed
+        # session would be a different conversation than the user's DM thread.
+        assert session.await_args.kwargs["is_dm"] is True
         # The full text is persisted as the bot message, split into ordered bubbles.
         update.assert_awaited_once()
         request = update.await_args.args[0]
@@ -104,6 +107,9 @@ class TestDeliverWorkflowResultToPlatforms:
             USER_ID,
             ["Report is ready.", "It has 3 pages."],
         )
+        # The channel already resolved the account id; the publisher must not
+        # read the user document again to recompute it.
+        assert publish.await_args.kwargs == {"destination_override": "tg-123"}
 
     async def test_failed_publish_is_logged_not_raised(self) -> None:
         """A failed publish is swallowed — but observable: log.error lands in

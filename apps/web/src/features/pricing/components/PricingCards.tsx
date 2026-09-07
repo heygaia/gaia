@@ -187,7 +187,7 @@ export function PricingCards({
               : false;
 
           // Only consider truly active subscriptions when user is logged in
-          const hasActiveSubscription = user
+          const hasActiveSubscription = user.userId
             ? !!(
                 subscriptionStatus?.is_subscribed &&
                 subscriptionStatus?.subscription?.status === "active"
