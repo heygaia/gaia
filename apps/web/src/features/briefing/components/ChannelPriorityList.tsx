@@ -2,7 +2,7 @@
 
 import { Button } from "@heroui/button";
 import { Skeleton } from "@heroui/skeleton";
-import { DragDropVerticalIcon } from "@icons";
+import { ArrowDown01Icon, ArrowUp01Icon, DragDropVerticalIcon } from "@icons";
 import { Reorder, useDragControls } from "motion/react";
 import Image from "next/image";
 import type React from "react";
@@ -10,6 +10,7 @@ import { useChannelPriority } from "@/features/briefing/hooks/useChannelPriority
 import {
   NOTIFICATION_PLATFORM_ICONS,
   NOTIFICATION_PLATFORM_LABELS,
+  NOTIFICATION_PLATFORMS,
   type NotificationPlatform,
 } from "@/features/notification/constants";
 
@@ -32,13 +33,23 @@ function PlatformIcon({ platform }: { platform: NotificationPlatform }) {
   );
 }
 
-/** A draggable, connected channel row. The grab handle initiates the drag. */
+/**
+ * A connected channel row. The grab handle initiates a drag; the up/down
+ * buttons are the keyboard-reachable path to the same reorder-and-persist,
+ * disabled at the ends of the list.
+ */
 function DraggableChannelRow({
   platform,
+  isFirst,
+  isLast,
   onDrop,
+  onMove,
 }: {
   platform: NotificationPlatform;
+  isFirst: boolean;
+  isLast: boolean;
   onDrop: () => void;
+  onMove: (delta: -1 | 1) => void;
 }) {
   const controls = useDragControls();
   const label = NOTIFICATION_PLATFORM_LABELS[platform];
@@ -69,6 +80,30 @@ function DraggableChannelRow({
       </Button>
       <PlatformIcon platform={platform} />
       <span className="flex-1 truncate text-sm text-zinc-200">{label}</span>
+      <Button
+        isIconOnly
+        size="sm"
+        variant="light"
+        radius="lg"
+        aria-label={`Move ${label} up`}
+        isDisabled={isFirst}
+        onPress={() => onMove(-1)}
+        className="size-7 min-w-0 text-zinc-500 hover:text-zinc-300"
+      >
+        <ArrowUp01Icon className="size-4" />
+      </Button>
+      <Button
+        isIconOnly
+        size="sm"
+        variant="light"
+        radius="lg"
+        aria-label={`Move ${label} down`}
+        isDisabled={isLast}
+        onPress={() => onMove(1)}
+        className="size-7 min-w-0 text-zinc-500 hover:text-zinc-300"
+      >
+        <ArrowDown01Icon className="size-4" />
+      </Button>
     </Reorder.Item>
   );
 }
@@ -98,14 +133,20 @@ function UnlinkedChannelRow({ platform }: { platform: NotificationPlatform }) {
 export const ChannelPriorityList: React.FC<ChannelPriorityListProps> = ({
   linkedMap,
 }) => {
-  const { isLoading, linkedOrder, unlinkedOrder, reorderLinked, persist } =
-    useChannelPriority(linkedMap);
+  const {
+    isLoading,
+    linkedOrder,
+    unlinkedOrder,
+    reorderLinked,
+    persist,
+    moveLinked,
+  } = useChannelPriority(linkedMap);
 
   if (isLoading) {
     return (
       <div className="space-y-2">
-        {[0, 1, 2, 3].map((i) => (
-          <Skeleton key={i} className="h-[46px] w-full rounded-xl" />
+        {NOTIFICATION_PLATFORMS.map((platform) => (
+          <Skeleton key={platform} className="h-[46px] w-full rounded-xl" />
         ))}
       </div>
     );
@@ -119,11 +160,14 @@ export const ChannelPriorityList: React.FC<ChannelPriorityListProps> = ({
         onReorder={reorderLinked}
         className="space-y-2"
       >
-        {linkedOrder.map((platform) => (
+        {linkedOrder.map((platform, index) => (
           <DraggableChannelRow
             key={platform}
             platform={platform}
+            isFirst={index === 0}
+            isLast={index === linkedOrder.length - 1}
             onDrop={persist}
+            onMove={(delta) => moveLinked(platform, delta)}
           />
         ))}
       </Reorder.Group>
