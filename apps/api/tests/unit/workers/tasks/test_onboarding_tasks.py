@@ -1,9 +1,9 @@
 """Unit tests for app.workers.tasks.onboarding_tasks.
 
 One task remains: the Gmail personalization pipeline, enqueued when a user
-connects Gmail. It owns exactly two things beyond calling the pipeline —
-releasing the job slot, and reporting the outcome. It deliberately owns neither
-the onboarding phase (completion is written when the form is submitted) nor the
+connects Gmail. It owns exactly one thing beyond calling the pipeline:
+reporting the outcome. It deliberately owns neither the onboarding phase
+(completion is written when the form is submitted) nor the
 ``onboarding:completed`` analytics event (captured by ``complete_onboarding``).
 """
 
@@ -11,7 +11,6 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.constants.onboarding import INTELLIGENCE_JOB_FIELD
 from app.workers.tasks.onboarding_tasks import process_onboarding_intelligence_task
 
 MODULE = "app.workers.tasks.onboarding_tasks"
@@ -43,59 +42,6 @@ class TestTheTaskRunsThePipeline:
         result = await process_onboarding_intelligence_task({}, USER)
 
         assert result == f"Gmail personalization failed for user {USER}: LLM timeout"
-
-
-class TestTheJobSlotIsReleased:
-    async def test_the_slot_is_cleared_with_this_jobs_id(self, pipeline: AsyncMock) -> None:
-        """Compare-and-clear on our own id — a stale id makes the next reset try
-        to abort a job that finished long ago."""
-        repo = AsyncMock()
-        with patch("app.services.onboarding.intelligence_job.user_repository", repo):
-            await process_onboarding_intelligence_task({"job_id": "job-7"}, USER)
-
-        repo.clear_active_job_if_matches.assert_awaited_once_with(
-            USER, INTELLIGENCE_JOB_FIELD, "job-7"
-        )
-
-    async def test_the_slot_is_cleared_after_a_failed_pipeline_too(
-        self, pipeline: AsyncMock
-    ) -> None:
-        """Left set, a crashed run blocks every later reconnect from enqueueing."""
-        pipeline.side_effect = RuntimeError("boom")
-        repo = AsyncMock()
-
-        with patch("app.services.onboarding.intelligence_job.user_repository", repo):
-            result = await process_onboarding_intelligence_task({"job_id": "job-7"}, USER)
-
-        repo.clear_active_job_if_matches.assert_awaited_once_with(
-            USER, INTELLIGENCE_JOB_FIELD, "job-7"
-        )
-        assert "failed" in result
-
-    async def test_nothing_is_cleared_when_arq_supplied_no_job_id(
-        self, pipeline: AsyncMock
-    ) -> None:
-        with patch(f"{MODULE}.clear_active_intelligence_job", new_callable=AsyncMock) as clear:
-            await process_onboarding_intelligence_task({}, USER)
-
-        clear.assert_not_awaited()
-
-    async def test_a_failed_clear_does_not_lose_the_success_result(
-        self, pipeline: AsyncMock
-    ) -> None:
-        with (
-            patch(
-                f"{MODULE}.clear_active_intelligence_job",
-                new_callable=AsyncMock,
-                side_effect=RuntimeError("mongo down"),
-            ),
-            patch(f"{MODULE}.log") as log,
-        ):
-            result = await process_onboarding_intelligence_task({"job_id": "job-7"}, USER)
-
-        assert result == f"Gmail personalization completed for user {USER}"
-        assert log.warning.call_args.kwargs["job_id"] == "job-7"
-        assert log.warning.call_args.kwargs["error"] == "mongo down"
 
 
 class TestTheTaskOwnsNeitherThePhaseNorTheEvent:

@@ -391,20 +391,6 @@ class TestWorkerScans:
         assert (await repo.get(created.id)).memory_backfilled is not None
 
 
-class TestBackgroundJobMarkers:
-    async def test_set_and_compare_and_clear(self, repo, make_user):
-        created = await repo.create(make_user())
-        field = "onboarding.intelligence_job_id"
-        await repo.set_active_job(created.id, field, "job1")
-        assert (await repo.get(created.id)).onboarding["intelligence_job_id"] == "job1"
-        # Wrong id → no-op.
-        await repo.clear_active_job_if_matches(created.id, field, "other")
-        assert (await repo.get(created.id)).onboarding["intelligence_job_id"] == "job1"
-        # Right id → cleared.
-        await repo.clear_active_job_if_matches(created.id, field, "job1")
-        assert "intelligence_job_id" not in ((await repo.get(created.id)).onboarding or {})
-
-
 class TestPlatformLinking:
     async def test_link_lookup_and_unlink(self, repo, make_user):
         created = await repo.create(make_user())

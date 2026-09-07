@@ -611,36 +611,6 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             return_document=False,
         )
 
-    # --------------------------------------------------- background-job markers
-
-    async def set_active_job(self, user_id: str, field: str, job_id: str) -> None:
-        """Mark an in-flight background job for the user (``field`` → ``job_id``)."""
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {"$set": {field: job_id}},
-            scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
-        )
-
-    async def clear_active_job(self, user_id: str, field: str) -> None:
-        """Clear the user's in-flight background-job marker."""
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {"$unset": {field: ""}},
-            scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
-        )
-
-    async def clear_active_job_if_matches(self, user_id: str, field: str, job_id: str) -> None:
-        """Clear the job marker only if it still holds ``job_id`` (compare-and-clear)."""
-        await self._apply_raw_update(
-            {"_id": self._id_value(user_id)},
-            {"$unset": {field: ""}},
-            scope=REPO_GLOBAL_SCOPE,
-            extra_filter={field: job_id},
-            return_document=False,
-        )
-
     # --------------------------------------------------------- settings writes
 
     async def set_channel_preferences(

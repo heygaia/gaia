@@ -18,7 +18,6 @@ from bson import ObjectId
 from freezegun import freeze_time as _freeze_time
 import pytest
 
-from app.constants.onboarding import INTELLIGENCE_JOB_FIELD
 from app.models.todo_models import TodoDocument, TodoUpdate
 from app.models.user_models import OnboardingPhase, UserDocument
 from app.utils.errors import AppError
@@ -641,24 +640,6 @@ class TestOnboardingTask:
 
             mock_service.assert_awaited_once_with(FAKE_USER_ID)
             assert result == f"Gmail personalization completed for user {FAKE_USER_ID}"
-
-    async def test_the_job_slot_is_released_when_the_task_finishes(self):
-        """A stale job id makes the next reset try to abort a job that is gone,
-        and blocks a later Gmail reconnect from enqueueing at all."""
-
-        repo = AsyncMock()
-        with (
-            patch(
-                "app.services.onboarding.intelligence_service.process_onboarding_intelligence",
-                new_callable=AsyncMock,
-            ),
-            patch("app.services.onboarding.intelligence_job.user_repository", repo),
-        ):
-            await process_onboarding_intelligence_task({"job_id": "job-42"}, FAKE_USER_ID)
-
-        repo.clear_active_job_if_matches.assert_awaited_once_with(
-            FAKE_USER_ID, INTELLIGENCE_JOB_FIELD, "job-42"
-        )
 
 
 # ---------------------------------------------------------------------------

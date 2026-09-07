@@ -70,6 +70,7 @@ from app.models.onboarding_models import (
 )
 from app.models.user_models import OnboardingPhase, PersonalizationBundle, UserDocument
 from app.services.oauth.oauth_service import handle_oauth_connection
+from app.services.onboarding.intelligence_job import personalization_job_id
 from app.services.onboarding.intelligence_service import OnboardingStage, holo_card_url
 from app.utils.redis_utils import RedisPoolManager
 from app.workers.tasks.onboarding_tasks import process_onboarding_intelligence_task
@@ -113,11 +114,10 @@ class _UserStore:
     """The user collection, in process.
 
     Only the named methods the onboarding flow calls are implemented, under the
-    repository's own names, so production code is unchanged. The two methods
+    repository's own names, so production code is unchanged. The one method
     whose real semantics live in a Mongo filter rather than in Python —
-    ``complete_onboarding``'s existence gate and ``clear_active_job_if_matches``'s
-    compare-and-clear — are reproduced here; each is certified against real Mongo
-    by the repository contract suite.
+    ``complete_onboarding``'s existence gate — is reproduced here; it is
+    certified against real Mongo by the repository contract suite.
     """
 
     def __init__(self) -> None:
@@ -196,23 +196,6 @@ class _UserStore:
             return None
         sub[GETTING_STARTED_CONVERSATION_ID_FIELD] = conversation_id
         return await self.get(user_id)
-
-    # -- job slot ----------------------------------------------------------
-    async def set_active_job(self, user_id: str, field_path: str, job_id: str) -> None:
-        sub = self._sub(user_id)
-        if sub is not None:
-            sub[field_path.removeprefix("onboarding.")] = job_id
-
-    async def clear_active_job(self, user_id: str, field_path: str) -> None:
-        sub = self._sub(user_id)
-        if sub is not None:
-            sub.pop(field_path.removeprefix("onboarding."), None)
-
-    async def clear_active_job_if_matches(self, user_id: str, field_path: str, job_id: str) -> None:
-        sub = self._sub(user_id)
-        key = field_path.removeprefix("onboarding.")
-        if sub is not None and sub.get(key) == job_id:
-            sub.pop(key)
 
     # -- pipeline writes ---------------------------------------------------
     async def mark_gmail_personalization_done(
@@ -829,10 +812,6 @@ class TestConnectingGmailEarnsThePersonalization:
             externals, HOLO_CARD_DESCRIPTION
         )
 
-    async def test_the_job_slot_is_released_when_the_pipeline_finishes(self, users: _UserStore):
-        """A stale id makes the next reset try to abort a job that is long gone."""
-        assert "intelligence_job_id" not in users.onboarding_of(USER_ID)
-
     async def test_the_personalization_endpoint_serves_what_the_pipeline_wrote(
         self, client: AsyncClient
     ):
@@ -1071,12 +1050,13 @@ class TestResettingOnboarding:
         supposed to be blank."""
         await complete_submit(client)
         await connect_gmail()
-        job_id = users.onboarding_of(USER_ID)["intelligence_job_id"]
 
         await client.post(RESET)
 
         aborted = await arq_pool.zrange(abort_jobs_ss, 0, -1)
-        assert [raw.decode() if isinstance(raw, bytes) else raw for raw in aborted] == [job_id]
+        assert [raw.decode() if isinstance(raw, bytes) else raw for raw in aborted] == [
+            personalization_job_id(USER_ID)
+        ]
 
     async def test_a_failed_abort_does_not_block_the_reset(
         self, client: AsyncClient, users: _UserStore, personalized: None

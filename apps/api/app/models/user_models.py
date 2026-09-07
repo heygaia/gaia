@@ -403,9 +403,8 @@ class UserDocument(MongoDocument):
     fields are all Optional so a legacy/partial row never fails an auth read.
 
     The write side is now a closed set — every writer routes through
-    ``UserRepository`` and every field it can set is declared (the arbitrary
-    ``set_active_job`` field is an ``onboarding.*`` path), so no *new* undeclared
-    field can appear. Tightening to ``ignore`` is still blocked on the read side:
+    ``UserRepository`` and every field it can set is declared, so no *new*
+    undeclared field can appear. Tightening to ``ignore`` is still blocked on the read side:
     it would drop whatever historical fields production rows carry, and that
     inventory cannot be established from a dev sample. Flip it only after scanning
     the production collection for undeclared top-level fields.

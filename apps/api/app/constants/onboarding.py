@@ -8,10 +8,6 @@ itself (`intelligence_service`), which run when a user connects Gmail.
 # ARQ task name — must match the registered worker task function.
 INTELLIGENCE_TASK = "process_onboarding_intelligence_task"
 
-# Dotted Mongo path storing the active ARQ job id on the user doc, so a
-# re-enqueue can abort the in-flight job.
-INTELLIGENCE_JOB_FIELD = "onboarding.intelligence_job_id"
-
 # Key inside the `onboarding` subdocument stamped once the pipeline has run for
 # a user. Its presence is what makes a Gmail reconnect a no-op.
 GMAIL_PERSONALIZATION_MARKER = "gmail_personalization_at"

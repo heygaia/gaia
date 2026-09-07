@@ -6,6 +6,7 @@ submitting the form IS completion: nothing is queued, nothing is seeded, and the
 phase lands on PERSONALIZATION_COMPLETE in one write.
 """
 
+import asyncio
 from collections.abc import AsyncIterator, Iterator
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -47,6 +48,7 @@ from app.services.onboarding.intelligence_job import (
     abort_active_intelligence_job,
     enqueue_gmail_personalization,
     is_intelligence_job_live,
+    personalization_job_id,
 )
 from app.services.onboarding.onboarding_service import (
     complete_onboarding,
@@ -867,75 +869,71 @@ def store(sample_user_id: str) -> Iterator[dict[str, Any]]:
 
     repo.get.side_effect = _get
 
-    async def _set_active(uid: str, field: str, job_id: str) -> None:
-        if uid != sample_user_id:
-            return
-        onboarding[field.removeprefix("onboarding.")] = job_id
-
-    async def _clear_active(uid: str, field: str) -> None:
-        if uid != sample_user_id:
-            return
-        onboarding.pop(field.removeprefix("onboarding."), None)
-
-    repo.set_active_job.side_effect = _set_active
-    repo.clear_active_job.side_effect = _clear_active
-
     with patch("app.services.onboarding.intelligence_job.user_repository", repo):
         yield onboarding
 
 
 class TestEnqueueGmailPersonalization:
-    """The marker is the only thing standing between a Gmail reconnect and a
-    second full personalization run."""
+    """The marker is what stands between a Gmail reconnect and a second full
+    personalization run; the per-user job id is what stands between two
+    connects and two runs at once."""
 
     async def test_a_first_connect_enqueues_the_pipeline_once(
         self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
     ) -> None:
         job_id = await enqueue_gmail_personalization(sample_user_id)
 
-        assert job_id is not None
+        assert job_id == personalization_job_id(sample_user_id)
         # The queued args decide whose mailbox is read — a pipeline enqueued for
         # nobody looks identical here unless the args are asserted.
         assert await queued_job_calls(arq_pool) == [(INTELLIGENCE_TASK, (sample_user_id,))]
-        assert store["intelligence_job_id"] == job_id
 
-    async def test_the_stored_job_id_is_what_a_later_abort_cancels(
+    async def test_a_reconnect_while_the_run_is_live_joins_it(
         self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
     ) -> None:
-        """The whole point of storing the id: a reset has to reach the job that
-        is actually running, and leave the slot empty afterwards."""
+        """Two live pipelines would interleave their stage events on one
+        WebSocket; the second connect must not start one, and must not kill the
+        healthy one either."""
+        first = await enqueue_gmail_personalization(sample_user_id)
+
+        second = await enqueue_gmail_personalization(sample_user_id)
+
+        assert second == first
+        assert await queued_job_names(arq_pool) == [INTELLIGENCE_TASK]
+        assert await arq_pool.zrange(abort_jobs_ss, 0, -1) == []
+
+    async def test_racing_connects_admit_one_run(
+        self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
+    ) -> None:
+        """The claim is Redis's, not a read-then-write in Python."""
+        results = await asyncio.gather(
+            *(enqueue_gmail_personalization(sample_user_id) for _ in range(5))
+        )
+
+        assert set(results) == {personalization_job_id(sample_user_id)}
+        assert await queued_job_names(arq_pool) == [INTELLIGENCE_TASK]
+
+    async def test_the_live_job_is_what_a_reset_aborts(
+        self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
+    ) -> None:
         job_id = await enqueue_gmail_personalization(sample_user_id)
 
         aborted = await abort_active_intelligence_job(sample_user_id)
 
         assert aborted is True
         assert await arq_pool.zscore(abort_jobs_ss, job_id) is not None
-        assert "intelligence_job_id" not in store
 
-    async def test_a_second_enqueue_cancels_the_job_still_in_flight(
-        self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
-    ) -> None:
-        """Two live pipelines interleave their stage events on one WebSocket and
-        corrupt the frontend's cursor — the older one has to go."""
-        first = await enqueue_gmail_personalization(sample_user_id)
-
-        second = await enqueue_gmail_personalization(sample_user_id)
-
-        assert second is not None and second != first
-        assert await arq_pool.zscore(abort_jobs_ss, first) is not None
-        assert store["intelligence_job_id"] == second
-
-    async def test_nothing_stored_means_nothing_to_abort(
+    async def test_nothing_queued_means_nothing_to_abort(
         self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
     ) -> None:
         assert await abort_active_intelligence_job(sample_user_id) is False
         assert await arq_pool.zrange(abort_jobs_ss, 0, -1) == []
 
-    async def test_a_queue_that_hands_back_no_job_leaves_no_stored_id(
+    async def test_a_queue_that_hands_back_no_job_reports_it(
         self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
     ) -> None:
-        """A dropped enqueue must not leave a job id pointing at nothing, and
-        has to be visible in the wide event — nothing else reports it."""
+        """ARQ returning nothing with no live run is a dropped enqueue, and has
+        to be visible in the wide event — nothing else reports it."""
         async with captured_wide_event() as event:
             with patch(
                 "app.services.onboarding.intelligence_job.enqueue_worker_job",
@@ -945,7 +943,6 @@ class TestEnqueueGmailPersonalization:
                 job_id = await enqueue_gmail_personalization(sample_user_id)
 
         assert job_id is None
-        assert "intelligence_job_id" not in store
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.ONBOARDING} personalization enqueue returned no job",
@@ -991,7 +988,7 @@ class TestEnqueueGmailPersonalization:
 
 
 class TestIsIntelligenceJobLive:
-    """`is_intelligence_job_live` is what the Gmail-connect handler asks before
+    """`is_intelligence_job_live` is what the stuck-user sweep asks before
     re-enqueueing, so a wrong answer either starves a user of their
     personalization or runs two pipelines onto one WebSocket. Every case below
     is driven by real arq job state on the pool, never by mocking the function."""
@@ -1021,36 +1018,18 @@ class TestIsIntelligenceJobLive:
     async def test_a_finished_job_is_not_live(
         self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
     ) -> None:
-        """A completed job leaves its id behind on the user; treating that stale
-        id as live would block the next connect from ever personalizing."""
+        """Treating a finished run as live would block the stuck-user sweep from
+        ever re-queueing."""
         job_id = await enqueue_gmail_personalization(sample_user_id)
         assert job_id is not None
         await arq_pool.zrem(default_queue_name, job_id)
         await arq_pool.set(result_key_prefix + job_id, b"done")
 
         assert await Job(job_id, redis=arq_pool).status() == JobStatus.complete
-        assert store["intelligence_job_id"] == job_id
         assert await is_intelligence_job_live(sample_user_id) is False
 
-    async def test_an_id_arq_no_longer_knows_is_not_live(
-        self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
-    ) -> None:
-        store["intelligence_job_id"] = "a-job-arq-never-heard-of"
-
-        assert await is_intelligence_job_live(sample_user_id) is False
-
-    async def test_no_stored_job_id_is_not_live(
-        self, arq_pool: ArqRedis, store: dict[str, Any], sample_user_id: str
-    ) -> None:
-        assert "intelligence_job_id" not in store
-        assert await is_intelligence_job_live(sample_user_id) is False
-
-    async def test_a_missing_user_is_not_live(self, arq_pool: ArqRedis) -> None:
-        repo = AsyncMock()
-        repo.get.return_value = None
-
-        with patch("app.services.onboarding.intelligence_job.user_repository", repo):
-            assert await is_intelligence_job_live("ghost") is False
+    async def test_a_user_arq_has_never_seen_is_not_live(self, arq_pool: ArqRedis) -> None:
+        assert await is_intelligence_job_live("ghost") is False
 
 
 class TestGetUserOnboardingStatus:
