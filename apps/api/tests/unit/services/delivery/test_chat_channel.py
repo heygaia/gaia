@@ -140,6 +140,26 @@ class TestResolveChatChannel:
         read.assert_awaited_once_with(USER_ID)
         assert picked == ChatChannel(source=ConversationSource.TELEGRAM, platform_user_id="tg-1")
 
+    async def test_the_users_stored_order_overrides_the_default_order(self) -> None:
+        # Both platforms are linked and enabled, so only the stored order can
+        # decide: reading the default instead would silently land the message
+        # on telegram (the first default entry).
+        user = UserDocument.model_validate(
+            {
+                "id": USER_ID,
+                "chat_channel_priority": [CHANNEL_TYPE_SLACK, CHANNEL_TYPE_TELEGRAM],
+                "platform_links": {
+                    "telegram": {"id": "tg-1", "username": "a", "display_name": "A"},
+                    "slack": {"id": "sl-1", "username": "b", "display_name": "B"},
+                },
+                "notification_channel_prefs": {},
+            }
+        )
+        with patch.object(chat_channel.user_repository, "get", AsyncMock(return_value=user)):
+            picked = await resolve_chat_channel(USER_ID)
+
+        assert picked == ChatChannel(source=ConversationSource.SLACK, platform_user_id="sl-1")
+
     async def test_an_unknown_user_has_no_channel(self) -> None:
         with patch.object(chat_channel.user_repository, "get", AsyncMock(return_value=None)):
             assert await resolve_chat_channel(USER_ID) is None
