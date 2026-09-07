@@ -219,7 +219,6 @@ async def _core_agent_logic(
         )
         configurable["playbook_fallback"] = trigger_context.get(PLAYBOOK_FALLBACK_CONTEXT_KEY)
 
-
     log.set(
         agent={
             "model": configurable.get("model"),

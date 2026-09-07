@@ -1351,7 +1351,6 @@ class TestTheWorkflowKeysTheRunStashes:
         }
 
 
-
 class TestTheHumanTurnSilentRunsSynthesise:
     """``call_agent_silent``'s root guard. The human turn is read from
     ``messages``, never from ``message``, so a background caller that sets only

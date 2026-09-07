@@ -60,6 +60,7 @@ BOOTSTRAP_GRACE_DAYS: Final[int] = 3
 HUE_ROTATION_STEP: Final[int] = 137
 HUE_MAX: Final[int] = 360
 
+
 def hue_for_day(day_of_year: int) -> int:
     """Deterministic bands-gradient hue (0-359) for a given day-of-year."""
     return (day_of_year * HUE_ROTATION_STEP) % HUE_MAX

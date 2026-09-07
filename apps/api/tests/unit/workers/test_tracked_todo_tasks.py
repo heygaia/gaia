@@ -1100,7 +1100,9 @@ class TestExecuteViaAgent:
 
     async def test_a_canvas_read_failure_does_not_abort_the_run(self):
         agent = AsyncMock(return_value=SilentRunResult(message="ok", tool_data={}))
-        p1, p2, p3, p4, p5 = self._patches(agent=agent, canvas_side_effect=RuntimeError("mongo down"))
+        p1, p2, p3, p4, p5 = self._patches(
+            agent=agent, canvas_side_effect=RuntimeError("mongo down")
+        )
         with p1, p2, p3, p4, p5:
             result = await _execute_via_agent(_doc(), "user-1", user_data={})
 

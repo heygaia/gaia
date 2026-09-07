@@ -1993,7 +1993,6 @@ class TestDeliveryContextIsThreadedWhole:
         assert narrate.await_args.kwargs["returned_note"] == "handed back by the subagent"
 
 
-
 class TestWorkflowNotificationRef:
     """The workflow identity handed to the notification dispatcher. It decides
     what the user is told finished and whether they are told at all, and the
