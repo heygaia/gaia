@@ -5,8 +5,6 @@ import { useShallow } from "zustand/react/shallow";
 
 import type { RightSidebarMode, RightSidebarState } from "./layoutStore.types";
 
-export type { RightSidebarMode, RightSidebarState };
-
 export interface HeaderState {
   component: ReactNode | null;
 }

@@ -7,7 +7,7 @@ import type { GoogleCalendarEvent } from "@/types/features/calendarTypes";
 export type { SelectedCalendarEventData };
 
 /** Narrow a Google Calendar event down to the fields the composer attaches. */
-export const toSelectedCalendarEventData = (
+const toSelectedCalendarEventData = (
   event: GoogleCalendarEvent | SelectedCalendarEventData,
 ): SelectedCalendarEventData =>
   "kind" in event

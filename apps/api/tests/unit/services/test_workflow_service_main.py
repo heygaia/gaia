@@ -64,6 +64,7 @@ from app.models.workflow_models import (
 )
 from app.services.workflow.generation_service import (
     WorkflowGenerationService,
+    WorkflowPromptRequest,
     WorkflowStepGenerationError,
     _build_available_triggers,
     _build_trigger_hint,
@@ -1892,8 +1893,7 @@ class TestGenerateWorkflowPrompt:
         )
 
         result = await WorkflowGenerationService.generate_workflow_prompt(
-            title="Morning Briefing",
-            description="Daily summary",
+            WorkflowPromptRequest(title="Morning Briefing", description="Daily summary"),
             user_id="test-user",
         )
 
@@ -1916,7 +1916,7 @@ class TestGenerateWorkflowPrompt:
         )
 
         result = await WorkflowGenerationService.generate_workflow_prompt(
-            title="Task", user_id="test-user"
+            WorkflowPromptRequest(title="Task"), user_id="test-user"
         )
 
         assert result["prompt"] == "Manual instructions"
@@ -1937,7 +1937,7 @@ class TestGenerateWorkflowPrompt:
         )
 
         result = await WorkflowGenerationService.generate_workflow_prompt(
-            title="Task", user_id="test-user"
+            WorkflowPromptRequest(title="Task"), user_id="test-user"
         )
 
         assert result["prompt"] == "Instructions"
@@ -1956,7 +1956,7 @@ class TestGenerateWorkflowPrompt:
 
         with pytest.raises(OutputParserException, match="LLM unavailable"):
             await WorkflowGenerationService.generate_workflow_prompt(
-                title="Test", user_id="test-user"
+                WorkflowPromptRequest(title="Test"), user_id="test-user"
             )
 
 

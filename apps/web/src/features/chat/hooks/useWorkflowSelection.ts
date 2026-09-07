@@ -13,7 +13,7 @@ import type {
 export type { SelectedWorkflowData, WorkflowSelectionOptions };
 
 /** Narrow a full API workflow down to the fields the composer attaches. */
-export const toSelectedWorkflowData = (
+const toSelectedWorkflowData = (
   workflow: Workflow | SelectedWorkflowData,
 ): SelectedWorkflowData =>
   "trigger_config" in workflow

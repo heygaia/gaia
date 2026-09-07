@@ -4,7 +4,7 @@ import { workflowKeys } from "../api/queryKeys";
 import { type Workflow, workflowApi } from "../api/workflowApi";
 
 /** How long the workflow list stays fresh before a remount refetches it. */
-export const WORKFLOWS_STALE_TIME = 60 * 1000;
+const WORKFLOWS_STALE_TIME = 60 * 1000;
 
 interface UseWorkflowsReturn {
   workflows: Workflow[];

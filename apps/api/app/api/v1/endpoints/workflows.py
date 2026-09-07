@@ -46,6 +46,7 @@ from app.services.workflow.execution_service import (
 )
 from app.services.workflow.generation_service import (
     WorkflowGenerationService,
+    WorkflowPromptRequest,
     WorkflowStepGenerationError,
 )
 from app.services.workflow.service import (
@@ -773,11 +774,13 @@ async def generate_workflow_prompt_endpoint(
 
     try:
         result = await WorkflowGenerationService.generate_workflow_prompt(
-            title=request.title,
-            description=request.description,
-            trigger_config=request.trigger_config,
-            existing_prompt=request.existing_prompt,
-            integration_ids=request.integration_ids,
+            WorkflowPromptRequest(
+                title=request.title,
+                description=request.description,
+                trigger_config=request.trigger_config,
+                existing_prompt=request.existing_prompt,
+                integration_ids=request.integration_ids,
+            ),
             user_id=user["user_id"],
         )
         log.set(outcome="success")
