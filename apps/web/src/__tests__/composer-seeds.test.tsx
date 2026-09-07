@@ -47,19 +47,6 @@ describe("useComposerSeeds", () => {
     expect(store().pendingPrompt).toBeNull();
   });
 
-  it("leaves an auto-send prompt alone — that is the page's turn to send", () => {
-    store().setPendingPrompt("Hi! I'm a founder. Who are you?", true);
-
-    render(
-      <StrictMode>
-        <Harness />
-      </StrictMode>,
-    );
-
-    expect(store().inputText).toBe("");
-    expect(store().pendingPrompt).toBe("Hi! I'm a founder. Who are you?");
-  });
-
   it("seeds a ?q= deep link once and strips the param from the URL", () => {
     window.history.replaceState({}, "", "/c?q=summarise%20my%20inbox&tab=x");
 

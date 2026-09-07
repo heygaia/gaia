@@ -86,6 +86,9 @@ export async function consumeInboundLinkCode(
       args.profile,
     );
     if (redeemed === null) return null;
+    // The server composed the opener from onboarding; it is the turn to run,
+    // as on Telegram, even when the user edited the prewritten text.
+    return redeemed || parsed.text || null;
   }
 
   return parsed.text || null;
@@ -93,9 +96,16 @@ export async function consumeInboundLinkCode(
 
 /** Sent when the code is stale, already used, or the handle belongs elsewhere. */
 export function buildLinkCodeFailureMessage(
-  reason: "expired" | "conflict",
+  reason: "expired" | "conflict" | "plan",
   frontendUrl: string,
 ): string {
+  if (reason === "plan") {
+    return (
+      "**This platform is part of GAIA Pro**\n\n" +
+      "Subscribe and tap the link again.\n" +
+      `${frontendUrl}/pricing`
+    );
+  }
   if (reason === "conflict") {
     return (
       "**This account is already connected to someone else**\n\n" +
@@ -147,9 +157,10 @@ export async function redeemLinkCode(
         return firstMessage;
       } catch (error: unknown) {
         const status = error instanceof GaiaApiError ? error.status : undefined;
-        if (status !== 400 && status !== 409) throw error;
+        if (status !== 400 && status !== 409 && status !== 429) throw error;
 
-        const reason = status === 409 ? "conflict" : "expired";
+        const reason =
+          status === 409 ? "conflict" : status === 429 ? "plan" : "expired";
         wideLog.set({ link_result: "rejected", reason });
         wideLog.audit("platform_link_code_rejected", {
           user_hash: hashLogIdentifier(platformUserId),

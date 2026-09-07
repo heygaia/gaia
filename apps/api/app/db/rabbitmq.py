@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 
 import aio_pika
 from aio_pika import Message
@@ -79,6 +80,12 @@ class RabbitMQPublisher:
             if await self.is_connected():
                 return
             log.info(f"{LogTag.STARTUP} RabbitMQ connection not active, reconnecting...")
+            # A connection can be open with no channel (connect() timed out
+            # between the two); forgetting it would leak the socket and its
+            # heartbeat task, once per timeout.
+            if self.connection is not None and not self.connection.is_closed:
+                with contextlib.suppress(Exception):
+                    await self.connection.close()
             # Reset connection state
             self.connection = None
             self.channel = None

@@ -28,11 +28,13 @@ class DodoWebhookEventType(str, Enum):
     SUBSCRIPTION_FAILED = "subscription.failed"
     SUBSCRIPTION_ON_HOLD = "subscription.on_hold"
     SUBSCRIPTION_PLAN_CHANGED = "subscription.plan_changed"
-    SUBSCRIPTION_UPDATED = "subscription.updated"
 
     # Events Dodo sends that GAIA acknowledges and ignores. They must parse:
     # a legitimate event outside this enum failed validation and was recorded
     # as a processing error instead of landing in the no-handler "ignored" path.
+    # subscription.updated carries field edits Dodo also reports through the
+    # status events above; GAIA acts on those and ignores this one.
+    SUBSCRIPTION_UPDATED = "subscription.updated"
     REFUND_SUCCEEDED = "refund.succeeded"
     REFUND_FAILED = "refund.failed"
     DISPUTE_OPENED = "dispute.opened"

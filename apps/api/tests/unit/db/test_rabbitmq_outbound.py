@@ -316,6 +316,24 @@ class TestTopologyArgumentsMatchTheConsumer:
 
         assert pub._outbound_topology_declared is False
 
+    async def test_a_half_open_connection_is_closed_before_reconnecting(self, monkeypatch) -> None:
+        """A connect() that timed out between the connection and the channel
+        leaves an open socket with no channel; the reconnect must close it,
+        not just forget it."""
+        pub = RabbitMQPublisher("amqp://test")
+        stale = MagicMock(is_closed=False)
+        stale.close = AsyncMock()
+        pub.connection = stale
+        pub.channel = None
+        fresh = MagicMock(is_closed=False)
+        fresh.channel = AsyncMock(return_value=MagicMock(is_closed=False))
+        monkeypatch.setattr(aio_pika, "connect_robust", AsyncMock(return_value=fresh))
+
+        await pub.ensure_connected()
+
+        stale.close.assert_awaited_once()
+        assert pub.connection is fresh
+
     async def test_connect_dials_the_configured_url(self, monkeypatch) -> None:
         pub = RabbitMQPublisher("amqp://broker.example/vhost")
         connection = MagicMock(is_closed=False)

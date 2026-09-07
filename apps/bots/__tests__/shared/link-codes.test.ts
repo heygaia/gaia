@@ -158,6 +158,27 @@ describe("redeemLinkCode", () => {
     expect(target.sent[0]).toContain("already connected to someone else");
   });
 
+  it("points a free user at pricing instead of throwing on a paid platform", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 429", 429);
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBeNull();
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("plan", FRONTEND_URL),
+    ]);
+    expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
+  });
+
   it("lets an unexpected failure propagate rather than faking a link", async () => {
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 500", 500);
@@ -214,6 +235,23 @@ describe("consumeInboundLinkCode", () => {
     expect(redeem).toHaveBeenCalledOnce();
   });
 
+  it("runs the server-composed opener even when the user edited the text", async () => {
+    const redeem = vi.fn(async () => ({
+      linked: true,
+      firstMessage: FIRST_MESSAGE,
+    }));
+
+    const result = await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `hi #${CODE}`,
+        isLinked: async () => false,
+      }),
+    );
+
+    expect(result).toBe(FIRST_MESSAGE);
+  });
+
   it("strips a stray code from a linked sender without redeeming or replying", async () => {
     const redeem = vi.fn();
     const target = fakeTarget();
@@ -248,7 +286,7 @@ describe("consumeInboundLinkCode", () => {
     expect(result).toBeNull();
   });
 
-  it("stops the turn when the message was nothing but a code", async () => {
+  it("runs the server-composed opener when the message was nothing but a code", async () => {
     const redeem = vi.fn(async () => ({
       linked: true,
       firstMessage: FIRST_MESSAGE,
@@ -262,7 +300,7 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBeNull();
+    expect(result).toBe(FIRST_MESSAGE);
     expect(redeem).toHaveBeenCalledOnce();
   });
 });

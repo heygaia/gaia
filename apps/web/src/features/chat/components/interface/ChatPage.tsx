@@ -11,7 +11,6 @@ import { PaywallNotice } from "@/features/chat/components/composer/PaywallNotice
 import { FileDropModal } from "@/features/chat/components/files/FileDropModal";
 import { FounderLetter } from "@/features/chat/components/interface/founder-letter/FounderLetter";
 import { useActiveConversation } from "@/features/chat/components/interface/hooks/useActiveConversation";
-import { useAutoSendPendingPrompt } from "@/features/chat/components/interface/hooks/useAutoSendPendingPrompt";
 import { useChatLayout } from "@/features/chat/components/interface/hooks/useChatLayout";
 import { useVoiceModeControls } from "@/features/chat/components/interface/hooks/useVoiceModeControls";
 import { useWorkflowAutoSend } from "@/features/chat/components/interface/hooks/useWorkflowAutoSend";
@@ -69,8 +68,6 @@ const MainChat = React.memo(function MainChat() {
     },
     multiple: true,
   });
-
-  useAutoSendPendingPrompt();
 
   const { voiceModeActive, onVoiceModeHover, startVoiceMode, endVoiceCall } =
     useVoiceModeControls(convoIdParam);

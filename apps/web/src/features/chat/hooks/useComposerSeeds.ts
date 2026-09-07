@@ -6,7 +6,6 @@ import { useCallback, useEffect, useRef } from "react";
 import {
   useComposerTextActions,
   usePendingPrompt,
-  usePendingPromptAutoSend,
 } from "@/stores/composerStore";
 
 /**
@@ -25,7 +24,6 @@ export const useComposerSeeds = (
 ): void => {
   const router = useRouter();
   const pendingPrompt = usePendingPrompt();
-  const pendingPromptAutoSend = usePendingPromptAutoSend();
   const { appendToInputText, clearPendingPrompt } = useComposerTextActions();
 
   // Append rather than replace, and leave the caret ready, so a seed behaves
@@ -44,14 +42,12 @@ export const useComposerSeeds = (
   const seededPromptRef = useRef<string | null>(null);
 
   useEffect(() => {
-    // An auto-send prompt is the user's turn, not composer text — ChatPage's
-    // useAutoSendPendingPrompt sends it and clears the store itself.
-    if (!pendingPrompt || pendingPromptAutoSend) return;
+    if (!pendingPrompt) return;
     if (seededPromptRef.current === pendingPrompt) return;
     seededPromptRef.current = pendingPrompt;
     seedInput(pendingPrompt);
     clearPendingPrompt();
-  }, [pendingPrompt, pendingPromptAutoSend, seedInput, clearPendingPrompt]);
+  }, [pendingPrompt, seedInput, clearPendingPrompt]);
 
   // Read straight from the URL rather than into React state: the seed is a
   // one-shot mount read, and the ref makes it idempotent if `seedInput`'s

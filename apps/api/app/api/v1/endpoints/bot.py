@@ -415,6 +415,11 @@ async def create_link_token(
     status_code=200,
     summary="Redeem Platform Link Code",
     description="Link a platform account using a one-tap code minted by the web at onboarding.",
+    responses={
+        400: {"description": "Code expired or already used"},
+        409: {"description": "Platform account linked to another GAIA user"},
+        429: {"description": "Platform requires a plan the user does not have"},
+    },
 )
 async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> RedeemLinkCodeResponse:
     """Consume a web-minted code and link the platform account that presented it.
