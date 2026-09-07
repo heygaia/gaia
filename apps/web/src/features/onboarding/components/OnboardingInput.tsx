@@ -22,6 +22,7 @@ import {
   NEEDS_HINT,
   NEEDS_MAX_SELECTION,
   needOptionsFor,
+  type OptionValue,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
   OTHER_NEED_OPTION,
@@ -234,7 +235,7 @@ function OwnWordsInput({
 
 interface OptionChipsProps {
   label: string;
-  options: { value: string; label: string }[];
+  options: readonly { value: OptionValue; label: string }[];
   isSelected: (value: string) => boolean;
   /** Chips that can no longer be picked (the Q2 cap); selected ones stay live. */
   isDisabled?: (value: string) => boolean;

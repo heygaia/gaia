@@ -1,6 +1,6 @@
 import type { NeedOption, ProfessionOption, Question } from "../types";
 
-export const professionOptions: ProfessionOption[] = [
+export const professionOptions = [
   { label: "Founder / CEO", value: "founder" },
   { label: "Executive", value: "executive" },
   { label: "Sales", value: "sales" },
@@ -11,7 +11,9 @@ export const professionOptions: ProfessionOption[] = [
   { label: "Finance", value: "finance" },
   { label: "Student", value: "student" },
   { label: "Other", value: "other" },
-];
+] as const satisfies readonly ProfessionOption[];
+
+export type ProfessionValue = (typeof professionOptions)[number]["value"];
 
 /**
  * Q2 options everyone sees: pains in the user's words, each a different job
@@ -22,21 +24,21 @@ export const professionOptions: ProfessionOption[] = [
  * anything outside that set, so the two lists must stay in lockstep. The
  * first-person phrasing lives in `first_message.py` next to the enum.
  */
-export const needOptions: NeedOption[] = [
+export const needOptions = [
   { value: "inbox", label: "Inbox out of control" },
   { value: "calendar", label: "Walking into meetings cold" },
   { value: "mornings", label: "Mornings start behind" },
   { value: "reminders", label: "Things I keep forgetting" },
   { value: "grunt_work", label: "Grunt work every week" },
   { value: "tools", label: "Too many tools to juggle" },
-];
+] as const satisfies readonly NeedOption[];
 
 /**
  * Two extra pains per Q1 role, shown first and marked as personalised. Keys
  * are `professionOptions` values; mirrors `ROLE_NEEDS` on the API, which
  * rejects a role need sent with a different profession.
  */
-const roleNeedOptions: Record<string, NeedOption[]> = {
+const roleNeedOptions = {
   founder: [
     { value: "founder_team_updates", label: "Team updates I chase" },
     { value: "founder_competitors", label: "Competitors I never track" },
@@ -73,7 +75,7 @@ const roleNeedOptions: Record<string, NeedOption[]> = {
     { value: "student_assignments", label: "Assignments piling up" },
     { value: "student_exams", label: "Exams I'm not ready for" },
   ],
-};
+} as const satisfies Partial<Record<ProfessionValue, readonly NeedOption[]>>;
 
 /** How the role reads inside "Personalised for you, since you're …". */
 export const ROLE_PHRASES: Record<string, string> = {
@@ -88,14 +90,45 @@ export const ROLE_PHRASES: Record<string, string> = {
   student: "a student",
 };
 
-const allNeedOptions: NeedOption[] = [
+/** Q2's catch-all. Not a backend need: it opens a field whose text is sent as
+ * `other_need`, so this value never lands in `selectedNeeds`. */
+export const OTHER_NEED = "something_else";
+
+/**
+ * Every value a Q2 chip can carry. Derived from the option lists, so a need
+ * added there without a style in `OPTION_STYLE` fails to compile instead of
+ * crashing the chip at render.
+ */
+export type NeedValue =
+  | (typeof needOptions)[number]["value"]
+  | (typeof roleNeedOptions)[keyof typeof roleNeedOptions][number]["value"]
+  | typeof OTHER_NEED;
+
+/** Every value an onboarding chip can carry. */
+export type OptionValue = ProfessionValue | NeedValue;
+
+/** A Q2 option whose value is known at compile time. */
+export interface TypedNeedOption extends NeedOption {
+  value: NeedValue;
+}
+
+const allNeedOptions: readonly TypedNeedOption[] = [
   ...needOptions,
   ...Object.values(roleNeedOptions).flat(),
 ];
 
+function isRole(
+  profession: string,
+): profession is keyof typeof roleNeedOptions {
+  return profession in roleNeedOptions;
+}
+
 /** The Q2 grid for a Q1 answer: the role's two pains first, then the shared six. */
-export function needOptionsFor(profession: string | null): NeedOption[] {
-  const role = profession ? roleNeedOptions[profession] : undefined;
+export function needOptionsFor(
+  profession: string | null,
+): readonly TypedNeedOption[] {
+  const role =
+    profession && isRole(profession) ? roleNeedOptions[profession] : undefined;
   return role ? [...role, ...needOptions] : needOptions;
 }
 
@@ -128,10 +161,7 @@ export function isListedProfession(value: string): boolean {
   );
 }
 
-/** Q2's catch-all. Not a backend need: it opens a field whose text is sent as
- * `other_need`, so this value never lands in `selectedNeeds`. */
-export const OTHER_NEED = "something_else";
-export const OTHER_NEED_OPTION: NeedOption = {
+export const OTHER_NEED_OPTION: TypedNeedOption = {
   value: OTHER_NEED,
   label: "Something else",
 };

@@ -43,6 +43,8 @@ import {
 } from "@icons";
 import type { ComponentType, SVGProps } from "react";
 
+import type { OptionValue } from "./index";
+
 export interface OptionTint {
   /** Resting look: translucent pastel fill, tinted text and icon. */
   idle: string;
@@ -98,7 +100,7 @@ export interface OptionStyle {
   tint: OptionTint;
 }
 
-export const OPTION_STYLE: Record<string, OptionStyle> = {
+export const OPTION_STYLE: Record<OptionValue, OptionStyle> = {
   // professions
   founder: { icon: Rocket01Icon, tint: TINTS.rose },
   executive: { icon: Briefcase01Icon, tint: TINTS.amber },
