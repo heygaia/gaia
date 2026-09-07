@@ -1,46 +1,22 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import IntegrationConnectionPrompt from "@/features/chat/components/bubbles/bot/IntegrationConnectionPrompt";
 
 /**
- * A token-required (bearer) MCP server must collect its token in the secure
- * modal, never by connecting directly (which would fail) and never through chat.
- * The chat connect card used to only wire the OAuth/direct path, so clicking
- * Connect on a bearer server errored instead of prompting for the token.
- * Remove the bearer branch in handleConnect and the first test goes red.
+ * A token-required (bearer) MCP server must collect its token INLINE in the chat
+ * card and connect from there — never a modal, never a chat message, never the
+ * LLM. Submit calls connectIntegration(id, token); on success the card shows
+ * "Connected" and the token is cleared. Remove the bearer input / inline connect
+ * and these go red.
  */
 
-const connectIntegration = vi.fn(async () => ({ status: "connected" }));
-let integrations: Array<Record<string, unknown>> = [];
+const connectIntegration = vi.fn();
+let integrations: Record<string, unknown>[] = [];
 
 vi.mock("@/features/integrations/hooks/useIntegrations", () => ({
   useIntegrations: () => ({ integrations, connectIntegration }),
-}));
-
-// Stub the modal so the test asserts the branch (modal opened) without HeroUI's
-// portal internals; it exposes a submit button that fires onSubmit(id, token).
-vi.mock("@/features/integrations/components/BearerTokenModal", () => ({
-  BearerTokenModal: ({
-    isOpen,
-    integrationId,
-    onSubmit,
-  }: {
-    isOpen: boolean;
-    integrationId: string;
-    onSubmit: (id: string, token: string) => Promise<void>;
-  }) =>
-    isOpen ? (
-      <div data-testid="bearer-modal">
-        <button
-          type="button"
-          onClick={() => onSubmit(integrationId, "sk-test-123")}
-        >
-          submit-token
-        </button>
-      </div>
-    ) : null,
 }));
 
 vi.mock("@/components/shared/CollapsibleListWrapper", () => ({
@@ -58,7 +34,7 @@ function bearerIntegration() {
     id: "custom-bearer",
     name: "TokenMCP",
     description: "Needs a token",
-    status: "created",
+    status: "not_connected",
     source: "custom",
     available: true,
     authType: "bearer",
@@ -67,79 +43,85 @@ function bearerIntegration() {
 }
 
 function oauthIntegration() {
-  return {
-    id: "custom-oauth",
-    name: "OAuthMCP",
-    description: "Needs oauth",
-    status: "created",
-    source: "custom",
-    available: true,
-    authType: "oauth",
-    requiresAuth: true,
-  };
+  return { ...bearerIntegration(), id: "custom-oauth", authType: "oauth" };
 }
 
-describe("IntegrationConnectionPrompt — token-required servers", () => {
+function renderCard(id: string) {
+  return render(
+    <IntegrationConnectionPrompt
+      integration_connection_required={{
+        integration_id: id,
+        message: "Connect it",
+        expired: false,
+      }}
+    />,
+  );
+}
+
+describe("IntegrationConnectionPrompt — inline token entry", () => {
   beforeEach(() => {
-    connectIntegration.mockClear();
+    connectIntegration.mockReset();
     integrations = [];
   });
 
-  it("opens the secure token modal instead of connecting directly", async () => {
+  it("collects the token in-card and connects with (id, token)", async () => {
+    connectIntegration.mockResolvedValue({
+      status: "connected",
+      toolsCount: 2,
+    });
     integrations = [bearerIntegration()];
-    render(
-      <IntegrationConnectionPrompt
-        integration_connection_required={{
-          integration_id: "custom-bearer",
-          message: "Connect it",
-          expired: false,
-        }}
-      />,
+    renderCard("custom-bearer");
+
+    const input = screen.getByPlaceholderText("Paste API token");
+    fireEvent.change(input, { target: { value: "sk-test-123" } });
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
+
+    await waitFor(() =>
+      expect(connectIntegration).toHaveBeenCalledWith(
+        "custom-bearer",
+        "sk-test-123",
+      ),
     );
-
-    fireEvent.click(screen.getByRole("button"));
-
-    expect(await screen.findByTestId("bearer-modal")).toBeDefined();
-    // Never a direct connect for a bearer server — that path can't supply a token.
-    expect(connectIntegration).not.toHaveBeenCalled();
+    // success surfaces inline, no navigation/modal
+    await screen.findByText("Connected");
+    expect(screen.getByText("2 tools available")).toBeDefined();
   });
 
-  it("submits the entered token through connectIntegration(id, token)", async () => {
+  it("shows the error inline and lets the user retry", async () => {
+    connectIntegration.mockRejectedValueOnce(new Error("bad token"));
     integrations = [bearerIntegration()];
-    render(
-      <IntegrationConnectionPrompt
-        integration_connection_required={{
-          integration_id: "custom-bearer",
-          message: "Connect it",
-          expired: false,
-        }}
-      />,
-    );
+    renderCard("custom-bearer");
 
-    fireEvent.click(screen.getByRole("button"));
-    fireEvent.click(await screen.findByText("submit-token"));
+    fireEvent.change(screen.getByPlaceholderText("Paste API token"), {
+      target: { value: "wrong" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
 
-    expect(connectIntegration).toHaveBeenCalledWith(
-      "custom-bearer",
-      "sk-test-123",
-    );
+    expect(await screen.findByText("bad token")).toBeDefined();
+    expect(screen.getByRole("button", { name: /retry/i })).toBeDefined();
   });
 
-  it("uses the direct/OAuth path (no token modal) for a non-bearer server", async () => {
+  it("uses the direct/OAuth path (no token input) for a non-bearer server", async () => {
+    connectIntegration.mockResolvedValue({ status: "redirecting" });
     integrations = [oauthIntegration()];
-    render(
-      <IntegrationConnectionPrompt
-        integration_connection_required={{
-          integration_id: "custom-oauth",
-          message: "Connect it",
-          expired: false,
-        }}
-      />,
+    renderCard("custom-oauth");
+
+    expect(screen.queryByPlaceholderText("Paste API token")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /connect/i }));
+
+    await waitFor(() =>
+      expect(connectIntegration).toHaveBeenCalledWith(
+        "custom-oauth",
+        undefined,
+      ),
     );
+  });
 
-    fireEvent.click(screen.getByRole("button"));
-
-    expect(connectIntegration).toHaveBeenCalledWith("custom-oauth");
-    expect(screen.queryByTestId("bearer-modal")).toBeNull();
+  it("shows a loading header (from the streamed name) until the catalog resolves", () => {
+    integrations = [];
+    renderCard("custom-bearer");
+    // no catalog entry yet; the streamed integration_name is not set here, so it
+    // falls back — the point is it renders instead of returning nothing.
+    expect(screen.getByText("Integration")).toBeDefined();
   });
 });

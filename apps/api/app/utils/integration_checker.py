@@ -68,6 +68,7 @@ async def request_integration_connection(
             {
                 "integration_connection_required": {
                     "integration_id": integration_id,
+                    "integration_name": integration_name,
                     "expired": expired,
                     "message": card_message,
                 }

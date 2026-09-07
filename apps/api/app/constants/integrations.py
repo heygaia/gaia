@@ -25,6 +25,12 @@ MAX_MY_INTEGRATIONS_RESULTS = 100
 INTEGRATION_STATUS_CONNECTED: Final = "connected"
 INTEGRATION_STATUS_EXPIRED: Final = "expired"
 
+# WebSocket message type pushed to an open integrations UI (or chat connect card)
+# when a user's integration changes status live. Referenced by both publish sites
+# (the expiry transition and the connected transition) so the wire contract with
+# the web `useIntegrationStatusWebSocket` handler stays in one place.
+INTEGRATION_STATUS_UPDATE_EVENT: Final = "integration_status_update"
+
 # How long a Composio connection-webhook background task may run before it is
 # cancelled, so a stalled pause/expiry cannot hang indefinitely. The exact value
 # is an arbitrary budget — every test patches it — so mutating the literal

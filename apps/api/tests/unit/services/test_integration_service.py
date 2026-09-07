@@ -608,10 +608,12 @@ class TestUpdateUserIntegrationStatus:
     """The service delegates to repo.set_status; the upsert/$set/connected_at
     shape is the repository's concern (covered by its contract suite)."""
 
+    @patch("app.services.integrations.user_integration_status.websocket_manager")
     @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
     @patch("app.services.integrations.user_integration_status.user_integration_repository")
-    async def test_update_status_connected_success(self, mock_repo, mock_sched):
+    async def test_update_status_connected_success(self, mock_repo, mock_sched, mock_ws):
         mock_repo.set_status = AsyncMock(return_value=True)
+        mock_ws.broadcast_to_user = AsyncMock()
 
         result = await update_user_integration_status.__wrapped__(
             USER_ID, INTEGRATION_ID, "connected"
@@ -626,11 +628,38 @@ class TestUpdateUserIntegrationStatus:
             connected_account_id=None,
         )
         mock_sched.assert_called_once_with(USER_ID)
+        # The connected transition pushes a live status update so an open card
+        # flips without a reload (this is what makes the inline chat card live).
+        mock_ws.broadcast_to_user.assert_awaited_once_with(
+            user_id=USER_ID,
+            message={
+                "type": "integration_status_update",
+                "data": {"integration_id": INTEGRATION_ID, "status": "connected"},
+            },
+        )
 
+    @patch("app.services.integrations.user_integration_status.websocket_manager")
     @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
     @patch("app.services.integrations.user_integration_status.user_integration_repository")
-    async def test_update_status_created_does_not_schedule(self, mock_repo, mock_sched):
+    async def test_connected_broadcast_failure_is_non_fatal(self, mock_repo, mock_sched, mock_ws):
+        # A live push is best-effort — the status is already persisted and the
+        # client recovers on its next catalog read, so a broadcast failure
+        # (Redis down) must not fail the connection.
         mock_repo.set_status = AsyncMock(return_value=True)
+        mock_ws.broadcast_to_user = AsyncMock(side_effect=RuntimeError("redis down"))
+
+        result = await update_user_integration_status.__wrapped__(
+            USER_ID, INTEGRATION_ID, "connected"
+        )
+
+        assert result is True
+
+    @patch("app.services.integrations.user_integration_status.websocket_manager")
+    @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
+    @patch("app.services.integrations.user_integration_status.user_integration_repository")
+    async def test_update_status_created_does_not_schedule(self, mock_repo, mock_sched, mock_ws):
+        mock_repo.set_status = AsyncMock(return_value=True)
+        mock_ws.broadcast_to_user = AsyncMock()
 
         result = await update_user_integration_status.__wrapped__(
             USER_ID, INTEGRATION_ID, "created"
@@ -645,13 +674,19 @@ class TestUpdateUserIntegrationStatus:
             connected_account_id=None,
         )
         mock_sched.assert_not_called()
+        # Only the connected transition broadcasts; created must not.
+        mock_ws.broadcast_to_user.assert_not_awaited()
 
+    @patch("app.services.integrations.user_integration_status.websocket_manager")
     @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")
     @patch("app.services.integrations.user_integration_status.user_integration_repository")
-    async def test_the_connected_account_id_is_recorded_whenever_known(self, mock_repo, mock_sched):
+    async def test_the_connected_account_id_is_recorded_whenever_known(
+        self, mock_repo, mock_sched, mock_ws
+    ):
         # Composio addresses an account by its nanoid; without it a dead account
         # can only be found by listing every account the user has.
         mock_repo.set_status = AsyncMock(return_value=True)
+        mock_ws.broadcast_to_user = AsyncMock()
 
         await update_user_integration_status.__wrapped__(
             USER_ID, INTEGRATION_ID, "connected", connected_account_id="ca_abc123"
