@@ -7,6 +7,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useHotkeys } from "react-hotkeys-hook";
 import { HeaderTitle } from "@/components/layout/headers/HeaderTitle";
+import RightSidebarPanel from "@/components/layout/sidebar/RightSidebarPanel";
 import { IntegrationSidebar } from "@/components/layout/sidebar/right-variants/IntegrationSidebar";
 import { integrationsApi } from "@/features/integrations/api/integrationsApi";
 import {
@@ -32,7 +33,6 @@ import ContactSupportModal from "@/features/support/components/ContactSupportMod
 import { useHeader } from "@/hooks/layout/useHeader";
 import { usePlatform } from "@/hooks/ui/usePlatform";
 import { toast } from "@/lib/toast";
-import { useRightSidebar } from "@/stores/rightSidebarStore";
 
 export default function IntegrationsPage() {
   const queryClient = useQueryClient();
@@ -57,13 +57,6 @@ export default function IntegrationsPage() {
   // or a tool call hits a dead account) — flip it to Reconnect without a refresh.
   useIntegrationStatusWebSocket();
 
-  // Right sidebar store
-  const setRightSidebarContent = useRightSidebar((state) => state.setContent);
-  const closeRightSidebar = useRightSidebar((state) => state.close);
-  const openRightSidebar = useRightSidebar((state) => state.open);
-  const setRightSidebarVariant = useRightSidebar((state) => state.setVariant);
-  const isSidebarOpen = useRightSidebar((state) => state.isOpen);
-
   // Search + category filter — page-owned, so they reset when you leave.
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState(ALL_CATEGORIES);
@@ -82,6 +75,7 @@ export default function IntegrationsPage() {
   const [selectedIntegrationId, setSelectedIntegrationId] = useState<
     string | null
   >(null);
+  const clearSelection = useCallback(() => setSelectedIntegrationId(null), []);
   const [isSupportModalOpen, setIsSupportModalOpen] = useState(false);
 
   // Bearer-token connect modal (MCP `status=bearer_required` flow).
@@ -99,21 +93,21 @@ export default function IntegrationsPage() {
     [integrations, selectedIntegrationId],
   );
 
-  // Stable handlers — they only depend on the (memoized) hook actions, so the
-  // sidebar content isn't rebuilt just because they were recreated.
+  // Stable handlers — clearing the selection unmounts the panel, which closes
+  // the sidebar.
   const handleDisconnect = useCallback(
     async (id: string) => {
       await disconnectIntegration(id);
-      closeRightSidebar();
+      setSelectedIntegrationId(null);
     },
-    [disconnectIntegration, closeRightSidebar],
+    [disconnectIntegration],
   );
   const handleDelete = useCallback(
     async (id: string) => {
       await deleteCustomIntegration(id);
-      closeRightSidebar();
+      setSelectedIntegrationId(null);
     },
-    [deleteCustomIntegration, closeRightSidebar],
+    [deleteCustomIntegration],
   );
   const handlePublish = useCallback(
     (id: string) => publishIntegration(id),
@@ -124,13 +118,9 @@ export default function IntegrationsPage() {
     [unpublishIntegration],
   );
 
-  const handleIntegrationClick = useCallback(
-    (integrationId: string) => {
-      setSelectedIntegrationId(integrationId);
-      openRightSidebar("sidebar");
-    },
-    [openRightSidebar],
-  );
+  const handleIntegrationClick = useCallback((integrationId: string) => {
+    setSelectedIntegrationId(integrationId);
+  }, []);
 
   const { markPending } = usePendingDeepLink(
     integrations,
@@ -146,41 +136,7 @@ export default function IntegrationsPage() {
     ? settlingIntegrationId === selectedIntegration.id
     : false;
 
-  // Build the sidebar element once per relevant change. React Query's structural
-  // sharing keeps `selectedIntegration`'s identity stable across no-op refetches
-  // (e.g. the post-connect poll), so this only rebuilds when the selected
-  // integration's data or its settling state actually changes — not on every
-  // poll tick.
-  const sidebarElement = useMemo(() => {
-    if (!selectedIntegration) return null;
-    const isCustomIntegration = selectedIntegration.source === "custom";
-    return (
-      <IntegrationSidebar
-        integration={selectedIntegration}
-        onConnect={connectIntegration}
-        onDisconnect={handleDisconnect}
-        onDelete={isCustomIntegration ? handleDelete : undefined}
-        onPublish={isCustomIntegration ? handlePublish : undefined}
-        onUnpublish={isCustomIntegration ? handleUnpublish : undefined}
-        category={selectedIntegration.name}
-        isSettling={isSelectedSettling}
-      />
-    );
-  }, [
-    selectedIntegration,
-    isSelectedSettling,
-    connectIntegration,
-    handleDisconnect,
-    handleDelete,
-    handlePublish,
-    handleUnpublish,
-  ]);
-
-  // Push the memoized element into the right sidebar while it's open.
-  useEffect(() => {
-    if (!isSidebarOpen || !sidebarElement) return;
-    setRightSidebarContent(sidebarElement);
-  }, [isSidebarOpen, sidebarElement, setRightSidebarContent]);
+  const isCustomIntegration = selectedIntegration?.source === "custom";
 
   // Keyboard shortcut to focus search input
   useHotkeys(
@@ -262,33 +218,26 @@ export default function IntegrationsPage() {
     handleEnterSearch,
   ]);
 
-  // Set sidebar to sidebar mode
-  useEffect(() => {
-    setRightSidebarVariant("sidebar");
-  }, [setRightSidebarVariant]);
-
-  // Sync close action from right sidebar
-  useEffect(() => {
-    return useRightSidebar.subscribe((state, prevState) => {
-      if (prevState.isOpen && !state.isOpen && selectedIntegrationId) {
-        setSelectedIntegrationId(null);
-      }
-    });
-  }, [selectedIntegrationId]);
-
-  // Cleanup right sidebar on unmount
-  useEffect(() => {
-    return () => {
-      closeRightSidebar();
-    };
-  }, [closeRightSidebar]);
-
   const handleRequestIntegration = () => {
     setIsSupportModalOpen(true);
   };
 
   return (
     <div className="flex h-screen w-full flex-col">
+      {selectedIntegration && (
+        <RightSidebarPanel mode="sidebar" onClose={clearSelection}>
+          <IntegrationSidebar
+            integration={selectedIntegration}
+            onConnect={connectIntegration}
+            onDisconnect={handleDisconnect}
+            onDelete={isCustomIntegration ? handleDelete : undefined}
+            onPublish={isCustomIntegration ? handlePublish : undefined}
+            onUnpublish={isCustomIntegration ? handleUnpublish : undefined}
+            category={selectedIntegration.name}
+            isSettling={isSelectedSettling}
+          />
+        </RightSidebarPanel>
+      )}
       <div className="absolute right-4 bottom-4 z-1">
         <Button
           color="primary"
