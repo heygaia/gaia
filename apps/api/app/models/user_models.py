@@ -1,25 +1,50 @@
 from datetime import datetime
-from enum import Enum
-import re
-from typing import Annotated, Any, TypedDict
+from enum import Enum, StrEnum
+from typing import Any, TypedDict
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.db.repositories.base import MongoDocument
 from app.utils.timezone import is_valid_timezone
 
-# Lowercased, bounded slug for request-supplied integration ids.
-IntegrationSlug = Annotated[
-    str,
-    StringConstraints(
-        strip_whitespace=True,
-        to_lower=True,
-        pattern=r"^[a-z0-9][a-z0-9_-]{0,63}$",
-    ),
-]
-
 # Shared field doc for the `message` field on the success/message response models.
 _RESPONSE_MESSAGE_DESC = "Response message"
+
+#: Onboarding Q2 "Something else": one short line, sent verbatim in the first message.
+OTHER_NEED_MAX_LENGTH = 120
+#: Q2 is "pick up to three": every extra pick dilutes the first thread's opener and
+#: the bot's first message down to a feature list. Mirrored in the web constants.
+NEEDS_MAX_SELECTION = 3
+#: Q1 is answered in sentences, not job titles, so this is a "one line" cap,
+#: not a "job title" one. Mirrored by PROFESSION_MAX_LENGTH in the web
+#: onboarding constants — the field's maxLength must match or typing goes dead.
+PROFESSION_MAX_LENGTH = 80
+
+
+def clean_profession(value: str) -> str:
+    """One rule for every surface that stores a job title.
+
+    Q1's "Other" field asks "What do you do?", and people answer in sentences
+    ("I'm a founder, building a startup"), so punctuation and digits are fine.
+    What is not fine is a second line: the text is spoken back inside GAIA's
+    first message. The completion request and the preferences PATCH once had
+    different rules here, and the wizard hung on the stricter one.
+    """
+    cleaned = value.strip()
+    if not cleaned:
+        raise ValueError("Profession cannot be empty")
+    if len(cleaned) > PROFESSION_MAX_LENGTH:
+        raise ValueError(f"Profession must be {PROFESSION_MAX_LENGTH} characters or less")
+    if any(ch.isspace() and ch != " " for ch in cleaned) or not any(ch.isalpha() for ch in cleaned):
+        raise ValueError("Profession must be one line of words")
+    return cleaned
+
+
+def clean_other_need(value: str | None) -> str | None:
+    """Whitespace-only is "nothing typed", not a need."""
+    if value is None:
+        return None
+    return value.strip() or None
 
 
 class OnboardingPhase(str, Enum):
@@ -55,32 +80,119 @@ class UpdateTimezoneResponse(BaseModel):
     timezone: str = Field(..., description="The timezone that was set")
 
 
+class OnboardingNeed(StrEnum):
+    """The pains the user handed GAIA during onboarding (Q2, up to three picks).
+
+    Six are shown to everyone; the rest come in pairs, one pair per Q1 role, and
+    only that role sees its pair (``ROLE_NEEDS``). Each value is a different job
+    GAIA can start on, so the picks carry signal into the first thread, the
+    bot opener and the comms playbooks.
+    """
+
+    # Shared
+    INBOX = "inbox"
+    CALENDAR = "calendar"
+    MORNINGS = "mornings"
+    REMINDERS = "reminders"
+    GRUNT_WORK = "grunt_work"
+    TOOLS = "tools"
+    # Per role
+    FOUNDER_TEAM_UPDATES = "founder_team_updates"
+    FOUNDER_COMPETITORS = "founder_competitors"
+    EXECUTIVE_REPORTS = "executive_reports"
+    EXECUTIVE_DECISIONS = "executive_decisions"
+    SALES_LEADS = "sales_leads"
+    SALES_CALL_RESEARCH = "sales_call_research"
+    PRODUCT_FEEDBACK = "product_feedback"
+    PRODUCT_SPECS = "product_specs"
+    MARKETING_CONTENT = "marketing_content"
+    MARKETING_REPORTS = "marketing_reports"
+    ENGINEERING_PRS = "engineering_prs"
+    ENGINEERING_NOTIFICATIONS = "engineering_notifications"
+    FINANCE_NUMBERS = "finance_numbers"
+    FINANCE_REPORTS = "finance_reports"
+    CREATIVE_REVISIONS = "creative_revisions"
+    CREATIVE_DEADLINES = "creative_deadlines"
+    STUDENT_ASSIGNMENTS = "student_assignments"
+    STUDENT_EXAMS = "student_exams"
+
+
+#: The two role-specific pains each Q1 slug unlocks. Keys are the
+#: ``professionOptions`` values in apps/web onboarding constants; a typed
+#: profession ("other") unlocks none. Mirrored one-for-one by
+#: ``roleNeedOptions`` on the web.
+ROLE_NEEDS: dict[str, tuple[OnboardingNeed, OnboardingNeed]] = {
+    "founder": (OnboardingNeed.FOUNDER_TEAM_UPDATES, OnboardingNeed.FOUNDER_COMPETITORS),
+    "executive": (OnboardingNeed.EXECUTIVE_REPORTS, OnboardingNeed.EXECUTIVE_DECISIONS),
+    "sales": (OnboardingNeed.SALES_LEADS, OnboardingNeed.SALES_CALL_RESEARCH),
+    "product": (OnboardingNeed.PRODUCT_FEEDBACK, OnboardingNeed.PRODUCT_SPECS),
+    "marketing": (OnboardingNeed.MARKETING_CONTENT, OnboardingNeed.MARKETING_REPORTS),
+    "engineering": (OnboardingNeed.ENGINEERING_PRS, OnboardingNeed.ENGINEERING_NOTIFICATIONS),
+    "finance": (OnboardingNeed.FINANCE_NUMBERS, OnboardingNeed.FINANCE_REPORTS),
+    "creative": (OnboardingNeed.CREATIVE_REVISIONS, OnboardingNeed.CREATIVE_DEADLINES),
+    "student": (OnboardingNeed.STUDENT_ASSIGNMENTS, OnboardingNeed.STUDENT_EXAMS),
+}
+
+_NEED_ROLE: dict[OnboardingNeed, str] = {
+    need: role for role, pair in ROLE_NEEDS.items() for need in pair
+}
+
+
+def role_of_need(need: OnboardingNeed) -> str | None:
+    """The Q1 role a need belongs to, or ``None`` for the six everyone sees."""
+    return _NEED_ROLE.get(need)
+
+
 class OnboardingPreferences(BaseModel):
     profession: str | None = Field(
         None,
         description="User's profession or main area of focus",
     )
-    response_style: str | None = Field(
+    needs: list[OnboardingNeed] | None = Field(
         None,
+        max_length=NEEDS_MAX_SELECTION,
+        description="The jobs the user handed GAIA (onboarding Q2, up to three)",
+    )
+
+    @field_validator("needs", mode="before")
+    @classmethod
+    def keep_the_needs_that_still_exist(cls, v: object) -> object:
+        """A stored document must always load: users who onboarded before the
+        pain-based Q2 hold values the enum no longer has and up to seven picks.
+        Unknown values are dropped and the list is cut to the cap, first picks
+        first. The strict check lives on ``OnboardingRequest``."""
+        if not isinstance(v, list):
+            return v
+        known = {need.value for need in OnboardingNeed}
+        kept = [need for need in dict.fromkeys(v) if need in known]
+        return kept[:NEEDS_MAX_SELECTION]
+
+    response_style: str | None = Field(
+        default=None,
         description="Preferred communication style: brief, detailed, casual, professional",
     )
+    other_need: str | None = Field(
+        None,
+        max_length=OTHER_NEED_MAX_LENGTH,
+        description="What the user typed under 'Something else' in onboarding Q2, verbatim",
+    )
     custom_instructions: str | None = Field(
-        None, max_length=500, description="Custom instructions for the AI assistant"
+        default=None, max_length=500, description="Custom instructions for the AI assistant"
     )
     # Removed timezone field - now only stored at user.timezone root level
+
+    @field_validator("other_need")
+    @classmethod
+    def validate_other_need(cls, v: str | None) -> str | None:
+        return clean_other_need(v)
 
     @field_validator("profession")
     @classmethod
     def validate_profession(cls, v: str | None) -> str | None:
-        if v is not None and v != "":
-            v = v.strip()
-            if not v:
-                raise ValueError("Profession cannot be empty")
-            if len(v) > 50:
-                raise ValueError("Profession must be 50 characters or less")
-            return v
-        # Return None for empty strings to normalize the data
-        return None if v == "" else v
+        # Empty string normalises to None: "unset", not "set to nothing".
+        if v is None or v == "":
+            return None
+        return clean_profession(v)
 
     @field_validator("response_style")
     @classmethod
@@ -107,71 +219,67 @@ class OnboardingPreferences(BaseModel):
         return None if v == "" else v
 
 
-class ClarifyAnswer(BaseModel):
-    """One answered no-Gmail clarify question, persisted on onboarding.clarify_answers."""
-
-    id: str = Field(..., description="Question id — one of scope, blocker, constraint")
-    kind: str = Field(..., description="scope / blocker / constraint")
-    question: str = Field(..., description="Original question text")
-    value: str | None = Field(
-        None,
-        max_length=500,
-        description="User's answer; None means the question was skipped",
-    )
-
-
 class OnboardingRequest(BaseModel):
-    name: str = Field(..., min_length=1, max_length=100, description="User's preferred name")
-    profession: str = Field(..., min_length=1, max_length=50, description="User's profession")
+    """The onboarding submission — Q1 (profession) and Q2 (needs).
+
+    The name is derived from the email server-side, so it is not submitted;
+    nothing else is generated at onboarding, so nothing else is collected.
+    """
+
+    profession: str = Field(
+        ..., min_length=1, max_length=PROFESSION_MAX_LENGTH, description="User's profession"
+    )
+    needs: list[OnboardingNeed] = Field(
+        default_factory=list,
+        max_length=NEEDS_MAX_SELECTION,
+        description="The jobs the user handed GAIA (onboarding Q2, up to three)",
+    )
+    other_need: str | None = Field(
+        None,
+        max_length=OTHER_NEED_MAX_LENGTH,
+        description="What the user typed under 'Something else' in Q2, verbatim",
+    )
     timezone: str | None = Field(
         None, description="User's detected timezone (e.g., 'America/New_York', 'UTC')"
     )
-    focus: str | None = Field(
-        None, max_length=500, description="User's current primary focus or goal"
-    )
-    clarify_answers: list[ClarifyAnswer] | None = Field(
-        None,
-        description="No-Gmail follow-up answers (scope/blocker/constraint)",
-    )
-    selected_integrations: list[IntegrationSlug] | None = Field(
-        None,
-        max_length=25,
-        description="Integration slugs the user selected during onboarding.",
-    )
-    defer_workflows: bool = Field(
-        default=False,
-        description=(
-            "Gmail-path split: run inbox intelligence immediately and defer "
-            "workflow creation until the user submits selected integrations."
-        ),
-    )
 
-    @field_validator("selected_integrations")
+    @field_validator("needs", mode="before")
     @classmethod
-    def dedupe_integrations(cls, v: list[str] | None) -> list[str] | None:
-        return _dedupe_slugs(v)
-
-    @field_validator("name")
-    @classmethod
-    def validate_name(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Name cannot be empty")
-        if not re.match(r"^[a-zA-Z\s\-\'\.]+$", v):
-            raise ValueError(
-                "Name can only contain letters, spaces, hyphens, apostrophes, and periods"
-            )
+    def dedupe_needs(cls, v: object) -> object:
+        """First-occurrence order, no duplicates — the UI is a toggle grid, so
+        a repeated value is a client bug, not a meaningful selection. Runs
+        before the pick cap so a double tap counts as one pick, not three."""
+        if isinstance(v, list):
+            return list(dict.fromkeys(v))
         return v
 
     @field_validator("profession")
     @classmethod
     def validate_profession(cls, v: str) -> str:
-        v = v.strip()
-        if not v:
-            raise ValueError("Profession cannot be empty")
-        if not re.match(r"^[a-zA-Z\s\-\.]+$", v):
-            raise ValueError("Profession can only contain letters, spaces, hyphens, and periods")
-        return v
+        return clean_profession(v)
+
+    @field_validator("other_need")
+    @classmethod
+    def validate_other_need(cls, v: str | None) -> str | None:
+        return clean_other_need(v)
+
+    @model_validator(mode="after")
+    def require_an_answer_to_q2(self) -> "OnboardingRequest":
+        # Q2 is answered by a pick or by typed words; an empty Q2 leaves the
+        # first message with nothing to ask about.
+        if not self.needs and not self.other_need:
+            raise ValueError("Pick at least one need or say it in your own words")
+        return self
+
+    @model_validator(mode="after")
+    def role_needs_match_the_profession(self) -> "OnboardingRequest":
+        # A role pair is only ever shown to its role, so a mismatch is a client
+        # bug or a replayed request, and the playbooks would coach the wrong job.
+        for need in self.needs:
+            role = role_of_need(need)
+            if role is not None and role != self.profession.lower():
+                raise ValueError(f"{need.value} is only offered to {role}")
+        return self
 
     @field_validator("timezone")
     @classmethod
@@ -193,34 +301,6 @@ class OnboardingResponse(BaseModel):
     user: dict[str, Any] | None = Field(None, description="Updated user data")
 
 
-class OnboardingIntegrationsRequest(BaseModel):
-    selected_integrations: list[IntegrationSlug] = Field(
-        default_factory=list,
-        max_length=25,
-        description="Integration slugs the user selected during onboarding.",
-    )
-
-    @field_validator("selected_integrations")
-    @classmethod
-    def dedupe_integrations(cls, v: list[str]) -> list[str]:
-        return _dedupe_slugs(v) or []
-
-
-class OnboardingIntegrationsStatus(str, Enum):
-    """Outcome of submitting onboarding integration selections."""
-
-    QUEUED = "queued"  # Selections saved; workflows-phase job enqueued.
-    ALREADY_COMPLETE = "already_complete"  # Onboarding already finished (replay).
-    ALREADY_RUNNING = "already_running"  # Workflows job already in flight (replay).
-
-
-class OnboardingIntegrationsResponse(BaseModel):
-    success: bool = Field(..., description="Whether the submission was accepted")
-    status: OnboardingIntegrationsStatus = Field(
-        ..., description="Outcome of persisting the selected integrations"
-    )
-
-
 class OnboardingPhaseUpdateRequest(BaseModel):
     phase: OnboardingPhase = Field(..., description="The onboarding phase to transition to")
 
@@ -231,22 +311,6 @@ class OnboardingPhaseUpdateRequest(BaseModel):
         # Phase validation is handled by the enum type
         # Additional business logic validation should be in the service layer
         return v
-
-
-def _dedupe_slugs(v: list[str] | None) -> list[str] | None:
-    # Order-preserving dedupe: a user can select the same integration twice
-    # (e.g. via a chip and a mention). We keep the first occurrence so the
-    # selection order — which downstream workflow generation treats as priority
-    # — is stable, rather than using set() which would scramble it.
-    if not v:
-        return v
-    seen: set[str] = set()
-    out: list[str] = []
-    for slug in v:
-        if slug not in seen:
-            seen.add(slug)
-            out.append(slug)
-    return out
 
 
 class AuthenticatedUser(TypedDict, total=False):
@@ -290,6 +354,7 @@ class AuthenticatedUser(TypedDict, total=False):
     provider_metadata: dict[str, Any] | None
     hil_preferences: dict[str, Any] | None
     notification_channel_prefs: dict[str, Any] | None
+    chat_channel_priority: list[str] | None
     platform_links: dict[str, Any] | None
     platform_links_connected_at: dict[str, Any] | None
     starred_voice_ids: list[str] | None
@@ -338,9 +403,8 @@ class UserDocument(MongoDocument):
     fields are all Optional so a legacy/partial row never fails an auth read.
 
     The write side is now a closed set — every writer routes through
-    ``UserRepository`` and every field it can set is declared (the arbitrary
-    ``set_active_job`` field is an ``onboarding.*`` path), so no *new* undeclared
-    field can appear. Tightening to ``ignore`` is still blocked on the read side:
+    ``UserRepository`` and every field it can set is declared, so no *new*
+    undeclared field can appear. Tightening to ``ignore`` is still blocked on the read side:
     it would drop whatever historical fields production rows carry, and that
     inventory cannot be established from a dev sample. Flip it only after scanning
     the production collection for undeclared top-level fields.
@@ -363,6 +427,9 @@ class UserDocument(MongoDocument):
     notification_channel_prefs: dict[str, Any] | None = None
     platform_links: dict[str, Any] | None = None
     platform_links_connected_at: dict[str, Any] | None = None
+    # Order in which a proactive message picks its ONE chat platform; unset
+    # means DEFAULT_CHAT_CHANNEL_PRIORITY.
+    chat_channel_priority: list[str] | None = None
     starred_voice_ids: list[str] | None = None
     selected_voice_id: str | None = None
     # Profile / billing display name used by the payments emails.
@@ -404,7 +471,12 @@ class OnboardingStatusResponse(BaseModel):
     # a user past onboarding. A loose string is the safer honest type here.
     phase: str | None
     preferences: OnboardingPreferences
+    # The pre-relocation holo-card conversation. Still served because users who
+    # ran that flow carry it; nothing writes it any more.
     first_message_conversation_id: str | None
+    # The "Getting started" conversation seeded at completion — what the web
+    # redirects into once the wizard closes.
+    getting_started_conversation_id: str | None = None
 
 
 class AuthenticatedUserResponse(BaseModel):
@@ -480,6 +552,19 @@ class HoloCardOnboardingFields(BaseModel):
     member_since: str | None = None
     overlay_color: str = "rgba(0,0,0,0)"
     overlay_opacity: int = 40
+
+
+class PersonalizationBundle(BaseModel):
+    """The holo-card fields the Gmail pipeline generates and persists in one write."""
+
+    house: str
+    personality_phrase: str
+    user_bio: str
+    bio_status: BioStatus
+    account_number: int
+    member_since: str
+    overlay_color: str
+    overlay_opacity: int
 
 
 class UpdateHoloCardColorsResponse(BaseModel):

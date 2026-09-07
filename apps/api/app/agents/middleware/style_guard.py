@@ -36,10 +36,16 @@ from collections.abc import Awaitable, Callable
 
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.types import ModelRequest, ModelResponse
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langgraph.config import get_stream_writer
 
-from app.agents.evals.ai_isms import AiIsmScore, score_reply, violation_snippets
+from app.agents.context.slots import BACKGROUND_EXECUTOR_NAME
+from app.agents.evals.ai_isms import (
+    AiIsmScore,
+    phantom_claim_snippets,
+    score_reply,
+    violation_snippets,
+)
 from app.agents.llm.lane import ModelLane
 from app.constants.agents import AgentTag, wrap_agent_payload
 from app.constants.llm import LANE_FIELD_ID, UNKNOWN_MODEL_NAME
@@ -48,6 +54,7 @@ from app.constants.style_guard import (
     STYLE_GUARD_CORRECTION_INSTRUCTION,
     STYLE_GUARD_MAX_SNIPPETS_PER_DETECTOR,
     STYLE_GUARD_MAX_VIOLATIONS,
+    STYLE_GUARD_PHANTOM_RULES,
     STYLE_GUARD_RULES,
 )
 from app.models.agent_models import AgentConfigurable, agent_configurable, current_run_config
@@ -70,12 +77,14 @@ from shared.py.wide_events import log
 ModelCallHandler = Callable[[ModelRequest], Awaitable[ModelResponse]]
 
 
-def build_correction_note(text: str) -> str:
+def build_correction_note(text: str, phantom: dict[str, list[str]] | None = None) -> str:
     """The rewrite instruction for a draft, naming every tell it actually used."""
+    rules = {**STYLE_GUARD_RULES, **STYLE_GUARD_PHANTOM_RULES}
+    found = {**violation_snippets(text), **(phantom or {})}
     lines = [
-        f"- {STYLE_GUARD_RULES[detector]} ×{len(snippets)}: "
+        f"- {rules[detector]} ×{len(snippets)}: "
         + "; ".join(f'"{snippet}"' for snippet in snippets[:STYLE_GUARD_MAX_SNIPPETS_PER_DETECTOR])
-        for detector, snippets in violation_snippets(text).items()
+        for detector, snippets in found.items()
     ]
     body = "\n".join(
         ["Your draft violated the voice rules:", *lines, STYLE_GUARD_CORRECTION_INSTRUCTION]
@@ -83,8 +92,29 @@ def build_correction_note(text: str) -> str:
     return wrap_agent_payload(AgentTag.STYLE_CORRECTION, body)
 
 
-def _fired_detectors(score: AiIsmScore) -> list[str]:
-    return sorted(detector for detector in STYLE_GUARD_RULES if getattr(score, detector))
+def _fired_detectors(score: AiIsmScore, phantom: dict[str, list[str]] | None = None) -> list[str]:
+    fired = [detector for detector in STYLE_GUARD_RULES if getattr(score, detector)]
+    return sorted(fired + list(phantom or {}))
+
+
+def _answers_the_user_directly(request: ModelRequest) -> bool:
+    """True when nothing has happened this turn but the user speaking: the one
+    case where "doing it now" and "the card above" are false.
+
+    Walks back past the clock marker (a bare HumanMessage every request ends
+    with) and any system notice to the last message that carries the turn's
+    state. A tool call or its result means work was dispatched, so "on it" is
+    true; an executor result arrives as a HumanMessage (see ``comms_narrator``)
+    and re-voices finished work, so "it's set" there is true too.
+    """
+    for message in reversed(request.messages):
+        if isinstance(message, ToolMessage):
+            return False
+        if isinstance(message, AIMessage):
+            return not message.tool_calls
+        if isinstance(message, HumanMessage) and message.name == BACKGROUND_EXECUTOR_NAME:
+            return False
+    return any(isinstance(message, HumanMessage) for message in request.messages)
 
 
 class StyleGuardMiddleware(AgentMiddleware):
@@ -116,7 +146,8 @@ class StyleGuardMiddleware(AgentMiddleware):
             return response
 
         before = score_reply(text)
-        if before.total_violations <= STYLE_GUARD_MAX_VIOLATIONS:
+        phantom = phantom_claim_snippets(text) if _answers_the_user_directly(request) else {}
+        if before.total_violations + sum(map(len, phantom.values())) <= STYLE_GUARD_MAX_VIOLATIONS:
             log.set_ns(
                 "style_guard",
                 violations_before=before.total_violations,
@@ -133,7 +164,7 @@ class StyleGuardMiddleware(AgentMiddleware):
                 messages=[
                     *request.messages,
                     draft,
-                    HumanMessage(content=build_correction_note(text)),
+                    HumanMessage(content=build_correction_note(text, phantom)),
                 ]
             )
         )
@@ -174,7 +205,7 @@ class StyleGuardMiddleware(AgentMiddleware):
             violations_after=after.total_violations,
             regenerated=True,
             regressed=after.total_violations > before.total_violations,
-            detectors=_fired_detectors(before),
+            detectors=_fired_detectors(before, phantom),
             retracted_cost_usd=retracted_cost,
         )
         user_id = configurable.get("user_id")

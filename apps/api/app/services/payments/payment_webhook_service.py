@@ -3,7 +3,6 @@ Clean payment webhook service for Dodo Payments integration.
 Handles webhook events and updates database state accordingly.
 """
 
-from datetime import UTC, datetime
 from typing import Any
 
 from standardwebhooks.webhooks import Webhook
@@ -12,8 +11,7 @@ from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from app.db.repositories.processed_webhooks import processed_webhook_repository
 from app.db.repositories.subscriptions import subscription_repository
-from app.db.repositories.users import user_repository
-from app.models.payment_models import SubscriptionDocument, SubscriptionUpdate
+from app.models.payment_models import ProcessedWebhookUpdate, SubscriptionUpdate
 from app.models.webhook_models import (
     DodoWebhookEvent,
     DodoWebhookEventType,
@@ -22,12 +20,28 @@ from app.models.webhook_models import (
 from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import (
     AnalyticsEvents,
+    SubscriptionPlan,
     track_payment_event,
     track_subscription_event,
 )
-from app.services.email import send_pro_subscription_email
 from app.services.payments.payment_service import payment_service
+from app.services.payments.subscription_activation import (
+    activate_subscription,
+    reactivate_workflows_safely,
+)
+from app.services.workflow.subscription_pause import (
+    deactivate_workflows_for_lapsed_subscription,
+)
 from shared.py.wide_events import log
+
+
+def _outcome_of(result: DodoWebhookProcessingResult) -> ProcessedWebhookUpdate:
+    return ProcessedWebhookUpdate(
+        status=result.status,
+        message=result.message,
+        payment_id=result.payment_id,
+        subscription_id=result.subscription_id,
+    )
 
 
 class PaymentWebhookService:
@@ -107,35 +121,16 @@ class PaymentWebhookService:
             )
             return False
 
-    async def _is_webhook_processed(self, webhook_id: str) -> bool:
-        """Check if webhook has already been processed."""
-        return await processed_webhook_repository.is_processed(webhook_id)
-
-    async def _mark_webhook_as_processed(
-        self, webhook_id: str, event_type: str, result: DodoWebhookProcessingResult
-    ) -> None:
-        """Store webhook ID as processed in database."""
-        try:
-            await processed_webhook_repository.mark_processed(
-                webhook_id,
-                event_type=event_type,
-                status=result.status,
-                message=result.message,
-                payment_id=result.payment_id,
-                subscription_id=result.subscription_id,
-            )
-        except Exception as e:
-            log.error(
-                f"{LogTag.PAYMENT} Failed to store processed webhook ID",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
     async def process_webhook(
         self, webhook_data: dict[str, Any], webhook_id: str
     ) -> DodoWebhookProcessingResult:
         """
-        Process Dodo payment webhook with idempotency check.
+        Process a Dodo payment webhook exactly once.
+
+        The delivery is claimed (inserted under the unique ``webhook_id``)
+        before its handler runs, so a replay or a racing duplicate is turned
+        away at the claim, never after the side effects. A handler failure
+        releases the claim so Dodo's retry is a clean run.
 
         Args:
             webhook_data: The webhook payload
@@ -144,8 +139,15 @@ class PaymentWebhookService:
         Returns:
             Processing result
         """
+        event_type_raw = str(webhook_data.get("type", "unknown"))
+        if not await processed_webhook_repository.claim(webhook_id, event_type=event_type_raw):
+            log.info(f"{LogTag.PAYMENT} Webhook already processed, skipping", webhook_id=webhook_id)
+            return DodoWebhookProcessingResult(
+                event_type=event_type_raw,
+                status="ignored",
+                message="Webhook already processed",
+            )
         try:
-            event_type_raw = webhook_data.get("type", "unknown")
             # Extract financial fields from the nested payload (Dodo wraps data under "data")
             payload_data: dict[str, Any] = webhook_data.get("data", webhook_data)
             customer_field = payload_data.get("customer")
@@ -167,17 +169,6 @@ class PaymentWebhookService:
                 }
             )
 
-            # Check if webhook has already been processed
-            if await self._is_webhook_processed(webhook_id):
-                log.info(
-                    f"{LogTag.PAYMENT} Webhook already processed, skipping", webhook_id=webhook_id
-                )
-                return DodoWebhookProcessingResult(
-                    event_type=webhook_data.get("type", "unknown"),
-                    status="ignored",
-                    message="Webhook already processed",
-                )
-
             event = DodoWebhookEvent(**webhook_data)
 
             handler = self.handlers.get(event.type)
@@ -187,8 +178,8 @@ class PaymentWebhookService:
                     status="ignored",
                     message=f"No handler for {event.type}",
                 )
-                # Store even ignored webhooks to prevent reprocessing
-                await self._mark_webhook_as_processed(webhook_id, event.type.value, result)
+                # The claim already blocks a replay; the outcome is for the record.
+                await processed_webhook_repository.record_outcome(webhook_id, _outcome_of(result))
                 return result
 
             result = await handler(event)
@@ -206,8 +197,7 @@ class PaymentWebhookService:
                 if isinstance(webhook_user_id, str) and webhook_user_id:
                     schedule_account_sync(webhook_user_id)
 
-            # Store webhook as processed after successful handler execution
-            await self._mark_webhook_as_processed(webhook_id, event.type.value, result)
+            await processed_webhook_repository.record_outcome(webhook_id, _outcome_of(result))
             return result
 
         except Exception as e:
@@ -216,8 +206,9 @@ class PaymentWebhookService:
                 error=str(e),
                 error_type=type(e).__name__,
             )
+            await processed_webhook_repository.release(webhook_id)
             return DodoWebhookProcessingResult(
-                event_type=webhook_data.get("type", "unknown"),
+                event_type=event_type_raw,
                 status="failed",
                 message=f"Processing error: {e!s}",
             )
@@ -325,84 +316,21 @@ class PaymentWebhookService:
         if not sub_data:
             raise ValueError("Invalid subscription data")
 
-        # Check if subscription already exists
-        existing = await subscription_repository.get_by_dodo_id(sub_data.subscription_id)
-
-        if existing:
-            log.info(
-                f"{LogTag.PAYMENT} Subscription already exists",
-                subscription_id=sub_data.subscription_id,
-            )
+        activation = await activate_subscription(sub_data)
+        if activation.user_id is None:
             return DodoWebhookProcessingResult(
                 event_type=event.type.value,
-                status="processed",
-                message="Subscription already active",
+                status="failed",
+                message="User not found",
                 subscription_id=sub_data.subscription_id,
             )
 
-        # Find user by email or metadata
-        user_id = sub_data.metadata.get("user_id")
-        user_email = sub_data.customer.email
-        if not user_id:
-            user = await user_repository.get_by_email(user_email)
-            if not user:
-                log.error(
-                    f"{LogTag.PAYMENT} User not found for subscription",
-                    subscription_id=sub_data.subscription_id,
-                )
-                return DodoWebhookProcessingResult(
-                    event_type=event.type.value,
-                    status="failed",
-                    message="User not found",
-                    subscription_id=sub_data.subscription_id,
-                )
-            user_id = str(user.id)
-
-        # Create subscription record
-        subscription_doc = {
-            "dodo_subscription_id": sub_data.subscription_id,
-            "user_id": user_id,
-            "product_id": sub_data.product_id,
-            "status": "active",
-            "quantity": sub_data.quantity,
-            "currency": sub_data.currency,
-            "recurring_pre_tax_amount": sub_data.recurring_pre_tax_amount,
-            "payment_frequency_count": sub_data.payment_frequency_count,
-            "payment_frequency_interval": sub_data.payment_frequency_interval,
-            "subscription_period_count": sub_data.subscription_period_count,
-            "subscription_period_interval": sub_data.subscription_period_interval,
-            "next_billing_date": sub_data.next_billing_date,
-            "previous_billing_date": sub_data.previous_billing_date,
-            "created_at": datetime.now(UTC),
-            "updated_at": datetime.now(UTC),
-            "metadata": sub_data.metadata,
-        }
-
-        await subscription_repository.create(SubscriptionDocument.model_validate(subscription_doc))
-
-        # Track subscription activation in PostHog
-        if user_id:
-            track_subscription_event(
-                user_id=user_id,
-                event_type=AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
-                subscription_id=sub_data.subscription_id,
-                plan_name="Pro",
-                amount=sub_data.recurring_pre_tax_amount / 100
-                if sub_data.recurring_pre_tax_amount
-                else None,
-                currency=sub_data.currency,
-            )
-
-        # Send welcome email
-        await self._send_welcome_email(user_id)
-
-        log.info(
-            f"{LogTag.PAYMENT} Subscription activated", subscription_id=sub_data.subscription_id
-        )
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
-            message="Subscription activated",
+            message="Subscription activated"
+            if activation.created
+            else "Subscription already active",
             subscription_id=sub_data.subscription_id,
         )
 
@@ -441,8 +369,9 @@ class PaymentWebhookService:
                     user_id=user_id,
                     event_type=AnalyticsEvents.SUBSCRIPTION_RENEWED,
                     subscription_id=sub_data.subscription_id,
-                    currency=sub_data.currency,
+                    plan=SubscriptionPlan(currency=sub_data.currency),
                 )
+                await reactivate_workflows_safely(user_id)
 
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
@@ -507,6 +436,11 @@ class PaymentWebhookService:
                     "billing_interval": sub_data.payment_frequency_interval,
                 },
             )
+            # Only an immediate cancellation actually drops the user from Pro now —
+            # a cancel scheduled for period end (status left untouched above) keeps
+            # them paid until `subscription.expired` fires, so their workflows stay on.
+            if not sub_data.cancel_at_next_billing_date:
+                await self._deactivate_workflows_for_lapsed_subscription(user_id)
 
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
@@ -535,6 +469,7 @@ class PaymentWebhookService:
                 event_type=AnalyticsEvents.SUBSCRIPTION_EXPIRED,
                 subscription_id=sub_data.subscription_id,
             )
+            await self._deactivate_workflows_for_lapsed_subscription(user_id)
 
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
@@ -555,6 +490,10 @@ class PaymentWebhookService:
             sub_data.subscription_id, SubscriptionUpdate(status="failed")
         )
 
+        user_id = await subscription_repository.get_user_id_by_dodo_id(sub_data.subscription_id)
+        if user_id:
+            await self._deactivate_workflows_for_lapsed_subscription(user_id)
+
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
             status="processed",
@@ -573,6 +512,10 @@ class PaymentWebhookService:
         await subscription_repository.apply_update_by_dodo_id(
             sub_data.subscription_id, SubscriptionUpdate(status="on_hold")
         )
+
+        user_id = await subscription_repository.get_user_id_by_dodo_id(sub_data.subscription_id)
+        if user_id:
+            await self._deactivate_workflows_for_lapsed_subscription(user_id)
 
         return DodoWebhookProcessingResult(
             event_type=event.type.value,
@@ -605,19 +548,15 @@ class PaymentWebhookService:
             subscription_id=sub_data.subscription_id,
         )
 
-    async def _send_welcome_email(self, user_id: str) -> None:
-        """Send welcome email for new subscription."""
+    async def _deactivate_workflows_for_lapsed_subscription(self, user_id: str) -> None:
+        """Turn off this user's automation once they're no longer paid. Never raises —
+        a workflow-deactivation failure must not turn an otherwise-successful billing
+        webhook into a "failed" result that Dodo would retry."""
         try:
-            user = await user_repository.get(user_id)
-            if user and user.email:
-                await send_pro_subscription_email(
-                    user_name=user.first_name or "User",
-                    user_email=user.email,
-                )
-                log.info(f"{LogTag.PAYMENT} Welcome email sent to", email=user.email)
+            await deactivate_workflows_for_lapsed_subscription(user_id)
         except Exception as e:
             log.error(
-                f"{LogTag.PAYMENT} Failed to send welcome email",
+                f"{LogTag.PAYMENT} Failed to deactivate workflows for lapsed subscription",
                 error=str(e),
                 error_type=type(e).__name__,
                 user_id=user_id,

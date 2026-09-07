@@ -136,6 +136,14 @@ class CommonSettings(BaseAppSettings):
     EMAIL_PROVIDER: str = "resend"
 
     # ----------------------------------------------
+    # Payment Processing
+    # ----------------------------------------------
+    # Optional coupon surfaced alongside the checkout link in every 402
+    # "subscription required" response (web and bots). Unset means no code
+    # is advertised.
+    PAYWALL_DISCOUNT_CODE: str | None = None
+
+    # ----------------------------------------------
     # Observability
     # ----------------------------------------------
     POSTHOG_PROJECT_TOKEN: str | None = None
@@ -328,6 +336,10 @@ class ProductionSettings(CommonSettings):
     RESEND_API_KEY: str
     RESEND_AUDIENCE_ID: str
     EMAIL_UNSUBSCRIBE_SECRET: str
+    # Signs single-purpose file-share grants (fetched by Composio during tool
+    # execution). Dedicated secret so share tokens are domain-separated from
+    # unsubscribe links.
+    SHARE_GRANT_SECRET: str
 
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str
@@ -549,6 +561,7 @@ class DevelopmentSettings(CommonSettings):
     RESEND_API_KEY: str | None = None
     RESEND_AUDIENCE_ID: str | None = None
     EMAIL_UNSUBSCRIBE_SECRET: str | None = None
+    SHARE_GRANT_SECRET: str | None = None
 
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str | None = None

@@ -90,6 +90,35 @@ def _body(name: str) -> list[str]:
     return []
 
 
+def _first_argument_end(text: str, i: int) -> int:
+    """Index just past the first call argument starting at ``i``: the comma
+    that ends it, or the closing bracket of a one-argument call.
+
+    Bracket/quote balanced: a type arg like ``dict[str, object] | None`` (or a
+    quoted forward ref) holds commas a regex stops at, and a half-blanked cast
+    then reads as a real change.
+    """
+    depth = 0
+    quote: str | None = None
+    while i < len(text):
+        ch = text[i]
+        if quote:
+            if ch == quote and text[i - 1] != "\\":
+                quote = None
+        elif ch in "\"'":
+            quote = ch
+        elif ch in "([{":
+            depth += 1
+        elif ch in ")]}":
+            if depth == 0:
+                break
+            depth -= 1
+        elif ch == "," and depth == 0:
+            break
+        i += 1
+    return i
+
+
 def _normalized(lines: list[str]) -> list[str]:
     """Blank the TYPE argument of every ``cast()``.
 
@@ -108,29 +137,7 @@ def _normalized(lines: list[str]) -> list[str]:
     out: list[str] = []
     pos = 0
     while (start := joined.find("cast(", pos)) != -1:
-        # Scan the FIRST argument with bracket/quote balancing: a type arg
-        # like ``dict[str, object] | None`` (or a quoted forward ref) holds
-        # commas a regex stops at, and a half-blanked cast then reads as a
-        # real change.
-        i = start + len("cast(")
-        depth = 0
-        quote: str | None = None
-        while i < len(joined):
-            ch = joined[i]
-            if quote:
-                if ch == quote and joined[i - 1] != "\\":
-                    quote = None
-            elif ch in "\"'":
-                quote = ch
-            elif ch in "([{":
-                depth += 1
-            elif ch in ")]}":
-                if depth == 0:
-                    break  # cast with one argument — not ours to touch
-                depth -= 1
-            elif ch == "," and depth == 0:
-                break
-            i += 1
+        i = _first_argument_end(joined, start + len("cast("))
         if i < len(joined) and joined[i] == ",":
             arg = joined[start + len("cast(") : i]
             out.append(joined[pos:start] + "cast(" + "\n" * arg.count("\n") + "_")
@@ -141,10 +148,42 @@ def _normalized(lines: list[str]) -> list[str]:
     return "".join(out).split("\n")
 
 
+def _blank_call_next_arg(lines: list[str]) -> list[str]:
+    """Blank the sole argument of every ``call_next(...)``.
+
+    Starlette's ``BaseHTTPMiddleware`` builds ``call_next`` as a closure over the
+    request's own ``scope``/``receive``/``send`` and calls
+    ``self.app(scope, receive_or_disconnect, send_no_error)`` — it never reads
+    its ``request`` parameter (starlette/middleware/base.py, ``async def
+    call_next(request: Request)``). So ``call_next(request)`` and
+    ``call_next(None)`` are the same program, and mutmut's argument-to-None
+    mutation of that one call is unkillable by any test rather than a gap in
+    one. Same class of provable no-op as the ``cast()`` type argument above.
+
+    Narrow on purpose: only a call spelled ``call_next``, and only its first
+    argument. Every ``call_next`` in this codebase is that closure — a helper
+    of that name which DID read its argument would be mis-blanked here.
+
+    Line COUNT is preserved so the caller's index arithmetic still maps a
+    differing line back to the real file.
+    """
+    joined = "\n".join(lines)
+    out: list[str] = []
+    pos = 0
+    needle = "call_next("
+    while (start := joined.find(needle, pos)) != -1:
+        i = _first_argument_end(joined, start + len(needle))
+        arg = joined[start + len(needle) : i]
+        out.append(joined[pos:start] + needle + "\n" * arg.count("\n") + "_")
+        pos = i
+    out.append(joined[pos:])
+    return "".join(out).split("\n")
+
+
 orig_raw = _body(orig_name)
 mut_raw = _body(mutant_name)
-orig_lines = _normalized(orig_raw)
-mut_lines = _normalized(mut_raw)
+orig_lines = _blank_call_next_arg(_normalized(orig_raw))
+mut_lines = _blank_call_next_arg(_normalized(mut_raw))
 if orig_lines == mut_lines:
     print("EQUIV")
     sys.exit(0)
@@ -557,6 +596,43 @@ def _unobservable_ensure_ascii(
     return False
 
 
+def _unreachable_match_arm(path: str, line_no: int) -> bool:
+    """True when line_no sits in a ``case _: assert_never(...)`` arm.
+
+    That arm exists for mypy, which uses it to prove the match exhaustive over
+    the enum or union it switches on; at runtime no input reaches it. Deleting
+    the arm, or its argument, changes no execution, so no test can kill the
+    mutant — and the arm must stay, since it is what turns a new enum member
+    into a type error instead of a silent fall-through. Seven of these survived
+    as "real" on the playbook lifecycle's three match statements.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Match):
+            continue
+        for case in node.cases:
+            wildcard = (
+                isinstance(case.pattern, ast.MatchAs)
+                and case.pattern.pattern is None
+                and case.pattern.name is None
+            )
+            if not wildcard or len(case.body) != 1 or not isinstance(case.body[0], ast.Expr):
+                continue
+            call = case.body[0].value
+            if not (
+                isinstance(call, ast.Call)
+                and isinstance(call.func, ast.Name)
+                and call.func.id == "assert_never"
+            ):
+                continue
+            if case.pattern.lineno <= line_no <= (case.body[0].end_lineno or line_no):
+                return True
+    return False
+
+
 def _within(span, line_no: int, col: int) -> bool:
     start_line, start_col, end_line, end_col = span
     if line_no < start_line or line_no > end_line:
@@ -594,6 +670,7 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
             _unobservable_get_default(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_ensure_ascii(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_header_case(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unreachable_match_arm(real_path, line_no)
         ):
             print("EQUIV")
             sys.exit(0)

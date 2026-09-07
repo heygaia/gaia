@@ -16,16 +16,15 @@ from pydantic import ValidationError
 from pymongo.errors import DuplicateKeyError
 import pytest
 
-from app.db.repositories.workflows import (
-    SystemWorkflowDefinition,
-    WorkflowReArm,
-    WorkflowsRepository,
-)
+from app.db.repositories.workflows import WorkflowsRepository
 from app.models.scheduler_models import ScheduledTaskStatus
 from app.models.workflow_models import (
+    DeactivationReason,
+    SystemWorkflowDefinition,
     TriggerConfig,
     TriggerType,
     WorkflowDocument,
+    WorkflowRearm,
     WorkflowStep,
     WorkflowUpdate,
 )
@@ -119,21 +118,35 @@ class TestWorkflowsOwnedCrud:
         assert await repo.update_for_user(created.id, "attacker", WorkflowUpdate(title="X")) is None
         assert (await repo.get(created.id)).title == "New"
 
+    async def test_deactivate_records_the_blockers_in_the_same_write(self, repo):
+        """A pause on integrations a run found missing carries them with it;
+        a plain deactivation leaves whatever list was there alone."""
+        created = await repo.create(_workflow(user_id="owner"))
+
+        paused = await repo.deactivate(
+            created.id,
+            "owner",
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github", "slack"],
+        )
+        assert paused is not None
+        assert paused.activated is False
+        assert paused.deactivated_reason is DeactivationReason.INTEGRATION_NEVER_CONNECTED
+        assert paused.blocked_on_integrations == ["github", "slack"]
+        assert (await repo.get(created.id)).blocked_on_integrations == ["github", "slack"]
+
+        plain = await repo.deactivate(created.id, "owner")
+        assert plain is not None
+        assert plain.deactivated_reason is None
+        assert plain.blocked_on_integrations == ["github", "slack"]
+        assert await repo.deactivate(created.id, "attacker") is None
+
     async def test_delete_for_user_scoped(self, repo):
         created = await repo.create(_workflow(user_id="owner"))
         assert await repo.delete_for_user(created.id, "attacker") is False
         assert await repo.get(created.id) is not None
         assert await repo.delete_for_user(created.id, "owner") is True
         assert await repo.get(created.id) is None
-
-    async def test_delete_many_for_user(self, repo):
-        owner = _uid("owner")
-        a = await repo.create(_workflow(user_id=owner))
-        b = await repo.create(_workflow(user_id=owner))
-        other = await repo.create(_workflow(user_id=_uid("other")))
-        deleted = await repo.delete_many_for_user([a.id, b.id, other.id], owner)
-        assert deleted == 2  # other user's row is not touched
-        assert await repo.get(other.id) is not None
 
     async def test_list_for_user_newest_first_excludes_todo(self, repo):
         owner = _uid("owner")
@@ -237,7 +250,7 @@ class TestWorkflowsScheduler:
             await repo.set_status(
                 wf.id,
                 ScheduledTaskStatus.SCHEDULED,
-                rearm=WorkflowReArm(scheduled_at=new_fire, next_run=new_fire),
+                rearm=WorkflowRearm(scheduled_at=new_fire, next_run=new_fire),
             )
             is True
         )
@@ -324,7 +337,7 @@ class TestWorkflowsScheduler:
             wf.id,
             ScheduledTaskStatus.SCHEDULED,
             user_id=owner,
-            rearm=WorkflowReArm(scheduled_at=run_at, occurrence_count=3, next_run=run_at),
+            rearm=WorkflowRearm(scheduled_at=run_at, occurrence_count=3, next_run=run_at),
         )
         assert ok is True
         fetched = await repo.get(wf.id)
@@ -343,7 +356,7 @@ class TestWorkflowsScheduler:
         # an explicit None clears it (the reap path for a non-recurring workflow).
         assert (
             await repo.set_status(
-                wf.id, ScheduledTaskStatus.SCHEDULED, rearm=WorkflowReArm(scheduled_at=None)
+                wf.id, ScheduledTaskStatus.SCHEDULED, rearm=WorkflowRearm(scheduled_at=None)
             )
             is True
         )
@@ -490,6 +503,54 @@ class TestWorkflowsTriggersAndSystem:
         assert [s.title for s in updated.steps] == ["s2"]
         assert updated.trigger_config.type == TriggerType.SCHEDULE
         assert updated.trigger_config.composio_trigger_ids == ["t1"]
+
+
+class TestPlaybookDeclineTally:
+    """``count_playbook_decline``: once per run, atomically, a fresh tally per hash."""
+
+    async def test_a_run_counts_once_however_many_times_it_declines(self, repo) -> None:
+        created = await repo.create(_workflow())
+        first = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_a", workflow_hash="h1"
+        )
+        again = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_a", workflow_hash="h1"
+        )
+        next_run = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="run_b", workflow_hash="h1"
+        )
+
+        assert (first, again, next_run) == (1, None, 2)
+        stored = await repo.get_for_user(created.id, created.user_id)
+        assert stored is not None
+        assert stored.playbook_declined_run == "run_b"
+
+    async def test_an_edited_workflow_starts_a_fresh_tally(self, repo) -> None:
+        created = await repo.create(_workflow())
+        await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r1", workflow_hash="h1"
+        )
+        await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r2", workflow_hash="h1"
+        )
+
+        fresh = await repo.count_playbook_decline(
+            created.id, created.user_id, run_id="r3", workflow_hash="h2"
+        )
+
+        assert fresh == 1
+        stored = await repo.get_for_user(created.id, created.user_id)
+        assert stored is not None
+        assert (stored.playbook_declines, stored.playbook_declined_hash) == (1, "h2")
+
+    async def test_another_users_workflow_is_not_counted(self, repo) -> None:
+        created = await repo.create(_workflow())
+        assert (
+            await repo.count_playbook_decline(
+                created.id, _uid("stranger"), run_id="r1", workflow_hash="h1"
+            )
+            is None
+        )
 
 
 class TestWorkflowsPublishAndWrites:
@@ -782,6 +843,31 @@ class TestWorkflowsPublicMarketplaceReads:
         rows = await repo.find_explore(limit=20, offset=0)
         bare_row = next(r for r in rows if r.id == bare.id)
         assert bare_row.use_case_categories == ["featured"]
+
+    async def test_find_public_matching_searches_both_lists_and_escapes(self, repo, raw_collection):
+        community = await repo.create(
+            _workflow(is_public=True, title="Investor digest", description="weekly")
+        )
+        featured = await repo.create(
+            _workflow(
+                title="Morning briefing", description="inbox for investors", total_executions=5
+            )
+        )
+        await raw_collection.update_one({"_id": featured.id}, {"$set": {"is_explore": True}})
+        by_integration = await repo.create(
+            _workflow(is_public=True, title="Sync", description="", source_integration="linear")
+        )
+        # private → never surfaces, even on a match
+        await repo.create(_workflow(is_public=False, title="Investor secret"))
+
+        rows = await repo.find_public_matching(["investor"], limit=10)
+        assert [r.id for r in rows] == [featured.id, community.id]  # featured first
+        assert [r.id for r in await repo.find_public_matching(["linear"], limit=10)] == [
+            by_integration.id
+        ]
+        assert await repo.find_public_matching(["inve.tor"], limit=10) == []  # regex-escaped
+        assert await repo.find_public_matching([], limit=10) == []
+        assert len(await repo.find_public_matching(["investor"], limit=1)) == 1
 
     async def test_find_public_by_step_category_matches_and_escapes(self, repo, seeded_creator):
         creator_id, creator = seeded_creator

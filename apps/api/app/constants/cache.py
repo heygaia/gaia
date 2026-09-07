@@ -147,6 +147,12 @@ STATE_KEY_PREFIX = "oauth_state"
 CONNECT_LINK_PREFIX = "connect_link"
 PLATFORM_LINK_TOKEN_PREFIX = "platform_link_token"  # nosec B105
 PLATFORM_LINK_TOKEN_TTL = TEN_MINUTES_TTL
+# One-tap onboarding linking, the opposite direction to the token above: the WEB
+# mints this code at the platform-pick step and the BOT redeems it on the user's
+# first contact. code -> {user_id, first_message}. Longer TTL than the token
+# because the user may sit on the platform-pick screen before tapping through.
+PLATFORM_LINK_CODE_PREFIX = "platform_link_code"  # nosec B105
+PLATFORM_LINK_CODE_TTL = THIRTY_MINUTES_TTL
 # Desktop tool bridge — request ownership keys + per-request result channels.
 # A request key expiring means the desktop never answered; the result endpoint
 # rejects late POSTs whose key is gone.
@@ -166,6 +172,13 @@ DESKTOP_REQUEST_TTL_GRACE_SECONDS = 15
 # retrying agent is auto-denied instead of re-prompting the user for the same
 # action.
 HIL_DECLINED_PREFIX = "hil:declined:"
+# One workflow's "you're out of runs / out of budget" notice, keyed by
+# user+workflow. The wall it reports is a daily one, so it is the same true
+# statement for every occurrence until the reset — worth exactly one message,
+# not one per fire (a production thread ran to six in a row).
+WORKFLOW_LIMIT_NOTICE_PREFIX = "workflow:limit-notice:"
+WORKFLOW_LIMIT_NOTICE_TTL = ONE_DAY_TTL
+
 EXECUTOR_BUSY_PREFIX = "executor:busy:"
 EXECUTOR_BUSY_TTL = THIRTY_MINUTES_TTL
 EXECUTOR_QUEUE_PREFIX = "executor:queue:"
@@ -174,6 +187,11 @@ EXECUTOR_QUEUE_TTL = ONE_HOUR_TTL  # Tasks expire if not picked up within 1 hour
 # whatever tool events were collected. Matches the busy lock TTL — the executor
 # cannot outlive its lock, so waiting longer would be pointless.
 EXECUTOR_WAIT_TIMEOUT = THIRTY_MINUTES_TTL
+#: How long a background (workflow) turn waits for the executor it dispatched.
+#: Shorter than the worker's job timeout on purpose: a wait as long as the job
+#: means the job is cut first, mid-bookkeeping, and the fire is never closed
+#: out. Seen live: an executor that stopped mid-run left a record 'running'.
+BACKGROUND_EXECUTOR_WAIT_TIMEOUT = 25 * 60
 # ElevenLabs voice lists (account + shared library) cached for the voice picker.
 ELEVENLABS_VOICES_CACHE_KEY = "voice:elevenlabs_voices"
 ELEVENLABS_SHARED_VOICES_CACHE_KEY = "voice:elevenlabs_shared_voices"
@@ -185,3 +203,14 @@ VOICE_EXECUTOR_RESULT_TIMEOUT_S = 90.0
 # One-shot gate (SET NX) for the "priority compute used this month" in-app notice,
 # so a degraded pro user is told once per month, not once per turn.
 COST_BUDGET_NOTIFIED_KEY = "cost_budget_notified:{user_id}:{window}"
+
+# The onboarding question written ahead of time. Keyed by user plus a hash of
+# the answers it was written from, so re-answering Q1/Q2 with anything different
+# reads a key that was never written rather than a stale question. Two hours is
+# the gap between the answers being saved and completion being pressed, with
+# room for a wizard someone walked away from.
+FIRST_QUESTION_CACHE_PREFIX = "onboarding:first_question:"
+FIRST_QUESTION_CACHE_TTL = 2 * ONE_HOUR_TTL
+#: Prefix of the tiered rate limiter's per-user counters: ``{prefix}:{user_id}:{feature}:{period}:{window}``.
+#: Named so a dev tool can clear one user's counters without knowing the rest of the key.
+RATE_LIMIT_KEY_PREFIX = "rate_limit"

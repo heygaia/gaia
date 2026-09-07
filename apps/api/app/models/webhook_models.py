@@ -29,6 +29,23 @@ class DodoWebhookEventType(str, Enum):
     SUBSCRIPTION_ON_HOLD = "subscription.on_hold"
     SUBSCRIPTION_PLAN_CHANGED = "subscription.plan_changed"
 
+    # Events Dodo sends that GAIA acknowledges and ignores. They must parse:
+    # a legitimate event outside this enum failed validation and was recorded
+    # as a processing error instead of landing in the no-handler "ignored" path.
+    # subscription.updated carries field edits Dodo also reports through the
+    # status events above; GAIA acts on those and ignores this one.
+    SUBSCRIPTION_UPDATED = "subscription.updated"
+    REFUND_SUCCEEDED = "refund.succeeded"
+    REFUND_FAILED = "refund.failed"
+    DISPUTE_OPENED = "dispute.opened"
+    DISPUTE_EXPIRED = "dispute.expired"
+    DISPUTE_ACCEPTED = "dispute.accepted"
+    DISPUTE_CANCELLED = "dispute.cancelled"
+    DISPUTE_CHALLENGED = "dispute.challenged"
+    DISPUTE_WON = "dispute.won"
+    DISPUTE_LOST = "dispute.lost"
+    LICENSE_KEY_CREATED = "license_key.created"
+
 
 class DodoCustomerData(BaseModel):
     """Customer info from webhook."""
@@ -41,11 +58,13 @@ class DodoCustomerData(BaseModel):
 class DodoBillingData(BaseModel):
     """Billing address from webhook."""
 
-    city: str
+    # Only `country` is guaranteed by Dodo's schema; the rest are optional and
+    # routinely absent on a subscription read back from the API.
     country: str
-    state: str
-    street: str
-    zipcode: str
+    city: str | None = None
+    state: str | None = None
+    street: str | None = None
+    zipcode: str | None = None
 
 
 class DodoPaymentData(BaseModel):

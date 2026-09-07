@@ -259,6 +259,21 @@ async def create_todo_indexes() -> None:
                 ],
                 name="tracked_sweep",
             ),
+            # Trigger dispatch resolves subscriptions on every webhook event, so
+            # both lookups must be indexed or each event scans the collection.
+            # Per-resource triggers are found by Composio instance id (cross-user,
+            # mirroring the workflows index); account-level triggers (Gmail) carry
+            # no instance id and are found by user + trigger name instead.
+            todos_collection.create_index(
+                "trigger_subscriptions.composio_trigger_ids",
+                name="subscription_trigger_ids",
+                sparse=True,
+            ),
+            todos_collection.create_index(
+                [("user_id", 1), ("trigger_subscriptions.trigger_name", 1)],
+                name="user_subscription_trigger_name",
+                sparse=True,
+            ),
         )
 
     except Exception as e:
@@ -582,6 +597,7 @@ async def create_payment_indexes() -> None:
     payments_collection = get_async_collection("payments")
     plans_collection = get_async_collection("subscription_plans")
     subscriptions_collection = get_async_collection("subscriptions")
+    checkout_sessions_collection = get_async_collection("checkout_sessions")
     try:
         # Create payment collection indexes
         await asyncio.gather(
@@ -600,6 +616,9 @@ async def create_payment_indexes() -> None:
             subscriptions_collection.create_index([("user_id", 1), ("status", 1)]),
             subscriptions_collection.create_index([("user_id", 1), ("created_at", -1)]),
             subscriptions_collection.create_index("webhook_processed_at", sparse=True),
+            # Checkout session indexes - webhook-race resolution lookups
+            checkout_sessions_collection.create_index("session_id", unique=True),
+            checkout_sessions_collection.create_index([("user_id", 1), ("created_at", -1)]),
             # Plans indexes
             plans_collection.create_index("is_active"),
             plans_collection.create_index("dodo_product_id", sparse=True),

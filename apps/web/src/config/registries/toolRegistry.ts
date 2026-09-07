@@ -5,6 +5,7 @@ import type {
   ToolCallEntry as SharedToolCallEntry,
 } from "@shared/chat";
 import type {
+  ConnectOptionsData,
   IntegrationConnectionData,
   IntegrationListStreamData,
 } from "@/features/integrations/types";
@@ -176,6 +177,7 @@ const TOOL_REGISTRY = {
   notification_data: null as unknown as { notifications: NotificationRecord[] },
   send_notification_data: null as unknown as SendNotificationData,
   integration_connection_required: null as unknown as IntegrationConnectionData,
+  connect_options: null as unknown as ConnectOptionsData,
   integration_list_data: null as unknown as IntegrationListStreamData,
   tool_calls_data: null as unknown as SharedToolCallEntry[],
   subagent_group: null as unknown as SharedSubagentGroupData,

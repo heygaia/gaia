@@ -1,0 +1,205 @@
+"""The paywall gate: require_active_subscription and its helpers.
+
+Distinct from tiered rate limiting — this blocks access outright for a plan
+with none at all, rather than capping usage. The 402 wire shape is fixed (the
+frontend is built against it), so the contract tests assert the exact body.
+"""
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from app.decorators.entitlements import (
+    PAYWALL_MESSAGE,
+    SubscriptionRequiredException,
+    confirm_subscription_active,
+    get_checkout_url,
+    is_subscription_active,
+    require_active_subscription,
+)
+from app.models.payment_models import PlanType
+from app.services.analytics_service import AnalyticsEvents
+
+pytestmark = pytest.mark.unit
+
+ENT = "app.decorators.entitlements"
+# require_subscription resolves the caller via app.core.request_context.resolve_caller,
+# which reads get_authenticated_user from its own module — not re-imported into
+# entitlements.py — so tests patch it at the source.
+RCX = "app.core.request_context"
+
+
+def _checkout(payment_link: str | None) -> MagicMock:
+    checkout = MagicMock()
+    checkout.checkout.payment_link = payment_link
+    return checkout
+
+
+class TestIsSubscriptionActive:
+    async def test_pro_plan_is_active(self) -> None:
+        plan_lookup = AsyncMock(return_value=PlanType.PRO)
+        with patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup):
+            assert await is_subscription_active("u1") is True
+        plan_lookup.assert_awaited_once_with("u1")
+
+    async def test_free_plan_is_not_active(self) -> None:
+        plan_lookup = AsyncMock(return_value=PlanType.FREE)
+        with patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup):
+            assert await is_subscription_active("u1") is False
+        plan_lookup.assert_awaited_once_with("u1")
+
+
+class TestGetCheckoutUrl:
+    async def test_returns_the_minted_payment_link(self) -> None:
+        checkout_mock = AsyncMock(return_value=_checkout("https://checkout.dodo.test/abc"))
+        with patch(f"{ENT}.payment_service.create_pro_checkout", new=checkout_mock):
+            assert await get_checkout_url("u1") == "https://checkout.dodo.test/abc"
+        checkout_mock.assert_awaited_once_with("u1")
+
+    async def test_dodo_failure_degrades_to_none_instead_of_raising(self) -> None:
+        """A paywall response must never itself fail because Dodo is down."""
+        exc = RuntimeError("dodo unreachable")
+        with (
+            patch(f"{ENT}.payment_service.create_pro_checkout", new=AsyncMock(side_effect=exc)),
+            patch(f"{ENT}.log") as mock_log,
+        ):
+            assert await get_checkout_url("u1") is None
+
+        mock_log.warning.assert_called_once_with(
+            "Could not mint checkout link for paywall response",
+            user={"id": "u1"},
+            payment={"operation": "paywall_checkout_link"},
+            error_type="RuntimeError",
+        )
+
+
+class TestRequireActiveSubscription:
+    async def test_pro_user_passes_without_minting_a_checkout_link(self) -> None:
+        checkout_mock = AsyncMock()
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.PRO),
+            ) as plan,
+            patch(f"{ENT}.payment_service.create_pro_checkout", new=checkout_mock),
+        ):
+            await require_active_subscription("u1", feature="chat")  # must not raise
+        checkout_mock.assert_not_called()
+        # The plan read is for THIS user; a lost id would read some default tier.
+        plan.assert_awaited_once_with("u1")
+
+    async def test_free_user_gets_the_exact_402_wire_contract(self) -> None:
+        checkout_mock = AsyncMock(return_value=_checkout("https://checkout.dodo.test/abc"))
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.FREE),
+            ),
+            patch(f"{ENT}.payment_service.create_pro_checkout", new=checkout_mock),
+            patch(f"{ENT}.settings.PAYWALL_DISCOUNT_CODE", None),
+            patch(f"{ENT}.log") as mock_log,
+        ):
+            with pytest.raises(SubscriptionRequiredException) as exc_info:
+                await require_active_subscription("u1", feature="chat_stream_endpoint")
+
+        # The blocked user's own id must reach the checkout minter — not a
+        # stale/None value. A caller mixup here would mint a checkout link
+        # for the wrong account (or no account at all).
+        checkout_mock.assert_awaited_once_with("u1")
+
+        exc = exc_info.value
+        assert exc.status_code == 402
+        assert exc.detail == {
+            "code": "subscription_required",
+            "message": PAYWALL_MESSAGE,
+            "checkout_url": "https://checkout.dodo.test/abc",
+            "discount_code": None,
+        }
+        mock_log.warning.assert_called_once_with(
+            "Subscription required, blocking request",
+            user={"id": "u1"},
+            payment={"operation": "paywall_gate", "feature": "chat_stream_endpoint"},
+        )
+
+    async def test_discount_code_travels_when_configured(self) -> None:
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.FREE),
+            ),
+            patch(
+                f"{ENT}.payment_service.create_pro_checkout",
+                new=AsyncMock(return_value=_checkout(None)),
+            ),
+            patch(f"{ENT}.settings.PAYWALL_DISCOUNT_CODE", "SAVE20"),
+        ):
+            with pytest.raises(SubscriptionRequiredException) as exc_info:
+                await require_active_subscription("u1", feature="chat")
+
+        assert exc_info.value.detail["discount_code"] == "SAVE20"
+        assert exc_info.value.detail["checkout_url"] is None
+
+    async def test_block_is_captured_against_the_blocked_users_own_profile(self) -> None:
+        """The paywall event must carry the blocked user's id, not an anonymous
+        one — bot and worker paths reach this with no request context, so an
+        implicit distinct_id would strand the block on a ghost profile."""
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.FREE),
+            ),
+            patch(
+                f"{ENT}.payment_service.create_pro_checkout",
+                new=AsyncMock(return_value=_checkout("https://checkout.dodo.test/abc")),
+            ),
+            patch(f"{ENT}.capture_event") as mock_capture,
+        ):
+            with pytest.raises(SubscriptionRequiredException):
+                await require_active_subscription("u1", feature="get_token")
+
+        mock_capture.assert_called_once_with(
+            "u1",
+            AnalyticsEvents.PAYWALL_BLOCKED,
+            {"feature": "get_token", "has_checkout_url": True},
+        )
+
+    async def test_pro_user_is_never_captured_as_blocked(self) -> None:
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.PRO),
+            ),
+            patch(f"{ENT}.capture_event") as mock_capture,
+        ):
+            await require_active_subscription("u1", feature="get_token")
+
+        mock_capture.assert_not_called()
+
+
+class TestConfirmSubscriptionActive:
+    async def test_a_live_subscription_is_confirmed_from_the_database_and_drops_the_stale_key(
+        self,
+    ) -> None:
+        status = MagicMock(plan_type=PlanType.PRO)
+        with (
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=status),
+            ) as fresh,
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await confirm_subscription_active("u1") is True
+        fresh.assert_awaited_once_with("u1")
+        invalidate.assert_awaited_once_with("u1")
+
+    async def test_a_free_user_is_not_confirmed_and_the_cache_is_left_alone(self) -> None:
+        status = MagicMock(plan_type=PlanType.FREE)
+        with (
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=status),
+            ),
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await confirm_subscription_active("u1") is False
+        invalidate.assert_not_awaited()

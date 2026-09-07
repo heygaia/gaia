@@ -9,7 +9,12 @@ production wording proves nothing.
 
 import pytest
 
-from app.agents.evals.ai_isms import AiIsmScore, score_reply, violation_snippets
+from app.agents.evals.ai_isms import (
+    AiIsmScore,
+    phantom_claim_snippets,
+    score_reply,
+    violation_snippets,
+)
 
 PROD_REPLIES: tuple[str, ...] = (
     "on it, pinging you in 3 hours.<NEW_MESSAGE_BREAK>",
@@ -387,3 +392,44 @@ class TestViolationSnippets:
         result = violation_snippets(text)
         assert "template_shape" not in result
         assert result["bold_emphasis"] == ["**a**", "**b**"]
+
+
+class TestPhantomClaims:
+    """A text-only answer straight to the user cannot have done anything, so a
+    claim that work is happening, or that a card is on screen, is a phantom."""
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Sending the Acme nudge now. I'll confirm once it's out.",
+            "Setting that up now, you'll have it by the morning.",
+            "On it, pulling your calendar as we speak.",
+            "The daily triage is already live.",
+            "I'll confirm once it's locked in.",
+        ],
+    )
+    def test_counts_an_action_claimed_with_nothing_behind_it(self, text: str) -> None:
+        assert "claimed_action" in phantom_claim_snippets(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "The connect card's right here again, tap it.",
+            "Tap the card above and I'll take it from there.",
+            "Gmail's connect link is below.",
+        ],
+    )
+    def test_counts_a_card_that_was_never_drawn(self, text: str) -> None:
+        assert "phantom_card" in phantom_claim_snippets(text)
+
+    @pytest.mark.parametrize(
+        "text",
+        [
+            "Want me to set that up?",
+            "Once Gmail is connected I sort the inbox every morning.",
+            "A reminder tells you something, a workflow does something.",
+            "You could send it from your own mail if you want it out today.",
+        ],
+    )
+    def test_leaves_offers_and_explanations_alone(self, text: str) -> None:
+        assert phantom_claim_snippets(text) == {}

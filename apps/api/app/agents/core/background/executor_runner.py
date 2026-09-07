@@ -40,7 +40,12 @@ from app.agents.core.background.executor_queue import (
 )
 from app.agents.core.background.redis_writer import make_redis_stream_writer
 from app.agents.core.background.result_delivery import deliver_result, persist_cancelled_run
-from app.agents.core.background.session import ExecutorRun, get_session, signal_executor_done
+from app.agents.core.background.session import (
+    ExecutorRun,
+    executor_abandoned,
+    get_session,
+    signal_executor_done,
+)
 from app.agents.core.subagents.subagent_runner import (
     execute_subagent_stream,
     prepare_executor_execution,
@@ -65,7 +70,7 @@ from app.services.hil.approvals_store import (
 from app.services.hil.resume_slot import release_resume_dispatch
 from app.utils.agent_utils import format_sse_data
 from app.utils.background_tasks import spawn_background_task
-from shared.py.wide_events import get_trace_id, log, wide_task
+from shared.py.wide_events import WorkflowContext, get_trace_id, log, wide_task
 
 #: Task name for a queued executor run. Tests drain by this name to wait out
 #: exactly the runs a turn handed off, not every background task in the process.
@@ -113,6 +118,20 @@ async def run_executor_background(
         # and executor turns are the expensive ones, so the under-count lands
         # exactly where COGS-by-channel matters most.
         conversation_source=configurable.get("conversation_source"),
+        # The workflow run this executor is part of. The workflow task stamped
+        # it on ITS boundary; this one is fresh, so without carrying it over
+        # every model call the executor makes lands in the ledger with the
+        # workflow but no execution — and "what did this run cost" reads only
+        # the comms shell, a few percent of the real figure.
+        **(
+            {
+                "workflow": WorkflowContext(
+                    id=run.workflow_id, execution_id=run.workflow_execution_id
+                )
+            }
+            if run.workflow_id and run.workflow_execution_id
+            else {}
+        ),
     ):
         result_text = ""
         result_type = "final"
@@ -175,11 +194,9 @@ async def _record_pause(
     try:
         item = build_run_item(
             task=task,
-            task_id=run.task_id,
             configurable=configurable,
-            conversation_id=run.conversation_id,
-            user_message_id=run.user_message_id,
-            bot_message_id=run.bot_message_id,
+            identity=run.identity,
+            workflow_execution_id=run.workflow_execution_id,
         )
         for approval_id in approval_ids:
             await set_resume_item(approval_id, item)
@@ -304,23 +321,40 @@ async def _finalize_executor_run(
 
     # Signal SSE consumer that tool events are done so it can drain the session
     # into the comms ack and publish [DONE]. Comms re-narration runs in parallel.
-    signal_executor_done(run.stream_id)
+    signal_executor_done(
+        run.stream_id,
+        failed=result_type == "error",
+        reason=result_text if result_type == "error" else None,
+    )
+
+    # The waiter gave up on this executor and closed its run as failed. A result
+    # delivered now would answer a turn that is over, and a collection queued
+    # now would start work on it; only the lock release below is still owed.
+    abandoned = executor_abandoned(run.stream_id)
+    if abandoned:
+        log.warning(
+            f"{LogTag.AGENT} Executor finished after its waiter gave up; result not delivered",
+            stream_id=run.stream_id,
+            task_id=run.task_id,
+            result_type=result_type,
+        )
 
     # Delivery is best-effort: a failure here must NOT skip the lock release and
     # queue handoff below, or queued tasks strand and the busy lock leaks until
     # its TTL. The lock lifecycle is the load-bearing step — always run it.
     try:
-        await _deliver_terminal_outcome(
-            run,
-            task,
-            TerminalOutcome(
-                result_text=result_text,
-                result_type=result_type,
-                was_cancelled=was_cancelled,
-                returned_note=returned_note,
-                tool_data=tool_data,
-            ),
-        )
+        if not abandoned:
+            await _deliver_terminal_outcome(
+                run,
+                task,
+                TerminalOutcome(
+                    result_text=result_text,
+                    result_type=result_type,
+                    was_cancelled=was_cancelled,
+                    returned_note=returned_note,
+                    tool_data=tool_data,
+                ),
+            )
     except Exception as e:  # never let delivery failure strand the queue
         log.error(
             f"{LogTag.AGENT} Executor finalize delivery failed",
@@ -352,7 +386,8 @@ async def _finalize_executor_run(
     # NOW, so the very hand-off below claims and runs it. Without this, a card
     # parked mid-turn has no live collector until some later landing wakes one —
     # and decisions on it would be refused in the meantime.
-    await _queue_collection_if_uncollected(run, task)
+    if not abandoned:
+        await _queue_collection_if_uncollected(run, task)
 
     # Hand the conversation on. The lock is already free, so this is always an
     # NX re-acquire: it runs on EVERY terminal path, cancelled included (a Stop
@@ -383,6 +418,7 @@ async def _queue_collection_if_uncollected(run: ExecutorRun, task: str) -> None:
                     "user_name": run.user.get("name", ""),
                     "user_timezone": run.user.get("timezone"),
                 },
+                workflow_execution_id=run.workflow_execution_id,
             )
     except Exception as e:  # a failed wake must not strand the queue handoff
         log.error(

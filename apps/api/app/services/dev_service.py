@@ -37,6 +37,7 @@ from app.services.files import FileService
 from app.services.oauth.oauth_service import store_user_info
 from app.services.platform_link_service import Platform, PlatformLinkService
 from app.services.todos.todo_service import create_todo
+from app.services.triggers.subscription_service import teardown_subscriptions
 from app.utils.errors import create_error
 from shared.py.wide_events import log
 
@@ -56,9 +57,8 @@ async def require_dev_user(email: str) -> UserDocument:
 
 async def mint_dev_user(email: str, name: str | None = None) -> UserDocument:
     """Idempotently find-or-create a dev user via the real signup path."""
-    resolved_name = name or email.split("@", 1)[0]
     user_id, is_new = await store_user_info(
-        name=resolved_name,
+        name=name,
         email=email,
         picture_url=None,
         # Same stored shape as real signup, but a minted dev user must never
@@ -146,9 +146,10 @@ async def seed_dev_data(
         user_id,
         phase=OnboardingPhase.COMPLETED,
         bio_status=BioStatus.NO_GMAIL,
-        pipeline_mode="full",
         preferences=OnboardingPreferences(
             profession="Developer",
+            needs=None,
+            other_need=None,
             response_style="casual",
             custom_instructions=None,
         ),
@@ -208,6 +209,13 @@ async def delete_dev_user(email: str) -> DeleteDevUserResponse:
     """Remove a dev user and the todos/conversations/projects it owns."""
     user = await require_dev_user(email)
     user_id = user.id
+
+    # Same rule as every other delete path: unregister while the documents still
+    # name their Composio triggers. Dev accounts are exactly where orphaned
+    # triggers accumulate unnoticed, because nobody is watching that Composio org.
+    for todo in await todo_repository.list_for_user(user_id):
+        if todo.trigger_subscriptions and todo.id:
+            await teardown_subscriptions(todo.id, user_id, reason="user_deleted")
 
     todos_deleted = await todo_repository.delete_all_for_user(user_id)
     conversations_deleted = len(await conversation_repository.delete_all_for_user(user_id))

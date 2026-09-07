@@ -218,6 +218,45 @@ def _closing_hook_snippets(non_blank_lines: list[str]) -> list[str]:
     return []
 
 
+#: A text-only reply answering the user directly did nothing: no tool ran in it.
+#: So "sending it now", "setting that up", "already live" and "I'll confirm once
+#: it's in" describe work that is not happening. Scored only by the style guard,
+#: which knows whether a tool result precedes the draft; not part of the corpus
+#: score, whose replies were recorded without that context.
+CLAIMED_ACTION_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\b(?:sending|setting (?:that|this|it|them|everything) up|setting up|adding|pulling|"
+        r"creating|scheduling|wiring (?:that|this|it|up)|kicking (?:that|this|it) off|"
+        r"drafting|running|checking|grabbing|fetching)\b[^.\n]{0,50}\b(?:now|right now|as we speak)\b",
+        r"\b(?:is|are|'s|’s) (?:already |now )?(?:live|running|set up|in place|done|sent)\b",
+        r"\bi(?:'|’)?ll (?:confirm|let you know|ping you|report back) (?:once|when|as soon as)\b",
+        r"\bon it\b",
+    )
+)
+
+#: A card or link the reply points at. In a text-only reply there is none:
+#: drawing one is a tool call, and a draft with a tool call never reaches the
+#: guard.
+PHANTOM_CARD_PATTERNS: tuple[re.Pattern[str], ...] = tuple(
+    re.compile(pattern, re.I)
+    for pattern in (
+        r"\b(?:connect )?card(?:'s|’s| is)?\b[^.\n]{0,30}\b(?:above|below|here|up there|in this reply|coming|right there)\b",
+        r"\btap (?:the|that|this) (?:card|link|button)\b",
+        r"\bconnect link\b[^.\n]{0,20}\b(?:above|below|here|is)\b",
+    )
+)
+
+
+def phantom_claim_snippets(text: str) -> dict[str, list[str]]:
+    """Claims a text-only reply cannot back: an action in flight, a card on screen."""
+    found = {
+        "claimed_action": _matches(CLAIMED_ACTION_PATTERNS, text),
+        "phantom_card": _matches(PHANTOM_CARD_PATTERNS, text),
+    }
+    return {detector: snippets for detector, snippets in found.items() if snippets}
+
+
 def violation_snippets(text: str) -> dict[str, list[str]]:
     """The offending fragments per detector, for a correction note that quotes them.
 

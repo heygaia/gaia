@@ -9,21 +9,26 @@ Covers:
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from types import SimpleNamespace
+from typing import Any, get_args
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bson import ObjectId
+from dodopayments.types import WebhookEventType
 from fastapi import HTTPException
 import pytest
 
 from app.constants.cache import UPGRADE_LINK_CACHE_TTL
+from app.constants.log_tags import LogTag
 from app.constants.payments import PAYMENT_HISTORY_LIMIT
 from app.models.payment_models import (
+    CheckoutSource,
     CreateSubscriptionResponse,
     PlanDocument,
     PlanDuration,
     PlanResponse,
     PlanType,
+    ProcessedWebhookUpdate,
     ProCheckout,
     SubscriptionDocument,
     SubscriptionStatus,
@@ -34,8 +39,11 @@ from app.models.webhook_models import (
     DodoWebhookEventType,
     DodoWebhookProcessingResult,
 )
+from app.services.analytics_service import AnalyticsEvents, SubscriptionPlan
+from app.services.payments import payment_service as payment_service_module
 from app.services.payments.payment_service import DodoPaymentService
 from app.services.payments.payment_webhook_service import PaymentWebhookService
+from app.services.payments.subscription_activation import send_welcome_email_safely
 from shared.py.wide_events import log
 
 # ---------------------------------------------------------------------------
@@ -89,17 +97,13 @@ SAMPLE_SUBSCRIPTION_DOC: dict[str, Any] = {
     "updated_at": NOW,
 }
 
-SAMPLE_SUBSCRIPTION = SubscriptionDocument(
-    id=str(SAMPLE_SUBSCRIPTION_DOC["_id"]),
-    dodo_subscription_id="sub_xyz789",
-    user_id=FAKE_USER_ID,
-    product_id="prod_abc123",
-    status="active",
-    created_at=NOW,
-    updated_at=NOW,
-    quantity=1,
-    currency="USD",
-    recurring_pre_tax_amount=999,
+SAMPLE_SUBSCRIPTION = SubscriptionDocument.model_validate(
+    {
+        # _id holds a raw ObjectId that extra="allow" would keep and later
+        # serialization could not dump — the id rides on the typed field.
+        **{k: v for k, v in SAMPLE_SUBSCRIPTION_DOC.items() if k != "_id"},
+        "id": str(SAMPLE_SUBSCRIPTION_DOC["_id"]),
+    }
 )
 
 SAMPLE_USER_DOC: dict[str, Any] = {
@@ -220,6 +224,7 @@ def mock_subscription_repository():
         mock_repo.get_latest_active_for_user = AsyncMock(return_value=None)
         mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=None)
         mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
+        mock_repo.has_any_for_user = AsyncMock(return_value=False)
         yield mock_repo
 
 
@@ -256,6 +261,15 @@ def mock_dodo_client():
 
 
 @pytest.fixture
+def mock_checkout_session_repository():
+    """No pending checkout by default — the Dodo fallback is skipped."""
+    with patch("app.services.payments.payment_service.checkout_session_repository") as mock_repo:
+        mock_repo.get_latest_for_user = AsyncMock(return_value=None)
+        mock_repo.create = AsyncMock()
+        yield mock_repo
+
+
+@pytest.fixture
 def payment_service(mock_dodo_client):
     """Create a DodoPaymentService with a mocked Dodo client."""
     with patch("app.services.payments.payment_service.DodoPayments") as mock_cls:
@@ -270,19 +284,28 @@ def payment_service(mock_dodo_client):
 
 @pytest.fixture
 def mock_webhook_subscription_repository():
-    with patch(
-        "app.services.payments.payment_webhook_service.subscription_repository"
-    ) as mock_repo:
-        mock_repo.get_by_dodo_id = AsyncMock(return_value=None)
-        mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
-        mock_repo.create = AsyncMock()
-        mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
+    """One mock behind both modules that write subscription rows.
+
+    ``subscription.active`` activates through
+    ``subscription_activation.activate_subscription`` (shared with payment
+    verification's Dodo reconciliation); the other handlers still update the row
+    from the webhook service itself.
+    """
+    mock_repo = MagicMock()
+    mock_repo.get_by_dodo_id = AsyncMock(return_value=None)
+    mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
+    mock_repo.create = AsyncMock()
+    mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
+    with (
+        patch("app.services.payments.payment_webhook_service.subscription_repository", mock_repo),
+        patch("app.services.payments.subscription_activation.subscription_repository", mock_repo),
+    ):
         yield mock_repo
 
 
 @pytest.fixture
 def mock_webhook_users_collection():
-    with patch("app.services.payments.payment_webhook_service.user_repository") as mock_repo:
+    with patch("app.services.payments.subscription_activation.user_repository") as mock_repo:
         _set_user(mock_repo, SAMPLE_USER_DOC)
         yield mock_repo
 
@@ -292,8 +315,9 @@ def mock_processed_webhook_repository():
     with patch(
         "app.services.payments.payment_webhook_service.processed_webhook_repository"
     ) as mock_repo:
-        mock_repo.is_processed = AsyncMock(return_value=False)
-        mock_repo.mark_processed = AsyncMock()
+        mock_repo.claim = AsyncMock(return_value=True)
+        mock_repo.record_outcome = AsyncMock()
+        mock_repo.release = AsyncMock()
         yield mock_repo
 
 
@@ -305,14 +329,40 @@ def mock_track_payment():
 
 @pytest.fixture
 def mock_track_subscription():
-    with patch("app.services.payments.payment_webhook_service.track_subscription_event") as mock_fn:
+    mock_fn = MagicMock()
+    with (
+        patch("app.services.payments.payment_webhook_service.track_subscription_event", mock_fn),
+        patch("app.services.payments.subscription_activation.track_subscription_event", mock_fn),
+    ):
+        yield mock_fn
+
+
+@pytest.fixture
+def mock_deactivate_workflows():
+    with patch(
+        "app.services.payments.payment_webhook_service.deactivate_workflows_for_lapsed_subscription",
+        new_callable=AsyncMock,
+    ) as mock_fn:
+        mock_fn.return_value = 0
         yield mock_fn
 
 
 @pytest.fixture
 def mock_webhook_send_email():
     with patch(
-        "app.services.payments.payment_webhook_service.send_pro_subscription_email",
+        "app.services.payments.subscription_activation.send_pro_subscription_email",
+        new_callable=AsyncMock,
+    ) as mock_fn:
+        yield mock_fn
+
+
+@pytest.fixture(autouse=True)
+def mock_activation_workflow_reactivation():
+    """``activate_subscription`` resumes lapsed workflows; that reaches the
+    workflow stack, which no webhook test wants to run. Patched at the source
+    module because the import is deferred to break a cycle."""
+    with patch(
+        "app.services.workflow.subscription_pause.reactivate_workflows_for_restored_subscription",
         new_callable=AsyncMock,
     ) as mock_fn:
         yield mock_fn
@@ -489,18 +539,116 @@ class TestGetPlans:
         assert plans[0].max_users is None
         assert plans[0].features == []
 
+    async def test_free_plan_never_reaches_the_response(
+        self,
+        payment_service,
+        mock_plan_repository,
+        mock_redis_cache,
+    ):
+        """GAIA is paid-only — a $0 'Free' row in the collection must never
+        render as a card, even though the repository still returns it (a
+        pre-cutover seed, or a manual DB edit)."""
+        free_plan = PlanDocument(
+            id=str(ObjectId()),
+            dodo_product_id="",
+            name="Free",
+            amount=0,
+            currency="USD",
+            duration="monthly",
+            is_active=True,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        mock_plan_repository.list_plans = AsyncMock(return_value=[free_plan, SAMPLE_PLAN])
+
+        plans = await payment_service.get_plans()
+
+        assert [p.name for p in plans] == ["Pro Monthly"]
+        assert all(p.amount > 0 for p in plans)
+
+    async def test_free_plan_filtered_even_when_served_from_cache(
+        self,
+        payment_service,
+        mock_plan_repository,
+        mock_redis_cache,
+    ):
+        """The free row is cached too (the cache mirrors the DB) — filtering
+        must happen on every read path, not only the DB-miss path."""
+        cached_free = PlanResponse(
+            id="free-id",
+            dodo_product_id="",
+            name="Free",
+            description=None,
+            amount=0,
+            currency="USD",
+            duration="monthly",
+            max_users=1,
+            features=[],
+            is_active=True,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        cached_pro = PlanResponse(
+            id="pro-id",
+            dodo_product_id="prod_abc123",
+            name="Pro",
+            description=None,
+            amount=3000,
+            currency="USD",
+            duration="monthly",
+            max_users=1,
+            features=[],
+            is_active=True,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        mock_redis_cache.get = AsyncMock(
+            return_value=[cached_free.model_dump(), cached_pro.model_dump()]
+        )
+
+        plans = await payment_service.get_plans()
+
+        assert [p.name for p in plans] == ["Pro"]
+
+    async def test_zero_amount_enterprise_plan_is_not_mistaken_for_free(
+        self,
+        payment_service,
+        mock_plan_repository,
+        mock_redis_cache,
+    ):
+        """Enterprise is also $0 (contact-sales) — amount alone must not be
+        the filter, or the Enterprise card would vanish too."""
+        enterprise_plan = PlanDocument(
+            id=str(ObjectId()),
+            dodo_product_id="",
+            name="Enterprise",
+            amount=0,
+            currency="USD",
+            duration="monthly",
+            max_users=0,
+            is_active=True,
+            created_at=NOW,
+            updated_at=NOW,
+        )
+        mock_plan_repository.list_plans = AsyncMock(return_value=[enterprise_plan])
+
+        plans = await payment_service.get_plans()
+
+        assert [p.name for p in plans] == ["Enterprise"]
+
 
 class TestCreateSubscription:
     """Tests for DodoPaymentService.create_subscription."""
 
+    @pytest.mark.usefixtures("mock_redis_cache")
     async def test_success_returns_payment_link(
         self,
         payment_service,
         mock_users_collection,
         mock_subscription_repository,
         mock_plan_repository,
-        mock_redis_cache,
         mock_dodo_client,
+        mock_checkout_session_repository,
     ):
         """Happy path: returns checkout URL when user exists and has no active sub."""
         _set_user(mock_users_collection, SAMPLE_USER_DOC)
@@ -523,6 +671,53 @@ class TestCreateSubscription:
         assert result.subscription_id == "sess_001"
         assert result.payment_link == "https://checkout.dodo.dev/sess_001"
         assert result.status == "payment_link_created"
+        # The checkout session is recorded verbatim — the verify fallback
+        # resolves the purchase against Dodo through this record.
+        recorded = mock_checkout_session_repository.create.call_args.args[0]
+        assert recorded.session_id == "sess_001"
+        assert recorded.user_id == FAKE_USER_ID
+        assert recorded.product_id == "prod_abc123"
+        assert recorded.created_at is not None
+        assert recorded.created_at.tzinfo is not None
+
+    @pytest.mark.usefixtures("mock_redis_cache")
+    async def test_checkout_record_failure_does_not_block_checkout(
+        self,
+        payment_service,
+        mock_users_collection,
+        mock_subscription_repository,
+        mock_plan_repository,
+        mock_dodo_client,
+        mock_checkout_session_repository,
+    ):
+        """Recording the session is best-effort: losing it only disables the
+        verify fallback, never the checkout itself — but the loss is logged."""
+        _set_user(mock_users_collection, SAMPLE_USER_DOC)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+
+        checkout_response = MagicMock()
+        checkout_response.session_id = "sess_001"
+        checkout_response.checkout_url = "https://checkout.dodo.dev/sess_001"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=checkout_response)
+        mock_plan_repository.list_plans = AsyncMock(return_value=[])
+        mock_checkout_session_repository.create = AsyncMock(side_effect=Exception("mongo down"))
+
+        with patch("app.services.payments.payment_service.log") as mock_log:
+            result = await payment_service.create_subscription(
+                user_id=FAKE_USER_ID,
+                product_id="prod_abc123",
+            )
+
+        assert result.subscription_id == "sess_001"
+        assert result.status == "payment_link_created"
+        mock_log.error.assert_called_once_with(
+            f"{LogTag.PAYMENT} Failed to record checkout session",
+            error="mongo down",
+            error_type="Exception",
+            user_id=FAKE_USER_ID,
+            session_id="sess_001",
+        )
 
     async def test_raises_404_if_user_not_found(
         self,
@@ -616,6 +811,81 @@ class TestCreateSubscription:
 
         call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
         assert call_kwargs["discount_code"] == "SAVE20"
+
+    async def test_outside_production_everything_but_the_card_is_prefilled(
+        self,
+        payment_service,
+        mock_users_collection,
+        mock_subscription_repository,
+        mock_plan_repository,
+        mock_dodo_client,
+    ):
+        """Dodo's documented test card is a US Visa; on the Indian rail it is
+        declined, so a developer could not pay with the card the docs name."""
+        _set_user(mock_users_collection, SAMPLE_USER_DOC)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        checkout_response = MagicMock()
+        checkout_response.session_id = "sess_003"
+        checkout_response.checkout_url = "https://checkout.dodo.dev/sess_003"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=checkout_response)
+        mock_plan_repository.list_plans = AsyncMock(return_value=[])
+
+        with patch.object(payment_service_module.settings, "ENV", "development"):
+            await payment_service.create_subscription(
+                user_id=FAKE_USER_ID, product_id="prod_abc123"
+            )
+        dev_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert dev_kwargs["billing_address"] == {
+            "country": "US",
+            "street": "548 Market St",
+            "city": "San Francisco",
+            "state": "CA",
+            "zipcode": "94104",
+        }
+        assert dev_kwargs["customer"]["phone_number"] == "+14155550123"
+        assert dev_kwargs["show_saved_payment_methods"] is True
+
+        with patch.object(payment_service_module.settings, "ENV", "production"):
+            await payment_service.create_subscription(
+                user_id=FAKE_USER_ID, product_id="prod_abc123"
+            )
+        prod_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert "billing_address" not in prod_kwargs
+        assert "phone_number" not in prod_kwargs["customer"]
+        assert "show_saved_payment_methods" not in prod_kwargs
+
+    async def test_return_url_follows_the_requested_path(
+        self,
+        payment_service,
+        mock_users_collection,
+        mock_subscription_repository,
+        mock_plan_repository,
+        mock_dodo_client,
+    ):
+        """A checkout started in the onboarding wizard comes back to the wizard,
+        not to the standalone result page: the wizard confirms the payment in
+        place and is the one screen the user sees after paying."""
+        _set_user(mock_users_collection, SAMPLE_USER_DOC)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        checkout_response = MagicMock()
+        checkout_response.session_id = "sess_003"
+        checkout_response.checkout_url = "https://checkout.dodo.dev/sess_003"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=checkout_response)
+        mock_plan_repository.list_plans = AsyncMock(return_value=[])
+
+        await payment_service.create_subscription(
+            user_id=FAKE_USER_ID,
+            product_id="prod_abc123",
+            return_path=CheckoutSource.ONBOARDING.return_path,
+        )
+        call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert call_kwargs["return_url"].endswith("/onboarding?checkout=returned")
+
+        await payment_service.create_subscription(user_id=FAKE_USER_ID, product_id="prod_abc123")
+        call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
+        assert call_kwargs["return_url"].endswith("/payment/success")
 
     async def test_no_discount_code_when_not_provided(
         self,
@@ -805,6 +1075,107 @@ class TestCancelSubscription:
 class TestVerifyPaymentCompletion:
     """Tests for DodoPaymentService.verify_payment_completion."""
 
+    @pytest.fixture
+    def mock_track_activation(self):
+        with patch("app.services.payments.payment_service.track_subscription_event") as mock_fn:
+            yield mock_fn
+
+    @pytest.fixture
+    def materialize_mocks(
+        self,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+        mock_users_collection,
+        mock_send_email,
+        mock_track_activation,
+    ):
+        """Every seam the Dodo materialization path touches, as one bundle."""
+        return SimpleNamespace(
+            subscriptions=mock_subscription_repository,
+            checkouts=mock_checkout_session_repository,
+            dodo=mock_dodo_client,
+            users=mock_users_collection,
+            send_email=mock_send_email,
+            track_activation=mock_track_activation,
+        )
+
+    @staticmethod
+    def _dodo_subscription(
+        user_id: str | None = FAKE_USER_ID,
+        status: str = "active",
+    ) -> SimpleNamespace:
+        """A Dodo SDK subscription object for the materialization path.
+
+        A plain namespace, not a MagicMock: the production code reads these
+        attributes (and ``getattr(..., default)``s) by name, and a MagicMock
+        answers *any* name with a truthy child — which lets a mutant that
+        rewrites an attribute string pass unnoticed.
+        """
+        return SimpleNamespace(
+            subscription_id="sub_from_checkout",
+            product_id="prod_abc123",
+            status=status,
+            quantity=1,
+            currency="USD",
+            recurring_pre_tax_amount=30000,
+            payment_frequency_count=1,
+            payment_frequency_interval="Year",
+            subscription_period_count=1,
+            subscription_period_interval="Year",
+            next_billing_date=datetime(2027, 8, 24, tzinfo=UTC),
+            previous_billing_date=datetime(2026, 8, 24, tzinfo=UTC),
+            metadata={"user_id": user_id} if user_id is not None else {},
+        )
+
+    @staticmethod
+    def _exact_retrieve(expected_id: str, result: object) -> MagicMock:
+        """A ``retrieve`` stub that answers only its own id.
+
+        Any other argument raises, so a mutant that rewrites which id gets
+        passed dies in every test that walks the chain.
+        """
+
+        def impl(resource_id: str) -> object:
+            if resource_id != expected_id:
+                raise AssertionError(
+                    f"retrieve called with {resource_id!r}, expected {expected_id!r}"
+                )
+            return result
+
+        return MagicMock(side_effect=impl)
+
+    @staticmethod
+    def _wire_dodo_checkout_chain(
+        mock_dodo_client,
+        user_id: str | None,
+        payment_id: str | None = "pay_123",
+        payment_status: str | None = "succeeded",
+        subscription_id: str | None = "sub_from_checkout",
+        subscription_status: str = "active",
+    ) -> SimpleNamespace:
+        """checkout_sessions.retrieve -> payments.retrieve -> subscriptions.retrieve,
+        each answering only the id the previous hop produced."""
+        checkout_status = SimpleNamespace(payment_id=payment_id, payment_status=payment_status)
+        payment = SimpleNamespace(subscription_id=subscription_id)
+        subscription = TestVerifyPaymentCompletion._dodo_subscription(
+            user_id, status=subscription_status
+        )
+        mock_dodo_client.checkout_sessions = SimpleNamespace(
+            retrieve=TestVerifyPaymentCompletion._exact_retrieve("ches_123", checkout_status)
+        )
+        mock_dodo_client.payments = SimpleNamespace(
+            retrieve=TestVerifyPaymentCompletion._exact_retrieve("pay_123", payment)
+        )
+        mock_dodo_client.subscriptions = SimpleNamespace(
+            retrieve=TestVerifyPaymentCompletion._exact_retrieve("sub_from_checkout", subscription)
+        )
+        return subscription
+
+    @staticmethod
+    def _pending_checkout() -> SimpleNamespace:
+        return SimpleNamespace(session_id="ches_123", product_id="prod_abc123")
+
     async def test_active_subscription_returns_completed(
         self,
         payment_service,
@@ -826,10 +1197,283 @@ class TestVerifyPaymentCompletion:
         assert result.subscription_id == "sub_xyz789"
         mock_send_email.assert_awaited_once()
 
+    async def test_materializes_subscription_from_dodo_when_webhook_not_landed(
+        self,
+        payment_service,
+        materialize_mocks,
+    ):
+        """The webhook-vs-redirect race: no local row yet, but Dodo reports the
+        checkout as paid+active — materialize it and return completed."""
+        materialize_mocks.subscriptions.get_active_for_user = AsyncMock(return_value=None)
+        materialize_mocks.subscriptions.get_latest_active_for_user = AsyncMock(return_value=None)
+        materialize_mocks.subscriptions.get_by_dodo_id = AsyncMock(return_value=None)
+        created = SubscriptionDocument.model_validate(
+            {**SAMPLE_SUBSCRIPTION_DOC, "dodo_subscription_id": "sub_from_checkout"}
+        )
+        materialize_mocks.subscriptions.create = AsyncMock(return_value=created)
+        materialize_mocks.checkouts.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(materialize_mocks.dodo, FAKE_USER_ID)
+        _set_user(materialize_mocks.users, SAMPLE_USER_DOC)
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is True
+        assert result.subscription_id == "sub_from_checkout"
+        materialize_mocks.checkouts.get_latest_for_user.assert_awaited_once_with(FAKE_USER_ID)
+        materialize_mocks.subscriptions.get_by_dodo_id.assert_awaited_once_with("sub_from_checkout")
+        # The materialized row must carry the Dodo subscription verbatim — a
+        # drifted field here prints a wrong receipt.
+        doc = materialize_mocks.subscriptions.create.call_args.args[0]
+        assert doc.dodo_subscription_id == "sub_from_checkout"
+        assert doc.user_id == FAKE_USER_ID
+        assert doc.product_id == "prod_abc123"
+        assert doc.status == "active"
+        assert doc.quantity == 1
+        assert doc.currency == "USD"
+        assert doc.recurring_pre_tax_amount == 30000
+        assert doc.payment_frequency_count == 1
+        assert doc.payment_frequency_interval == "Year"
+        assert doc.subscription_period_count == 1
+        assert doc.subscription_period_interval == "Year"
+        assert doc.next_billing_date == "2027-08-24T00:00:00+00:00"
+        assert doc.previous_billing_date == "2026-08-24T00:00:00+00:00"
+        assert doc.metadata == {"user_id": FAKE_USER_ID}
+        assert doc.created_at is not None
+        assert doc.created_at.tzinfo is not None
+        assert doc.updated_at == doc.created_at
+        materialize_mocks.track_activation.assert_called_once_with(
+            user_id=FAKE_USER_ID,
+            event_type=AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
+            subscription_id="sub_from_checkout",
+            plan=SubscriptionPlan(name="Pro", amount=300.0, currency="USD"),
+        )
+        materialize_mocks.send_email.assert_awaited_once()
+
+    async def test_materialization_is_idempotent_with_webhook_row(
+        self,
+        payment_service,
+        materialize_mocks,
+    ):
+        """If the webhook landed while we were asking Dodo, its row wins and
+        nothing new is created."""
+        materialize_mocks.subscriptions.get_active_for_user = AsyncMock(return_value=None)
+        materialize_mocks.subscriptions.get_latest_active_for_user = AsyncMock(return_value=None)
+        existing = SubscriptionDocument.model_validate(SAMPLE_SUBSCRIPTION_DOC)
+        materialize_mocks.subscriptions.get_by_dodo_id = AsyncMock(return_value=existing)
+        materialize_mocks.subscriptions.create = AsyncMock()
+        materialize_mocks.checkouts.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(materialize_mocks.dodo, FAKE_USER_ID)
+        _set_user(materialize_mocks.users, SAMPLE_USER_DOC)
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is True
+        materialize_mocks.subscriptions.get_by_dodo_id.assert_awaited_once_with("sub_from_checkout")
+        materialize_mocks.subscriptions.create.assert_not_called()
+        materialize_mocks.track_activation.assert_not_called()
+
+    async def test_no_pending_checkout_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+    ):
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+
+    async def test_unpaid_checkout_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """Checkout still at the details-collection stage — no payment yet."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        # Everything downstream is valid, so a mutant that drops the
+        # payment-status guard would happily materialize — and get caught.
+        self._wire_dodo_checkout_chain(mock_dodo_client, FAKE_USER_ID, payment_id=None)
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_dodo_client.payments.retrieve.assert_not_called()
+
+    async def test_settled_payment_not_succeeded_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """A payment id exists but the payment has not succeeded yet."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(mock_dodo_client, FAKE_USER_ID, payment_status="processing")
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_dodo_client.payments.retrieve.assert_not_called()
+
+    async def test_payment_without_subscription_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """A settled one-off payment with no subscription behind it."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(mock_dodo_client, FAKE_USER_ID, subscription_id=None)
+        # A payment payload may not carry the field at all — the defensive
+        # getattr default makes that the quiet "no subscription" path, not an
+        # AttributeError swallowed into the Dodo-failure warning.
+        mock_dodo_client.payments = SimpleNamespace(
+            retrieve=self._exact_retrieve("pay_123", SimpleNamespace())
+        )
+
+        with patch("app.services.payments.payment_service.log") as mock_log:
+            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_log.warning.assert_not_called()
+        mock_dodo_client.subscriptions.retrieve.assert_not_called()
+
+    async def test_inactive_dodo_subscription_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """Dodo answers, but the subscription never went active (e.g. on_hold)."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_by_dodo_id = AsyncMock(return_value=None)
+        mock_subscription_repository.create = AsyncMock()
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(
+            mock_dodo_client, FAKE_USER_ID, subscription_status="on_hold"
+        )
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_subscription_repository.create.assert_not_called()
+
+    async def test_materializes_when_metadata_has_no_user_id(
+        self,
+        payment_service,
+        materialize_mocks,
+    ):
+        """Metadata without a user id is not a mismatch — our own checkout
+        record already binds the session to this user."""
+        materialize_mocks.subscriptions.get_active_for_user = AsyncMock(return_value=None)
+        materialize_mocks.subscriptions.get_latest_active_for_user = AsyncMock(return_value=None)
+        materialize_mocks.subscriptions.get_by_dodo_id = AsyncMock(return_value=None)
+        created = SubscriptionDocument.model_validate(
+            {**SAMPLE_SUBSCRIPTION_DOC, "dodo_subscription_id": "sub_from_checkout"}
+        )
+        materialize_mocks.subscriptions.create = AsyncMock(return_value=created)
+        materialize_mocks.checkouts.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(materialize_mocks.dodo, None)
+        _set_user(materialize_mocks.users, SAMPLE_USER_DOC)
+
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is True
+        assert materialize_mocks.subscriptions.create.call_args.args[0].user_id == FAKE_USER_ID
+
+    async def test_ignores_subscription_owned_by_other_user(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """Metadata mismatch means the subscription belongs to someone else."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_by_dodo_id = AsyncMock(return_value=None)
+        mock_subscription_repository.create = AsyncMock()
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        self._wire_dodo_checkout_chain(mock_dodo_client, "someone_else@example.com")
+
+        with patch("app.services.payments.payment_service.log") as mock_log:
+            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_subscription_repository.create.assert_not_called()
+        # The skip lands on the wide event (warnings[] is a queryable surface),
+        # so the message and every kwarg are part of the contract.
+        mock_log.warning.assert_called_once_with(
+            f"{LogTag.PAYMENT} Checkout subscription belongs to a different user; skipping",
+            session_id="ches_123",
+            user_id=FAKE_USER_ID,
+            metadata_user_id="someone_else@example.com",
+        )
+
+    async def test_dodo_api_failure_returns_not_completed(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+    ):
+        """The fallback is best-effort — Dodo being down must not 500 verify."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.get_latest_for_user = AsyncMock(
+            return_value=self._pending_checkout()
+        )
+        mock_dodo_client.checkout_sessions = MagicMock()
+        mock_dodo_client.checkout_sessions.retrieve = MagicMock(
+            side_effect=Exception("Dodo API down")
+        )
+
+        with patch("app.services.payments.payment_service.log") as mock_log:
+            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert result.payment_completed is False
+        mock_log.warning.assert_called_once_with(
+            f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
+            error="Dodo API down",
+            error_type="Exception",
+            user_id=FAKE_USER_ID,
+            session_id="ches_123",
+        )
+
     async def test_no_subscription_returns_not_completed(
         self,
         payment_service,
         mock_subscription_repository,
+        mock_checkout_session_repository,
     ):
         mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
         mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
@@ -925,6 +1569,26 @@ class TestGetUserSubscriptionStatus:
         assert status.has_subscription is False
         assert status.current_plan is None
         assert status.subscription is None
+        assert status.has_ever_subscribed is False
+
+    async def test_lapsed_user_is_distinguishable_from_a_never_paid_one(
+        self,
+        payment_service,
+        mock_subscription_repository,
+    ):
+        """No active subscription but a row in history — the paywall shows the
+        "your subscription ended" copy off this flag, so it must not read the
+        same as a user who has never paid."""
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.has_any_for_user = AsyncMock(return_value=True)
+
+        status = await payment_service.get_user_subscription_status(FAKE_USER_ID)
+
+        assert status.is_subscribed is False
+        assert status.has_ever_subscribed is True
+        # Scoped to this user: an unscoped history read would show the "your
+        # subscription ended" copy to everyone the moment anyone had ever paid.
+        mock_subscription_repository.has_any_for_user.assert_awaited_once_with(FAKE_USER_ID)
 
     async def test_active_subscription_returns_pro_status(
         self,
@@ -947,6 +1611,7 @@ class TestGetUserSubscriptionStatus:
         assert status.plan_type == PlanType.PRO
         assert status.status == SubscriptionStatus.ACTIVE
         assert status.has_subscription is True
+        assert status.has_ever_subscribed is True
         assert status.can_upgrade is True
         assert status.can_downgrade is True
         assert status.current_plan is not None
@@ -1233,11 +1898,50 @@ class TestCreateProCheckout:
         upgrade_gets = [
             call
             for call in mock_redis_cache.get.await_args_list
-            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:yearly"
+            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:yearly:/payment/success"
         ]
         assert len(upgrade_gets) == 1
         # The checkout session must be created for THIS user, tied by metadata.
-        mint.assert_awaited_once_with(FAKE_USER_ID, "prod_y")
+        mint.assert_awaited_once_with(
+            FAKE_USER_ID, "prod_y", discount_code=None, return_path="/payment/success"
+        )
+
+    async def test_configured_paywall_discount_is_pre_applied_to_the_minted_session(
+        self,
+        payment_service,
+        mock_plan_repository,
+        mock_subscription_repository,
+        mock_users_collection,
+        mock_redis_cache,
+        mock_dodo_client,
+    ):
+        """Every surface that hands out this link also advertises
+        PAYWALL_DISCOUNT_CODE, so the code must actually reach Dodo — otherwise
+        the 402 body and the bot notice promise a discount the page never applies.
+        """
+        mock_plan_repository.list_plans = AsyncMock(return_value=CATALOGUE)
+        session = MagicMock()
+        session.session_id = "cs_d"
+        session.checkout_url = "https://checkout.dodopayments.com/s/cs_d"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=session)
+
+        mint = AsyncMock(
+            return_value=CreateSubscriptionResponse(
+                subscription_id="cs_d",
+                payment_link="https://checkout.dodopayments.com/s/cs_d",
+                status="payment_link_created",
+            )
+        )
+        with (
+            patch.object(payment_service, "create_subscription", mint),
+            patch(
+                "app.services.payments.payment_service.settings.PAYWALL_DISCOUNT_CODE",
+                "SAVE20",
+            ),
+        ):
+            await payment_service.create_pro_checkout(FAKE_USER_ID)
+
+        assert mint.await_args.kwargs["discount_code"] == "SAVE20"
 
     async def test_caches_the_session_under_the_one_hour_ttl(
         self,
@@ -1259,7 +1963,7 @@ class TestCreateProCheckout:
         upgrade_calls = [
             call
             for call in mock_redis_cache.set.await_args_list
-            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:monthly"
+            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:monthly:/payment/success"
         ]
         assert len(upgrade_calls) == 1
         assert upgrade_calls[0].kwargs["ttl"] == UPGRADE_LINK_CACHE_TTL
@@ -1342,7 +2046,7 @@ class TestCreateProCheckout:
         await payment_service.create_pro_checkout(FAKE_USER_ID)
 
         cached_keys = [call.args[0] for call in mock_redis_cache.set.await_args_list]
-        upgrade_key = f"upgrade_link:{FAKE_USER_ID}:monthly"
+        upgrade_key = f"upgrade_link:{FAKE_USER_ID}:monthly:/payment/success"
         assert upgrade_key in cached_keys
         cached_payload = next(
             call.args[1]
@@ -1767,16 +2471,54 @@ class TestProcessWebhookIdempotency:
         webhook_service,
         mock_processed_webhook_repository,
     ):
-        """If webhook_id was already processed, returns 'ignored' immediately."""
-        mock_processed_webhook_repository.is_processed = AsyncMock(
-            return_value={"webhook_id": "wh_dup"}
-        )
+        """A delivery whose id is already claimed returns 'ignored' before any handler runs."""
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
 
         event_data = _make_webhook_event("payment.succeeded", PAYMENT_DATA_PAYLOAD)
         result = await webhook_service.process_webhook(event_data, "wh_dup")
 
         assert result.status == "ignored"
-        assert "already processed" in result.message
+        assert result.message == "Webhook already processed"
+        # The claim is on this delivery id, under the event type Dodo sent.
+        mock_processed_webhook_repository.claim.assert_awaited_once_with(
+            "wh_dup", event_type="payment.succeeded"
+        )
+        mock_processed_webhook_repository.record_outcome.assert_not_awaited()
+
+    async def test_a_delivery_without_a_type_is_claimed_as_unknown(
+        self, webhook_service, mock_processed_webhook_repository
+    ):
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
+
+        result = await webhook_service.process_webhook({"data": {}}, "wh_typeless")
+
+        assert result.event_type == "unknown"
+        mock_processed_webhook_repository.claim.assert_awaited_once_with(
+            "wh_typeless", event_type="unknown"
+        )
+
+    async def test_a_replayed_cancellation_deactivates_workflows_only_once(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        """Dodo can redeliver the same webhook id. The idempotency check must stop
+        the second delivery before it deactivates the user's workflows again."""
+        event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
+
+        first = await webhook_service.process_webhook(event_data, "wh_cancel_replay")
+        assert first.status == "processed"
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
+
+        # Second delivery of the identical webhook id: the claim is taken.
+        mock_processed_webhook_repository.claim = AsyncMock(return_value=False)
+        second = await webhook_service.process_webhook(event_data, "wh_cancel_replay")
+
+        assert second.status == "ignored"
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
 
     async def test_unknown_event_type_is_ignored_and_recorded(
         self,
@@ -1798,18 +2540,86 @@ class TestProcessWebhookIdempotency:
 
         assert result.status == "ignored"
         assert "No handler" in result.message
-        mock_processed_webhook_repository.mark_processed.assert_awaited()
+        mock_processed_webhook_repository.record_outcome.assert_awaited_once_with(
+            "wh_unknown",
+            ProcessedWebhookUpdate(
+                status="ignored", message=result.message, payment_id=None, subscription_id=None
+            ),
+        )
         webhook_service.handlers = original_handlers
+
+    async def test_a_handled_delivery_records_the_handlers_full_outcome(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
+
+        result = await webhook_service.process_webhook(event_data, "wh_cancel_outcome")
+
+        assert result.status == "processed"
+        mock_processed_webhook_repository.record_outcome.assert_awaited_once_with(
+            "wh_cancel_outcome",
+            ProcessedWebhookUpdate(
+                status=result.status,
+                message=result.message,
+                payment_id=result.payment_id,
+                subscription_id=result.subscription_id,
+            ),
+        )
+
+    def test_the_recorded_outcome_carries_every_field_of_the_result(self):
+        from app.services.payments.payment_webhook_service import _outcome_of
+
+        result = DodoWebhookProcessingResult(
+            event_type="payment.succeeded",
+            status="processed",
+            message="ok",
+            payment_id="pay_1",
+            subscription_id="sub_1",
+        )
+
+        assert _outcome_of(result) == ProcessedWebhookUpdate(
+            status="processed", message="ok", payment_id="pay_1", subscription_id="sub_1"
+        )
+
+    async def test_every_event_type_dodo_can_send_parses(self) -> None:
+        """Drift guard against the SDK: a real Dodo event outside our enum failed
+        validation and was logged as a processing error (seen live with
+        subscription.updated on 2026-09-06). The SDK's literal is the contract."""
+        sdk_types = set(get_args(WebhookEventType))
+        ours = {member.value for member in DodoWebhookEventType}
+        assert ours == sdk_types
+
+    async def test_an_event_we_do_not_act_on_is_ignored_not_failed(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+    ):
+        """subscription.updated fires on every Dodo-side edit; we neither act on
+        it nor treat it as an error, and it is recorded so a redelivery is a no-op."""
+        event_data = _make_webhook_event("subscription.updated", {})
+        result = await webhook_service.process_webhook(event_data, "wh_updated")
+        assert result.status == "ignored"
+        assert "No handler" in result.message
+        mock_processed_webhook_repository.record_outcome.assert_awaited()
 
     async def test_processing_failure_returns_failed_result(
         self,
         webhook_service,
         mock_processed_webhook_repository,
     ):
-        """When event parsing fails, returns a 'failed' result."""
+        """When event parsing fails, returns a 'failed' result and hands the
+        claim back so the sender's retry is not turned away as a replay."""
         bad_data = {"type": "INVALID_TYPE", "data": {}}
 
         result = await webhook_service.process_webhook(bad_data, "wh_bad")
+
+        mock_processed_webhook_repository.release.assert_awaited_once_with("wh_bad")
+        mock_processed_webhook_repository.record_outcome.assert_not_awaited()
 
         assert result.status == "failed"
         assert "Processing error" in result.message
@@ -1996,7 +2806,7 @@ class TestHandleSubscriptionActive:
     ):
         """If subscription already exists in DB, skip creation."""
         mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(
-            return_value=SAMPLE_SUBSCRIPTION_DOC
+            return_value=SAMPLE_SUBSCRIPTION
         )
 
         event_data = _make_webhook_event("subscription.active", SUBSCRIPTION_DATA_PAYLOAD)
@@ -2096,6 +2906,24 @@ class TestHandleSubscriptionActive:
 
         assert result.status == "failed"
         assert "Processing error" in result.message
+
+    @pytest.mark.usefixtures(
+        "mock_processed_webhook_repository",
+        "mock_webhook_subscription_repository",
+        "mock_webhook_users_collection",
+        "mock_webhook_send_email",
+        "mock_track_subscription",
+    )
+    async def test_does_not_deactivate_workflows(
+        self,
+        webhook_service,
+        mock_deactivate_workflows,
+    ):
+        """A user going Pro must never have their automation turned off."""
+        event_data = _make_webhook_event("subscription.active", SUBSCRIPTION_DATA_PAYLOAD)
+        await webhook_service.process_webhook(event_data, "wh_sub_008")
+
+        mock_deactivate_workflows.assert_not_awaited()
 
 
 class TestHandleSubscriptionRenewed:
@@ -2251,6 +3079,7 @@ class TestHandleSubscriptionCancelled:
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
         mock_track_subscription,
+        mock_deactivate_workflows,
     ):
         event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
         await webhook_service.process_webhook(event_data, "wh_cancel_sub_004")
@@ -2273,6 +3102,7 @@ class TestHandleSubscriptionCancelled:
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
         mock_track_subscription,
+        mock_deactivate_workflows,
     ):
         """A cancel-at-next-billing-date keeps the subscription active and just
         records the flag — the user retains Pro access until the period ends."""
@@ -2298,6 +3128,7 @@ class TestHandleSubscriptionCancelled:
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
         mock_track_subscription,
+        mock_deactivate_workflows,
     ):
         """Even if Dodo ever reported status "cancelled" in a scheduled-cancel
         payload, the user is not downgraded early — status stays untouched."""
@@ -2314,6 +3145,56 @@ class TestHandleSubscriptionCancelled:
         set_data = update_call.args[1].model_dump(exclude_unset=True)
         assert "status" not in set_data
         assert set_data["cancel_at_next_billing_date"] is True
+
+    async def test_immediate_cancel_deactivates_this_users_workflows(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        """An immediate cancellation (no cancel_at_next_billing_date) drops the
+        user from Pro right away, so their workflows must be turned off now."""
+        event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
+
+        await webhook_service.process_webhook(event_data, "wh_cancel_sub_007")
+
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
+
+    async def test_scheduled_cancel_does_not_deactivate_workflows(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        """A cancel scheduled for period end keeps the user on Pro (and their
+        workflows running) until `subscription.expired` actually fires."""
+        payload = {**SUBSCRIPTION_DATA_PAYLOAD, "cancel_at_next_billing_date": True}
+        event_data = _make_webhook_event("subscription.cancelled", payload)
+
+        await webhook_service.process_webhook(event_data, "wh_cancel_sub_008")
+
+        mock_deactivate_workflows.assert_not_awaited()
+
+    async def test_deactivation_failure_does_not_fail_the_webhook(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        """A broken workflow deactivation must not turn an otherwise-successful
+        billing webhook into a "failed" result that Dodo would retry forever."""
+        mock_deactivate_workflows.side_effect = RuntimeError("mongo down")
+        event_data = _make_webhook_event("subscription.cancelled", SUBSCRIPTION_DATA_PAYLOAD)
+
+        result = await webhook_service.process_webhook(event_data, "wh_cancel_sub_009")
+
+        assert result.status == "processed"
 
 
 class TestHandleSubscriptionExpired:
@@ -2341,6 +3222,7 @@ class TestHandleSubscriptionExpired:
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
         mock_track_subscription,
+        mock_deactivate_workflows,
     ):
         event_data = _make_webhook_event("subscription.expired", SUBSCRIPTION_DATA_PAYLOAD)
         await webhook_service.process_webhook(event_data, "wh_expire_002")
@@ -2353,6 +3235,36 @@ class TestHandleSubscriptionExpired:
         assert call_kwargs["event_type"] == "subscription:expired"
         assert call_kwargs["user_id"] == FAKE_USER_ID
 
+    async def test_deactivates_this_users_workflows(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        event_data = _make_webhook_event("subscription.expired", SUBSCRIPTION_DATA_PAYLOAD)
+        await webhook_service.process_webhook(event_data, "wh_expire_003")
+
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
+
+    async def test_no_user_id_means_no_deactivation_call(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_deactivate_workflows,
+    ):
+        """No local subscription row matched the Dodo id: there is no user to
+        resolve, so nothing is deactivated instead of raising on a None id."""
+        mock_webhook_subscription_repository.get_user_id_by_dodo_id.return_value = None
+        event_data = _make_webhook_event("subscription.expired", SUBSCRIPTION_DATA_PAYLOAD)
+
+        await webhook_service.process_webhook(event_data, "wh_expire_004")
+
+        mock_deactivate_workflows.assert_not_awaited()
+
 
 class TestHandleSubscriptionFailed:
     """Tests for _handle_subscription_failed."""
@@ -2362,6 +3274,7 @@ class TestHandleSubscriptionFailed:
         webhook_service,
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
+        mock_deactivate_workflows,
     ):
         event_data = _make_webhook_event("subscription.failed", SUBSCRIPTION_DATA_PAYLOAD)
         result = await webhook_service.process_webhook(event_data, "wh_sfail_001")
@@ -2372,6 +3285,18 @@ class TestHandleSubscriptionFailed:
         set_data = update_call.args[1].model_dump(exclude_unset=True)
         assert set_data["status"] == "failed"
 
+    async def test_deactivates_this_users_workflows(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_deactivate_workflows,
+    ):
+        event_data = _make_webhook_event("subscription.failed", SUBSCRIPTION_DATA_PAYLOAD)
+        await webhook_service.process_webhook(event_data, "wh_sfail_002")
+
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
+
 
 class TestHandleSubscriptionOnHold:
     """Tests for _handle_subscription_on_hold."""
@@ -2381,6 +3306,7 @@ class TestHandleSubscriptionOnHold:
         webhook_service,
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
+        mock_deactivate_workflows,
     ):
         event_data = _make_webhook_event("subscription.on_hold", SUBSCRIPTION_DATA_PAYLOAD)
         result = await webhook_service.process_webhook(event_data, "wh_hold_001")
@@ -2390,6 +3316,18 @@ class TestHandleSubscriptionOnHold:
         update_call = mock_webhook_subscription_repository.apply_update_by_dodo_id.call_args
         set_data = update_call.args[1].model_dump(exclude_unset=True)
         assert set_data["status"] == "on_hold"
+
+    async def test_deactivates_this_users_workflows(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+        mock_deactivate_workflows,
+    ):
+        event_data = _make_webhook_event("subscription.on_hold", SUBSCRIPTION_DATA_PAYLOAD)
+        await webhook_service.process_webhook(event_data, "wh_hold_002")
+
+        mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
 
 
 class TestHandleSubscriptionPlanChanged:
@@ -2419,15 +3357,14 @@ class TestHandleSubscriptionPlanChanged:
 
 
 class TestSendWelcomeEmail:
-    """Tests for _send_welcome_email."""
+    """Tests for send_welcome_email_safely."""
 
     async def test_sends_email_when_user_found(
         self,
-        webhook_service,
         mock_webhook_users_collection,
         mock_webhook_send_email,
     ):
-        await webhook_service._send_welcome_email(FAKE_USER_ID)
+        await send_welcome_email_safely(FAKE_USER_ID)
 
         mock_webhook_send_email.assert_awaited_once_with(
             user_name="Alice",
@@ -2436,31 +3373,28 @@ class TestSendWelcomeEmail:
 
     async def test_no_email_when_user_not_found(
         self,
-        webhook_service,
         mock_webhook_users_collection,
         mock_webhook_send_email,
     ):
         _set_user(mock_webhook_users_collection, None)
 
-        await webhook_service._send_welcome_email(FAKE_USER_ID)
+        await send_welcome_email_safely(FAKE_USER_ID)
 
         mock_webhook_send_email.assert_not_awaited()
 
     async def test_no_email_when_user_has_no_email(
         self,
-        webhook_service,
         mock_webhook_users_collection,
         mock_webhook_send_email,
     ):
         _set_user(mock_webhook_users_collection, {**SAMPLE_USER_DOC, "email": None})
 
-        await webhook_service._send_welcome_email(FAKE_USER_ID)
+        await send_welcome_email_safely(FAKE_USER_ID)
 
         mock_webhook_send_email.assert_not_awaited()
 
     async def test_email_error_is_swallowed(
         self,
-        webhook_service,
         mock_webhook_users_collection,
         mock_webhook_send_email,
     ):
@@ -2468,7 +3402,7 @@ class TestSendWelcomeEmail:
         mock_webhook_send_email.side_effect = Exception("SMTP down")
 
         # Should not raise
-        await webhook_service._send_welcome_email(FAKE_USER_ID)
+        await send_welcome_email_safely(FAKE_USER_ID)
 
 
 class TestGetUserIdFromMetadata:
@@ -2485,76 +3419,6 @@ class TestGetUserIdFromMetadata:
     async def test_stringifies_non_string_user_id(self, webhook_service):
         user_id = await webhook_service._get_user_id_from_metadata({"user_id": 12345})
         assert user_id == "12345"
-
-
-class TestIsWebhookProcessed:
-    """Tests for _is_webhook_processed."""
-
-    async def test_returns_true_when_found(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        mock_processed_webhook_repository.is_processed = AsyncMock(return_value=True)
-
-        result = await webhook_service._is_webhook_processed("wh_exists")
-        assert result is True
-
-    async def test_returns_false_when_not_found(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        mock_processed_webhook_repository.is_processed = AsyncMock(return_value=False)
-
-        result = await webhook_service._is_webhook_processed("wh_new")
-        assert result is False
-
-
-class TestMarkWebhookAsProcessed:
-    """Tests for _mark_webhook_as_processed."""
-
-    async def test_inserts_processed_record(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        result = DodoWebhookProcessingResult(
-            event_type="payment.succeeded",
-            status="processed",
-            message="OK",
-            payment_id="pay_001",
-            subscription_id="sub_001",
-        )
-
-        await webhook_service._mark_webhook_as_processed("wh_mark_001", "payment.succeeded", result)
-
-        mock_processed_webhook_repository.mark_processed.assert_awaited_once()
-        call = mock_processed_webhook_repository.mark_processed.call_args
-        assert call.args[0] == "wh_mark_001"
-        assert call.kwargs["event_type"] == "payment.succeeded"
-        assert call.kwargs["status"] == "processed"
-        assert call.kwargs["payment_id"] == "pay_001"
-        assert call.kwargs["subscription_id"] == "sub_001"
-
-    async def test_insert_error_is_swallowed(
-        self,
-        webhook_service,
-        mock_processed_webhook_repository,
-    ):
-        """If storing webhook record fails, it's logged not propagated."""
-        mock_processed_webhook_repository.mark_processed = AsyncMock(
-            side_effect=Exception("DB write failed")
-        )
-
-        result = DodoWebhookProcessingResult(
-            event_type="payment.succeeded",
-            status="processed",
-            message="OK",
-        )
-
-        # Should not raise
-        await webhook_service._mark_webhook_as_processed("wh_mark_002", "payment.succeeded", result)
 
 
 # ============================================================================
@@ -2581,20 +3445,26 @@ class TestPaymentWebhookServiceInit:
 
         assert svc.webhook_verifier is None
 
-    def test_all_handler_event_types_registered(self):
-        """All DodoWebhookEventType values have a corresponding handler."""
-        with patch("app.services.payments.payment_webhook_service.settings") as mock_settings:
-            mock_settings.DODO_WEBHOOK_PAYMENTS_SECRET = ""
-            mock_settings.ENV = "development"
-            svc = PaymentWebhookService()
-
-        for event_type in DodoWebhookEventType:
-            assert event_type in svc.handlers, f"Missing handler for {event_type}"
-
-
-# ============================================================================
-# process_webhook account-sync scheduling
-# ============================================================================
+    def test_every_handler_is_for_an_event_dodo_sends_and_the_acted_on_set_is_explicit(
+        self, webhook_service
+    ):
+        """The enum is everything Dodo can send (drift-guarded against the SDK);
+        the handlers are the subset GAIA acts on. Anything else is acknowledged
+        and ignored, never a processing error."""
+        assert set(webhook_service.handlers) <= set(DodoWebhookEventType)
+        assert set(webhook_service.handlers) == {
+            DodoWebhookEventType.PAYMENT_SUCCEEDED,
+            DodoWebhookEventType.PAYMENT_FAILED,
+            DodoWebhookEventType.PAYMENT_PROCESSING,
+            DodoWebhookEventType.PAYMENT_CANCELLED,
+            DodoWebhookEventType.SUBSCRIPTION_ACTIVE,
+            DodoWebhookEventType.SUBSCRIPTION_RENEWED,
+            DodoWebhookEventType.SUBSCRIPTION_CANCELLED,
+            DodoWebhookEventType.SUBSCRIPTION_EXPIRED,
+            DodoWebhookEventType.SUBSCRIPTION_FAILED,
+            DodoWebhookEventType.SUBSCRIPTION_ON_HOLD,
+            DodoWebhookEventType.SUBSCRIPTION_PLAN_CHANGED,
+        }
 
 
 class TestWebhookAccountSync:

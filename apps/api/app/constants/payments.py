@@ -7,3 +7,18 @@ Payment and billing constants.
 PAYMENT_HISTORY_LIMIT = 10
 
 NO_USER_MESSAGE = "Could not identify the user, so their billing state is unavailable."
+
+#: Everything a checkout opened outside production prefills, so a developer
+#: only types the test card. The country matters: Dodo's documented test card
+#: (4242 4242 4242 4242) is a US Visa and the Indian rail declines it, so an
+#: overlay placed on the Indian rail by the developer's IP could not pay with
+#: the card the docs name. The address is a real US one so validation passes;
+#: the customer can still edit every field.
+DODO_TEST_MODE_BILLING_ADDRESS: dict[str, str] = {
+    "country": "US",
+    "street": "548 Market St",
+    "city": "San Francisco",
+    "state": "CA",
+    "zipcode": "94104",
+}
+DODO_TEST_MODE_PHONE_NUMBER = "+14155550123"

@@ -13,6 +13,11 @@ import type { SearchMode } from "@/types/shared/searchTypes";
 interface ComposerState {
   // Text input state
   pendingPrompt: string | null;
+  /**
+   * Send `pendingPrompt` as the user's turn on arrival instead of dropping it
+   * into the composer. Onboarding's web path uses this so the first message
+   * shows up as a real user bubble with GAIA's streamed reply under it.
+   */
   inputText: string;
 
   // Mode and tool selection

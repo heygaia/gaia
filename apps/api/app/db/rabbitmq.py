@@ -1,3 +1,6 @@
+import asyncio
+import contextlib
+
 import aio_pika
 from aio_pika import Message
 from aio_pika.abc import AbstractChannel, AbstractRobustConnection
@@ -8,6 +11,10 @@ from app.constants.log_tags import LogTag
 from app.constants.outbound import (
     OUTBOUND_DLX,
     OUTBOUND_QUEUES,
+    RABBITMQ_CONNECT_TIMEOUT_SECONDS,
+    RABBITMQ_HEARTBEAT_SECONDS,
+    RABBITMQ_PUBLISH_TIMEOUT_SECONDS,
+    RABBITMQ_TOPOLOGY_TIMEOUT_SECONDS,
     dlq_name,
     work_queue_arguments,
 )
@@ -22,12 +29,19 @@ class RabbitMQPublisher:
         self.channel: AbstractChannel | None = None
         self.declared_queues: set[str] = set()
         self._outbound_topology_declared: bool = False
+        # Serializes reconnects so concurrent publishers cannot each open a
+        # connection (and leak all but the last one).
+        self._connect_lock = asyncio.Lock()
 
     async def connect(self) -> None:
         """Connect to RabbitMQ and create channel."""
         if self.connection is None:
             log.debug(f"{LogTag.STARTUP} Establishing RabbitMQ connection")
-            self.connection = await aio_pika.connect_robust(self.amqp_url)
+            self.connection = await aio_pika.connect_robust(
+                self.amqp_url,
+                timeout=RABBITMQ_CONNECT_TIMEOUT_SECONDS,
+                heartbeat=RABBITMQ_HEARTBEAT_SECONDS,
+            )
             self.channel = await self.connection.channel()
             log.set(db={"connection_status": "connected", "backend": "rabbitmq"})
             log.info(f"{LogTag.STARTUP} RabbitMQ connection established")
@@ -58,8 +72,20 @@ class RabbitMQPublisher:
         during long-running tasks. FastAPI main app stays connected via
         the WebSocket consumer, but ARQ workers only publish sporadically.
         """
-        if not await self.is_connected():
+        if await self.is_connected():
+            return
+        async with self._connect_lock:
+            # Double-checked: another waiter may have reconnected while we
+            # queued on the lock.
+            if await self.is_connected():
+                return
             log.info(f"{LogTag.STARTUP} RabbitMQ connection not active, reconnecting...")
+            # A connection can be open with no channel (connect() timed out
+            # between the two); forgetting it would leak the socket and its
+            # heartbeat task, once per timeout.
+            if self.connection is not None and not self.connection.is_closed:
+                with contextlib.suppress(Exception):
+                    await self.connection.close()
             # Reset connection state
             self.connection = None
             self.channel = None
@@ -88,14 +114,14 @@ class RabbitMQPublisher:
             await self.channel.default_exchange.publish(message, routing_key=queue_name)
 
         try:
-            await _attempt()
+            await asyncio.wait_for(_attempt(), timeout=RABBITMQ_PUBLISH_TIMEOUT_SECONDS)
         except Exception as e:
             log.error(
                 f"{LogTag.STARTUP} Failed to publish to RabbitMQ: . Attempting recovery...",
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            await _attempt()
+            await asyncio.wait_for(_attempt(), timeout=RABBITMQ_PUBLISH_TIMEOUT_SECONDS)
             log.info(f"{LogTag.STARTUP} Successfully published after reconnection")
 
     async def publish(self, queue_name: str, body: bytes) -> None:
@@ -110,19 +136,23 @@ class RabbitMQPublisher:
         the redeclare with PRECONDITION_FAILED. Safe to call on every startup;
         the durable queues persist so messages survive while a bot is offline.
         """
-        await self.ensure_connected()
-        if not self.channel:
-            raise RuntimeError("Failed to establish RabbitMQ connection")
 
-        dlx = await self.channel.declare_exchange(
-            OUTBOUND_DLX, aio_pika.ExchangeType.DIRECT, durable=True
-        )
-        for queue_name in OUTBOUND_QUEUES.values():
-            dlq = await self.channel.declare_queue(dlq_name(queue_name), durable=True)
-            await dlq.bind(dlx, routing_key=dlq_name(queue_name))
-            await self.channel.declare_queue(
-                queue_name, durable=True, arguments=work_queue_arguments(queue_name)
+        async def _declare() -> None:
+            await self.ensure_connected()
+            if not self.channel:
+                raise RuntimeError("Failed to establish RabbitMQ connection")
+
+            dlx = await self.channel.declare_exchange(
+                OUTBOUND_DLX, aio_pika.ExchangeType.DIRECT, durable=True
             )
+            for queue_name in OUTBOUND_QUEUES.values():
+                dlq = await self.channel.declare_queue(dlq_name(queue_name), durable=True)
+                await dlq.bind(dlx, routing_key=dlq_name(queue_name))
+                await self.channel.declare_queue(
+                    queue_name, durable=True, arguments=work_queue_arguments(queue_name)
+                )
+
+        await asyncio.wait_for(_declare(), timeout=RABBITMQ_TOPOLOGY_TIMEOUT_SECONDS)
         self._outbound_topology_declared = True
 
     async def publish_outbound(self, queue_name: str, body: bytes) -> None:

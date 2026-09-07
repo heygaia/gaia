@@ -38,11 +38,13 @@ from app.agents.core.background.session import (
     RunKind,
     create_session,
     get_session,
+    mark_executor_failed,
     mark_executor_spawned,
 )
 from app.agents.core.nodes import executor_status
 from app.constants.agents import AgentTag, wrap_agent_payload
 from app.constants.cache import EXECUTOR_BUSY_PREFIX
+from app.constants.log_tags import LogTag
 from app.models.chat_models import SourceCategory
 from shared.py.wide_events import log, log_context
 
@@ -109,6 +111,79 @@ class _Boundaries:
 def boundaries():
     with ExitStack() as stack:
         yield _Boundaries(stack)
+
+
+class TestTheDoneSignalCarriesTheOutcome:
+    """The silent workflow path reads the executor's outcome off the session,
+    not off comms' prose: an error result marks the executor failed with its
+    text as the reason, and anything else marks it finished cleanly."""
+
+    async def test_an_error_result_marks_the_executor_failed_with_its_text(
+        self, boundaries
+    ) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+
+        await er._finalize_executor_run(_run(RunKind.LIVE), TASK, "the model call failed", "error")
+
+        session = get_session("s1")
+        assert session is not None
+        assert session.done_event.is_set()
+        assert session.executor_failed is True
+        assert session.executor_failure == "the model call failed"
+
+    async def test_a_final_result_marks_the_executor_finished(self, boundaries) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+
+        await er._finalize_executor_run(_run(RunKind.LIVE), TASK, "all done", "final")
+
+        session = get_session("s1")
+        assert session is not None
+        assert session.done_event.is_set()
+        assert session.executor_failed is False
+        assert session.executor_failure is None
+
+
+class TestAnAbandonedExecutorIsNotDelivered:
+    """The silent path waited, gave up, closed the fire as failed and tore the
+    session down. The executor's own finalize, when it finally comes, must not
+    answer that closed turn or queue work on it; the lock it holds is still owed."""
+
+    async def test_a_result_after_the_waiter_gave_up_releases_the_lock_and_nothing_else(
+        self, boundaries
+    ) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+        mark_executor_failed("s1", "the executor did not finish within 1500s")
+
+        with (
+            patch.object(er, "_queue_collection_if_uncollected", new_callable=AsyncMock) as collect,
+            patch.object(er, "log") as log,
+        ):
+            await er._finalize_executor_run(_run(RunKind.LIVE), TASK, "late result", "final")
+
+        boundaries.deliver.assert_not_awaited()
+        collect.assert_not_awaited()
+        boundaries.release.assert_awaited_once()
+        log.warning.assert_any_call(
+            f"{LogTag.AGENT} Executor finished after its waiter gave up; result not delivered",
+            stream_id="s1",
+            task_id="task-1",
+            result_type="final",
+        )
+
+    async def test_a_run_nobody_gave_up_on_queues_its_uncollected_work(self, boundaries) -> None:
+        boundaries.stream_manager.is_cancelled.return_value = False
+        create_session("s1", RunKind.LIVE)
+        run = _run(RunKind.LIVE)
+
+        with patch.object(
+            er, "_queue_collection_if_uncollected", new_callable=AsyncMock
+        ) as collect:
+            await er._finalize_executor_run(run, TASK, "done", "final")
+
+        collect.assert_awaited_once_with(run, TASK)
 
 
 class TestCancelledRouting:
@@ -651,11 +726,15 @@ class TestBuildRunItem:
     def test_every_field_survives_the_round_trip_shape(self) -> None:
         item = build_run_item(
             task="triage my inbox",
-            task_id="task-1",
             configurable={"user_id": "user-1", "thread_id": "conv-1"},
-            conversation_id="conv-1",
-            user_message_id="user-msg-1",
-            bot_message_id="bot-msg-1",
+            identity=RunIdentity(
+                stream_id="",
+                conversation_id="conv-1",
+                kind=RunKind.QUEUED,
+                task_id="task-1",
+                user_message_id="user-msg-1",
+                bot_message_id="bot-msg-1",
+            ),
         )
 
         assert item["task"] == "triage my inbox"
@@ -669,10 +748,14 @@ class TestBuildRunItem:
         ``prepare_run_from_item`` reads it unconditionally."""
         item = build_run_item(
             task="t",
-            task_id=None,
             configurable={"user_id": "user-1"},
-            conversation_id="conv-1",
-            user_message_id=None,
+            identity=RunIdentity(
+                stream_id="",
+                conversation_id="conv-1",
+                kind=RunKind.QUEUED,
+                task_id=None,
+                user_message_id=None,
+            ),
         )
 
         assert item["bot_message_id"] is None

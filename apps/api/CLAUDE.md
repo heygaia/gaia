@@ -36,7 +36,7 @@ nx run api:test:coverage
 
 The agent system uses two compiled LangGraph graphs registered via `GraphManager` / `ProviderRegistry`:
 
-- **`comms_agent`** — thin front-door agent. Has only three tools: `call_executor`, `add_memory`, `search_memory`. Handles user-facing chat (streaming or silent).
+- **`comms_agent`** — thin front-door agent. Tools: `call_executor` / `cancel_executor`, the memory tools, and the three discovery tools (`find_integration`, `search_public_workflows`, `show_connect_card`) that read catalogues or render the connect card in the same reply. Handles user-facing chat (streaming or silent).
 - **`executor_agent`** — full-tool agent. Receives tasks from `comms_agent` via the `call_executor` tool. Has access to the entire tool registry retrieved from ChromaDB.
 
 Both graphs are built in `app/agents/core/graph_builder/build_graph.py` and registered during startup via `build_graphs()`.
@@ -521,7 +521,7 @@ Tier summary (full table in `tests/CLAUDE.md`):
 - `tests/stress/` / `tests/meta/` — race/retry battles, import-fence invariants (own targets).
 - `tests/composio/`, `tests/model_onboarding/` — live-credential, opt-in, excluded by default.
 
-Never run a raw full `pytest` locally — use the nx targets (`nx test api`, `nx run api:test:*`); they pin the dirs, markers, and xdist settings.
+Never run a raw full `pytest` locally, and never with xdist: the default `addopts` carries `-n 4`, each worker imports the whole app, and parallel workers exhaust a laptop's memory fast. For a targeted run use `uv run pytest <one file> -p no:xdist -o addopts=""`, one file at a time, files back to back in a single command; suites belong to CI or the nx targets (`nx test api`, `nx run api:test:*`), which pin the dirs, markers and xdist settings for the home-box runners.
 
 **Unmark the patch-away.** A caller mocking a service means that service's logic has never run — the mock is a permanent blind spot. When you see an endpoint test mocking a service it barely touches, or a service test mocking a repo call whose logic matters, prefer un-mocking: let the real component run against mocked seams one layer down. Same rule as "never mock the thing under test."
 

@@ -33,18 +33,21 @@ from app.api.v1.middleware.tiered_rate_limiter import (
 from app.config.settings import settings
 from app.constants.agents import (
     PLAYBOOK_FALLBACK_CONTEXT_KEY,
-    PLAYBOOK_HEAL_ATTEMPT_LIMIT,
-    PLAYBOOK_SUSPECT_STREAK_LIMIT,
+    PLAYBOOK_REPLAYED_CALLS_KEY,
     AgentTag,
     wrap_agent_payload,
 )
-from app.constants.cache import EXECUTOR_BUSY_PREFIX
+from app.constants.cache import (
+    EXECUTOR_BUSY_PREFIX,
+)
 from app.constants.log_tags import LogTag
 from app.core.websocket_manager import get_websocket_manager
 from app.db.repositories.playbooks import playbook_repository
 from app.db.repositories.todos import todo_repository
 from app.db.repositories.users import user_repository
+from app.db.repositories.workflows import workflow_repository
 from app.decorators import enforce_daily_cost_budget
+from app.decorators.entitlements import confirm_subscription_active, is_subscription_active
 from app.decorators.rate_limiting import enforce_tiered_limit
 from app.models.chat_models import MessageModel, ToolDataEntry
 from app.models.message_models import MessageRequestWithHistory
@@ -66,9 +69,12 @@ from app.models.user_models import AuthenticatedUser
 from app.models.workflow_execution_models import RecordedCall
 from app.models.workflow_models import (
     CreateWorkflowRequest,
+    IntegrationRef,
+    PlaybookDiscard,
     TriggerConfig,
     TriggerType,
     Workflow,
+    WorkflowUpdate,
 )
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.limit_upsell import LimitHitOrigin, mark_run_origin
@@ -87,16 +93,29 @@ from app.services.workflow.conversation_service import (
 )
 from app.services.workflow.execution_service import (
     PlaybookFallbackFailed,
+    WorkflowExecutorFailed,
     WorkflowFireOverlapped,
     WorkflowFireQueued,
     WorkflowFireTimedOut,
+    WorkflowRunFailed,
     complete_execution,
     create_execution,
 )
+from app.services.workflow.integration_pause import pause_workflow_before_fire
 from app.services.workflow.notifications import send_workflow_completion_notification
-from app.services.workflow.playbook.check import HEAL_STATUSES, distrust_fresh_playbook
+from app.services.workflow.playbook.check import distrust_fresh_playbook
 from app.services.workflow.playbook.evaluator import PlaybookUser
-from app.services.workflow.playbook.runner import PlaybookRunResult, run_playbook
+from app.services.workflow.playbook.lifecycle import (
+    DiscardReason,
+    PlaybookLifecycle,
+    discard_reason,
+    needs_heal,
+)
+from app.services.workflow.playbook.runner import (
+    PlaybookRunResult,
+    completed_block,
+    run_playbook,
+)
 from app.services.workflow.playbook.workflow_hash import workflow_hash
 from app.services.workflow.run_trace import build_trace
 from app.services.workflow.scheduler import WorkflowScheduler, workflow_scheduler
@@ -110,6 +129,8 @@ from shared.py.wide_events import WorkflowContext, log
 
 # How far a fire may drift from its scheduled time before it is worth a warning.
 _DRIFT_WARN_SECONDS = 300
+#: How much of an exception's text a warning carries into the wide event.
+_ERROR_EXCERPT_CHARS = 500
 
 
 async def process_workflow_generation_task(
@@ -438,9 +459,75 @@ async def _rate_limit_failure_content(
     return body, upgrade_action
 
 
+async def _limit_notice_already_sent(workflow: Workflow) -> bool:
+    """Whether this workflow already reported its limit wall in the current window.
+
+    One production thread ended on six identical limit notices: the wall is one
+    fact per day, so it is worth one message per day. The gate lives with the
+    workflow entity (``claim_limit_notice``); the run itself is still skipped
+    and re-armed either way.
+    """
+    return not await workflow_repository.claim_limit_notice(workflow.user_id, workflow.id)
+
+
+async def _notify_workflow_paused_for_integrations(
+    workflow: Workflow, missing: list[IntegrationRef]
+) -> None:
+    """The single notice a workflow paused for a dead integration is allowed to send.
+
+    Best-effort like every other notification here: failing to tell the user must
+    not turn a clean skip into a worker error. The workflow is already paused, so
+    a lost notice costs one message, not a message per occurrence.
+    """
+    names = ", ".join(ref.name for ref in missing)
+    first = missing[0]
+    try:
+        await notification_service.create_notification(
+            NotificationRequest(
+                user_id=workflow.user_id,
+                source=NotificationSourceEnum.INTEGRATION_EXPIRED,
+                type=NotificationType.WARNING,
+                content=NotificationContent(
+                    title=f"Workflow Paused: {workflow.title}",
+                    body=(
+                        f"'{workflow.title}' needs {names}, which isn't connected. "
+                        f"It's paused and will run again once you reconnect."
+                    ),
+                    actions=[
+                        NotificationAction(
+                            type=ActionType.REDIRECT,
+                            label=f"Connect {first.name}",
+                            style=ActionStyle.PRIMARY,
+                            config=ActionConfig(
+                                redirect=RedirectConfig(
+                                    url=f"/integrations?id={first.id}",
+                                    open_in_new_tab=False,
+                                    close_notification=True,
+                                )
+                            ),
+                        )
+                    ],
+                ),
+                metadata={
+                    "workflow_id": workflow.id,
+                    "missing_integrations": ",".join(ref.id for ref in missing),
+                },
+            )
+        )
+    except Exception as notify_err:
+        log.warning(
+            f"{LogTag.WORKER} Could not send the integration-paused notice",
+            workflow_id=workflow.id,
+            error=str(notify_err),
+            error_type=type(notify_err).__name__,
+        )
+
+
 async def _notify_workflow_failed(error: Exception, workflow: Workflow) -> None:
     """Tell the user the workflow failed. Best-effort: a notification failure must
     not mask the error that caused it."""
+    if isinstance(error, RateLimitExceededException) and await _limit_notice_already_sent(workflow):
+        return
     try:
         if isinstance(error, RateLimitExceededException):
             body, upgrade_action = await _rate_limit_failure_content(error, workflow)
@@ -482,25 +569,34 @@ async def _record_execution_failure(
     workflow_id: str,
     execution_id: str | None,
     *,
-    after_replay: PlaybookFallbackFailed | None = None,
+    record: WorkflowRunFailed | None = None,
 ) -> None:
     """Close out a failed run: mark the execution record, bump the failure count
     and notify the user. Every step is best-effort — none of this bookkeeping
     may mask ``error``. The error itself is recorded on the wide event by the
-    caller's except block (this helper is bookkeeping only). ``trace`` is what
-    the fire had already done before it failed, so the next fire reads it as
-    history instead of repeating it."""
+    caller's except block (this helper is bookkeeping only). ``record`` carries
+    what the fire had already done before it failed, so the next fire reads it
+    as history instead of repeating it."""
     if execution_id:
         try:
             await complete_execution(
                 execution_id=execution_id,
                 status="failed",
                 error_message=str(error),
-                conversation_id=after_replay.conversation_id if after_replay else None,
-                trace=after_replay.trace if after_replay else None,
+                conversation_id=record.conversation_id if record else None,
+                trace=record.trace if record else None,
             )
         except Exception as e2:
-            log.debug(f"{LogTag.WORKER} Failed to complete execution record: %s" % e2)
+            # Visible, not debug: a record left "running" makes every later
+            # fire read as overlapping. Seen live after a job timeout, with
+            # nothing in the log to say why the write never landed.
+            log.warning(
+                f"{LogTag.WORKER} Failed to complete execution record; it stays 'running'",
+                workflow_id=workflow_id,
+                execution_id=execution_id,
+                error=str(e2)[:_ERROR_EXCERPT_CHARS],
+                error_type=type(e2).__name__,
+            )
 
     if workflow is None:
         return
@@ -516,7 +612,10 @@ async def _record_execution_failure(
         except Exception as e2:
             log.debug(f"{LogTag.WORKER} Failed to update workflow stats: %s" % e2)
 
-    await _notify_workflow_failed(error, workflow)
+    # An executor that died was already announced by the delivery path, as the
+    # workflow's failure notification; a second one here would say it twice.
+    if not isinstance(error, WorkflowExecutorFailed):
+        await _notify_workflow_failed(error, workflow)
 
 
 def _origin_for(trigger_type: str) -> LimitHitOrigin:
@@ -533,20 +632,10 @@ def _origin_for(trigger_type: str) -> LimitHitOrigin:
     )
 
 
-#: A completed line as the fallback agent reads it. The narration reads the
-#: full result (its own bound); the agent needs to know what ran and roughly
-#: what came back, not the whole payload again in its brief.
-FALLBACK_LINE_MAX_CHARS = 1_500
-
-
-def _bounded_line(line: str) -> str:
-    return line if len(line) <= FALLBACK_LINE_MAX_CHARS else line[:FALLBACK_LINE_MAX_CHARS] + "..."
-
-
 def _fallback_note(result: PlaybookRunResult) -> str:
     """The replay that did not hold, stopped or untrusted, addressed to the agent
     that has to finish the run."""
-    completed = "\n".join(f"- {_bounded_line(line)}" for line in result.completed) or "- nothing"
+    completed = completed_block(result.completed)
     if result.ok:
         body = PLAYBOOK_SUSPECT_FALLBACK_TEMPLATE.format(
             reason=result.suspect or "no reason was recorded", completed=completed
@@ -565,6 +654,9 @@ def _fallback_note(result: PlaybookRunResult) -> str:
 AGENT_RUN_SUMMARY = "Ran the full workflow"
 HEAL_RUN_SUMMARY = "Ran the full workflow and repaired its saved shortcut"
 REPLAY_SUMMARY = "Ran from the saved shortcut"
+#: Same run, minus the sentence describing it: the steps all ran, so the record
+#: must not read like a failure, and it must not read like a normal replay either.
+REPLAY_NARRATION_FAILED_SUMMARY = "Ran from the saved shortcut; the summary could not be written"
 REPLAY_STOPPED_SUMMARY = "The saved shortcut stopped partway, so GAIA ran the rest itself"
 REPLAY_FLAGGED_SUMMARY = (
     "The saved shortcut's result looked wrong ({reason}), so GAIA ran the workflow itself"
@@ -582,12 +674,21 @@ SHORTCUT_DISCARDED_SUMMARY = (
 
 
 async def _discard_playbook(
-    workflow_id: str, user_id: str, playbook: PlaybookDocument, *, reason: str, **details: object
+    workflow_id: str,
+    user_id: str,
+    playbook: PlaybookDocument,
+    *,
+    reason: DiscardReason,
+    **details: object,
 ) -> None:
     """Drop a playbook the worker has given up on, saying why. Never raises: the
-    fire still runs on the agent, and a failed delete only costs the next check."""
+    fire still runs on the agent, and a failed delete only costs the next check.
+    Scoped to the revision the verdict was about: a body rewritten in the
+    meantime is a different decision and stays."""
     try:
-        await playbook_repository.delete_for_workflow(workflow_id, user_id)
+        removed = await playbook_repository.delete_revision(
+            workflow_id, user_id, playbook_id=playbook.playbook_id, revision=playbook.revision
+        )
     except Exception as e:
         log.warning(
             f"{LogTag.WORKER} Playbook delete failed; it stays on file for now",
@@ -597,13 +698,47 @@ async def _discard_playbook(
             error_type=type(e).__name__,
         )
         return
+    if not removed:
+        log.info(
+            f"{LogTag.WORKER} Playbook already replaced; the discard stands down",
+            workflow_id=workflow_id,
+            playbook_id=playbook.playbook_id,
+            revision=playbook.revision,
+            reason=reason.value,
+        )
+        return
     log.warning(
         f"{LogTag.WORKER} Playbook discarded",
         workflow_id=workflow_id,
         playbook_id=playbook.playbook_id,
-        reason=reason,
+        reason=reason.value,
         **details,
     )
+    # The log says why to whoever is reading Loki this week; the workflow says
+    # why to whoever asks in six months why their shortcut is gone. Failing to
+    # write it costs that answer and nothing else, so it never fails the fire.
+    try:
+        await workflow_repository.update_for_user(
+            workflow_id,
+            user_id,
+            WorkflowUpdate(
+                last_playbook_discard=PlaybookDiscard(
+                    playbook_id=playbook.playbook_id,
+                    revision=playbook.revision,
+                    reason=reason.value,
+                    at=datetime.now(UTC),
+                    details={key: str(value) for key, value in details.items()},
+                )
+            ),
+        )
+    except Exception as e:
+        log.warning(
+            f"{LogTag.WORKER} Playbook discard not recorded on the workflow",
+            workflow_id=workflow_id,
+            playbook_id=playbook.playbook_id,
+            reason=reason,
+            error_type=type(e).__name__,
+        )
 
 
 @dataclass(frozen=True)
@@ -652,6 +787,7 @@ async def _run_workflow(
             f"{LogTag.WORKFLOW} playbook lookup failed; running the workflow agentically",
             workflow_id=workflow_id,
             error_type=type(e).__name__,
+            error=str(e)[:_ERROR_EXCERPT_CHARS],
         )
         log.set_ns("playbook", mode="agent", reason="lookup_failed", llm_calls=0)
         return *await execute_workflow_as_chat(workflow, user, context), AGENT_RUN_SUMMARY
@@ -665,12 +801,12 @@ async def _run_workflow(
         # when there is none, so a stale one left on file would never be
         # re-authored and the workflow would run at full agent cost forever.
         await _discard_playbook(
-            workflow_id, workflow.user_id, playbook, reason="stale_workflow_hash"
+            workflow_id, workflow.user_id, playbook, reason=DiscardReason.STALE_WORKFLOW_HASH
         )
         log.set_ns(
             "playbook",
             mode="agent",
-            reason="stale_workflow_hash",
+            reason=DiscardReason.STALE_WORKFLOW_HASH.value,
             playbook_id=playbook.playbook_id,
             llm_calls=0,
         )
@@ -686,19 +822,20 @@ async def _run_workflow(
     # fire that never reached the agent (a DNS outage, a crashed worker) spends
     # nothing, and a rewrite starts the new body at zero. Past the limit the
     # playbook goes.
-    if playbook.last_run_status in HEAL_STATUSES:
-        if playbook.heal_attempts >= PLAYBOOK_HEAL_ATTEMPT_LIMIT:
+    lifecycle = PlaybookLifecycle.of(playbook)
+    if needs_heal(lifecycle):
+        if discard_reason(lifecycle) is DiscardReason.HEAL_ATTEMPTS_EXHAUSTED:
             await _discard_playbook(
                 workflow_id,
                 workflow.user_id,
                 playbook,
-                reason="heal_attempts_exhausted",
+                reason=DiscardReason.HEAL_ATTEMPTS_EXHAUSTED,
                 heal_attempts=playbook.heal_attempts,
             )
             log.set_ns(
                 "playbook",
                 mode="agent",
-                reason="heal_attempts_exhausted",
+                reason=DiscardReason.HEAL_ATTEMPTS_EXHAUSTED.value,
                 playbook_id=playbook.playbook_id,
                 heal_attempts=playbook.heal_attempts,
                 llm_calls=0,
@@ -776,6 +913,45 @@ async def _notify_replay_finished(
         )
 
 
+async def _deliver_replay(
+    fire: _Fire,
+    playbook: PlaybookDocument,
+    conversation_id: str,
+    result: PlaybookRunResult,
+) -> tuple[str, list[RecordedCall], str]:
+    """Write a trusted replay's turn and tell the user; the other outcomes leave
+    the conversation to the agent run that takes over, so one fire shows one
+    result instead of a half-run followed by a real one."""
+    workflow, workflow_id, user = fire.workflow, fire.workflow_id, fire.user
+    log.set_ns(
+        "playbook",
+        mode="replay",
+        reason="workflow_hash_match",
+        playbook_id=playbook.playbook_id,
+        llm_calls=result.llm_calls,
+        outcome=PlaybookRunStatus.SUCCESS.value,
+    )
+    if result.narration_failed is not None:
+        log.warning(
+            f"{LogTag.WORKER} Playbook replayed but the narration failed; "
+            "delivered the steps' record instead",
+            workflow_id=workflow_id,
+            playbook_id=playbook.playbook_id,
+            reason=result.narration_failed,
+        )
+    await add_playbook_run_messages(
+        conversation_id=conversation_id,
+        user_id=workflow.user_id,
+        workflow=workflow,
+        response=result.text,
+        trace=result.trace,
+        playbook=playbook,
+    )
+    await _notify_replay_finished(workflow, user, conversation_id, result.text)
+    summary = REPLAY_SUMMARY if result.narration_failed is None else REPLAY_NARRATION_FAILED_SUMMARY
+    return conversation_id, result.trace, summary
+
+
 async def _finish_after_replay(
     fire: _Fire,
     playbook: PlaybookDocument,
@@ -828,40 +1004,33 @@ async def _finish_after_replay(
         )
 
     if status is PlaybookRunStatus.SUCCESS:
-        log.set_ns(
-            "playbook",
-            mode="replay",
-            reason="workflow_hash_match",
-            playbook_id=playbook.playbook_id,
-            llm_calls=result.llm_calls,
-            outcome=status.value,
-        )
-        # Only a trusted replay writes the turn. The others leave the
-        # conversation to the agent run that takes over, so the user sees one
-        # result for one fire instead of a half-run followed by a real one.
-        await add_playbook_run_messages(
-            conversation_id=conversation_id,
-            user_id=workflow.user_id,
-            workflow=workflow,
-            response=result.text,
-            trace=result.trace,
-            playbook=playbook,
-        )
-        await _notify_replay_finished(workflow, user, conversation_id, result.text)
-        return conversation_id, result.trace, REPLAY_SUMMARY
+        return await _deliver_replay(fire, playbook, conversation_id, result)
 
-    disabled = False
-    if status is PlaybookRunStatus.SUSPECT and updated is not None:
-        disabled = updated.suspect_streak >= PLAYBOOK_SUSPECT_STREAK_LIMIT
-        if disabled:
-            await playbook_repository.delete_for_workflow(workflow_id, workflow.user_id)
-            log.warning(
-                f"{LogTag.WORKER} Playbook disabled after repeated suspect replays",
-                workflow_id=workflow_id,
-                playbook_id=playbook.playbook_id,
-                reason=reason,
-                suspect_streak=updated.suspect_streak,
-            )
+    # The verdict just recorded may be the one that spends the body's last
+    # chance: a suspect streak at its limit, or a failed replay of a body that
+    # every heal so far has rewritten without curing. Checked here, on the
+    # outcome, because a body rewritten after each failure is NOT_RUN at the
+    # next fire and the pre-heal check never sees it.
+    discard = discard_reason(PlaybookLifecycle.of(updated)) if updated is not None else None
+    disabled = discard is not None
+    if discard is DiscardReason.SUSPECT_STREAK_EXHAUSTED:
+        await _discard_playbook(
+            workflow_id,
+            workflow.user_id,
+            playbook,
+            reason=discard,
+            suspect_streak=updated.suspect_streak,
+            suspect_reason=reason,
+        )
+    elif discard is DiscardReason.HEAL_ATTEMPTS_EXHAUSTED:
+        await _discard_playbook(
+            workflow_id,
+            workflow.user_id,
+            playbook,
+            reason=discard,
+            heal_attempts=updated.heal_attempts,
+            failure=reason,
+        )
     if status is PlaybookRunStatus.FAILED:
         log.set_ns(
             "playbook",
@@ -899,7 +1068,13 @@ async def _finish_after_replay(
         # only when that is set, so there is no empty case left to name here.
         summary = REPLAY_FLAGGED_SUMMARY.format(reason=str(reason).rstrip("."))
     conversation_id, agent_trace = await execute_workflow_as_chat(
-        workflow, user, {**context, PLAYBOOK_FALLBACK_CONTEXT_KEY: _fallback_note(result)}
+        workflow,
+        user,
+        {
+            **context,
+            PLAYBOOK_FALLBACK_CONTEXT_KEY: _fallback_note(result),
+            PLAYBOOK_REPLAYED_CALLS_KEY: [call.model_dump(mode="json") for call in result.trace],
+        },
     )
     # This was a heal run too: it carried the heal brief and ended with a
     # decision, so it spends an attempt on the body it healed (a rewrite moved
@@ -988,6 +1163,18 @@ async def _admit_fire(
         )
         await _rearm_quietly(workflow_scheduler, workflow, context, workflow_id)
         return f"Workflow {workflow_id} skipped — user has not completed onboarding"
+
+    # A system-initiated fire whose integration is gone can only produce another
+    # "X isn't connected" message, so it pauses itself instead of running: one
+    # notice, then nothing until the reconnect reactivates it. A MANUAL fire is
+    # the user standing there — they get the in-chat connect card and their
+    # workflow stays as they left it.
+    if trigger_type != TriggerType.MANUAL.value:
+        missing = await pause_workflow_before_fire(workflow)
+        if missing:
+            await _notify_workflow_paused_for_integrations(workflow, missing)
+            names = ", ".join(ref.id for ref in missing)
+            return f"Workflow {workflow_id} paused — not connected: {names}"
     return None
 
 
@@ -1096,14 +1283,9 @@ async def _record_run_failure(
     # A failure after a partial replay arrives wrapped with the replay's
     # trace; the bookkeeping below classifies the real error, and the
     # record keeps the calls that already happened.
-    after_replay = raised if isinstance(raised, PlaybookFallbackFailed) else None
+    record = raised if isinstance(raised, WorkflowRunFailed) else None
     e = _unwrapped(raised)
-    if after_replay is None:
-        await _record_execution_failure(e, workflow, workflow_id, execution_id)
-    else:
-        await _record_execution_failure(
-            e, workflow, workflow_id, execution_id, after_replay=after_replay
-        )
+    await _record_execution_failure(e, workflow, workflow_id, execution_id, record=record)
 
     # Still arm the next occurrence — a transient failure (rate limit, LLM
     # error) must not permanently kill a recurring workflow.
@@ -1294,6 +1476,25 @@ async def execute_workflow_by_id(
 
         if not workflow:
             return f"Workflow {workflow_id} not found"
+
+        # Paid-only gate: no workflow may run for a lapsed/free user, regardless
+        # of trigger type (schedule, manual run-now, or a Composio/email trigger
+        # fire) — every one of those paths enqueues this same ARQ task, so this
+        # is the single choke point that covers all of them. The gate only
+        # skips: the cached tier can lag a payment by minutes, so a cached FREE
+        # gets one fresh read, and deactivating a user's workflows belongs to
+        # the billing webhook, which acts on a real Dodo event. A recurring
+        # workflow is re-armed so it resumes the moment the subscription is back.
+        if not await is_subscription_active(workflow.user_id) and not (
+            await confirm_subscription_active(workflow.user_id)
+        ):
+            log.warning(
+                f"{LogTag.WORKER} Workflow skipped — subscription required",
+                workflow_id=workflow_id,
+                user_id=workflow.user_id,
+            )
+            await _rearm_quietly(scheduler, workflow, context, workflow_id)
+            return f"Workflow {workflow_id} skipped — subscription required"
 
         # A coalesced trigger run carries its events (keyed by batch_key) in
         # Redis rather than in the job payload, so that concurrent enqueues
@@ -1618,6 +1819,12 @@ async def execute_workflow_as_chat(
                 conversation_id=conversation_id,
                 trace=trace,
             )
+        if result.executor_failed:
+            raise WorkflowExecutorFailed(
+                result.executor_failure or result.message,
+                conversation_id=conversation_id,
+                trace=trace,
+            )
 
         return conversation_id, trace
 
@@ -1633,7 +1840,7 @@ async def execute_workflow_as_chat(
             workflow_title=getattr(workflow, "title", None),
             user_id=user.get("user_id") if isinstance(user, dict) else None,
             error_type=type(e).__name__,
-            error=str(e)[:500],
+            error=str(e)[:_ERROR_EXCERPT_CHARS],
             outcome="agent_error",
             exc_info=True,
         )

@@ -3,6 +3,7 @@ Clean and lean workflow models for GAIA workflow system.
 """
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
 from typing import Any, TypedDict
@@ -27,16 +28,23 @@ from shared.py.wide_events import log
 
 
 class TriggerType(str, Enum):
-    """Type of workflow trigger.
+    """What caused a run.
 
     - MANUAL: Triggered by user action
     - SCHEDULE: Triggered by cron schedule
     - INTEGRATION: Triggered by external service (calendar, email, github, etc.)
+    - SCHEDULED_TODO: A tracked todo firing on its own schedule
+    - TODO_TRIGGER: A tracked todo woken by an integration event it subscribed to
+
+    The last two were bare strings written at one site and read at another, which
+    is exactly the drift an enum exists to stop.
     """
 
     MANUAL = "manual"
     SCHEDULE = "schedule"
     INTEGRATION = "integration"
+    SCHEDULED_TODO = "scheduled_todo"
+    TODO_TRIGGER = "todo_trigger"
 
 
 class DeactivationReason(str, Enum):
@@ -46,6 +54,15 @@ class DeactivationReason(str, Enum):
 
     USER_DORMANT = "user_dormant"
     INTEGRATION_EXPIRED = "integration_expired"
+    SUBSCRIPTION_LAPSED = "subscription_lapsed"
+    #: A run reached the work and found an integration the user has never
+    #: connected. Distinct from ``INTEGRATION_EXPIRED``, which a Composio webhook
+    #: raises when a live connection dies: this one is only ever set by a run
+    #: that tried, and only after the claim was checked against the user's
+    #: connection status. Nothing predicts it from the workflow's declared steps
+    #: — those are the model's guess at authoring time, and pausing a workflow
+    #: that would have worked is worse than the run it would have saved.
+    INTEGRATION_NEVER_CONNECTED = "integration_never_connected"
 
 
 class IntegrationRef(BaseModel):
@@ -711,6 +728,26 @@ class GeneratedPromptResult(TypedDict):
 # Repository persistence models (Wave E migration)
 
 
+class PlaybookDiscard(BaseModel):
+    """The last playbook the worker dropped for this workflow, and why.
+
+    A discard is otherwise silent data loss: the warning line ages out of log
+    retention long before anyone asks why a workflow went back to running at
+    full agent cost, and nothing on the workflow itself says it ever had a
+    shortcut. ``wf_0d05167369cf`` lost a working playbook exactly that way.
+    """
+
+    playbook_id: str
+    revision: int
+    #: The worker's own reason string — ``stale_workflow_hash``,
+    #: ``heal_attempts_exhausted``, ``suspect_streak_exhausted``.
+    reason: str
+    at: datetime
+    #: Whatever the discarding call site named beside the reason (the heal
+    #: attempt count, the suspect streak), rendered so one shape stores them all.
+    details: dict[str, str] = Field(default_factory=dict)
+
+
 class WorkflowDocument(Workflow, MongoDocument):
     """A workflow as stored in MongoDB.
 
@@ -734,6 +771,19 @@ class WorkflowDocument(Workflow, MongoDocument):
     #: an edit to the workflow changes the hash and asks again.
     playbook_declines: int = 0
     playbook_declined_hash: str | None = None
+    #: The run (its stream id) that last counted a decline. A run is one
+    #: decision however many times it is voiced, and a model voices it several
+    #: times in one turn: the tally grows once per run, matched on this.
+    playbook_declined_run: str | None = None
+    #: The integrations a blocked run named when it paused this workflow. The
+    #: resume side needs them because it cannot re-derive them: a workflow is
+    #: paused on what a run actually found missing, which is not always what
+    #: ``compute_required_integrations`` reads off the declared steps. Empty on
+    #: every workflow that was not paused this way.
+    blocked_on_integrations: list[str] = Field(default_factory=list)
+    #: Why the worker last dropped this workflow's playbook, so a workflow that
+    #: quietly went back to full agent cost can say what happened to it.
+    last_playbook_discard: PlaybookDiscard | None = None
 
 
 class WorkflowCreatorInfo(BaseModel):
@@ -794,3 +844,45 @@ class WorkflowUpdate(BaseModel):
     created_by: str | None = None
     playbook_declines: int | None = None
     playbook_declined_hash: str | None = None
+    playbook_declined_run: str | None = None
+    blocked_on_integrations: list[str] | None = None
+    last_playbook_discard: PlaybookDiscard | None = None
+
+
+class _Unset:
+    """Sentinel for a ``WorkflowRearm`` field that was not provided — distinct
+    from an explicit ``None``, which the recovery scan legitimately writes (a
+    reaped non-recurring workflow clears its ``scheduled_at``)."""
+
+
+UNSET = _Unset()
+
+
+@dataclass(slots=True, frozen=True)
+class WorkflowRearm:
+    """Optional re-arm fields for ``WorkflowsRepository.set_status``.
+
+    ``scheduled_at``/``next_run`` (written as ``trigger_config.next_run``) default
+    to the ``UNSET`` sentinel because ``None`` is a meaningful value the recovery
+    scan writes — an omitted field is left untouched, an explicit ``None`` clears
+    it. ``occurrence_count``/``repeat`` are only set when provided (they never
+    need clearing to ``None``).
+    """
+
+    scheduled_at: datetime | _Unset | None = UNSET
+    occurrence_count: int | None = None
+    repeat: str | None = None
+    next_run: datetime | _Unset | None = UNSET
+
+
+@dataclass(slots=True, frozen=True)
+class SystemWorkflowDefinition:
+    """A system workflow's canonical definition, re-applied in full by
+    ``WorkflowsRepository.reset_system_workflow``."""
+
+    title: str
+    description: str
+    prompt: str
+    steps: list[WorkflowStep]
+    trigger_config: TriggerConfig
+    composio_trigger_ids: list[str]

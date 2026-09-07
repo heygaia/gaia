@@ -2,6 +2,9 @@ from typing import cast
 
 from arq import cron
 from arq.typing import WorkerCoroutine
+from arq.worker import func
+
+from app.constants.onboarding import INTELLIGENCE_TASK
 
 # The worker runs the executor agent + Composio custom tools, so it needs the
 # same monkey-patches as the API process (main.py). Without this, custom tools
@@ -21,7 +24,6 @@ from app.workers.tasks import (
     generate_workflow_steps,
     process_gmail_emails_to_memory,
     process_onboarding_intelligence_task,
-    process_onboarding_workflows_task,
     process_reminder,
     process_workflow_generation_task,
     promote_usage_badges,
@@ -40,6 +42,7 @@ from app.workers.tasks.tracked_todo_tasks import (
     execute_tracked_todo,
     safety_net_check_orphaned_todos,
 )
+from app.workers.tasks.trigger_dispatch_tasks import dispatch_todo_subscriptions
 from app.workers.tasks.workflow_dormancy_tasks import sweep_dormant_user_workflows
 
 # Wrap every task in the standard envelope (wide event + Prometheus histogram)
@@ -55,8 +58,14 @@ _execute_workflow_by_id = arq_task(execute_workflow_by_id)
 _regenerate_workflow_steps = arq_task(regenerate_workflow_steps)
 _generate_workflow_steps = arq_task(generate_workflow_steps)
 _process_gmail_emails_to_memory = arq_task(process_gmail_emails_to_memory)
-_process_onboarding_intelligence_task = arq_task(process_onboarding_intelligence_task)
-_process_onboarding_workflows_task = arq_task(process_onboarding_workflows_task)
+# The job id is per user and doubles as the "one run at a time" claim
+# (`intelligence_job.personalization_job_id`); a kept result would make ARQ
+# refuse the next enqueue for an hour after a failed run, so keep none.
+_process_onboarding_intelligence_task = func(
+    arq_task(process_onboarding_intelligence_task),
+    name=INTELLIGENCE_TASK,
+    keep_result=0,
+)
 _cleanup_stuck_personalization = arq_task(cleanup_stuck_personalization)
 _backfill_active_users = arq_task(backfill_active_users)
 _backfill_user_memories = arq_task(backfill_user_memories)
@@ -64,6 +73,7 @@ _sweep_idle_sandboxes = arq_task(sweep_idle_sandboxes)
 _prune_inactive_sessions = arq_task(prune_inactive_sessions)
 _prune_checkpoint_versions = arq_task(prune_checkpoint_versions)
 _execute_tracked_todo = arq_task(execute_tracked_todo)
+_dispatch_todo_subscriptions = arq_task(dispatch_todo_subscriptions)
 _safety_net_check_orphaned_todos = arq_task(safety_net_check_orphaned_todos)
 _maintenance_sweep_tracked_todos = arq_task(maintenance_sweep_tracked_todos)
 _rescan_pending_scheduled_tasks = arq_task(rescan_pending_scheduled_tasks)
@@ -85,12 +95,12 @@ WorkerSettings.functions = [
     _generate_workflow_steps,
     _process_gmail_emails_to_memory,
     _process_onboarding_intelligence_task,
-    _process_onboarding_workflows_task,
     _cleanup_stuck_personalization,
     _sweep_idle_sandboxes,
     _prune_inactive_sessions,
     _prune_checkpoint_versions,
     _execute_tracked_todo,
+    _dispatch_todo_subscriptions,
     _backfill_active_users,
     _backfill_user_memories,
     _promote_usage_badges,

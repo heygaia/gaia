@@ -75,12 +75,19 @@ export type {
   SkillStatus,
   SkillTool,
 } from "./skills";
+export type { SubscriptionRequiredDetail } from "./subscription";
+export {
+  getSubscriptionRequiredDetail,
+  parseSubscriptionRequiredBody,
+  SUBSCRIPTION_REQUIRED_CODE,
+} from "./subscription";
 export type {
   BulkMoveRequest,
   PaginationMeta,
   Project,
   ProjectCreate,
   ProjectUpdate,
+  SubscriptionCondition,
   SubTask,
   Todo,
   TodoCounts,
@@ -89,8 +96,17 @@ export type {
   TodoLabel,
   TodoListResponse,
   TodoUpdate,
+  TriggerSubscription,
 } from "./todo";
-export { Priority, WorkflowStatus } from "./todo";
+export {
+  ConditionMatch,
+  ConditionOperator,
+  Priority,
+  SubscriptionAction,
+  SubscriptionResolution,
+  SubscriptionStatus,
+  WorkflowStatus,
+} from "./todo";
 export type {
   Tool,
   ToolCategory,

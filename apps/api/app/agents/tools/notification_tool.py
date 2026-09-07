@@ -5,12 +5,13 @@ from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
 
 from app.constants.log_tags import LogTag
-from app.constants.notifications import ALL_AUTO_INJECTED_CHANNELS, CHANNEL_TYPE_INAPP
+from app.constants.notifications import CHANNEL_TYPE_INAPP, NOTIFICATION_CHANNEL_TYPES
 from app.decorators import with_doc, with_rate_limiting
 from app.models.notification.notification_models import (
     BulkActions,
     ChannelConfig,
     NotificationContent,
+    NotificationQuery,
     NotificationRequest,
     NotificationSourceEnum,
     NotificationStatus,
@@ -119,12 +120,14 @@ async def get_notifications(
 
         # Get notifications with all filters
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            notification_type=notification_type,
-            source=source,
-            limit=limit,
-            offset=offset,
+            user_id,
+            NotificationQuery(
+                status=status,
+                notification_type=notification_type,
+                source=source,
+                limit=limit,
+                offset=offset,
+            ),
         )
 
         # The stream/tool payload must stay JSON-shaped (see ToolData.data), so the
@@ -163,10 +166,7 @@ async def search_notifications(
 
         # Get notifications for searching
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            limit=100,
-            offset=0,
+            user_id, NotificationQuery(status=status, limit=100)
         )
 
         # Simple text search
@@ -301,7 +301,7 @@ async def send_notification(
             return {
                 "error": (
                     "channels is required: specify which channel(s) to notify "
-                    f"({', '.join(ALL_AUTO_INJECTED_CHANNELS)}). If the user did not name a "
+                    f"({', '.join(NOTIFICATION_CHANNEL_TYPES)}). If the user did not name a "
                     "channel, ask them which one(s) they want before sending."
                 ),
                 "success": False,
@@ -310,12 +310,12 @@ async def send_notification(
         # Unknown channel names would otherwise be accepted and silently skipped
         # at delivery, so reject them here where the LLM can read the error and
         # self-correct.
-        unknown_channels = [ch for ch in channels if ch not in ALL_AUTO_INJECTED_CHANNELS]
+        unknown_channels = [ch for ch in channels if ch not in NOTIFICATION_CHANNEL_TYPES]
         if unknown_channels:
             return {
                 "error": (
                     f"Unknown channel(s): {', '.join(unknown_channels)}. "
-                    f"Valid channels: {', '.join(ALL_AUTO_INJECTED_CHANNELS)}."
+                    f"Valid channels: {', '.join(NOTIFICATION_CHANNEL_TYPES)}."
                 ),
                 "success": False,
             }

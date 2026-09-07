@@ -4,6 +4,12 @@ Decorators package for GAIA backend.
 
 from .caching import Cacheable, CacheInvalidator
 from .documentation import with_doc
+from .entitlements import (
+    SubscriptionRequiredException,
+    get_checkout_url,
+    is_subscription_active,
+    require_active_subscription,
+)
 from .rate_limiting import (
     LangChainRateLimitError,
     clear_user_context,
@@ -32,4 +38,9 @@ __all__ = [
     # Caching
     "Cacheable",
     "CacheInvalidator",
+    # Entitlements
+    "SubscriptionRequiredException",
+    "get_checkout_url",
+    "is_subscription_active",
+    "require_active_subscription",
 ]

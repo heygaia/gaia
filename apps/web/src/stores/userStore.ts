@@ -1,16 +1,8 @@
 import { create } from "zustand";
 import { devtools, persist } from "zustand/middleware";
 
-export interface OnboardingData {
-  completed: boolean;
-  completed_at?: string;
-  phase?: string;
-  preferences?: {
-    profession?: string;
-    response_style?: string;
-    custom_instructions?: string;
-  };
-}
+// The onboarding block is the API's shape; the store holds it verbatim.
+import type { OnboardingData } from "@/features/auth/api/authApi";
 
 interface UserState {
   userId: string;

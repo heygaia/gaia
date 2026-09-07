@@ -43,3 +43,25 @@ def work_queue_arguments(queue_name: str) -> dict[str, Any]:
         "x-dead-letter-exchange": OUTBOUND_DLX,
         "x-dead-letter-routing-key": dlq_name(queue_name),
     }
+
+
+# --- AMQP deadlines -------------------------------------------------------
+# Every aio-pika await MUST be bounded: chat-stream is exempt from the
+# request-timeout middleware, so an un-bounded await against a stalled broker
+# hangs the request forever and a graceful uvicorn reload then waits on it
+# indefinitely (observed: a 35-minute hang in dev).
+
+# Deadline for establishing the TCP/AMQP connection + handshake.
+RABBITMQ_CONNECT_TIMEOUT_SECONDS = 10.0
+
+# AMQP heartbeat interval. The broker drops the connection after two missed
+# heartbeats, so a half-open socket surfaces as a real error instead of a hang.
+RABBITMQ_HEARTBEAT_SECONDS = 30
+
+# Deadline for one publish attempt (connect + optional declare + publish).
+# ``_publish_with_retry`` makes at most two attempts, so worst case is 2x this.
+RABBITMQ_PUBLISH_TIMEOUT_SECONDS = 10.0
+
+# Deadline for declaring the whole outbound topology (DLX + per-platform work
+# queue and DLQ). Larger than a publish because it is many round trips.
+RABBITMQ_TOPOLOGY_TIMEOUT_SECONDS = 15.0

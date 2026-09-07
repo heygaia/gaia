@@ -29,6 +29,14 @@ STYLE_GUARD_RULES: dict[str, str] = {
     "template_shape": "the bold-led listicle template",
 }
 
+#: The two claims a text-only reply cannot back. Separate from the AI-ism rules
+#: because they are not tells of generated prose; they are false statements,
+#: and only the guard knows the draft answered the user with no tool in between.
+STYLE_GUARD_PHANTOM_RULES: dict[str, str] = {
+    "claimed_action": "an action claimed as happening when nothing ran in this reply",
+    "phantom_card": "a card or link that is not in this reply",
+}
+
 #: Closes the note. Rewriting is the ONLY instruction: a model told to "improve"
 #: a reply also shortens it, and the facts are what must survive verbatim.
 STYLE_GUARD_CORRECTION_INSTRUCTION = (
