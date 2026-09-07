@@ -1,12 +1,18 @@
 """Workflow generation service for LLM-based step creation."""
 
 import re
+from typing import TypeVar, cast
 
 from langchain_core.exceptions import OutputParserException
+from langchain_core.language_models import LanguageModelInput
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
-from app.agents.llm.client import ainvoke_structured, metered_config
+from app.agents.llm.client import (
+    ainvoke_llm,
+    background_structured_runnable,
+    metered_config,
+)
 from app.agents.prompts.trigger_prompts import generate_trigger_context
 from app.agents.prompts.workflow_prompts import (
     WORKFLOW_PROMPT_GENERATION_SYSTEM,
@@ -29,7 +35,68 @@ from app.models.workflow_models import (
 )
 from shared.py.wide_events import log
 
+_StructuredSchemaT = TypeVar("_StructuredSchemaT", bound=BaseModel)
+
 _MAX_GENERATION_ATTEMPTS = 2
+
+# Provider messages can be long (OpenRouter's 402 body quotes credit figures);
+# the modal shows this inline, so keep it to one readable line.
+_MAX_REASON_CHARS = 300
+
+
+class WorkflowStepGenerationError(RuntimeError):
+    """Step generation failed for a reason the user should be told about.
+
+    Subclasses ``RuntimeError`` so callers that already treat generation failure
+    as a runtime error keep working; the API layer catches this type to turn the
+    opaque 500 into a message the workflow modal can render.
+    """
+
+    def __init__(self, reason: str) -> None:
+        self.reason = reason
+        super().__init__(reason)
+
+
+def _failure_reason(error: BaseException) -> str:
+    """A one-line, user-showable summary of why generation failed.
+
+    The exception type is included because provider errors (a 402 from the
+    model gateway, a timeout) say nothing about workflows on their own, and a
+    bare message like "This request requires more credits" reads as if the
+    user's own account is at fault.
+    """
+    detail = " ".join(str(error).split()) or error.__class__.__name__
+    if len(detail) > _MAX_REASON_CHARS:
+        detail = detail[: _MAX_REASON_CHARS - 1].rstrip() + "…"
+    return f"{type(error).__name__}: {detail}"
+
+
+async def _structured_one_shot(
+    schema: type[_StructuredSchemaT],
+    prompt: LanguageModelInput,
+    *,
+    label: str,
+    user_id: str,
+) -> _StructuredSchemaT:
+    """A structured one-shot on the provider THIS deployment actually runs on.
+
+    ``ainvoke_structured`` is hardwired to the OpenRouter aux lane. A deployment
+    pointed at a custom endpoint (``DEV_DEFAULT_MODEL=custom``) has no working
+    OpenRouter route, so every workflow generation died on a provider error
+    before the model was ever asked — which surfaced as a blank 500 from
+    ``/regenerate-steps``. ``background_structured_runnable`` picks the lane
+    this deployment is configured for and falls back to the aux lane otherwise.
+    """
+    config = metered_config(user_id)
+    return cast(
+        _StructuredSchemaT,
+        await ainvoke_llm(
+            background_structured_runnable(schema, config=config),
+            prompt,
+            label=label,
+            config=config,
+        ),
+    )
 
 
 def _slug_to_friendly_name(slug: str) -> str:
@@ -160,7 +227,9 @@ class WorkflowGenerationService:
         """Generate workflow steps using the LLM's native structured output.
 
         Raises:
-            RuntimeError: If generation fails after all retry attempts.
+            WorkflowStepGenerationError: If generation fails — either the
+                provider call failed outright or every attempt came back
+                empty/schema-invalid. Carries a user-showable ``reason``.
         """
         log.info(f"{LogTag.WORKFLOW} ========== START", title=title)
 
@@ -302,7 +371,7 @@ class WorkflowGenerationService:
         )
         log.info(f"{LogTag.WORKFLOW} Prompt built", prompt_chars=len(formatted_prompt))
 
-        # Transient provider errors are retried inside ainvoke_structured; this loop
+        # Transient provider errors are retried inside ainvoke_llm; this loop
         # only regenerates when the model returns an empty or schema-invalid result.
         last_error: Exception | None = None
         for attempt in range(_MAX_GENERATION_ATTEMPTS):
@@ -312,15 +381,15 @@ class WorkflowGenerationService:
                 )
 
             try:
-                result = await ainvoke_structured(
+                result = await _structured_one_shot(
                     GeneratedWorkflow,
                     formatted_prompt,
                     label="workflow_generation",
-                    config=metered_config(user_id),
+                    user_id=user_id,
                 )
             except (ValidationError, OutputParserException) as e:
-                # Schema-invalid structured output is regenerable; provider errors
-                # keep propagating so ainvoke_structured owns retry/fallback.
+                # Schema-invalid structured output is regenerable; the provider's
+                # own retry/fallback already ran inside ainvoke_llm.
                 last_error = e
                 log.warning(
                     f"{LogTag.WORKFLOW} Structured output invalid; regenerating",
@@ -329,6 +398,19 @@ class WorkflowGenerationService:
                     error_type=type(e).__name__,
                 )
                 continue
+            except Exception as e:
+                # Not regenerable: the provider itself failed (auth, credit,
+                # timeout) after ainvoke_llm's own retry+fallback. Re-raise as
+                # the typed error so the API answers with the reason instead of
+                # a blank 500 — the cause chain is kept, nothing is swallowed.
+                log.error(
+                    f"{LogTag.WORKFLOW} ========== FAILED: provider error",
+                    attempt=attempt + 1,
+                    error_type=type(e).__name__,
+                    error=str(e),
+                    user_id=user_id,
+                )
+                raise WorkflowStepGenerationError(_failure_reason(e)) from e
 
             if result and result.steps:
                 steps_data = enrich_steps(result.steps)
@@ -353,9 +435,9 @@ class WorkflowGenerationService:
             last_error=last_error,
             user_id=user_id,
         )
-        raise RuntimeError(
-            f"Workflow step generation failed for '{title}' "
-            f"after {_MAX_GENERATION_ATTEMPTS} attempts: {last_error}"
+        raise WorkflowStepGenerationError(
+            f"the model returned no usable steps after {_MAX_GENERATION_ATTEMPTS} attempts"
+            + (f" ({_failure_reason(last_error)})" if last_error else "")
         ) from last_error
 
     @staticmethod
@@ -412,11 +494,11 @@ class WorkflowGenerationService:
             HumanMessage(content=formatted),
         ]
 
-        result = await ainvoke_structured(
+        result = await _structured_one_shot(
             GeneratedPromptOutput,
             messages,
             label="workflow_prompt",
-            config=metered_config(user_id),
+            user_id=user_id,
         )
 
         suggested: SuggestedTrigger | None = None

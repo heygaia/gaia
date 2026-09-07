@@ -41,6 +41,7 @@ from app.models.workflow_models import (
     WorkflowStatusResponse,
 )
 from app.services.analytics_service import AnalyticsEvents
+from app.services.workflow.generation_service import WorkflowStepGenerationError
 from shared.py.wide_events import WorkflowContext
 
 BASE_URL = "/api/v1/workflows"
@@ -734,11 +735,9 @@ class TestRegenerateSteps:
 
         assert response.status_code == 200
 
-    async def test_regenerate_steps_not_found_returns_500(self, client: AsyncClient):
-        """When the service returns None the endpoint raises HTTPException(404)
-        inside a bare ``except Exception`` block, so the caller actually
-        receives a 500.  (The endpoint is missing ``except HTTPException: raise``.)
-        """
+    async def test_regenerate_steps_not_found_returns_404(self, client: AsyncClient):
+        """A missing workflow is a 404, not a 500: the endpoint re-raises its own
+        HTTPException instead of letting the bare ``except Exception`` wrap it."""
         with patch(
             f"{_WF_SERVICE}.regenerate_workflow_steps",
             new_callable=AsyncMock,
@@ -749,7 +748,31 @@ class TestRegenerateSteps:
                 json={"instruction": "Change tools"},
             )
 
-        assert response.status_code == 500
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Workflow not found"
+
+    async def test_regenerate_steps_generation_failure_returns_actionable_detail(
+        self, client: AsyncClient
+    ):
+        """A model-lane failure must reach the modal as a readable reason, not as
+        the opaque "Failed to regenerate workflow steps"."""
+        with patch(
+            f"{_WF_SERVICE}.regenerate_workflow_steps",
+            new_callable=AsyncMock,
+            side_effect=WorkflowStepGenerationError(
+                "PaymentRequiredResponseError: This request requires more credits"
+            ),
+        ):
+            response = await client.post(
+                f"{BASE_URL}/wf_abc123/regenerate-steps",
+                json={"instruction": "Regen steps"},
+            )
+
+        assert response.status_code == 502
+        assert response.json()["detail"] == (
+            "Step generation failed: PaymentRequiredResponseError: "
+            "This request requires more credits"
+        )
 
     async def test_regenerate_steps_missing_instruction_returns_422(self, client: AsyncClient):
         response = await client.post(

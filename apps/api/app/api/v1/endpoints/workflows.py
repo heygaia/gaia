@@ -44,7 +44,10 @@ from app.services.system_workflows.provisioner import reset_system_workflow_to_d
 from app.services.workflow.execution_service import (
     get_workflow_executions as get_executions,
 )
-from app.services.workflow.generation_service import WorkflowGenerationService
+from app.services.workflow.generation_service import (
+    WorkflowGenerationService,
+    WorkflowStepGenerationError,
+)
 from app.services.workflow.service import (
     WorkflowService,
     ensure_public_workflow_slug,
@@ -422,8 +425,28 @@ async def regenerate_workflow_steps(
         log.set(outcome="success")
         return WorkflowResponse(workflow=workflow, message="Workflow regeneration started")
 
+    except HTTPException:
+        # The 404 above is raised inside this try; without this the bare
+        # ``except Exception`` below re-wrapped it into a 500 and the modal
+        # showed "Failed to regenerate workflow steps" for a missing workflow.
+        raise
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
+    except WorkflowStepGenerationError as e:
+        # The model lane failed or produced nothing usable. This is not a bug in
+        # the request, so it must not read as one — the modal shows this detail
+        # verbatim, and "Failed to regenerate workflow steps" told the user
+        # nothing they could act on.
+        log.error(
+            f"{LogTag.WORKFLOW} Step generation failed",
+            workflow_id=workflow_id,
+            user_id=user["user_id"],
+            reason=e.reason,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"Step generation failed: {e.reason}",
+        ) from e
     except Exception as e:
         log.error(
             f"{LogTag.WORKFLOW} Error regenerating workflow steps",
