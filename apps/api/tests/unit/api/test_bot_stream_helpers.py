@@ -20,12 +20,12 @@ from app.api.v1.endpoints.bot import (
     _bot_stream_entitlement_gate,
     _bot_stream_failure_logger,
     _bot_stream_payload_frame,
-    _build_bot_message_request,
     _notice_only_stream,
     _paywall_notice,
 )
 from app.models.bot_models import BotChatRequest
 from app.models.message_models import FileData
+from app.services.bot_service import build_bot_message_request
 
 
 class TestBotStreamControlFrame:
@@ -123,12 +123,11 @@ class TestBotStreamPayloadFrame:
                 "data": {"feature": "chat_messages", "current_plan": "free"},
             }
         }
-        with patch(
-            "app.api.v1.endpoints.bot._bot_upgrade_url",
-            new_callable=AsyncMock,
-            return_value="https://pay.example/checkout",
-        ):
-            frame, stop = await _bot_stream_payload_frame(data, "user-1")
+        # The stream resolves the upgrade URL once and hands the frames a
+        # resolver; the card is what asks for it.
+        upgrade_url = AsyncMock(return_value="https://pay.example/checkout")
+        frame, stop = await _bot_stream_payload_frame(data, upgrade_url)
+        upgrade_url.assert_awaited_once_with()
         payload = json.loads(frame[len("data: ") : -2])
         assert payload["notice"]["text"].endswith(
             "[Upgrade to Pro](https://pay.example/checkout) for higher limits."
@@ -212,16 +211,16 @@ class TestBotStreamPayloadFrame:
 
 
 class TestBuildBotMessageRequest:
-    """``_build_bot_message_request`` — loads history and appends the incoming turn."""
+    """``build_bot_message_request`` — loads history and appends the incoming turn."""
 
     async def test_appends_the_incoming_message_after_the_loaded_history(self):
         body = BotChatRequest(message="new turn", platform="discord", platform_user_id="u1")
         with patch(
-            "app.api.v1.endpoints.bot.BotService.load_conversation_history",
+            "app.services.bot_service.BotService.load_conversation_history",
             new_callable=AsyncMock,
             return_value=[{"role": "user", "content": "old turn"}],
         ) as mock_load:
-            result = await _build_bot_message_request(body, "conv-1", "user-1")
+            result = await build_bot_message_request(body, "conv-1", "user-1")
 
         mock_load.assert_awaited_once_with("conv-1", "user-1")
         assert result.message == "new turn"
@@ -236,11 +235,11 @@ class TestBuildBotMessageRequest:
             message="hi", platform="discord", platform_user_id="u1", file_ids=None, file_data=None
         )
         with patch(
-            "app.api.v1.endpoints.bot.BotService.load_conversation_history",
+            "app.services.bot_service.BotService.load_conversation_history",
             new_callable=AsyncMock,
             return_value=[],
         ):
-            result = await _build_bot_message_request(body, "conv-2", "user-1")
+            result = await build_bot_message_request(body, "conv-2", "user-1")
         assert result.fileIds == []
         assert result.fileData == []
         assert len(result.messages) == 1
@@ -250,11 +249,11 @@ class TestBuildBotMessageRequest:
             message="hi", platform="discord", platform_user_id="u1", file_ids=["f1", "f2"]
         )
         with patch(
-            "app.api.v1.endpoints.bot.BotService.load_conversation_history",
+            "app.services.bot_service.BotService.load_conversation_history",
             new_callable=AsyncMock,
             return_value=[],
         ):
-            result = await _build_bot_message_request(body, "conv-3", "user-1")
+            result = await build_bot_message_request(body, "conv-3", "user-1")
         assert result.fileIds == ["f1", "f2"]
 
     async def test_passes_through_provided_file_data(self):
@@ -263,11 +262,11 @@ class TestBuildBotMessageRequest:
             message="hi", platform="discord", platform_user_id="u1", file_data=file_data
         )
         with patch(
-            "app.api.v1.endpoints.bot.BotService.load_conversation_history",
+            "app.services.bot_service.BotService.load_conversation_history",
             new_callable=AsyncMock,
             return_value=[],
         ):
-            result = await _build_bot_message_request(body, "conv-4", "user-1")
+            result = await build_bot_message_request(body, "conv-4", "user-1")
         assert result.fileData == file_data
 
 
