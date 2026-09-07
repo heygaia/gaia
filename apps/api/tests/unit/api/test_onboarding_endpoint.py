@@ -658,10 +658,11 @@ class TestGetPersonalization:
             "onboarding_todos": None,
         }
 
-    async def test_get_personalization_unpersonalized_phase_is_passed_through(
+    async def test_get_personalization_unknown_historical_phase_reads_as_unset(
         self, client: AsyncClient
     ):
-        """A phase outside the personalized set yields has_personalization=False."""
+        """A phase outside today's enum (an old row) reads as unset: the endpoint
+        reports the initial phase and has_personalization=False, never a 500."""
         user_doc = _make_user_doc(
             onboarding={"phase": "email_connected", "bio_status": "completed"}
         )
@@ -675,7 +676,7 @@ class TestGetPersonalization:
 
         assert response.status_code == 200
         data = response.json()
-        assert data["phase"] == "email_connected"
+        assert data["phase"] == "initial"
         assert data["has_personalization"] is False
 
     async def test_get_personalization_social_profile_defaults_missing_keys(
