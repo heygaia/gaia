@@ -2,6 +2,7 @@
 Push Notification Constants
 """
 
+from enum import StrEnum
 import re
 
 # Maximum devices a user can register for push notifications
@@ -10,43 +11,45 @@ MAX_DEVICES_PER_USER = 10
 # Expo push token format: ExponentPushToken[xxx] or ExpoPushToken[xxx]
 EXPO_TOKEN_PATTERN = re.compile(r"^Expo(nent)?PushToken\[[a-zA-Z0-9_-]+\]$")
 
-# Notification channel type identifiers
-CHANNEL_TYPE_INAPP = "inapp"
-CHANNEL_TYPE_TELEGRAM = "telegram"
-CHANNEL_TYPE_DISCORD = "discord"
-CHANNEL_TYPE_WHATSAPP = "whatsapp"
-CHANNEL_TYPE_SLACK = "slack"
-CHANNEL_TYPE_IMESSAGE = "imessage"
-CHANNEL_TYPE_EMAIL = "email"
+
+class NotificationChannel(StrEnum):
+    """Every surface a notification can be delivered on.
+
+    Single source of truth: the preference model, the endpoint, the repository
+    writes and the delivery-time preference lookup all derive from these members,
+    so a new channel cannot be honoured by delivery while staying invisible in the
+    API.
+    """
+
+    INAPP = "inapp"
+    TELEGRAM = "telegram"
+    DISCORD = "discord"
+    WHATSAPP = "whatsapp"
+    SLACK = "slack"
+    IMESSAGE = "imessage"
+    EMAIL = "email"
+
 
 # External channel types that are auto-injected based on platform links
 EXTERNAL_NOTIFICATION_CHANNELS = (
-    CHANNEL_TYPE_TELEGRAM,
-    CHANNEL_TYPE_DISCORD,
-    CHANNEL_TYPE_WHATSAPP,
-    CHANNEL_TYPE_SLACK,
-    CHANNEL_TYPE_IMESSAGE,
+    NotificationChannel.TELEGRAM,
+    NotificationChannel.DISCORD,
+    NotificationChannel.WHATSAPP,
+    NotificationChannel.SLACK,
+    NotificationChannel.IMESSAGE,
 )
 
 # All channel types that are auto-injected when no channels are explicitly specified.
 # inapp is always available; the external platforms respect user preferences.
-ALL_AUTO_INJECTED_CHANNELS = (
-    CHANNEL_TYPE_INAPP,
-    CHANNEL_TYPE_TELEGRAM,
-    CHANNEL_TYPE_DISCORD,
-    CHANNEL_TYPE_WHATSAPP,
-    CHANNEL_TYPE_SLACK,
-    CHANNEL_TYPE_IMESSAGE,
-)
+ALL_AUTO_INJECTED_CHANNELS = (NotificationChannel.INAPP, *EXTERNAL_NOTIFICATION_CHANNELS)
 
-# Default enabled state for external channels
+# Channels the user can switch on and off. inapp is excluded: it is always
+# delivered, so it has no preference to store.
+USER_CONFIGURABLE_CHANNELS = (*EXTERNAL_NOTIFICATION_CHANNELS, NotificationChannel.EMAIL)
+
+# Default enabled state for every user-configurable channel
 DEFAULT_CHANNEL_PREFERENCES: dict[str, bool] = {
-    CHANNEL_TYPE_TELEGRAM: True,
-    CHANNEL_TYPE_DISCORD: True,
-    CHANNEL_TYPE_WHATSAPP: True,
-    CHANNEL_TYPE_SLACK: True,
-    CHANNEL_TYPE_IMESSAGE: True,
-    CHANNEL_TYPE_EMAIL: True,
+    channel.value: True for channel in USER_CONFIGURABLE_CHANNELS
 }
 
 # Workflow-completion notification copy. GAIA texts like a friend (first person,

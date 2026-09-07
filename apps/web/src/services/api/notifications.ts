@@ -1,4 +1,4 @@
-import type { NotificationPlatform } from "@/features/notification/constants";
+import type { ChannelPlatform, ChannelPreferences } from "@gaia/shared/types";
 import { apiauth } from "@/lib/api/client";
 import {
   type BulkActionRequest,
@@ -163,12 +163,10 @@ export class NotificationsAPI {
   }
 
   /**
-   * Get notification channel preferences (telegram, discord, whatsapp, slack)
+   * Get the enabled state of every user-configurable notification channel
    */
-  static async getChannelPreferences(): Promise<
-    Record<NotificationPlatform, boolean>
-  > {
-    const response = await apiauth.get<Record<NotificationPlatform, boolean>>(
+  static async getChannelPreferences(): Promise<ChannelPreferences> {
+    const response = await apiauth.get<ChannelPreferences>(
       `${NotificationsAPI.BASE_URL}/preferences/channels`,
     );
     return response.data;
@@ -178,11 +176,11 @@ export class NotificationsAPI {
    * Update a notification channel preference
    */
   static async updateChannelPreference(
-    platform: NotificationPlatform,
+    channel: ChannelPlatform,
     enabled: boolean,
   ): Promise<void> {
     await apiauth.put(`${NotificationsAPI.BASE_URL}/preferences/channels`, {
-      [platform]: enabled,
+      [channel]: enabled,
     });
   }
 }

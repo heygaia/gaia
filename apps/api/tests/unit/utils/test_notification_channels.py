@@ -10,14 +10,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from app.constants.notifications import (
-    CHANNEL_TYPE_DISCORD,
-    CHANNEL_TYPE_IMESSAGE,
-    CHANNEL_TYPE_INAPP,
-    CHANNEL_TYPE_SLACK,
-    CHANNEL_TYPE_TELEGRAM,
-    CHANNEL_TYPE_WHATSAPP,
-)
+from app.constants.notifications import NotificationChannel
 from app.models.chat_models import ConversationSource
 from app.models.notification.notification_models import (
     ActionConfig,
@@ -89,7 +82,7 @@ def _make_redirect_action(label: str = "View", url: str = "/test") -> Notificati
 class TestChannelAdapterBaseHelpers:
     def test_success_helper(self) -> None:
         status = InAppChannelAdapter()._success()
-        assert status.channel_type == CHANNEL_TYPE_INAPP
+        assert status.channel_type == NotificationChannel.INAPP
         assert status.status == NotificationStatus.DELIVERED
         assert status.delivered_at is not None
 
@@ -114,7 +107,7 @@ class TestChannelAdapterBaseHelpers:
 @pytest.mark.asyncio
 class TestInAppChannelAdapter:
     def test_channel_type(self) -> None:
-        assert InAppChannelAdapter().channel_type == CHANNEL_TYPE_INAPP
+        assert InAppChannelAdapter().channel_type == NotificationChannel.INAPP
 
     def test_can_handle_with_inapp_channel(self) -> None:
         request = _make_request(channels=[ChannelConfig(channel_type="inapp", enabled=True)])
@@ -245,11 +238,11 @@ class TestExternalAdapterIdentity:
     @pytest.mark.parametrize(
         "adapter_cls, channel_type, platform",
         [
-            (WhatsAppChannelAdapter, CHANNEL_TYPE_WHATSAPP, ConversationSource.WHATSAPP),
-            (SlackChannelAdapter, CHANNEL_TYPE_SLACK, ConversationSource.SLACK),
-            (TelegramChannelAdapter, CHANNEL_TYPE_TELEGRAM, ConversationSource.TELEGRAM),
-            (DiscordChannelAdapter, CHANNEL_TYPE_DISCORD, ConversationSource.DISCORD),
-            (ImessageChannelAdapter, CHANNEL_TYPE_IMESSAGE, ConversationSource.IMESSAGE),
+            (WhatsAppChannelAdapter, NotificationChannel.WHATSAPP, ConversationSource.WHATSAPP),
+            (SlackChannelAdapter, NotificationChannel.SLACK, ConversationSource.SLACK),
+            (TelegramChannelAdapter, NotificationChannel.TELEGRAM, ConversationSource.TELEGRAM),
+            (DiscordChannelAdapter, NotificationChannel.DISCORD, ConversationSource.DISCORD),
+            (ImessageChannelAdapter, NotificationChannel.IMESSAGE, ConversationSource.IMESSAGE),
         ],
     )
     def test_channel_type_and_platform(self, adapter_cls, channel_type, platform) -> None:

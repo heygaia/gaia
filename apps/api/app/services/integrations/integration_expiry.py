@@ -22,7 +22,7 @@ from typing import Literal
 from app.config.oauth_config import get_integration_by_id
 from app.constants.integrations import INTEGRATION_STATUS_EXPIRED
 from app.constants.log_tags import LogTag
-from app.constants.notifications import CHANNEL_TYPE_INAPP
+from app.constants.notifications import NotificationChannel
 from app.core.websocket_manager import websocket_manager
 from app.db.repositories.user_integrations import user_integration_repository
 from app.models.notification.notification_models import (
@@ -210,7 +210,7 @@ async def _announce_expiry(
             user_id=user_id,
             source=NotificationSourceEnum.INTEGRATION_EXPIRED,
             type=NotificationType.WARNING,
-            channels=[ChannelConfig(channel_type=CHANNEL_TYPE_INAPP)],
+            channels=[ChannelConfig(channel_type=NotificationChannel.INAPP)],
             content=NotificationContent(
                 title=f"{integration_name} disconnected",
                 body=_expiry_body(integration_name, paused_workflows, reason),

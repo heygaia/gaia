@@ -10,7 +10,7 @@ import pytest
 
 from app.api.v1.middleware.tiered_rate_limiter import RateLimitExceededException
 from app.constants.log_tags import LogTag
-from app.constants.notifications import CHANNEL_TYPE_INAPP
+from app.constants.notifications import NotificationChannel
 from app.models.agent_models import SilentRunResult
 from app.models.notification.notification_models import (
     ActionType,
@@ -1311,7 +1311,7 @@ class TestWorkflowNotificationSenders:
         assert "Morning Briefing" in notif_req.content.title
         assert notif_req.content.body
         # Scoped to in-app only (no external chrome push) and no result payload.
-        assert [c.channel_type for c in notif_req.channels] == [CHANNEL_TYPE_INAPP]
+        assert [c.channel_type for c in notif_req.channels] == [NotificationChannel.INAPP]
         assert notif_req.content.rich_content is None
         # Exactly one "View Results" redirect to the run's conversation.
         actions = notif_req.content.actions

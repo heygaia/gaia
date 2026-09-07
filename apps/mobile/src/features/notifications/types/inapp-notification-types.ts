@@ -13,6 +13,7 @@ export type {
   QuietHours,
 } from "@gaia/shared/types";
 export {
+  NOTIFICATION_CHANNELS,
   NotificationActionStyle as InAppNotificationActionStyle,
   NotificationActionType as InAppNotificationActionType,
   NotificationStatus as InAppNotificationStatus,
