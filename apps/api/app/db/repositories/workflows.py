@@ -20,6 +20,7 @@ scan/routing reads are not keyed by id. Matches the ``workflow_executions``
 repository. Revisit only with evidence of a hot by-id read path.
 """
 
+from collections.abc import Sequence
 from datetime import UTC, datetime
 import re
 from typing import Any
@@ -293,6 +294,38 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
     async def count_community(self) -> int:
         """Total community-marketplace workflows (matches ``find_community``)."""
         return await self._count(_COMMUNITY_MATCH)
+
+    async def find_public_matching(
+        self, patterns: Sequence[str], *, limit: int
+    ) -> list[PublicWorkflowRow]:
+        """Public templates (community or explore) with any of ``patterns`` in
+        their title, description or source integration; featured first, then
+        most-run. No patterns means nothing matches, not everything."""
+        if not patterns:
+            return []
+        searchable = ("title", "description", "source_integration")
+        return await self._aggregate(
+            [
+                {
+                    "$match": {
+                        "$and": [
+                            {"$or": [_COMMUNITY_MATCH, {"is_explore": True}]},
+                            {
+                                "$or": [
+                                    {field: {"$regex": re.escape(pattern), "$options": "i"}}
+                                    for pattern in patterns
+                                    for field in searchable
+                                ]
+                            },
+                        ]
+                    }
+                },
+                {"$sort": {"is_explore": -1, "total_executions": -1, "updated_at": -1}},
+                {"$limit": limit},
+                _ADD_ID_STAGE,
+            ],
+            PublicWorkflowRow,
+        )
 
     async def find_explore(self, *, limit: int, offset: int) -> list[PublicWorkflowRow]:
         """A page of explore/featured workflows, most-run first.

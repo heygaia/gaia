@@ -17,7 +17,7 @@ knows about expired grants, UI vs bot wording and the stream frame. A second
 implementation is how the card and its copy drift apart.
 """
 
-from typing import Annotated, Any, TypedDict, cast
+from typing import Annotated, Any, TypedDict
 
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
@@ -25,13 +25,14 @@ from langchain_core.tools import tool
 from app.config.oauth_config import OAUTH_INTEGRATIONS, get_integration_by_id
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
+from app.db.repositories.workflows import workflow_repository
 from app.decorators import with_doc
-from app.helpers.integration_helpers import build_search_matcher
+from app.helpers.integration_helpers import build_search_patterns
 from app.models.agent_models import agent_configurable
-from app.models.workflow_models import PublicWorkflowsResponse
-from app.services.integrations.community_service import list_community_integrations
-from app.services.oauth.oauth_service import check_multiple_integrations_status
-from app.services.workflow.service import WorkflowService
+from app.services.integrations.integration_search import (
+    match_my_integrations,
+    match_public_integrations,
+)
 from app.templates.docstrings.discovery_tool_docs import (
     FIND_INTEGRATION,
     SEARCH_PUBLIC_WORKFLOWS,
@@ -43,10 +44,6 @@ from shared.py.wide_events import log
 # Five is what a chat reply can carry without turning into a catalogue dump; the
 # model picks one and shows its card rather than listing everything it found.
 MAX_DISCOVERY_RESULTS = 5
-
-# Over-fetch before filtering: neither public-workflow list takes a query, so the
-# match happens here and a small page would hide the one template that matches.
-PUBLIC_WORKFLOW_FETCH_LIMIT = 50
 
 
 class IntegrationMatch(TypedDict):
@@ -96,31 +93,20 @@ async def find_integration(
         if not user_id:
             return {"error": "User ID not found in configuration.", "query": query}
 
-        matcher = build_search_matcher(query)
-
-        # Platform integrations first: these are the only ones show_connect_card
-        # can render, so a platform hit is always more useful than a community one.
-        available = [i for i in OAUTH_INTEGRATIONS if i.available]
-        status_map = await check_multiple_integrations_status([i.id for i in available], user_id)
-
+        # The user's own catalogue first: those are the ones show_connect_card
+        # can render, so a hit there is always more useful than a marketplace one.
         matches: list[IntegrationMatch] = [
             {
-                "id": integration.id,
-                "name": integration.name,
-                "description": _one_line(integration.description),
-                "connected": status_map.get(integration.id, False),
-                "source": "platform",
+                "id": item.id,
+                "name": item.name,
+                "description": _one_line(item.description),
+                "connected": item.status == "connected",
+                "source": item.source,
             }
-            for integration in available
-            if matcher(
-                f"{integration.name} {integration.description} {integration.category}".lower()
-            )
+            for item in (await match_my_integrations(user_id, query))[:MAX_DISCOVERY_RESULTS]
         ]
 
         if len(matches) < MAX_DISCOVERY_RESULTS:
-            # Same call the marketplace search endpoint makes; no second search.
-            community = await list_community_integrations(search=query, limit=MAX_DISCOVERY_RESULTS)
-            seen = {m["id"].lower() for m in matches}
             matches.extend(
                 {
                     "id": item.integration_id,
@@ -129,13 +115,15 @@ async def find_integration(
                     "connected": False,
                     "source": "community",
                 }
-                for item in community.integrations
-                if item.integration_id.lower() not in seen
+                for item in await match_public_integrations(
+                    query,
+                    exclude_ids={m["id"] for m in matches},
+                    limit=MAX_DISCOVERY_RESULTS - len(matches),
+                )
             )
 
-        capped = matches[:MAX_DISCOVERY_RESULTS]
-        log.set_ns("tool", result_count=len(capped))
-        return {"integrations": capped, "query": query}
+        log.set_ns("tool", result_count=len(matches))
+        return {"integrations": matches, "query": query}
 
     except Exception as e:
         log.error(f"{LogTag.TOOL} Error finding integrations", error_type=type(e).__name__)
@@ -156,41 +144,18 @@ async def search_public_workflows(
     explore_url = f"{settings.FRONTEND_URL.rstrip('/')}/workflows"
     try:
         log.set(tool={"name": "search_public_workflows", "action": "search"})
-        matcher = build_search_matcher(query)
-
-        # Cacheable erases the wrapped return type; both are declared
-        # -> PublicWorkflowsResponse, so this is correct by construction.
-        explore = cast(
-            PublicWorkflowsResponse,
-            await WorkflowService.get_explore_workflows(limit=PUBLIC_WORKFLOW_FETCH_LIMIT),
+        rows = await workflow_repository.find_public_matching(
+            build_search_patterns(query), limit=MAX_DISCOVERY_RESULTS
         )
-        community = cast(
-            PublicWorkflowsResponse,
-            await WorkflowService.get_community_workflows(limit=PUBLIC_WORKFLOW_FETCH_LIMIT),
-        )
-
-        matches: list[PublicWorkflowMatch] = []
-        seen: set[str] = set()
-        for row in [*explore.workflows, *community.workflows]:
-            identity = str(row.get("id") or row.get("slug") or row.get("title"))
-            if identity in seen:
-                continue
-            fields = (row.get(field) for field in ("title", "description", "source_integration"))
-            haystack = " ".join(str(value) for value in fields if value).lower()
-            if not matcher(haystack):
-                continue
-            seen.add(identity)
-            matches.append(
-                {
-                    "title": str(row.get("title") or ""),
-                    "description": _one_line(row.get("description")),
-                    "source_integration": row.get("source_integration"),
-                    "slug": row.get("slug"),
-                }
-            )
-            if len(matches) == MAX_DISCOVERY_RESULTS:
-                break
-
+        matches: list[PublicWorkflowMatch] = [
+            {
+                "title": row.title,
+                "description": _one_line(row.description),
+                "source_integration": row.source_integration,
+                "slug": row.slug,
+            }
+            for row in rows
+        ]
         log.set_ns("tool", result_count=len(matches))
         return {"workflows": matches, "query": query, "explore_url": explore_url}
 

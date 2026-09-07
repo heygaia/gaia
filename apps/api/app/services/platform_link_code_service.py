@@ -6,8 +6,11 @@ user carries it to the platform (invisibly in a Telegram deep link, visibly as a
 trailing ``#code`` in the WhatsApp/iMessage message they send), and the BOT
 redeems it on first contact. Nobody has to type ``/auth``.
 
-Security properties match ``connect_link_service``: 128-bit opaque code, the
-binding lives server-side, single-use via ``GETDEL``, bounded TTL.
+Security properties match ``connect_link_service`` (128-bit opaque code, the
+binding lives server-side, bounded TTL) except that a code is spent after the
+link is written, not on first read: ``peek_platform_link_code`` then
+``discard_platform_link_code``, so a refused tap leaves the code usable for the
+retry the refusal asks for.
 """
 
 import secrets

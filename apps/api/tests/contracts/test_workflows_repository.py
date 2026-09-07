@@ -844,6 +844,31 @@ class TestWorkflowsPublicMarketplaceReads:
         bare_row = next(r for r in rows if r.id == bare.id)
         assert bare_row.use_case_categories == ["featured"]
 
+    async def test_find_public_matching_searches_both_lists_and_escapes(self, repo, raw_collection):
+        community = await repo.create(
+            _workflow(is_public=True, title="Investor digest", description="weekly")
+        )
+        featured = await repo.create(
+            _workflow(
+                title="Morning briefing", description="inbox for investors", total_executions=5
+            )
+        )
+        await raw_collection.update_one({"_id": featured.id}, {"$set": {"is_explore": True}})
+        by_integration = await repo.create(
+            _workflow(is_public=True, title="Sync", description="", source_integration="linear")
+        )
+        # private → never surfaces, even on a match
+        await repo.create(_workflow(is_public=False, title="Investor secret"))
+
+        rows = await repo.find_public_matching(["investor"], limit=10)
+        assert [r.id for r in rows] == [featured.id, community.id]  # featured first
+        assert [r.id for r in await repo.find_public_matching(["linear"], limit=10)] == [
+            by_integration.id
+        ]
+        assert await repo.find_public_matching(["inve.tor"], limit=10) == []  # regex-escaped
+        assert await repo.find_public_matching([], limit=10) == []
+        assert len(await repo.find_public_matching(["investor"], limit=1)) == 1
+
     async def test_find_public_by_step_category_matches_and_escapes(self, repo, seeded_creator):
         creator_id, creator = seeded_creator
         gmail_wf = await repo.create(
