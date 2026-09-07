@@ -14,6 +14,7 @@ import { paywallCopyFor } from "../constants";
 import { useDodoPayments } from "../hooks/useDodoPayments";
 import { useIsPaid } from "../hooks/useIsPaid";
 import { usePricing } from "../hooks/usePricing";
+import { isCheckoutSettled } from "../stores/checkoutOverlayStore";
 import { isProPlan } from "../utils/planPredicates";
 import { CheckoutConfirming } from "./CheckoutConfirming";
 import { PlanFeature } from "./PlanFeature";
@@ -129,9 +130,9 @@ export function PaywallModal() {
               className="w-full text-black!"
               color="#00bbff"
               onClick={handleSubscribe}
-              disabled={checkoutPhase !== "idle"}
+              disabled={!isCheckoutSettled(checkoutPhase)}
             >
-              {checkoutPhase === "idle"
+              {isCheckoutSettled(checkoutPhase)
                 ? copy.subscribeCta
                 : "Opening checkout..."}
             </RaisedButton>

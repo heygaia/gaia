@@ -6,7 +6,10 @@ import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import type { CheckoutSource } from "../api/pricingApi";
 import { writePendingCheckout } from "../lib/pendingCheckout";
-import type { CheckoutPhase } from "../stores/checkoutOverlayStore";
+import {
+  type CheckoutPhase,
+  isCheckoutSettled,
+} from "../stores/checkoutOverlayStore";
 import type { PlanViewerState } from "../types";
 import { useDodoPayments } from "./useDodoPayments";
 
@@ -117,7 +120,7 @@ export function usePricingCardCta({
       hasActiveSubscription,
     }),
     isCtaDisabled:
-      checkoutPhase !== "idle" ||
+      !isCheckoutSettled(checkoutPhase) ||
       isSubscriptionStatusUnknown ||
       (isCurrentPlan && hasActiveSubscription),
     isConfirmingPayment:

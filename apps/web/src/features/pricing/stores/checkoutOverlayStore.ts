@@ -27,7 +27,12 @@ export type CheckoutPhase =
   | "open" // the overlay is up, the user is paying
   | "confirming" // overlay gone, polling the server for the webhook's effect
   | "confirmed" // the server says the subscription is active
-  | "timeout"; // past the visible budget, still polling in the background
+  | "timeout" // past the visible budget, still polling in the background
+  | "unconfirmed"; // the whole budget passed with nothing landing; polling stopped
+
+/** A checkout can start from here: nothing is minting, open, or being confirmed. */
+export const isCheckoutSettled = (phase: CheckoutPhase): boolean =>
+  phase === "idle" || phase === "unconfirmed";
 
 export type CheckoutBillingCycle = "monthly" | "yearly";
 
@@ -39,8 +44,23 @@ interface CheckoutOverlayStore {
     source: CheckoutSource,
   ) => Promise<void>;
   handleCheckoutEvent: (event: CheckoutEvent) => void;
+  /** Dodo sent the browser back with the subscription it created (the
+   *  redirect path, no overlay in this page's life). Settles the charge with
+   *  the server directly, which asks Dodo when the webhook is late or lost. */
+  confirmReturnedCheckout: (subscriptionId?: string) => void;
   reset: () => void;
 }
+
+/** One read of "is the subscription real yet?"; the loop keeps asking until it says yes. */
+type PaidProbe = () => Promise<boolean>;
+
+const subscriptionIsActive: PaidProbe = async () =>
+  (await pricingApi.getSubscriptionStatus()).plan_type === "pro";
+
+const verifySettles =
+  (subscriptionId?: string): PaidProbe =>
+  async () =>
+    (await pricingApi.verifyPayment(subscriptionId)).payment_completed;
 
 /** Cancels the in-flight confirmation loop when a new checkout starts or the
  *  machine is reset — without it a stale loop could resolve over a newer one. */
@@ -52,10 +72,10 @@ const sleep = (ms: number) =>
 export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
   devtools(
     (set, get) => {
-      /** Polls the authoritative subscription status until the webhook has
-       *  landed. Past the visible budget the copy changes to admit the delay,
-       *  but the polling continues — the access unlocks the moment it lands. */
-      const confirmPayment = async () => {
+      /** The one loop that waits for a payment to become a subscription.
+       *  Past the visible budget the copy changes to admit the delay but the
+       *  polling continues; past the total budget it stops and says so. */
+      const confirmPayment = async (isPaid: PaidProbe) => {
         confirmationRun += 1;
         const run = confirmationRun;
         const startedAt = Date.now();
@@ -66,9 +86,9 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
           if (run !== confirmationRun) return;
 
           try {
-            const status = await pricingApi.getSubscriptionStatus();
+            const paid = await isPaid();
             if (run !== confirmationRun) return;
-            if (status.plan_type === "pro") {
+            if (paid) {
               set({ phase: "confirmed", error: null }, false, "confirmed");
               void closeDodoOverlay();
               return;
@@ -89,6 +109,7 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
             CHECKOUT_CONFIRM_MAX_DELAY_MS,
           );
         }
+        set({ phase: "unconfirmed" }, false, "unconfirmed");
       };
 
       return {
@@ -136,7 +157,7 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
               // does. Ask the server until it answers.
               if (get().phase === "open") {
                 set({ phase: "confirming" }, false, "confirming");
-                void confirmPayment();
+                void confirmPayment(subscriptionIsActive);
               }
               break;
             case "checkout.error":
@@ -156,6 +177,11 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
             default:
               break;
           }
+        },
+
+        confirmReturnedCheckout: (subscriptionId) => {
+          set({ phase: "confirming", error: null }, false, "confirmReturned");
+          void confirmPayment(verifySettles(subscriptionId));
         },
 
         reset: () => {

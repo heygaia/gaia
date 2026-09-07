@@ -4,8 +4,8 @@
  * this stage so the decision has no competition.
  *
  * There is no composer and no skip: the stage ends when the backend reports
- * an active subscription, which `useAwaitPaidStatus` polls for so a webhook
- * that lands after the checkout overlay closes still advances the flow.
+ * an active subscription. The checkout store's confirmation loop is what
+ * waits for the webhook, on the overlay path and on Dodo's redirect back.
  */
 
 "use client";
@@ -20,7 +20,6 @@ import { PricingCards } from "@/features/pricing/components/PricingCards";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { PAYMENT_INTRO_LINES } from "../../constants/messages";
 import { MOTION_FADE_UP } from "../../constants/motion";
-import { useAwaitPaidStatus } from "../../hooks/useAwaitPaidStatus";
 import { useCheckoutReturn } from "../../hooks/useCheckoutReturn";
 import { usePaceDone } from "../../hooks/useTypedLines";
 import { OnboardingBotBubbles } from "../OnboardingBotBubbles";
@@ -31,7 +30,6 @@ export function Payment() {
   const [isYearly, setIsYearly] = useState(false);
   const { isUnknown } = useIsPaid();
   const { returned, isLate, failed, timedOut, retry } = useCheckoutReturn();
-  useAwaitPaidStatus();
   const gaiaDone = usePaceDone(PAYMENT_REVEAL_KEY);
 
   return (

@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const createCheckoutSession = vi.fn();
 const getSubscriptionStatus = vi.fn();
+const verifyPayment = vi.fn();
 const openDodoOverlay = vi.fn();
 const closeDodoOverlay = vi.fn();
 
@@ -10,6 +11,7 @@ vi.mock("@/features/pricing/api/pricingApi", () => ({
     createCheckoutSession: (...args: unknown[]) =>
       createCheckoutSession(...args),
     getSubscriptionStatus: () => getSubscriptionStatus(),
+    verifyPayment: (...args: unknown[]) => verifyPayment(...args),
   },
 }));
 
@@ -45,6 +47,7 @@ describe("checkout overlay state machine", () => {
     createCheckoutSession.mockResolvedValue(SESSION);
     openDodoOverlay.mockResolvedValue(undefined);
     getSubscriptionStatus.mockResolvedValue(FREE);
+    verifyPayment.mockResolvedValue({ payment_completed: false });
   });
 
   afterEach(() => {
@@ -116,6 +119,34 @@ describe("checkout overlay state machine", () => {
     await advancePolls(2);
 
     expect(getSubscriptionStatus.mock.calls.length).toBeGreaterThan(pollsSoFar);
+    expect(useCheckoutOverlayStore.getState().phase).toBe("confirmed");
+  });
+
+  it("stops after the total budget and says the payment is unconfirmed", async () => {
+    await useCheckoutOverlayStore
+      .getState()
+      .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.closed" });
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 10_000);
+    expect(useCheckoutOverlayStore.getState().phase).toBe("unconfirmed");
+
+    const pollsSoFar = getSubscriptionStatus.mock.calls.length;
+    await advancePolls(3);
+    expect(getSubscriptionStatus.mock.calls.length).toBe(pollsSoFar);
+  });
+
+  it("settles a returned checkout through verify, with the subscription off the URL", async () => {
+    useCheckoutOverlayStore.getState().confirmReturnedCheckout("sub_1");
+    expect(useCheckoutOverlayStore.getState().phase).toBe("confirming");
+
+    verifyPayment.mockResolvedValue({ payment_completed: true });
+    await advancePolls(2);
+
+    expect(verifyPayment).toHaveBeenCalledWith("sub_1");
+    expect(getSubscriptionStatus).not.toHaveBeenCalled();
     expect(useCheckoutOverlayStore.getState().phase).toBe("confirmed");
   });
 

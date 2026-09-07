@@ -3,19 +3,11 @@
 import { useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
 
-import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
-import { usePricing } from "@/features/pricing/hooks/usePricing";
-import { verifyPaymentWithRetry } from "@/features/pricing/utils/verifyPaymentWithRetry";
+import { useDodoPayments } from "@/features/pricing/hooks/useDodoPayments";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 import { CHECKOUT_RETURNED_PARAM } from "../constants";
 
-/** How long the wizard shows a plain "confirming" state before admitting the
- *  webhook is late. Polling continues underneath either way. */
-const LATE_AFTER_MS = 30_000;
-/** Past this with still no subscription, stop spinning and offer a retry. A
- *  charge that lands later still unlocks access: the poll never stops. */
-const GIVE_UP_AFTER_MS = 120_000;
 /** Dodo appends the subscription it just created to the return URL. */
 const SUBSCRIPTION_ID_PARAM = "subscription_id";
 /** ...and the outcome of the charge: `succeeded`, `failed`, `processing`. */
@@ -37,12 +29,11 @@ interface CheckoutReturn {
 /**
  * A checkout started inside the wizard returns to `/onboarding?checkout=returned`
  * rather than the standalone result page, so the payment stage confirms the
- * charge in place. Two things make the subscription real on our side: the
- * webhook (polled by `useAwaitPaidStatus`) and, when that is late or lost, a
- * verify call that hands the server the subscription id off the return URL so
- * it can settle the question with Dodo directly. This hook runs the second,
- * times the wait, and reads a failed outcome straight off the URL. The query
- * is consumed on first render and removed from the address bar immediately.
+ * charge in place. The checkout store runs the wait (its one confirmation
+ * loop, here fed by the verify call that hands the server the subscription
+ * id off the return URL); this hook reads Dodo's query once, starts that
+ * wait, and reads a failed outcome straight off the URL. The query is
+ * consumed on first render and removed from the address bar immediately.
  */
 interface ReturnParams {
   returned: boolean;
@@ -76,34 +67,16 @@ export function useCheckoutReturn(): CheckoutReturn {
     if (window.location.search)
       window.history.replaceState(null, "", CLEAN_PATH);
   }, []);
-  const { isPaid } = useIsPaid();
-  const { verifyPayment, refetchSubscription } = usePricing();
-  const [isLate, setIsLate] = useState(false);
-  const [timedOut, setTimedOut] = useState(false);
-  const verifiedRef = useRef(false);
+  const { checkoutPhase, confirmReturnedCheckout, clearError } =
+    useDodoPayments();
 
-  const waiting = returned && !failed && !isPaid;
-
+  const waiting = returned && !failed;
   useEffect(() => {
-    if (!waiting || verifiedRef.current) return;
-    verifiedRef.current = true;
-    verifyPaymentWithRetry(() => verifyPayment(subscriptionId))
-      .then(() => refetchSubscription())
-      .catch((error: unknown) => {
-        // The poll keeps going; a failed verify only loses the shortcut.
-        console.error("Post-checkout verification failed:", error);
-      });
-  }, [waiting, subscriptionId, verifyPayment, refetchSubscription]);
+    if (waiting) confirmReturnedCheckout(subscriptionId);
+  }, [waiting, subscriptionId, confirmReturnedCheckout]);
 
-  useEffect(() => {
-    if (!waiting) return;
-    const late = setTimeout(() => setIsLate(true), LATE_AFTER_MS);
-    const giveUp = setTimeout(() => setTimedOut(true), GIVE_UP_AFTER_MS);
-    return () => {
-      clearTimeout(late);
-      clearTimeout(giveUp);
-    };
-  }, [waiting]);
+  const isLate = waiting && checkoutPhase === "timeout";
+  const timedOut = waiting && checkoutPhase === "unconfirmed";
 
   // A checkout that never became a subscription is invisible to the server:
   // a declined charge produces no webhook, and a webhook that never lands
@@ -124,9 +97,7 @@ export function useCheckoutReturn(): CheckoutReturn {
       reason: failed ? "declined" : "confirmation_timeout",
     });
     outcomeTrackedRef.current = false;
-    setIsLate(false);
-    setTimedOut(false);
-    verifiedRef.current = false;
+    clearError();
     setReturnParams(NOT_RETURNED);
   };
 

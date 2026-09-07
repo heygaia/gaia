@@ -2,52 +2,59 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { CheckoutPhase } from "@/features/pricing/stores/checkoutOverlayStore";
+
 let search = "";
-const verifyPayment = vi.fn(async () => ({ payment_completed: false }));
-const refetchSubscription = vi.fn(async () => undefined);
+let checkoutPhase: CheckoutPhase = "idle";
+const confirmReturnedCheckout = vi.fn();
+const clearError = vi.fn();
 
 vi.mock("next/navigation", () => ({
   useSearchParams: () => new URLSearchParams(search),
 }));
-vi.mock("@/features/pricing/hooks/useIsPaid", () => ({
-  useIsPaid: () => ({ isPaid: false, isUnknown: false }),
-}));
-vi.mock("@/features/pricing/hooks/usePricing", () => ({
-  usePricing: () => ({ verifyPayment, refetchSubscription }),
+vi.mock("@/features/pricing/hooks/useDodoPayments", () => ({
+  useDodoPayments: () => ({
+    checkoutPhase,
+    confirmReturnedCheckout,
+    clearError,
+  }),
 }));
 
 import { useCheckoutReturn } from "@/features/onboarding/hooks/useCheckoutReturn";
 
 describe("useCheckoutReturn", () => {
   beforeEach(() => {
-    verifyPayment.mockClear();
-    vi.useRealTimers();
+    confirmReturnedCheckout.mockClear();
+    clearError.mockClear();
+    checkoutPhase = "idle";
   });
 
-  it("reads a declined charge off Dodo's return URL and skips verification", () => {
+  it("reads a declined charge off Dodo's return URL and never starts a wait", () => {
     search = "checkout=returned&subscription_id=sub_1&status=failed";
     const { result } = renderHook(() => useCheckoutReturn());
     expect(result.current.returned).toBe(true);
     expect(result.current.failed).toBe(true);
     expect(result.current.timedOut).toBe(false);
-    expect(verifyPayment).not.toHaveBeenCalled();
+    expect(confirmReturnedCheckout).not.toHaveBeenCalled();
   });
 
-  it("verifies a returned checkout and gives up after the budget", () => {
-    vi.useFakeTimers();
+  it("hands a returned checkout to the store's one confirmation loop", () => {
     search = "checkout=returned&subscription_id=sub_1&status=succeeded";
     const { result } = renderHook(() => useCheckoutReturn());
     expect(result.current.failed).toBe(false);
-    expect(verifyPayment).toHaveBeenCalledWith("sub_1");
-    act(() => {
-      vi.advanceTimersByTime(30_000);
-    });
-    expect(result.current.isLate).toBe(true);
-    expect(result.current.timedOut).toBe(false);
-    act(() => {
-      vi.advanceTimersByTime(90_000);
-    });
-    expect(result.current.timedOut).toBe(true);
+    expect(confirmReturnedCheckout).toHaveBeenCalledWith("sub_1");
+  });
+
+  it("reads late and given-up straight off the store's phase", () => {
+    search = "checkout=returned&subscription_id=sub_1&status=succeeded";
+    checkoutPhase = "timeout";
+    const late = renderHook(() => useCheckoutReturn());
+    expect(late.result.current.isLate).toBe(true);
+    expect(late.result.current.timedOut).toBe(false);
+
+    checkoutPhase = "unconfirmed";
+    const gaveUp = renderHook(() => useCheckoutReturn());
+    expect(gaveUp.result.current.timedOut).toBe(true);
   });
 
   it("strips Dodo's query from the address bar as soon as it is read", () => {
@@ -61,10 +68,11 @@ describe("useCheckoutReturn", () => {
     spy.mockRestore();
   });
 
-  it("retry leaves the confirming state without touching the URL again", () => {
+  it("retry settles the store and leaves the confirming state without touching the URL again", () => {
     search = "checkout=returned&status=failed";
     const { result } = renderHook(() => useCheckoutReturn());
     act(() => result.current.retry());
+    expect(clearError).toHaveBeenCalledOnce();
     expect(result.current.returned).toBe(false);
     expect(result.current.failed).toBe(false);
   });

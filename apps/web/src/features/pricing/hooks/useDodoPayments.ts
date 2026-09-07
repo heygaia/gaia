@@ -27,6 +27,9 @@ export const useDodoPayments = () => {
   const checkoutError = useCheckoutOverlayStore((s) => s.error);
   const startOverlayCheckout = useCheckoutOverlayStore((s) => s.startCheckout);
   const resetOverlayCheckout = useCheckoutOverlayStore((s) => s.reset);
+  const confirmReturnedCheckout = useCheckoutOverlayStore(
+    (s) => s.confirmReturnedCheckout,
+  );
   const { refetch: refetchSubscription } = useUserSubscriptionStatus();
 
   // The store polls the raw endpoint; this is what pushes the confirmed answer
@@ -106,6 +109,7 @@ export const useDodoPayments = () => {
   return {
     createSubscriptionAndRedirect,
     openCheckoutOverlay,
+    confirmReturnedCheckout,
     checkoutPhase,
     isLoading,
     error: error ?? checkoutError,
