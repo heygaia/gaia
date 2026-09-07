@@ -137,8 +137,9 @@ class TestOnboardingWrites:
             preferences=OnboardingPreferences(profession="eng"),
         )
         assert first is not None
-        assert first.onboarding["completed"] is True
-        assert first.onboarding["phase"] == OnboardingPhase.COMPLETED.value
+        assert first.onboarding is not None
+        assert first.onboarding.completed is True
+        assert first.onboarding.phase == OnboardingPhase.COMPLETED
         # Gate misses on replay (onboarding already exists) → None, original untouched.
         second = await repo.complete_onboarding(
             created.id,
@@ -147,7 +148,7 @@ class TestOnboardingWrites:
             preferences=OnboardingPreferences(),
         )
         assert second is None
-        assert (await repo.get(created.id)).onboarding["phase"] == OnboardingPhase.COMPLETED.value
+        assert (await repo.get(created.id)).onboarding.phase == OnboardingPhase.COMPLETED
 
     async def test_update_preferences_patches_only_given_keys(self, repo, make_user):
         created = await repo.create(make_user())
@@ -162,9 +163,11 @@ class TestOnboardingWrites:
             created.id, OnboardingPreferences(profession="designer")
         )
         assert updated is not None
-        prefs = updated.onboarding["preferences"]
-        assert prefs["profession"] == "designer"
-        assert prefs["response_style"] == "brief"
+        assert updated.onboarding is not None
+        prefs = updated.onboarding.preferences
+        assert prefs is not None
+        assert prefs.profession == "designer"
+        assert prefs.response_style == "brief"
 
     async def test_save_personalization_writes_bundle_and_phase(self, repo, make_user):
         created = await repo.create(make_user())
@@ -182,9 +185,10 @@ class TestOnboardingWrites:
             ),
         )
         onboarding = (await repo.get(created.id)).onboarding
-        assert onboarding["house"] == "explorer"
-        assert onboarding["phase"] == "personalization_complete"
-        assert onboarding["account_number"] == 42
+        assert onboarding is not None
+        assert onboarding.house == "explorer"
+        assert onboarding.phase == OnboardingPhase.PERSONALIZATION_COMPLETE
+        assert onboarding.account_number == 42
 
     async def test_mark_gmail_personalization_done_stamps_marker_and_conversation(
         self, repo, make_user
@@ -193,8 +197,9 @@ class TestOnboardingWrites:
         await repo.mark_gmail_personalization_done(created.id, conversation_id="conv-1")
 
         onboarding = (await repo.get(created.id)).onboarding
-        assert isinstance(onboarding["gmail_personalization_at"], datetime)
-        assert onboarding["holo_conversation_id"] == "conv-1"
+        assert onboarding is not None
+        assert isinstance(onboarding.gmail_personalization_at, datetime)
+        assert onboarding.holo_conversation_id == "conv-1"
 
     async def test_mark_gmail_personalization_done_omits_missing_conversation(
         self, repo, make_user
@@ -203,8 +208,11 @@ class TestOnboardingWrites:
         await repo.mark_gmail_personalization_done(created.id)
 
         onboarding = (await repo.get(created.id)).onboarding
-        assert "gmail_personalization_at" in onboarding
-        assert "holo_conversation_id" not in onboarding
+        assert onboarding is not None
+        # model_fields_set is the typed stand-in for "key present in the Mongo doc":
+        # the write must stamp the marker and must not write the conversation id at all.
+        assert "gmail_personalization_at" in onboarding.model_fields_set
+        assert "holo_conversation_id" not in onboarding.model_fields_set
 
     async def test_set_social_profiles_overwrites(self, repo, make_user):
         created = await repo.create(make_user())
@@ -213,17 +221,18 @@ class TestOnboardingWrites:
             created.id,
             [SocialProfile(platform="y", url="u/y"), SocialProfile(platform="z", url="u/z")],
         )
-        assert len((await repo.get(created.id)).onboarding["social_profiles"]) == 2
+        assert len((await repo.get(created.id)).onboarding.social_profiles) == 2
 
     async def test_set_bio_status(self, repo, make_user):
         created = await repo.create(make_user())
         await repo.set_bio_status(created.id, "processing")
-        assert (await repo.get(created.id)).onboarding["bio_status"] == "processing"
+        assert (await repo.get(created.id)).onboarding.bio_status == BioStatus.PROCESSING
 
     async def test_set_writing_style_user_summary(self, repo, make_user):
         created = await repo.create(make_user())
         await repo.set_writing_style_user_summary(created.id, "my style")
-        style = (await repo.get(created.id)).onboarding["writing_style"]
+        style = (await repo.get(created.id)).onboarding.writing_style
+        assert style is not None
         assert style["user_edited_summary"] == "my style"
 
     async def test_reset_onboarding_removes_subdocument(self, repo, make_user):
@@ -242,13 +251,13 @@ class TestOnboardingWrites:
         await repo.set_social_profiles_if_unset(
             created.id, [SocialProfile(platform="x", url="u/x")]
         )
-        first = (await repo.get(created.id)).onboarding["social_profiles"]
+        first = (await repo.get(created.id)).onboarding.social_profiles
         assert len(first) == 1
         await repo.set_social_profiles_if_unset(
             created.id,
             [SocialProfile(platform="y", url="u/y"), SocialProfile(platform="z", url="u/z")],
         )
-        assert (await repo.get(created.id)).onboarding["social_profiles"] == first
+        assert (await repo.get(created.id)).onboarding.social_profiles == first
 
 
 class TestSettingsWrites:
@@ -308,8 +317,9 @@ class TestSettingsWrites:
         created = await repo.create(make_user())
         assert await repo.set_holo_card_colors(created.id, "rgba(1,2,3,1)", 55)
         onboarding = (await repo.get(created.id)).onboarding
-        assert onboarding["overlay_color"] == "rgba(1,2,3,1)"
-        assert onboarding["overlay_opacity"] == 55
+        assert onboarding is not None
+        assert onboarding.overlay_color == "rgba(1,2,3,1)"
+        assert onboarding.overlay_opacity == 55
         assert await repo.set_holo_card_colors("0" * 24, "x", 1) is False
 
 

@@ -174,3 +174,19 @@ class TestOnboardingSubdocumentToleratesOldRows:
         )
         assert doc.onboarding is not None
         assert doc.onboarding.phase is OnboardingPhase.COMPLETED
+
+    def test_a_non_mapping_preferences_blob_reads_as_unset(self) -> None:
+        """``onboarding.preferences`` is an untyped blob in stored rows. Typing
+        it put every authenticated read behind its validation, so a string or a
+        list there has to read as "no preferences" instead of failing the load."""
+        for blob in ("brief", ["brief"], 7):
+            doc = UserDocument.model_validate(
+                {
+                    "id": "507f1f77bcf86cd799439011",
+                    "email": "old@example.com",
+                    "onboarding": {"completed": True, "preferences": blob},
+                }
+            )
+            assert doc.onboarding is not None
+            assert doc.onboarding.preferences is None
+            assert doc.onboarding.completed is True

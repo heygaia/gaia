@@ -14,6 +14,7 @@ from uuid import uuid4
 import pytest
 
 from app.constants.log_tags import LogTag
+from app.models.user_models import UserDocument
 from app.workers.tasks.workflow_tasks import execute_workflow_by_id
 
 MODULE = "app.workers.tasks.workflow_tasks"
@@ -40,8 +41,7 @@ def _patch_scheduler(workflow: MagicMock):
 def _onboarded_user():
     """Keep the onboarding gate out of the way — this file is about the
     subscription gate, which runs before it."""
-    user = MagicMock()
-    user.onboarding = {"completed": True}
+    user = UserDocument.model_validate({"onboarding": {"completed": True}})
     with patch(f"{MODULE}.user_repository.get", AsyncMock(return_value=user)):
         yield
 

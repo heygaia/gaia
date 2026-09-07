@@ -9,6 +9,7 @@ already took them.
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from app.models.user_models import UserDocument
 from app.workers.tasks.workflow_tasks import execute_workflow_by_id
 
 MODULE = "app.workers.tasks.workflow_tasks"
@@ -23,10 +24,8 @@ def _workflow() -> MagicMock:
     return wf
 
 
-def _onboarded_user() -> MagicMock:
-    user = MagicMock()
-    user.onboarding = {"completed": True}
-    return user
+def _onboarded_user() -> UserDocument:
+    return UserDocument.model_validate({"onboarding": {"completed": True}})
 
 
 async def _run_task(

@@ -1,3 +1,4 @@
+from collections.abc import Mapping
 from datetime import datetime
 from enum import Enum, StrEnum
 from typing import Any, TypedDict
@@ -458,6 +459,18 @@ class OnboardingSubdocument(BaseModel):
             member.value for member in BioStatus
         }
         return value if value in known else None
+
+    @field_validator("preferences", mode="before")
+    @classmethod
+    def a_non_mapping_preferences_blob_reads_as_unset(cls, value: object) -> object:
+        """``onboarding.preferences`` is an untyped blob in stored rows: a string
+        or a list there must read as "no preferences", not fail the whole user
+        read. Typing the field moved that blast radius from one account
+        projection to every authenticated request, so the leniency has to live
+        here."""
+        if value is None or isinstance(value, (OnboardingPreferences, Mapping)):
+            return value
+        return None
 
 
 class UserDocument(MongoDocument):

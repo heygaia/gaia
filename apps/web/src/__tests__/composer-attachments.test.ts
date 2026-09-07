@@ -60,12 +60,14 @@ describe("composerStore selections", () => {
   });
 });
 
-describe("composer-storage selection migration", () => {
+describe("composer-storage legacy selection keys", () => {
   beforeEach(() => {
     localStorage.clear();
   });
 
-  it("copies the two legacy selection keys into composer-storage and removes them", async () => {
+  it("removes the legacy selection keys without restoring what they held", async () => {
+    // A selection that outlives the session can auto-send something the user
+    // never meant to, so the old stores' contents are dropped, not imported.
     localStorage.setItem(
       "workflow-selection-storage",
       JSON.stringify({ state: { selectedWorkflow: WORKFLOW, autoSend: true } }),
@@ -82,28 +84,11 @@ describe("composer-storage selection migration", () => {
     await useComposerStore.persist.rehydrate();
 
     expect(store().inputText).toBe("draft");
-    expect(store().selectedWorkflow).toEqual(WORKFLOW);
-    expect(store().workflowAutoSend).toBe(true);
-    expect(store().selectedCalendarEvent).toEqual(EVENT);
+    expect(store().selectedWorkflow).toBeNull();
+    expect(store().workflowAutoSend).toBe(false);
+    expect(store().selectedCalendarEvent).toBeNull();
     expect(localStorage.getItem("workflow-selection-storage")).toBeNull();
     expect(localStorage.getItem("calendar-event-selection-storage")).toBeNull();
-  });
-
-  it("imports the legacy keys on a fresh install with no composer-storage at all", async () => {
-    // A version-gated migrate never runs when nothing was persisted yet; the
-    // import has to happen on every rehydrate until the legacy keys are gone.
-    localStorage.setItem(
-      "workflow-selection-storage",
-      JSON.stringify({
-        state: { selectedWorkflow: WORKFLOW, autoSend: false },
-      }),
-    );
-
-    await useComposerStore.persist.rehydrate();
-
-    expect(store().selectedWorkflow).toEqual(WORKFLOW);
-    expect(store().workflowAutoSend).toBe(false);
-    expect(localStorage.getItem("workflow-selection-storage")).toBeNull();
   });
 
   it("is a no-op once the legacy keys are gone", async () => {
