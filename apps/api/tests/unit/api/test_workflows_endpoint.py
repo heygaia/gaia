@@ -29,9 +29,11 @@ from httpx import AsyncClient
 from pymongo.errors import DuplicateKeyError
 import pytest
 
+from app.constants.log_tags import LogTag
 from app.models.payment_models import PlanType
 from app.models.workflow_execution_models import WorkflowExecutionsResponse
 from app.models.workflow_models import (
+    PromptTriggerHint,
     PublicWorkflowRow,
     PublicWorkflowsResponse,
     Workflow,
@@ -41,8 +43,11 @@ from app.models.workflow_models import (
     WorkflowStatusResponse,
 )
 from app.services.analytics_service import AnalyticsEvents
-from app.services.workflow.generation_service import WorkflowStepGenerationError
-from shared.py.wide_events import WorkflowContext
+from app.services.workflow.generation_service import (
+    WorkflowPromptRequest,
+    WorkflowStepGenerationError,
+)
+from shared.py.wide_events import WorkflowContext, log
 
 BASE_URL = "/api/v1/workflows"
 
@@ -774,6 +779,43 @@ class TestRegenerateSteps:
             "This request requires more credits"
         )
 
+    async def test_regenerate_steps_generation_failure_logs_workflow_user_and_reason(
+        self, client: AsyncClient, fake_user: dict
+    ):
+        """The 502 is only actionable in support if the log names which workflow,
+        which user and which provider reason produced it."""
+        recorded: list[tuple[str, dict]] = []
+        with (
+            patch(
+                f"{_WF_SERVICE}.regenerate_workflow_steps",
+                new_callable=AsyncMock,
+                side_effect=WorkflowStepGenerationError(
+                    "PaymentRequiredResponseError: This request requires more credits"
+                ),
+            ),
+            patch.object(
+                log,
+                "error",
+                lambda message, **kwargs: recorded.append((message, kwargs)),
+            ),
+        ):
+            response = await client.post(
+                f"{BASE_URL}/wf_abc123/regenerate-steps",
+                json={"instruction": "Regen steps"},
+            )
+
+        assert response.status_code == 502
+        # The generic http_exception record from the error middleware follows;
+        # the handler's own record is the first and must be complete.
+        assert recorded[0] == (
+            f"{LogTag.WORKFLOW} Step generation failed",
+            {
+                "workflow_id": "wf_abc123",
+                "user_id": fake_user["user_id"],
+                "reason": "PaymentRequiredResponseError: This request requires more credits",
+            },
+        )
+
     async def test_regenerate_steps_missing_instruction_returns_422(self, client: AsyncClient):
         response = await client.post(
             f"{BASE_URL}/wf_abc123/regenerate-steps",
@@ -1119,6 +1161,48 @@ class TestGeneratePrompt:
         assert response.status_code == 200
         data = response.json()
         assert data["suggested_trigger"]["type"] == "schedule"
+
+    async def test_generate_prompt_forwards_every_request_field(
+        self, client: AsyncClient, fake_user: dict
+    ):
+        """Every field the editor posts has to reach ``WorkflowPromptRequest``:
+        a dropped one silently degrades the generated instructions (wrong
+        trigger, unmentioned integrations) instead of failing loudly."""
+        with patch(
+            f"{_WF_GEN_SERVICE}.generate_workflow_prompt",
+            new_callable=AsyncMock,
+            return_value={"prompt": "Generated", "suggested_trigger": None},
+        ) as mock_generate:
+            response = await client.post(
+                f"{BASE_URL}/generate-prompt",
+                json={
+                    "title": "Daily Report",
+                    "description": "Summarise yesterday's sales",
+                    "trigger_config": {
+                        "type": "schedule",
+                        "cron_expression": "0 9 * * *",
+                        "trigger_name": "daily_digest",
+                    },
+                    "existing_prompt": "Send me a report.",
+                    "integration_ids": ["gmail", "slack"],
+                },
+            )
+
+        assert response.status_code == 200
+        assert mock_generate.await_args.args == (
+            WorkflowPromptRequest(
+                title="Daily Report",
+                description="Summarise yesterday's sales",
+                trigger_config=PromptTriggerHint(
+                    type="schedule",
+                    cron_expression="0 9 * * *",
+                    trigger_name="daily_digest",
+                ),
+                existing_prompt="Send me a report.",
+                integration_ids=["gmail", "slack"],
+            ),
+        )
+        assert mock_generate.await_args.kwargs == {"user_id": fake_user["user_id"]}
 
     async def test_generate_prompt_service_error_returns_500(self, client: AsyncClient):
         with patch(
