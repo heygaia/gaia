@@ -2245,6 +2245,57 @@ class TestBotRateLimitNotice:
         assert await _bot_rate_limit_notice(chunk, "user_1") is None
 
 
+class TestForwarderWiring:
+    """The handler starts a stream and hands the forwarder that stream and the
+    bot's own platform; a mismatch here is a bot reading the wrong turn."""
+
+    async def test_the_forwarder_is_given_the_started_stream_and_the_bots_platform(
+        self, client: AsyncClient
+    ):
+        async def nothing() -> AsyncGenerator[str, None]:
+            if False:  # pragma: no cover
+                yield
+
+        with (
+            patch("app.api.v1.endpoints.bot.require_bot_api_key", new=AsyncMock()),
+            patch(
+                "app.api.v1.endpoints.bot.PlatformLinkService.get_user_by_platform_id",
+                new=AsyncMock(return_value={"user_id": "uid1", "_id": "uid1"}),
+            ),
+            patch("app.api.v1.endpoints.bot.BotService") as bot_svc,
+            patch("app.api.v1.endpoints.bot.stream_manager") as sm,
+            patch("app.api.v1.endpoints.bot._charge_bot_turn", new=AsyncMock()),
+            patch("app.api.v1.endpoints.bot.spawn_background_task", new=MagicMock()),
+            patch("app.api.v1.endpoints.bot.run_chat_stream_background", new=AsyncMock()),
+            patch(
+                "app.api.v1.endpoints.bot.create_bot_session_token",
+                new=MagicMock(return_value="tok"),
+            ),
+            patch(
+                "app.api.v1.endpoints.bot._bot_stream_from_redis",
+                new=MagicMock(return_value=nothing()),
+            ) as forwarder,
+        ):
+            bot_svc.enforce_rate_limit = AsyncMock()
+            bot_svc.get_or_create_session = AsyncMock(return_value="conv-1")
+            bot_svc.load_conversation_history = AsyncMock(return_value=[])
+            sm.start_stream = AsyncMock()
+            response = await client.post(
+                f"{BOT_BASE}/chat-stream",
+                json={"message": "hello", "platform": "discord", "platform_user_id": "u1"},
+            )
+            await response.aread()
+
+        started_stream_id = sm.start_stream.await_args.args[0]
+        assert forwarder.call_args.kwargs == {
+            "stream_id": started_stream_id,
+            "conversation_id": "conv-1",
+            "user_id": "uid1",
+            "session_token": "tok",
+            "platform": "discord",
+        }
+
+
 class TestBotStreamFromRedis:
     """The forwarding generator on its own: its boundary, its first bytes, and
     what it records when the client goes away or the subscription breaks."""
