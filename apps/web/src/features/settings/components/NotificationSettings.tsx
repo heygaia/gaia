@@ -2,9 +2,10 @@
 
 import { NOTIFICATION_CHANNELS } from "@gaia/shared";
 import type { ChannelPlatform, ChannelPreferences } from "@gaia/shared/types";
+import { Button } from "@heroui/button";
 import { Switch } from "@heroui/switch";
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { isBotPlatform } from "@/config/botPlatforms";
 import { ChannelPriorityList } from "@/features/briefing/components/ChannelPriorityList";
 import {
@@ -26,13 +27,14 @@ export default function NotificationSettings() {
   const [platformLinks, setPlatformLinks] = useState<
     Record<string, PlatformLink | null>
   >({});
-  const [channelPrefs, setChannelPrefs] = useState<ChannelPreferences>(
-    () =>
-      Object.fromEntries(
-        NOTIFICATION_CHANNELS.map((channel) => [channel, true]),
-      ) as ChannelPreferences,
+  // Null until the stored preferences load. There is no safe placeholder: an
+  // all-true stand-in renders a channel the user switched off as enabled, and
+  // toggling from that reading writes the wrong value back.
+  const [channelPrefs, setChannelPrefs] = useState<ChannelPreferences | null>(
+    null,
   );
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
   const [togglingPlatform, setTogglingPlatform] = useState<string | null>(null);
 
   const linkedMap = useMemo(
@@ -46,33 +48,36 @@ export default function NotificationSettings() {
     [platformLinks],
   );
 
-  useEffect(() => {
-    const fetchAll = async () => {
-      setLoading(true);
-      try {
-        const [linksData, prefs] = await Promise.all([
-          apiService.get<{
-            platform_links: Record<string, PlatformLink | null>;
-          }>("/platform-links", { silent: true }),
-          NotificationsAPI.getChannelPreferences(),
-        ]);
-        setPlatformLinks(linksData.platform_links || {});
-        setChannelPrefs(prefs);
-      } catch {
-        // silently ignore
-      } finally {
-        setLoading(false);
-      }
-    };
-
-    fetchAll();
+  const fetchAll = useCallback(async () => {
+    setLoading(true);
+    setLoadFailed(false);
+    try {
+      const [linksData, prefs] = await Promise.all([
+        apiService.get<{
+          platform_links: Record<string, PlatformLink | null>;
+        }>("/platform-links", { silent: true }),
+        NotificationsAPI.getChannelPreferences(),
+      ]);
+      setPlatformLinks(linksData.platform_links || {});
+      setChannelPrefs(prefs);
+    } catch {
+      setLoadFailed(true);
+    } finally {
+      setLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    void fetchAll();
+  }, [fetchAll]);
 
   const handleToggle = async (channel: ChannelPlatform, enabled: boolean) => {
     setTogglingPlatform(channel);
     try {
       await NotificationsAPI.updateChannelPreference(channel, enabled);
-      setChannelPrefs((prev) => ({ ...prev, [channel]: enabled }));
+      setChannelPrefs((prev) =>
+        prev ? { ...prev, [channel]: enabled } : prev,
+      );
       trackEvent(ANALYTICS_EVENTS.SETTINGS_NOTIFICATIONS_TOGGLED, {
         platform: channel,
         enabled,
@@ -83,6 +88,14 @@ export default function NotificationSettings() {
       setTogglingPlatform(null);
     }
   };
+
+  if (loadFailed) {
+    return (
+      <SettingsPage>
+        <PreferencesError onRetry={() => void fetchAll()} />
+      </SettingsPage>
+    );
+  }
 
   return (
     <SettingsPage>
@@ -115,9 +128,14 @@ export default function NotificationSettings() {
             >
               <Switch
                 size="sm"
-                isSelected={isAvailable ? channelPrefs[channel] : false}
+                isSelected={
+                  isAvailable && !!channelPrefs && channelPrefs[channel]
+                }
                 isDisabled={
-                  !isAvailable || loading || togglingPlatform === channel
+                  !isAvailable ||
+                  loading ||
+                  !channelPrefs ||
+                  togglingPlatform === channel
                 }
                 onValueChange={(enabled) => handleToggle(channel, enabled)}
                 aria-label={`Enable ${label} notifications`}
@@ -137,5 +155,34 @@ export default function NotificationSettings() {
         <ChannelPriorityList linkedMap={linkedMap} />
       </div>
     </SettingsPage>
+  );
+}
+
+/**
+ * A failed preferences load is a settled failure, not a slow one. Showing the
+ * switches anyway would render defaults as if they were the user's stored
+ * choices, so the whole page waits behind a retry instead.
+ */
+function PreferencesError({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="mx-auto flex w-full max-w-2xl flex-col items-center gap-3 rounded-2xl bg-zinc-900/60 p-10 text-center">
+      <p className="text-sm font-medium text-zinc-200">
+        Couldn&apos;t load your notification settings
+      </p>
+      <p className="max-w-sm text-xs text-zinc-500">
+        Your channels are unchanged — this page just couldn&apos;t reach them.
+        Try again in a moment.
+      </p>
+      <Button
+        size="sm"
+        color="primary"
+        variant="flat"
+        radius="full"
+        className="mt-1 font-medium"
+        onPress={onRetry}
+      >
+        Try again
+      </Button>
+    </div>
   );
 }
