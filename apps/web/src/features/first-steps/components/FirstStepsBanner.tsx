@@ -3,10 +3,10 @@
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Cancel01Icon } from "@icons";
-import { twMerge } from "tailwind-merge";
 import { FirstStepRow } from "@/features/first-steps/components/FirstStepRow";
 import { useFirstStepAction } from "@/features/first-steps/hooks/useFirstStepAction";
 import { useFirstSteps } from "@/features/first-steps/hooks/useFirstSteps";
+import { cn } from "@/lib/utils";
 
 interface FirstStepsBannerProps {
   className?: string;
@@ -23,7 +23,7 @@ export function FirstStepsBanner({ className }: FirstStepsBannerProps) {
   return (
     <section
       aria-label="First steps"
-      className={twMerge(
+      className={cn(
         "flex h-fit w-full flex-wrap items-center gap-x-2 gap-y-1 rounded-2xl bg-zinc-800 px-3 py-2",
         className,
       )}
