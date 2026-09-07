@@ -112,6 +112,49 @@ class TestDeepResearch:
     @patch(f"{MODULE}.decompose_research_queries", new_callable=AsyncMock)
     @patch(f"{MODULE}.search_for_research", new_callable=AsyncMock)
     @patch(f"{MODULE}.rank_and_deduplicate_urls")
+    async def test_the_decomposition_gets_this_runs_inputs_and_its_user(
+        self,
+        mock_rank: MagicMock,
+        mock_ddg: AsyncMock,
+        mock_decompose: AsyncMock,
+        _mock_cache: AsyncMock,
+        _mock_cache_key: MagicMock,
+        _mock_uid: MagicMock,
+    ) -> None:
+        # Every argument here is load-bearing: the four positional ones decide
+        # which sub-queries come back, and `user_id` is the only thing that
+        # attributes the decomposition's spend to anybody.
+        mock_decompose.return_value = ["sub-q1"]
+        mock_ddg.return_value = {"results": []}
+        mock_rank.return_value = []
+
+        from app.agents.tools.research_tool import deep_research
+
+        await deep_research.ainvoke(
+            {
+                "query": "quantum error correction",
+                "scope": "academic",
+                "depth": 3,
+                "focus_areas": ["surface codes", "decoders"],
+            },
+            config=_make_config(),
+        )
+
+        assert mock_decompose.await_args.args == (
+            "quantum error correction",
+            "academic",
+            "surface codes | decoders",
+            3,
+        )
+        assert mock_decompose.await_args.kwargs == {"user_id": "user-123"}
+
+    @pytest.mark.asyncio
+    @patch(f"{MODULE}.get_user_id_from_config", return_value="user-123")
+    @patch(f"{MODULE}.build_research_cache_key", return_value="cache:key")
+    @patch(f"{MODULE}.get_cache", new_callable=AsyncMock, return_value=None)
+    @patch(f"{MODULE}.decompose_research_queries", new_callable=AsyncMock)
+    @patch(f"{MODULE}.search_for_research", new_callable=AsyncMock)
+    @patch(f"{MODULE}.rank_and_deduplicate_urls")
     async def test_no_sources_found(
         self,
         mock_rank: MagicMock,
