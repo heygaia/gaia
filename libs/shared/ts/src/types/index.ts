@@ -85,7 +85,6 @@ export type {
   SubscriptionCondition,
   SubTask,
   Todo,
-  TodoAssignee,
   TodoCounts,
   TodoCreate,
   TodoFilters,
