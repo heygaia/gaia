@@ -28,15 +28,19 @@ const GlobalIntegrationModal = dynamic(
   { ssr: false },
 );
 
-export default function ProvidersLayout({ children }: { children: ReactNode }) {
+/** Notification reads and pushes write the query cache, so they must mount
+ *  under `QueryProvider`; the layout itself renders above it. */
+function NotificationSubscriptions() {
   // Warm the notification query cache on app load
   useNotifications({ limit: 100 });
+  // Subscribe to notification events — writes the shared query cache
+  useNotificationWebSocket();
+  return null;
+}
 
+export default function ProvidersLayout({ children }: { children: ReactNode }) {
   // Initialize global WebSocket connection
   useWebSocketConnection();
-
-  // Subscribe to notification events — updates the shared store directly
-  useNotificationWebSocket();
 
   // Subscribe to background executor completion messages — inserts new
   // bot messages delivered via WebSocket (executor notifications, queued task results)
@@ -62,6 +66,7 @@ export default function ProvidersLayout({ children }: { children: ReactNode }) {
       <Toaster position="top-right" />
       <LazyMotionProvider>
         <QueryProvider>
+          <NotificationSubscriptions />
           {/** biome-ignore lint/complexity/noUselessFragments: needs empty component */}
           <Suspense fallback={<></>}>
             <GlobalAuth />
