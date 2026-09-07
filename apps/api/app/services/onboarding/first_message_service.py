@@ -1,11 +1,12 @@
 """Generate GAIA's first message to a new user after onboarding intelligence."""
 
+from dataclasses import dataclass
 import time
 from typing import cast
 
 from langchain_core.messages import BaseMessage, HumanMessage
 
-from app.agents.llm.client import ainvoke_llm, get_helper_llm
+from app.agents.llm.client import ainvoke_llm, get_helper_llm, metered_config
 from app.agents.prompts.onboarding_prompts import (
     FIRST_MESSAGE_GENERATION_PROMPT_GMAIL,
     FIRST_MESSAGE_GENERATION_PROMPT_NO_GMAIL,
@@ -36,21 +37,41 @@ def default_first_message(name: str) -> str:
     )
 
 
+@dataclass(frozen=True)
+class FirstMessageRecipient:
+    """Who the greeting is for, and how it should sound to them."""
+
+    user_id: str
+    name: str
+    profession: str
+    writing_style: WritingStyleProfile | None
+    has_gmail: bool
+    focus: str = ""
+
+
+@dataclass(frozen=True)
+class FirstMessageOutcome:
+    """What onboarding actually produced, which is what the greeting reports."""
+
+    triage: InboxTriage | None
+    created_todos: list[OnboardingTodoSummary]
+    created_workflows: list[OnboardingWorkflowSummary]
+    executed_todos: list[OnboardingTodoSummary] | None = None
+    clarify_answers: list[ClarifyAnswerRecord] | None = None
+
+
 async def generate_first_message(
-    *,
-    user_id: str,
-    name: str,
-    profession: str,
-    triage: InboxTriage | None,
-    created_todos: list[OnboardingTodoSummary],
-    created_workflows: list[OnboardingWorkflowSummary],
-    writing_style: WritingStyleProfile | None,
-    has_gmail: bool,
-    focus: str = "",
-    executed_todos: list[OnboardingTodoSummary] | None = None,
-    clarify_answers: list[ClarifyAnswerRecord] | None = None,
+    recipient: FirstMessageRecipient,
+    outcome: FirstMessageOutcome,
 ) -> str:
     """Generate GAIA's first message to a new user."""
+    user_id, name = recipient.user_id, recipient.name
+    profession, focus = recipient.profession, recipient.focus
+    writing_style, has_gmail = recipient.writing_style, recipient.has_gmail
+    triage, clarify_answers = outcome.triage, outcome.clarify_answers
+    created_todos, created_workflows = outcome.created_todos, outcome.created_workflows
+    executed_todos = outcome.executed_todos
+
     t0 = time.monotonic()
     try:
         executed_ids = {t.id for t in (executed_todos or []) if t.id}
@@ -106,7 +127,12 @@ async def generate_first_message(
         llm = get_helper_llm()
         t_llm = time.monotonic()
         response = await ainvoke_llm(
-            llm, [HumanMessage(content=prompt)], label="onboarding_first_message"
+            llm,
+            [HumanMessage(content=prompt)],
+            label="onboarding_first_message",
+            # Without a config the metering seam has no user to book this to, so
+            # the spend landed on nobody in usage_daily and nowhere in PostHog.
+            config=metered_config(user_id),
         )
         llm_duration_s = round(time.monotonic() - t_llm, 2)
         message = cast(BaseMessage, response).text.strip()

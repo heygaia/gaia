@@ -86,6 +86,8 @@ from app.services.composio.composio_service import get_composio_service
 from app.services.onboarding import inbox_scan_cache
 from app.services.onboarding.clarify_service import format_clarify_context
 from app.services.onboarding.first_message_service import (
+    FirstMessageOutcome,
+    FirstMessageRecipient,
     default_first_message,
     generate_first_message,
 )
@@ -347,16 +349,20 @@ async def _finalize_onboarding(
     first_message = await _safe_run(
         "first_message",
         generate_first_message(
-            user_id=ctx.user_id,
-            name=ctx.name,
-            profession=ctx.profession,
-            triage=ctx.triage,
-            created_todos=todos,
-            created_workflows=workflows,
-            writing_style=ctx.writing_style,
-            has_gmail=ctx.has_gmail,
-            focus=ctx.focus,
-            clarify_answers=ctx.clarify_answers,
+            FirstMessageRecipient(
+                user_id=ctx.user_id,
+                name=ctx.name,
+                profession=ctx.profession,
+                writing_style=ctx.writing_style,
+                has_gmail=ctx.has_gmail,
+                focus=ctx.focus,
+            ),
+            FirstMessageOutcome(
+                triage=ctx.triage,
+                created_todos=todos,
+                created_workflows=workflows,
+                clarify_answers=ctx.clarify_answers,
+            ),
         ),
         default=default_first_message(ctx.name),
     )
