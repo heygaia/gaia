@@ -42,6 +42,7 @@ from app.services.photon.photon_client import (
 )
 from app.utils.errors import AppError, create_error
 from app.utils.redis_utils import RedisPoolManager
+from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log
 
 
@@ -51,7 +52,7 @@ async def _enqueue_day_zero_hello(user_id: str, platform: str) -> None:
     is harmless; a Redis hiccup must not fail the link."""
     try:
         pool = await RedisPoolManager.get_pool()
-        await pool.enqueue_job("send_day_zero_hello", user_id, platform)
+        await enqueue_worker_job(pool, "send_day_zero_hello", user_id, platform)
     except Exception as e:
         log.warning(
             "platform_link.day_zero_enqueue_failed",
@@ -63,14 +64,16 @@ async def _enqueue_day_zero_hello(user_id: str, platform: str) -> None:
 
 async def _after_link(user_id: str, platform: str, previously_linked_same: bool) -> None:
     """Run the activation side effects that follow a successful chat platform link."""
-    # Any chat platform link satisfies the "link a platform" activation step.
-    await first_steps_service.mark_step(user_id, first_steps_service.STEP_LINK_PLATFORM)
-
     # A brand-new chat link is the day-zero moment: greet the user once. The
     # task guards itself (once ever, young account, still linked), so a
-    # same-id relink never re-greets.
+    # same-id relink never re-greets. This goes first: a retry of the link sees
+    # the platform already linked and never greets, so if the first-steps write
+    # below failed before the enqueue the hello would be lost for good.
     if not previously_linked_same:
         await _enqueue_day_zero_hello(user_id, platform)
+
+    # Any chat platform link satisfies the "link a platform" activation step.
+    await first_steps_service.mark_step(user_id, first_steps_service.STEP_LINK_PLATFORM)
 
 
 class Platform(str, Enum):

@@ -32,7 +32,8 @@ from app.services.platform_link_service import (
     start_platform_connect,
 )
 from app.utils.errors import AppError, create_error
-from shared.py.wide_events import log, log_context
+from app.workers.queue import TRACE_ID_KWARG
+from shared.py.wide_events import get_trace_id, log, log_context
 
 
 def _user(**fields) -> UserDocument:
@@ -62,9 +63,11 @@ class _FakeArqPool:
 
     def __init__(self):
         self.jobs: list[tuple] = []
+        self.job_kwargs: list[dict] = []
 
-    async def enqueue_job(self, *args):
+    async def enqueue_job(self, *args, **kwargs):
         self.jobs.append(args)
+        self.job_kwargs.append(kwargs)
 
 
 @pytest.fixture
@@ -315,6 +318,35 @@ class TestLinkSideEffects:
         first_steps_repo.set_first_step.assert_awaited_once_with(
             sample_user_id, first_steps_service.STEP_LINK_PLATFORM
         )
+
+    async def test_the_hello_survives_the_activation_step_failing(
+        self, mock_repo, sample_user_id, day_zero_pool
+    ):
+        """A retry of this link sees the platform already linked and never
+        greets, so the hello must be on the queue before the first-steps write
+        gets a chance to fail — otherwise it is lost for good."""
+        mock_repo.get.return_value = _user(id=sample_user_id, platform_links={})
+        mock_repo.link_platform.return_value = _user(id=sample_user_id)
+
+        with patch("app.services.first_steps_service.user_repository") as first_steps_repo:
+            first_steps_repo.set_first_step = AsyncMock(side_effect=RuntimeError("mongo is down"))
+            with pytest.raises(RuntimeError, match="mongo is down"):
+                await PlatformLinkService.link_account(sample_user_id, "discord", "discord456")
+
+        assert day_zero_pool.jobs == [("send_day_zero_hello", sample_user_id, "discord")]
+
+    async def test_the_hello_carries_the_link_requests_trace_id(
+        self, mock_repo, sample_user_id, day_zero_pool
+    ):
+        mock_repo.get.return_value = _user(id=sample_user_id, platform_links={})
+        mock_repo.link_platform.return_value = _user(id=sample_user_id)
+
+        async with log_context("platform_link_test"):
+            await PlatformLinkService.link_account(sample_user_id, "discord", "discord456")
+            trace_id = get_trace_id()
+
+        assert trace_id
+        assert day_zero_pool.job_kwargs == [{TRACE_ID_KWARG: trace_id}]
 
     async def test_a_redis_outage_still_links_and_names_the_cause(self, mock_repo, sample_user_id):
         mock_repo.get.return_value = _user(id=sample_user_id, platform_links={})
