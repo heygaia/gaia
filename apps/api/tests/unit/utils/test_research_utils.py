@@ -9,7 +9,6 @@ from unittest.mock import AsyncMock, patch
 from uuid import uuid4
 
 from app.utils.research_utils import (
-    _decompose_cache_key,
     build_research_cache_key,
     decompose_research_queries,
     rank_and_deduplicate_urls,
@@ -25,35 +24,6 @@ def test_cache_key_is_stable_and_scope_aware() -> None:
     )
 
 
-def test_two_users_asking_the_same_thing_share_one_decomposition() -> None:
-    # user_id is carried only to attribute the call's spend. If it reached the
-    # hash, the six-hour entry would be per user and every user would pay for
-    # the same decomposition again.
-    assert _decompose_cache_key("decompose", "q", "web", "", 1, user_id="alice") == (
-        _decompose_cache_key("decompose", "q", "web", "", 1, user_id="bob")
-    )
-
-
-def test_a_different_question_gets_a_different_entry() -> None:
-    assert _decompose_cache_key("decompose", "q", "web", "", 1, user_id="alice") != (
-        _decompose_cache_key("decompose", "other", "web", "", 1, user_id="alice")
-    )
-
-
-def test_two_helpers_with_identical_arguments_do_not_share_an_entry() -> None:
-    assert _decompose_cache_key("decompose", "q", "web", "", 1, user_id="alice") != (
-        _decompose_cache_key("some_other_helper", "q", "web", "", 1, user_id="alice")
-    )
-
-
-def test_a_keyword_argument_other_than_user_id_still_changes_the_entry() -> None:
-    # Nothing makes the caller pass positionally; only user_id is meant to be
-    # dropped, so any other keyword has to reach the hash like the rest.
-    assert _decompose_cache_key("decompose", "q", scope="web", user_id="alice") != (
-        _decompose_cache_key("decompose", "q", scope="academic", user_id="alice")
-    )
-
-
 async def test_decompose_parses_llm_json_response() -> None:
     response = AsyncMock()
     response.text = '["query one", "query two", "query three"]'
@@ -63,22 +33,20 @@ async def test_decompose_parses_llm_json_response() -> None:
         patch("app.utils.research_utils.get_helper_llm", return_value=object()),
     ):
         llm.return_value = response
-        queries = await decompose_research_queries(query, "web", "", 1, user_id="u1")
+        queries = await decompose_research_queries(query, "web", "", 1)
 
     assert queries == ["query one", "query two", "query three"]
     assert len(queries) == 3
     # The label becomes ``agent_name`` on the llm_call wide event, which is how
     # this lane's auxiliary COGS is told apart from every other one-shot helper.
     assert llm.await_args.kwargs["label"] == "research_queries"
-    # ...and the config is the only thing that books this call's spend to a user.
-    assert llm.await_args.kwargs["config"]["configurable"]["user_id"] == "u1"
 
 
 async def test_decompose_falls_back_to_heuristics_when_llm_fails() -> None:
     query = f"unique-fallback-path-{uuid4()}"
     with patch("app.utils.research_utils.ainvoke_llm", new_callable=AsyncMock) as llm:
         llm.side_effect = RuntimeError("llm down")
-        queries = await decompose_research_queries(query, "", "", 2, user_id="u1")
+        queries = await decompose_research_queries(query, "", "", 2)
 
     assert queries == [
         query,

@@ -7,11 +7,10 @@ from typing import Any
 
 from langchain_core.messages import HumanMessage
 
-from app.agents.llm.client import ainvoke_llm, get_helper_llm, metered_config
+from app.agents.llm.client import ainvoke_llm, get_helper_llm
 from app.constants.cache import SIX_HOUR_TTL
 from app.constants.log_tags import LogTag
 from app.decorators.caching import Cacheable
-from app.utils.cache_utils import create_cache_key_hash
 from shared.py.wide_events import log
 
 
@@ -21,25 +20,12 @@ def build_research_cache_key(query: str, scope: str, focus_areas: list[str], dep
     return f"research:result:{h}"
 
 
-def _decompose_cache_key(func_name: str, *args: object, **kwargs: object) -> str:
-    """Key the decomposition on the question asked, never on who asked it.
-
-    ``user_id`` rides along only to attribute the call's spend; hashing it too
-    would give every user a private copy of an identical decomposition and turn
-    one shared six-hour entry into one per user.
-    """
-    shared = {name: value for name, value in kwargs.items() if name != "user_id"}
-    return f"research:{create_cache_key_hash(func_name, *args, **shared)}"
-
-
-@Cacheable(key_generator=_decompose_cache_key, ttl=SIX_HOUR_TTL)
+@Cacheable(smart_hash=True, ttl=SIX_HOUR_TTL, namespace="research")
 async def decompose_research_queries(
     query: str,
     scope: str,
     focus_areas_str: str,
     depth: int,
-    *,
-    user_id: str,
 ) -> list[str]:
     """Use a cheap LLM to generate diverse, targeted sub-queries for thorough coverage."""
     log.set(
@@ -68,10 +54,7 @@ async def decompose_research_queries(
 
     try:
         response = await ainvoke_llm(
-            get_helper_llm(),
-            [HumanMessage(content=prompt)],
-            label="research_queries",
-            config=metered_config(user_id),
+            get_helper_llm(), [HumanMessage(content=prompt)], label="research_queries"
         )
         # ``.text`` flattens the message's content blocks to a string; ``.content``
         # may be a list (Gemini), whose repr would never parse as JSON.
