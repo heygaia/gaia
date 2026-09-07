@@ -1,7 +1,7 @@
 from typing import Any, TypedDict
 
 from app.constants.log_tags import LogTag
-from app.constants.notifications import CHANNEL_TYPE_INAPP
+from app.constants.notifications import NotificationChannel
 from app.core.websocket_manager import websocket_manager
 from app.models.notification.notification_models import (
     ActionStyle,
@@ -55,7 +55,7 @@ class InAppChannelAdapter(ChannelAdapter[InAppPayload]):
 
     @property
     def channel_type(self) -> str:
-        return CHANNEL_TYPE_INAPP
+        return NotificationChannel.INAPP
 
     def can_handle(self, notification: NotificationRequest) -> bool:  # noqa: ARG002 -- polymorphic interface; implementations keep the full signature
         """Return True — in-app delivery is always available for any request."""
@@ -96,7 +96,7 @@ class InAppChannelAdapter(ChannelAdapter[InAppPayload]):
             operation="inapp_deliver",
             user_id=user_id,
             notification_id=content["id"],
-            channel_type=CHANNEL_TYPE_INAPP,
+            channel_type=NotificationChannel.INAPP,
         )
         try:
             await websocket_manager.broadcast_to_user(

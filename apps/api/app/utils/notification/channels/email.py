@@ -23,9 +23,9 @@ import httpx
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from app.constants.notifications import (
-    CHANNEL_TYPE_EMAIL,
     NOTIFICATION_KIND_BRIEFING_DAILY,
     NOTIFICATION_KIND_BRIEFING_WEEKLY,
+    NotificationChannel,
 )
 from app.db.repositories.users import user_repository
 from app.models.notification.notification_models import (
@@ -55,7 +55,7 @@ class EmailChannelAdapter(ChannelAdapter):
 
     @property
     def channel_type(self) -> str:
-        return CHANNEL_TYPE_EMAIL
+        return NotificationChannel.EMAIL
 
     def can_handle(self, notification: NotificationRequest) -> bool:
         """Always claim the notification; ``deliver`` decides skip vs send

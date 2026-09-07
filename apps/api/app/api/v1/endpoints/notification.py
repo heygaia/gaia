@@ -16,7 +16,11 @@ from fastapi.responses import HTMLResponse
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.constants.log_tags import LogTag
-from app.constants.notifications import EXPO_TOKEN_PATTERN, MAX_DEVICES_PER_USER
+from app.constants.notifications import (
+    EXPO_TOKEN_PATTERN,
+    MAX_DEVICES_PER_USER,
+    NotificationChannel,
+)
 from app.db.repositories.users import user_repository
 from app.models.device_token_models import (
     DeviceTokenRequest,
@@ -90,7 +94,7 @@ async def unsubscribe_from_emails(token: Annotated[str, Query()]) -> Response:
 
 
 async def _disable_email_channel(user_id: str) -> None:
-    await user_repository.set_channel_preferences(user_id, email=False)
+    await user_repository.set_channel_preferences(user_id, {NotificationChannel.EMAIL.value: False})
 
 
 @router.get("/notifications", response_model=PaginatedNotificationsResponse)
@@ -156,12 +160,7 @@ async def get_channel_preferences(
     try:
         prefs = await fetch_channel_preferences(user_id)
         log.set(operation="get_channel_preferences", outcome="success")
-        return ChannelPreferences(
-            telegram=prefs["telegram"],
-            discord=prefs["discord"],
-            whatsapp=prefs["whatsapp"],
-            slack=prefs["slack"],
-        )
+        return ChannelPreferences.model_validate(prefs)
     except Exception as e:
         log.error(
             f"{LogTag.NOTIFICATION} Failed to get channel preferences",
@@ -189,11 +188,7 @@ async def update_channel_preferences(
 
     try:
         await user_repository.set_channel_preferences(
-            user_id,
-            telegram=preferences.telegram,
-            discord=preferences.discord,
-            whatsapp=preferences.whatsapp,
-            slack=preferences.slack,
+            user_id, preferences.model_dump(exclude_none=True)
         )
         schedule_account_sync(user_id)
 
@@ -208,12 +203,7 @@ async def update_channel_preferences(
             },
         )
         log.set(operation="update_channel_preferences", outcome="success")
-        return ChannelPreferences(
-            telegram=prefs["telegram"],
-            discord=prefs["discord"],
-            whatsapp=prefs["whatsapp"],
-            slack=prefs["slack"],
-        )
+        return ChannelPreferences.model_validate(prefs)
     except Exception as e:
         log.error(
             f"{LogTag.NOTIFICATION} Failed to update channel preferences",

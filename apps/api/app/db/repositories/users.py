@@ -20,6 +20,7 @@ cached read may carry a slightly stale ``last_active_at``; nothing reads that
 field off a cached path (the inactivity scan is an uncached query).
 """
 
+from collections.abc import Mapping
 from datetime import UTC, datetime
 
 from bson import ObjectId
@@ -31,6 +32,7 @@ from app.constants.cache import (
     USER_CACHE_PREFIX,
 )
 from app.constants.log_tags import LogTag
+from app.constants.notifications import DEFAULT_CHANNEL_PREFERENCES
 from app.db.redis import redis_cache
 from app.db.repositories.base import MongoRepository, cached_query
 from app.db.repositories.cache import CachePolicy
@@ -685,29 +687,15 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
 
     # --------------------------------------------------------- settings writes
 
-    async def set_channel_preferences(
-        self,
-        user_id: str,
-        *,
-        telegram: bool | None = None,
-        discord: bool | None = None,
-        whatsapp: bool | None = None,
-        slack: bool | None = None,
-        email: bool | None = None,
-    ) -> None:
-        """Set the given notification channel flags; unspecified channels are left
-        untouched (a ``None`` argument is not written)."""
-        set_fields: dict[str, object] = {}
-        if telegram is not None:
-            set_fields["notification_channel_prefs.telegram"] = telegram
-        if discord is not None:
-            set_fields["notification_channel_prefs.discord"] = discord
-        if whatsapp is not None:
-            set_fields["notification_channel_prefs.whatsapp"] = whatsapp
-        if slack is not None:
-            set_fields["notification_channel_prefs.slack"] = slack
-        if email is not None:
-            set_fields["notification_channel_prefs.email"] = email
+    async def set_channel_preferences(self, user_id: str, preferences: Mapping[str, bool]) -> None:
+        """Set the given notification channel flags; unlisted channels are left untouched."""
+        unknown = sorted(set(preferences) - set(DEFAULT_CHANNEL_PREFERENCES))
+        if unknown:
+            raise ValueError(f"Unknown notification channels: {unknown}")
+        set_fields: dict[str, object] = {
+            f"notification_channel_prefs.{channel}": enabled
+            for channel, enabled in preferences.items()
+        }
         if not set_fields:
             return
         await self._apply_raw_update(

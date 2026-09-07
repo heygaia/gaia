@@ -46,7 +46,7 @@ class ExternalPlatformAdapter(ChannelAdapter[ExternalPayload]):
 
     @property
     def channel_type(self) -> str:
-        # CHANNEL_TYPE_X and ConversationSource.X.value are the same string, so
+        # NotificationChannel.X and ConversationSource.X.value are the same string, so
         # derive the channel type from the platform instead of restating it.
         return self.platform.value
 
