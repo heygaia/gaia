@@ -1,6 +1,6 @@
 """Mongo → VFS glue for ``/workspace/gaia-tasks/``.
 
-The Mongo side: ``todos`` collection, ``assignee == "gaia"``, 30-day
+The Mongo side: ``todos`` collection, ``gaia-tracked`` label, 30-day
 completion window.
 
 The VFS side: :mod:`app.services.storage.gaia_tasks_vfs`.
@@ -15,9 +15,8 @@ from __future__ import annotations
 from datetime import UTC, datetime, timedelta
 
 from app.agents.workspace.system_docs import GAIA_TASKS_GUIDE_MD
-from app.constants.todos import FACET_DELIVERABLE, FACET_NOTES, facet_from_doc
 from app.db.repositories.todos import todo_repository
-from app.models.todo_models import ExecutionStatus, TodoDocument
+from app.models.todo_models import TodoDocument
 from app.services._vfs_scheduler import make_scheduler, run_hashed_sync
 from app.services.storage.gaia_tasks_vfs import (
     GaiaTaskProjection,
@@ -57,8 +56,8 @@ schedule_gaia_tasks_sync = make_scheduler(sync_user_gaia_tasks, log_name="gaia_t
 async def _fetch_active_projections(user_id: str) -> list[GaiaTaskProjection]:
     """Pull the user's active gaia-tasks from Mongo.
 
-    Filter: ``assignee == "gaia"`` AND (open OR completed within the last
-    30 days).
+    Filter: carries the ``gaia-tracked`` label AND (open OR completed
+    within the last 30 days).
     """
     cutoff = datetime.now(UTC) - timedelta(days=ACTIVE_WINDOW_DAYS)
     docs = await todo_repository.list_active_gaia_tracked_since(user_id, completed_since=cutoff)
@@ -66,22 +65,16 @@ async def _fetch_active_projections(user_id: str) -> list[GaiaTaskProjection]:
 
 
 def _project(doc: TodoDocument) -> GaiaTaskProjection:
-    """Typed document → ``GaiaTaskProjection`` (preserve every field the agent uses)."""
-    allow_canvas_fallback = doc.execution_status == ExecutionStatus.PROPOSED
-    raw = doc.model_dump()
+    """``TodoDocument`` → ``GaiaTaskProjection`` (preserve every field the agent uses)."""
     return {
         "id": doc.id,
-        "deliverable": facet_from_doc(
-            raw, FACET_DELIVERABLE, allow_canvas_fallback=allow_canvas_fallback
-        ),
-        "notes": facet_from_doc(raw, FACET_NOTES, allow_canvas_fallback=allow_canvas_fallback),
+        "canvas": doc.canvas_content or "",
         "log": doc.log_content or "",
-        "artifacts": [artifact.model_dump() for artifact in doc.artifacts],
         "meta": {
             "title": doc.title,
             "completed": doc.completed,
             "completed_at": doc.completed_at,
-            "priority": doc.priority,
+            "priority": doc.priority.value,
             "due_date": doc.due_date,
             "due_date_timezone": doc.due_date_timezone,
             "labels": doc.labels,

@@ -23,8 +23,8 @@ BriefingKind = Literal["daily", "weekly"]
 BriefingMood = Literal["clear", "packed", "idle", "winback", "weekly"]
 
 # ``kind`` on a section item tags how the renderer treats it (a GAIA action, a
-# user ask, a proposal awaiting approval, a look-back note, a plain highlight).
-BriefingItemKind = Literal["gaia", "you", "proposal", "lookback", "note"]
+# user ask, a look-back note, a plain highlight).
+BriefingItemKind = Literal["gaia", "you", "lookback", "note"]
 
 
 class BriefingStat(BaseModel):

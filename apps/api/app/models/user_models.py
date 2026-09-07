@@ -324,7 +324,6 @@ class AuthenticatedUser(TypedDict, total=False):
     last_inactive_email_sent: datetime | None
     inactive_email_count: int | None
     # Briefing engine markers (schemaless-ish, same rationale as onboarding above).
-    first_steps: dict[str, Any] | None
     briefing_bootstrap: dict[str, Any] | None
     briefing_dormancy: dict[str, Any] | None
     briefing_channel_priority: list[str] | None
@@ -405,7 +404,6 @@ class UserDocument(MongoDocument):
     last_inactive_email_sent: datetime | None = None
     inactive_email_count: int | None = None
     # Briefing engine markers (schemaless-ish, same rationale as onboarding above).
-    first_steps: dict[str, Any] | None = None
     briefing_bootstrap: dict[str, Any] | None = None
     briefing_dormancy: dict[str, Any] | None = None
     briefing_channel_priority: list[str] | None = None

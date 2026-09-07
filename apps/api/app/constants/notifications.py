@@ -68,8 +68,6 @@ DEFAULT_CHAT_CHANNEL_PRIORITY: tuple[str, ...] = (
 NOTIFICATION_KIND_BRIEFING_DAILY = "briefing_daily"
 NOTIFICATION_KIND_BRIEFING_WEEKLY = "briefing_weekly"
 
-# Todo-lifecycle notification kinds (plain template; used for filtering/analytics).
-NOTIFICATION_KIND_TODO_NEEDS_YOU = "todo_needs_you"
 # A genuinely time-critical signal alert (see the daily-briefing-run spec's
 # urgent-signal requirement): gated by urgency, not by count.
 NOTIFICATION_KIND_URGENT_SIGNAL = "urgent_signal"

@@ -1,6 +1,6 @@
 """Context gathering + formatting for the briefing run.
 
-The service does deterministic work (curation, persistence, delivery); this
+The service does deterministic work (fact assembly, persistence, delivery); this
 module reads the world the agent needs to see and formats it into the prompt
 blocks. Every block is plain text — the agent turns it into the payload.
 """
@@ -10,28 +10,19 @@ from datetime import UTC, datetime, time, timedelta
 from zoneinfo import ZoneInfo
 
 from app.constants.briefing import BRIEFING_KIND_DAILY, WINBACK_THRESHOLD
-from app.constants.todos import (
-    ASSIGNEE_GAIA,
-    FACET_NOTES,
-    facet_from_doc,
-)
+from app.constants.todos import BLOCKING_LABELS, FAILED_LABEL, GAIA_TRACKED_LABEL
 from app.db.repositories.briefings import briefing_repository
 from app.db.repositories.todos import todo_repository
 from app.db.repositories.workflow_executions import workflow_executions_repository
 from app.memory.engine import memory_engine
 from app.memory.mappers import entry_to_note
 from app.models.briefing_models import BriefingKind, BriefingMood, BriefingPayload
-from app.models.todo_models import ExecutionStatus, Priority, TodoDocument
+from app.models.todo_models import TodoDocument
 from app.services.briefing import dormancy
 from shared.py.wide_events import log
 
-# GAIA todos that are live work (shown in the plan block).
-_OPEN_GAIA_STATUSES = [
-    ExecutionStatus.PROPOSED.value,
-    ExecutionStatus.QUEUED.value,
-    ExecutionStatus.RUNNING.value,
-    ExecutionStatus.NEEDS_YOU.value,
-]
+# Open tracked todos the brief reports on (in progress / blocked / failed).
+_TRACKED_WORK_LIMIT = 20
 
 
 @dataclass
@@ -62,6 +53,24 @@ class WinbackState:
 class CompletedWork:
     gaia: list[TodoDocument] = field(default_factory=list)
     user: list[TodoDocument] = field(default_factory=list)
+
+
+@dataclass
+class TrackedWork:
+    """GAIA's tracked todos by state — the deterministic world the brief reports."""
+
+    completed: list[TodoDocument] = field(default_factory=list)
+    running: list[TodoDocument] = field(default_factory=list)
+    blocked: list[TodoDocument] = field(default_factory=list)
+    failed: list[TodoDocument] = field(default_factory=list)
+
+    @property
+    def is_empty(self) -> bool:
+        return not (self.completed or self.running or self.blocked or self.failed)
+
+
+def is_gaia_tracked(doc: TodoDocument) -> bool:
+    return GAIA_TRACKED_LABEL in doc.labels
 
 
 def resolve_clock(user_timezone: str | None) -> UserClock:
@@ -133,165 +142,34 @@ async def format_goal_block(user_id: str, user: dict) -> tuple[str, bool]:
     return ("\n".join(lines), bool(focus) or len(lines) > 0)
 
 
-@dataclass
-class GoalLane:
-    """One goal's world: the lane the nightly pass advances and the brief reports."""
-
-    goal_id: str
-    title: str
-    canvas_excerpt: str
-    completed: list[TodoDocument] = field(default_factory=list)
-    staged: list[TodoDocument] = field(default_factory=list)
-    running: list[TodoDocument] = field(default_factory=list)
-    failed: list[TodoDocument] = field(default_factory=list)
-    needs_you: list[TodoDocument] = field(default_factory=list)
-
-
-_LANE_CANVAS_EXCERPT_CHARS = 700
-# The nightly pass writes its freshest thinking into these sections, so they lead
-# the excerpt regardless of where they sit in the notes facet.
-_PRIORITY_CANVAS_SECTIONS = ("current state", "next steps")
-
-
-def _split_markdown_sections(text: str) -> list[tuple[str, str]]:
-    """Split markdown into (heading, block) pairs by ``## `` headers.
-
-    Each block keeps its own heading line; text before the first header is
-    returned under an empty heading.
-    """
-    sections: list[tuple[str, str]] = []
-    heading = ""
-    buf: list[str] = []
-    for line in text.splitlines():
-        if line.lstrip().startswith("## "):
-            if buf:
-                sections.append((heading, "\n".join(buf).strip()))
-            heading = line.lstrip()[3:].strip()
-            buf = [line]
+async def gather_tracked_work(user_id: str, since: datetime) -> TrackedWork:
+    """GAIA's tracked todos: completed since ``since``, plus every open one by state."""
+    work = TrackedWork()
+    for doc in await todo_repository.list_completed_since(user_id, since=since):
+        if is_gaia_tracked(doc):
+            work.completed.append(doc)
+    for doc in await todo_repository.list_active_tracked(user_id, limit=_TRACKED_WORK_LIMIT):
+        if FAILED_LABEL in doc.labels:
+            work.failed.append(doc)
+        elif BLOCKING_LABELS.intersection(doc.labels):
+            work.blocked.append(doc)
         else:
-            buf.append(line)
-    if buf:
-        sections.append((heading, "\n".join(buf).strip()))
-    return sections
-
-
-def _excerpt_canvas(notes: str) -> str:
-    """The freshest slice of a goal's notes facet for the night shift to plan from.
-
-    A head-truncation converges on the oldest plan text as the notes grow, hiding
-    exactly the ``## Current State`` the nightly pass should plan from. So the
-    priority sections lead, the rest of the budget is filled from the top of
-    everything else, and when no such sections exist the tail (most recently
-    appended) wins over the head.
-    """
-    notes = notes.strip()
-    if len(notes) <= _LANE_CANVAS_EXCERPT_CHARS:
-        return notes
-    sections = _split_markdown_sections(notes)
-    priority = [b for h, b in sections if h.lower() in _PRIORITY_CANVAS_SECTIONS]
-    if not priority:
-        return notes[-_LANE_CANVAS_EXCERPT_CHARS:].strip()
-    rest = [b for h, b in sections if h.lower() not in _PRIORITY_CANVAS_SECTIONS]
-    excerpt = "\n\n".join(priority).strip()
-    if rest and len(excerpt) < _LANE_CANVAS_EXCERPT_CHARS:
-        excerpt += "\n\n" + "\n\n".join(rest).strip()
-    return excerpt[:_LANE_CANVAS_EXCERPT_CHARS].strip()
-
-
-async def gather_goal_lanes(user_id: str, since: datetime) -> list[GoalLane]:
-    """Every active goal with its children by execution state.
-
-    This is the deterministic world the briefing reports and the night shift
-    advances: state lives here, never in per-run memory recall. Goals are
-    backstage data only — recurring goal work is a GAIA todo with recurrence,
-    never a goal-linked workflow (see the unified-todo-model spec).
-    """
-    lanes: list[GoalLane] = []
-    for goal in await todo_repository.list_open_goals(user_id):
-        # A goal's living strategy is its notes facet (its working memory).
-        goal_notes = facet_from_doc(goal.model_dump(), FACET_NOTES, allow_canvas_fallback=False)
-        lane = GoalLane(
-            goal_id=goal.id,
-            title=goal.title or "untitled goal",
-            canvas_excerpt=_excerpt_canvas(goal_notes),
-        )
-        for child in await todo_repository.list_goal_children(user_id, goal.id):
-            status = child.execution_status.value if child.execution_status else None
-            if child.completed_at and child.completed_at >= since:
-                lane.completed.append(child)
-            elif status == "proposed":
-                lane.staged.append(child)
-            elif status in ("queued", "running"):
-                lane.running.append(child)
-            elif status == "failed":
-                lane.failed.append(child)
-            elif status == "needs_you":
-                lane.needs_you.append(child)
-        lanes.append(lane)
-    return lanes
-
-
-def format_goal_lanes_block(lanes: list[GoalLane]) -> str:
-    """Render lanes for the night-shift prompt: state in, judgment out."""
-    if not lanes:
-        return "No active goals."
-    parts: list[str] = []
-    for lane in lanes:
-        lines = [f'GOAL "{lane.title}" (goal_id: {lane.goal_id})']
-        if lane.canvas_excerpt.strip():
-            lines.append(f"strategy canvas:\n{lane.canvas_excerpt.strip()}")
-        for label, docs in (
-            ("done since yesterday", lane.completed),
-            ("open work", lane.running),
-            ("staged proposals", lane.staged),
-            ("failed", lane.failed),
-            ("blocked on the user", lane.needs_you),
-        ):
-            if docs:
-                lines.append(label + ": " + "; ".join(d.title or "?" for d in docs))
-        parts.append("\n".join(lines))
-    return "\n\n".join(parts)
+            work.running.append(doc)
+    return work
 
 
 async def gather_completed_since(user_id: str, since: datetime) -> CompletedWork:
     work = CompletedWork()
     for doc in await todo_repository.list_completed_since(user_id, since=since):
-        (work.gaia if doc.assignee == ASSIGNEE_GAIA else work.user).append(doc)
+        (work.gaia if is_gaia_tracked(doc) else work.user).append(doc)
     return work
-
-
-async def format_todos_block(user_id: str) -> str:
-    gaia_docs = await todo_repository.list_open_gaia_by_status(
-        user_id, statuses=_OPEN_GAIA_STATUSES, limit=20
-    )
-    gaia_lines = [
-        f"- [GAIA · {d.execution_status.value if d.execution_status else None}] {d.title or 'untitled'}"
-        + (f" (serves: {d.serves})" if d.serves else "")
-        for d in gaia_docs
-    ]
-
-    user_docs = await todo_repository.list_open_user_todos(user_id, limit=20)
-    user_lines = [
-        f"- [YOU] {d.title or 'untitled'}"
-        + (f" (priority: {d.priority.value})" if d.priority != Priority.NONE else "")
-        for d in user_docs
-    ]
-
-    if not gaia_lines and not user_lines:
-        return "Current list: EMPTY — no open todos on either side."
-    parts = ["Current open todos:"]
-    if gaia_lines:
-        parts.append("GAIA-assigned:\n" + "\n".join(gaia_lines))
-    if user_lines:
-        parts.append("Yours:\n" + "\n".join(user_lines))
-    return "\n\n".join(parts)
 
 
 async def user_open_todo_summary(user_id: str) -> tuple[int, list[str]]:
     """Count + first titles of the user's own open todos, for the brief's facts.
 
-    The voice pass gets these so an empty-lane day can't be voiced as "all
-    clear" while the user's own list still has work in it.
+    The voice pass gets these so an empty day can't be voiced as "all clear"
+    while the user's own list still has work in it.
     """
     docs = await todo_repository.list_open_user_todos(user_id, limit=50)
     titles = [d.title or "untitled" for d in docs]
@@ -337,10 +215,10 @@ async def compute_winback_state(user_id: str, recent: int = 10) -> WinbackState:
     """Count consecutive most-recent daily briefings the user never acknowledged.
 
     Acknowledgement is honest and channel-agnostic: the briefing was opened, OR the
-    user was active since it went out (a reactivation signal — goal created, session
-    active, or any message). A todo completing is deliberately NOT an ack: GAIA's
-    night shift completes its own todos autonomously, so counting completions would
-    let GAIA acknowledge its own briefings and winback would never fire.
+    user was active since it went out (a reactivation signal — session active, or
+    any message). A todo completing is deliberately NOT an ack: GAIA completes its
+    own tracked todos autonomously, so counting completions would let GAIA
+    acknowledge its own briefings and winback would never fire.
 
     The loop breaks at the first acknowledged briefing, so the reactivation-signal
     lookup runs only for the unacknowledged tail (at most one extra call past it).

@@ -26,16 +26,6 @@ class FakeIntegrationRepo:
         return self.count
 
 
-class FakeTodoRepo:
-    def __init__(self, count: int) -> None:
-        self.count = count
-        self.calls: list[str] = []
-
-    async def count_gaia_assigned(self, user_id: str) -> int:
-        self.calls.append(user_id)
-        return self.count
-
-
 class FakeUserRepo:
     def __init__(self) -> None:
         self.bootstrap_calls: list[str] = []
@@ -53,7 +43,6 @@ class Harness:
         self.provisioned: list[str] = []
         self.tracked: list[tuple[str, str, dict[str, Any] | None]] = []
         self.integrations = FakeIntegrationRepo(0)
-        self.todos = FakeTodoRepo(0)
         self.users = FakeUserRepo()
 
 
@@ -81,7 +70,6 @@ def harness(monkeypatch: pytest.MonkeyPatch) -> Harness:
     monkeypatch.setattr(context, "format_goal_block", fake_format_goal_block)
     monkeypatch.setattr(rollout, "track", fake_track)
     monkeypatch.setattr(rollout, "user_integration_repository", h.integrations)
-    monkeypatch.setattr(rollout, "todo_repository", h.todos)
     monkeypatch.setattr(rollout, "user_repository", h.users)
     return h
 
@@ -124,16 +112,6 @@ class TestNormalPath:
     async def test_no_goal_but_busy_account_is_still_normal(self, harness: Harness) -> None:
         harness.has_goal = False
         harness.integrations.count = 2
-        harness.todos.count = 0
-
-        assert await provision_existing_user(USER_ID) == "normal"
-        assert harness.users.bootstrap_calls == []
-        assert harness.tracked == [(USER_ID, "briefing_provisioned", {"path": "normal"})]
-
-    async def test_no_goal_but_gaia_todos_exist_is_normal(self, harness: Harness) -> None:
-        harness.has_goal = False
-        harness.integrations.count = 0
-        harness.todos.count = 1
 
         assert await provision_existing_user(USER_ID) == "normal"
         assert harness.users.bootstrap_calls == []
@@ -145,17 +123,15 @@ class TestBootstrapPath:
     async def test_no_goal_and_sparse_account_holds_briefings(self, harness: Harness) -> None:
         harness.has_goal = False
         harness.integrations.count = 1
-        harness.todos.count = 0
 
         assert await provision_existing_user(USER_ID) == "bootstrap"
         assert harness.provisioned == [USER_ID]
         assert harness.users.bootstrap_calls == [USER_ID]
         assert harness.tracked == [(USER_ID, "briefing_provisioned", {"path": "bootstrap"})]
 
-    async def test_zero_integrations_and_zero_todos_is_sparse(self, harness: Harness) -> None:
+    async def test_zero_integrations_is_sparse(self, harness: Harness) -> None:
         harness.has_goal = False
         harness.integrations.count = 0
-        harness.todos.count = 0
 
         assert await provision_existing_user(USER_ID) == "bootstrap"
         assert harness.users.bootstrap_calls == [USER_ID]
@@ -163,12 +139,10 @@ class TestBootstrapPath:
     async def test_sparsity_is_measured_for_the_same_user(self, harness: Harness) -> None:
         harness.has_goal = False
         harness.integrations.count = 1
-        harness.todos.count = 0
 
         await provision_existing_user(USER_ID)
 
         assert harness.integrations.calls == [USER_ID]
-        assert harness.todos.calls == [USER_ID]
 
 
 @pytest.mark.unit

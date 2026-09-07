@@ -1,6 +1,6 @@
 """Firing a briefing workflow runs the briefing pipeline, not a chat turn.
 
-Three system workflows (daily brief, overnight work, weekly digest) share one
+Two system workflows (daily brief, weekly digest) share one
 ARQ entry point with every other workflow, and the only thing separating them
 is ``system_workflow_key``. Route one wrongly and the user gets somebody else's
 brief — or an agent chat turn billed against their budget — so the key-to-
@@ -15,7 +15,6 @@ import pytest
 
 from app.constants.briefing import (
     DAILY_BRIEFING_WORKFLOW_KEY,
-    OVERNIGHT_WORK_WORKFLOW_KEY,
     WEEKLY_DIGEST_WORKFLOW_KEY,
 )
 from app.models.workflow_models import (
@@ -55,17 +54,15 @@ def _briefing_workflow(system_workflow_key: str) -> Workflow:
 
 
 class _Pipelines:
-    """The three briefing entry points, each replaced by a stub."""
+    """The two briefing entry points, each replaced by a stub."""
 
     def __init__(self) -> None:
         self.daily = AsyncMock()
-        self.overnight = AsyncMock()
         self.weekly = AsyncMock()
 
     def patches(self) -> list:
         return [
             patch(f"{BRIEFING_SERVICE}.run_daily_briefing", self.daily),
-            patch(f"{BRIEFING_SERVICE}.run_overnight_work", self.overnight),
             patch(f"{BRIEFING_SERVICE}.run_weekly_digest", self.weekly),
         ]
 
@@ -90,22 +87,6 @@ class TestKeyChoosesThePipeline:
             summary = await _run_briefing_workflow(workflow)
 
         pipelines.daily.assert_awaited_once_with("u_1")
-        pipelines.overnight.assert_not_awaited()
-        pipelines.weekly.assert_not_awaited()
-        assert summary == BRIEFING_SUMMARY
-
-    async def test_overnight_key_runs_the_overnight_work_for_that_user(
-        self, pipelines: _Pipelines
-    ) -> None:
-        workflow = _briefing_workflow(OVERNIGHT_WORK_WORKFLOW_KEY)
-
-        with ExitStack() as stack:
-            for patcher in pipelines.patches():
-                stack.enter_context(patcher)
-            summary = await _run_briefing_workflow(workflow)
-
-        pipelines.overnight.assert_awaited_once_with("u_1")
-        pipelines.daily.assert_not_awaited()
         pipelines.weekly.assert_not_awaited()
         assert summary == BRIEFING_SUMMARY
 
@@ -121,7 +102,6 @@ class TestKeyChoosesThePipeline:
 
         pipelines.weekly.assert_awaited_once_with("u_1")
         pipelines.daily.assert_not_awaited()
-        pipelines.overnight.assert_not_awaited()
         assert summary == BRIEFING_SUMMARY
 
 
@@ -201,5 +181,4 @@ class TestTheFireTakesTheBriefingPath:
 
         harness.chat.assert_awaited_once()
         pipelines.daily.assert_not_awaited()
-        pipelines.overnight.assert_not_awaited()
         pipelines.weekly.assert_not_awaited()

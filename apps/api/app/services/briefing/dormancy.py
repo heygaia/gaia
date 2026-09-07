@@ -1,15 +1,15 @@
 """Idle wind-down: pause the whole loop when GAIA has nothing to work on.
 
-An idle day is a daily run that found no goal lanes and no goal knowledge — the
-engine has nothing legitimate to advance. On day IDLE_WARN_DAYS the brief warns
+An idle day is a daily run that found no tracked work and no goal knowledge — the
+engine has nothing legitimate to report. On day IDLE_WARN_DAYS the brief warns
 plainly; on day IDLE_DORMANT_DAYS it says goodbye once and the loop goes
-dormant: the daily brief, the night shift, and the weekly digest all early-exit
-before any LLM call, so a goalless account costs a few Mongo reads a day.
+dormant: the daily brief and the weekly digest both early-exit before any LLM
+call, so a goalless account costs a few Mongo reads a day.
 
 Reactivation is pull-based, checked at run start (no hooks in the chat or todo
-paths): a goal created, any authenticated activity, or any user message in any
-conversation since dormancy began wakes the loop on its next run. Only the
-daily run mutates dormancy state; the night shift and weekly digest read it.
+paths): any authenticated activity or any user message in any conversation since
+dormancy began wakes the loop on its next run. Only the daily run mutates
+dormancy state; the weekly digest reads it.
 """
 
 from dataclasses import dataclass
@@ -17,7 +17,6 @@ from datetime import UTC, datetime
 
 from app.constants.briefing import IDLE_DORMANT_DAYS, IDLE_WARN_DAYS
 from app.db.repositories.conversations import conversation_repository
-from app.db.repositories.todos import todo_repository
 from app.db.repositories.users import user_repository
 
 # Marker on the user doc:
@@ -62,15 +61,11 @@ def wind_down_stage(idle_days: int) -> str | None:
 async def reactivation_signal_since(user_id: str, since: datetime) -> bool:
     """True when the user did anything since ``since`` that should wake the loop.
 
-    This is the canonical "the user was active since T" predicate: a goal created,
-    authenticated activity (``last_active_at``), or any user message in any
-    conversation. Shared by the dormancy ladder (wake a paused loop) and winback
+    This is the canonical "the user was active since T" predicate: authenticated
+    activity (``last_active_at``) or any user message in any conversation. Shared by the dormancy ladder (wake a paused loop) and winback
     acknowledgement (``context.compute_winback_state``) so the two never diverge on
     what counts as the user showing up. ``since`` must be timezone-aware.
     """
-    if await todo_repository.has_goal_created_since(user_id, since=since):
-        return True
-
     last_active = await user_repository.get_last_active_at(user_id)
     if isinstance(last_active, datetime):
         if last_active.tzinfo is None:
