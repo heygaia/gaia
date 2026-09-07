@@ -86,7 +86,9 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         return await self._find_one({"_id": workflow_id, "user_id": user_id})
 
     @staticmethod
-    def _list_query(user_id: str, *, exclude_todo_workflows: bool) -> dict[str, Any]:
+    def _list_query(
+        user_id: str, *, exclude_todo_workflows: bool, exclude_system_workflows: bool = False
+    ) -> dict[str, Any]:
         """The shared filter for a user's listed workflows — the single source of
         truth for both ``list_for_user`` and ``count_for_user`` so a paginated
         list and its total can never drift out of the same predicate."""
@@ -96,6 +98,8 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
                 {"is_todo_workflow": {"$exists": False}},
                 {"is_todo_workflow": False},
             ]
+        if exclude_system_workflows:
+            query["is_system_workflow"] = {"$ne": True}
         return query
 
     async def list_for_user(
@@ -124,12 +128,28 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
             skip=offset,
         )
 
-    async def count_for_user(self, user_id: str, *, exclude_todo_workflows: bool = True) -> int:
+    async def count_for_user(
+        self,
+        user_id: str,
+        *,
+        exclude_todo_workflows: bool = True,
+        exclude_system_workflows: bool = False,
+    ) -> int:
         """Total workflows a user has under the same filter as ``list_for_user`` —
-        the ``total`` a paginated list reports, independent of ``limit``/``offset``."""
+        the ``total`` a paginated list reports, independent of ``limit``/``offset``.
+        ``exclude_system_workflows`` additionally drops the auto-provisioned ones,
+        for callers asking what the user authored themselves."""
         return await self._count(
-            self._list_query(user_id, exclude_todo_workflows=exclude_todo_workflows)
+            self._list_query(
+                user_id,
+                exclude_todo_workflows=exclude_todo_workflows,
+                exclude_system_workflows=exclude_system_workflows,
+            )
         )
+
+    async def count_public_for_user(self, user_id: str) -> int:
+        """How many of the user's workflows are published to the community marketplace."""
+        return await self._count({"user_id": user_id, "is_public": True})
 
     async def find_by_ids(self, workflow_ids: list[str]) -> list[WorkflowDocument]:
         """Workflows whose ids are in ``workflow_ids`` (no user scoping)."""
