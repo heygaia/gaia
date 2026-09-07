@@ -6,7 +6,6 @@ import hashlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from langgraph.store.base import PutOp
 import pytest
 
 from app.constants.chroma import (
@@ -23,7 +22,6 @@ from app.db.chroma.chroma_tools_store import (
     _build_put_operations,
     _compute_tool_diff,
     _compute_tool_hash,
-    _execute_batch_operations,
     _get_current_tools_with_hashes,
     _get_existing_tools_from_chroma,
     _get_subagent_tools,
@@ -334,25 +332,6 @@ class TestBuildPutOperations:
 
 
 # ---------------------------------------------------------------------------
-# _execute_batch_operations
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-class TestExecuteBatchOperations:
-    async def test_noop_on_empty_ops(self):
-        store = AsyncMock()
-        await _execute_batch_operations(store, [])
-        store.abatch.assert_not_awaited()
-
-    async def test_calls_abatch_in_batches(self):
-        store = AsyncMock()
-        ops = [MagicMock(spec=PutOp) for _ in range(120)]
-        await _execute_batch_operations(store, ops, batch_size=50)
-        assert store.abatch.await_count == 3  # 50 + 50 + 20
-
-
-# ---------------------------------------------------------------------------
 # index_tools_to_store
 # ---------------------------------------------------------------------------
 
@@ -391,7 +370,7 @@ class TestIndexToolsToStore:
             patch("app.db.chroma.chroma_tools_store.set_cache", new_callable=AsyncMock),
             patch("app.db.chroma.chroma_tools_store.providers") as mock_providers,
             patch(
-                "app.db.chroma.chroma_tools_store._execute_batch_operations",
+                "app.db.chroma.index_warmup.execute_batch_operations",
                 new_callable=AsyncMock,
             ) as mock_execute,
         ):
@@ -427,7 +406,7 @@ class TestIndexToolsToStore:
             ) as mock_set_cache,
             patch("app.db.chroma.chroma_tools_store.providers") as mock_providers,
             patch(
-                "app.db.chroma.chroma_tools_store._execute_batch_operations",
+                "app.db.chroma.index_warmup.execute_batch_operations",
                 new_callable=AsyncMock,
                 side_effect=ChromaBatchWriteError("1 of 1 ChromaDB writes failed"),
             ),
@@ -457,7 +436,7 @@ class TestIndexToolsToStore:
             ) as mock_set_cache,
             patch("app.db.chroma.chroma_tools_store.providers") as mock_providers,
             patch(
-                "app.db.chroma.chroma_tools_store._execute_batch_operations",
+                "app.db.chroma.index_warmup.execute_batch_operations",
                 new_callable=AsyncMock,
             ),
         ):
@@ -594,7 +573,7 @@ def _indexing(store: AsyncMock, cached_hash: str | None) -> Iterator[SimpleNames
         patch("app.db.chroma.chroma_tools_store.set_cache", new_callable=AsyncMock) as set_cache,
         patch("app.db.chroma.chroma_tools_store.providers") as providers,
         patch(
-            "app.db.chroma.chroma_tools_store._execute_batch_operations",
+            "app.db.chroma.index_warmup.execute_batch_operations",
             new_callable=AsyncMock,
         ) as execute,
     ):
@@ -803,7 +782,7 @@ class TestInitializeChromaToolsStore:
                 new=AsyncMock(return_value=existing),
             ) as existing_mock,
             patch(
-                "app.db.chroma.chroma_tools_store._execute_batch_operations", new=AsyncMock()
+                "app.db.chroma.index_warmup.execute_batch_operations", new=AsyncMock()
             ) as execute,
         ):
             yield SimpleNamespace(
