@@ -1,5 +1,6 @@
 """Workflow generation service for LLM-based step creation."""
 
+from dataclasses import dataclass
 import re
 from typing import TypeVar, cast
 
@@ -19,7 +20,7 @@ from app.agents.prompts.workflow_prompts import (
     WORKFLOW_PROMPT_GENERATION_TEMPLATE,
 )
 from app.agents.templates.workflow_template import WORKFLOW_GENERATION_TEMPLATE
-from app.agents.tools.core.registry import get_tool_registry
+from app.agents.tools.core.registry import ToolRegistry, get_tool_registry
 from app.config.oauth_config import OAUTH_INTEGRATIONS
 from app.constants.integrations import MANAGED_BY_INTERNAL
 from app.constants.log_tags import LogTag
@@ -211,6 +212,212 @@ def enrich_steps(generated_steps: list[GeneratedStep]) -> list[WorkflowStep]:
     ]
 
 
+def _collect_registry_categories(
+    tool_registry: ToolRegistry, active_set: set[str]
+) -> tuple[list[str], list[str]]:
+    """List the tool-registry categories the generator may use, with their tools.
+
+    Provider categories (``require_integration``) are included only when the
+    integration is in ``active_set``; core categories are always included.
+    """
+    category_names: list[str] = []
+    tools_with_categories: list[str] = []
+    for category, cat_obj in tool_registry.get_all_category_objects().items():
+        if cat_obj.require_integration:
+            # Provider category: include only when in the active set.
+            integration_key = (cat_obj.integration_name or category).lower()
+            if integration_key not in active_set:
+                continue
+        # Core category (require_integration=False): always include.
+        category_names.append(category)
+        tool_names = [
+            tool.name if hasattr(tool, "name") else str(tool) for tool in cat_obj.get_tool_objects()
+        ]
+        tools_with_categories.append(f"{category}: {', '.join(tool_names)}")
+    return category_names, tools_with_categories
+
+
+def _collect_subagent_categories(active_set: set[str]) -> tuple[list[str], list[str]]:
+    """List subagent capabilities offered to the generator as categories.
+
+    Internal subagents (todos/reminders/skills) are always-available core
+    capabilities; provider subagents are gated by the active set so
+    unconnected/unnamed ones stay out.
+    """
+    category_names: list[str] = []
+    tools_with_categories: list[str] = []
+    for integration in OAUTH_INTEGRATIONS:
+        if integration.subagent_config and integration.subagent_config.has_subagent:
+            is_internal = integration.managed_by == MANAGED_BY_INTERNAL
+            if not is_internal and integration.id.lower() not in active_set:
+                continue
+            cfg = integration.subagent_config
+            category_names.append(integration.id)
+            tools_with_categories.append(f"{integration.id} (subagent): {cfg.capabilities}")
+    return category_names, tools_with_categories
+
+
+async def _collect_custom_integration_categories(
+    user_id: str, active_set: set[str]
+) -> tuple[list[str], list[str], dict[str, str]]:
+    """List the user's selected custom (MCP / self-added) integrations.
+
+    These aren't in the static registry or ``OAUTH_INTEGRATIONS``, so each is
+    surfaced as its own category keyed by integration id, along with the
+    id -> display-name map the preferred-tools hint needs. Loading them is an
+    enrichment: on failure this degrades to the built-in catalog.
+    """
+    category_names: list[str] = []
+    tools_with_categories: list[str] = []
+    display_names: dict[str, str] = {}
+    try:
+        # Local import: my_integrations -> tools/oauth services transitively
+        # import this module, so a top-level import is a circular import.
+        from app.services.integrations.my_integrations import (  # noqa: PLC0415 -- my_integrations transitively re-imports this module; top-level would be circular
+            get_my_integrations,
+        )
+
+        my_integrations = await get_my_integrations(user_id)
+        for integ in my_integrations.integrations:
+            if integ.source != "custom":
+                continue
+            if integ.id.lower() not in active_set:
+                continue
+            category_names.append(integ.id)
+            display_names[integ.id.lower()] = integ.name
+            summary = integ.description or integ.name
+            tools_with_categories.append(
+                f"{integ.id} (custom integration): {integ.name}. {summary}"
+            )
+    except Exception as e:
+        # Custom integrations are an enrichment for generation; degrade to
+        # the built-in catalog rather than failing the whole generation.
+        log.warning(
+            f"{LogTag.WORKFLOW} Could not load custom integrations for user",
+            user_id=user_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+    return category_names, tools_with_categories, display_names
+
+
+def _build_integration_hints(
+    prefer_set: set[str], explicit_set: set[str], display_names: dict[str, str]
+) -> list[str]:
+    """Build the preferred/explicit integration hint lines appended to the prompt.
+
+    Each slug is resolved to a human label plus its category id: the name tells
+    the LLM what the user meant; the id is what each step's ``category`` must be
+    set to for that integration's tools to resolve. Custom integrations are
+    keyed by an opaque uuid, so ``display_names`` supplies the human name
+    ``OAUTH_INTEGRATIONS`` can't.
+    """
+
+    def _hint_label(slug: str) -> str:
+        name = display_names.get(slug) or _slug_to_friendly_name(slug)
+        return f"{name} (category: {slug})" if name != slug else slug
+
+    hint_parts: list[str] = []
+    if prefer_set:
+        friendly_prefer = [_hint_label(s) for s in sorted(prefer_set)]
+        hint_parts.append(
+            "Preferred integrations (use where the workflow makes sense): "
+            + ", ".join(friendly_prefer)
+        )
+    if explicit_set:
+        friendly_explicit = [_hint_label(s) for s in sorted(explicit_set)]
+        hint_parts.append(
+            "Integrations the user explicitly named — MUST appear in the steps: "
+            + ", ".join(friendly_explicit)
+        )
+    return hint_parts
+
+
+def _validated_steps(result: GeneratedWorkflow | None) -> list[WorkflowStep] | None:
+    """Enrich a candidate generation result, or return None when it is unusable.
+
+    An empty result is regenerable rather than fatal, so it is reported as
+    absence instead of raising.
+    """
+    if not result or not result.steps:
+        return None
+    return enrich_steps(result.steps)
+
+
+async def _run_generation_attempt(
+    formatted_prompt: str, *, user_id: str, attempt: int
+) -> tuple[list[WorkflowStep] | None, Exception | None]:
+    """Run one generation attempt and classify its outcome.
+
+    Returns ``(steps, None)`` on success and ``(None, error)`` when the attempt
+    is regenerable — empty output or schema-invalid structured output. Provider
+    failures are not regenerable and are raised as
+    ``WorkflowStepGenerationError``.
+    """
+    try:
+        result = await _structured_one_shot(
+            GeneratedWorkflow,
+            formatted_prompt,
+            label="workflow_generation",
+            user_id=user_id,
+        )
+    except (ValidationError, OutputParserException) as e:
+        # Schema-invalid structured output is regenerable; the provider's
+        # own retry/fallback already ran inside ainvoke_llm.
+        log.warning(
+            f"{LogTag.WORKFLOW} Structured output invalid; regenerating",
+            attempt=attempt + 1,
+            max_attempts=_MAX_GENERATION_ATTEMPTS,
+            error_type=type(e).__name__,
+        )
+        return None, e
+    except Exception as e:
+        # Not regenerable: the provider itself failed (auth, credit,
+        # timeout) after ainvoke_llm's own retry+fallback. Re-raise as
+        # the typed error so the API answers with the reason instead of
+        # a blank 500 — the cause chain is kept, nothing is swallowed.
+        log.error(
+            f"{LogTag.WORKFLOW} ========== FAILED: provider error",
+            attempt=attempt + 1,
+            error_type=type(e).__name__,
+            error=str(e),
+            user_id=user_id,
+        )
+        raise WorkflowStepGenerationError(_failure_reason(e)) from e
+
+    steps_data = _validated_steps(result)
+    if steps_data is not None:
+        log.info(f"{LogTag.WORKFLOW} ========== DONE: steps", steps_data_count=len(steps_data))
+        return steps_data, None
+
+    log.warning(
+        f"{LogTag.WORKFLOW} No steps; regenerating",
+        attempt=attempt + 1,
+        max_attempts=_MAX_GENERATION_ATTEMPTS,
+    )
+    return None, ValueError(
+        "LLM returned a workflow with no steps — the model may not have understood the request"
+    )
+
+
+@dataclass(frozen=True)
+class WorkflowPromptRequest:
+    """The inputs that shape a generated/improved workflow instruction prompt.
+
+    Grouped into one object because they travel together from the API layer:
+    what the workflow is (``title``/``description``), what the user already
+    wrote (``existing_prompt``), and which integrations may or should be named
+    (``connected_integration_ids``/``integration_ids``).
+    """
+
+    title: str | None = None
+    description: str | None = None
+    trigger_config: PromptTriggerHint | None = None
+    existing_prompt: str | None = None
+    connected_integration_ids: set[str] | None = None
+    integration_ids: list[str] | None = None
+
+
 class WorkflowGenerationService:
     """Service for generating workflow steps using LLM."""
 
@@ -243,39 +450,12 @@ class WorkflowGenerationService:
         # Preferred integrations are soft hints; explicit mentions are hard requirements.
         active_set = prefer_set | explicit_set
 
-        tools_with_categories = []
-        category_names = []
-        # Selected custom-integration ids -> display name. Custom integrations are
-        # keyed by an opaque uuid, so the preferred-tools hint must resolve the
-        # human name here (OAUTH_INTEGRATIONS doesn't know them).
-        selected_display_names: dict[str, str] = {}
-        categories = tool_registry.get_all_category_objects()
-        for category, cat_obj in categories.items():
-            if cat_obj.require_integration:
-                # Provider category: include only when in the active set.
-                integration_key = (cat_obj.integration_name or category).lower()
-                if integration_key not in active_set:
-                    continue
-            # Core category (require_integration=False): always include.
-            category_names.append(category)
-            category_tools = cat_obj.get_tool_objects()
-            tool_names = [
-                tool.name if hasattr(tool, "name") else str(tool) for tool in category_tools
-            ]
-            tools_with_categories.append(f"{category}: {', '.join(tool_names)}")
-
-        # Add subagent capabilities. Internal subagents (todos/reminders/skills)
-        # are always-available core capabilities — include them unconditionally,
-        # mirroring the always-on core categories above. Provider subagents are
-        # gated by the active set, so unconnected/unnamed ones stay out.
-        for integration in OAUTH_INTEGRATIONS:
-            if integration.subagent_config and integration.subagent_config.has_subagent:
-                is_internal = integration.managed_by == MANAGED_BY_INTERNAL
-                if not is_internal and integration.id.lower() not in active_set:
-                    continue
-                cfg = integration.subagent_config
-                category_names.append(integration.id)
-                tools_with_categories.append(f"{integration.id} (subagent): {cfg.capabilities}")
+        category_names, tools_with_categories = _collect_registry_categories(
+            tool_registry, active_set
+        )
+        subagent_categories, subagent_lines = _collect_subagent_categories(active_set)
+        category_names.extend(subagent_categories)
+        tools_with_categories.extend(subagent_lines)
 
         for tool in tool_registry.get_core_tools():
             tool_name = tool.name if hasattr(tool, "name") else str(tool)
@@ -288,38 +468,18 @@ class WorkflowGenerationService:
             "generate outlines, extract key points, write briefs. No external tool call."
         )
 
-        # The user's CUSTOM integrations (MCP / self-added) aren't in the static
-        # registry or OAUTH_INTEGRATIONS, so the generator never saw them. Surface
-        # each as its own category (keyed by integration id) so steps can use them.
+        # Selected custom-integration ids -> display name. Custom integrations are
+        # keyed by an opaque uuid, so the preferred-tools hint must resolve the
+        # human name here (OAUTH_INTEGRATIONS doesn't know them).
+        selected_display_names: dict[str, str] = {}
         if user_id:
-            try:
-                # Local import: my_integrations -> tools/oauth services transitively
-                # import this module, so a top-level import is a circular import.
-                from app.services.integrations.my_integrations import (  # noqa: PLC0415 -- my_integrations transitively re-imports this module; top-level would be circular
-                    get_my_integrations,
-                )
-
-                my_integrations = await get_my_integrations(user_id)
-                for integ in my_integrations.integrations:
-                    if integ.source != "custom":
-                        continue
-                    if integ.id.lower() not in active_set:
-                        continue
-                    category_names.append(integ.id)
-                    selected_display_names[integ.id.lower()] = integ.name
-                    summary = integ.description or integ.name
-                    tools_with_categories.append(
-                        f"{integ.id} (custom integration): {integ.name}. {summary}"
-                    )
-            except Exception as e:
-                # Custom integrations are an enrichment for generation; degrade to
-                # the built-in catalog rather than failing the whole generation.
-                log.warning(
-                    f"{LogTag.WORKFLOW} Could not load custom integrations for user",
-                    user_id=user_id,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
+            (
+                custom_categories,
+                custom_lines,
+                selected_display_names,
+            ) = await _collect_custom_integration_categories(user_id, active_set)
+            category_names.extend(custom_categories)
+            tools_with_categories.extend(custom_lines)
 
         log.info(
             f"{LogTag.WORKFLOW} Categories resolved",
@@ -337,28 +497,7 @@ class WorkflowGenerationService:
                 f"{prompt}\n\nShort display summary for additional context: {description}"
             )
 
-        # Resolve a slug to a human label plus its category id. The name tells
-        # the LLM what the user meant; the id is what each step's `category`
-        # must be set to for that integration's tools to resolve. Custom
-        # integrations are keyed by an opaque uuid, so selected_display_names
-        # supplies the human name OAUTH_INTEGRATIONS can't.
-        def _hint_label(slug: str) -> str:
-            name = selected_display_names.get(slug) or _slug_to_friendly_name(slug)
-            return f"{name} (category: {slug})" if name != slug else slug
-
-        hint_parts: list[str] = []
-        if prefer_set:
-            friendly_prefer = [_hint_label(s) for s in sorted(prefer_set)]
-            hint_parts.append(
-                "Preferred integrations (use where the workflow makes sense): "
-                + ", ".join(friendly_prefer)
-            )
-        if explicit_set:
-            friendly_explicit = [_hint_label(s) for s in sorted(explicit_set)]
-            hint_parts.append(
-                "Integrations the user explicitly named — MUST appear in the steps: "
-                + ", ".join(friendly_explicit)
-            )
+        hint_parts = _build_integration_hints(prefer_set, explicit_set, selected_display_names)
         if hint_parts:
             prompt_context = prompt_context + "\n\n" + "\n".join(hint_parts)
 
@@ -380,54 +519,11 @@ class WorkflowGenerationService:
                     f"{LogTag.WORKFLOW} Regeneration attempt for", attempt=attempt, title=title
                 )
 
-            try:
-                result = await _structured_one_shot(
-                    GeneratedWorkflow,
-                    formatted_prompt,
-                    label="workflow_generation",
-                    user_id=user_id,
-                )
-            except (ValidationError, OutputParserException) as e:
-                # Schema-invalid structured output is regenerable; the provider's
-                # own retry/fallback already ran inside ainvoke_llm.
-                last_error = e
-                log.warning(
-                    f"{LogTag.WORKFLOW} Structured output invalid; regenerating",
-                    attempt=attempt + 1,
-                    max_attempts=_MAX_GENERATION_ATTEMPTS,
-                    error_type=type(e).__name__,
-                )
-                continue
-            except Exception as e:
-                # Not regenerable: the provider itself failed (auth, credit,
-                # timeout) after ainvoke_llm's own retry+fallback. Re-raise as
-                # the typed error so the API answers with the reason instead of
-                # a blank 500 — the cause chain is kept, nothing is swallowed.
-                log.error(
-                    f"{LogTag.WORKFLOW} ========== FAILED: provider error",
-                    attempt=attempt + 1,
-                    error_type=type(e).__name__,
-                    error=str(e),
-                    user_id=user_id,
-                )
-                raise WorkflowStepGenerationError(_failure_reason(e)) from e
-
-            if result and result.steps:
-                steps_data = enrich_steps(result.steps)
-                log.info(
-                    f"{LogTag.WORKFLOW} ========== DONE: steps", steps_data_count=len(steps_data)
-                )
+            steps_data, last_error = await _run_generation_attempt(
+                formatted_prompt, user_id=user_id, attempt=attempt
+            )
+            if steps_data is not None:
                 return steps_data
-
-            last_error = ValueError(
-                "LLM returned a workflow with no steps — "
-                "the model may not have understood the request"
-            )
-            log.warning(
-                f"{LogTag.WORKFLOW} No steps; regenerating",
-                attempt=attempt + 1,
-                max_attempts=_MAX_GENERATION_ATTEMPTS,
-            )
 
         log.error(
             f"{LogTag.WORKFLOW} ========== FAILED after attempts",
@@ -442,26 +538,24 @@ class WorkflowGenerationService:
 
     @staticmethod
     async def generate_workflow_prompt(
-        title: str | None = None,
-        description: str | None = None,
-        trigger_config: PromptTriggerHint | None = None,
-        existing_prompt: str | None = None,
-        connected_integration_ids: set[str] | None = None,
-        integration_ids: list[str] | None = None,
+        request: WorkflowPromptRequest,
         *,
         user_id: str,
     ) -> GeneratedPromptResult:
         """Generate or improve workflow instructions using LLM.
 
-        If `connected_integration_ids` is provided, the available-triggers
+        If `request.connected_integration_ids` is provided, the available-triggers
         list shown to the LLM is restricted to those integrations.
-        If `integration_ids` is provided, the LLM is hinted to prefer
+        If `request.integration_ids` is provided, the LLM is hinted to prefer
         those integrations when naming triggers/actions.
         """
-        trigger_hint = _build_trigger_hint(trigger_config)
-        available_triggers = _build_available_triggers(connected_integration_ids)
+        title = request.title
+        description = request.description
+        existing_prompt = request.existing_prompt
+        trigger_hint = _build_trigger_hint(request.trigger_config)
+        available_triggers = _build_available_triggers(request.connected_integration_ids)
 
-        normalized_slugs = _normalize_slugs(integration_ids)
+        normalized_slugs = _normalize_slugs(request.integration_ids)
         if normalized_slugs:
             friendly = [_slug_to_friendly_name(s) for s in normalized_slugs]
             integrations_hint = (
