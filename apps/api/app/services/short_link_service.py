@@ -15,7 +15,11 @@ from pymongo.errors import DuplicateKeyError
 
 from app.config.settings import settings
 from app.constants.todos import FACET_DELIVERABLE, facet_from_doc
-from app.db.repositories.short_links import short_link_repository
+from app.db.repositories.short_links import (
+    LIVE_TARGET_UNIQUE_INDEX,
+    SLUG_UNIQUE_INDEX,
+    short_link_repository,
+)
 from app.db.repositories.todos import todo_repository
 from app.models.short_link_models import ShortLink, ShortLinkTarget
 from app.models.todo_models import ExecutionStatus
@@ -107,9 +111,24 @@ async def get_or_create_short_link(
                     expires_at=expires_at,
                 )
             )
-        except DuplicateKeyError:
-            # Slug already taken — draw another.
-            continue
+        except DuplicateKeyError as e:
+            violated = str(e)
+            if f"index: {SLUG_UNIQUE_INDEX}" in violated:
+                # Slug already taken — draw another.
+                continue
+            if f"index: {LIVE_TARGET_UNIQUE_INDEX}" not in violated:
+                raise
+            # Lost a concurrent mint for this target. The winner's slug is the
+            # one live link, and minting a third would leave a link alive after
+            # the user revokes the one they were shown — hand back the winner.
+            winner = await short_link_repository.refresh_for_target(
+                user_id, target_type, target_id, expires_at=expires_at
+            )
+            if winner is None:
+                # The winner was revoked between the collision and this read;
+                # a fresh slug is now the correct outcome.
+                continue
+            return _build_url(winner.slug)
         return _build_url(link.slug)
 
     log.error("short_link.slug_exhausted", user_id=user_id, target_id=target_id)

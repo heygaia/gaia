@@ -16,6 +16,11 @@ from datetime import datetime
 from app.db.repositories.base import UserScopedRepository
 from app.models.short_link_models import ShortLink, ShortLinkTarget, ShortLinkUpdate
 
+# Index names, shared with the index builder and the mint loop, which tells the
+# two unique-key violations apart by the index Mongo names in the error.
+SLUG_UNIQUE_INDEX = "slug_unique"
+LIVE_TARGET_UNIQUE_INDEX = "user_target_live_unique"
+
 
 class ShortLinksRepository(UserScopedRepository[ShortLink, ShortLinkUpdate]):
     collection_name = "short_links"

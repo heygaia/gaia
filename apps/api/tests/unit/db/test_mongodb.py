@@ -9,11 +9,13 @@ Covers:
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+from pymongo.errors import DuplicateKeyError
 import pytest
 
 from app.db.mongodb import indexes as indexes_module
-from app.db.mongodb.indexes import create_playbook_indexes
+from app.db.mongodb.indexes import create_playbook_indexes, create_short_link_indexes
 from app.db.mongodb.mongodb import MongoDB, init_mongodb
+from app.db.repositories.short_links import LIVE_TARGET_UNIQUE_INDEX
 
 # ---------------------------------------------------------------------------
 # MongoDB class — __init__
@@ -393,8 +395,52 @@ class TestCreatePlaybookIndexes:
         )
 
 
+class TestCreateShortLinkIndexes:
+    @patch("app.db.mongodb.indexes.get_async_collection")
+    async def test_one_live_link_per_target_is_a_unique_index(
+        self, mock_get_collection: MagicMock
+    ) -> None:
+        """Two overlapping mints for one target must collide on the index — a
+        second live link would outlive the first one's revocation."""
+        collection = MagicMock()
+        collection.create_index = AsyncMock()
+        mock_get_collection.return_value = collection
+
+        await create_short_link_indexes()
+
+        collection.create_index.assert_any_await(
+            [("user_id", 1), ("target_type", 1), ("target_id", 1)],
+            unique=True,
+            partialFilterExpression={"revoked": False},
+            name=LIVE_TARGET_UNIQUE_INDEX,
+        )
+
+
 class TestCreateAllIndexes:
     """Tests for create_all_indexes() and its error handling."""
+
+    @pytest.mark.regression
+    @patch("app.db.mongodb.indexes.log")
+    async def test_a_failed_short_links_index_build_is_not_swallowed(
+        self, mock_log: MagicMock
+    ) -> None:
+        """Without its unique indexes a mint can hand out a duplicate capability
+        URL, so this failure must stop index creation, not become a log line."""
+        patches = {
+            name: patch(f"app.db.mongodb.indexes.{name}", new_callable=AsyncMock)
+            for name in _INDEX_CREATORS
+        }
+        mocks = {name: p.start() for name, p in patches.items()}
+        mocks["create_short_link_indexes"].side_effect = DuplicateKeyError("E11000 duplicate key")
+
+        try:
+            from app.db.mongodb.indexes import create_all_indexes
+
+            with pytest.raises(DuplicateKeyError):
+                await create_all_indexes()
+        finally:
+            for p in patches.values():
+                p.stop()
 
     @patch("app.db.mongodb.indexes.log")
     async def test_create_all_indexes_success(self, mock_log: MagicMock) -> None:

@@ -19,12 +19,19 @@ from pymongo.errors import DuplicateKeyError, OperationFailure
 from app.constants.log_tags import LogTag
 from app.db.mongodb.collections import get_async_collection
 from app.db.repositories.integrations import integration_repository
+from app.db.repositories.short_links import LIVE_TARGET_UNIQUE_INDEX, SLUG_UNIQUE_INDEX
 from shared.py.wide_events import log
 
 # Mirrors pymongo's private `_IndexKeyHint` (pymongo.operations) — the shape
 # every `create_index` call in this module actually passes: a single field
 # name, or an ordered list of (field, direction | "text") pairs.
 IndexKeys = str | list[tuple[str, int | str]]
+
+# Collections whose indexes enforce a correctness invariant rather than query
+# speed, so a failed build must stop startup instead of becoming a log line.
+# short_links: without its two unique indexes the mint hands out a duplicate
+# capability URL, or a second live link that survives the user's revocation.
+INTEGRITY_CRITICAL_COLLECTIONS = frozenset({"short_links"})
 
 
 async def create_all_indexes() -> None:
@@ -111,6 +118,8 @@ async def create_all_indexes() -> None:
                     collection_name=collection_name,
                     result=result,
                 )
+                if collection_name in INTEGRITY_CRITICAL_COLLECTIONS:
+                    raise result
                 index_results[collection_name] = f"FAILED: {result!s}"
             else:
                 index_results[collection_name] = "SUCCESS"
@@ -1197,7 +1206,9 @@ async def create_short_link_indexes() -> None:
     """Create indexes for the short_links collection.
 
     Slugs are capability URLs: globally unique, so one index enforces the whole
-    namespace and the mint retry loop races against it.
+    namespace and the mint retry loop races against it. A second unique index
+    holds the invariant the mint depends on but cannot enforce: at most one
+    live (non-revoked) link per (user, target).
 
     Pre-capability rows were per-user and 3 chars, so two users could hold the
     same slug and the unique index cannot build over them. Removing them is a
@@ -1211,19 +1222,32 @@ async def create_short_link_indexes() -> None:
         await short_links_collection.create_index(
             [("slug", 1)],
             unique=True,
-            name="slug_unique",
+            name=SLUG_UNIQUE_INDEX,
         )
-        # Mint-idempotency lookup: one link per (user, target).
+        # One LIVE link per (user, target): the mint's read-then-write cannot
+        # enforce this on its own, so two overlapping mints would each get a
+        # slug and revoking the one the user was shown would leave the other
+        # live. Revoked links fall out of the partial filter, so the next mint
+        # after a revocation is free to draw a fresh slug.
+        await short_links_collection.create_index(
+            [("user_id", 1), ("target_type", 1), ("target_id", 1)],
+            unique=True,
+            partialFilterExpression={"revoked": False},
+            name=LIVE_TARGET_UNIQUE_INDEX,
+        )
+        # The same keys again without the partial filter: the idempotency read
+        # matches on `revoked: {$ne: True}`, which a partial index cannot serve.
         await short_links_collection.create_index(
             [("user_id", 1), ("target_type", 1), ("target_id", 1)],
             name="user_target",
         )
     except DuplicateKeyError as e:
         log.error(
-            f"{LogTag.MONGO} slug_unique cannot be built over duplicate slugs — "
-            "pre-capability per-user links are still present. Run "
-            "`uv run python -m scripts.migrate_short_link_slugs --dry-run`, "
-            "review, then re-run without the flag",
+            f"{LogTag.MONGO} a unique short_links index cannot be built over the "
+            "duplicates already in the collection. Duplicate slugs are pre-capability "
+            "per-user links: run `uv run python -m scripts.migrate_short_link_slugs "
+            "--dry-run`, review, then re-run without the flag. Duplicate live links "
+            "for one target can only predate the live-target index",
             collection_name="short_links",
             error_type=type(e).__name__,
             error=str(e),

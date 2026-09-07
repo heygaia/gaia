@@ -9,9 +9,11 @@ from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 import uuid
 
+from pymongo.errors import DuplicateKeyError
 import pytest
 
-from app.db.repositories.short_links import ShortLinksRepository
+from app.db.mongodb.indexes import create_short_link_indexes
+from app.db.repositories.short_links import LIVE_TARGET_UNIQUE_INDEX, ShortLinksRepository
 from app.models.short_link_models import ShortLink, ShortLinkUpdate
 
 
@@ -37,6 +39,43 @@ def make_doc() -> Callable[..., ShortLink]:
         return ShortLink.model_validate(data)
 
     return _make
+
+
+@pytest.fixture
+async def indexed_repo(
+    repo: ShortLinksRepository, raw_collection, monkeypatch: pytest.MonkeyPatch
+) -> ShortLinksRepository:
+    """The repository over a collection carrying the real short_links indexes."""
+    monkeypatch.setattr("app.db.mongodb.indexes.get_async_collection", lambda _name: raw_collection)
+    await create_short_link_indexes()
+    return repo
+
+
+class TestShortLinksLiveTargetUniqueness:
+    """One live link per (user, target) is enforced by Mongo, not by the mint's
+    read-then-write — two overlapping mints must collide on the index, or the
+    loser's link outlives the winner's revocation."""
+
+    async def test_a_second_live_link_for_one_target_is_rejected(self, indexed_repo, make_doc):
+        await indexed_repo.create(make_doc(user_id="u", target_id="t1"))
+        with pytest.raises(DuplicateKeyError, match=LIVE_TARGET_UNIQUE_INDEX):
+            await indexed_repo.create(make_doc(user_id="u", target_id="t1"))
+
+    async def test_a_revoked_link_does_not_block_a_fresh_mint(self, indexed_repo, make_doc):
+        await indexed_repo.create(make_doc(user_id="u", target_id="t1", revoked=True))
+        fresh = await indexed_repo.create(make_doc(user_id="u", target_id="t1"))
+        assert await indexed_repo.get_by_slug(fresh.slug) is not None
+
+    async def test_the_index_refuses_to_build_over_duplicate_live_links(
+        self, repo, raw_collection, make_doc, monkeypatch: pytest.MonkeyPatch
+    ):
+        await repo.create(make_doc(user_id="u", target_id="t1"))
+        await repo.create(make_doc(user_id="u", target_id="t1"))
+        monkeypatch.setattr(
+            "app.db.mongodb.indexes.get_async_collection", lambda _name: raw_collection
+        )
+        with pytest.raises(DuplicateKeyError):
+            await create_short_link_indexes()
 
 
 class TestShortLinksCore:
