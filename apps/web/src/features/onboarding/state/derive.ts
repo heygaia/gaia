@@ -26,7 +26,7 @@ function isQuestionsComplete(s: OnboardingState): boolean {
 }
 
 /** Q2 picks so far: chips plus "Something else" once its field is open. */
-export function pickCount(s: OnboardingState): number {
+function pickCount(s: OnboardingState): number {
   return s.selectedNeeds.length + (s.otherNeedOpen ? 1 : 0);
 }
 
