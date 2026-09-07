@@ -618,7 +618,6 @@ def world(
         patch(f"{svc}.onboarding_service.user_repository", users),
         patch(f"{svc}.intelligence_job.user_repository", users),
         patch(f"{svc}.intelligence_service.user_repository", users),
-        patch(f"{svc}.post_onboarding_service.user_repository", users),
         patch("app.workers.tasks.onboarding_tasks.user_repository", users),
         patch("app.api.v1.endpoints.onboarding.user_repository", users),
         patch(f"{svc}.onboarding_service.todo_repository", todo_repo),
