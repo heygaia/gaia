@@ -521,7 +521,7 @@ Tier summary (full table in `tests/CLAUDE.md`):
 - `tests/stress/` / `tests/meta/` — race/retry battles, import-fence invariants (own targets).
 - `tests/composio/`, `tests/model_onboarding/` — live-credential, opt-in, excluded by default.
 
-Never run a raw full `pytest` locally — use the nx targets (`nx test api`, `nx run api:test:*`); they pin the dirs, markers, and xdist settings.
+Never run a raw full `pytest` locally, and never with xdist: the default `addopts` carries `-n 4`, each worker imports the whole app, and parallel workers exhaust a laptop's memory fast. For a targeted run use `uv run pytest <one file> -p no:xdist -o addopts=""`, one file at a time, files back to back in a single command; suites belong to CI or the nx targets (`nx test api`, `nx run api:test:*`), which pin the dirs, markers and xdist settings for the home-box runners.
 
 **Unmark the patch-away.** A caller mocking a service means that service's logic has never run — the mock is a permanent blind spot. When you see an endpoint test mocking a service it barely touches, or a service test mocking a repo call whose logic matters, prefer un-mocking: let the real component run against mocked seams one layer down. Same rule as "never mock the thing under test."
 

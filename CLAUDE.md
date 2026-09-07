@@ -313,6 +313,8 @@ When asked to find bugs or issues in the code, **only report problems that a rea
 
 ### Testing
 
+**Running tests locally: one file at a time, never with xdist.** The API's default `addopts` includes `-n 4`, and every xdist worker is a full import of the app with its own memory; a single agent running a few suites in parallel has taken a 24 GB laptop down. Always run `uv run pytest <one test file> -p no:xdist -o addopts=""`, run files back to back in one command rather than in separate concurrent calls, never start a second test, type-check or mutation process while one is running, and count subagents' tool runs as load. Full suites, mutation runs and the coverage lanes are CI's job (`mise ci:local` when you must, with `--only <lane>`).
+
 Tests are first-class: every new feature/refactor ships a test at the right tier; every bug ships a failing-then-passing test (see `apps/api/tests/CLAUDE.md` for which tier).
 
 **The bug loop — every bug ships a failing-then-passing test, no exceptions.** The moment a real issue is found (by you, by the user, in review, or in production), stop and run this loop before fixing anything:
