@@ -29,6 +29,7 @@ async def _drain_background_tasks() -> None:
     while pending := set(wide_events._spawned_tasks):
         await asyncio.gather(*pending, return_exceptions=True)
 
+
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -306,6 +307,10 @@ class TestStoreUserInfo:
         mock_user_repo.create.return_value = UserDocument(id=uid)
 
         await store_user_info("", "aryan.randeriya@test.com", None)
+
+        # The ESP calls carrying the derived name go out on the signup
+        # background task; drain it before asserting on them.
+        await _drain_background_tasks()
 
         assert mock_user_repo.create.call_args.args[0].name == "Aryan Randeriya"
         assert mock_track_signup.call_args.kwargs["name"] == "Aryan Randeriya"
