@@ -3,6 +3,7 @@ import type {
   BrowserSessionStatus,
   BrowserStepSnapshot,
 } from "@/types/features/browserTaskTypes";
+import { GAIA_CONNECT_DEFAULT_API_ORIGIN } from "./constants";
 
 /** Machine states → plain language the user understands at a glance. Shared by
  * the chat card and the browser side panel so the two never disagree. */
@@ -27,21 +28,27 @@ export function connectApiOrigin(apiBaseUrl: string): string {
   return new URL(apiBaseUrl).origin;
 }
 
-export interface ConnectCommandOptions {
-  apiOrigin: string;
-  token: string;
-  /** Passed as `--browser`; null lets the tool detect or ask. */
-  browser: string | null;
+/** The `--api` override the command needs, or null when the web's API is the
+ * tool's built-in default (production), so the pasted command stays short. */
+export function connectApiOverride(apiBaseUrl: string): string | null {
+  const origin = connectApiOrigin(apiBaseUrl);
+  return origin === GAIA_CONNECT_DEFAULT_API_ORIGIN ? null : origin;
 }
 
-/** The one command a user pastes to sync their browser's logins. */
+export interface ConnectCommandOptions {
+  token: string;
+  /** From `connectApiOverride`; null means the tool's default API. */
+  apiOrigin: string | null;
+}
+
+/** The one command a user pastes to sync their browser's logins. The tool
+ * detects the browser and asks which sites to sync itself. */
 export function buildConnectCommand({
-  apiOrigin,
   token,
-  browser,
+  apiOrigin,
 }: ConnectCommandOptions): string {
-  const parts = ["gaia-connect", "--api", apiOrigin, "--token", token];
-  if (browser) parts.push("--browser", browser);
+  const parts = ["npx", "@heygaia/cli", "connect", "--token", token];
+  if (apiOrigin) parts.push("--api", apiOrigin);
   return parts.join(" ");
 }
 

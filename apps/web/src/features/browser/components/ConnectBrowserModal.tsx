@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Link } from "@heroui/link";
 import {
   Modal,
   ModalBody,
@@ -10,44 +9,26 @@ import {
   ModalHeader,
 } from "@heroui/modal";
 import { Skeleton } from "@heroui/skeleton";
-import { ArcBrowserIcon, ChromeIcon, EdgeStyleIcon, GlobalIcon } from "@icons";
-import { type ComponentType, type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect } from "react";
 import CopyButton from "@/components/ui/CopyButton";
-import {
-  type ConnectableBrowser,
-  GAIA_CONNECT_README_URL,
-  SAVED_LOGIN_TTL_DAYS,
-} from "../constants";
+import { SAVED_LOGIN_TTL_DAYS } from "../constants";
 import { useImportToken } from "../hooks/useImportToken";
 import {
   buildConnectCommand,
-  connectApiOrigin,
+  connectApiOverride,
   formatCountdown,
 } from "../utils";
 
 /** Countdown turns amber inside the last minute so the user acts before it dies. */
 const EXPIRY_WARNING_SECONDS = 60;
 
-interface BrowserOption {
-  label: string;
-  value: ConnectableBrowser | null;
-  icon: ComponentType<{ className?: string }>;
-}
-
-const BROWSER_OPTIONS: readonly BrowserOption[] = [
-  { label: "Arc", value: "Arc", icon: ArcBrowserIcon },
-  { label: "Chrome", value: "Chrome", icon: ChromeIcon },
-  { label: "Edge", value: "Edge", icon: EdgeStyleIcon },
-  { label: "Other", value: null, icon: GlobalIcon },
-];
-
 const FACTS: readonly string[] = [
   "Cookies only, never passwords. macOS asks permission once.",
-  "You pick which sites to sync.",
+  "It detects your browser and asks which sites to sync.",
   `Encrypted. Expires ${SAVED_LOGIN_TTL_DAYS} days after last use; forget any site here.`,
 ];
 
-/** A tonal card: zinc-800 on the modal, per the dark-card contract. */
+/** A tonal card: zinc-800 on the dialog, per the dark-card contract. */
 function Surface({
   label,
   children,
@@ -67,55 +48,12 @@ function Surface({
   );
 }
 
-function BrowserPicker({
-  value,
-  onChange,
-}: {
-  value: ConnectableBrowser | null;
-  onChange: (browser: ConnectableBrowser | null) => void;
-}) {
-  return (
-    <div className="flex flex-wrap gap-2">
-      {BROWSER_OPTIONS.map(({ label, value: option, icon: Icon }) => {
-        const selected = option === value;
-        return (
-          <Button
-            key={label}
-            size="sm"
-            radius="full"
-            variant={selected ? "solid" : "flat"}
-            color={selected ? "primary" : "default"}
-            className={selected ? undefined : "bg-zinc-900"}
-            startContent={<Icon className="size-4" />}
-            onPress={() => onChange(option)}
-          >
-            {label}
-          </Button>
-        );
-      })}
-    </div>
-  );
-}
-
-/** Flags stay whole (a hyphen is a soft-wrap point, so `--token` would split
- * as `-` / `-token`); only the opaque code may break mid-word. */
+/** One line, never wrapped: a long code scrolls sideways rather than breaking. */
 function CommandBlock({ command }: { command: string }) {
   return (
-    <div className="flex items-center gap-3 rounded-xl bg-zinc-900 py-2 pr-2 pl-3">
-      <code className="min-w-0 flex-1 text-primary text-sm">
-        {command.split(" ").map((part, index, parts) => (
-          <span
-            key={part}
-            className={
-              parts[index - 1] === "--token"
-                ? "wrap-anywhere"
-                : "whitespace-nowrap"
-            }
-          >
-            {index > 0 ? " " : ""}
-            {part}
-          </span>
-        ))}
+    <div className="flex items-center gap-2 rounded-xl bg-zinc-900 py-2 pr-2 pl-3">
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap text-primary text-xs">
+        {command}
       </code>
       <CopyButton textToCopy={command} />
     </div>
@@ -148,7 +86,6 @@ function CodeStatus({
 function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
   const { token, secondsLeft, isExpired, isMinting, error, mint } =
     useImportToken();
-  const [browser, setBrowser] = useState<ConnectableBrowser | null>(null);
 
   useEffect(() => {
     mint();
@@ -158,9 +95,8 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
   const command =
     token && apiBaseUrl
       ? buildConnectCommand({
-          apiOrigin: connectApiOrigin(apiBaseUrl),
           token,
-          browser,
+          apiOrigin: connectApiOverride(apiBaseUrl),
         })
       : null;
 
@@ -168,10 +104,6 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
     <>
       <ModalHeader>Import browser logins</ModalHeader>
       <ModalBody className="gap-3">
-        <Surface label="Browser">
-          <BrowserPicker value={browser} onChange={setBrowser} />
-        </Surface>
-
         <Surface label="Run in Terminal">
           {isMinting || (!command && !error && !isExpired) ? (
             <Skeleton className="h-10 w-full rounded-xl" />
@@ -211,16 +143,8 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
         </Surface>
       </ModalBody>
       <ModalFooter className="items-center justify-between">
-        <p className="min-w-0 text-xs text-zinc-500">
-          macOS, Chromium browsers.{" "}
-          <Link
-            href={GAIA_CONNECT_README_URL}
-            isExternal
-            size="sm"
-            className="text-xs"
-          >
-            Get gaia-connect
-          </Link>
+        <p className="text-xs text-zinc-500">
+          macOS with Arc, Chrome, Brave, Edge or Helium.
         </p>
         <Button color="primary" size="sm" onPress={onClose}>
           Done

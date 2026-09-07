@@ -1,13 +1,15 @@
 /**
- * The Connect-browser modal hands the user one command to paste. These pin
- * the pieces that must be exactly right for it to work against any deployment:
- * the API origin the tool talks to, the flags it accepts (`--api`, `--token`,
- * `--browser`), and the countdown that tells the user the code is still live.
+ * The import-logins modal hands the user one command to paste. These pin the
+ * pieces that must be exactly right for it to work against any deployment:
+ * the bare origin the tool is pointed at, when that override is (and isn't)
+ * spelled out, the npx form of the command, and the countdown that tells the
+ * user the code is still live.
  */
 import { describe, expect, it } from "vitest";
 import {
   buildConnectCommand,
   connectApiOrigin,
+  connectApiOverride,
   formatCountdown,
 } from "@/features/browser/utils";
 
@@ -22,26 +24,33 @@ describe("connectApiOrigin", () => {
   });
 });
 
-describe("buildConnectCommand", () => {
-  it("carries the origin and the code", () => {
-    expect(
-      buildConnectCommand({
-        apiOrigin: "https://api.example.com",
-        token: "abc123",
-        browser: null,
-      }),
-    ).toBe("gaia-connect --api https://api.example.com --token abc123");
+describe("connectApiOverride", () => {
+  it("is null on production, where the tool's default already matches", () => {
+    expect(connectApiOverride("https://api.heygaia.io/api/v1/")).toBeNull();
   });
 
-  it("adds --browser only when one was picked", () => {
+  it("names the origin for dev and self-hosted APIs", () => {
+    expect(connectApiOverride("http://localhost:8510/api/v1/")).toBe(
+      "http://localhost:8510",
+    );
+  });
+});
+
+describe("buildConnectCommand", () => {
+  it("is the short npx form when no API override is needed", () => {
+    expect(buildConnectCommand({ token: "abc123", apiOrigin: null })).toBe(
+      "npx @heygaia/cli connect --token abc123",
+    );
+  });
+
+  it("appends --api only when an override was given", () => {
     expect(
       buildConnectCommand({
-        apiOrigin: "https://api.example.com",
         token: "abc123",
-        browser: "Arc",
+        apiOrigin: "http://localhost:8510",
       }),
     ).toBe(
-      "gaia-connect --api https://api.example.com --token abc123 --browser Arc",
+      "npx @heygaia/cli connect --token abc123 --api http://localhost:8510",
     );
   });
 });

@@ -11,7 +11,6 @@ import {
   ChromeIcon,
   Clock01Icon,
   Delete02Icon,
-  EdgeStyleIcon,
   GlobalIcon,
   Location01Icon,
   SafariIcon,
@@ -42,8 +41,6 @@ function browserIcon(
       return ArcBrowserIcon;
     case "chrome":
       return ChromeIcon;
-    case "edge":
-      return EdgeStyleIcon;
     case "safari":
       return SafariIcon;
     default:
