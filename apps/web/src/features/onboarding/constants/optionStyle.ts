@@ -43,7 +43,7 @@ import {
 } from "@icons";
 import type { ComponentType, SVGProps } from "react";
 
-import type { OptionValue } from "./index";
+import type { OptionValue } from "./options.types";
 
 export interface OptionTint {
   /** Resting look: translucent pastel fill, tinted text and icon. */

@@ -22,7 +22,6 @@ import {
   NEEDS_HINT,
   NEEDS_MAX_SELECTION,
   needOptionsFor,
-  type OptionValue,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
   OTHER_NEED_OPTION,
@@ -33,6 +32,7 @@ import {
 } from "../constants";
 import { EASE_OUT_QUART } from "../constants/motion";
 import { OPTION_STYLE } from "../constants/optionStyle";
+import type { OptionValue } from "../constants/options.types";
 import { OnboardingCTAButton } from "./OnboardingCTAButton";
 
 interface ProfessionModeProps {
