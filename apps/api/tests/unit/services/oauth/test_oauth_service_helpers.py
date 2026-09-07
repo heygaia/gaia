@@ -3,9 +3,11 @@ handle_oauth_connection. Kept apart from test_oauth_service.py so that file
 imports only symbols that exist on the base revision — the regression-proof
 lane runs its marked tests there."""
 
+import asyncio
 from unittest.mock import MagicMock, patch
 
 from bson import ObjectId
+import pytest
 from tests.factories import make_integration_config
 from tests.helpers import captured_wide_event
 
@@ -19,6 +21,13 @@ from app.services.oauth.oauth_service import (
     _setup_integration_triggers,
 )
 from app.services.workflow.trigger_service import TriggerService
+from shared.py import wide_events
+
+
+async def _drain_background_tasks() -> None:
+    """Await every spawned fire-and-forget task so the loop is left clean."""
+    while pending := set(wide_events._spawned_tasks):
+        await asyncio.gather(*pending, return_exceptions=True)
 
 
 class LoguruErrorSpy:
@@ -74,10 +83,58 @@ class TestReturningUserProfile:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def signup_email_tasks():
+    """Run the signup ESP delivery inside the caller's wide-event boundary.
+
+    The real ``spawn_logged_task`` opens a boundary of its own, so the delivery
+    errors land on the background task's event rather than the one under
+    assertion. Scheduling the same coroutine as a plain task keeps the caller's
+    boundary in scope without changing what the delivery itself does.
+    """
+    tasks: list[asyncio.Task] = []
+
+    def _spawn(operation, coro):
+        task = asyncio.ensure_future(coro)
+        tasks.append(task)
+        return task
+
+    with patch("app.services.oauth.oauth_service.spawn_logged_task", _spawn):
+        yield tasks
+
+
 class TestRunSignupSideEffects:
     """Every outbound effect is swallowed so it cannot fail the signup, which
     makes the wide event the only place the failure is visible. A blank or
     misattributed entry there is a signup silently missing its email."""
+
+    async def test_the_esp_calls_do_not_block_the_signup(
+        self,
+        mock_track_signup,
+        mock_send_welcome_email,
+        mock_add_marketing_contact,
+        mock_schedule_user_provision,
+    ):
+        """A hung ESP used to hold user creation open for as long as the HTTP
+        client allowed; the helper must hand the calls off, not await them."""
+        never_finishes = asyncio.Event()
+        call_started = asyncio.Event()
+
+        async def _hang(*_args: str) -> None:
+            call_started.set()
+            await never_finishes.wait()
+
+        mock_send_welcome_email.side_effect = _hang
+
+        # The helper returns while the ESP call is still in flight; awaiting it
+        # inline instead would never reach this line before the timeout.
+        async with asyncio.timeout(1):
+            await _run_signup_side_effects(str(ObjectId()), "bob@test.com", "Bob")
+            await call_started.wait()
+
+        mock_send_welcome_email.assert_called_once_with("bob@test.com", "Bob")
+        never_finishes.set()
+        await _drain_background_tasks()
 
     async def test_a_posthog_failure_is_recorded_and_the_rest_still_runs(
         self,
@@ -85,12 +142,14 @@ class TestRunSignupSideEffects:
         mock_send_welcome_email,
         mock_add_marketing_contact,
         mock_schedule_user_provision,
+        signup_email_tasks,
     ):
         user_id = str(ObjectId())
         mock_track_signup.side_effect = RuntimeError("PostHog unavailable")
 
         async with captured_wide_event() as event:
             await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+            await asyncio.gather(*signup_email_tasks)
 
         assert event["errors"] == [
             {
@@ -110,12 +169,14 @@ class TestRunSignupSideEffects:
         mock_send_welcome_email,
         mock_add_marketing_contact,
         mock_schedule_user_provision,
+        signup_email_tasks,
     ):
         user_id = str(ObjectId())
         mock_send_welcome_email.side_effect = RuntimeError("SMTP error")
 
         async with captured_wide_event() as event:
             await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+            await asyncio.gather(*signup_email_tasks)
 
         assert event["errors"] == [
             {
@@ -134,12 +195,14 @@ class TestRunSignupSideEffects:
         mock_send_welcome_email,
         mock_add_marketing_contact,
         mock_schedule_user_provision,
+        signup_email_tasks,
     ):
         user_id = str(ObjectId())
         mock_add_marketing_contact.side_effect = RuntimeError("Resend API error")
 
         async with captured_wide_event() as event:
             await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+            await asyncio.gather(*signup_email_tasks)
 
         assert event["errors"] == [
             {
