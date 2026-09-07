@@ -1,4 +1,4 @@
-//go:build !darwin
+//go:build !darwin && !linux && !windows
 
 package main
 
@@ -7,9 +7,10 @@ import (
 	"runtime"
 )
 
-// ExtractCookies is macOS-only for now. Linux (Secret Service) and Windows
-// (DPAPI/App-Bound Encryption) decrypt differently and are not implemented yet;
-// the binary still builds and runs everywhere so those can be added in place.
-func ExtractCookies(_ Browser, _ Profile) ([]Cookie, error) {
-	return nil, fmt.Errorf("cookie extraction is not implemented on %s yet (macOS only for now)", runtime.GOOS)
+// Chromium's cookie encryption is OS-specific (Keychain, Secret Service, DPAPI)
+// and the three supported systems each have their own file. This stub keeps the
+// binary buildable on any other GOOS — where Firefox, whose cookies are
+// plaintext, still works.
+func extractChromiumCookies(b Browser, _ Profile) ([]Cookie, error) {
+	return nil, fmt.Errorf("decrypting %s cookies is not supported on %s", b.Name, runtime.GOOS)
 }

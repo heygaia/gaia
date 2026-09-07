@@ -73,7 +73,7 @@ func parseFlags() options {
 func runRobot(o options) result {
 	browsers := DetectBrowsers()
 	if len(browsers) == 0 {
-		return result{Error: "no Chromium-family browser found"}
+		return result{Error: "no supported browser found"}
 	}
 	if o.browser == "" && o.list {
 		return result{OK: true, Browsers: browserNames(browsers)}
@@ -82,7 +82,7 @@ func runRobot(o options) result {
 	if err != nil {
 		return result{Error: err.Error(), Browsers: browserNames(browsers)}
 	}
-	profiles := ListProfiles(b.UserDataDir)
+	profiles := ListProfiles(b)
 	if len(profiles) == 0 {
 		return result{Error: fmt.Sprintf("no profiles with cookies found for %s", b.Name)}
 	}
@@ -127,14 +127,14 @@ func runRobot(o options) result {
 func runInteractive(o options) error {
 	browsers := DetectBrowsers()
 	if len(browsers) == 0 {
-		return fmt.Errorf("no Chromium-family browser found under your profile directory")
+		return fmt.Errorf("no supported browser found under your profile directory")
 	}
 
 	b, err := selectBrowser(browsers)
 	if err != nil {
 		return err
 	}
-	profiles := ListProfiles(b.UserDataDir)
+	profiles := ListProfiles(b)
 	if len(profiles) == 0 {
 		return fmt.Errorf("no profiles with cookies found in %s", b.Name)
 	}
@@ -142,7 +142,11 @@ func runInteractive(o options) error {
 	if err != nil {
 		return err
 	}
-	fmt.Printf("Reading %s — approve the keychain prompt to continue…\n", b.Name)
+	if b.Family == familyChromium {
+		fmt.Printf("Reading %s — approve the keychain prompt to continue…\n", b.Name)
+	} else {
+		fmt.Printf("Reading %s…\n", b.Name) // Firefox cookies are plaintext: no prompt
+	}
 	cookies, err := ExtractCookies(b, p)
 	if err != nil {
 		return err

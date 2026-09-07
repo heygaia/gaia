@@ -6,6 +6,11 @@ import (
 	"testing"
 )
 
+// chromiumAt is a Chromium-family browser rooted at a fake user-data dir.
+func chromiumAt(userDataDir string) Browser {
+	return Browser{Name: "Chrome", Family: familyChromium, UserDataDir: userDataDir}
+}
+
 // writeProfile lays down a fake profile directory with a Cookies file and,
 // optionally, a Preferences JSON carrying a display name.
 func writeProfile(t *testing.T, userDataDir, dir, displayName string) {
@@ -30,7 +35,7 @@ func TestListProfilesReadsDisplayNames(t *testing.T) {
 	writeProfile(t, dir, "Default", "Alice")
 	writeProfile(t, dir, "Profile 1", "Work")
 
-	profiles := ListProfiles(dir)
+	profiles := ListProfiles(chromiumAt(dir))
 	if len(profiles) != 2 {
 		t.Fatalf("expected 2 profiles, got %d: %+v", len(profiles), profiles)
 	}
@@ -47,7 +52,7 @@ func TestListProfilesFallsBackToDirNameWithoutPreferences(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "Profile 2", "") // no Preferences file
 
-	profiles := ListProfiles(dir)
+	profiles := ListProfiles(chromiumAt(dir))
 	if len(profiles) != 1 || profiles[0].Name != "Profile 2" {
 		t.Fatalf("expected fallback to dir name, got %+v", profiles)
 	}
@@ -66,7 +71,7 @@ func TestListProfilesFallsBackWhenPreferencesUnparseable(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profiles := ListProfiles(dir)
+	profiles := ListProfiles(chromiumAt(dir))
 	if len(profiles) != 1 || profiles[0].Name != "Default" {
 		t.Fatalf("expected fallback to dir name on bad JSON, got %+v", profiles)
 	}
@@ -80,7 +85,7 @@ func TestListProfilesSkipsDirsWithoutCookies(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	profiles := ListProfiles(dir)
+	profiles := ListProfiles(chromiumAt(dir))
 	if len(profiles) != 1 || filepath.Base(profiles[0].Dir) != "Default" {
 		t.Fatalf("expected only Default, got %+v", profiles)
 	}
@@ -90,7 +95,7 @@ func TestPickProfileByNameMatchesNameOrDirectory(t *testing.T) {
 	dir := t.TempDir()
 	writeProfile(t, dir, "Default", "Alice")
 	writeProfile(t, dir, "Profile 1", "Work")
-	profiles := ListProfiles(dir)
+	profiles := ListProfiles(chromiumAt(dir))
 
 	byName, err := pickProfileByName(profiles, "work")
 	if err != nil || filepath.Base(byName.Dir) != "Profile 1" {

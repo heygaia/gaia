@@ -7,65 +7,139 @@ import (
 	"runtime"
 )
 
-// Browser is one installed Chromium-family browser we can read a profile from.
+// browserFamily is how a browser stores its cookies — the two families differ in
+// database schema and in whether the values are encrypted at all, so every
+// per-browser decision hangs off this rather than off the browser's name.
+type browserFamily string
+
+const (
+	familyChromium browserFamily = "chromium"
+	familyFirefox  browserFamily = "firefox"
+)
+
+// Browser is one installed browser we can read a profile from.
 type Browser struct {
-	Name            string // display name
-	UserDataDir     string // the browser's user-data root (holds Default/, Profile 1/, …)
-	KeychainService string // macOS Keychain generic-password service ("<Name> Safe Storage")
-	KeychainAccount string // macOS Keychain account (usually the browser name)
+	Name            string        // display name
+	Family          browserFamily // how its cookies are stored
+	UserDataDir     string        // root holding the profile directories
+	KeychainService string        // macOS Keychain generic-password service ("<Name> Safe Storage")
+	KeychainAccount string        // macOS Keychain account (usually the browser name)
+	SecretApp       string        // Linux Secret Service "application" attribute
 }
 
-// candidate is a browser we know how to locate, before checking it exists on disk.
+// candidate is a browser we know how to locate, before checking it exists on
+// disk. Each OS field lists every place that browser's profile root can live;
+// the first one that actually holds profiles wins.
 type candidate struct {
-	name      string
-	macSubdir string // under ~/Library/Application Support
-	linuxSub  string // under ~/.config
-	winSub    string // under %LOCALAPPDATA%
+	name       string
+	family     browserFamily
+	secretApp  string   // Linux Secret Service "application" attribute
+	mac        []string // under ~/Library/Application Support
+	linux      []string // under $HOME
+	winLocal   []string // under %LOCALAPPDATA%
+	winRoaming []string // under %APPDATA%
 }
 
 var candidates = []candidate{
-	{"Arc", "Arc/User Data", "", "Arc/User Data"},
-	{"Chrome", "Google/Chrome", "google-chrome", "Google/Chrome/User Data"},
-	{"Helium", "net.imput.helium", "helium", "Helium/User Data"},
-	{"Brave", "BraveSoftware/Brave-Browser", "BraveSoftware/Brave-Browser", "BraveSoftware/Brave-Browser/User Data"},
-	{"Edge", "Microsoft Edge", "microsoft-edge", "Microsoft/Edge/User Data"},
+	{
+		// Arc ships no Linux build, so it needs no Secret Service attribute.
+		name: "Arc", family: familyChromium,
+		mac:      []string{"Arc/User Data"},
+		winLocal: []string{"Arc/User Data"},
+	},
+	{
+		name: "Chrome", family: familyChromium, secretApp: "chrome",
+		mac:      []string{"Google/Chrome"},
+		linux:    []string{".config/google-chrome"},
+		winLocal: []string{"Google/Chrome/User Data"},
+	},
+	{
+		name: "Chromium", family: familyChromium, secretApp: "chromium",
+		mac:      []string{"Chromium"},
+		linux:    []string{".config/chromium"},
+		winLocal: []string{"Chromium/User Data"},
+	},
+	{
+		// Helium is a Chromium fork; its Secret Service "application" attribute is
+		// the lowercased product name, which we assume is "helium" (UNVERIFIED —
+		// no Helium Linux build was available to check).
+		name: "Helium", family: familyChromium, secretApp: "helium",
+		mac:      []string{"net.imput.helium"},
+		linux:    []string{".config/helium", ".config/net.imput.helium"},
+		winLocal: []string{"Helium/User Data"},
+	},
+	{
+		name: "Brave", family: familyChromium, secretApp: "brave",
+		mac:      []string{"BraveSoftware/Brave-Browser"},
+		linux:    []string{".config/BraveSoftware/Brave-Browser"},
+		winLocal: []string{"BraveSoftware/Brave-Browser/User Data"},
+	},
+	{
+		name: "Edge", family: familyChromium, secretApp: "microsoft-edge",
+		mac:      []string{"Microsoft Edge"},
+		linux:    []string{".config/microsoft-edge"},
+		winLocal: []string{"Microsoft/Edge/User Data"},
+	},
+	{
+		// Firefox cookies are plaintext, so it needs no keyring secret anywhere.
+		name: "Firefox", family: familyFirefox,
+		mac: []string{"Firefox/Profiles"},
+		linux: []string{
+			".mozilla/firefox",
+			"snap/firefox/common/.mozilla/firefox",
+			".var/app/org.mozilla.firefox/.mozilla/firefox",
+		},
+		winRoaming: []string{"Mozilla/Firefox/Profiles"},
+	},
 }
+
+// The file that marks a directory as a usable profile of each family.
+const (
+	chromiumCookieDB = "Cookies"
+	firefoxCookieDB  = "cookies.sqlite"
+)
 
 // DetectBrowsers returns every candidate whose profile actually exists on disk.
 func DetectBrowsers() []Browser {
 	home, _ := os.UserHomeDir()
 	var out []Browser
 	for _, c := range candidates {
-		dir := userDataDir(home, c)
-		if dir == "" {
-			continue
+		for _, dir := range userDataDirs(home, c) {
+			b := Browser{
+				Name:            c.name,
+				Family:          c.family,
+				UserDataDir:     dir,
+				KeychainService: c.name + " Safe Storage",
+				KeychainAccount: c.name,
+				SecretApp:       c.secretApp,
+			}
+			if len(ListProfiles(b)) == 0 {
+				continue
+			}
+			out = append(out, b)
+			break // first location that holds profiles wins
 		}
-		if _, err := os.Stat(filepath.Join(dir, "Default", "Cookies")); err != nil {
-			continue
-		}
-		out = append(out, Browser{
-			Name:            c.name,
-			UserDataDir:     dir,
-			KeychainService: c.name + " Safe Storage",
-			KeychainAccount: c.name,
-		})
 	}
 	return out
 }
 
 // Profile is one browser profile under a user-data dir (Chrome's "Default",
-// "Profile 1", …). Dir is the absolute path to that profile's directory; Name
-// is its display name from Preferences, falling back to the directory name.
+// "Profile 1", Firefox's "abcd1234.default-release", …). Dir is the absolute
+// path to that profile's directory; Name is its display name from Preferences,
+// falling back to the directory name.
 type Profile struct {
 	Dir  string `json:"dir"`
 	Name string `json:"name"`
 }
 
 // ListProfiles returns every profile under a browser's user-data dir that has a
-// Cookies database, each with its display name. os.ReadDir sorts by filename,
+// cookie database, each with its display name. os.ReadDir sorts by filename,
 // so "Default" comes first and the order is stable for pickers and robots.
-func ListProfiles(userDataDir string) []Profile {
-	entries, err := os.ReadDir(userDataDir)
+func ListProfiles(b Browser) []Profile {
+	if b.Family == familyFirefox {
+		return firefoxProfiles(b.UserDataDir)
+	}
+	entries, err := os.ReadDir(b.UserDataDir)
 	if err != nil {
 		return nil
 	}
@@ -74,8 +148,8 @@ func ListProfiles(userDataDir string) []Profile {
 		if !e.IsDir() {
 			continue
 		}
-		dir := filepath.Join(userDataDir, e.Name())
-		if _, err := os.Stat(filepath.Join(dir, "Cookies")); err != nil {
+		dir := filepath.Join(b.UserDataDir, e.Name())
+		if _, err := os.Stat(filepath.Join(dir, chromiumCookieDB)); err != nil {
 			continue
 		}
 		out = append(out, Profile{Dir: dir, Name: profileDisplayName(dir, e.Name())})
@@ -101,23 +175,29 @@ func profileDisplayName(profileDir, dirName string) string {
 	return prefs.Profile.Name
 }
 
-func userDataDir(home string, c candidate) string {
+// userDataDirs expands a candidate's per-OS locations to absolute paths.
+func userDataDirs(home string, c candidate) []string {
 	switch runtime.GOOS {
 	case "darwin":
-		if c.macSubdir == "" {
-			return ""
-		}
-		return filepath.Join(home, "Library", "Application Support", c.macSubdir)
+		return joinAll(filepath.Join(home, "Library", "Application Support"), c.mac)
 	case "linux":
-		if c.linuxSub == "" {
-			return ""
-		}
-		return filepath.Join(home, ".config", c.linuxSub)
+		return joinAll(home, c.linux)
 	case "windows":
-		if c.winSub == "" {
-			return ""
-		}
-		return filepath.Join(os.Getenv("LOCALAPPDATA"), c.winSub)
+		return append(
+			joinAll(os.Getenv("LOCALAPPDATA"), c.winLocal),
+			joinAll(os.Getenv("APPDATA"), c.winRoaming)...,
+		)
 	}
-	return ""
+	return nil
+}
+
+func joinAll(base string, subs []string) []string {
+	if base == "" || len(subs) == 0 {
+		return nil
+	}
+	out := make([]string, len(subs))
+	for i, s := range subs {
+		out[i] = filepath.Join(base, filepath.FromSlash(s))
+	}
+	return out
 }

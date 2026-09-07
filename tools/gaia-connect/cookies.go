@@ -37,24 +37,66 @@ type rawCookie struct {
 	sameSite         int64
 }
 
-// readCookieRows copies the (locked) Cookies DB and returns every row. The copy
-// is required because the browser holds a write lock on the live file.
-func readCookieRows(profileDir string) ([]rawCookie, error) {
-	src := filepath.Join(profileDir, "Cookies")
+// ExtractCookies reads every cookie from one profile, decrypting them when the
+// browser's family stores them encrypted.
+func ExtractCookies(b Browser, p Profile) ([]Cookie, error) {
+	if b.Family == familyFirefox {
+		return extractFirefoxCookies(p)
+	}
+	return extractChromiumCookies(b, p)
+}
+
+// walSuffixes are SQLite's write-ahead-log sidecars. Firefox runs cookies.sqlite
+// in WAL mode, so the newest cookies live in the -wal file until a checkpoint:
+// copying the main database alone silently loses this session's logins.
+var walSuffixes = []string{"-wal", "-shm"}
+
+// openCookieDB copies a (locked) cookie database — with its WAL sidecars — to a
+// temp file and opens it. The copy is required because the browser holds a write
+// lock on the live file; the copy is opened read-write so SQLite can replay the
+// WAL into it. The returned cleanup closes the DB and removes the copies.
+func openCookieDB(src string) (*sql.DB, func(), error) {
 	tmp, err := os.CreateTemp("", "gaia-cookies-*")
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	defer os.Remove(tmp.Name())
+	remove := func() {
+		os.Remove(tmp.Name())
+		for _, s := range walSuffixes {
+			os.Remove(tmp.Name() + s)
+		}
+	}
 	if err := copyFile(src, tmp.Name()); err != nil {
-		return nil, fmt.Errorf("copy cookie db: %w", err)
+		remove()
+		return nil, nil, fmt.Errorf("copy cookie db: %w", err)
 	}
+	for _, s := range walSuffixes {
+		if _, err := os.Stat(src + s); err != nil {
+			continue // no WAL sidecar: the database is already self-contained
+		}
+		if err := copyFile(src+s, tmp.Name()+s); err != nil {
+			remove()
+			return nil, nil, fmt.Errorf("copy cookie db %s: %w", s, err)
+		}
+	}
+	db, err := sql.Open("sqlite", "file:"+tmp.Name())
+	if err != nil {
+		remove()
+		return nil, nil, err
+	}
+	return db, func() {
+		db.Close()
+		remove()
+	}, nil
+}
 
-	db, err := sql.Open("sqlite", "file:"+tmp.Name()+"?mode=ro")
+// readCookieRows returns every row of a Chromium profile's Cookies DB.
+func readCookieRows(profileDir string) ([]rawCookie, error) {
+	db, cleanup, err := openCookieDB(filepath.Join(profileDir, "Cookies"))
 	if err != nil {
 		return nil, err
 	}
-	defer db.Close()
+	defer cleanup()
 
 	rows, err := db.Query(`SELECT host_key, name, encrypted_value, path,
 		expires_utc, is_secure, is_httponly, samesite FROM cookies`)
@@ -80,18 +122,27 @@ func (r rawCookie) toCookie(value string) Cookie {
 	if r.expires > 0 {
 		expires = float64(r.expires-chromeEpochOffsetMicros) / 1_000_000
 	}
-	path := r.path
-	if path == "" {
-		path = "/"
-	}
-	ss, ok := sameSiteName[r.sameSite]
-	if !ok {
-		ss = "Lax"
-	}
 	return Cookie{
-		Name: r.name, Value: value, Domain: r.host, Path: path,
-		Expires: expires, Secure: r.secure, HTTPOnly: r.httpOnly, SameSite: ss,
+		Name: r.name, Value: value, Domain: r.host, Path: cookiePath(r.path),
+		Expires: expires, Secure: r.secure, HTTPOnly: r.httpOnly,
+		SameSite: sameSiteLabel(r.sameSite),
 	}
+}
+
+// sameSiteLabel maps a stored SameSite enum to Playwright's spelling. Chromium
+// and Firefox agree on 0/1/2; Chromium additionally uses -1 for "unspecified".
+func sameSiteLabel(v int64) string {
+	if name, ok := sameSiteName[v]; ok {
+		return name
+	}
+	return "Lax"
+}
+
+func cookiePath(p string) string {
+	if p == "" {
+		return "/"
+	}
+	return p
 }
 
 func copyFile(src, dst string) error {

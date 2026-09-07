@@ -23,7 +23,7 @@ import {
 const EXPIRY_WARNING_SECONDS = 60;
 
 const FACTS: readonly string[] = [
-  "Cookies only, never passwords. macOS asks permission once.",
+  "Cookies only, never passwords. Your OS may ask permission once.",
   "It detects your browser and asks which sites to sync.",
   `Encrypted. Expires ${SAVED_LOGIN_TTL_DAYS} days after last use; forget any site here.`,
 ];
@@ -144,7 +144,7 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
       </ModalBody>
       <ModalFooter className="items-center justify-between">
         <p className="text-xs text-zinc-500">
-          macOS with Arc, Chrome, Brave, Edge or Helium.
+          macOS or Linux, with Chromium browsers and Firefox.
         </p>
         <Button color="primary" size="sm" onPress={onClose}>
           Done

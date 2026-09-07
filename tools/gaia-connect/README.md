@@ -1,12 +1,20 @@
 # gaia-connect
 
 Sync a local browser's logins to GAIA so its server-side browser stays signed in
-for your tasks. Reads the browser's own encrypted cookies (one OS-keychain
-prompt = your consent), lets you choose which sites to sync, and uploads them to
-`POST /browser/import` with a single-use code.
+for your tasks. Reads the browser's own cookies — never passwords — lets you
+choose which sites to sync, and uploads them to `POST /browser/import` with a
+single-use code.
 
-macOS + Chromium family (Arc, Chrome, Helium, Brave, Edge) for now. Linux and
-Windows detect but don't decrypt yet — the binary still builds and runs there.
+Browsers: the Chromium family (Chrome, Chromium, Brave, Edge, Arc, Helium) and
+Firefox. Chromium cookies are encrypted with a key the OS guards, so reading them
+asks once — the macOS Keychain prompt, or the GNOME Keyring / KWallet unlock on
+Linux (a browser using Chromium's basic store needs no prompt); that prompt is
+your consent. Firefox stores cookies in plaintext, so it never prompts.
+
+Platforms: macOS and Linux are verified. Windows is implemented (DPAPI) but
+unverified end to end, and Chrome 127+ on Windows uses App-Bound Encryption
+(`v20` cookies), which needs the browser's own elevated context and fails with a
+clear message. Arc has no Linux build.
 
 ## Users: run it via the CLI
 
@@ -21,7 +29,7 @@ Mint a single-use import code in GAIA → Settings → Browser → Import, then:
 ## Interactive (from source)
 
     go run .            # or: ./gaia-connect
-    # pick a browser → approve the keychain prompt → search/toggle sites → sync
+    # pick a browser → approve the keychain/keyring prompt (none for Firefox) → search/toggle sites → sync
 
 `--api` defaults to `https://api.heygaia.io`. For dev or self-hosting pass
 `--api http://localhost:8510`, where the import code is auto-minted (dev bypass)
