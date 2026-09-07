@@ -37,6 +37,27 @@ Examples:
 - User: "Show me my connected integrations" → connected_only: True
 """
 
+LIST_DEVICES = """
+DEVICES (LIST): List the user's paired machines (the `gaia bridge` daemon) and the local
+MCP servers each one exposes.
+
+Use this before anything device-related: to learn which machines are paired, whether each is
+online right now, and the local MCP servers it exposes (with their integration_id, so you can
+hand off to their tools).
+
+RETURN VALUE:
+A list of devices, each with:
+- id, name, platform, online (is the daemon connected right now)
+- servers: the local MCP servers it exposes (server_key, display_name, integration_id, kind
+  (stdio | url | filesystem), status, and tools_synced_at).
+
+NOTES:
+- A server with tools_synced_at = null was never successfully reached, so its tools are not
+  available yet; tell the user to make sure the device is online.
+- Tools of an online, synced device server are used like any other integration (hand off to it);
+  you do not connect to a device server through add_custom_mcp_server.
+"""
+
 ADD_CUSTOM_MCP_SERVER = """
 INTEGRATIONS (ADD CUSTOM MCP SERVER): Add a remote MCP server the user asks for by name
 (e.g. "add the Sentry MCP", "connect the Linear MCP server").

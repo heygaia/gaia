@@ -37,7 +37,10 @@ from app.services.device.bridge import (
 )
 from app.services.device.connection_manager import device_connection_manager
 from app.services.device.device_auth import verify_device_token
-from app.services.device.device_service import get_active_device
+from app.services.device.device_service import (
+    enqueue_device_server_warmup,
+    get_active_device,
+)
 from shared.py.wide_events import log
 
 router = APIRouter(prefix="/ws", tags=["Device Bridge"])
@@ -86,6 +89,18 @@ async def device_ws(websocket: WebSocket) -> None:
     # that immediately precedes every dial; presence lives in Redis, so no
     # second Postgres write here.
     await mark_online(device_id)
+    # A device coming online re-drives warm-connect for all its servers, so tools
+    # a registration couldn't index (Redis down, or the device was offline) get
+    # indexed now. Best-effort — a socket must never fail on the warmup enqueue.
+    try:
+        await enqueue_device_server_warmup(device_id)
+    except Exception as e:
+        log.warning(
+            f"{LogTag.API} Failed to enqueue device warmup on connect",
+            device_id=device_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     state = {"last_recv": time.monotonic()}
     tasks = [

@@ -80,6 +80,7 @@ def _ensure_timestamptz_columns(connection: Connection) -> None:
 # carry a DEFAULT whenever it is NOT NULL, so existing rows stay valid.
 _ADDED_COLUMNS: tuple[tuple[str, str, str], ...] = (
     ("memories", "shelf_life", "varchar(20) NOT NULL DEFAULT 'durable'"),
+    ("bridge_device_mcp_servers", "kind", "varchar(20) NOT NULL DEFAULT 'stdio'"),
 )
 
 

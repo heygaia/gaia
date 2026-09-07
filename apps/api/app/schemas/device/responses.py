@@ -43,6 +43,7 @@ class DeviceServerResponse(BaseModel):
     server_key: str
     display_name: str
     integration_id: str
+    kind: str = "stdio"
     status: str
     tools_synced_at: datetime | None = None
 

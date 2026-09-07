@@ -29,6 +29,7 @@ from app.constants.device_bridge import (
     REFRESH_TOKEN_RETRY_GRACE_SECONDS,
     USER_CODE_ALPHABET,
     USER_CODE_LENGTH,
+    DeviceServerKind,
 )
 from app.constants.log_tags import LogTag
 from app.db.postgresql import get_db_session
@@ -54,6 +55,8 @@ from app.services.integrations.user_integrations import (
     invalidate_user_integration_caches,
     remove_user_integration,
 )
+from app.utils.redis_utils import RedisPoolManager
+from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log
 
 PAIRING_VERIFICATION_PATH = "/settings/devices/approve"
@@ -299,7 +302,11 @@ async def get_active_device(device_id: str) -> Device | None:
 
 
 async def register_device_server(
-    user_id: str, device_id: str, server_key: str, display_name: str
+    user_id: str,
+    device_id: str,
+    server_key: str,
+    display_name: str,
+    kind: DeviceServerKind = "stdio",
 ) -> DeviceMCPServer:
     """Register (idempotently) one MCP server a device exposes.
 
@@ -318,6 +325,7 @@ async def register_device_server(
 
         if existing is not None:
             existing.display_name = display_name
+            existing.kind = kind
             existing.status = DeviceServerStatus.CONNECTED
             existing.error_message = None
             await session.commit()
@@ -332,6 +340,7 @@ async def register_device_server(
             integration_id=integration_id,
             server_key=server_key,
             display_name=display_name,
+            kind=kind,
             status=DeviceServerStatus.CONNECTED,
         )
         session.add(server)
@@ -411,6 +420,35 @@ async def list_device_servers(device_ids: list[str]) -> dict[str, list[DeviceMCP
         for server in result.scalars().all():
             grouped.setdefault(server.device_id, []).append(server)
         return grouped
+
+
+async def record_device_server_sync(integration_id: str, *, error: str | None = None) -> None:
+    """Stamp a device server's warm-connect outcome (connected+synced, or an error)."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(DeviceMCPServer.integration_id == integration_id)
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            # Revoked mid-warmup — nothing to record.
+            return
+        if error is None:
+            server.status = DeviceServerStatus.CONNECTED
+            server.error_message = None
+            server.tools_synced_at = datetime.now(UTC)
+        else:
+            server.status = DeviceServerStatus.ERROR
+            server.error_message = error[:2000]
+        await session.commit()
+
+
+async def enqueue_device_server_warmup(
+    device_id: str, server_keys: list[str] | None = None
+) -> None:
+    """Queue a background warm-connect so a device's MCP tools become discoverable."""
+    pool = await RedisPoolManager.get_pool()
+    await enqueue_worker_job(pool, "warm_device_servers", device_id, server_keys)
 
 
 async def _device_server_integration_ids(session: AsyncSession, device_id: str) -> list[str]:

@@ -6,7 +6,12 @@ device connect-token lifetime, and the Redis routing channels that let any worke
 reach the pod that owns a device's socket.
 """
 
-from typing import Final
+from typing import Final, Literal
+
+# The kind of thing a `server_key` resolves to on the device — the daemon's
+# ServerConfig.type. The cloud stores it for display/agent context only; it never
+# learns the underlying command or URL.
+DeviceServerKind = Literal["stdio", "url", "filesystem"]
 
 # --- Device connect token (short-lived JWT the daemon presents on the WS upgrade) ---
 # Distinct audience so a device token can never be replayed against the chat-stream

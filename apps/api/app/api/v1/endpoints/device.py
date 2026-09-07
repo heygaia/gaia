@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException
 
 from app.api.v1.dependencies.oauth_dependencies import get_user_id
 from app.constants.auth import AUDIT_ACTOR_DEVICE_DAEMON
+from app.constants.log_tags import LogTag
 from app.schemas.device.requests import (
     ApprovePairingRequest,
     DeviceTokenRequest,
@@ -36,6 +37,7 @@ from app.services.device.device_auth import create_device_token, verify_device_t
 from app.services.device.device_service import (
     PairingError,
     approve_pairing,
+    enqueue_device_server_warmup,
     get_active_device,
     list_device_servers,
     list_devices,
@@ -174,8 +176,24 @@ async def register_server(
         user={"id": device["user_id"]},
     )
     server = await register_device_server(
-        device["user_id"], device["device_id"], payload.server_key, payload.display_name
+        device["user_id"],
+        device["device_id"],
+        payload.server_key,
+        payload.display_name,
+        payload.kind,
     )
+    # Warm-connect off the request path so the server's tools get indexed and
+    # become discoverable. Best-effort: registration must still succeed if Redis
+    # is down (the device-online transition re-drives it).
+    try:
+        await enqueue_device_server_warmup(device["device_id"], [server.server_key])
+    except Exception as e:
+        log.warning(
+            f"{LogTag.API} Failed to enqueue device server warmup",
+            device_id=device["device_id"],
+            error=str(e),
+            error_type=type(e).__name__,
+        )
     return RegisterServerResponse(
         integration_id=server.integration_id, server_key=server.server_key
     )
@@ -208,6 +226,7 @@ async def list_user_devices(user_id: str = Depends(get_user_id)) -> DeviceListRe
                         server_key=s.server_key,
                         display_name=s.display_name,
                         integration_id=s.integration_id,
+                        kind=s.kind,
                         status=s.status.value,
                         tools_synced_at=s.tools_synced_at,
                     )

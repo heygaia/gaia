@@ -26,12 +26,18 @@ from app.helpers.integration_helpers import (
     normalize_server_url,
 )
 from app.models.agent_models import agent_configurable
+from app.models.device_models import DeviceInfo, DeviceServerInfo, ListDevicesResult
 from app.models.integration_models import (
     AuthType,
     CreateCustomIntegrationRequest,
     IntegrationInfo,
     ListIntegrationsResult,
     SuggestedIntegration,
+)
+from app.services.device.bridge import online_device_ids
+from app.services.device.device_service import (
+    list_device_servers,
+    list_devices as list_devices_service,
 )
 from app.services.integrations.custom_crud import (
     create_and_connect_custom_integration,
@@ -46,6 +52,7 @@ from app.templates.docstrings.integration_tool_docs import (
     ADD_CUSTOM_MCP_SERVER,
     CHECK_INTEGRATIONS_STATUS,
     CONNECT_INTEGRATION,
+    LIST_DEVICES,
     LIST_INTEGRATIONS,
 )
 from app.utils.integration_checker import request_integration_connection
@@ -485,6 +492,51 @@ async def add_custom_mcp_server(
         return f"Error adding MCP server: {e!s}"
 
 
+@tool
+@with_doc(LIST_DEVICES)
+async def list_devices(config: RunnableConfig) -> ListDevicesResult | str:
+    try:
+        log.set(tool={"name": "list_devices", "action": "list"})
+        configurable = agent_configurable(config)
+        user_id = configurable.get("user_id") if configurable else None
+        if not user_id:
+            return "Error: User ID not found in configuration."
+
+        devices = await list_devices_service(str(user_id))
+        device_ids = [d.id for d in devices]
+        online = await online_device_ids(device_ids)
+        servers_by_device = await list_device_servers(device_ids)
+
+        return ListDevicesResult(
+            devices=[
+                DeviceInfo(
+                    id=d.id,
+                    name=d.name,
+                    platform=d.platform,
+                    online=d.id in online,
+                    last_seen_at=d.last_seen_at.isoformat() if d.last_seen_at else None,
+                    servers=[
+                        DeviceServerInfo(
+                            server_key=s.server_key,
+                            display_name=s.display_name,
+                            integration_id=s.integration_id,
+                            kind=s.kind,
+                            status=s.status.value,
+                            tools_synced_at=(
+                                s.tools_synced_at.isoformat() if s.tools_synced_at else None
+                            ),
+                        )
+                        for s in servers_by_device.get(d.id, [])
+                    ],
+                )
+                for d in devices
+            ]
+        )
+    except Exception as e:
+        log.error(f"{LogTag.TOOL} Error listing devices", error_type=type(e).__name__)
+        return f"Error listing devices: {e!s}"
+
+
 # Export all tools
 tools = [
     list_integrations,
@@ -492,4 +544,5 @@ tools = [
     connect_integration,
     check_integrations_status,
     add_custom_mcp_server,
+    list_devices,
 ]

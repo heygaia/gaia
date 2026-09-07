@@ -87,6 +87,11 @@ class DeviceMCPServer(Base):
     # for the built-in server). Unique per device; the frame's ``server`` field.
     server_key: Mapped[str] = mapped_column(String(120), nullable=False)
     display_name: Mapped[str] = mapped_column(String(120), nullable=False)
+    # The daemon's ServerConfig.type (stdio | url | filesystem). Plain String,
+    # not SQLEnum, to avoid a Postgres enum ALTER when a new kind appears.
+    kind: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="stdio", server_default="stdio"
+    )
     status: Mapped[DeviceServerStatus] = mapped_column(
         SQLEnum(DeviceServerStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,

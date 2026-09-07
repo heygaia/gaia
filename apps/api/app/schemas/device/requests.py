@@ -2,6 +2,8 @@
 
 from pydantic import BaseModel, Field
 
+from app.constants.device_bridge import DeviceServerKind
+
 
 class StartPairingRequest(BaseModel):
     """Daemon kicks off pairing, announcing itself (RFC 8628 device flow)."""
@@ -38,3 +40,6 @@ class RegisterServerRequest(BaseModel):
 
     server_key: str = Field(min_length=1, max_length=120, pattern=r"^[a-z0-9][a-z0-9_-]*$")
     display_name: str = Field(min_length=1, max_length=120)
+    # What the key resolves to on the device; defaults to "stdio" so older daemons
+    # that don't send it keep registering.
+    kind: DeviceServerKind = "stdio"

@@ -851,6 +851,8 @@ class TestInitializedCategoryContract:
             "check_integrations_status": False,
             # Force-gated (always_gate), not destructive — see the always_gate test.
             "add_custom_mcp_server": False,
+            # Read-only device catalog lookup.
+            "list_devices": False,
         }
 
 
