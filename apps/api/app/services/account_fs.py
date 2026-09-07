@@ -251,9 +251,8 @@ async def _linked_account_bodies(user_id: str) -> list[AccountFileProjection]:
 
 async def _onboarding_preferences(user_id: str) -> dict[str, object]:
     user = await user_repository.get(user_id)
-    onboarding = user.onboarding if user else None
-    preferences = (onboarding or {}).get("preferences")
-    return preferences if isinstance(preferences, dict) else {}
+    preferences = user.onboarding.preferences if user and user.onboarding else None
+    return preferences.model_dump() if preferences else {}
 
 
 __all__ = [

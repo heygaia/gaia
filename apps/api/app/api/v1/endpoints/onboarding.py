@@ -33,11 +33,13 @@ from app.models.onboarding_models import (
 from app.models.user_models import (
     AuthenticatedUser,
     BioStatus,
+    OnboardingPhase,
     OnboardingPhaseUpdateRequest,
     OnboardingPreferences,
     OnboardingRequest,
     OnboardingResponse,
     OnboardingStatusResponse,
+    OnboardingSubdocument,
     UserDocument,
 )
 from app.services.account_fs import schedule_account_sync
@@ -299,12 +301,12 @@ async def update_user_preferences(
 
 
 async def _resolve_account_identity(
-    user_doc: UserDocument, onboarding: dict[str, Any]
+    user_doc: UserDocument, onboarding: OnboardingSubdocument
 ) -> tuple[int, str]:
     """The stored account number and join date, derived from ``created_at`` on
     the first read (both are backfilled together or not at all)."""
-    account_number = onboarding.get("account_number")
-    member_since = onboarding.get("member_since")
+    account_number = onboarding.account_number
+    member_since = onboarding.member_since
     if account_number and member_since:
         return account_number, member_since
 
@@ -342,17 +344,15 @@ async def _load_suggested_workflows(workflow_ids: list[str]) -> list[Personaliza
         return []
 
 
-async def _resolve_display_bio(onboarding: dict[str, Any], user_id: str) -> str:
+async def _resolve_display_bio(onboarding: OnboardingSubdocument, user_id: str) -> str:
     """The bio to show now. While extraction is still pending we only promise a
     bio if there is a Gmail connection to extract one from."""
-    bio_status = onboarding.get("bio_status", "pending")
+    bio_status = onboarding.bio_status or BioStatus.PENDING
 
-    if bio_status in ["processing", BioStatus.PROCESSING]:
+    if bio_status == BioStatus.PROCESSING:
         return _BIO_PROCESSING_MESSAGE
-    if bio_status not in ["pending", BioStatus.PENDING]:
-        # onboarding is dict[str, Any] on the document; user_bio is stored as str.
-        stored_bio: str = onboarding.get("user_bio", "")
-        return stored_bio
+    if bio_status != BioStatus.PENDING:
+        return onboarding.user_bio
 
     connection_status = await get_composio_service().check_connection_status(["gmail"], user_id)
     if connection_status.get("gmail", False):
@@ -422,39 +422,39 @@ async def get_onboarding_personalization(
         if not user_doc:
             raise HTTPException(status_code=404, detail="User not found")
 
-        onboarding = user_doc.onboarding or {}
-        phase = onboarding.get("phase", "initial")
+        onboarding = user_doc.onboarding or OnboardingSubdocument()
+        phase = onboarding.phase or OnboardingPhase.INITIAL
         log.info(
             f"{LogTag.ONBOARDING} User onboarding state",
             user_id=user_id,
             phase=phase,
-            bio_status=onboarding.get("bio_status"),
+            bio_status=onboarding.bio_status,
         )
 
         account_number, member_since = await _resolve_account_identity(user_doc, onboarding)
         display_bio = await _resolve_display_bio(onboarding, user_id)
-        workflows = await _load_suggested_workflows(onboarding.get("suggested_workflows", []))
+        workflows = await _load_suggested_workflows(onboarding.suggested_workflows)
         onboarding_todos = await _load_onboarding_todos(user_id)
 
-        raw_social_profiles = onboarding.get("social_profiles", [])
-        raw_triage_summary = onboarding.get("triage_summary")
+        raw_social_profiles = onboarding.social_profiles
+        raw_triage_summary = onboarding.triage_summary
 
         return PersonalizationResponse(
             phase=phase,
             has_personalization=phase in _PERSONALIZED_PHASES,
-            house=onboarding.get("house", "Bluehaven"),
-            personality_phrase=onboarding.get("personality_phrase", "Curious Adventurer"),
+            house=onboarding.house or "Bluehaven",
+            personality_phrase=onboarding.personality_phrase or "Curious Adventurer",
             user_bio=display_bio,
             account_number=account_number,
             member_since=member_since,
-            overlay_color=onboarding.get("overlay_color", "rgba(0,0,0,0)"),
-            overlay_opacity=onboarding.get("overlay_opacity", 40),
+            overlay_color=onboarding.overlay_color,
+            overlay_opacity=onboarding.overlay_opacity,
             suggested_workflows=workflows,
             name=user_doc.name or "User",
             holo_card_id=user_doc.id,
-            first_message_conversation_id=onboarding.get("first_message_conversation_id"),
-            first_message=onboarding.get("first_message"),
-            writing_style=_build_writing_style(onboarding.get("writing_style")),
+            first_message_conversation_id=onboarding.first_message_conversation_id,
+            first_message=onboarding.first_message,
+            writing_style=_build_writing_style(onboarding.writing_style),
             social_profiles=[
                 SocialProfile(platform=p.get("platform", ""), url=p.get("url", ""))
                 for p in raw_social_profiles

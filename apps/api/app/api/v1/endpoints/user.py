@@ -22,7 +22,7 @@ from app.models.chat_channel_models import ChannelPriorityList
 from app.models.user_models import (
     AuthenticatedUser,
     AuthenticatedUserResponse,
-    HoloCardOnboardingFields,
+    OnboardingSubdocument,
     PublicHoloCardResponse,
     UpdateHoloCardColorsResponse,
     UpdateTimezoneResponse,
@@ -237,7 +237,7 @@ async def get_public_holo_card(card_id: str) -> PublicHoloCardResponse:
         if not user_doc:
             raise HTTPException(status_code=404, detail="Card not found")
 
-        onboarding = HoloCardOnboardingFields.model_validate(user_doc.onboarding or {})
+        onboarding = user_doc.onboarding or OnboardingSubdocument()
 
         # Check if user has completed onboarding
         if not onboarding.house:

@@ -392,6 +392,71 @@ class PlatformLinkRecord(TypedDict, total=False):
     display_name: str
 
 
+class OnboardingSubdocument(BaseModel):
+    """``users.onboarding`` — the wizard's answers plus everything the Gmail
+    personalization pipeline stamps on the user.
+
+    ``extra="allow"``: production rows carry keys written by onboarding flows
+    that no longer exist, and dropping them here would silently strip them from
+    ``GET /me`` (which spreads the document) and from any read-modify-write.
+    Declared fields are what ``app/`` actually reads, so a reader is a typo-proof
+    attribute access instead of a ``.get()`` that can never fail.
+
+    The loosely-typed fields (``writing_style``, ``triage_summary``,
+    ``social_profiles``, ``clarify_answers``) stay mappings on purpose: they are
+    read back from rows written by older pipeline versions and are validated into
+    their real models at the point of use (``PersistedTriageSummary`` and
+    friends), so validating them here would turn a historical row into a failed
+    auth read.
+    """
+
+    model_config = ConfigDict(extra="allow")
+
+    # Wizard state.
+    completed: bool = False
+    completed_at: datetime | None = None
+    phase: OnboardingPhase | None = None
+    preferences: OnboardingPreferences | None = None
+    focus: str = ""
+    clarify_answers: list[dict[str, Any]] = Field(default_factory=list)
+
+    # Seeded conversations, kept so a reset can tear them down again.
+    first_message_conversation_id: str | None = None
+    getting_started_conversation_id: str | None = None
+    holo_conversation_id: str | None = None
+    first_message: str | None = None
+
+    # Gmail personalization pipeline.
+    gmail_personalization_at: datetime | None = None
+    bio_status: BioStatus | None = None
+    writing_style: dict[str, Any] | None = None
+    triage_summary: dict[str, Any] | None = None
+    social_profiles: list[dict[str, Any]] = Field(default_factory=list)
+    suggested_workflows: list[str] = Field(default_factory=list)
+
+    # Holo card.
+    house: str | None = None
+    personality_phrase: str | None = None
+    user_bio: str = ""
+    account_number: int | None = None
+    member_since: str | None = None
+    overlay_color: str = "rgba(0,0,0,0)"
+    overlay_opacity: int = 40
+
+    @field_validator("phase", "bio_status", mode="before")
+    @classmethod
+    def unknown_enum_values_read_as_unset(cls, value: object) -> object:
+        """A historical row with a value outside today's enum is an unset field,
+        not a failed auth read; only our own code writes these, but the read
+        must never depend on that."""
+        if value is None or isinstance(value, (OnboardingPhase, BioStatus)):
+            return value
+        known = {member.value for member in OnboardingPhase} | {
+            member.value for member in BioStatus
+        }
+        return value if value in known else None
+
+
 class UserDocument(MongoDocument):
     """A user as stored in MongoDB.
 
@@ -419,9 +484,9 @@ class UserDocument(MongoDocument):
     created_at: datetime | None = None
     updated_at: datetime | None = None
     last_active_at: datetime | None = None
+    onboarding: OnboardingSubdocument | None = None
     # These nested subdocuments are schemaless-ish and read via chained `.get`
     # across many callers; typed as Any (not a sub-model) per this wave's scope.
-    onboarding: dict[str, Any] | None = None
     provider_metadata: dict[str, Any] | None = None
     hil_preferences: dict[str, Any] | None = None
     notification_channel_prefs: dict[str, Any] | None = None
@@ -531,27 +596,6 @@ class AuthenticatedUserResponse(BaseModel):
     memory_backfilled: datetime | None = None
     last_inactive_email_sent: datetime | None = None
     inactive_email_count: int | None = None
-
-
-class HoloCardOnboardingFields(BaseModel):
-    """The subset of ``UserDocument.onboarding`` the holo-card endpoint reads.
-
-    ``UserDocument.onboarding`` stays ``dict[str, Any]`` (see its field comment
-    in ``UserDocument``) because it's read via chained ``.get()`` across many
-    other callers with different shape needs, several of which are under
-    active, unrelated development right now -- widening that shared field is
-    real scope, not this endpoint's. This model validates only the fields
-    this one endpoint actually consumes, at the point of use, so the endpoint
-    itself never guesses through ``.get()``.
-    """
-
-    house: str | None = None
-    personality_phrase: str | None = None
-    user_bio: str | None = None
-    account_number: int | None = None
-    member_since: str | None = None
-    overlay_color: str = "rgba(0,0,0,0)"
-    overlay_opacity: int = 40
 
 
 class PersonalizationBundle(BaseModel):

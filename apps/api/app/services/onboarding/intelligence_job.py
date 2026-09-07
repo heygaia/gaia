@@ -8,19 +8,14 @@ the user document and nothing is aborted to make room; two pipelines can never
 emit stage events onto the same WebSocket because the second never starts.
 """
 
-from typing import Any
-
 from arq.constants import abort_jobs_ss
 from arq.jobs import Job, JobStatus
 from arq.utils import timestamp_ms
 
 from app.constants.log_tags import LogTag
-from app.constants.onboarding import (
-    GMAIL_PERSONALIZATION_MARKER,
-    INTELLIGENCE_TASK,
-    LEGACY_PERSONALIZATION_MARKER,
-)
+from app.constants.onboarding import INTELLIGENCE_TASK
 from app.db.repositories.users import user_repository
+from app.models.user_models import OnboardingSubdocument
 from app.utils.redis_utils import RedisPoolManager
 from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log
@@ -33,18 +28,13 @@ def personalization_job_id(user_id: str) -> str:
     return f"{INTELLIGENCE_TASK}:{user_id}"
 
 
-def personalization_already_ran(onboarding: dict[str, Any]) -> bool:
+def personalization_already_ran(onboarding: OnboardingSubdocument) -> bool:
     """Whether the Gmail personalization pipeline has already run for this user.
 
-    ``onboarding`` is the raw ``UserDocument.onboarding`` subdocument, which is
-    schemaless by design (``extra="allow"``), so this reads it by key. Users who
-    completed the pre-relocation onboarding carry holo-card fields but no
-    marker; the legacy field stands in for them.
+    Users who completed the pre-relocation onboarding carry holo-card fields but
+    no marker; ``house`` stands in as the marker for them.
     """
-    return bool(
-        onboarding.get(GMAIL_PERSONALIZATION_MARKER)
-        or onboarding.get(LEGACY_PERSONALIZATION_MARKER)
-    )
+    return bool(onboarding.gmail_personalization_at or onboarding.house)
 
 
 async def _job_status(user_id: str) -> JobStatus | None:
@@ -102,7 +92,7 @@ async def enqueue_gmail_personalization(user_id: str) -> str | None:
             user_id=user_id,
         )
         return None
-    if personalization_already_ran(user.onboarding or {}):
+    if personalization_already_ran(user.onboarding or OnboardingSubdocument()):
         log.info(
             f"{LogTag.ONBOARDING} personalization enqueue skipped — already ran",
             user_id=user_id,

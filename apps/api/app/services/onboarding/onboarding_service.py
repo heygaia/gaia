@@ -3,11 +3,6 @@ from typing import Any
 from fastapi import HTTPException
 
 from app.constants.log_tags import LogTag
-from app.constants.onboarding import (
-    FIRST_CONVERSATION_ID_FIELD,
-    GETTING_STARTED_CONVERSATION_ID_FIELD,
-    HOLO_CONVERSATION_ID_FIELD,
-)
 from app.db.repositories.conversations import conversation_repository
 from app.db.repositories.todos import todo_repository
 from app.db.repositories.user_integrations import user_integration_repository
@@ -20,6 +15,7 @@ from app.models.user_models import (
     OnboardingPreferences,
     OnboardingRequest,
     OnboardingStatusResponse,
+    OnboardingSubdocument,
     UserDocument,
 )
 from app.services.analytics_service import AnalyticsEvents, capture_event, identify_user
@@ -96,7 +92,7 @@ async def complete_onboarding(
             log.info(
                 f"{LogTag.ONBOARDING} complete_onboarding replay — onboarding already submitted",
                 user_id=user_id,
-                phase=(existing.onboarding or {}).get("phase"),
+                phase=existing.onboarding.phase if existing.onboarding else None,
             )
             return _serialize_user(existing)
 
@@ -182,19 +178,15 @@ async def get_user_onboarding_status(user_id: str) -> OnboardingStatusResponse:
         if user is None:
             raise HTTPException(status_code=404, detail="User not found")
 
-        onboarding_data = user.onboarding or {}
+        onboarding_data = user.onboarding or OnboardingSubdocument()
 
         return OnboardingStatusResponse(
-            completed=onboarding_data.get("completed", False),
-            completed_at=onboarding_data.get("completed_at"),
-            phase=onboarding_data.get("phase"),
-            preferences=OnboardingPreferences.model_validate(
-                onboarding_data.get("preferences") or {}
-            ),
-            first_message_conversation_id=onboarding_data.get(FIRST_CONVERSATION_ID_FIELD),
-            getting_started_conversation_id=onboarding_data.get(
-                GETTING_STARTED_CONVERSATION_ID_FIELD
-            ),
+            completed=onboarding_data.completed,
+            completed_at=onboarding_data.completed_at,
+            phase=onboarding_data.phase,
+            preferences=onboarding_data.preferences or OnboardingPreferences.model_validate({}),
+            first_message_conversation_id=onboarding_data.first_message_conversation_id,
+            getting_started_conversation_id=onboarding_data.getting_started_conversation_id,
         )
 
     except HTTPException:
@@ -301,17 +293,17 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
             user_id=user_id,
         )
 
-    onboarding = user.onboarding or {}
+    onboarding = user.onboarding or OnboardingSubdocument()
     # Legacy state: users who ran the pre-relocation onboarding still carry the
     # workflows it generated and the conversation it seeded. Nothing writes
     # either any more, but a reset must still clear them.
-    workflow_ids: list[str] = onboarding.get("suggested_workflows") or []
+    workflow_ids: list[str] = onboarding.suggested_workflows
     seeded_conversation_ids: list[str] = [
         cid
         for cid in (
-            onboarding.get(FIRST_CONVERSATION_ID_FIELD),
-            onboarding.get(GETTING_STARTED_CONVERSATION_ID_FIELD),
-            onboarding.get(HOLO_CONVERSATION_ID_FIELD),
+            onboarding.first_message_conversation_id,
+            onboarding.getting_started_conversation_id,
+            onboarding.holo_conversation_id,
         )
         if cid
     ]

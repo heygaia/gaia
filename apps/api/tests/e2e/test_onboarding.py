@@ -57,7 +57,6 @@ from app.constants.onboarding import (
     GMAIL_PERSONALIZATION_MARKER,
     HOLO_CONVERSATION_ID_FIELD,
     INTELLIGENCE_TASK,
-    LEGACY_PERSONALIZATION_MARKER,
 )
 from app.models.oauth_models import OAuthIntegration
 from app.models.onboarding_models import (
@@ -858,7 +857,7 @@ class TestThePipelineRunsAtMostOnce:
         """Users who finished the pre-relocation onboarding carry `house` and no
         marker. Treating them as new hands them a second card."""
         await complete_submit(client)
-        users.docs[USER_ID]["onboarding"][LEGACY_PERSONALIZATION_MARKER] = "explorer"
+        users.docs[USER_ID]["onboarding"]["house"] = "explorer"
 
         await connect_gmail()
 
