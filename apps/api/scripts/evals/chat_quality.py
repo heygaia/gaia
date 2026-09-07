@@ -23,11 +23,9 @@ Pro so the paid-only gate lets the turn reach the agent.
 import argparse
 import asyncio
 from collections import Counter
-import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 import time
 from uuid import uuid4
@@ -42,15 +40,12 @@ except Exception as e:
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-import httpx
 from pydantic import BaseModel
 
-from app.agents.llm.client import (
-    LLMInvokeOptions,
-    ainvoke_llm,
-    background_structured_runnable,
-)
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
+from scripts.evals.core.dev_users import dev_client, provision
+from scripts.evals.core.judge import criteria_block, judge
+from scripts.evals.core.live_chat import Turn, TurnOptions, send_turn
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:9330")
 # A fresh user per scenario AND per run: memory from an earlier run would leak
@@ -67,6 +62,12 @@ JUDGE_TIMEOUT_SECONDS = 180.0
 JUDGE_CONCURRENCY = 4
 WORST_REPLY_COUNT = 8
 REPLY_PREVIEW_WORDS = 30
+#: This harness's shape IS the shared default; only the budgets are its own.
+TURN_OPTIONS = TurnOptions(
+    timeout=TURN_TIMEOUT_SECONDS,
+    delivery_wait_seconds=DELIVERY_WAIT_SECONDS,
+    delivery_poll_seconds=DELIVERY_POLL_SECONDS,
+)
 
 #: One profile for every scenario: the difference we want to read is the
 #: MESSAGE, so the user behind it is held constant.
@@ -174,162 +175,8 @@ SCENARIOS: list[tuple[str, str, list[str]]] = [
 ]
 
 
-class Turn(BaseModel):
-    """One GAIA reply plus the evidence she did a thing rather than talked about it."""
-
-    message: str
-    reply: str
-    #: ``tool_name`` of every ``tool_data`` entry in the stream. A connect card
-    #: arrives as ``integration_connection_required``; a created reminder as the
-    #: reminder tool's own name.
-    tools: list[str]
-
-
-def _frame_tool_names(frame: dict) -> list[str]:
-    """Every tool name in a ``tool_data`` frame, including the one a
-    ``tool_calls_data`` announcement wraps (its ``data`` is one step dict)."""
-    payload = frame.get("tool_data")
-    entries = payload if isinstance(payload, list) else [payload]
-    names: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("tool_name"), str):
-            continue
-        names.append(entry["tool_name"])
-        inner = entry.get("data")
-        if entry["tool_name"] == "tool_calls_data" and isinstance(inner, dict):
-            inner_name = inner.get("tool_name") or inner.get("name")
-            if isinstance(inner_name, str):
-                names.append(inner_name)
-    return names
-
-
-async def _send_turn(
-    client: httpx.AsyncClient,
-    api_url: str,
-    message: str,
-    conversation_id: str,
-    history: list[dict[str, str]],
-) -> Turn:
-    """One comms turn against the running API, joined from its SSE frames."""
-    messages = [*history, {"role": "user", "content": message}]
-    body = {
-        "message": message,
-        "messages": messages,
-        "conversation_id": conversation_id,
-        "turn_id": str(uuid4()),
-    }
-    chunks: list[str] = []
-    tools: list[str] = []
-    async with client.stream(
-        "POST", f"{api_url}/api/v1/chat-stream", json=body, timeout=TURN_TIMEOUT_SECONDS
-    ) as response:
-        if response.status_code != 200:
-            await response.aread()
-            return Turn(
-                message=message,
-                reply=f"[HTTP {response.status_code}] {response.text[:300]}",
-                tools=[],
-            )
-        async for line in response.aiter_lines():
-            if not line.startswith("data: "):
-                continue
-            try:
-                frame = json.loads(line[len("data: ") :])
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(frame, dict):
-                continue
-            # The style guard retracts a draft it is about to rewrite; the web
-            # and the bots drop the text on this frame, so the harness must too
-            # or every rewrite reads as the reply pasted twice.
-            boundary = frame.get("message_boundary")
-            if isinstance(boundary, dict) and boundary.get("discarded"):
-                chunks.clear()
-            if isinstance(frame.get("response"), str):
-                chunks.append(frame["response"])
-            tools.extend(_frame_tool_names(frame))
-    reply = "".join(chunks).strip() or "[no text in stream]"
-    delegated = "call_executor" in tools
-    if delegated:
-        delivered, more_tools = await _await_delivery(client, api_url, conversation_id, message)
-        if delivered:
-            reply = reply + "\n\n[delivered later] " + delivered
-            tools.extend(more_tools)
-        else:
-            reply = reply + "\n\n[nothing delivered within budget]"
-    return Turn(message=message, reply=reply, tools=tools)
-
-
-def _bot_messages_after(messages: list[dict], user_text: str) -> list[dict]:
-    """Bot messages saved after the last user message equal to ``user_text``."""
-    idx = None
-    for i, m in enumerate(messages):
-        if m.get("type") == "user" and (m.get("response") or "").strip() == user_text.strip():
-            idx = i
-    if idx is None:
-        return []
-    return [m for m in messages[idx + 1 :] if m.get("type") == "bot"]
-
-
-async def _await_delivery(
-    client: httpx.AsyncClient, api_url: str, conversation_id: str, user_text: str
-) -> tuple[str, list[str]]:
-    """Poll the saved conversation until the delegated answer lands (or the budget ends)."""
-    deadline = time.monotonic() + DELIVERY_WAIT_SECONDS
-    last_seen = ""
-    while time.monotonic() < deadline:
-        await asyncio.sleep(DELIVERY_POLL_SECONDS)
-        try:
-            resp = await client.get(
-                f"{api_url}/api/v1/conversations/{conversation_id}", timeout=30.0
-            )
-        except Exception:
-            continue
-        if resp.status_code != 200:
-            continue
-        payload = resp.json()
-        convo = payload.get("conversation", payload) if isinstance(payload, dict) else {}
-        messages = convo.get("messages") or []
-        bots = _bot_messages_after(messages, user_text)
-        texts = [(m.get("response") or "").strip() for m in bots]
-        delivered = [t for t in texts[1:] if t] if len(texts) > 1 else []
-        tool_names = [
-            t.get("tool_name")
-            for m in bots
-            for t in (m.get("tool_data") or [])
-            if isinstance(t, dict)
-        ]
-        real_tools = [t for t in tool_names if t and t != "tool_calls_data"]
-        if delivered and "\n".join(delivered) == last_seen:
-            return last_seen, real_tools
-        if delivered:
-            last_seen = "\n".join(delivered)
-        elif real_tools:
-            return "", real_tools
-    return last_seen, []
-
-
 def _slug(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40]
-
-
-async def _provision(api_url: str, email: str) -> None:
-    """A fresh Pro dev user carrying the shared onboarding profile."""
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        await client.post(f"{api_url}/api/v1/dev/users", json={"email": email, "name": "Alex"})
-        # The API is paid-only: a turn from a free user is a 402 before it ever
-        # reaches the agent.
-        await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "scripts/grant_pro_access.py", "--email", email],
-            check=True,
-            capture_output=True,
-        )
-        await client.patch(
-            f"{api_url}/api/v1/onboarding/preferences",
-            headers={"X-Dev-User": email},
-            json=PROFILE.model_dump(mode="json", exclude_none=True),
-        )
 
 
 #: 0/1 criteria, in report order. Key is the column header; value is the ask.
@@ -442,7 +289,7 @@ Judge only THIS reply, but use the history to spot repetition and re-offers.
 
 
 async def _judge(row: "Graded") -> _Verdict:
-    criteria = "\n".join(f"- {key}: {text}" for key, text in CRITERIA.items())
+    criteria = criteria_block(CRITERIA)
     history = (
         "\n".join(f"  user: {t.message}\n  GAIA: {t.reply}" for t in row.history)
         or "  (this is the first turn)"
@@ -456,12 +303,7 @@ async def _judge(row: "Graded") -> _Verdict:
         tools=", ".join(row.turn.tools) or "none",
         criteria=criteria,
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_Verdict, temperature=0.0),
-        prompt,
-        label="chat_quality_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
-    )
+    return await judge(_Verdict, prompt, label="chat_quality_judge", timeout=JUDGE_TIMEOUT_SECONDS)
 
 
 class Graded(BaseModel):
@@ -503,13 +345,11 @@ async def run(api_url: str, only: str | None) -> None:
     for index, (label, note, turns) in enumerate(scenarios):
         email = USER_TEMPLATE.format(slug=f"{index}-{_slug(label)}")
         print(f"\n\n######## {label}  ({email})")
-        await _provision(api_url, email)
+        await provision(api_url, email, PROFILE)
         conversation_id = str(uuid4())
         history: list[dict[str, str]] = []
         prior: list[Turn] = []
-        async with httpx.AsyncClient(
-            headers={"X-Dev-User": email}, cookies={"dev_bypass_user": email}
-        ) as client:
+        async with dev_client(email) as client:
             # The stream persists into an existing conversation; without this the
             # save 404s and the delegated answer has nowhere to land.
             await client.post(
@@ -518,7 +358,9 @@ async def run(api_url: str, only: str | None) -> None:
                 timeout=30.0,
             )
             for turn_number, message in enumerate(turns, start=1):
-                turn = await _send_turn(client, api_url, message, conversation_id, history)
+                turn = await send_turn(
+                    client, api_url, message, conversation_id, history, TURN_OPTIONS
+                )
                 history.append({"role": "user", "content": message})
                 history.append({"role": "assistant", "content": turn.reply})
                 collected.append(

@@ -30,11 +30,9 @@ per-criterion totals, and the worst replies verbatim.
 import argparse
 import asyncio
 from collections import Counter
-import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 from uuid import uuid4
 
@@ -48,14 +46,8 @@ except Exception as e:
 backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
-import httpx
 from pydantic import BaseModel
 
-from app.agents.llm.client import (
-    LLMInvokeOptions,
-    ainvoke_llm,
-    background_structured_runnable,
-)
 from app.agents.prompts.new_user_prompts import TARGET_REPLY_EXAMPLE
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.onboarding.first_conversation import HANDOVER_WITHOUT_JOB
@@ -63,6 +55,9 @@ from app.services.onboarding.first_question import (
     QUESTION_TIMEOUT_SECONDS,
     compose_first_question,
 )
+from scripts.evals.core.dev_users import dev_client, provision
+from scripts.evals.core.judge import criteria_block, judge
+from scripts.evals.core.live_chat import NO_TEXT_REPLY, Turn, TurnOptions, send_turn
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:8000")
 #: One minted dev user per persona. Sharing a user leaked context between them
@@ -81,8 +76,15 @@ JUDGE_CONCURRENCY = 4
 WORST_REPLY_COUNT = 5
 #: Turn 1 is the chip; turn 2 is the "yes" that proves the offer was real.
 DEFAULT_TURNS = 2
-#: A stream that carried no prose at all. Never graded — see _grade_all.
-NO_TEXT_REPLY = "[no text in stream]"
+#: This harness reads the opener, not delegated work: it never polled for a
+#: delivered answer, took only the outer tool name, and kept the retracted
+#: preamble. Preserved exactly, because its scores were read against that shape.
+TURN_OPTIONS = TurnOptions(
+    timeout=FOLLOW_TIMEOUT_SECONDS,
+    include_nested_tool_names=False,
+    drop_discarded_boundary=False,
+    poll_for_delivery=False,
+)
 
 PERSONAS: list[tuple[str, OnboardingPreferences, str | None]] = [
     (
@@ -168,105 +170,8 @@ def print_personas(rows: list[tuple[str, object]]) -> None:
     print(f"\nfallbacks: {fallbacks}/{len(rows)}")
 
 
-class Turn(BaseModel):
-    """One GAIA reply plus the evidence that she did something, not just talked."""
-
-    message: str
-    reply: str
-    #: ``tool_name`` of every ``tool_data`` entry the stream carried. A connect
-    #: card arrives as ``integration_connection_required``, a created list as the
-    #: todo tool's own name — either way the turn did a thing.
-    tools: list[str]
-
-
-def _frame_tool_names(frame: dict) -> list[str]:
-    """The tool names in one SSE frame's ``tool_data``, which is an entry or a list."""
-    payload = frame.get("tool_data")
-    entries = payload if isinstance(payload, list) else [payload]
-    return [
-        entry["tool_name"]
-        for entry in entries
-        if isinstance(entry, dict) and isinstance(entry.get("tool_name"), str)
-    ]
-
-
-async def _send_turn(
-    client: httpx.AsyncClient,
-    api_url: str,
-    message: str,
-    conversation_id: str,
-    history: list[dict[str, str]],
-) -> Turn:
-    """One comms turn against the running API, joined from its SSE frames.
-
-    ``history`` is the prior turns of THIS conversation in the shape the endpoint
-    expects; the new user message is appended to it. Sharing the conversation id
-    across turns is what makes turn 2 a follow-up rather than a second cold open.
-    """
-    messages = [*history, {"role": "user", "content": message}]
-    body = {
-        "message": message,
-        "messages": messages,
-        "conversation_id": conversation_id,
-        "turn_id": str(uuid4()),
-    }
-    chunks: list[str] = []
-    tools: list[str] = []
-    async with client.stream(
-        "POST", f"{api_url}/api/v1/chat-stream", json=body, timeout=FOLLOW_TIMEOUT_SECONDS
-    ) as response:
-        if response.status_code != 200:
-            await response.aread()
-            return Turn(
-                message=message,
-                reply=f"[HTTP {response.status_code}] {response.text[:300]}",
-                tools=[],
-            )
-        async for line in response.aiter_lines():
-            if not line.startswith("data: "):
-                continue
-            try:
-                frame = json.loads(line[len("data: ") :])
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(frame, dict):
-                continue
-            if isinstance(frame.get("response"), str):
-                chunks.append(frame["response"])
-            tools.extend(_frame_tool_names(frame))
-    return Turn(
-        message=message,
-        reply="".join(chunks).strip() or NO_TEXT_REPLY,
-        tools=tools,
-    )
-
-
 def _slug(label: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40]
-
-
-async def _provision(api_url: str, email: str, preferences: OnboardingPreferences) -> None:
-    """A fresh dev user carrying this persona's answers.
-
-    The answers are saved through the real PATCH, so the same prewarm that runs
-    in the product writes this persona's question and chips into the cache the
-    agent's new-user guidance reads them back from.
-    """
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        await client.post(f"{api_url}/api/v1/dev/users", json={"email": email, "name": "Persona"})
-        # The API is paid-only: a follow turn from a free user is a 402 before it
-        # reaches the agent, so each persona gets a dev subscription first.
-        await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "scripts/grant_pro_access.py", "--email", email],
-            check=True,
-            capture_output=True,
-        )
-        await client.patch(
-            f"{api_url}/api/v1/onboarding/preferences",
-            headers={"X-Dev-User": email},
-            json=preferences.model_dump(mode="json", exclude_none=True),
-        )
 
 
 def _preview(reply: str) -> str:
@@ -399,7 +304,7 @@ ACCEPT_NOTE_ACCEPT = (
 
 async def _judge(turn: Turn, question: str, turn_number: int) -> _Verdict:
     """One structured grading call on the same dev lane the rest of the script uses."""
-    criteria = "\n".join(f"- {key}: {text}" for key, text in CRITERIA.items())
+    criteria = criteria_block(CRITERIA)
     prompt = JUDGE_PROMPT.format(
         question=question,
         turn_number=turn_number,
@@ -410,11 +315,8 @@ async def _judge(turn: Turn, question: str, turn_number: int) -> _Verdict:
         criteria=criteria,
         accept_note=ACCEPT_NOTE_ACCEPT if turn_number > 1 else ACCEPT_NOTE_OFFER,
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_Verdict, temperature=0.0),
-        prompt,
-        label="first_question_eval_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    return await judge(
+        _Verdict, prompt, label="first_question_eval_judge", timeout=JUDGE_TIMEOUT_SECONDS
     )
 
 
@@ -447,12 +349,10 @@ async def run_follow(rows: list[tuple[str, object]], api_url: str, turns: int) -
             print("  skipped (no chips were composed)")
             continue
         email = FOLLOW_USER_TEMPLATE.format(slug=f"{index}-{_slug(label)}")
-        await _provision(api_url, email, PERSONAS[index][1])
+        await provision(api_url, email, PERSONAS[index][1], name="Persona")
         print(f"  user: {email}")
         print(f"  chips: {result.chips}")
-        async with httpx.AsyncClient(
-            headers={"X-Dev-User": email}, cookies={"dev_bypass_user": email}
-        ) as client:
+        async with dev_client(email) as client:
             for chip in result.chips:
                 # The cheap dev lane sometimes returns a degenerate draft — a "."
                 # question with four EMPTY chips. Replaying one sends an empty
@@ -468,7 +368,9 @@ async def run_follow(rows: list[tuple[str, object]], api_url: str, turns: int) -
                 print(f"\n  --- chip: {chip}")
                 for turn_number in range(1, turns + 1):
                     message = chip if turn_number == 1 else ACCEPT_MESSAGE
-                    turn = await _send_turn(client, api_url, message, conversation_id, history)
+                    turn = await send_turn(
+                        client, api_url, message, conversation_id, history, TURN_OPTIONS
+                    )
                     history.append({"role": "user", "content": message})
                     history.append({"role": "assistant", "content": turn.reply})
                     collected.append(

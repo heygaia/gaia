@@ -38,7 +38,6 @@ import json
 import os
 from pathlib import Path
 import re
-import subprocess
 import sys
 import time
 from uuid import uuid4
@@ -54,15 +53,14 @@ backend_dir = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(backend_dir))
 
 import httpx
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from app.agents.llm.client import (
-    LLMInvokeOptions,
-    ainvoke_llm,
-    background_structured_runnable,
-)
 from app.agents.prompts.capability_prompts import CAPABILITY_BLOCK
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
+from scripts.evals.core.dev_users import dev_client, provision
+from scripts.evals.core.judge import criteria_block, judge, simulate
+from scripts.evals.core.live_chat import Turn as LiveTurn, TurnOptions, send_turn
+from scripts.evals.core.prompt_gates import banned_dashes
 
 DEFAULT_API_URL = os.environ.get("GAIA_API_URL", "http://localhost:9330")
 #: A fresh user per persona AND per run: memory from an earlier run would leak in
@@ -85,7 +83,18 @@ MIN_TURNS = 4
 MAX_TURNS = 8
 WORST_TURN_COUNT = 10
 REPLY_PREVIEW_WORDS = 30
-NO_TEXT_REPLY = "[no text in stream]"
+#: Differs from the shared default in three ways, all of them reported on: the
+#: frame kinds feed the report, a delegated turn whose stream carried no prose is
+#: just the answer (not the sentinel plus the answer), and the delivered text is
+#: joined bare because the judge reads the whole thing as one reply.
+TURN_OPTIONS = TurnOptions(
+    timeout=TURN_TIMEOUT_SECONDS,
+    collect_frame_kinds=True,
+    drop_sentinel_before_delivery=True,
+    delivered_prefix="\n\n",
+    delivery_wait_seconds=DELIVERY_WAIT_SECONDS,
+    delivery_poll_seconds=DELIVERY_POLL_SECONDS,
+)
 
 PROD_SCENARIOS_PATH = (
     Path(__file__).resolve().parents[4] / ".agents" / "prod-convos" / "hard_scenarios.json"
@@ -465,42 +474,15 @@ _CARD_PROMISE = re.compile(
 # --------------------------------------------------------------------------------------
 
 
-class Turn(BaseModel):
-    """One exchange, plus the evidence GAIA did a thing rather than talked about it."""
+class Turn(LiveTurn):
+    """A live-chat turn plus the OpenUI blocks parsed out of its reply.
 
-    message: str
-    reply: str
-    #: ``tool_name`` of every ``tool_data`` entry. A connect card arrives as
-    #: ``integration_connection_required``; a created reminder as the reminder tool.
-    tools: list[str] = []
-    #: Every distinct top-level key seen on an SSE frame. Captured generically so a
-    #: frame kind added upstream still shows up here instead of being dropped.
-    frame_kinds: list[str] = []
-    openui: list[OpenUIBlock] = []
-    #: True when the answer arrived on the saved conversation rather than the stream.
-    delegated: bool = False
+    OpenUI is this harness's whole reason for existing, so it stays here rather
+    than in the shared model: no other script parses it, and a field only one
+    caller fills is a field every other caller has to explain away.
+    """
 
-    @property
-    def is_empty(self) -> bool:
-        return not self.reply.strip() or self.reply.strip() == NO_TEXT_REPLY
-
-
-def _frame_tool_names(frame: dict) -> list[str]:
-    """Every tool name in a ``tool_data`` frame, including the one a
-    ``tool_calls_data`` announcement wraps (its ``data`` is one step dict)."""
-    payload = frame.get("tool_data")
-    entries = payload if isinstance(payload, list) else [payload]
-    names: list[str] = []
-    for entry in entries:
-        if not isinstance(entry, dict) or not isinstance(entry.get("tool_name"), str):
-            continue
-        names.append(entry["tool_name"])
-        inner = entry.get("data")
-        if entry["tool_name"] == "tool_calls_data" and isinstance(inner, dict):
-            inner_name = inner.get("tool_name") or inner.get("name")
-            if isinstance(inner_name, str):
-                names.append(inner_name)
-    return names
+    openui: list[OpenUIBlock] = Field(default_factory=list)
 
 
 async def _send_turn(
@@ -510,129 +492,18 @@ async def _send_turn(
     conversation_id: str,
     history: list[dict[str, str]],
 ) -> Turn:
-    messages = [*history, {"role": "user", "content": message}]
-    body = {
-        "message": message,
-        "messages": messages,
-        "conversation_id": conversation_id,
-        "turn_id": str(uuid4()),
-    }
-    chunks: list[str] = []
-    tools: list[str] = []
-    kinds: list[str] = []
-    async with client.stream(
-        "POST", f"{api_url}/api/v1/chat-stream", json=body, timeout=TURN_TIMEOUT_SECONDS
-    ) as response:
-        if response.status_code != 200:
-            await response.aread()
-            return Turn(
-                message=message,
-                reply=f"[HTTP {response.status_code}] {response.text[:300]}",
-            )
-        async for line in response.aiter_lines():
-            if not line.startswith("data: "):
-                continue
-            try:
-                frame = json.loads(line[len("data: ") :])
-            except json.JSONDecodeError:
-                continue
-            if not isinstance(frame, dict):
-                continue
-            kinds.extend(k for k in frame if frame[k] is not None)
-            # A discarded boundary is the style guard retracting its draft; the
-            # real clients drop that text, so the harness does too.
-            boundary = frame.get("message_boundary")
-            if isinstance(boundary, dict) and boundary.get("discarded"):
-                chunks.clear()
-            if isinstance(frame.get("response"), str):
-                chunks.append(frame["response"])
-            tools.extend(_frame_tool_names(frame))
-    reply = "".join(chunks).strip() or NO_TEXT_REPLY
-    delegated = "call_executor" in tools
-    if delegated:
-        delivered, more_tools = await _await_delivery(client, api_url, conversation_id, message)
-        if delivered:
-            reply = (reply if reply != NO_TEXT_REPLY else "") + "\n\n" + delivered
-            tools.extend(more_tools)
-        else:
-            reply = reply + "\n\n[nothing delivered within budget]"
-    reply = reply.strip()
-    return Turn(
-        message=message,
-        reply=reply,
-        tools=tools,
-        frame_kinds=sorted(set(kinds)),
-        openui=parse_openui(reply),
-        delegated=delegated,
-    )
-
-
-def _bot_messages_after(messages: list[dict], user_text: str) -> list[dict]:
-    idx = None
-    for i, m in enumerate(messages):
-        if m.get("type") == "user" and (m.get("response") or "").strip() == user_text.strip():
-            idx = i
-    if idx is None:
-        return []
-    return [m for m in messages[idx + 1 :] if m.get("type") == "bot"]
-
-
-async def _await_delivery(
-    client: httpx.AsyncClient, api_url: str, conversation_id: str, user_text: str
-) -> tuple[str, list[str]]:
-    """Poll the saved conversation until the delegated answer lands (or the budget ends)."""
-    deadline = time.monotonic() + DELIVERY_WAIT_SECONDS
-    last_seen = ""
-    while time.monotonic() < deadline:
-        await asyncio.sleep(DELIVERY_POLL_SECONDS)
-        try:
-            resp = await client.get(
-                f"{api_url}/api/v1/conversations/{conversation_id}", timeout=30.0
-            )
-        except Exception:
-            continue
-        if resp.status_code != 200:
-            continue
-        payload = resp.json()
-        convo = payload.get("conversation", payload) if isinstance(payload, dict) else {}
-        messages = convo.get("messages") or []
-        bots = _bot_messages_after(messages, user_text)
-        texts = [(m.get("response") or "").strip() for m in bots]
-        delivered = [t for t in texts[1:] if t] if len(texts) > 1 else []
-        tool_names = [
-            t.get("tool_name")
-            for m in bots
-            for t in (m.get("tool_data") or [])
-            if isinstance(t, dict)
-        ]
-        real_tools = [t for t in tool_names if t and t != "tool_calls_data"]
-        if delivered and "\n".join(delivered) == last_seen:
-            return last_seen, real_tools
-        if delivered:
-            last_seen = "\n".join(delivered)
-        elif real_tools:
-            return "", real_tools
-    return last_seen, []
+    """One turn, with the frame kinds and OpenUI blocks this harness reports on."""
+    base = await send_turn(client, api_url, message, conversation_id, history, TURN_OPTIONS)
+    return Turn(**base.model_dump(), openui=parse_openui(base.reply))
 
 
 async def _provision(api_url: str, email: str, persona: Persona) -> None:
     """A fresh Pro dev user carrying an onboarding profile that matches the persona."""
-    profile = OnboardingPreferences(profession=persona.profession, needs=persona.needs)
-    async with httpx.AsyncClient(timeout=60.0) as client:
-        await client.post(f"{api_url}/api/v1/dev/users", json={"email": email, "name": "Alex"})
-        # The API is paid-only: a turn from a free user is a 402 before it ever
-        # reaches the agent.
-        await asyncio.to_thread(
-            subprocess.run,
-            [sys.executable, "scripts/grant_pro_access.py", "--email", email],
-            check=True,
-            capture_output=True,
-        )
-        await client.patch(
-            f"{api_url}/api/v1/onboarding/preferences",
-            headers={"X-Dev-User": email},
-            json=profile.model_dump(mode="json", exclude_none=True),
-        )
+    await provision(
+        api_url,
+        email,
+        OnboardingPreferences(profession=persona.profession, needs=persona.needs),
+    )
 
 
 # --------------------------------------------------------------------------------------
@@ -708,12 +579,13 @@ async def _next_user_message(
         min_turns=MIN_TURNS,
         max_turns=MAX_TURNS,
     )
-    return await ainvoke_llm(
-        # Warm: a deterministic difficult user stops being difficult in new ways.
-        background_structured_runnable(_UserMove, temperature=0.8),
+    return await simulate(
+        _UserMove,
         prompt,
         label="adversarial_user_sim",
-        options=LLMInvokeOptions(max_attempts=2, timeout=USER_TIMEOUT_SECONDS),
+        timeout=USER_TIMEOUT_SECONDS,
+        # Warm: a deterministic difficult user stops being difficult in new ways.
+        temperature=0.8,
     )
 
 
@@ -816,16 +688,19 @@ FAILURES: dict[str, str] = {
 }
 
 
-#: Dash characters the prompt bans outright. A hard fail, checked in CODE rather than
-#: by the judge: it is a character test, and evals/CLAUDE.md is explicit that a rule
-#: stated as an absolute belongs in a mechanical gate. A judge reading for tone missed
-#: these sitting in plain text.
-DASH_CHARACTERS = ("—", "–")
+#: A hard fail checked in CODE rather than by the judge: it is a character test,
+#: and evals/CLAUDE.md is explicit that a rule stated as an absolute belongs in a
+#: mechanical gate. A judge reading for tone missed these sitting in plain text.
+#:
+#: The characters themselves are NOT listed here. ``banned_dashes()`` reads them
+#: out of the live prompt clause that names them, so a dash added to (or dropped
+#: from) the rule changes this gate with no eval edit — which is the difference
+#: between a gate that tracks the prompt and a copy that silently stops matching it.
 DASH_FAILURE = "dash_characters"
 
 
 def _has_dash(reply: str) -> bool:
-    return any(dash in reply for dash in DASH_CHARACTERS)
+    return any(dash in reply for dash in banned_dashes())
 
 
 class _TurnVerdict(BaseModel):
@@ -932,7 +807,7 @@ def _describe_openui(turn: Turn) -> str:
 
 
 async def _judge_turn(row: Graded) -> _TurnVerdict:
-    failures = "\n".join(f"- {key}: {text}" for key, text in FAILURES.items())
+    failures = criteria_block(FAILURES)
     history = (
         "\n".join(f"  user: {t.message}\n  GAIA: {t.reply}" for t in row.history)
         or "  (this is the first turn)"
@@ -949,11 +824,8 @@ async def _judge_turn(row: Graded) -> _TurnVerdict:
         openui=_describe_openui(row.turn),
         failures=failures,
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_TurnVerdict, temperature=0.0),
-        prompt,
-        label="adversarial_turn_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    return await judge(
+        _TurnVerdict, prompt, label="adversarial_turn_judge", timeout=JUDGE_TIMEOUT_SECONDS
     )
 
 
@@ -987,11 +859,8 @@ async def _judge_comeback(conversation: "Conversation") -> _ComebackVerdict:
         stop_reason=conversation.stop_reason or "(ran out of turns)",
         transcript=transcript,
     )
-    return await ainvoke_llm(
-        background_structured_runnable(_ComebackVerdict, temperature=0.0),
-        prompt,
-        label="adversarial_comeback_judge",
-        options=LLMInvokeOptions(max_attempts=2, timeout=JUDGE_TIMEOUT_SECONDS),
+    return await judge(
+        _ComebackVerdict, prompt, label="adversarial_comeback_judge", timeout=JUDGE_TIMEOUT_SECONDS
     )
 
 
@@ -1020,9 +889,7 @@ async def _run_persona(
     prior: list[Turn] = []
     message = persona.opener
 
-    async with httpx.AsyncClient(
-        headers={"X-Dev-User": email}, cookies={"dev_bypass_user": email}
-    ) as client:
+    async with dev_client(email) as client:
         # The stream persists into an existing conversation; without this the save
         # 404s and the delegated answer has nowhere to land.
         await client.post(
