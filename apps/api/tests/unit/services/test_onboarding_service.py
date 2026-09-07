@@ -430,21 +430,36 @@ class TestSavePersonalizationData:
 
 
 class TestSeedInitialUserData:
-    async def test_seeds_onboarding_todo(self) -> None:
-        with patch(
-            "app.services.onboarding.post_onboarding_service.seed_onboarding_todo",
-            new_callable=AsyncMock,
-        ) as mock_todo:
-            await seed_initial_user_data("user1")
-            mock_todo.assert_awaited_once_with("user1")
-
-    async def test_handles_exception(self) -> None:
-        with patch(
-            "app.services.onboarding.post_onboarding_service.seed_onboarding_todo",
-            new_callable=AsyncMock,
-            side_effect=Exception("seed error"),
+    async def test_seeds_onboarding_todo_and_universal_workflows(self) -> None:
+        with (
+            patch(
+                "app.services.onboarding.post_onboarding_service.seed_onboarding_todo",
+                new_callable=AsyncMock,
+            ) as mock_todo,
+            patch(
+                "app.services.onboarding.post_onboarding_service.provision_universal_system_workflows",
+                new_callable=AsyncMock,
+            ) as mock_provision,
         ):
             await seed_initial_user_data("user1")
+            mock_todo.assert_awaited_once_with("user1")
+            # Silent, like per-integration provisioning during onboarding.
+            mock_provision.assert_awaited_once_with("user1", notify=False)
+
+    async def test_todo_seed_failure_still_provisions_universal_workflows(self) -> None:
+        with (
+            patch(
+                "app.services.onboarding.post_onboarding_service.seed_onboarding_todo",
+                new_callable=AsyncMock,
+                side_effect=Exception("seed error"),
+            ),
+            patch(
+                "app.services.onboarding.post_onboarding_service.provision_universal_system_workflows",
+                new_callable=AsyncMock,
+            ) as mock_provision,
+        ):
+            await seed_initial_user_data("user1")
+            mock_provision.assert_awaited_once_with("user1", notify=False)
 
 
 class TestOnboardingServiceLogPins:
