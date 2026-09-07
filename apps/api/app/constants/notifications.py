@@ -59,6 +59,7 @@ DEFAULT_CHANNEL_PREFERENCES: dict[str, bool] = {
 DEFAULT_CHAT_CHANNEL_PRIORITY: tuple[str, ...] = (
     NotificationChannel.TELEGRAM,
     NotificationChannel.WHATSAPP,
+    NotificationChannel.IMESSAGE,
     NotificationChannel.SLACK,
     NotificationChannel.DISCORD,
 )
