@@ -29,7 +29,7 @@ BEHAVIOR:
 
 RETURN VALUE:
 `{"integrations": [...], "query": ...}` with up to 5 rows:
-- id: the exact id to pass to `show_connect_card` (e.g. "gmail")
+- id: the exact integration id (e.g. "gmail")
 - name: display name
 - description: one line
 - connected: whether the user already connected it
@@ -37,8 +37,8 @@ RETURN VALUE:
 
 An empty list means GAIA does not have it; say so plainly and never invent an
 integration that is not in the results. If a `source: "platform"` row is not
-connected and the user wants it, call `show_connect_card` with its id IN THE
-SAME REPLY.
+connected and the user wants it, hand the connect to the executor
+(call_executor: connect it) with its id.
 """
 
 SEARCH_PUBLIC_WORKFLOWS = """
@@ -69,39 +69,6 @@ RETURN VALUE:
 IMPORTANT: there is NO in-chat action that adds a public workflow. The user
 adds it themselves on the explore page, so give them `explore_url` and never
 claim you added, created or activated the template. If a row's
-`source_integration` is not connected, you may show its connect card with
-`show_connect_card` in the same reply.
-"""
-
-SHOW_CONNECT_CARD = """
-INTEGRATIONS (SHOW CONNECT CARD): put the connect button in front of the user now.
-
-Use this tool the moment your reply is going to mention connecting an
-integration. It renders the connect card in THIS reply, so the ask and the tap
-are one message.
-
-Use it when the user asks:
-- "Connect my Gmail"
-- "Link my Notion account"
-- "Set up my calendar"
-And use it whenever you are about to say that something needs an integration
-the user has not connected.
-
-PARAMETERS:
-- `integration_id` (str): the exact integration id, e.g. "gmail", "notion",
-  "googlecalendar". Get it from `find_integration` when unsure; a wrong id
-  shows the user nothing.
-
-BEHAVIOR:
-- Shows the connect card, or the reconnect card when their grant expired.
-- On text-only platforms (bots) there is no card, so a single-use connect link
-  valid for one hour comes back instead.
-
-RETURN VALUE:
-A one-line confirmation that the card is in this reply, followed by an
-instruction on how to word your reply. Follow it exactly: when a card was
-shown, put NO URL in your reply; when a link came back, include it verbatim.
-
-Never tell the user to connect something without calling this tool in the same
-reply, and never say the card is on its way or ask whether to send it.
+`source_integration` is not connected, hand the connect to the executor
+(call_executor: connect it).
 """

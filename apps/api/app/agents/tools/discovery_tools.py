@@ -1,20 +1,13 @@
 """Discovery tools the comms agent runs itself, without the executor.
 
-Three questions used to cost a round trip through ``call_executor``: "is there a
-Notion integration?", "is there a ready-made workflow for X?" and "connect my
-Gmail". The first two are read-only catalogue lookups with no side effects, and
-the third has to land its card in the SAME reply as the sentence that offers it
--- which the executor path cannot do, because its card arrives on a later
-message once the background run reports back.
+Two questions used to cost a round trip through ``call_executor``: "is there a
+Notion integration?" and "is there a ready-made workflow for X?". Both are
+read-only catalogue lookups with no side effects.
 
-None of these do work on the user's data, so putting them on the front door does
-not breach the "delegate every real ask" rule: they read catalogues, and
-``show_connect_card`` renders UI.
-
-``show_connect_card`` deliberately owns no card-building logic. It validates an
-id and defers to :func:`request_integration_connection`, the one place that
-knows about expired grants, UI vs bot wording and the stream frame. A second
-implementation is how the card and its copy drift apart.
+Neither does work on the user's data, so putting them on the front door does
+not breach the "delegate every real ask" rule: they read catalogues. Connecting
+an integration is not one of them -- that goes to the executor, whose
+``connect_integration`` tool and integration checker are the one card source.
 """
 
 from typing import Annotated, Any, TypedDict
@@ -22,7 +15,6 @@ from typing import Annotated, Any, TypedDict
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import tool
 
-from app.config.oauth_config import OAUTH_INTEGRATIONS, get_integration_by_id
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
 from app.db.repositories.workflows import workflow_repository
@@ -36,13 +28,11 @@ from app.services.integrations.integration_search import (
 from app.templates.docstrings.discovery_tool_docs import (
     FIND_INTEGRATION,
     SEARCH_PUBLIC_WORKFLOWS,
-    SHOW_CONNECT_CARD,
 )
-from app.utils.integration_checker import request_integration_connection
 from shared.py.wide_events import log
 
 # Five is what a chat reply can carry without turning into a catalogue dump; the
-# model picks one and shows its card rather than listing everything it found.
+# model picks one rather than listing everything it found.
 MAX_DISCOVERY_RESULTS = 5
 
 
@@ -93,8 +83,8 @@ async def find_integration(
         if not user_id:
             return {"error": "User ID not found in configuration.", "query": query}
 
-        # The user's own catalogue first: those are the ones show_connect_card
-        # can render, so a hit there is always more useful than a marketplace one.
+        # The user's own catalogue first: those are the ones that can actually
+        # be connected, so a hit there beats a marketplace one.
         matches: list[IntegrationMatch] = [
             {
                 "id": item.id,
@@ -166,51 +156,3 @@ async def search_public_workflows(
             "query": query,
             "explore_url": explore_url,
         }
-
-
-@tool
-@with_doc(SHOW_CONNECT_CARD)
-async def show_connect_card(
-    config: RunnableConfig,
-    integration_id: Annotated[
-        str,
-        "Exact integration id, e.g. 'gmail', 'notion', 'googlecalendar'. Use "
-        "find_integration when unsure; a wrong id shows the user nothing.",
-    ],
-) -> str:
-    """Render the connect card for an integration in this reply."""
-    try:
-        log.set(tool={"name": "show_connect_card", "action": "show"})
-        user_id = _user_id_from(config)
-        if not user_id:
-            return "Error: User ID not found in configuration."
-
-        normalized = integration_id.lower().strip()
-        integration = get_integration_by_id(normalized)
-        if integration is None or not integration.available:
-            # Naming the alternatives keeps the model from retrying the same
-            # wrong id, which is what it does when told only "not found".
-            available = ", ".join(i.id for i in OAUTH_INTEGRATIONS if i.available)
-            return (
-                f"No connectable integration with id '{integration_id}'. No card was shown, so "
-                f"do NOT tell the user to connect anything. Valid ids: {available}"
-            )
-
-        instruction = await request_integration_connection(
-            integration.id, integration.name, str(user_id)
-        )
-        return (
-            f"The connect card for {integration.name} is now in this reply; do not describe it "
-            f"as coming, do not ask whether to send it. {instruction}"
-        )
-
-    except Exception as e:
-        log.error(
-            f"{LogTag.TOOL} Error showing connect card",
-            integration_id=integration_id,
-            error_type=type(e).__name__,
-        )
-        return (
-            f"Could not show the connect card ({e!s}). No card was shown, so do NOT tell the "
-            f"user to connect anything this turn."
-        )

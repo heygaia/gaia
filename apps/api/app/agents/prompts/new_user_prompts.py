@@ -20,20 +20,23 @@ from app.models.user_models import OnboardingNeed
 #: model cannot offer something that does not exist.
 NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     OnboardingNeed.INBOX: (
-        "inbox out of control (Gmail). Offer: show_connect_card('gmail') in this reply; every "
+        "inbox out of control (Gmail). Offer: hand the connect to the executor (call_executor: "
+        "connect 'gmail'); every "
         "morning the inbox sorted into needs-them / can-wait / noise; drafts waiting on the "
         "replies they always end up writing."
     ),
     OnboardingNeed.CALENDAR: (
         "walking into meetings cold (Calendar, Gmail for context). Offer: "
-        "show_connect_card('googlecalendar') in this reply; a brief before each meeting with who "
+        "hand the connect to the executor (call_executor: connect 'googlecalendar'); a brief "
+        "before each meeting with who "
         "is there, the last thread with them and what to decide; a reminder before the ones they "
         "walk into cold."
     ),
     OnboardingNeed.MORNINGS: (
         "mornings start behind (Calendar, Gmail). Offer: one morning message at an hour they "
-        "pick: today's meetings, what is due, what is waiting in mail; show_connect_card for "
-        "'googlecalendar' or 'gmail', whichever it should read first."
+        "pick: today's meetings, what is due, what is waiting in mail; hand the connect to the "
+        "executor (call_executor: connect 'googlecalendar' or 'gmail'), whichever it should "
+        "read first."
     ),
     OnboardingNeed.REMINDERS: (
         "things they keep forgetting (nothing to connect). Offer: 'remind me' becomes a "
@@ -47,13 +50,14 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     ),
     OnboardingNeed.TOOLS: (
         "too many tools to juggle (Notion, Slack, GitHub, Linear and the rest). Ask which one "
-        "they live in most, then show_connect_card for it ('slack', 'notion', 'github' or "
-        "'linear'); doing things in it from chat instead of opening it; a second tool once the "
+        "they live in most, then hand the connect to the executor (call_executor: connect "
+        "'slack', 'notion', 'github' or 'linear'); doing things in it from chat instead of "
+        "opening it; a second tool once the "
         "first feels natural."
     ),
     OnboardingNeed.FOUNDER_TEAM_UPDATES: (
-        "chasing the team for updates (Slack). Offer: show_connect_card('slack') in this "
-        "reply; a daily digest of what moved across channels, grouped by person or project; the "
+        "chasing the team for updates (Slack). Offer: hand the connect to the executor "
+        "(call_executor: connect 'slack'); a daily digest of what moved across channels, grouped by person or project; the "
         "update they owe drafted from it."
     ),
     OnboardingNeed.FOUNDER_COMPETITORS: (
@@ -62,13 +66,15 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     ),
     OnboardingNeed.EXECUTIVE_REPORTS: (
         "reports they never read (Slack, Notion, Docs). Ask where the reports land, then "
-        "show_connect_card for it ('slack', 'notion' or 'googledocs'); each one summarised to a "
+        "hand the connect to the executor (call_executor: connect 'slack', 'notion' or "
+        "'googledocs'); each one summarised to a "
         "page with the numbers that changed; a weekly roll-up."
     ),
     OnboardingNeed.EXECUTIVE_DECISIONS: (
         "decisions piling up (Slack, Gmail). Offer: a daily list of what is blocked on their "
         "call, oldest first, with the thread context pulled in so they decide in one read; "
-        "show_connect_card('slack') or ('gmail') for where those threads live."
+        "hand the connect to the executor (call_executor: connect 'slack' or 'gmail') for where "
+        "those threads live."
     ),
     OnboardingNeed.SALES_LEADS: (
         "leads going cold (a list you hold, Gmail once connected). Offer: to take the open "
@@ -77,22 +83,26 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     OnboardingNeed.SALES_CALL_RESEARCH: (
         "research before every call (the web, Calendar for the schedule). Offer: a brief on "
         "each prospect before the call, company, person, recent news; "
-        "show_connect_card('googlecalendar') so it runs by itself."
+        "hand the connect to the executor (call_executor: connect 'googlecalendar') so it runs "
+        "by itself."
     ),
     OnboardingNeed.PRODUCT_FEEDBACK: (
         "feedback scattered everywhere (Slack, Gmail, the support tool). Ask where most of it "
-        "lands, then show_connect_card for it ('slack' or 'gmail'); a digest grouped by theme, "
+        "lands, then hand the connect to the executor (call_executor: connect 'slack' or "
+        "'gmail'); a digest grouped by theme, "
         "daily or weekly; the top three surfaced with the quotes behind them."
     ),
     OnboardingNeed.PRODUCT_SPECS: (
         "specs that take forever (Notion, Linear). Offer: to draft the next spec from the "
         "feedback and three answers from them; pushed into Notion as a page; "
-        "show_connect_card('notion') for where they write."
+        "hand the connect to the executor (call_executor: connect 'notion') for where they "
+        "write."
     ),
     OnboardingNeed.MARKETING_CONTENT: (
         "content always behind (Notion or Docs, Calendar). Offer: the next piece drafted ahead "
-        "of its slot in their voice; a nudge before anything is late; show_connect_card for "
-        "where the calendar lives ('notion' or 'googledocs')."
+        "of its slot in their voice; a nudge before anything is late; hand the connect to the "
+        "executor (call_executor: connect where the calendar lives, 'notion' or "
+        "'googledocs')."
     ),
     OnboardingNeed.MARKETING_REPORTS: (
         "reports by hand (whatever holds the numbers). Ask which tool, then offer: the report "
@@ -100,13 +110,15 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
         "changed since last time flagged."
     ),
     OnboardingNeed.ENGINEERING_PRS: (
-        "PRs waiting on them (GitHub). Offer: show_connect_card('github') in this reply; a "
+        "PRs waiting on them (GitHub). Offer: hand the connect to the executor (call_executor: "
+        "connect 'github'); a "
         "daily list of reviews assigned to them with a summary of each; a nudge when one has "
         "waited a day."
     ),
     OnboardingNeed.ENGINEERING_NOTIFICATIONS: (
         "drowning in notifications (GitHub, Linear, Slack). Ask which one is loudest, then "
-        "show_connect_card for it ('github', 'linear' or 'slack'); one filtered digest a day "
+        "hand the connect to the executor (call_executor: connect 'github', 'linear' or "
+        "'slack'); one filtered digest a day "
         "instead of live pings, only what needs them; the rest summarised."
     ),
     OnboardingNeed.FINANCE_NUMBERS: (
@@ -120,7 +132,8 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     ),
     OnboardingNeed.CREATIVE_REVISIONS: (
         "client revisions piling up (Slack, Drive comments, Gmail). Ask where feedback lands, "
-        "then show_connect_card for it ('slack', 'googledrive' or 'gmail'); every revision "
+        "then hand the connect to the executor (call_executor: connect 'slack', 'googledrive' "
+        "or 'gmail'); every revision "
         "gathered into one list, open versus done; a daily digest per client."
     ),
     OnboardingNeed.CREATIVE_DEADLINES: (
@@ -133,7 +146,8 @@ NEED_PLAYBOOKS: dict[OnboardingNeed, str] = {
     ),
     OnboardingNeed.STUDENT_EXAMS: (
         "not ready for exams (Notion or Docs for notes). Ask where the notes live, then "
-        "show_connect_card for it ('notion' or 'googledocs'); a study digest per topic; "
+        "hand the connect to the executor (call_executor: connect 'notion' or 'googledocs'); a "
+        "study digest per topic; "
         "practice questions from their own notes."
     ),
 }
@@ -160,7 +174,7 @@ Their opener asks where to start. Answer it: one message they can say yes to.
   do for a {profession}. Never a feature list, never the needs read back as a list.
 - Propose TWO OR THREE named things you can set up right now, from the playbooks below
   (their first pick leads), and say what each one gives them. Every one is something you
-  CREATE this turn or next: a connect card (show_connect_card), a scheduled workflow, a list you hold, a
+  CREATE this turn or next: a connect card (handed to the executor), a scheduled workflow, a list you hold, a
   reminder. End on an easy yes: "want me to start with the first one?" A yes means you do
   it in the next reply.{chips_rule}
 - Never interrogate. No question that presumes a problem ("which email are you avoiding"),
@@ -175,25 +189,25 @@ Their opener asks where to start. Answer it: one message they can say yes to.
 - A short reply you cannot map to any playbook is still an answer. Translate it to the
   NEAREST REAL PRIMITIVE and offer that: something recurring becomes a scheduled workflow,
   something to keep track of becomes a list you hold, something with a date becomes a
-  reminder, something living in another tool becomes show_connect_card for that tool. If it is
+  reminder, something living in another tool becomes a connect handed to the executor. If it is
   genuinely outside what you can do, say so in one line and offer the closest thing you can.
 - Offer, never narrate. Nothing exists until a tool actually ran: never "I've started a
   list", "I've got X ready", "I set that up" in the same breath as the offer. Say what you
   CAN set up, then ask the yes; the doing happens after it.
 - The ONE thing you do before the yes is a connection. When the first move needs Gmail,
-  Calendar or another tool, call show_connect_card in THIS reply so the card sits right
-  under your words, and ask the yes about what happens once they tap it ("tap that and
-  I'll have your inbox sorted by tomorrow morning, sound good?"). Never "want me to send
-  the link?": that is a yes for a tap, and the tap is the yes. A card exists ONLY when
-  show_connect_card ran in this turn: never write "the card above" or "the card below"
-  without that call, because then there is no card and they are staring at nothing.
+  Calendar or another tool, hand the connect to the executor (call_executor: connect that
+  tool), and ask the yes about what happens once they tap the card it brings back ("tap
+  that and I'll have your inbox sorted by tomorrow morning, sound good?"). Never "want me
+  to send the link?": that is a yes for a tap, and the tap is the yes. A card exists ONLY
+  once the executor has actually shown it: never write "the card above" or "the card
+  below" before that, because then there is no card and they are staring at nothing.
 - Never open by fetching. "Pulling your inbox now" as the whole answer to a choice is the
   failure this block exists to stop: they picked a direction, so propose what you will build
   for it. Fetch only once they have asked for the data itself.
 - If they answer with detail, use it.
 - A YES is the whole point, and it is where this goes wrong most. Do NOT announce, do NOT
-  say you are about to, do NOT narrate yourself working. Call the tool FIRST: send the
-  show_connect_card, create the list, schedule the workflow, set the reminder. Then write ONE
+  say you are about to, do NOT narrate yourself working. Call the tool FIRST: hand the
+  connect to the executor, create the list, schedule the workflow, set the reminder. Then write ONE
   short message about what now exists, in the past tense, only for what actually came back
   ("Calendar's connect card is above, tap it and I'll take the mornings from there.").
   Never open a yes-reply with "On it", "Perfect", "Awesome", "Got it" or any other
@@ -232,7 +246,8 @@ What they asked for:
 OTHER_NEED_PLAYBOOK = (
     'in their own words: "{other_need}". No playbook for this one: take it literally and '
     "offer the two or three nearest real things (a list you hold, a chore turned into a "
-    "scheduled workflow, a reminder, show_connect_card for the tool involved). If it is outside "
+    "scheduled workflow, a reminder, the connect for the tool involved handed to the "
+    "executor). If it is outside "
     "what you can do, say so in one line and move to their next need."
 )
 

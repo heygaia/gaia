@@ -197,7 +197,7 @@ class TestOnboardingAnalytics:
         captured = [call.args[0] for call in mock_capture.call_args_list]
         assert AnalyticsEvents.ONBOARDING_COMPLETED not in captured
 
-    async def test_update_phase_captures_step_completed(self, client: AsyncClient):
+    async def test_update_phase_captures_phase_completed(self, client: AsyncClient):
         with (
             patch(_SET_PHASE, new_callable=AsyncMock, return_value=True),
             patch(
@@ -210,7 +210,7 @@ class TestOnboardingAnalytics:
 
         assert response.status_code == 200
         mock_capture.assert_called_once_with(
-            AnalyticsEvents.ONBOARDING_STEP_COMPLETED, {"phase": "getting_started"}
+            AnalyticsEvents.ONBOARDING_PHASE_COMPLETED, {"phase": "getting_started"}
         )
 
     async def test_complete_onboarding_missing_needs_returns_422(self, client: AsyncClient):

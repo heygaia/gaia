@@ -208,7 +208,7 @@ async def update_onboarding_phase(
             log.warning(f"{LogTag.ONBOARDING} No document found for user", user_id=user_id)
             raise HTTPException(status_code=404, detail="User not found")
 
-        capture_context_event(AnalyticsEvents.ONBOARDING_STEP_COMPLETED, {"phase": phase})
+        capture_context_event(AnalyticsEvents.ONBOARDING_PHASE_COMPLETED, {"phase": phase})
         log.set_ns("onboarding", phase_updated=True)
 
         try:

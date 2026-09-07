@@ -8,17 +8,14 @@ real, so a dropped field or a broken cap goes red here.
 from collections.abc import Iterator
 from contextlib import contextmanager
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 from app.agents.tools.discovery_tools import (
     MAX_DISCOVERY_RESULTS,
     _one_line,
     find_integration,
     search_public_workflows,
-    show_connect_card,
 )
-from app.config.oauth_config import OAUTH_INTEGRATIONS
-from app.db.repositories.user_integrations import user_integration_repository
 from app.models.workflow_models import PublicWorkflowRow
 from app.schemas.integrations.responses import CommunityIntegrationItem, MyIntegrationItem
 
@@ -293,156 +290,3 @@ class TestSearchPublicWorkflows:
         log.error.assert_called_once()
         assert "Error searching public workflows" in log.error.call_args.args[0]
         assert log.error.call_args.kwargs == {"error_type": "RuntimeError"}
-
-
-@contextmanager
-def _ui_graph_run(*, expired: bool = False) -> Iterator[MagicMock]:
-    """A UI graph run, yielding the stream writer the card is emitted on."""
-    writer = MagicMock()
-    with (
-        patch(
-            "app.utils.integration_checker.get_config",
-            return_value={"configurable": {"source_category": "ui"}},
-        ),
-        patch("app.utils.integration_checker.get_stream_writer", return_value=writer),
-        patch(
-            "app.utils.integration_checker.build_connect_link_url",
-            AsyncMock(return_value=None),
-        ),
-        patch.object(user_integration_repository, "is_expired", AsyncMock(return_value=expired)),
-    ):
-        yield writer
-
-
-class TestShowConnectCard:
-    """A thin wrapper over the one card builder, with id validation."""
-
-    async def test_emits_the_connect_card_frame(self) -> None:
-        with _ui_graph_run() as writer:
-            await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-
-        writer.assert_called_once_with(
-            {
-                "integration_connection_required": {
-                    "integration_id": "gmail",
-                    "expired": False,
-                    "message": "To use Gmail features, please connect your account first.",
-                }
-            }
-        )
-
-    async def test_an_expired_grant_asks_the_user_to_sign_in_again(self) -> None:
-        with _ui_graph_run(expired=True) as writer:
-            await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-
-        assert writer.call_args[0][0]["integration_connection_required"]["expired"] is True
-
-    async def test_tells_the_model_the_card_is_already_in_this_reply(self) -> None:
-        with _ui_graph_run():
-            result = await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-
-        # The failure this pins: the model narrating "I'll send you a link" and
-        # the card sitting unmentioned in the same message.
-        assert "is now in this reply" in result
-        assert "do not ask whether to send it" in result
-
-    async def test_an_unknown_id_shows_no_card_and_says_so(self) -> None:
-        with _ui_graph_run() as writer:
-            result = await show_connect_card.ainvoke({"integration_id": "quickbooks"}, _CONFIG)
-
-        writer.assert_not_called()
-        assert "No card was shown" in result
-        assert "do NOT tell the user to connect" in result
-
-    async def test_the_id_is_matched_case_insensitively(self) -> None:
-        with _ui_graph_run() as writer:
-            await show_connect_card.ainvoke({"integration_id": "  Gmail "}, _CONFIG)
-
-        assert writer.call_args[0][0]["integration_connection_required"]["integration_id"] == (
-            "gmail"
-        )
-
-    async def test_missing_user_id_shows_no_card(self) -> None:
-        with _ui_graph_run() as writer:
-            result = await show_connect_card.ainvoke(
-                {"integration_id": "gmail"}, {"configurable": {}}
-            )
-
-        writer.assert_not_called()
-        assert result == "Error: User ID not found in configuration."
-
-    async def test_an_unknown_id_names_every_valid_one(self) -> None:
-        with _ui_graph_run():
-            result = await show_connect_card.ainvoke({"integration_id": "quickbooks"}, _CONFIG)
-
-        valid = ", ".join(i.id for i in OAUTH_INTEGRATIONS if i.available)
-        assert result == (
-            "No connectable integration with id 'quickbooks'. No card was shown, so do NOT tell "
-            f"the user to connect anything. Valid ids: {valid}"
-        )
-
-    async def test_the_card_is_requested_for_this_user_by_id_and_name(self) -> None:
-        request = AsyncMock(return_value="Ask them to tap it.")
-        with (
-            patch("app.agents.tools.discovery_tools.request_integration_connection", request),
-            patch("app.agents.tools.discovery_tools.log") as log,
-        ):
-            result = await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-
-        request.assert_awaited_once_with("gmail", "Gmail", _USER)
-        assert result.endswith("do not ask whether to send it. Ask them to tap it.")
-        log.set.assert_any_call(tool={"name": "show_connect_card", "action": "show"})
-
-    async def test_a_failure_is_logged_with_the_id_and_type_and_the_model_is_told(self) -> None:
-        with (
-            patch(
-                "app.agents.tools.discovery_tools.request_integration_connection",
-                AsyncMock(side_effect=RuntimeError("stream gone")),
-            ),
-            patch("app.agents.tools.discovery_tools.log") as log,
-        ):
-            result = await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-
-        assert result.startswith("Could not show the connect card (stream gone). No card was shown")
-        log.error.assert_called_once()
-        assert "Error showing connect card" in log.error.call_args.args[0]
-        assert log.error.call_args.kwargs == {
-            "integration_id": "gmail",
-            "error_type": "RuntimeError",
-        }
-
-
-class TestCardPayloadMatchesTheExecutorPath:
-    """The comms card and the executor card must be the same frame.
-
-    Two builders would drift and the web/bot clients would render two different
-    cards for the same ask, which is the whole reason show_connect_card wraps
-    request_integration_connection instead of writing its own frame.
-    """
-
-    async def test_payload_is_identical_to_the_executor_tools_payload(self) -> None:
-        from app.agents.tools.integration_tool import connect_integration
-
-        with _ui_graph_run() as comms_writer:
-            await show_connect_card.ainvoke({"integration_id": "gmail"}, _CONFIG)
-        comms_payload = comms_writer.call_args[0][0]
-
-        with _ui_graph_run() as executor_writer:
-            with (
-                patch(
-                    "app.agents.tools.integration_tool.check_single_integration_status",
-                    AsyncMock(return_value=False),
-                ),
-                patch(
-                    "app.agents.tools.integration_tool.get_stream_writer",
-                    return_value=MagicMock(),
-                ),
-            ):
-                await connect_integration.ainvoke({"integration_ids": ["gmail"]}, _CONFIG)
-        executor_payload = next(
-            call[0][0]
-            for call in executor_writer.call_args_list
-            if "integration_connection_required" in call[0][0]
-        )
-
-        assert comms_payload == executor_payload

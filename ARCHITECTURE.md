@@ -58,7 +58,7 @@ The **only** agent the user talks to. Owns the conversation thread, narrates pro
 - `call_executor` — the **only** way to do work. Non-blocking; returns `Task accepted (task_id: ...)` immediately.
 - `cancel_executor` — cancel the most recent background run.
 - Memory tools — `add_memory`, `search_memory`, `forget_memory`, `read_memory_document` (see §8).
-- Discovery tools (`apps/api/app/agents/tools/discovery_tools.py`) — `find_integration` and `search_public_workflows` are read-only catalogue lookups; `show_connect_card` renders the connect card in the same reply as the sentence offering it, which the executor path cannot do (its card lands on a later message).
+- Discovery tools (`apps/api/app/agents/tools/discovery_tools.py`) — `find_integration` and `search_public_workflows` are read-only catalogue lookups. The connect card is not one of them: comms hands connecting to the executor, whose `connect_integration` tool and integration checker are the one card source.
 
 That's it. No `bash`. No `read`. No per-integration tools. The comms agent is a router + narrator, not a worker.
 

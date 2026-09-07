@@ -522,9 +522,11 @@ class TestNewUserGuidanceBlock:
     # the five worst replies in the persona eval was a "yes" answered with
     # "On it, setting that up now" and no tool, so that turn needed spelling out
     # (call the tool first, report in past tense, no acknowledgement opener).
-    # Raised as the playbooks learned to name the exact show_connect_card call
-    # and the connect-card exception joined the block.
-    MAX_BLOCK_CHARS = 7_400
+    # Raised as the playbooks learned to name the exact connect handoff and the
+    # connect-card exception joined the block. Raised once more when the card
+    # moved to the executor: every playbook now spells out the handoff
+    # (``call_executor: connect 'gmail'``) instead of naming one tool.
+    MAX_BLOCK_CHARS = 7_500
 
     @staticmethod
     def _count(value: int) -> AsyncMock:

@@ -73,9 +73,6 @@ class AnalyticsEvents(StrEnum):
     CONVERSATION_DELETED = "chat:conversation_deleted"
     CHAT_MESSAGE_COMPLETED = "chat:message_completed"
     CHAT_MESSAGE_CANCELLED = "chat:message_cancelled"
-    # A comms reply scored dirty against the AI-ism detectors and was
-    # rewritten before delivery. Counts only — never the text.
-    CHAT_STYLE_GUARD_REGENERATED = "chat:style_guard_regenerated"
 
     # Files
     FILE_UPLOADED = "chat:file_uploaded"
@@ -128,7 +125,10 @@ class AnalyticsEvents(StrEnum):
     NOTIFICATION_PREFERENCE_UPDATED = "settings:notifications_toggled"
 
     # Onboarding
-    ONBOARDING_STEP_COMPLETED = "onboarding:step_completed"
+    # Named for its "phase" payload: the web emits its own
+    # onboarding:step_completed with step_number/step_name, and one event name
+    # carrying two different shapes is unqueryable.
+    ONBOARDING_PHASE_COMPLETED = "onboarding:phase_completed"
     ONBOARDING_COMPLETED = "onboarding:completed"
 
     # Integrations
