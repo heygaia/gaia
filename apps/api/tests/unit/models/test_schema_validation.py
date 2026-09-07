@@ -215,8 +215,14 @@ class TestOnboardingRequest:
         """Q2 is "pick up to two": a third need is a client that skipped the cap."""
         with pytest.raises(ValidationError):
             OnboardingRequest(profession="Founder", needs=["inbox", "calendar", "mornings"])
-        with pytest.raises(ValidationError):
-            OnboardingPreferences(needs=["inbox", "calendar", "mornings"])
+        # The stored shape is read back for users who picked up to seven under
+        # the old Q2; it keeps their first picks rather than refusing to load.
+        assert [
+            n.value for n in OnboardingPreferences(needs=["inbox", "calendar", "mornings"]).needs
+        ] == [
+            "inbox",
+            "calendar",
+        ]
 
     def test_a_role_need_is_accepted_for_its_role(self) -> None:
         r = OnboardingRequest(profession="student", needs=["student_exams", "inbox"])
@@ -407,9 +413,12 @@ class TestOnboardingPreferences:
             assert p.needs == [need]
             assert p.model_dump()["needs"] == [need.value]
 
-    def test_needs_reject_an_unknown_key(self):
-        with pytest.raises(ValidationError):
-            OnboardingPreferences(needs=["inbox", "telepathy"])
+    def test_needs_drop_a_key_the_enum_no_longer_has(self):
+        """Stored documents from before the Q2 rewrite carry retired values;
+        the strict check is on OnboardingRequest, the stored model must load."""
+        assert [n.value for n in OnboardingPreferences(needs=["inbox", "telepathy"]).needs] == [
+            "inbox"
+        ]
 
 
 class TestUserUpdateResponse:
