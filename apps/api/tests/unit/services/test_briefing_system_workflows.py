@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.agents.prompts.briefing_prompts import DAILY_BRIEFING_PROMPT, WEEKLY_DIGEST_PROMPT
 from app.agents.prompts.playbook_prompts import PLAYBOOK_CHECK_BRIEF
 from app.constants.briefing import (
     BRIEFING_DAILY_CRON,
@@ -34,6 +35,63 @@ from app.services.system_workflows.provisioner import (
     provision_universal_system_workflows,
 )
 from app.services.workflow.playbook.check import playbook_check_brief
+
+# The two definitions, field for field. These workflows ship to every user at
+# onboarding and nothing downstream re-derives their text, so the text IS the
+# feature: a typo in a step description is a shipped bug that no other test in
+# the suite would notice.
+EXPECTED_DEFINITIONS: dict[str, dict[str, object]] = {
+    BRIEFING_DAILY_KEY: {
+        "title": "Daily Briefing",
+        "description": (
+            "Every morning: today's meetings, what is waiting on you, and what moved, "
+            "read from the integrations you have connected."
+        ),
+        "prompt": DAILY_BRIEFING_PROMPT,
+        "cron": BRIEFING_DAILY_CRON,
+        "steps": [
+            (
+                "Read today from each connected integration",
+                "gaia",
+                "One fixed read-only call per connected integration, in order: "
+                "calendar events today, inbox threads from the last 24 hours, "
+                "pull requests, issues, pages, mentions from the last 24 hours, "
+                "and todos due today. Nothing for integrations that are not connected.",
+            ),
+            (
+                "Write the briefing",
+                "gaia",
+                "Plain text, at most 12 lines: the shape of the day, what is waiting "
+                "on the user, what moved. One or two lines on an empty day. "
+                "A final 'Next:' line naming one thing GAIA could do that it is not yet.",
+            ),
+        ],
+    },
+    BRIEFING_WEEKLY_KEY: {
+        "title": "Weekly Digest",
+        "description": (
+            "Sunday evening: the receipt for the week, numbers first, "
+            "what GAIA did and what you did across your connected integrations."
+        ),
+        "prompt": WEEKLY_DIGEST_PROMPT,
+        "cron": BRIEFING_WEEKLY_CRON,
+        "steps": [
+            (
+                "Read the week from GAIA and each connected integration",
+                "gaia",
+                "Workflow and todo statistics, then one fixed read-only call per "
+                "connected integration over the last 7 days, in order. "
+                "Nothing for integrations that are not connected.",
+            ),
+            (
+                "Write the digest",
+                "gaia",
+                "The fixed WEEK OF / GAIA / YOU / NOTABLE / NEXT shape, counts before "
+                "words, one YOU line per connected integration.",
+            ),
+        ],
+    },
+}
 
 PROVISIONER = "app.services.system_workflows.provisioner"
 CHECK = "app.services.workflow.playbook.check"
@@ -68,6 +126,7 @@ class TestBriefingDefinitions:
             assert request.source_integration is None, "not owned by an integration"
             assert request.trigger_config.type == TriggerType.SCHEDULE
             assert request.trigger_config.timezone is None, "the provisioner stamps it"
+            assert request.trigger_config.enabled is True, "provisioned already armed"
             assert request.steps and all(step.id for step in request.steps)
 
     def test_each_factory_call_mints_fresh_step_ids(self) -> None:
@@ -75,6 +134,25 @@ class TestBriefingDefinitions:
             first = {step.id for step in factory().steps or []}
             second = {step.id for step in factory().steps or []}
             assert first.isdisjoint(second)
+
+    @pytest.mark.parametrize("key", [BRIEFING_DAILY_KEY, BRIEFING_WEEKLY_KEY])
+    def test_definition_content_is_pinned(self, key: str) -> None:
+        expected = EXPECTED_DEFINITIONS[key]
+        request = _definitions()[key]
+
+        assert request.title == expected["title"]
+        assert request.description == expected["description"]
+        assert request.prompt is expected["prompt"], "the prompt is the product"
+        assert request.trigger_config.cron_expression == expected["cron"]
+
+        steps = request.steps or []
+        assert [(s.title, s.category, s.description) for s in steps] == expected["steps"]
+
+    def test_universal_set_is_exactly_the_two_briefings_in_order(self) -> None:
+        assert [key for key, _ in BRIEFING_SYSTEM_WORKFLOWS] == [
+            BRIEFING_DAILY_KEY,
+            BRIEFING_WEEKLY_KEY,
+        ]
 
     def test_universal_set_and_registry(self) -> None:
         assert UNIVERSAL_SYSTEM_WORKFLOWS == BRIEFING_SYSTEM_WORKFLOWS

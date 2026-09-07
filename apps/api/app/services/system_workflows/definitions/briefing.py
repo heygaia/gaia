@@ -38,7 +38,6 @@ def _daily_briefing() -> CreateWorkflowRequest:
         trigger_config=TriggerConfig(
             type=TriggerType.SCHEDULE,
             cron_expression=BRIEFING_DAILY_CRON,
-            enabled=True,
         ),
         steps=[
             WorkflowStep(
@@ -79,7 +78,6 @@ def _weekly_digest() -> CreateWorkflowRequest:
         trigger_config=TriggerConfig(
             type=TriggerType.SCHEDULE,
             cron_expression=BRIEFING_WEEKLY_CRON,
-            enabled=True,
         ),
         steps=[
             WorkflowStep(
