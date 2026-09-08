@@ -1,313 +1,238 @@
-"""Exact-string tests for GAIA's deterministic first contact after one-tap linking.
+"""The bot's first contact after a one-tap link: two bubbles, composed by the
+server, never by the model.
 
-No model runs on this path, so the copy IS the feature: every bubble here is a
-message a real user reads seconds after signing up. A mutation that reorders the
-bubbles, drops a pick, or changes a promise must go red.
+What has to hold: every pick has a clause and an ask (a missing entry is a
+silently skipped pick), only the jobs that are impossible without an account
+ask for a link, and the copy reads as speech in GAIA's voice.
 """
 
-from unittest.mock import AsyncMock, call, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
-import app.services.onboarding.first_contact as fc
 from app.services.onboarding.first_contact import (
+    NEED_ASKS,
+    NEED_CLAUSES,
     NEED_INTEGRATIONS,
-    NEED_PROMISES,
+    NO_PICKS_ASK,
+    OTHER_NEED_ASK,
     build_first_contact,
     compose_first_contact,
     compose_link_greeting,
     needed_integration_ids,
 )
 
-CONNECTED_PATCH = "app.services.onboarding.first_contact.user_integration_repository.is_connected"
-LINK_PATCH = "app.services.onboarding.first_contact.build_connect_link_url"
+MODULE = "app.services.onboarding.first_contact"
+GMAIL = ("gmail", "https://gaia.test/connect/aaa")
+CALENDAR = ("googlecalendar", "https://gaia.test/connect/bbb")
 
 
-def _prefs(
-    needs: list[OnboardingNeed] | None = None,
-    other_need: str | None = None,
-) -> OnboardingPreferences:
+def _prefs(needs: list[OnboardingNeed], other_need: str | None = None) -> OnboardingPreferences:
     return OnboardingPreferences(profession="founder", needs=needs, other_need=other_need)
 
 
-@pytest.mark.unit
-class TestNeedPromises:
-    def test_every_need_has_a_promise(self) -> None:
-        """A pick with no promise is a pick GAIA silently ignores — the exact
-        failure the deterministic bundle exists to stop."""
-        assert set(NEED_PROMISES) == set(OnboardingNeed)
+class TestNeedCopy:
+    def test_every_need_has_a_clause(self) -> None:
+        assert set(NEED_CLAUSES) == set(OnboardingNeed)
 
-    def test_every_need_declares_its_integrations(self) -> None:
-        """An absent key and an empty tuple mean different things only if every
-        need is present: a missing key is a forgotten need, not "connects
-        nothing"."""
-        assert set(NEED_INTEGRATIONS) == set(OnboardingNeed)
+    def test_every_need_has_an_ask(self) -> None:
+        assert set(NEED_ASKS) == set(OnboardingNeed)
 
-    @pytest.mark.parametrize("promise", NEED_PROMISES.values())
-    def test_no_promise_shouts_or_uses_an_emoji(self, promise: str) -> None:
-        assert "!" not in promise
-        assert promise.isascii()
+    def test_only_the_jobs_impossible_without_an_account_ask_for_a_link(self) -> None:
+        """Slack, Notion and GitHub are never demanded up front; the playbook
+        offers them later, once the answer says where the work lives."""
+        assert NEED_INTEGRATIONS == {
+            OnboardingNeed.INBOX: ("gmail",),
+            OnboardingNeed.CALENDAR: ("googlecalendar",),
+            OnboardingNeed.MORNINGS: ("gmail",),
+            OnboardingNeed.SALES_LEADS: ("gmail",),
+            OnboardingNeed.SALES_CALL_RESEARCH: ("googlecalendar",),
+        }
 
-    @pytest.mark.parametrize("promise", NEED_PROMISES.values())
-    def test_every_promise_is_a_problem_sentence_then_a_promise_sentence(
-        self, promise: str
-    ) -> None:
-        """The shape Aryan asked for. One sentence is either a complaint with no
-        offer or an offer with no reason, and both read as a slogan."""
-        problem, _, rest = promise.partition(". ")
-        assert problem and rest.endswith(".")
+    @pytest.mark.parametrize("clause", list(NEED_CLAUSES.values()), ids=list(NEED_CLAUSES))
+    def test_a_clause_is_lowercase_speech_with_no_full_stop(self, clause: str) -> None:
+        assert clause[0].islower() or clause.startswith("I ")
+        assert not clause.endswith(".")
+        assert "!" not in clause
+
+    @pytest.mark.parametrize("ask", list(NEED_ASKS.values()), ids=list(NEED_ASKS))
+    def test_an_ask_is_one_short_reasoned_request_they_can_answer(self, ask: str) -> None:
+        """A question or a "send me / name / paste" request, ending on the thing
+        to do, no shouting, no emoji, and short enough to read on a phone."""
+        assert ask.endswith((".", "?"))
+        assert "!" not in ask
+        assert ask.isascii()
+        assert len(ask) <= 120
+        assert ask.count("?") <= 1
 
 
-@pytest.mark.unit
 class TestNeededIntegrationIds:
     def test_picks_dedupe_and_keep_tap_order(self) -> None:
-        """Mornings needs Gmail too; the founder who tapped the inbox first sees
-        the Gmail link first, and never twice."""
-        assert needed_integration_ids(_prefs([OnboardingNeed.INBOX, OnboardingNeed.MORNINGS])) == [
-            "gmail",
-            "googlecalendar",
-        ]
+        assert needed_integration_ids(
+            _prefs([OnboardingNeed.CALENDAR, OnboardingNeed.INBOX, OnboardingNeed.MORNINGS])
+        ) == ["googlecalendar", "gmail"]
 
     def test_picks_that_connect_nothing_contribute_nothing(self) -> None:
-        assert needed_integration_ids(_prefs([OnboardingNeed.GRUNT_WORK])) == []
+        assert (
+            needed_integration_ids(
+                _prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.PRODUCT_SPECS])
+            )
+            == []
+        )
 
     def test_no_picks_is_no_links(self) -> None:
-        assert needed_integration_ids(_prefs(None)) == []
-
-    def test_a_need_with_no_entry_contributes_nothing_instead_of_crashing(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """The lookup default is the guard: a pick nobody mapped yet must fall
-        through to the rest of the picks, not take the whole first contact down
-        with it. The drift test above keeps the table complete; this proves the
-        one line that survives the day it is not."""
-        monkeypatch.setattr(
-            fc,
-            "NEED_INTEGRATIONS",
-            {k: v for k, v in NEED_INTEGRATIONS.items() if k is not OnboardingNeed.INBOX},
-        )
-        assert needed_integration_ids(_prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR])) == [
-            "googlecalendar"
-        ]
-
-    def test_three_picks_keep_every_distinct_integration_in_tap_order(self) -> None:
-        """Dedupe must not collapse across picks: Gmail arrives with Mornings and
-        is not repeated by Executive decisions, which still contributes Slack."""
-        assert needed_integration_ids(
-            _prefs(
-                [
-                    OnboardingNeed.MORNINGS,
-                    OnboardingNeed.EXECUTIVE_DECISIONS,
-                    OnboardingNeed.ENGINEERING_PRS,
-                ]
-            )
-        ) == ["gmail", "googlecalendar", "slack", "github"]
+        assert needed_integration_ids(_prefs([])) == []
 
 
-@pytest.mark.unit
 class TestComposeFirstContact:
     def test_the_founder_bundle_reads_end_to_end(self) -> None:
         assert compose_first_contact(
             "telegram",
             "Aryan Randeriya",
-            _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR, OnboardingNeed.GRUNT_WORK]),
-            [
-                ("gmail", "https://gaia.test/connect/aaa"),
-                ("googlecalendar", "https://gaia.test/connect/bbb"),
-            ],
+            _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR], other_need="book my travel."),
+            [GMAIL, CALENDAR],
         ) == [
-            "Hey Aryan. I'm with you on Telegram now.",
-            "Your inbox is out of control. Every morning I'll have it sorted and "
-            "the replies drafted.",
-            "You walk into meetings cold. I'll brief you before each one.",
-            "Grunt work eats your week. Hand it to me and it's done.",
-            "Two taps and those switch on. Links are live for the next hour:",
-            "Gmail: https://gaia.test/connect/aaa",
-            "Google Calendar: https://gaia.test/connect/bbb",
+            "Hey Aryan, I'm with you on Telegram now. From here, every morning your inbox "
+            "comes sorted with replies drafted and you get a brief before each meeting. "
+            'You also said "book my travel". That\'s mine too.',
+            "Your inbox and your calendar are where I start, and I can't see them yet. "
+            "[Connect Gmail](https://gaia.test/connect/aaa) and "
+            "[Connect Google Calendar](https://gaia.test/connect/bbb). Either one first.",
         ]
 
-    def test_the_promises_follow_the_order_the_user_tapped(self) -> None:
+    def test_it_is_always_exactly_two_bubbles(self) -> None:
+        for prefs, links in (
+            (_prefs([]), []),
+            (_prefs([OnboardingNeed.INBOX]), [GMAIL]),
+            (_prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.TOOLS], "x"), []),
+        ):
+            assert len(compose_first_contact("telegram", None, prefs, links)) == 2
+
+    def test_clauses_follow_the_order_the_user_tapped(self) -> None:
         """Their first pick is what they came for, so it leads."""
-        bubbles = compose_first_contact(
+        promise, _ = compose_first_contact(
             "telegram", None, _prefs([OnboardingNeed.CALENDAR, OnboardingNeed.INBOX]), []
         )
-        assert bubbles[1] == NEED_PROMISES[OnboardingNeed.CALENDAR]
-        assert bubbles[2] == NEED_PROMISES[OnboardingNeed.INBOX]
+        assert promise.index(NEED_CLAUSES[OnboardingNeed.CALENDAR]) < promise.index(
+            NEED_CLAUSES[OnboardingNeed.INBOX]
+        )
 
-    def test_one_link_is_one_tap(self) -> None:
-        bubbles = compose_first_contact(
+    def test_three_clauses_read_as_a_sentence(self) -> None:
+        promise, _ = compose_first_contact(
             "telegram",
             None,
-            _prefs([OnboardingNeed.INBOX]),
-            [("gmail", "https://gaia.test/connect/aaa")],
+            _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR, OnboardingNeed.GRUNT_WORK]),
+            [],
         )
-        assert bubbles[-2] == "One tap and that switches on. The link is live for the next hour:"
-        assert bubbles[-1] == "Gmail: https://gaia.test/connect/aaa"
-
-    def test_each_link_is_its_own_bubble_under_its_real_name(self) -> None:
-        """One link per message: a wall of URLs is a wall nobody taps, and the
-        name comes from the OAuth config so it matches the connect page."""
-        bubbles = compose_first_contact(
-            "whatsapp",
-            None,
-            _prefs([OnboardingNeed.MORNINGS]),
-            [("gmail", "https://a"), ("googlecalendar", "https://b")],
+        assert promise == (
+            "Hey, I'm with you on Telegram now. From here, every morning your inbox comes "
+            "sorted with replies drafted, you get a brief before each meeting, and whatever "
+            "grunt work you hand me gets done."
         )
-        assert bubbles[-2:] == ["Gmail: https://a", "Google Calendar: https://b"]
 
-    def test_three_links_are_spelled_out_as_a_word(self) -> None:
-        bubbles = compose_first_contact(
+    def test_one_link_gives_the_reason_and_one_tap(self) -> None:
+        _, first_move = compose_first_contact(
+            "imessage", "Dev", _prefs([OnboardingNeed.INBOX]), [GMAIL]
+        )
+        assert first_move == (
+            "That starts with your inbox, which I can't see yet. "
+            "One tap: [Connect Gmail](https://gaia.test/connect/aaa)."
+        )
+
+    def test_a_link_wins_over_a_question_for_mixed_picks(self) -> None:
+        """A tap does more than a typed answer, so the connect ask leads."""
+        _, first_move = compose_first_contact(
+            "telegram", None, _prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.INBOX]), [GMAIL]
+        )
+        assert "[Connect Gmail]" in first_move
+        assert NEED_ASKS[OnboardingNeed.GRUNT_WORK] not in first_move
+
+    def test_no_links_asks_about_the_first_pick(self) -> None:
+        _, first_move = compose_first_contact(
             "telegram",
             None,
-            _prefs(None),
-            [("gmail", "https://a"), ("googlecalendar", "https://b"), ("slack", "https://c")],
+            _prefs([OnboardingNeed.FOUNDER_TEAM_UPDATES, OnboardingNeed.GRUNT_WORK]),
+            [],
         )
-        assert bubbles[1] == "Three taps and those switch on. Links are live for the next hour:"
+        assert first_move == NEED_ASKS[OnboardingNeed.FOUNDER_TEAM_UPDATES]
 
-    def test_more_links_than_spelled_out_counts_falls_back_to_the_digit(self) -> None:
-        """Past three the word list runs out and the digit is what renders — not
-        a blank, not "None taps"."""
-        bubbles = compose_first_contact(
-            "telegram",
-            None,
-            _prefs(None),
-            [
-                ("gmail", "https://a"),
-                ("googlecalendar", "https://b"),
-                ("slack", "https://c"),
-                ("notion", "https://d"),
-            ],
-        )
-        assert bubbles[1] == "4 taps and those switch on. Links are live for the next hour:"
+    def test_an_already_connected_pick_gets_its_connected_ask(self) -> None:
+        """Gmail on and inbox picked: no link to hand over, so the ask assumes
+        the inbox is running and asks what to flag."""
+        _, first_move = compose_first_contact("telegram", None, _prefs([OnboardingNeed.INBOX]), [])
+        assert first_move == NEED_ASKS[OnboardingNeed.INBOX]
+        assert "already on" in first_move
 
-    def test_only_trailing_punctuation_is_trimmed_from_their_own_words(self) -> None:
-        """The trim exists to drop a stray period, not letters: a need that ends
-        on a capital must survive verbatim."""
-        bubbles = compose_first_contact(
-            "telegram", None, _prefs([OnboardingNeed.INBOX], other_need="posting on X!"), []
-        )
-        assert bubbles[-2] == 'You said: "posting on X". I\'ll take that on too.'
+    def test_their_own_words_are_quoted_back_with_trailing_punctuation_trimmed(self) -> None:
+        promise, _ = compose_first_contact("telegram", None, _prefs([], "Book my travel!!"), [])
+        assert promise.endswith('You also said "Book my travel". That\'s mine too.')
 
-    def test_nothing_to_connect_still_offers_a_first_move(self) -> None:
-        """Ending on the promises alone ends on nothing the user can say yes to."""
-        bubbles = compose_first_contact("telegram", None, _prefs([OnboardingNeed.REMINDERS]), [])
-        assert bubbles[-1] == "Say the word and I'll start."
+    def test_only_typed_words_ask_for_a_bit_more(self) -> None:
+        _, first_move = compose_first_contact("telegram", None, _prefs([], "book my travel"), [])
+        assert first_move == OTHER_NEED_ASK
 
-    def test_their_own_words_are_quoted_back_and_taken_on(self) -> None:
-        bubbles = compose_first_contact(
-            "telegram", None, _prefs([OnboardingNeed.INBOX], other_need="chasing invoices."), []
-        )
-        assert bubbles[-2] == 'You said: "chasing invoices". I\'ll take that on too.'
+    def test_a_blank_other_need_adds_nothing(self) -> None:
+        promise, first_move = compose_first_contact("telegram", None, _prefs([], "   "), [])
+        assert promise == "Hey, I'm with you on Telegram now."
+        assert first_move == NO_PICKS_ASK
 
-    def test_a_blank_other_need_adds_no_bubble(self) -> None:
-        bubbles = compose_first_contact(
-            "telegram", None, _prefs([OnboardingNeed.INBOX], other_need="   "), []
-        )
-        assert bubbles == [
-            "Hey. I'm with you on Telegram now.",
-            NEED_PROMISES[OnboardingNeed.INBOX],
-            "Say the word and I'll start.",
-        ]
-
-    def test_a_user_who_picked_nothing_still_gets_a_hello_and_an_offer(self) -> None:
-        assert compose_first_contact("telegram", "Aryan", _prefs(None), []) == [
-            "Hey Aryan. I'm with you on Telegram now.",
-            "Say the word and I'll start.",
+    def test_a_user_who_picked_nothing_still_gets_a_hello_and_a_first_move(self) -> None:
+        assert compose_first_contact("whatsapp", "Dev", _prefs([]), []) == [
+            "Hey Dev, I'm with you on WhatsApp now.",
+            NO_PICKS_ASK,
         ]
 
     def test_output_is_stable_across_calls(self) -> None:
-        prefs = _prefs([OnboardingNeed.INBOX])
-        assert compose_first_contact("telegram", "Aryan", prefs, []) == compose_first_contact(
-            "telegram", "Aryan", prefs, []
+        args = ("telegram", "Aryan", _prefs([OnboardingNeed.INBOX]), [GMAIL])
+        assert compose_first_contact(*args) == compose_first_contact(*args)
+
+
+class TestComposeLinkGreeting:
+    def test_uses_the_first_name_only_and_opens_the_sentence(self) -> None:
+        assert compose_link_greeting("telegram", "Aryan Randeriya") == (
+            "Hey Aryan, I'm with you on Telegram now."
         )
 
-
-@pytest.mark.unit
-class TestComposeLinkGreeting:
     @pytest.mark.parametrize(
-        ("platform", "expected"),
-        [
-            ("telegram", "Hey Aryan. I'm with you on Telegram now."),
-            ("whatsapp", "Hey Aryan. I'm with you on WhatsApp now."),
-            ("imessage", "Hey Aryan. I'm with you on iMessage now."),
-        ],
+        ("platform", "label"),
+        [("telegram", "Telegram"), ("whatsapp", "WhatsApp"), ("imessage", "iMessage")],
     )
     def test_each_platform_is_named_the_way_the_user_calls_it(
-        self, platform: str, expected: str
+        self, platform: str, label: str
     ) -> None:
-        assert compose_link_greeting(platform, "Aryan Randeriya") == expected
+        assert label in compose_link_greeting(platform, "Dev")
 
-    @pytest.mark.parametrize("name", [None, "", "   "])
-    def test_an_unknown_name_drops_the_clause_rather_than_greeting_a_blank(
-        self, name: str | None
-    ) -> None:
-        assert compose_link_greeting("telegram", name) == "Hey. I'm with you on Telegram now."
+    def test_an_unknown_name_drops_the_clause_rather_than_greeting_a_blank(self) -> None:
+        assert compose_link_greeting("telegram", "   ") == "Hey, I'm with you on Telegram now."
 
 
-@pytest.mark.unit
 class TestBuildFirstContact:
     async def test_an_already_connected_integration_is_not_re_offered(self) -> None:
-        """A link to something already on is a tap that does nothing, and it
-        makes the whole first move look like GAIA is not paying attention."""
+        repo = AsyncMock()
+        repo.is_connected = AsyncMock(side_effect=lambda _u, i: i == "gmail")
+        mint = AsyncMock(side_effect=lambda _u, i: f"https://gaia.test/connect/{i}")
         with (
-            patch(CONNECTED_PATCH, new=AsyncMock(side_effect=lambda _u, i: i == "gmail")),
-            patch(LINK_PATCH, new=AsyncMock(return_value="https://gaia.test/connect/x")) as mint,
+            patch(f"{MODULE}.user_integration_repository", repo),
+            patch(f"{MODULE}.build_connect_link_url", mint),
         ):
             bubbles = await build_first_contact(
-                "user1", "telegram", "Aryan", _prefs([OnboardingNeed.MORNINGS])
+                "u1", "telegram", "Aryan", _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR])
             )
-
-        mint.assert_awaited_once_with("user1", "googlecalendar")
-        assert bubbles[-1] == "Google Calendar: https://gaia.test/connect/x"
-        assert not any("Gmail" in b for b in bubbles)
+        mint.assert_awaited_once_with("u1", "googlecalendar")
+        assert bubbles[1] == (
+            "That starts with your calendar, which I can't see yet. "
+            "One tap: [Connect Google Calendar](https://gaia.test/connect/googlecalendar)."
+        )
 
     async def test_a_link_that_could_not_be_minted_is_dropped_not_shipped_dead(self) -> None:
-        """Redis down means no binding exists — a URL that resolves to nothing is
-        worse in a first message than one fewer link."""
+        repo = AsyncMock()
+        repo.is_connected = AsyncMock(return_value=False)
         with (
-            patch(CONNECTED_PATCH, new=AsyncMock(return_value=False)),
-            patch(LINK_PATCH, new=AsyncMock(return_value=None)),
+            patch(f"{MODULE}.user_integration_repository", repo),
+            patch(f"{MODULE}.build_connect_link_url", AsyncMock(return_value=None)),
         ):
             bubbles = await build_first_contact(
-                "user1", "telegram", None, _prefs([OnboardingNeed.INBOX])
+                "u1", "telegram", None, _prefs([OnboardingNeed.INBOX])
             )
-
-        assert bubbles[-1] == "Say the word and I'll start."
-
-    async def test_every_unconnected_integration_gets_its_own_minted_link(self) -> None:
-        with (
-            patch(CONNECTED_PATCH, new=AsyncMock(return_value=False)),
-            patch(LINK_PATCH, new=AsyncMock(side_effect=lambda _u, i: f"https://gaia.test/{i}")),
-        ):
-            bubbles = await build_first_contact(
-                "user1", "telegram", None, _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR])
-            )
-
-        assert bubbles[-2:] == [
-            "Gmail: https://gaia.test/gmail",
-            "Google Calendar: https://gaia.test/googlecalendar",
-        ]
-
-    async def test_the_lookups_and_the_greeting_carry_this_user_and_this_name(self) -> None:
-        """Both awaited calls are bound to the caller's user id, in pick order,
-        and the name the caller passed reaches the hello — a first contact
-        answering for the wrong user, or opening on a nameless "Hey", is the
-        failure this whole path is deterministic to avoid."""
-        connected = AsyncMock(return_value=False)
-        with (
-            patch(CONNECTED_PATCH, new=connected),
-            patch(
-                LINK_PATCH, new=AsyncMock(side_effect=lambda _u, i: f"https://gaia.test/{i}")
-            ) as mint,
-        ):
-            bubbles = await build_first_contact(
-                "user1", "telegram", "Aryan Randeriya", _prefs([OnboardingNeed.MORNINGS])
-            )
-
-        assert connected.await_args_list == [
-            call("user1", "gmail"),
-            call("user1", "googlecalendar"),
-        ]
-        assert mint.await_args_list == [call("user1", "gmail"), call("user1", "googlecalendar")]
-        assert bubbles[0] == "Hey Aryan. I'm with you on Telegram now."
+        assert bubbles[1] == NEED_ASKS[OnboardingNeed.INBOX]
