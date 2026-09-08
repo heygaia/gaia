@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """Developer tool: send every LOCAL user back through onboarding from scratch.
 
-For each user in the local Mongo this runs the same ``reset_onboarding`` the
-product's "Restart onboarding" button calls — seeded conversations, onboarding
-todos, legacy suggested workflows, connected integrations and memories are
-deleted and the ``onboarding`` subdocument is unset — then empties the local
-Redis so no cached user document, plan cache, rate-limit bucket or link code
+For each user in the local Mongo this runs the ``reset_onboarding`` behind the
+product's "Restart onboarding" button with ``keep_connections``: seeded
+conversations, onboarding todos and legacy suggested workflows are deleted and
+the ``onboarding`` subdocument is unset, while connected integrations and
+memories stay. It then empties the local Redis so no cached user document, plan cache, rate-limit bucket or link code
 survives. Subscriptions are untouched: a locally-paid user skips the payment
 stage and lands on the questions; a free one hits the paywall first.
 
@@ -94,13 +94,13 @@ async def flush_local_redis() -> int:
 
 
 async def run_reset(*, dry_run: bool) -> ResetResult:
-    """Reset onboarding for every local user, then flush Redis (unless dry-run)."""
+    """Reset onboarding state for every local user, then flush Redis (unless dry-run)."""
     assert_local_stack(settings.ENV, settings.MONGO_DB, settings.REDIS_URL)
     result = ResetResult(dry_run=dry_run, user_ids=await user_repository.list_all_ids())
     if dry_run:
         return result
     for user_id in result.user_ids:
-        await reset_onboarding(user_id)
+        await reset_onboarding(user_id, keep_connections=True)
         result.users_reset += 1
     result.redis_keys_deleted = await flush_local_redis()
     return result

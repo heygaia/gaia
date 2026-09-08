@@ -90,7 +90,7 @@ class TestRunReset:
         reset.assert_not_awaited()
         flush.assert_not_awaited()
 
-    async def test_execute_resets_every_user_then_flushes_redis(self) -> None:
+    async def test_execute_resets_every_user_keeping_connections_then_flushes_redis(self) -> None:
         repo = MagicMock()
         repo.list_all_ids = AsyncMock(return_value=["u1", "u2"])
         reset = AsyncMock()
@@ -104,6 +104,7 @@ class TestRunReset:
             result = await run_reset(dry_run=False)
 
         assert [c.args for c in reset.await_args_list] == [("u1",), ("u2",)]
+        assert all(c.kwargs == {"keep_connections": True} for c in reset.await_args_list)
         assert result.users_reset == 2
         assert result.redis_keys_deleted == 7
         flush.assert_awaited_once()
