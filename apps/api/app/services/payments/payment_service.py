@@ -16,8 +16,6 @@ from app.constants.cache import (
     ALL_PLANS_CACHE_KEY,
     SUBSCRIPTION_PLAN_CACHE_PREFIX,
     SUBSCRIPTION_PLAN_CACHE_TTL,
-    UPGRADE_LINK_CACHE_PREFIX,
-    UPGRADE_LINK_CACHE_TTL,
 )
 from app.constants.log_tags import LogTag
 from app.constants.payments import (
@@ -622,41 +620,25 @@ class DodoPaymentService:
         billing_cycle: PlanDuration = PlanDuration.MONTHLY,
         source: CheckoutSource | None = None,
     ) -> ProCheckout:
-        """Mint (or reuse) a hosted checkout session that upgrades this user to Pro.
+        """Mint a hosted checkout session that upgrades this user to Pro.
 
-        Cached for an hour per user and cycle so asking twice — or hitting a usage
-        wall repeatedly — reuses one session instead of stranding a new one in Dodo
-        each time. The plan is cached alongside the session so a cached hit quotes
-        the price the session was minted under, never a newer catalogue read.
+        Every call mints a fresh session. Dodo sessions are single-use: the
+        moment a payment runs against one, declined or not, its page only says
+        "link expired". A per-user cache of the last session handed exactly
+        that page back after a failed card, so there is no cache.
 
         ``settings.PAYWALL_DISCOUNT_CODE`` is pre-applied here rather than passed
         in by callers: every caller (the 402 paywall body, the bot notice, the
         subscription tool) advertises that same code, so applying it at the one
-        place the session is minted keeps the link and the pitch from drifting —
-        and keeps one cached session per user and cycle.
+        place the session is minted keeps the link and the pitch from drifting.
         """
         return_path = source.return_path if source else PAYMENT_RESULT_PATH
-        # The session carries its return URL, so a session minted for one
-        # destination must never be handed to a checkout that expects another.
-        cache_key = f"{UPGRADE_LINK_CACHE_PREFIX}{user_id}:{billing_cycle}:{return_path}"
-        cached = await redis_cache.get(cache_key)
-        if isinstance(cached, dict) and "plan" in cached and "checkout" in cached:
-            return ProCheckout(
-                plan=PlanResponse.model_validate(cached["plan"]),
-                checkout=CreateSubscriptionResponse.model_validate(cached["checkout"]),
-            )
-
         plan = await self.get_pro_plan(billing_cycle)
         checkout = await self.create_subscription(
             user_id,
             plan.dodo_product_id,
             discount_code=settings.PAYWALL_DISCOUNT_CODE,
             return_path=return_path,
-        )
-        await redis_cache.set(
-            cache_key,
-            {"plan": plan.model_dump(), "checkout": checkout.model_dump()},
-            ttl=UPGRADE_LINK_CACHE_TTL,
         )
         return ProCheckout(plan=plan, checkout=checkout)
 
