@@ -43,6 +43,10 @@ TOOL_CALL = GatedCall(id="call-1", name="send_email", args={"to": "bob@example.c
 
 EM_DASH = "— "  # the em dash + space between a summary's label/lead-in and its content
 
+# The stream the request was raised on, which closed when the run paused — deliberately
+# NOT the stream the settled card must be published to.
+PAUSED_RUN_STREAM_ID = "stream-of-the-paused-run"
+
 
 @pytest.fixture
 def bridge():
@@ -99,6 +103,29 @@ class TestPublishExactlyOnce:
 
         bridge["stream"].publish_chunk.assert_awaited_once()
         bridge["notify"].assert_awaited_once()
+
+    async def test_the_notification_names_the_user_conversation_and_approval(
+        self, bridge: dict
+    ) -> None:
+        # The wake-up is delivered out-of-band (push/email), so every one of these has
+        # to be the real value: a wrong user notifies a stranger, a wrong conversation
+        # or approval id deep-links the user to a card that isn't the one waiting.
+        await publish(bridge)
+
+        bridge["notify"].assert_awaited_once_with(
+            USER_ID, CONVERSATION_ID, "appr-1", "Send email — to: bob@example.com"
+        )
+
+    async def test_the_wide_event_names_the_approval_its_tool_and_its_stream(
+        self, bridge: dict
+    ) -> None:
+        # These three fields are all an operator has to find the turn a pending approval
+        # belongs to; dropping the namespace (or renaming a key) makes the event unqueryable.
+        await publish(bridge)
+
+        bridge["log"].set.assert_called_once_with(
+            hil={"approval_id": "appr-1", "tool": "send_email", "stream_id": STREAM_ID}
+        )
 
     async def test_a_resume_replay_publishes_nothing_and_wakes_nobody(self, bridge: dict) -> None:
         # The node re-runs from the top on every resume. Re-publishing would stack a
@@ -161,12 +188,34 @@ class TestTheOutcomeSettlesTheCard:
             args=TOOL_CALL.args,
             summary="Send email — to: bob@example.com",
             integration_name="Gmail",
+            stream_id=PAUSED_RUN_STREAM_ID,
         )
         # STREAM_ID explicitly, never record.stream_id: a resumed run publishes to a
         # NEW stream, and the card has to settle where the user is now watching.
         await publish_decision(
             record, outcome.status, stream_id=STREAM_ID, feedback=outcome.feedback
         )
+
+    async def test_the_card_settles_on_the_stream_the_user_is_watching_now(
+        self, bridge: dict
+    ) -> None:
+        # The request's own stream closed when the run paused. Settling there resolves
+        # the card where nobody is looking, leaving a live Approve/Deny prompt on screen.
+        await self.settle(ApprovalOutcome(status=HILApprovalStatus.APPROVED))
+
+        assert bridge["stream"].publish_chunk.await_args.args[0] == STREAM_ID
+
+    async def test_the_settled_card_carries_the_original_calls_identity(self, bridge: dict) -> None:
+        # The settled card replaces the pending one by these fields; rebuilt from the
+        # stored record, so a dropped field renders a second, anonymous card instead.
+        await self.settle(ApprovalOutcome(status=HILApprovalStatus.APPROVED))
+
+        data = published_frame(bridge)["data"]
+        assert data["integration_name"] == "Gmail"
+        assert data["gated_tool_name"] == TOOL_CALL.name
+        assert data["tool_call_id"] == TOOL_CALL.id
+        assert data["summary"] == "Send email — to: bob@example.com"
+        assert data["args_preview"] == TOOL_CALL.args
 
     async def test_an_approval_settles_the_card(self, bridge: dict) -> None:
         await self.settle(ApprovalOutcome(status=HILApprovalStatus.APPROVED))

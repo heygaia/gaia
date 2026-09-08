@@ -34,6 +34,23 @@ def _record_wait_for_timeouts(monkeypatch: pytest.MonkeyPatch) -> list[float | N
     return recorded
 
 
+def _make_result(markdown: str = "ok", *, success: bool = True, error: str = "") -> MagicMock:
+    result = MagicMock()
+    result.success = success
+    result.markdown = markdown
+    result.error_message = error
+    return result
+
+
+def _warning_kwargs(mock_log: MagicMock, needle: str) -> dict[str, Any]:
+    """The kwargs of the single ``log.warning`` whose message contains ``needle``."""
+    matches = [
+        call.kwargs for call in mock_log.warning.call_args_list if needle in str(call.args[0])
+    ]
+    assert len(matches) == 1, f"expected exactly one {needle!r} warning, got {len(matches)}"
+    return matches[0]
+
+
 def _stub_crawler(mock_crawler_cls: MagicMock) -> AsyncMock:
     crawler_inst = AsyncMock()
     crawler_inst.__aenter__ = AsyncMock(return_value=crawler_inst)
@@ -463,3 +480,382 @@ class TestPerUrlTimeout:
 
         assert contents == {}
         assert errors == {"https://slow.example": expected_message}
+
+
+_patch_obscura_engine = patch(
+    "app.utils.crawl4ai_utils.ensure_crawl_obscura",
+    new_callable=AsyncMock,
+    return_value="http://127.0.0.1:9223",
+)
+
+
+def _obscura_params(**overrides: Any) -> Any:
+    from app.utils.crawl4ai_utils import CrawlBatchParams
+
+    defaults: dict[str, Any] = {
+        "page_timeout_ms": 20_000,
+        "total_timeout_seconds": 30.0,
+        "semaphore_count": 3,
+        "context_name": "test",
+    }
+    return CrawlBatchParams(**{**defaults, **overrides})
+
+
+class TestObscuraPerUrlFanout:
+    """What each per-URL crawl is handed, and what comes back when one goes wrong."""
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_every_url_is_crawled_on_the_batch_run_config(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(return_value=_make_result())
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example", "https://b.example"],
+            _obscura_params(page_timeout_ms=17_000, content_query="quantum"),
+        )
+
+        crawled = {call.kwargs["url"] for call in crawler_inst.arun.await_args_list}
+        assert crawled == {"https://a.example", "https://b.example"}
+        for call in crawler_inst.arun.await_args_list:
+            config = call.kwargs["config"]
+            assert config.page_timeout == 17_000
+            assert config.markdown_generator.content_filter.user_query == "quantum"
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.log")
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_a_crawl_error_is_reported_against_its_own_url(
+        self,
+        mock_crawler_cls: MagicMock,
+        mock_log: MagicMock,
+        mock_ensure: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(side_effect=ValueError("boom"))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        contents, errors = await batch_fetch_with_crawl4ai(
+            ["https://a.example"], _obscura_params(context_name="deep_research")
+        )
+
+        assert contents == {}
+        assert errors == {"https://a.example": "deep_research error: boom"}
+        assert _warning_kwargs(mock_log, "per-URL fetch failed") == {
+            "context_name": "deep_research",
+            "error_type": "ValueError",
+        }
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_content_is_truncated_to_the_callers_limit(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(return_value=_make_result("abcdefghij"))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        contents, _errors = await batch_fetch_with_crawl4ai(
+            ["https://a.example"], _obscura_params(max_content_chars=4)
+        )
+
+        assert contents == {"https://a.example": "abcd"}
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_an_empty_page_is_reported_against_the_calling_context(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(return_value=_make_result("   ", success=True))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        _contents, errors = await batch_fetch_with_crawl4ai(
+            ["https://a.example"], _obscura_params(context_name="deep_research")
+        )
+
+        assert errors == {"https://a.example": "deep_research returned empty content"}
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_semaphore_count_bounds_the_crawls_in_flight(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        in_flight = 0
+        peak = 0
+
+        async def arun(url: str, config: object) -> MagicMock:
+            nonlocal in_flight, peak
+            in_flight += 1
+            peak = max(peak, in_flight)
+            await asyncio.sleep(0.01)
+            in_flight -= 1
+            return _make_result()
+
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(side_effect=arun)
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example", "https://b.example", "https://c.example"],
+            _obscura_params(semaphore_count=1),
+        )
+
+        assert peak == 1
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_each_crawl_gets_its_own_page_derived_deadline(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(return_value=_make_result())
+        recorded = _record_wait_for_timeouts(monkeypatch)
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example"],
+            _obscura_params(page_timeout_ms=20_000, total_timeout_seconds=1_000.0),
+        )
+
+        # The per-URL crawl is bounded by page timeout + processing margin; the
+        # whole batch by the caller's total budget.
+        assert 65.0 in recorded
+        assert 1_000.0 in recorded
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_the_batch_deadline_marks_unfinished_urls_and_keeps_finished_ones(
+        self, mock_crawler_cls: MagicMock, mock_ensure: AsyncMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        never = asyncio.Event()
+
+        async def arun(url: str, config: object) -> MagicMock:
+            if url == "https://slow.example":
+                await never.wait()
+            return _make_result("fast content")
+
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(side_effect=arun)
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        contents, errors = await batch_fetch_with_crawl4ai(
+            ["https://fast.example", "https://slow.example"],
+            _obscura_params(total_timeout_seconds=0.05),
+        )
+
+        # Never all-or-nothing: what finished is kept, only the stragglers fail.
+        assert contents == {"https://fast.example": "fast content"}
+        assert errors == {"https://slow.example": "test batch timed out after 0s"}
+
+    @_patch_obscura_engine
+    @patch("app.utils.crawl4ai_utils.log")
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_a_failed_teardown_names_the_calling_context(
+        self,
+        mock_crawler_cls: MagicMock,
+        mock_log: MagicMock,
+        mock_ensure: AsyncMock,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.OBSCURA)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun = AsyncMock(return_value=_make_result())
+        crawler_inst.close = AsyncMock(side_effect=RuntimeError("driver gone"))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example"], _obscura_params(context_name="deep_research")
+        )
+
+        assert _warning_kwargs(mock_log, "browser close failed") == {
+            "context_name": "deep_research",
+            "error": "driver gone",
+            "error_type": "RuntimeError",
+        }
+
+
+class TestChromiumBatchWiring:
+    """What ``arun_many`` is handed, and how its failures reach the caller."""
+
+    @staticmethod
+    def _params(**overrides: Any) -> Any:
+        from app.utils.crawl4ai_utils import CrawlBatchParams
+
+        defaults: dict[str, Any] = {
+            "page_timeout_ms": 30_000,
+            "total_timeout_seconds": 60.0,
+            "semaphore_count": 5,
+            "context_name": "test",
+        }
+        return CrawlBatchParams(**{**defaults, **overrides})
+
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_arun_many_receives_every_url_on_the_batch_run_config(
+        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(return_value=[])
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        urls = ["https://a.example", "https://b.example"]
+        await batch_fetch_with_crawl4ai(urls, self._params(page_timeout_ms=11_000))
+
+        call = crawler_inst.arun_many.await_args
+        assert call.kwargs["urls"] == urls
+        assert call.kwargs["config"].page_timeout == 11_000
+        assert call.kwargs["config"].semaphore_count == 5
+
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_a_batch_error_is_reported_for_every_url(
+        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(side_effect=ValueError("boom"))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        urls = ["https://a.example", "https://b.example"]
+        contents, errors = await batch_fetch_with_crawl4ai(
+            urls, self._params(context_name="deep_research")
+        )
+
+        assert contents == {}
+        assert errors == dict.fromkeys(urls, "deep_research batch error: boom")
+
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_urls_the_batch_returned_nothing_for_are_reported(
+        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(return_value=[])
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        _contents, errors = await batch_fetch_with_crawl4ai(
+            ["https://a.example"], self._params(context_name="deep_research")
+        )
+
+        assert errors == {"https://a.example": "deep_research returned no result"}
+
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_the_batch_deadline_falls_back_to_per_url_recovery(
+        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        never = asyncio.Event()
+
+        async def arun_many(urls: list[str], config: object) -> list[MagicMock]:
+            if len(urls) > 1:
+                await never.wait()
+            return [_make_result("recovered")]
+
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(side_effect=arun_many)
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        urls = ["https://a.example", "https://b.example"]
+        contents, errors = await batch_fetch_with_crawl4ai(
+            urls, self._params(total_timeout_seconds=0.05)
+        )
+
+        assert errors == {}
+        assert contents == dict.fromkeys(urls, "recovered")
+
+    @patch("app.utils.crawl4ai_utils.log")
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_a_failed_teardown_names_the_calling_context(
+        self, mock_crawler_cls: MagicMock, mock_log: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(return_value=[_make_result()])
+        crawler_inst.close = AsyncMock(side_effect=RuntimeError("driver gone"))
+        from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example"], self._params(context_name="deep_research")
+        )
+
+        assert _warning_kwargs(mock_log, "browser close failed") == {
+            "context_name": "deep_research",
+            "error": "driver gone",
+            "error_type": "RuntimeError",
+        }
+
+
+class TestResultToUrlMapping:
+    """Only results that could not be placed at all count as unmapped."""
+
+    @staticmethod
+    def _unmatchable() -> MagicMock:
+        result = _make_result()
+        result.url = None
+        result.redirected_url = None
+        return result
+
+    def test_a_surplus_result_is_not_counted_as_unmapped(self) -> None:
+        from app.utils.crawl4ai_utils import _map_results_to_urls
+
+        matched = _make_result()
+        matched.url = "https://a.example"
+        matched.redirected_url = None
+
+        matched_results, unmatched_count = _map_results_to_urls(
+            ["https://a.example"], [matched, self._unmatchable()]
+        )
+
+        # Every requested URL got its result; the extra one has nowhere to go
+        # but is not evidence that mapping failed.
+        assert matched_results == {0: matched}
+        assert unmatched_count == 0
+
+    def test_results_left_over_after_the_fallback_are_counted(self) -> None:
+        from app.utils.crawl4ai_utils import _map_results_to_urls
+
+        urls = ["https://a.example", "https://b.example", "https://c.example"]
+        results = [self._unmatchable() for _ in range(4)]
+
+        matched_results, unmatched_count = _map_results_to_urls(urls, results)
+
+        # The positional fallback places one result per requested URL; the
+        # fourth has no home and is reported.
+        assert sorted(matched_results) == [0, 1, 2]
+        assert unmatched_count == 1
+
+    @patch("app.utils.crawl4ai_utils.log")
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_unmapped_results_are_reported_with_their_count(
+        self, mock_crawler_cls: MagicMock, mock_log: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = _stub_crawler(mock_crawler_cls)
+        crawler_inst.arun_many = AsyncMock(return_value=[self._unmatchable() for _ in range(4)])
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://a.example", "https://b.example", "https://c.example"],
+            CrawlBatchParams(
+                page_timeout_ms=30_000,
+                total_timeout_seconds=60.0,
+                semaphore_count=5,
+                context_name="test",
+            ),
+        )
+
+        assert _warning_kwargs(mock_log, "could not map results") == {
+            "context_name": "test",
+            "unmatched_count": 1,
+        }

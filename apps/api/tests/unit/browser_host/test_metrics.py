@@ -11,6 +11,9 @@ import pytest
 from app.browser_host import metrics as metrics_module
 from app.browser_host.chromium import ChromiumHost
 from app.browser_host.metrics import Aggregate, ProcessSampler, SessionMetrics
+from app.constants.log_tags import LogTag
+
+_MB = 1024 * 1024
 
 
 class _FakeCDP:
@@ -25,6 +28,24 @@ class _FakeCDP:
             "cookies": [],
             "targetInfos": [],
         }
+
+
+def _fake_proc(rss_mb: float, cpu: float) -> MagicMock:
+    proc = MagicMock()
+    proc.memory_info.return_value = MagicMock(rss=int(rss_mb * _MB))
+    proc.cpu_percent.return_value = cpu
+    return proc
+
+
+def _sampler_over(root: MagicMock, pid: int = 4321) -> ProcessSampler:
+    """A real sampler for ``pid`` whose process tree resolves to ``root``."""
+    with patch.object(metrics_module.psutil, "Process", return_value=root):
+        return ProcessSampler(pid)
+
+
+def _unused_pid() -> int:
+    live = set(psutil.pids())
+    return next(pid for pid in range(30000, 60000) if pid not in live)
 
 
 def _make_host() -> ChromiumHost:
@@ -100,17 +121,73 @@ class TestNavigationTiming:
 
 
 @pytest.mark.unit
+class TestProcessSamplerReadings:
+    def test_sample_sums_the_whole_process_tree_and_reports_rss_in_megabytes(self) -> None:
+        root = _fake_proc(rss_mb=100.0, cpu=10.0)
+        root.children.return_value = [_fake_proc(50.0, 5.0), _fake_proc(25.0, 2.5)]
+
+        assert _sampler_over(root).sample() == (175.0, 17.5)
+
+    def test_the_tree_walk_is_recursive_so_a_renderers_own_children_are_counted(self) -> None:
+        grandchild = _fake_proc(25.0, 2.5)
+        child = _fake_proc(50.0, 5.0)
+        root = _fake_proc(100.0, 10.0)
+        root.children.side_effect = lambda recursive: (
+            [child, grandchild] if recursive else [child]
+        )
+
+        assert _sampler_over(root).sample() == (175.0, 17.5)
+
+    def test_a_child_that_exits_mid_walk_is_skipped_while_the_rest_still_count(self) -> None:
+        gone = _fake_proc(50.0, 5.0)
+        gone.memory_info.side_effect = psutil.NoSuchProcess(99)
+        root = _fake_proc(100.0, 10.0)
+        root.children.return_value = [gone, _fake_proc(25.0, 2.5)]
+
+        assert _sampler_over(root).sample() == (125.0, 12.5)
+
+
+@pytest.mark.unit
 class TestSamplerFailureIsolation:
     def test_sampler_for_a_dead_process_is_none_not_an_exception(self) -> None:
         with patch.object(metrics_module.psutil, "Process", side_effect=psutil.NoSuchProcess(1234)):
             assert ProcessSampler.for_pid(1234) is None
 
+    def test_a_pid_that_owns_no_process_yields_no_sampler_rather_than_the_callers_own(
+        self,
+    ) -> None:
+        assert ProcessSampler.for_pid(_unused_pid()) is None
+
+    def test_an_unusable_pid_warns_with_the_pid_and_the_real_failure_type(self) -> None:
+        with (
+            patch.object(metrics_module.psutil, "Process", side_effect=psutil.NoSuchProcess(1234)),
+            patch.object(metrics_module, "log") as mock_log,
+        ):
+            assert ProcessSampler.for_pid(1234) is None
+
+        mock_log.warning.assert_called_once_with(
+            f"{LogTag.BROWSER} browser host resource sampler unavailable",
+            error_type="NoSuchProcess",
+            browser={"pid": 1234},
+        )
+
     def test_sample_returns_none_when_the_process_tree_cannot_be_read(self) -> None:
-        sampler = ProcessSampler.for_pid(psutil.Process().pid)
-        assert sampler is not None
-        sampler._root = MagicMock()
-        sampler._root.children.side_effect = psutil.AccessDenied(1234)
-        assert sampler.sample() is None
+        root = MagicMock()
+        root.children.side_effect = psutil.AccessDenied(1234)
+        assert _sampler_over(root).sample() is None
+
+    def test_a_failed_sample_warns_with_the_sampled_pid_and_the_real_failure_type(self) -> None:
+        root = MagicMock()
+        root.children.side_effect = psutil.AccessDenied(1234)
+
+        with patch.object(metrics_module, "log") as mock_log:
+            assert _sampler_over(root, pid=777).sample() is None
+
+        mock_log.warning.assert_called_once_with(
+            f"{LogTag.BROWSER} browser host resource sample failed",
+            error_type="AccessDenied",
+            browser={"pid": 777},
+        )
 
     async def test_a_failing_sampler_does_not_break_create_or_dispose(self) -> None:
         host = _make_host()

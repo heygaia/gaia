@@ -316,6 +316,21 @@ async def test_keep_session_alive_touches_the_session_each_iteration(
     touch.assert_awaited_with("sess-1")
 
 
+async def test_keep_session_alive_waits_the_configured_keepalive_interval(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The interval is the whole point: it has to stay under the host's idle TTL, so a
+    hardcoded or dropped delay silently lets the reaper win the race."""
+    sleep_mock = AsyncMock(side_effect=[None, asyncio.CancelledError()])
+    monkeypatch.setattr(session_mod.asyncio, "sleep", sleep_mock)
+    monkeypatch.setattr(session_mod.host_client, "touch_session", AsyncMock())
+
+    with pytest.raises(asyncio.CancelledError):
+        await session_mod.keep_session_alive("sess-1")
+
+    sleep_mock.assert_awaited_with(session_mod.BROWSER_HANDOFF_KEEPALIVE_SECONDS)
+
+
 async def test_keep_session_alive_logs_a_failed_touch_and_keeps_looping(
     monkeypatch: pytest.MonkeyPatch, fake_log: _FakeLog
 ) -> None:
@@ -339,6 +354,19 @@ async def test_keep_session_alive_logs_a_failed_touch_and_keeps_looping(
 
 def _info(url: str | None) -> MagicMock:
     return MagicMock(url=url)
+
+
+def _serve_urls(monkeypatch: pytest.MonkeyPatch, *urls: str) -> list[str]:
+    """Serve ``urls`` in order from ``get_session``, recording the session id asked for."""
+    asked: list[str] = []
+    remaining = list(urls)
+
+    async def _get(session_id: str) -> MagicMock:
+        asked.append(session_id)
+        return _info(remaining.pop(0))
+
+    monkeypatch.setattr(session_mod.host_client, "get_session", AsyncMock(side_effect=_get))
+    return asked
 
 
 @pytest.mark.unit
@@ -372,6 +400,20 @@ class TestNavigatedAway:
     def test_false_when_either_url_missing(self) -> None:
         assert not session_mod._navigated_away(None, "https://x.com/home")
         assert not session_mod._navigated_away("https://x.com/login", None)
+
+    def test_false_for_the_same_non_auth_page_ignoring_query(self) -> None:
+        # Both sides of the comparison must be the URL they claim to be. If either is
+        # parsed from something else, two identical non-auth URLs stop matching and a
+        # user idling on one page counts as "signed in" — resuming the agent mid-login.
+        assert not session_mod._navigated_away(
+            "https://x.com/dashboard", "https://x.com/dashboard?tab=2"
+        )
+
+    def test_a_missing_url_is_not_treated_as_an_auth_page(self) -> None:
+        # A session with no URL yet must not read as "still signing in" — that would
+        # make every unknown page look like an auth screen and block auto-resolve.
+        assert not session_mod._is_auth_url(None)
+        assert not session_mod._is_auth_url("")
 
 
 @pytest.mark.unit
@@ -422,6 +464,82 @@ class TestAutoResolveHandoffOnNavigation:
 
         await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
         resolve.assert_not_awaited()
+
+    async def test_every_poll_asks_about_the_handoffs_own_session(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Both the baseline read and each poll must name THIS session — reading any
+        other browser's URL would resolve the handoff off a page the user never saw."""
+        monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())
+        asked = _serve_urls(monkeypatch, "https://x/login", "https://x/", "https://x/")
+        monkeypatch.setattr(session_mod, "resolve_handoff", AsyncMock())
+
+        await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
+
+        assert asked == ["sess-1", "sess-1", "sess-1"]
+
+    async def test_polling_waits_the_configured_interval_between_reads(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        sleep_mock = AsyncMock()
+        monkeypatch.setattr(session_mod.asyncio, "sleep", sleep_mock)
+        _serve_urls(monkeypatch, "https://x/login", "https://x/", "https://x/")
+        monkeypatch.setattr(session_mod, "resolve_handoff", AsyncMock())
+
+        await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
+
+        sleep_mock.assert_awaited_with(session_mod.HANDOFF_AUTORESOLVE_POLL_SECONDS)
+
+    async def test_the_resume_note_tells_the_user_why_the_agent_carried_on(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The note is attached to the handoff and shown in the chat, so it is the only
+        explanation the user gets for the agent resuming without them tapping anything."""
+        monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())
+        _serve_urls(monkeypatch, "https://x/login", "https://x/", "https://x/")
+        resolve = AsyncMock()
+        monkeypatch.setattr(session_mod, "resolve_handoff", resolve)
+
+        await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
+
+        assert resolve.await_args[0][3] == "Signed in — resuming automatically."
+
+    async def test_a_slow_sign_in_is_still_detected_after_idling_on_the_login_page(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Typing a password takes longer than one poll. Giving up on the first
+        still-on-login read would leave every real login to the manual button."""
+        monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())
+        _serve_urls(monkeypatch, "https://x/login", "https://x/login", "https://x/", "https://x/")
+        resolve = AsyncMock()
+        monkeypatch.setattr(session_mod, "resolve_handoff", resolve)
+
+        await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
+
+        resolve.assert_awaited_once()
+
+    async def test_a_blip_restarts_the_debounce_from_zero_rather_than_shortening_it(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """After a snap-back to login, the next off-login read is the FIRST stable poll
+        again — not a resumption of the earlier count, which would resolve a whole poll
+        early and wake the agent onto a page still mid-redirect."""
+        monkeypatch.setattr(session_mod.asyncio, "sleep", AsyncMock())
+        asked = _serve_urls(
+            monkeypatch,
+            "https://x/login",
+            "https://x/interstitial",  # stable=1
+            "https://x/login",  # snap back → reset
+            "https://x/",  # stable=1 again, must NOT resolve here
+            "https://x/",  # stable=2 → resolve
+        )
+        resolve = AsyncMock()
+        monkeypatch.setattr(session_mod, "resolve_handoff", resolve)
+
+        await session_mod.auto_resolve_handoff_on_navigation("h1", "sess-1", "user-1")
+
+        resolve.assert_awaited_once()
+        assert len(asked) == 5, "resolved before the debounce had run its full length again"
 
     async def test_transient_redirect_is_debounced(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """A single off-login blip that snaps back must NOT resolve — the stable

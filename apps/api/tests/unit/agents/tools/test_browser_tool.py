@@ -30,6 +30,7 @@ from app.schemas.browser import (
 )
 from app.services.analytics_service import AnalyticsEvents
 from app.services.browser.exceptions import BrowserConcurrencyLimit, BrowserUnavailableError
+from app.services.browser.fingerprint import current_fingerprint_seed, seed_for_user
 from app.services.browser.runner import BrowserRunConfig, BrowserRunnerCallbacks
 from app.services.browser.tasks import BrowserTaskRecord
 
@@ -1367,3 +1368,248 @@ async def test_finished_run_is_captured_against_the_user_who_ran_it(
     assert props["status"] == "completed"
     assert props["success"] is True
     assert props["steps"] == 3
+
+
+def _capture(monkeypatch: pytest.MonkeyPatch) -> list[tuple[Any, ...]]:
+    captured: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        tool_mod,
+        "capture_event",
+        lambda user_id, event, props: captured.append((user_id, event, props)),
+    )
+    return captured
+
+
+async def test_anonymous_run_is_not_captured_at_all(monkeypatch: pytest.MonkeyPatch) -> None:
+    """No user id means no profile to attribute to -- capturing anyway would
+    invent an anonymous person per background run and inflate the funnel."""
+    captured = _capture(monkeypatch)
+    _install(monkeypatch)
+
+    await browser_task.ainvoke({"task": "x"}, config={"configurable": {"thread_id": "c1"}})
+
+    assert captured == []
+
+
+async def test_capture_source_falls_back_to_web_when_the_run_has_no_category(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture(monkeypatch)
+    _install(monkeypatch)
+
+    await browser_task.ainvoke(
+        {"task": "x"}, config={"configurable": {"user_id": "u1", "thread_id": "c1"}}
+    )
+
+    assert captured[0][2]["source"] == "web"
+
+
+async def test_capture_source_is_the_surface_the_run_came_from(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured = _capture(monkeypatch)
+    _install(monkeypatch)
+
+    await browser_task.ainvoke({"task": "x"}, config=BOT_CONFIG)
+
+    assert captured[0][2]["source"] == "bot"
+
+
+async def test_capture_duration_measures_the_run_not_the_whole_tool_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``duration_ms`` is milliseconds between starting and finishing the agent
+    loop -- the clock is read after the session is open, so setup time is not
+    charged to the run."""
+    captured = _capture(monkeypatch)
+    _install(monkeypatch)
+    # Reads, in order: the thread mirror's start, run_t0, then the persist clock.
+    ticks = iter([10.0, 100.0, 100.75])
+    monkeypatch.setattr(tool_mod, "perf_counter", lambda: next(ticks))
+
+    await browser_task.ainvoke({"task": "x"}, config=UI_CONFIG)
+
+    assert captured[0][2]["duration_ms"] == 750
+
+
+# ---------------------------------------------------------------------------
+# browser_task — per-user fingerprint seed
+# ---------------------------------------------------------------------------
+
+
+async def test_run_presents_the_users_own_device_fingerprint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The canvas/audio seed is pinned to the user for the duration of the run,
+    so the same person always presents the same device instead of a new one per
+    task -- and it is released afterwards so the next run is not stuck with it.
+
+    Driven through the raw coroutine, not ``ainvoke``: the seed rides a
+    contextvar, and a task-based invocation runs in a copy of the context, so the
+    caller could never see either the pin or the leak.
+    """
+    seen: list[int] = []
+
+    async def body(h: Harness) -> BrowserResultSnapshot:
+        seen.append(current_fingerprint_seed())
+        return _result(BrowserSessionStatus.COMPLETED, True, "done")
+
+    _install(monkeypatch, run_body=body)
+    before = current_fingerprint_seed()
+
+    await browser_task.coroutine(config=UI_CONFIG, task="x")
+
+    assert seen == [seed_for_user("u1")]
+    assert seen[0] != before
+    assert current_fingerprint_seed() == before
+
+
+async def test_fingerprint_seed_is_released_even_when_the_session_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A leaked seed would make every later run in this context impersonate the
+    user whose run happened to blow up."""
+    _install(monkeypatch, session_error=BrowserUnavailableError("host is down"))
+    before = current_fingerprint_seed()
+
+    await browser_task.coroutine(config=UI_CONFIG, task="x")
+
+    assert current_fingerprint_seed() == before
+
+
+# ---------------------------------------------------------------------------
+# _BrowserThreadMirror — the "Browser" group in the chat tool thread
+# ---------------------------------------------------------------------------
+
+
+def _mirror() -> tuple[tool_mod._BrowserThreadMirror, list[dict[str, Any]]]:
+    writes: list[dict[str, Any]] = []
+    return tool_mod._BrowserThreadMirror(writes.append), writes
+
+
+def _session_snapshot(session_id: str | None = "sess-1") -> BrowserSessionSnapshot:
+    return BrowserSessionSnapshot(
+        task="x", status=BrowserSessionStatus.RUNNING, session_id=session_id
+    )
+
+
+def test_mirror_opens_a_browser_group_keyed_on_the_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The group is what nests the browser agent's own actions under one
+    "Browser" row instead of leaving them loose in the thread."""
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+
+    (start,) = [w["subagent_start"] for w in writes]
+    assert start["subagent_id"] == "browser:sess-1"
+    assert start["subagent_name"] == "Browser"
+    assert start["agent_type"] == "spawned"
+    assert start["tool_category"] == "browser"
+
+
+def test_mirror_without_a_session_id_opens_no_group_and_drops_its_rows() -> None:
+    """No session id means no stable group id, so opening one would strand every
+    action row under an id the result can never close."""
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot(session_id=None))
+    mirror.mirror(
+        BrowserStepSnapshot(index=1, goal="g", actions=[BrowserAction(name="click", inputs={})])
+    )
+    mirror.mirror(_result(BrowserSessionStatus.COMPLETED, True, "done"))
+
+    assert writes == []
+
+
+def test_mirror_opens_the_group_once_for_a_re_reported_session() -> None:
+    """The runner re-emits the session card as its status changes; a second
+    subagent_start would render a duplicate Browser row."""
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    mirror.mirror(_session_snapshot(session_id="sess-2"))
+
+    starts = [w["subagent_start"] for w in writes if "subagent_start" in w]
+    assert [s["subagent_id"] for s in starts] == ["browser:sess-1"]
+
+
+def test_mirror_numbers_each_action_within_its_step() -> None:
+    """Rows are keyed {group}:{step}:{position}, which is what a later output
+    frame matches on -- two actions in one step must not collide."""
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    mirror.mirror(
+        BrowserStepSnapshot(
+            index=4,
+            goal="fill it in",
+            actions=[
+                BrowserAction(name="click", inputs={"index": 1}),
+                BrowserAction(name="input_text", inputs={"index": 2}),
+            ],
+        )
+    )
+
+    ids = [w["tool_data"]["data"]["tool_call_id"] for w in writes if "tool_data" in w]
+    assert ids == ["browser:sess-1:4:0", "browser:sess-1:4:1"]
+
+
+def test_mirror_tags_each_action_output_with_the_group_it_belongs_to() -> None:
+    """Without the subagent id the output frame renders outside the Browser
+    group, detached from the row it describes."""
+    from app.schemas.browser import BrowserActionOutput
+
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    mirror.mirror(
+        BrowserStepSnapshot(index=1, goal="g", actions=[BrowserAction(name="click", inputs={})])
+    )
+    mirror.results(1, [BrowserActionOutput(position=0, output="ok")])
+
+    (output,) = [w["tool_output"] for w in writes if "tool_output" in w]
+    assert output == {
+        "tool_call_id": "browser:sess-1:1:0",
+        "output": "ok",
+        "subagent_id": "browser:sess-1",
+    }
+
+
+def test_mirror_closes_the_group_on_the_result_with_the_run_duration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Construction, then the group opening (which restarts the clock), then close:
+    # the reported duration is the group's lifetime, not the mirror's.
+    ticks = iter([0.0, 1.0, 3.5])
+    monkeypatch.setattr(tool_mod, "perf_counter", lambda: next(ticks))
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    mirror.mirror(_result(BrowserSessionStatus.COMPLETED, True, "done"))
+
+    (end,) = [w["subagent_end"] for w in writes if "subagent_end" in w]
+    assert end["subagent_id"] == "browser:sess-1"
+    assert end["duration_ms"] == 2500
+
+
+def test_mirror_closes_the_group_only_once() -> None:
+    """The result card can be re-emitted; a second subagent_end would close a
+    group that no longer exists and collapse the wrong row."""
+    mirror, writes = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    final = _result(BrowserSessionStatus.COMPLETED, True, "done")
+    mirror.mirror(final)
+    mirror.mirror(final)
+
+    assert len([w for w in writes if "subagent_end" in w]) == 1
+
+
+def test_mirror_result_without_an_open_group_closes_nothing() -> None:
+    mirror, writes = _mirror()
+
+    mirror.mirror(_result(BrowserSessionStatus.FAILED, False, "never started"))
+
+    assert writes == []
