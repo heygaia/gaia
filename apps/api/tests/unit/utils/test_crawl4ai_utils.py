@@ -418,6 +418,45 @@ class TestRecoveryAfterBatchTimeout:
 
         assert expected_recovery_timeout in recorded
 
+    @patch("app.utils.crawl4ai_utils.log")
+    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
+    async def test_a_failed_recovery_teardown_names_the_calling_context(
+        self, mock_crawler_cls: MagicMock, mock_log: MagicMock, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
+        crawler_inst = self._timed_out_batch(mock_crawler_cls)
+        crawler_inst.close = AsyncMock(side_effect=RuntimeError("driver gone"))
+        from app.utils.crawl4ai_utils import CrawlBatchParams, batch_fetch_with_crawl4ai
+
+        await batch_fetch_with_crawl4ai(
+            ["https://good.example"],
+            CrawlBatchParams(
+                page_timeout_ms=30_000,
+                total_timeout_seconds=60.0,
+                semaphore_count=5,
+                context_name="deep_research",
+            ),
+        )
+
+        # The batch crawler and then the recovery crawler both fail to close;
+        # each warning names the caller, never a default.
+        closes = [
+            dict(call.kwargs)
+            for call in mock_log.warning.call_args_list
+            if "browser close failed" in str(call.args[0])
+        ]
+        assert (
+            closes
+            == [
+                {
+                    "context_name": "deep_research",
+                    "error": "driver gone",
+                    "error_type": "RuntimeError",
+                }
+            ]
+            * 2
+        )
+
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
     async def test_recovery_errors_name_the_calling_context(
         self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
