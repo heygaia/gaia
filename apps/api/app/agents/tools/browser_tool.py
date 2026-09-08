@@ -192,7 +192,7 @@ class _BrowserThreadMirror:
             output=output,
             subagent_id=self._group_id,
         )
-        self._writer({"tool_output": payload.model_dump(mode="json", exclude_none=True)})
+        self._writer({"tool_output": payload.model_dump(mode="json")})
 
     def _close(self) -> None:
         if not self._group_id:
