@@ -6,7 +6,8 @@ product's "Restart onboarding" button with ``keep_connections``: seeded
 conversations, onboarding todos and legacy suggested workflows are deleted and
 the ``onboarding`` subdocument is unset, while connected integrations and
 memories stay. Every subscription record of the user is deleted too, so the
-wizard shows the paywall again (the Dodo test-mode side is untouched: run a
+wizard shows the paywall again, and every linked chat platform (Telegram,
+WhatsApp, iMessage, ...) is unlinked so the one-tap link can be tested fresh (the Dodo test-mode side is untouched: run a
 fresh test checkout, with ``dodo wh listen`` pointed at this API so the
 activation webhook lands). It then empties the local Redis so no cached user
 document, cached plan, rate-limit bucket or link code survives.
@@ -28,7 +29,7 @@ Run from the repo root so Infisical's dev secrets are injected:
 
 Flags:
 --dry-run  List the users that would be reset. Default.
---execute  Actually reset them, drop subscriptions and flush Redis. Required to write anything.
+--execute  Actually reset them, drop subscriptions, unlink platforms and flush Redis.
 """
 
 import argparse
@@ -46,6 +47,7 @@ from app.db.redis import redis_cache
 from app.db.repositories.subscriptions import subscription_repository
 from app.db.repositories.users import user_repository
 from app.services.onboarding.onboarding_service import reset_onboarding
+from app.services.platform_link_service import linked_platforms_of
 
 LOCAL_HOSTS = frozenset({"localhost", "127.0.0.1", "::1"})
 REDIS_DELETE_BATCH = 500
@@ -85,6 +87,7 @@ class ResetResult:
     user_ids: list[str] = field(default_factory=list)
     users_reset: int = 0
     subscriptions_deleted: int = 0
+    platforms_unlinked: int = 0
     redis_keys_deleted: int = 0
 
 
@@ -97,6 +100,17 @@ async def flush_local_redis() -> int:
     return len(keys)
 
 
+async def unlink_every_platform(user_id: str) -> int:
+    """Unlink every chat platform on the user; returns how many were linked."""
+    user = await user_repository.get(user_id)
+    if user is None:
+        return 0
+    platforms = list(linked_platforms_of(user))
+    for platform in platforms:
+        await user_repository.unlink_platform(user_id, platform)
+    return len(platforms)
+
+
 async def run_reset(*, dry_run: bool) -> ResetResult:
     """Reset onboarding state for every local user, then flush Redis (unless dry-run)."""
     assert_local_stack(settings.ENV, settings.MONGO_DB, settings.REDIS_URL)
@@ -107,6 +121,7 @@ async def run_reset(*, dry_run: bool) -> ResetResult:
         await reset_onboarding(user_id, keep_connections=True)
         result.users_reset += 1
         result.subscriptions_deleted += await subscription_repository.delete_all_for_user(user_id)
+        result.platforms_unlinked += await unlink_every_platform(user_id)
     result.redis_keys_deleted = await flush_local_redis()
     return result
 
@@ -119,6 +134,7 @@ def _render(result: ResetResult) -> None:
     if not result.dry_run:
         print(f"onboarding reset: {result.users_reset}")
         print(f"subscriptions deleted: {result.subscriptions_deleted}")
+        print(f"platforms unlinked: {result.platforms_unlinked}")
         print(f"redis keys deleted: {result.redis_keys_deleted}")
 
 
@@ -128,7 +144,7 @@ async def main() -> None:
     mode.add_argument(
         "--execute",
         action="store_true",
-        help="reset every local user, drop their subscriptions and flush Redis",
+        help="reset every local user, drop subscriptions, unlink platforms and flush Redis",
     )
     mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
     args = parser.parse_args()
