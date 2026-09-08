@@ -95,7 +95,9 @@ class RabbitMQPublisher:
             await self.connect()
             log.info(f"{LogTag.STARTUP} RabbitMQ reconnected successfully")
 
-    async def _publish_with_retry(self, queue_name: str, body: bytes, *, declare: bool) -> None:
+    async def _publish_with_retry(
+        self, queue_name: str, body: bytes, *, declare: bool, expiration: int | None = None
+    ) -> None:
         """Publish to the default exchange, reconnecting and retrying once.
 
         The reconnect path handles ARQ-worker idle timeouts (workers publish
@@ -103,7 +105,9 @@ class RabbitMQPublisher:
         the WebSocket relay queue is declared on demand, while outbound work
         queues are pre-declared by ``declare_outbound_topology`` and pass False.
         """
-        message = Message(body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT)
+        message = Message(
+            body, delivery_mode=aio_pika.DeliveryMode.PERSISTENT, expiration=expiration
+        )
 
         async def _attempt() -> None:
             await self.ensure_connected()
@@ -155,8 +159,13 @@ class RabbitMQPublisher:
         await asyncio.wait_for(_declare(), timeout=RABBITMQ_TOPOLOGY_TIMEOUT_SECONDS)
         self._outbound_topology_declared = True
 
-    async def publish_outbound(self, queue_name: str, body: bytes) -> None:
+    async def publish_outbound(
+        self, queue_name: str, body: bytes, *, expiration: int | None = None
+    ) -> None:
         """Publish to an outbound work queue with one retry.
+
+        ``expiration`` is the broker-side TTL in seconds: past it the message
+        dead-letters instead of delivering to a bot that comes back late.
 
         Declares the outbound topology once (lazily) before the first publish so
         a message can never outrun the startup declaration and be silently
@@ -189,7 +198,7 @@ class RabbitMQPublisher:
                     "publishing to the existing queue. Delete or migrate it to reconcile.",
                     error=str(e),
                 )
-        await self._publish_with_retry(queue_name, body, declare=False)
+        await self._publish_with_retry(queue_name, body, declare=False, expiration=expiration)
 
     async def close(self) -> None:
         """Close RabbitMQ connection and channel."""

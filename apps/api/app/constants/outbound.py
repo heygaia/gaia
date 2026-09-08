@@ -18,6 +18,14 @@ from app.models.chat_models import BOT_CONVERSATION_SOURCES, ConversationSource
 # Dead-letter exchange every outbound work queue routes failed messages to.
 OUTBOUND_DLX = "outbound.dlx"
 
+#: Per-message expiry on the outbound work queues (seconds). The queues are
+#: durable so a message survives a bot being offline, but not forever: a bot
+#: that comes back after hours must not fire every stale ping at once. Expired
+#: messages dead-letter instead of delivering. A greeting or a confirmation is
+#: worthless within the hour; a brief or a notification within the day.
+OUTBOUND_TTL_SECONDS_DEFAULT = 24 * 60 * 60
+OUTBOUND_TTL_SECONDS_GREETING = 60 * 60
+
 # Per-platform durable work queues, derived from BOT_CONVERSATION_SOURCES (the
 # single source of truth for which sources are bots) so the queue set can never
 # drift from it. The ``outbound.<source>`` names MUST stay byte-identical to

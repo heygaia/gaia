@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.constants.outbound import OUTBOUND_TTL_SECONDS_GREETING
 from app.models.chat_models import ConversationSource
 from app.models.platform_models import PlatformLinkResult
 from app.services.outbound_delivery import OutboundResult
@@ -61,7 +62,9 @@ class TestPostLinkMessage:
     ) -> None:
         notify, publish, _ = side_effects
         await complete_platform_link("u1", "whatsapp", "wa-1", first_contact=BUBBLES)
-        publish.assert_awaited_once_with(ConversationSource.WHATSAPP, "u1", BUBBLES)
+        publish.assert_awaited_once_with(
+            ConversationSource.WHATSAPP, "u1", BUBBLES, ttl_seconds=OUTBOUND_TTL_SECONDS_GREETING
+        )
         notify.assert_not_awaited()
 
     async def test_a_first_contact_is_delivered_even_when_the_link_already_existed(

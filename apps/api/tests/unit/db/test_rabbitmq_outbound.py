@@ -42,6 +42,14 @@ class TestPublishWithRetry:
         channel.default_exchange.publish.assert_awaited_once()
         channel.declare_queue.assert_not_awaited()  # topology is pre-declared
 
+    async def test_publish_outbound_stamps_the_broker_ttl(self, connected_publisher) -> None:
+        """A durable queue outlives a bot outage; the message must not. The TTL
+        rides on the AMQP message so the broker expires it with no consumer."""
+        pub, channel = connected_publisher
+        await pub.publish_outbound("outbound.whatsapp", b"{}", expiration=3600)
+        message = channel.default_exchange.publish.await_args.args[0]
+        assert message.expiration == 3600
+
     async def test_publish_outbound_retries_once_then_succeeds(self, connected_publisher) -> None:
         pub, channel = connected_publisher
         channel.default_exchange.publish.side_effect = [RuntimeError("boom"), None]
