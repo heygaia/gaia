@@ -633,6 +633,29 @@ class TestResetOnboarding:
         assert counts.conversation_deleted == 2
         mock_repo.reset_onboarding.assert_awaited_once_with(sample_user_id)
 
+    async def test_keep_connections_leaves_integrations_and_memories_alone(
+        self,
+        mock_repo: MagicMock,
+        sample_user_id: str,
+    ) -> None:
+        mock_repo.get.return_value = _completed_user(sample_user_id)
+        integrations = AsyncMock()
+        memory = AsyncMock()
+        with (
+            patch(f"{SERVICE}.conversation_repository", AsyncMock()),
+            patch(f"{SERVICE}.todo_repository", AsyncMock()),
+            patch(f"{SERVICE}.user_integration_repository", integrations),
+            patch(f"{SERVICE}.memory_engine", memory),
+            patch(f"{SERVICE}.abort_active_intelligence_job", new_callable=AsyncMock),
+        ):
+            counts = await reset_onboarding(sample_user_id, keep_connections=True)
+
+        integrations.list_for_user.assert_not_awaited()
+        memory.delete_all.assert_not_awaited()
+        assert counts.integrations_disconnected == 0
+        assert counts.memories_cleared == 0
+        mock_repo.reset_onboarding.assert_awaited_once_with(sample_user_id)
+
     async def test_deletes_the_getting_started_conversation_too(
         self,
         mock_repo: MagicMock,
