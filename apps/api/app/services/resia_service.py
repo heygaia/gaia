@@ -6,19 +6,14 @@ module-level async — no service classes.
 """
 
 import re
+from typing import TypeVar
 import uuid
 
 import httpx
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from app.config.settings import settings
-from app.constants.resia import (
-    E164_RE,
-    RESIA_BASE_URL,
-    RESIA_TIMEOUT_SECONDS,
-    TERMINAL_CALL_STATUSES,
-    US_CA_PREFIX,
-)
+from app.constants.resia import E164_RE, RESIA_BASE_URL, RESIA_TIMEOUT_SECONDS, US_CA_PREFIX
 from app.schemas.resia_schemas import (
     CallPlaced,
     CallRead,
@@ -31,16 +26,33 @@ from shared.py.wide_events import log
 
 _E164 = re.compile(E164_RE)
 
+M = TypeVar("M", bound=BaseModel)
+
 
 class ResiaError(Exception):
     """A refused Resia request: machine-readable code plus request id."""
 
-    def __init__(self, code: str, message: str, request_id: str | None = None, status: int = 0):
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        request_id: str | None = None,
+        status: int = 0,
+        retry_after_seconds: int | None = None,
+    ):
         super().__init__(f"{code}: {message}")
         self.code = code
         self.message = message
         self.request_id = request_id
         self.status = status
+        self.retry_after_seconds = retry_after_seconds
+
+
+def _parse(model: type[M], data: object, what: str) -> M:
+    try:
+        return model.model_validate(data)
+    except ValidationError as exc:
+        raise ResiaError("bad_response", f"Unparseable {what}: {exc}") from exc
 
 
 def validate_us_ca_number(number: str) -> str:
@@ -51,10 +63,6 @@ def validate_us_ca_number(number: str) -> str:
     if not cleaned.startswith(US_CA_PREFIX):
         raise ValueError(f"Resia dials US/Canada (+1) only: {number}")
     return cleaned
-
-
-def is_configured() -> bool:
-    return bool(settings.RESIA_API_KEY and settings.RESIA_DEFAULT_CALL_AGENT_ID)
 
 
 def _require_key() -> str:
@@ -92,12 +100,21 @@ async def _request(
         try:
             body = response.json()
             err = body.get("error", body) if isinstance(body, dict) else {}
+            if not isinstance(err, dict):
+                err = {}
             code = str(err.get("code", code))
             message = str(err.get("message", message))
         except ValueError:
             pass
+        retry_after_seconds: int | None = None
+        raw_retry = response.headers.get("Retry-After")
+        if raw_retry is not None:
+            try:
+                retry_after_seconds = int(raw_retry)
+            except ValueError:
+                retry_after_seconds = None
         log.set(resia={"path": path, "status": response.status_code, "code": code})
-        raise ResiaError(code, message, request_id, response.status_code)
+        raise ResiaError(code, message, request_id, response.status_code, retry_after_seconds)
     data = response.json()
     if not isinstance(data, dict):
         raise ResiaError("bad_response", "Non-object response", request_id, 200)
@@ -130,7 +147,7 @@ async def place_call(
     if sender:
         payload["from_phone_number"] = sender
     data = await _request("POST", "/v1/calls", payload)
-    placed = CallPlaced.model_validate(data)
+    placed = _parse(CallPlaced, data, "call acceptance")
     log.set(resia={"call_id": placed.call_id, "status": placed.status})
     return placed
 
@@ -150,29 +167,27 @@ def _read_call(data: dict[str, object]) -> CallRead:
         failure_code = str(failure["code"])
     raw_transcript = data.get("transcript")
     turns = (
-        [TranscriptTurn.model_validate(t) for t in raw_transcript]
+        [_parse(TranscriptTurn, t, "transcript turn") for t in raw_transcript]
         if isinstance(raw_transcript, list)
         else []
     )
     spoken = [t for t in turns if t.role in ("assistant", "user")]
-    return CallRead.model_validate(
+    return _parse(
+        CallRead,
         {
             **data,
             "outcome": outcome,
             "summary": summary,
             "failure_code": failure_code,
             "transcript": spoken,
-        }
+        },
+        "call",
     )
 
 
 async def get_call(call_id: str) -> CallRead:
     """Read one call. Terminal when status is completed/error/canceled."""
     return _read_call(await _request("GET", f"/v1/calls/{call_id}"))
-
-
-def is_terminal(status: str) -> bool:
-    return status in TERMINAL_CALL_STATUSES
 
 
 async def send_text_batch(
@@ -201,18 +216,15 @@ async def send_text_batch(
         "/v1/text-message-batches",
         {"from_phone_number": sender, "text": text, "text_messages": entries},
     )
-    batch = TextBatchPlaced.model_validate(data)
+    batch = _parse(TextBatchPlaced, data, "text batch acceptance")
     log.set(resia={"batch_id": batch.batch_id, "total": len(batch.messages)})
     return batch
 
 
 async def get_text_batch(batch_id: str) -> TextBatchRead:
     """Read one SMS batch's derived status, counts and total."""
-    try:
-        data = await _request("GET", f"/v1/text-message-batches/{batch_id}")
-        return TextBatchRead.model_validate(data)
-    except ValidationError as exc:
-        raise ResiaError("bad_response", f"Unparseable batch payload: {exc}") from exc
+    data = await _request("GET", f"/v1/text-message-batches/{batch_id}")
+    return _parse(TextBatchRead, data, "text batch")
 
 
 async def list_text_batch_messages(
@@ -224,14 +236,8 @@ async def list_text_batch_messages(
         path += f"?cursor={cursor}"
     data = await _request("GET", path)
     raw = data.get("items", [])
-    messages = [TextMessagePlaced.model_validate(m) for m in raw] if isinstance(raw, list) else []
+    messages = (
+        [_parse(TextMessagePlaced, m, "text message") for m in raw] if isinstance(raw, list) else []
+    )
     next_cursor = data.get("next_cursor")
     return messages, str(next_cursor) if next_cursor else None
-
-
-async def list_phone_numbers() -> list[str]:
-    data = await _request("GET", "/v1/phone-numbers")
-    raw = data.get("items", [])
-    if not isinstance(raw, list):
-        return []
-    return [str(item["phone_number"]) for item in raw if isinstance(item, dict)]

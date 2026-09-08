@@ -55,7 +55,10 @@ def _resia_hint(error: resia_service.ResiaError) -> str:
             "SMS sender is not 10DLC-registered: register the 10DLC brand, "
             "activate a campaign, and attach the sender number first."
         )
-    return f"{error.code}: {error.message}"
+    hint = f"{error.code}: {error.message}"
+    if error.retry_after_seconds is not None:
+        hint += f" Retry after {error.retry_after_seconds}s."
+    return hint
 
 
 @tool
