@@ -23,7 +23,7 @@ export function OnboardingBotBubble({
   // the avatar lane (and the logo that sits in it) and tighten the right pad.
   const isMobile = useIsMobile();
   return (
-    <div className="max-sm:[&_.chat_bubble]:max-w-full max-sm:[&_.chat_bubble]:pr-2">
+    <div className="max-sm:[&_.chat_bubble]:w-full max-sm:[&_.chat_bubble]:max-w-full max-sm:[&_.chat_bubble]:pr-2">
       <ChatBubbleBot
         {...BOT_BUBBLE_DEFAULTS}
         text={text}
