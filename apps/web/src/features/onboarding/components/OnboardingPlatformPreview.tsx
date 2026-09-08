@@ -39,15 +39,13 @@ const DWELL_MS = 4000;
 interface OnboardingPlatformPreviewProps {
   profession: string | undefined;
   hoveredPlatform: PlatformPreviewPlatform | null;
-  userName: string | undefined;
-  userAvatar: string | undefined;
+  userFirstName: string | undefined;
 }
 
 export function OnboardingPlatformPreview({
   profession,
   hoveredPlatform,
-  userName,
-  userAvatar,
+  userFirstName,
 }: OnboardingPlatformPreviewProps) {
   const [rotatingPlatform, setRotatingPlatform] =
     useState<PlatformPreviewPlatform>(PLATFORM_PREVIEW_ORDER[0]);
@@ -57,10 +55,9 @@ export function OnboardingPlatformPreview({
   const script = useMemo(
     () =>
       getPlatformScript(profession, activePlatform, {
-        name: userName,
-        avatar: userAvatar,
+        firstName: userFirstName,
       }),
-    [profession, activePlatform, userName, userAvatar],
+    [profession, activePlatform, userFirstName],
   );
 
   const [hasLoaded, setHasLoaded] = useState(false);
