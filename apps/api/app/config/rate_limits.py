@@ -257,12 +257,24 @@ FEATURE_LIMITS: dict[str, TieredRateLimits] = {
     "phone_call_operations": TieredRateLimits(
         free=RateLimitConfig(day=1, month=3),  # TUNE — real per-minute cost
         pro=RateLimitConfig(day=5, month=30),  # ~$9 worst case at ~$0.10/min x 3min
-        info=FeatureInfo(title="Phone Calls", description="Place and check voice calls"),
+        info=FeatureInfo(title="Phone Calls", description="Place voice calls"),
+    ),
+    # Status reads cost no money (Resia API only), so they meter separately —
+    # sharing the placement quota would lock users out of their own results.
+    "phone_call_status_operations": TieredRateLimits(
+        free=RateLimitConfig(day=30, month=300),
+        pro=RateLimitConfig(day=300, month=9000),
+        info=FeatureInfo(title="Phone Call Status", description="Check voice call results"),
     ),
     "sms_operations": TieredRateLimits(
         free=RateLimitConfig(day=5, month=20),  # TUNE — real per-segment cost
         pro=RateLimitConfig(day=25, month=200),  # ~$3 worst case at ~$0.015/seg
-        info=FeatureInfo(title="SMS", description="Send and check text messages"),
+        info=FeatureInfo(title="SMS", description="Send text messages"),
+    ),
+    "sms_status_operations": TieredRateLimits(
+        free=RateLimitConfig(day=30, month=300),
+        pro=RateLimitConfig(day=300, month=9000),
+        info=FeatureInfo(title="SMS Status", description="Check text delivery"),
     ),
     # KNOWLEDGE MANAGEMENT
     "notes": TieredRateLimits(

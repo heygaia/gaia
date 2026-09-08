@@ -5,6 +5,7 @@ logic always runs. No network, no credentials.
 """
 
 from collections.abc import Callable
+import json
 from unittest.mock import patch
 
 import httpx
@@ -12,8 +13,6 @@ import pytest
 
 from app.services import resia_service
 from app.services.resia_service import ResiaError, validate_us_ca_number
-
-pytestmark = pytest.mark.unit
 
 
 @pytest.fixture(autouse=True)
@@ -46,19 +45,26 @@ class TestValidateNumber:
 
 
 class TestReadCall:
-    def test_extracts_outcome_and_filters_transcript(self):
-        call = resia_service._read_call(
-            {
-                "id": "call-1",
-                "status": "completed",
-                "analysis": {"outcome": "achieved", "summary": "Booked."},
-                "transcript": [
-                    {"role": "assistant", "content": "Hi"},
-                    {"role": "user", "content": "Yes"},
-                    {"role": "event", "content": "keypad"},
-                ],
-            }
-        )
+    async def test_extracts_outcome_and_filters_transcript(self):
+        def handler(request: httpx.Request):
+            return _json_response(
+                200,
+                {
+                    "id": "call-1",
+                    "status": "completed",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                    "analysis": {"outcome": "achieved", "summary": "Booked."},
+                    "transcript": [
+                        {"role": "assistant", "content": "Hi"},
+                        {"role": "user", "content": "Yes"},
+                        {"role": "event", "content": "keypad"},
+                    ],
+                },
+            )
+
+        with _patched(handler):
+            call = await resia_service.get_call("call-1")
         assert call.outcome == "achieved"
         assert call.summary == "Booked."
         assert [(t.role, t.content) for t in call.transcript] == [
@@ -66,22 +72,114 @@ class TestReadCall:
             ("user", "Yes"),
         ]
 
-    def test_missing_analysis_stays_unresolved(self):
-        call = resia_service._read_call({"id": "call-1", "status": "in_progress"})
+    async def test_missing_analysis_stays_unresolved(self):
+        def handler(request: httpx.Request):
+            return _json_response(
+                200,
+                {
+                    "id": "call-1",
+                    "status": "in_progress",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                },
+            )
+
+        with _patched(handler):
+            call = await resia_service.get_call("call-1")
         assert call.outcome is None
         assert call.transcript == []
 
-    def test_failure_code_surfaces(self):
-        call = resia_service._read_call(
-            {"id": "call-1", "status": "error", "failure": {"code": "busy", "message": "Busy"}}
-        )
+    async def test_failure_code_surfaces(self):
+        def handler(request: httpx.Request):
+            return _json_response(
+                200,
+                {
+                    "id": "call-1",
+                    "status": "error",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                    "failure": {"code": "busy", "message": "Busy"},
+                },
+            )
+
+        with _patched(handler):
+            call = await resia_service.get_call("call-1")
         assert call.failure_code == "busy"
 
-    def test_malformed_turn_fails_loud(self):
-        with pytest.raises(ResiaError, match="bad_response"):
-            resia_service._read_call(
-                {"id": "call-1", "status": "completed", "transcript": ["garbage"]}
+    async def test_malformed_turn_fails_loud(self):
+        def handler(request: httpx.Request):
+            return _json_response(
+                200,
+                {
+                    "id": "call-1",
+                    "status": "completed",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                    "transcript": ["garbage"],
+                },
             )
+
+        with _patched(handler):
+            with pytest.raises(ResiaError, match="bad_response"):
+                await resia_service.get_call("call-1")
+
+
+class TestPlaceCall:
+    async def test_builds_agent_inputs_and_reference(self):
+        bodies: list[object] = []
+
+        def handler(request: httpx.Request):
+            bodies.append(request.content)
+            return _json_response(
+                202,
+                {
+                    "id": "call-1",
+                    "status": "queued",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                },
+            )
+
+        with _patched(handler):
+            placed = await resia_service.place_call(
+                "+1 415-555-0123", "Book a table", "Alex", "user-1"
+            )
+        assert placed.call_id == "call-1"
+        assert placed.status == "queued"
+        assert isinstance(bodies[0], bytes)
+        body = json.loads(bodies[0].decode())
+        assert body["to_phone_number"] == "+14155550123"
+        assert body["call_agent_id"] == "agent-1"
+        assert body["inputs"] == {"objective": "Book a table", "on_behalf_of": "Alex"}
+        assert str(body["client_reference"]).startswith("gaia-user-1-")
+
+    async def test_blank_objective_rejected_before_network(self):
+        bodies: list[object] = []
+
+        def handler(request: httpx.Request):
+            bodies.append(request.content)
+            raise AssertionError("no request should fire")
+
+        with _patched(handler):
+            with pytest.raises(ValueError, match="objective is required"):
+                await resia_service.place_call("+14155550123", "  ", "Alex", "user-1")
+        assert bodies == []
+
+
+class TestSendBatch:
+    async def test_rejects_bad_counts_before_network(self):
+        bodies: list[object] = []
+
+        def handler(request: httpx.Request):
+            bodies.append(request.content)
+            raise AssertionError("no request should fire")
+
+        with _patched(handler):
+            with pytest.raises(ValueError, match="1-100"):
+                await resia_service.send_text_batch([], "hi", "user-1")
+            with pytest.raises(ValueError, match="1-1600"):
+                await resia_service.send_text_batch(["+14155550123"], "", "user-1")
+        assert bodies == []
 
 
 class TestRequestErrors:
@@ -119,3 +217,23 @@ class TestRequestErrors:
                 await resia_service.get_call("call-1")
         assert exc_info.value.code == "request_failed"
         assert exc_info.value.status == 503
+
+
+class TestUnknownOutcome:
+    async def test_unlisted_outcome_maps_to_none(self):
+        def handler(request: httpx.Request):
+            return _json_response(
+                200,
+                {
+                    "id": "call-1",
+                    "status": "completed",
+                    "created_at": "2026-09-08T17:57:38.921+00:00",
+                    "call_agent_version_id": "v1",
+                    "analysis": {"outcome": "transcended", "summary": "Huh."},
+                },
+            )
+
+        with _patched(handler):
+            call = await resia_service.get_call("call-1")
+        assert call.outcome is None
+        assert call.summary == "Huh."

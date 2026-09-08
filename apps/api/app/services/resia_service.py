@@ -6,15 +6,23 @@ module-level async — no service classes.
 """
 
 import re
-from typing import TypeVar
+from typing import TypeVar, cast
 import uuid
 
 import httpx
 from pydantic import BaseModel, ValidationError
 
 from app.config.settings import settings
-from app.constants.resia import E164_RE, RESIA_BASE_URL, RESIA_TIMEOUT_SECONDS, US_CA_PREFIX
+from app.constants.resia import (
+    E164_RE,
+    MAX_SMS_RECIPIENTS,
+    RESIA_BASE_URL,
+    RESIA_TIMEOUT_SECONDS,
+    SMS_MAX_CHARS,
+    US_CA_PREFIX,
+)
 from app.schemas.resia_schemas import (
+    CallOutcome,
     CallPlaced,
     CallRead,
     TextBatchPlaced,
@@ -27,6 +35,9 @@ from shared.py.wide_events import log
 _E164 = re.compile(E164_RE)
 
 M = TypeVar("M", bound=BaseModel)
+
+# The only outcomes our call agent's analysis_schema can produce.
+_KNOWN_OUTCOMES: tuple[str, ...] = ("achieved", "partial", "not_achieved", "unclear")
 
 
 class ResiaError(Exception):
@@ -134,6 +145,10 @@ async def place_call(
     from_phone_number: str | None = None,
 ) -> CallPlaced:
     """Queue one outbound call; the call has NOT been dialled when this returns."""
+    if not objective.strip():
+        raise ValueError("objective is required")
+    if not on_behalf_of.strip():
+        raise ValueError("on_behalf_of is required")
     to_number = validate_us_ca_number(to_phone_number)
     sender = from_phone_number or settings.RESIA_DEFAULT_FROM_NUMBER
     if sender:
@@ -154,12 +169,13 @@ async def place_call(
 
 def _read_call(data: dict[str, object]) -> CallRead:
     analysis = data.get("analysis")
-    outcome: str | None = None
+    outcome: CallOutcome | None = None
     summary: str | None = None
     if isinstance(analysis, dict):
         raw_outcome = analysis.get("outcome")
         raw_summary = analysis.get("summary")
-        outcome = str(raw_outcome) if raw_outcome is not None else None
+        if isinstance(raw_outcome, str) and raw_outcome in _KNOWN_OUTCOMES:
+            outcome = cast(CallOutcome, raw_outcome)
         summary = str(raw_summary) if raw_summary is not None else None
     failure = data.get("failure")
     failure_code: str | None = None
@@ -197,6 +213,10 @@ async def send_text_batch(
     from_phone_number: str | None = None,
 ) -> TextBatchPlaced:
     """Queue one SMS body to 1..N recipients from a single owned sender."""
+    if not 1 <= len(to_phone_numbers) <= MAX_SMS_RECIPIENTS:
+        raise ValueError(f"Send 1-{MAX_SMS_RECIPIENTS} recipients per call")
+    if not 1 <= len(text) <= SMS_MAX_CHARS:
+        raise ValueError(f"Message must be 1-{SMS_MAX_CHARS} chars")
     sender_raw = from_phone_number or settings.RESIA_DEFAULT_FROM_NUMBER
     if not sender_raw:
         raise ValueError(

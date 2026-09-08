@@ -1,6 +1,10 @@
 """Pydantic schemas for Resia voice-call and SMS responses."""
 
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
+
+CallOutcome = Literal["achieved", "partial", "not_achieved", "unclear"]
 
 
 class TranscriptTurn(BaseModel):
@@ -23,7 +27,7 @@ class CallRead(BaseModel):
     call_id: str = Field(alias="id")
     status: str
     to_phone_number: str | None = None
-    outcome: str | None = None
+    outcome: CallOutcome | None = None
     summary: str | None = None
     duration_secs: float | None = None
     charged_cents: int | None = Field(alias="charge_amount_in_cents", default=None)

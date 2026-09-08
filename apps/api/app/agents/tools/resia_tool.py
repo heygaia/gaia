@@ -6,8 +6,8 @@ from langchain_core.tools import tool
 from langgraph.config import get_stream_writer
 
 from app.constants.log_tags import LogTag
-from app.constants.resia import MAX_SMS_RECIPIENTS, SMS_MAX_CHARS
 from app.decorators import with_doc, with_rate_limiting
+from app.schemas.resia_schemas import CallOutcome
 from app.services import resia_service
 from app.services.analytics_service import AnalyticsEvents
 from app.templates.docstrings.resia_tool_docs import (
@@ -27,13 +27,19 @@ class PhoneCallResult(TypedDict):
     call_id: str
     status: str
     to_phone_number: NotRequired[str | None]
-    outcome: NotRequired[str | None]
+    outcome: NotRequired[CallOutcome | None]
     summary: NotRequired[str | None]
     duration_secs: NotRequired[float | None]
     charged_cents: NotRequired[int | None]
     failure_code: NotRequired[str | None]
     transcript: NotRequired[list[dict[str, str]]]
     error: NotRequired[str]
+
+
+class RejectedEntryDict(TypedDict):
+    to_phone_number: str
+    reason: str
+    position: int
 
 
 class SmsResult(TypedDict):
@@ -43,7 +49,7 @@ class SmsResult(TypedDict):
     status: NotRequired[str]
     recipient_count: NotRequired[int]
     messages: NotRequired[list[dict[str, str]]]
-    rejected: NotRequired[list[dict[str, str]]]
+    rejected: NotRequired[list[RejectedEntryDict]]
     counts: NotRequired[dict[str, int]]
     total: NotRequired[int]
     error: NotRequired[str]
@@ -78,12 +84,6 @@ async def place_phone_call(
         user_id = get_user_id_from_config(config)
         if not user_id:
             return {"error": "User authentication required", "call_id": "", "status": "error"}
-        if not objective.strip() or not on_behalf_of.strip():
-            return {
-                "error": "objective and on_behalf_of are required",
-                "call_id": "",
-                "status": "error",
-            }
 
         placed = await resia_service.place_call(
             to_phone_number,
@@ -114,7 +114,7 @@ async def place_phone_call(
 
 
 @tool
-@with_rate_limiting("phone_call_operations")
+@with_rate_limiting("phone_call_status_operations")
 @with_doc(GET_PHONE_CALL_STATUS)
 async def get_phone_call_status(
     config: RunnableConfig,  # noqa: ARG001 -- framework contract
@@ -156,16 +156,6 @@ async def send_sms(
         user_id = get_user_id_from_config(config)
         if not user_id:
             return {"error": "User authentication required", "batch_id": ""}
-        if not 1 <= len(to_phone_numbers) <= MAX_SMS_RECIPIENTS:
-            return {
-                "error": f"Send 1-{MAX_SMS_RECIPIENTS} recipients per call",
-                "batch_id": "",
-            }
-        if not 1 <= len(message) <= SMS_MAX_CHARS:
-            return {
-                "error": f"Message must be 1-{SMS_MAX_CHARS} chars",
-                "batch_id": "",
-            }
 
         batch = await resia_service.send_text_batch(
             to_phone_numbers, message, user_id, from_phone_number
@@ -183,7 +173,12 @@ async def send_sms(
                 for m in batch.messages
             ],
             "rejected": [
-                {"to_phone_number": r.to_phone_number, "reason": r.reason} for r in batch.rejected
+                {
+                    "to_phone_number": r.to_phone_number,
+                    "reason": r.reason,
+                    "position": r.position,
+                }
+                for r in batch.rejected
             ],
         }
         writer = get_stream_writer()
@@ -206,7 +201,7 @@ async def send_sms(
 
 
 @tool
-@with_rate_limiting("sms_operations")
+@with_rate_limiting("sms_status_operations")
 @with_doc(GET_SMS_STATUS)
 async def get_sms_status(
     config: RunnableConfig,  # noqa: ARG001 -- framework contract

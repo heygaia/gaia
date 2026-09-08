@@ -19,6 +19,7 @@ Args:
 Returns:
     dict with call_id and status (queued). The call has NOT happened yet;
     use get_phone_call_status to follow it. Costs real money on completion.
+    On failure, error explains why and call_id is empty: nothing was placed.
 """
 
 GET_PHONE_CALL_STATUS = """
@@ -53,6 +54,7 @@ Args:
 Returns:
     dict with batch_id, per-message ids/statuses and rejected entries.
     Follow delivery with get_sms_status. Costs real money per segment.
+    On failure, error explains why and batch_id is empty: nothing was sent.
 """
 
 GET_SMS_STATUS = """
