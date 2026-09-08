@@ -134,6 +134,20 @@ def test_list_arguments_are_emitted_as_json_strings(harness) -> None:
     assert entry["ranges"] == "[4,5]"
 
 
+def test_every_shard_is_told_how_many_shards_share_the_box(harness) -> None:
+    # The shard divides the host's core budget by this, so four packed shards
+    # run side by side instead of each claiming the whole box and queueing on
+    # the governor; a lone shard still gets everything.
+    _, outputs = harness(
+        [
+            _entry("app/a.py", ["tests/unit/test_a.py"], [1]),
+            _entry("app/b.py", ["tests/unit/test_b.py"], [2]),
+        ]
+    )
+
+    assert [item["shards"] for item in json.loads(outputs["matrix"])] == ["2", "2"]
+
+
 def test_a_module_with_several_test_files_keeps_all_of_them(harness) -> None:
     _, outputs = harness(
         [_entry("app/a.py", ["tests/unit/test_a.py", "tests/unit/test_b.py"], [1])]

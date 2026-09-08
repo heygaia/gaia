@@ -1257,9 +1257,12 @@ jobs:
     needs: [select-runner, changes, test-mutation-plan]
     if: needs.changes.outputs.has_python == 'true' && needs.test-mutation-plan.outputs.count != '0'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    # Per MODULE, not per lane. The slowest shard measured end to end (setup
-    # included) is ~3 minutes; the margin covers a genuinely large module.
-    timeout-minutes: 25
+    # Per SHARD, not per lane. A lone-module shard measures ~3 minutes end to
+    # end (setup included); a packed one carries up to a quarter of the diff,
+    # and 22 modules cost ~18 minutes of mutation work alone (2026-09-08, the
+    # 90-module browser-automation PR: ~40-50 s of fixed cost per module — the
+    # unmutated baseline run of every mapped test file — before any mutant).
+    timeout-minutes: 35
     strategy:
       # Every module reports. Stopping at the first failure would hide the
       # rest, and this gate's whole value is the complete list.
@@ -1284,12 +1287,17 @@ jobs:
       - name: Mutation check (zero survivors required)
         # STEP-level timeout so a stuck shard fails as a step (job continues,
         # the shard-log artifact uploads, logs survive) instead of the job
-        # being cancelled at its cap — a cancelled job retains nothing.
-        timeout-minutes: 20
+        # being cancelled at its cap — a cancelled job retains nothing. Sized
+        # for a packed shard (see the job timeout above), under it.
+        timeout-minutes: 30
         # Through env, not inline expansion: the value is generated, but an
         # inline ${{ }} in a run block is a shell-injection seam regardless.
+        # SHARD_COUNT is how many shards share the box's core budget: the shard
+        # takes nproc-2 divided by it, so packed shards run side by side instead
+        # of each claiming the whole box and queueing on the host governor.
         env:
           GROUP: ${{ matrix.group }}
+          SHARD_COUNT: ${{ matrix.shards }}
         run: bash scripts/ci/mutation.sh shard
       - name: Upload shard log
         # Belt and braces for the diagnosis path: runs even when the step

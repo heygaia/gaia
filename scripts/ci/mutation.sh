@@ -136,6 +136,9 @@ include = [
             else f"shard {number}/{len(shards)} ({len(shard)} modules)"
         ),
         "group": json.dumps(shard, separators=(",", ":")),
+        # How many shards share the box's core budget (mutation.sh shard divides
+        # nproc-2 by it). A string, like every other matrix value here.
+        "shards": str(len(shards)),
     }
     for number, shard in enumerate(shards, start=1)
 ]
@@ -206,16 +209,22 @@ for entry in entries:
 
   # This shard's CPU appetite: mutmut forks one mutant worker per child, and its
   # own default is os.cpu_count() — 16 on the box, so four shards at max-parallel
-  # would spawn 64 workers on 16 threads. Bound each shard to nproc-2 (the same
-  # budget cmd_local uses; two cores left for the OS and docker) AND take that
-  # many host tokens for the run, so the mutation shards queue against the box's
-  # physical-core budget instead of thrashing it and the test-python/build lanes.
+  # would spawn 64 workers on 16 threads. The matrix's shards SHARE nproc-2 (the
+  # budget cmd_local uses whole; two cores left for the OS and docker): each takes
+  # its slice as host tokens, so four packed shards run side by side inside the
+  # box's physical-core budget and a lone shard still gets all of it. Each shard
+  # claiming the whole budget serialised them on the governor instead — three
+  # idled up to its 600 s fail-open, then ran oversubscribed anyway, and a
+  # 22-module shard timed out at 20 min having done six of mutation work.
   # Fail-open and a no-op off the self-hosted box; MUTMUT_MAX_CHILDREN honours an
   # explicit override for the local runner.
-  local NPROC BUDGET SLOTS
+  local NPROC BUDGET SLOTS SHARDS
   NPROC="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
   BUDGET="$(( NPROC > 3 ? NPROC - 2 : 1 ))"
+  SHARDS="${SHARD_COUNT:-1}"
+  BUDGET="$(( BUDGET / SHARDS ))"; [ "$BUDGET" -ge 1 ] || BUDGET=1
   export MUTMUT_MAX_CHILDREN="${MUTMUT_MAX_CHILDREN:-$BUDGET}"
+  echo "cpu budget: $MUTMUT_MAX_CHILDREN mutmut child(ren) — $NPROC threads, nproc-2 shared by $SHARDS shard(s)"
   # Acquire tokens for the workers we will ACTUALLY spawn, not the default
   # budget: an explicit MUTMUT_MAX_CHILDREN override (e.g. a local runner) can
   # exceed BUDGET, and taking only BUDGET tokens would let the shard run more

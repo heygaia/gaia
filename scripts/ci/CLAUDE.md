@@ -91,7 +91,11 @@ Two rules make it safe to have in the gate at all:
   acquirer.
 
 Wiring: `pytest.sh slice` takes `XDIST_N` tokens, `mutation.sh shard` takes its
-`nproc-2` budget (and bounds `MUTMUT_MAX_CHILDREN` to match), and the nx `build`
+slice of the `nproc-2` budget — divided by `SHARD_COUNT`, which the plan emits
+as the matrix's `shards` value, so four packed shards run side by side and a
+lone one gets the whole budget (and bounds `MUTMUT_MAX_CHILDREN` to match; each
+shard claiming all of `nproc-2` serialised them on the governor and timed the
+packed ones out) — and the nx `build`
 step takes `NX_PARALLEL` via `runner.sh with-slots N -- <cmd>` (the wrapper exists
 so a scriptless lane's step stays one command line). The lib lives in the repo
 checkout and is sourced like `log.sh`; no `setup.sh` re-run is needed on the box.
