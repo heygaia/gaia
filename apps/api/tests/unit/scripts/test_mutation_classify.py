@@ -471,3 +471,80 @@ class TestContainerFunctionWithNestedDefs:
 
         assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
         assert result.returncode == 1
+
+
+class TestCacheSetModelArgument:
+    """``redis_cache.set`` dumps through ``TypeAdapter(model or Any)``, so a
+    ``model=C`` beside a value that already IS a ``C(...)`` writes identical
+    bytes either way — but only then. The shape is ``mint_import_token``'s."""
+
+    _WRAPPED = (
+        "    redis_cache.set(\n"
+        "        _key(token),\n"
+        "        ImportTokenRecord(user_id=user_id),\n"
+        "        ttl=BROWSER_IMPORT_TOKEN_TTL_SECONDS,\n"
+        "        model=ImportTokenRecord,\n"
+        "    )"
+    )
+    _DICT_VALUE = _WRAPPED.replace(
+        "        ImportTokenRecord(user_id=user_id),\n", '        {"user_id": user_id},\n'
+    )
+    _VARIABLE_VALUE = _WRAPPED.replace(
+        "        ImportTokenRecord(user_id=user_id),\n", "        record,\n"
+    )
+
+    def _probe(self, workdir: Path, body: str, mutant: str) -> subprocess.CompletedProcess[str]:
+        (workdir / MODULE_REL).write_text(f"def probe(token, user_id, record):\n{body}\n")
+        _write_mutants(workdir, body, mutant)
+        return _classify(workdir)
+
+    def test_a_none_model_beside_its_own_construction_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._WRAPPED, self._WRAPPED.replace("model=ImportTokenRecord,", "model=None,")
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_model_beside_its_own_construction_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._WRAPPED, self._WRAPPED.replace("        model=ImportTokenRecord,\n", "")
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_none_model_beside_a_dict_value_is_still_reported(self, workdir: Path) -> None:
+        # A dict IS coerced by the model adapter — dropping it changes the bytes.
+        result = self._probe(
+            workdir,
+            self._DICT_VALUE,
+            self._DICT_VALUE.replace("model=ImportTokenRecord,", "model=None,"),
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_model_beside_a_variable_value_is_still_reported(self, workdir: Path) -> None:
+        # Nothing at this call site says what `record` is, so nothing proves the
+        # adapter has no work to do.
+        result = self._probe(
+            workdir,
+            self._VARIABLE_VALUE,
+            self._VARIABLE_VALUE.replace("        model=ImportTokenRecord,\n", ""),
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_mutated_key_on_the_same_call_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._WRAPPED, self._WRAPPED.replace("_key(token)", "_key(None)")
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_mutated_ttl_on_the_same_call_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir,
+            self._WRAPPED,
+            self._WRAPPED.replace("ttl=BROWSER_IMPORT_TOKEN_TTL_SECONDS,", "ttl=None,"),
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr

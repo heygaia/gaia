@@ -64,7 +64,10 @@ from app.agents.llm.types import LLMProviderName
 from app.constants.llm import (
     AUX_MODEL_NAME,
     DEFAULT_GEMINI_MODEL_NAME,
+    DEFAULT_LLM_TEMPERATURE,
+    DEFAULT_MAX_TOKENS,
     DEFAULT_MODEL_NAME,
+    DEV_LLM_MAX_OUTPUT_TOKENS,
     HELPER_MAX_OUTPUT_TOKENS,
     OPENROUTER_APP_CATEGORIES,
     OPENROUTER_APP_TITLE,
@@ -718,6 +721,59 @@ class TestGetDefaultLlmCustomLane:
         get_default_llm()
 
         assert mock_chat_openrouter.call_args.kwargs["model"] == DEFAULT_MODEL_NAME
+
+    @patch("app.agents.llm.client.ChatOpenRouter")
+    @patch("app.agents.llm.client.settings")
+    def test_the_custom_lane_streams_with_usage_and_a_bounded_output(
+        self, mock_settings: MagicMock, mock_chat_openrouter: MagicMock
+    ) -> None:
+        """Same wire contract as the OpenRouter lane it replaces: streaming on,
+        usage metadata attached to that stream, and the output capped — an
+        unbounded auxiliary call runs to the endpoint's own 64k ceiling."""
+        mock_settings.GAIA_SIM_MODE = False
+        mock_settings.DEV_LLM_BASE_URL = "https://gw/v1"
+        mock_settings.DEV_LLM_API_KEY = "dev-key"  # pragma: allowlist secret
+        mock_settings.DEV_LLM_MODEL = "zai/glm-5.3-flash"
+
+        get_default_llm()
+
+        kwargs = mock_chat_openrouter.call_args.kwargs
+        assert kwargs["streaming"] is True
+        assert kwargs["stream_usage"] is True
+        assert kwargs["max_tokens"] == DEV_LLM_MAX_OUTPUT_TOKENS
+
+    @patch("app.agents.llm.client.ChatOpenRouter")
+    @patch("app.agents.llm.client.settings")
+    def test_the_custom_lane_carries_the_context_window_profile(
+        self, mock_settings: MagicMock, mock_chat_openrouter: MagicMock
+    ) -> None:
+        """The fractional-window middleware reads ``profile["max_input_tokens"]``
+        at graph-build time and raises without it — an arbitrary custom endpoint
+        has no curated LangChain profile, so this lane must supply one."""
+        mock_settings.GAIA_SIM_MODE = False
+        mock_settings.DEV_LLM_BASE_URL = "https://gw/v1"
+        mock_settings.DEV_LLM_API_KEY = "dev-key"  # pragma: allowlist secret
+        mock_settings.DEV_LLM_MODEL = "zai/glm-5.3-flash"
+
+        llm = get_default_llm()
+
+        assert llm.profile == {"max_input_tokens": DEFAULT_MAX_TOKENS}
+
+    @patch("app.agents.llm.client.ChatOpenRouter")
+    @patch("app.agents.llm.client.settings")
+    def test_an_unset_model_asks_for_no_model_rather_than_a_placeholder(
+        self, mock_settings: MagicMock, mock_chat_openrouter: MagicMock
+    ) -> None:
+        """``DEV_LLM_MODEL`` is ``str | None``; the ``or ""`` exists only to keep
+        the kwarg a str. It must stay empty — any stand-in id would be sent to
+        the endpoint as a real model request."""
+        mock_settings.DEV_LLM_MODEL = None
+        mock_settings.DEV_LLM_API_KEY = "dev-key"  # pragma: allowlist secret
+        mock_settings.DEV_LLM_BASE_URL = "https://gw/v1"
+
+        _build_custom_default_llm(DEFAULT_LLM_TEMPERATURE)
+
+        assert mock_chat_openrouter.call_args.kwargs["model"] == ""
 
 
 class TestBackgroundStructuredRunnable:

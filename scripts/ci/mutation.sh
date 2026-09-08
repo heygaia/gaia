@@ -1021,6 +1021,12 @@ sys.exit(proc.returncode)
     echo "      and a lookup default feeding urlparse(...).hostname, which is None" >&2
     echo "      for every non-URL, so \"\", None and \"XXXX\" are indistinguishable;" >&2
     echo "      mutating the lookup's KEY there is still reported." >&2
+    echo "      And one more: a cache write's model= dropped or None'd where the" >&2
+    echo "      value at that call site IS a construction of that same class —" >&2
+    echo "      redis_cache.set dumps through TypeAdapter(model or Any), which" >&2
+    echo "      emits identical bytes for an instance it does not have to coerce." >&2
+    echo "      A dict or a variable value there is coerced, and stays reported," >&2
+    echo "      as does any mutation of that call's key or TTL." >&2
     echo "$EQUIVALENT" >&2
   fi
   if [ -n "$LOGGING" ]; then

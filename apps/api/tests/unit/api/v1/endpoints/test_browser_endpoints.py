@@ -430,6 +430,20 @@ class TestImportBrowserSessions:
         assert [c["name"] for c in state["cookies"]] == ["s"]
         assert [c["domain"] for c in state["cookies"]] == [".github.com"]
         assert [o["origin"] for o in state["origins"]] == ["https://github.com"]
+        # Playwright's camelCase, not our snake_case field names: the stored slice
+        # is fed straight back to add_cookies/localStorage, which ignores
+        # http_only/same_site/local_storage and silently drops the login.
+        assert set(state["cookies"][0]) == {
+            "name",
+            "value",
+            "domain",
+            "path",
+            "expires",
+            "httpOnly",
+            "secure",
+            "sameSite",
+        }
+        assert set(state["origins"][0]) == {"origin", "localStorage"}
 
     async def test_wide_event_attributes_the_import_to_the_token_owner(self, monkeypatch):
         """No session cookie on this route — without the token owner on the event,

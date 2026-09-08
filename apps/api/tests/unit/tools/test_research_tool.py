@@ -449,6 +449,59 @@ class TestDeepResearch:
             f"Expected '1/3 searches returned results' in progress calls: {progress_calls}"
         )
 
+    @pytest.mark.asyncio
+    @patch(f"{MODULE}.get_user_id_from_config", return_value="user-123")
+    @patch(f"{MODULE}.build_research_cache_key", return_value="cache:key")
+    @patch(f"{MODULE}.get_cache", new_callable=AsyncMock, return_value=None)
+    @patch(f"{MODULE}.set_cache", new_callable=AsyncMock)
+    @patch(f"{MODULE}.decompose_research_queries", new_callable=AsyncMock)
+    @patch(f"{MODULE}.search_for_research", new_callable=AsyncMock)
+    @patch(f"{MODULE}.rank_and_deduplicate_urls")
+    @patch(f"{MODULE}.batch_fetch_with_crawl4ai", new_callable=AsyncMock)
+    async def test_batch_crawl_is_tuned_for_deep_research_and_scoped_to_the_query(
+        self,
+        mock_batch_crawl4ai: AsyncMock,
+        mock_rank: MagicMock,
+        mock_ddg: AsyncMock,
+        mock_decompose: AsyncMock,
+        _mock_set_cache: AsyncMock,
+        _mock_cache: AsyncMock,
+        _mock_cache_key: MagicMock,
+        _mock_uid: MagicMock,
+    ) -> None:
+        """Deep research fetches its own way: its batch timeouts and concurrency
+        come from the deep-research constants (not crawl4ai's plain-fetch
+        defaults), and ``content_query`` is what makes BM25 keep the passages
+        about this topic -- dropping it hands the model whole unfiltered pages."""
+        from app.constants.search import (
+            CRAWL4AI_PAGE_TIMEOUT_MS,
+            DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS,
+            DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT,
+        )
+        from app.utils.crawl4ai_utils import CrawlBatchParams
+
+        mock_decompose.return_value = ["q1"]
+        mock_ddg.return_value = {"results": [{"url": "https://a.com"}]}
+        mock_rank.return_value = [{"url": "https://a.com", "snippet": "s"}]
+        mock_batch_crawl4ai.return_value = ({"https://a.com": "content"}, {})
+
+        from app.agents.tools.research_tool import deep_research
+
+        await deep_research.ainvoke(
+            {"query": "AI trends", "scope": "", "depth": 1, "focus_areas": None},
+            config=_make_config(),
+        )
+
+        urls, params = mock_batch_crawl4ai.await_args.args
+        assert urls == ["https://a.com"]
+        assert params == CrawlBatchParams(
+            page_timeout_ms=CRAWL4AI_PAGE_TIMEOUT_MS,
+            total_timeout_seconds=DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS,
+            semaphore_count=DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT,
+            context_name="crawl4ai",
+            content_query="AI trends",
+        )
+
 
 # ---------------------------------------------------------------------------
 # _fetch_source_contents — the three-tier resolution of a ranked URL
@@ -640,3 +693,18 @@ class TestFetchSourceContents:
         message, kwargs = mock_log.warning.call_args
         assert "All fetchers failed, using search snippet" in message[0]
         assert kwargs == {"url": "https://a.com"}
+
+    @pytest.mark.asyncio
+    async def test_a_failure_outside_the_tiers_propagates_instead_of_becoming_a_source(
+        self,
+    ) -> None:
+        """Only the three fetch tiers are recoverable. Anything else must raise:
+        swallowing it would put an exception object in the sources list, which
+        the caller then treats as a source and crashes on far from the cause."""
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        writer = MagicMock(side_effect=RuntimeError("stream closed"))
+        with pytest.raises(RuntimeError, match="stream closed"):
+            await _fetch_source_contents(
+                [{"url": "https://a.com"}], {"https://a.com": "page body"}, {}, writer
+            )

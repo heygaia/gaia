@@ -31,7 +31,7 @@ async def mint_import_token(user_id: str) -> str:
         _key(token),
         ImportTokenRecord(user_id=user_id),
         ttl=BROWSER_IMPORT_TOKEN_TTL_SECONDS,
-        model=ImportTokenRecord,  # pragma: no mutate — TypeAdapter(Any) serialises it the same
+        model=ImportTokenRecord,
     )
     return token
 

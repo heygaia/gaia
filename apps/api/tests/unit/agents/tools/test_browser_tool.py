@@ -28,6 +28,7 @@ from app.schemas.browser import (
     HandoffOutcome,
     HandoffRequest,
 )
+from app.services.analytics_service import AnalyticsEvents
 from app.services.browser.exceptions import BrowserConcurrencyLimit, BrowserUnavailableError
 from app.services.browser.runner import BrowserRunConfig, BrowserRunnerCallbacks
 from app.services.browser.tasks import BrowserTaskRecord
@@ -1313,3 +1314,56 @@ async def test_non_credentials_handoff_gets_only_the_keepalive(
     assert len(watchers) == 1
     assert [name for _, name in w.spawned] == ["browser_handoff_keepalive"]
     w.auto_resolve.assert_not_called()
+
+
+async def test_handoff_watchers_are_aimed_at_this_run_handoff_session_and_user(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The watchers are only useful if they name the run that paused: the wrong
+    (or a missing) session id keeps the wrong browser alive, and the wrong
+    handoff/user id resolves a handoff nobody is waiting on."""
+
+    async def body(h: Harness) -> BrowserResultSnapshot:
+        await h.request_handoff(
+            HandoffRequest(category=SensitiveCategory.CREDENTIALS, reason="log in")
+        )
+        return _result(BrowserSessionStatus.COMPLETED, True, "done")
+
+    h = _install(monkeypatch, run_body=body)
+    w = _record_watchers(monkeypatch)
+
+    await browser_task.ainvoke({"task": "x"}, config=UI_CONFIG)
+
+    handoff_id = h.handoffs_created[0][0]
+    w.keep_alive.assert_called_once_with("sess-1")
+    w.auto_resolve.assert_called_once_with(handoff_id, "sess-1", "u1")
+
+
+# ---------------------------------------------------------------------------
+# _persist_run_outcome — analytics attribution
+# ---------------------------------------------------------------------------
+
+
+async def test_finished_run_is_captured_against_the_user_who_ran_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A graph-background run has no request context, so the id has to be passed
+    explicitly -- otherwise the event lands on an anonymous profile and never
+    shows up in that user's funnel."""
+    captured: list[tuple[Any, ...]] = []
+    monkeypatch.setattr(
+        tool_mod,
+        "capture_event",
+        lambda user_id, event, props: captured.append((user_id, event, props)),
+    )
+    _install(monkeypatch, result=_result(BrowserSessionStatus.COMPLETED, True, "done", steps=3))
+
+    await browser_task.ainvoke({"task": "x"}, config=UI_CONFIG)
+
+    (user_id, event, props) = captured[0]
+    assert len(captured) == 1
+    assert user_id == "u1"
+    assert event == AnalyticsEvents.BROWSER_TASK_FINISHED
+    assert props["status"] == "completed"
+    assert props["success"] is True
+    assert props["steps"] == 3

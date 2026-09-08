@@ -107,9 +107,7 @@ async def _fetch_source_contents(
                 }
             return {**url_info, "content": None, "fetch_error": "; ".join(errors)}
 
-    sources: list[dict[str, Any]] = await asyncio.gather(
-        *[_bounded_fetch(u) for u in ranked_urls], return_exceptions=False
-    )
+    sources: list[dict[str, Any]] = await asyncio.gather(*[_bounded_fetch(u) for u in ranked_urls])
     return sources
 
 
@@ -240,7 +238,6 @@ async def deep_research(
                 page_timeout_ms=CRAWL4AI_PAGE_TIMEOUT_MS,
                 total_timeout_seconds=DEEP_RESEARCH_CRAWL4AI_BATCH_TIMEOUT_SECONDS,
                 semaphore_count=DEEP_RESEARCH_CRAWL4AI_SEMAPHORE_COUNT,
-                context_name="crawl4ai",
                 content_query=query,
             ),
         )

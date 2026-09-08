@@ -739,6 +739,62 @@ def _unobservable_default_argument(
     return False
 
 
+# The two cache writers that serialise through ``serialize_any(value, model)``
+# -> ``TypeAdapter(model or Any).dump_json(value)`` (app/db/redis.py).
+_SERIALISING_CACHE_SETTERS = {"redis_cache.set", "set_cache"}
+
+
+def _value_argument(node):
+    """The ``value`` argument of a cache set call — second positional, or the kwarg."""
+    for kw in node.keywords:
+        if kw.arg == "value":
+            return kw.value
+    return node.args[1] if len(node.args) > 1 else None
+
+
+def _unobservable_serialised_model_argument(
+    path: str, line_no: int, col: int, orig_line: str, mut_line: str
+) -> bool:
+    """True when a cache write's ``model=C`` is dropped/None'd while the value IS a ``C(...)``.
+
+    ``redis_cache.set`` serialises with ``TypeAdapter(model or Any).dump_json``,
+    so ``model=`` only changes the bytes written when it has to coerce the value.
+    Handed an instance of that very class, both adapters emit the same JSON —
+    measured, not reasoned: ``TypeAdapter(ImportTokenRecord)`` and
+    ``TypeAdapter(Any)`` both dump ``ImportTokenRecord(user_id="u1")`` as
+    ``{"user_id":"u1"}``, with no warning under ``-W error``. The argument is
+    stated deliberately (it documents the stored shape and matches the ``model=``
+    the read side validates with), so the line stays and the mutant cannot die.
+    Narrow on purpose: the value at THAT call site must be a direct ``C(...)``
+    construction of the same class named by ``model=``. A dict or a variable
+    there really is coerced by the adapter, and stays reported — as does any
+    mutation of the key or the TTL, which are different spans.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if _callee_name(node.func) not in _SERIALISING_CACHE_SETTERS:
+            continue
+        for kw in node.keywords:
+            if kw.arg != "model" or not isinstance(kw.value, ast.Name):
+                continue
+            span = _node_span(kw)
+            if not _argument_at(span, line_no, col, orig_line):
+                continue
+            value = _value_argument(node)
+            if not (isinstance(value, ast.Call) and _callee_name(value.func) == kw.value.id):
+                return False
+            if _argument_deleted(orig_line, mut_line, span, kw.arg):
+                return True
+            replacement = _mutated_token(_node_span(kw.value), line_no, orig_line, mut_line)
+            return replacement is not None and replacement.strip() == "None"
+    return False
+
+
 def _hostname_is_none(value: object) -> bool:
     """True when ``urlparse(value).hostname`` is None — i.e. the value names no host.
 
@@ -843,6 +899,9 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
             or _unreachable_match_arm(real_path, line_no)
             or _unobservable_default_argument(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_urlparse_host_default(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unobservable_serialised_model_argument(
+                real_path, line_no, col, orig_raw[i], mut_raw[i]
+            )
         ):
             print("EQUIV")
             sys.exit(0)
