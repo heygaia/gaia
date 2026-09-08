@@ -11,6 +11,9 @@ from app.helpers.integration_helpers import generate_integration_slug, normalize
         ("https://mcp.sentry.dev/mcp", "https://mcp.sentry.dev/mcp"),
         # trailing slash stripped
         ("https://mcp.sentry.dev/mcp/", "https://mcp.sentry.dev/mcp"),
+        # ONLY the trailing slash is stripped — a real path char before it (and
+        # its case) survives, even an uppercase 'X'.
+        ("https://x.example/mcpX/", "https://x.example/mcpX"),
         # scheme + host lowercased, path case preserved
         ("HTTPS://MCP.Sentry.DEV/McP", "https://mcp.sentry.dev/McP"),
         # fragment dropped, query preserved

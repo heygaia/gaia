@@ -388,6 +388,19 @@ def _client(base_url: str, user_id: str | None = None) -> httpx.AsyncClient:
 
 
 class TestFullDeviceLifecycle:
+    async def _warm_and_assert_tools_indexed(self, owner, device_id, daemon) -> None:
+        """Warm-connect is what registration enqueues to make the server's tools
+        discoverable without anyone hitting /mcp/test. No ARQ worker runs in this
+        harness, so the task is invoked inline — this still exercises the real
+        tunnel connect + Chroma index + DB record, just not the queue hop itself."""
+        summary = await warm_device_servers({}, device_id)
+        assert summary == "warmed=1 failed=0", summary
+        warmed = (await owner.get("/api/v1/device/list")).json()["devices"][0]["servers"][0]
+        assert warmed["tools_synced_at"] is not None
+        assert warmed["status"] == "connected"
+        assert warmed["kind"] == "stdio"
+        daemon.mark("warm-connect indexed tools (tools_synced_at set)")
+
     async def test_pair_up_real_mcp_round_trip_then_revoke(
         self, tmp_path, live_api_server, clean_bridge_tables, everything_server_cached, warm_cli
     ):
@@ -440,19 +453,8 @@ class TestFullDeviceLifecycle:
             daemon.mark("device listed online")
             assert server["tools_synced_at"] is None, "not warmed yet"
 
-            # 5b. Warm-connect is what registration enqueues to make the server's
-            #     tools discoverable without anyone hitting /mcp/test. No ARQ
-            #     worker runs in this harness, so the task is invoked inline — this
-            #     still exercises the real tunnel connect + Chroma index + DB
-            #     record, just not the queue hop itself.
-            summary = await warm_device_servers({}, device_id)
-            assert summary == "warmed=1 failed=0", summary
-            relisted = (await owner.get("/api/v1/device/list")).json()["devices"]
-            warmed = relisted[0]["servers"][0]
-            assert warmed["tools_synced_at"] is not None
-            assert warmed["status"] == "connected"
-            assert warmed["kind"] == "stdio"
-            daemon.mark("warm-connect indexed tools (tools_synced_at set)")
+            # 5b. Warm-connect makes the server's tools discoverable (see helper).
+            await self._warm_and_assert_tools_indexed(owner, device_id, daemon)
 
             # 6. Trigger a real MCP round trip through the whole tunnel — the
             #    same endpoint Settings uses to test/retry a connection. No

@@ -74,6 +74,7 @@ from app.services.integrations.user_integrations import (
     get_user_integrations,
     remove_user_integration,
 )
+from tests.helpers import captured_wide_event
 
 # ---------------------------------------------------------------------------
 # Shared constants & helpers
@@ -644,15 +645,22 @@ class TestUpdateUserIntegrationStatus:
     async def test_connected_broadcast_failure_is_non_fatal(self, mock_repo, mock_sched, mock_ws):
         # A live push is best-effort — the status is already persisted and the
         # client recovers on its next catalog read, so a broadcast failure
-        # (Redis down) must not fail the connection.
+        # (Redis down) must not fail the connection. It must still be visible in
+        # the wide event: a silently-swallowed push is the whole risk here.
         mock_repo.set_status = AsyncMock(return_value=True)
         mock_ws.broadcast_to_user = AsyncMock(side_effect=RuntimeError("redis down"))
 
-        result = await update_user_integration_status.__wrapped__(
-            USER_ID, INTEGRATION_ID, "connected"
-        )
+        async with captured_wide_event() as event:
+            result = await update_user_integration_status.__wrapped__(
+                USER_ID, INTEGRATION_ID, "connected"
+            )
 
         assert result is True
+        (warning,) = event["warnings"]
+        assert "Failed to broadcast connected status" in warning["msg"]
+        assert warning["integration_id"] == INTEGRATION_ID
+        assert warning["error"] == "redis down"
+        assert warning["error_type"] == "RuntimeError"
 
     @patch("app.services.integrations.user_integration_status.websocket_manager")
     @patch("app.services.integrations.user_integration_status.schedule_user_integrations_sync")

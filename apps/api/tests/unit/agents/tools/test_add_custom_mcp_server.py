@@ -13,6 +13,7 @@ import pytest
 
 from app.agents.tools.core.registry import ToolRegistry
 from app.agents.tools.integration_tool import add_custom_mcp_server
+from tests.helpers import captured_wide_event
 
 _MODULE = "app.agents.tools.integration_tool"
 _CONFIG = {"configurable": {"user_id": "u1"}}
@@ -34,7 +35,7 @@ def seams():
     user_repo.is_connected = AsyncMock(return_value=False)
     with (
         patch(f"{_MODULE}.OAUTH_INTEGRATIONS", []),
-        patch(f"{_MODULE}.get_mcp_client", AsyncMock(return_value=mcp_client)),
+        patch(f"{_MODULE}.get_mcp_client", AsyncMock(return_value=mcp_client)) as get_client,
         patch(f"{_MODULE}.integration_repository", repo),
         patch(f"{_MODULE}.user_integration_repository", user_repo),
         patch(
@@ -48,6 +49,7 @@ def seams():
     ):
         yield SimpleNamespace(
             mcp_client=mcp_client,
+            get_client=get_client,
             repo=repo,
             user_repo=user_repo,
             create_connect=create_connect,
@@ -65,18 +67,38 @@ async def _run(server_url: str = _URL, name: str = "Sentry", config=_CONFIG) -> 
 async def test_no_auth_server_connects_and_reports_tool_count(seams):
     seams.mcp_client.probe_connection.return_value = {}
     seams.create_connect.return_value = (
-        _integration(),
+        _integration(name="Sentry"),
         {"status": "connected", "tools_count": 3},
     )
 
+    async with captured_wide_event() as event:
+        result = await _run()
+
+    assert result == "✅ Added and connected Sentry (3 tools available)."
+    assert event["tool"] == {"name": "add_custom_mcp_server", "action": "create"}
+    seams.request_card.assert_not_awaited()
+    # The client is fetched for this user; the URL is probed and looked up
+    # normalized (never the raw argument).
+    seams.get_client.assert_awaited_once_with(user_id="u1")
+    seams.mcp_client.probe_connection.assert_awaited_once_with(_URL)
+    seams.repo.find_custom_by_server_url.assert_awaited_once_with(_URL, "u1")
+    # The created integration carries the normalized url, no token, and is private.
+    passed_request = seams.create_connect.await_args.args[1]
+    assert seams.create_connect.await_args.args[0] == "u1"
+    assert seams.create_connect.await_args.args[2] is seams.mcp_client
+    assert passed_request.server_url == _URL
+    assert passed_request.bearer_token is None
+    assert passed_request.is_public is False
+
+
+async def test_no_auth_server_missing_tool_count_reports_zero(seams):
+    # tools_count absent -> the "or 0" fallback, not a crash or a blank.
+    seams.mcp_client.probe_connection.return_value = {}
+    seams.create_connect.return_value = (_integration(name="Sentry"), {"status": "connected"})
+
     result = await _run()
 
-    assert "connected" in result.lower()
-    assert "3 tools" in result
-    seams.request_card.assert_not_awaited()
-    # the resolved URL is normalized before it reaches the service
-    passed_request = seams.create_connect.await_args.args[1]
-    assert passed_request.server_url == _URL
+    assert result == "✅ Added and connected Sentry (0 tools available)."
 
 
 async def test_oauth_server_shows_card_and_never_leaks_the_oauth_url(seams):
@@ -91,8 +113,8 @@ async def test_oauth_server_shows_card_and_never_leaks_the_oauth_url(seams):
     assert result == "A connect button has been shown to the user."
     assert "secret-state-token" not in result
     assert "http" not in result  # the tool return carries no URL at all
-    seams.request_card.assert_awaited_once()
-    assert seams.request_card.await_args.args[0] == "int-oauth"
+    # The card is handed the created integration id, the name, and this user.
+    seams.request_card.assert_awaited_once_with("int-oauth", "Sentry", "u1")
 
 
 async def test_bearer_server_hands_off_to_ui_without_taking_a_token(seams):
@@ -104,12 +126,60 @@ async def test_bearer_server_hands_off_to_ui_without_taking_a_token(seams):
     # created (so the UI has a target for the token) but never auto-connected,
     # and the connect+token flow is delegated to the secure card.
     seams.create.assert_awaited_once()
+    assert seams.create.await_args.args[0] == "u1"
     seams.create_connect.assert_not_awaited()
     created_request = seams.create.await_args.args[1]
     assert created_request.auth_type == "bearer"
+    assert created_request.requires_auth is True
+    assert created_request.server_url == _URL
     assert created_request.bearer_token is None
-    seams.request_card.assert_awaited_once()
+    seams.request_card.assert_awaited_once_with("int-bearer", "Sentry", "u1")
     assert result == "A connect button has been shown to the user."
+
+
+async def test_auth_required_but_not_bearer_still_connects(seams):
+    # requires_auth with a non-bearer type is NOT the bearer hand-off; it goes
+    # through the connect path with the probed auth_type carried onto the request.
+    seams.mcp_client.probe_connection.return_value = {"requires_auth": True, "auth_type": "oauth"}
+    seams.create_connect.return_value = (
+        _integration(),
+        {"status": "connected", "tools_count": 1},
+    )
+
+    result = await _run()
+
+    seams.create.assert_not_awaited()
+    seams.create_connect.assert_awaited_once()
+    req = seams.create_connect.await_args.args[1]
+    assert req.requires_auth is True
+    assert req.auth_type == "oauth"
+    assert result == "✅ Added and connected Sentry (1 tools available)."
+
+
+@pytest.mark.parametrize(
+    ("probed", "expected"),
+    [("none", "none"), ("oauth", "oauth"), ("bearer", "bearer"), ("weird", None), (None, None)],
+)
+async def test_probe_auth_type_is_carried_only_when_known(seams, probed, expected):
+    # Each known auth_type flows onto the record verbatim; anything else (or a
+    # missing type) is dropped to None. requires_auth is False so this stays on
+    # the connect path, not the bearer hand-off.
+    seams.mcp_client.probe_connection.return_value = {"requires_auth": False, "auth_type": probed}
+    seams.create_connect.return_value = (_integration(), {"status": "connected", "tools_count": 0})
+
+    await _run()
+
+    assert seams.create_connect.await_args.args[1].auth_type == expected
+
+
+async def test_probe_unreachable_is_reported_without_writing(seams):
+    seams.mcp_client.probe_connection.return_value = {"error": "connection refused"}
+
+    result = await _run()
+
+    assert result == "❌ Couldn't reach that MCP server: connection refused"
+    seams.create.assert_not_awaited()
+    seams.create_connect.assert_not_awaited()
 
 
 async def test_duplicate_already_connected_short_circuits(seams):
@@ -118,66 +188,111 @@ async def test_duplicate_already_connected_short_circuits(seams):
 
     result = await _run()
 
-    assert "already added" in result.lower()
+    assert result == "✅ Sentry is already added and connected."
     seams.mcp_client.probe_connection.assert_not_awaited()
     seams.create_connect.assert_not_awaited()
     seams.create.assert_not_awaited()
 
 
 async def test_duplicate_not_connected_shows_connect_card(seams):
-    seams.repo.find_custom_by_server_url.return_value = _integration(
-        integration_id="int-dup", name="Sentry"
-    )
+    existing = _integration(integration_id="int-dup", name="Sentry")
+    seams.repo.find_custom_by_server_url.return_value = existing
     seams.user_repo.is_connected.return_value = False
 
     result = await _run()
 
     assert result == "A connect button has been shown to the user."
-    seams.request_card.assert_awaited_once()
-    assert seams.request_card.await_args.args[0] == "int-dup"
+    # is_connected is checked for this user + the existing id, and the card is
+    # handed the existing integration's own id and name.
+    seams.user_repo.is_connected.assert_awaited_once_with("u1", "int-dup")
+    seams.request_card.assert_awaited_once_with("int-dup", "Sentry", "u1")
     seams.mcp_client.probe_connection.assert_not_awaited()
 
 
-async def test_catalog_app_redirects_to_connect_integration(seams):
-    with patch(
-        f"{_MODULE}.OAUTH_INTEGRATIONS",
-        [SimpleNamespace(id="github", name="GitHub", short_name=None)],
-    ):
-        result = await _run(name="GitHub")
+# Distinct id/name/short_name so each match isolates exactly one branch of the
+# `id or name or short_name` test — no single field can stand in for another.
+_CATALOG = [SimpleNamespace(id="gh-id", name="GitHub Name", short_name="ghs")]
 
-    assert "connect_integration" in result
-    assert "github" in result
+
+@pytest.mark.parametrize(
+    "name_arg",
+    ["gh-id", "github name", "  GH-ID  ", "GHS"],
+    ids=["by-id", "by-name-caseless", "by-id-case-and-space", "by-short-name"],
+)
+async def test_catalog_app_redirects_to_connect_integration(seams, name_arg):
+    with patch(f"{_MODULE}.OAUTH_INTEGRATIONS", _CATALOG):
+        result = await _run(name=name_arg)
+
+    assert result == (
+        "GitHub Name is a built-in integration; use connect_integration with id "
+        "'gh-id' instead of adding it as a custom MCP server."
+    )
     seams.create_connect.assert_not_awaited()
     seams.create.assert_not_awaited()
+    seams.mcp_client.probe_connection.assert_not_awaited()
+
+
+async def test_a_name_matching_no_catalog_field_is_not_a_redirect(seams):
+    # A name that matches neither id, name, nor short_name proceeds to probe —
+    # proving the catalog guard is a real match, not an always-true short circuit.
+    seams.mcp_client.probe_connection.return_value = {}
+    seams.create_connect.return_value = (_integration(), {"status": "connected", "tools_count": 0})
+    with patch(f"{_MODULE}.OAUTH_INTEGRATIONS", _CATALOG):
+        result = await _run(name="Totally Unrelated")
+
+    assert "built-in integration" not in result
+    seams.mcp_client.probe_connection.assert_awaited_once()
 
 
 async def test_disallowed_url_is_rejected_before_any_write(seams):
     result = await _run(server_url="ftp://evil.example/mcp")
 
-    assert result.startswith("❌")
+    assert result.startswith("❌ That server URL can't be used:")
     seams.create_connect.assert_not_awaited()
     seams.create.assert_not_awaited()
     seams.mcp_client.probe_connection.assert_not_awaited()
+    seams.get_client.assert_not_awaited()
 
 
 async def test_missing_user_id_fails_loud(seams):
     result = await _run(config={"configurable": {}})
-
-    assert "User ID not found" in result
+    assert result == "Error: User ID not found in configuration."
 
 
 async def test_failed_connect_keeps_record_and_surfaces_id(seams):
     seams.mcp_client.probe_connection.return_value = {}
     seams.create_connect.return_value = (
-        _integration(integration_id="int-9"),
+        _integration(integration_id="int-9", name="Sentry"),
         {"status": "failed", "error": "boom"},
     )
 
     result = await _run()
 
-    assert "couldn't connect" in result.lower()
-    assert "int-9" in result
-    assert "boom" in result
+    assert result == (
+        "❌ Added Sentry but couldn't connect: boom. "
+        "It's saved (id int-9); you can ask me to retry connecting it."
+    )
+
+
+async def test_failed_connect_without_error_uses_a_default_reason(seams):
+    seams.mcp_client.probe_connection.return_value = {}
+    seams.create_connect.return_value = (_integration(integration_id="int-9"), {"status": "failed"})
+
+    result = await _run()
+
+    assert "couldn't connect: unknown error." in result
+
+
+async def test_unexpected_failure_is_caught_and_logged(seams):
+    seams.repo.find_custom_by_server_url.side_effect = RuntimeError("mongo down")
+
+    async with captured_wide_event() as event:
+        result = await _run()
+
+    assert result == "Error adding MCP server: mongo down"
+    (error,) = event["errors"]
+    assert "Error adding custom MCP server" in error["msg"]
+    assert error["error_type"] == "RuntimeError"
 
 
 def test_add_custom_mcp_server_is_force_gated():
