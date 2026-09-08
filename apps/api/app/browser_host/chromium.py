@@ -344,6 +344,7 @@ class ChromiumHost:
                 target_id=target_id,
                 created_at=now,
                 last_activity_at=now,
+                metrics=SessionMetrics(context_count=1, page_count=1),
             )
             async with self._lock:
                 # Hand the reservation over to the session in ONE critical section.
@@ -352,8 +353,6 @@ class ChromiumHost:
                 # while a slot was actually free.
                 self._sessions[session_id] = session
                 self._pending_slots -= 1
-            session.metrics.context_count += 1
-            session.metrics.page_count += 1
             self.sample_resources(session_id)
         except BaseException:
             async with self._lock:
