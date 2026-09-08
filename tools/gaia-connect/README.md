@@ -22,9 +22,13 @@ Mint a single-use import code in GAIA → Settings → Browser → Import, then:
 
     npx @heygaia/cli connect --token <code>
 
-`gaia connect` downloads the matching `gaia-connect` binary for your OS from the
-`cli-v<version>` GitHub release, verifies its SHA-256, caches it in
-`~/.gaia/bin/`, and forwards every flag below to it untouched.
+Without Node, the shell installer does the same thing (macOS and Linux):
+
+    curl -fsSL https://heygaia.io/connect.sh | sh -s -- --token <code>
+
+Both paths download the matching `gaia-connect` binary for your OS from the
+`cli-v<version>` GitHub release, verify its SHA-256, cache it in `~/.gaia/bin/`,
+and forward every flag below to it untouched.
 
 ## Interactive (from source)
 
