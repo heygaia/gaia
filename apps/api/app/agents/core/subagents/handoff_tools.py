@@ -41,7 +41,6 @@ from app.agents.core.subagents.provider_subagents import (
 )
 from app.agents.core.subagents.registry import (
     all_subagents,
-    foreign_provider_named_in,
     get_subagent_by_id,
 )
 from app.agents.core.subagents.subagent_helpers import (
@@ -766,30 +765,12 @@ def _subagent_resume_status(status: HILApprovalStatus) -> HILApprovalStatus:
 
 async def _handoff_rejection(
     ctx: SubagentExecutionContext,
-    task: str,
     background: bool,
     stream_id: str | None,
 ) -> str | None:
     """The pre-dispatch refusals for one handoff, or None when it may run."""
     agent_name: str = ctx.agent_name
     integration_id: str = ctx.integration_id
-
-    # A task naming one provider while routed to another is a routing mistake
-    # that survives the whole run: the subagent does the work on ITS system and
-    # the executor writes the name it was told into the summary, so the user is
-    # told their data went somewhere it never went. Refuse before dispatch —
-    # the executor can re-route or drop the name, but it cannot un-say it.
-    foreign = foreign_provider_named_in(task, integration_id)
-    if foreign is not None:
-        return (
-            f"HANDOFF REJECTED: this task is routed to the {agent_name} subagent "
-            f"({integration_id}) but its text names {foreign.name}. {foreign.name} is a "
-            f"separate integration with its own subagent, and nothing you hand to "
-            f"{integration_id} touches it: leaving the name in makes the result claim "
-            f"{foreign.name} did work it never did. Either re-issue this handoff to "
-            f"subagent:{foreign.id} if that is where the work belongs, or send it again "
-            f"with every mention of {foreign.name} removed from the task."
-        )
 
     # An uncollected parked subagent owns this integration's checkpoint thread.
     # Running ANY new handoff on it (blocking or background) would feed fresh
@@ -954,7 +935,7 @@ async def handoff(
         agent_name: str = ctx.agent_name
         integration_id: str = ctx.integration_id
 
-        rejection = await _handoff_rejection(ctx, task, background, stream_id)
+        rejection = await _handoff_rejection(ctx, background, stream_id)
         if rejection is not None:
             return rejection
 
