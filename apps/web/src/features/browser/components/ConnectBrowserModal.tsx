@@ -9,18 +9,29 @@ import {
   ModalHeader,
 } from "@heroui/modal";
 import { Skeleton } from "@heroui/skeleton";
-import { type ReactNode, useEffect } from "react";
+import { Tab, Tabs } from "@heroui/tabs";
+import { type ReactNode, useEffect, useState } from "react";
 import CopyButton from "@/components/ui/CopyButton";
-import { SAVED_LOGIN_TTL_DAYS } from "../constants";
+import { type ConnectRunner, SAVED_LOGIN_TTL_DAYS } from "../constants";
 import { useImportToken } from "../hooks/useImportToken";
 import {
   buildConnectCommand,
   connectApiOverride,
+  connectRunnersFor,
   formatCountdown,
 } from "../utils";
 
 /** Countdown turns amber inside the last minute so the user acts before it dies. */
 const EXPIRY_WARNING_SECONDS = 60;
+
+/** Tab labels; curl comes first because it needs nothing installed. */
+const RUNNER_TITLES: Record<ConnectRunner, string> = {
+  curl: "curl",
+  npx: "npx",
+  pnpm: "pnpm",
+  bun: "bun",
+  source: "from source",
+};
 
 const FACTS: readonly string[] = [
   "Cookies only, never passwords. Your OS may ask permission once.",
@@ -86,18 +97,18 @@ function CodeStatus({
 function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
   const { token, secondsLeft, isExpired, isMinting, error, mint } =
     useImportToken();
+  const [runner, setRunner] = useState<ConnectRunner>("curl");
 
   useEffect(() => {
     mint();
   }, [mint]);
 
   const apiBaseUrl = process.env.NEXT_PUBLIC_API_BASE_URL;
+  const apiOrigin = apiBaseUrl ? connectApiOverride(apiBaseUrl) : null;
+  const runners = connectRunnersFor(apiOrigin);
   const command =
     token && apiBaseUrl
-      ? buildConnectCommand({
-          token,
-          apiOrigin: connectApiOverride(apiBaseUrl),
-        })
+      ? buildConnectCommand({ token, apiOrigin, runner })
       : null;
 
   return (
@@ -105,6 +116,18 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
       <ModalHeader>Import browser logins</ModalHeader>
       <ModalBody className="gap-3">
         <Surface label="Run in Terminal">
+          <Tabs
+            size="sm"
+            radius="full"
+            aria-label="How to run it"
+            selectedKey={runner}
+            onSelectionChange={(key) => setRunner(key as ConnectRunner)}
+            classNames={{ tabList: "bg-zinc-900" }}
+          >
+            {runners.map((r) => (
+              <Tab key={r} title={RUNNER_TITLES[r]} />
+            ))}
+          </Tabs>
           {isMinting || (!command && !error && !isExpired) ? (
             <Skeleton className="h-10 w-full rounded-xl" />
           ) : error ? (
@@ -125,6 +148,7 @@ function ConnectBrowserBody({ onClose }: { onClose: () => void }) {
               <p
                 className={`text-xs ${secondsLeft <= EXPIRY_WARNING_SECONDS ? "text-amber-400/80" : "text-zinc-500"}`}
               >
+                {runner === "source" ? "Run from the repo root. " : ""}
                 Expires in {formatCountdown(secondsLeft)}
               </p>
             </>

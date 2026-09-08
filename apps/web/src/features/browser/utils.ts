@@ -3,7 +3,12 @@ import type {
   BrowserSessionStatus,
   BrowserStepSnapshot,
 } from "@/types/features/browserTaskTypes";
-import { GAIA_CONNECT_DEFAULT_API_ORIGIN } from "./constants";
+import {
+  CONNECT_RUNNERS,
+  type ConnectRunner,
+  GAIA_CONNECT_DEFAULT_API_ORIGIN,
+  GAIA_CONNECT_INSTALL_URL,
+} from "./constants";
 
 /** Machine states → plain language the user understands at a glance. Shared by
  * the chat card and the browser side panel so the two never disagree. */
@@ -35,21 +40,55 @@ export function connectApiOverride(apiBaseUrl: string): string | null {
   return origin === GAIA_CONNECT_DEFAULT_API_ORIGIN ? null : origin;
 }
 
+const LOCAL_HOSTNAMES = new Set(["localhost", "127.0.0.1", "[::1]"]);
+
+/** A localhost API means a developer's own checkout: the published CLI may not
+ * carry `connect` yet, and they want the source in this repo anyway. */
+export function isLocalApiOrigin(apiOrigin: string): boolean {
+  return LOCAL_HOSTNAMES.has(new URL(apiOrigin).hostname);
+}
+
+/** The runners worth offering for this API: `source` only when it's a
+ * developer's localhost checkout, where the source is right there. */
+export function connectRunnersFor(
+  apiOrigin: string | null,
+): readonly ConnectRunner[] {
+  const local = apiOrigin !== null && isLocalApiOrigin(apiOrigin);
+  return CONNECT_RUNNERS.filter((r) => r !== "source" || local);
+}
+
 export interface ConnectCommandOptions {
   token: string;
   /** From `connectApiOverride`; null means the tool's default API. */
   apiOrigin: string | null;
+  runner: ConnectRunner;
 }
 
 /** The one command a user pastes to sync their browser's logins. The tool
- * detects the browser and asks which sites to sync itself. */
+ * detects the browser and asks which sites to sync itself; every runner
+ * hands it the same flags. */
 export function buildConnectCommand({
   token,
   apiOrigin,
+  runner,
 }: ConnectCommandOptions): string {
-  const parts = ["npx", "@heygaia/cli", "connect", "--token", token];
-  if (apiOrigin) parts.push("--api", apiOrigin);
-  return parts.join(" ");
+  const flags = ["--token", token];
+  if (apiOrigin) flags.push("--api", apiOrigin);
+  switch (runner) {
+    case "curl":
+      return `curl -fsSL ${GAIA_CONNECT_INSTALL_URL} | sh -s -- ${flags.join(" ")}`;
+    case "npx":
+      return `npx @heygaia/cli connect ${flags.join(" ")}`;
+    case "pnpm":
+      return `pnpm dlx @heygaia/cli connect ${flags.join(" ")}`;
+    case "bun":
+      return `bunx @heygaia/cli connect ${flags.join(" ")}`;
+    case "source":
+      if (apiOrigin === null) {
+        throw new Error("The from-source runner needs an explicit API origin");
+      }
+      return `go run -C tools/gaia-connect . ${flags.join(" ")}`;
+  }
 }
 
 /** "9:58" from seconds remaining, clamped at 0:00 once expired. */
