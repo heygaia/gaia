@@ -20,9 +20,7 @@ import type { PlatformPreviewPlatform } from "../../constants/platformPreviewMes
 import { useConnectPlatform } from "../../hooks/useConnectPlatform";
 import { usePaceDone } from "../../hooks/useTypedLines";
 import type { Action, OnboardingState } from "../../state/types";
-import { ComposerCTA } from "../ComposerCTA";
 import { OnboardingBotBubbles } from "../OnboardingBotBubbles";
-import { OnboardingCTAButton } from "../OnboardingCTAButton";
 import { OnboardingPlatformConnect } from "../OnboardingPlatformConnect";
 import { OnboardingPlatformPreview } from "../OnboardingPlatformPreview";
 
@@ -73,7 +71,6 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
             onConnect={connect}
             onSkip={skip}
             onHoverPlatform={setHoveredPlatform}
-            hideSkip
           />
         </m.div>
       )}
@@ -86,16 +83,5 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
         onClose={closePhoneModal}
       />
     </m.div>
-  );
-}
-
-export function PlatformsComposer({ state, dispatch }: PlatformsProps) {
-  const { skip } = useConnectPlatform(dispatch, state.preferencesPersisted);
-  if (state.connectedPlatform) return null;
-
-  return (
-    <ComposerCTA>
-      <OnboardingCTAButton onClick={skip}>I'll do it later</OnboardingCTAButton>
-    </ComposerCTA>
   );
 }
