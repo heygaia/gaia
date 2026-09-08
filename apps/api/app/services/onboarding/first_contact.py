@@ -6,11 +6,12 @@ runs showed it skipping the per-pick lines, delegating to the executor, and
 sometimes never producing the connect links at all. The one message a user is
 guaranteed to read is not something to leave to sampling.
 
-Two bubbles:
+Three bubbles (two when they picked nothing):
 
-1. the hello, then one sentence that says what GAIA does from here for the
-   things they picked (their picks become clauses, not a list),
-2. the first move: either the connect links the picks cannot work without,
+1. the hello,
+2. one sentence that says what GAIA does from here for the things they
+   picked (their picks become clauses, not a list), with their typed words,
+3. the first move: either the connect links the picks cannot work without,
    with the reason, or one question about their first pick that they can
    answer in five words.
 
@@ -239,15 +240,22 @@ def _join_clauses(clauses: list[str]) -> str:
     return ", ".join(clauses[:-1]) + ", and " + clauses[-1]
 
 
-def _promise_bubble(platform: str, name: str | None, preferences: OnboardingPreferences) -> str:
-    sentences = [compose_link_greeting(platform, name)]
+def _opening_bubbles(
+    platform: str, name: str | None, preferences: OnboardingPreferences
+) -> list[str]:
+    """The hello, then the promise as its own bubble (with their typed words
+    folded in), so the message reads as a few texts, not one paragraph."""
+    bubbles = [compose_link_greeting(platform, name)]
     clauses = [NEED_CLAUSES[need] for need in preferences.needs or [] if need in NEED_CLAUSES]
+    promise: list[str] = []
     if clauses:
-        sentences.append(f"From here, {_join_clauses(clauses)}.")
+        promise.append(f"From here, {_join_clauses(clauses)}.")
     other = (preferences.other_need or "").strip().rstrip(".!")
     if other:
-        sentences.append(OTHER_NEED_SENTENCE.format(other_need=other))
-    return " ".join(sentences)
+        promise.append(OTHER_NEED_SENTENCE.format(other_need=other))
+    if promise:
+        bubbles.append(" ".join(promise))
+    return bubbles
 
 
 def _connect_bubble(connect_links: list[tuple[str, str]]) -> str:
@@ -287,7 +295,7 @@ def compose_first_contact(
     preferences: OnboardingPreferences,
     connect_links: list[tuple[str, str]],
 ) -> list[str]:
-    """Both bubbles a bot sends right after a one-tap link, in order.
+    """Every bubble a bot sends right after a one-tap link, in order.
 
     ``connect_links`` are ``(integration_id, url)`` pairs already minted by the
     caller for whatever :func:`needed_integration_ids` returned MINUS what the
@@ -299,7 +307,7 @@ def compose_first_contact(
     links it is one question about the first pick.
     """
     first_move = _connect_bubble(connect_links) if connect_links else _ask_bubble(preferences)
-    return [_promise_bubble(platform, name, preferences), first_move]
+    return [*_opening_bubbles(platform, name, preferences), first_move]
 
 
 async def build_first_contact(

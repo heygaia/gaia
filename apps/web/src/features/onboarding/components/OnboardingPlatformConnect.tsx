@@ -66,7 +66,7 @@ export const OnboardingPlatformConnect: FC<OnboardingPlatformConnectProps> = ({
       className={
         embedded
           ? "flex flex-col items-start gap-2"
-          : "ml-10.75 flex flex-col items-start gap-2"
+          : "flex flex-col items-start gap-2 sm:ml-10.75"
       }
     >
       <div

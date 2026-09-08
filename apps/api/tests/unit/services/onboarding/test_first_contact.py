@@ -93,25 +93,27 @@ class TestComposeFirstContact:
             _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR], other_need="book my travel."),
             [GMAIL, CALENDAR],
         ) == [
-            "Hey Aryan, I'm with you on Telegram now. From here, every morning your inbox "
-            "comes sorted with replies drafted and you get a brief before each meeting. "
-            'You also said "book my travel". That\'s mine too.',
+            "Hey Aryan, I'm with you on Telegram now.",
+            "From here, every morning your inbox comes sorted with replies drafted and you "
+            'get a brief before each meeting. You also said "book my travel". That\'s mine too.',
             "Your inbox and your calendar are where I start, and I can't see them yet. "
             "[Connect Gmail](https://gaia.test/connect/aaa) and "
             "[Connect Google Calendar](https://gaia.test/connect/bbb). Either one first.",
         ]
 
-    def test_it_is_always_exactly_two_bubbles(self) -> None:
-        for prefs, links in (
-            (_prefs([]), []),
-            (_prefs([OnboardingNeed.INBOX]), [GMAIL]),
-            (_prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.TOOLS], "x"), []),
+    def test_it_is_a_hello_a_promise_and_a_first_move(self) -> None:
+        """Three texts, never a wall; a user who picked nothing gets two."""
+        for prefs, links, count in (
+            (_prefs([]), [], 2),
+            (_prefs([OnboardingNeed.INBOX]), [GMAIL], 3),
+            (_prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.TOOLS], "x"), [], 3),
+            (_prefs([], "x"), [], 3),
         ):
-            assert len(compose_first_contact("telegram", None, prefs, links)) == 2
+            assert len(compose_first_contact("telegram", None, prefs, links)) == count
 
     def test_clauses_follow_the_order_the_user_tapped(self) -> None:
         """Their first pick is what they came for, so it leads."""
-        promise, _ = compose_first_contact(
+        _, promise, _ = compose_first_contact(
             "telegram", None, _prefs([OnboardingNeed.CALENDAR, OnboardingNeed.INBOX]), []
         )
         assert promise.index(NEED_CLAUSES[OnboardingNeed.CALENDAR]) < promise.index(
@@ -119,22 +121,21 @@ class TestComposeFirstContact:
         )
 
     def test_three_clauses_read_as_a_sentence(self) -> None:
-        promise, _ = compose_first_contact(
+        _, promise, _ = compose_first_contact(
             "telegram",
             None,
             _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR, OnboardingNeed.GRUNT_WORK]),
             [],
         )
         assert promise == (
-            "Hey, I'm with you on Telegram now. From here, every morning your inbox comes "
-            "sorted with replies drafted, you get a brief before each meeting, and whatever "
-            "grunt work you hand me gets done."
+            "From here, every morning your inbox comes sorted with replies drafted, you get "
+            "a brief before each meeting, and whatever grunt work you hand me gets done."
         )
 
     def test_one_link_gives_the_reason_and_one_tap(self) -> None:
-        _, first_move = compose_first_contact(
+        first_move = compose_first_contact(
             "imessage", "Dev", _prefs([OnboardingNeed.INBOX]), [GMAIL]
-        )
+        )[-1]
         assert first_move == (
             "That starts with your inbox, which I can't see yet. "
             "One tap: [Connect Gmail](https://gaia.test/connect/aaa)."
@@ -142,40 +143,41 @@ class TestComposeFirstContact:
 
     def test_a_link_wins_over_a_question_for_mixed_picks(self) -> None:
         """A tap does more than a typed answer, so the connect ask leads."""
-        _, first_move = compose_first_contact(
+        first_move = compose_first_contact(
             "telegram", None, _prefs([OnboardingNeed.GRUNT_WORK, OnboardingNeed.INBOX]), [GMAIL]
-        )
+        )[-1]
         assert "[Connect Gmail]" in first_move
         assert NEED_ASKS[OnboardingNeed.GRUNT_WORK] not in first_move
 
     def test_no_links_asks_about_the_first_pick(self) -> None:
-        _, first_move = compose_first_contact(
+        first_move = compose_first_contact(
             "telegram",
             None,
             _prefs([OnboardingNeed.FOUNDER_TEAM_UPDATES, OnboardingNeed.GRUNT_WORK]),
             [],
-        )
+        )[-1]
         assert first_move == NEED_ASKS[OnboardingNeed.FOUNDER_TEAM_UPDATES]
 
     def test_an_already_connected_pick_gets_its_connected_ask(self) -> None:
         """Gmail on and inbox picked: no link to hand over, so the ask assumes
         the inbox is running and asks what to flag."""
-        _, first_move = compose_first_contact("telegram", None, _prefs([OnboardingNeed.INBOX]), [])
+        first_move = compose_first_contact("telegram", None, _prefs([OnboardingNeed.INBOX]), [])[-1]
         assert first_move == NEED_ASKS[OnboardingNeed.INBOX]
         assert "already on" in first_move
 
     def test_their_own_words_are_quoted_back_with_trailing_punctuation_trimmed(self) -> None:
-        promise, _ = compose_first_contact("telegram", None, _prefs([], "Book my travel!!"), [])
-        assert promise.endswith('You also said "Book my travel". That\'s mine too.')
+        _, promise, _ = compose_first_contact("telegram", None, _prefs([], "Book my travel!!"), [])
+        assert promise == 'You also said "Book my travel". That\'s mine too.'
 
     def test_only_typed_words_ask_for_a_bit_more(self) -> None:
-        _, first_move = compose_first_contact("telegram", None, _prefs([], "book my travel"), [])
+        first_move = compose_first_contact("telegram", None, _prefs([], "book my travel"), [])[-1]
         assert first_move == OTHER_NEED_ASK
 
     def test_a_blank_other_need_adds_nothing(self) -> None:
-        promise, first_move = compose_first_contact("telegram", None, _prefs([], "   "), [])
-        assert promise == "Hey, I'm with you on Telegram now."
-        assert first_move == NO_PICKS_ASK
+        assert compose_first_contact("telegram", None, _prefs([], "   "), []) == [
+            "Hey, I'm with you on Telegram now.",
+            NO_PICKS_ASK,
+        ]
 
     def test_a_user_who_picked_nothing_still_gets_a_hello_and_a_first_move(self) -> None:
         assert compose_first_contact("whatsapp", "Dev", _prefs([]), []) == [
@@ -220,7 +222,7 @@ class TestBuildFirstContact:
                 "u1", "telegram", "Aryan", _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR])
             )
         mint.assert_awaited_once_with("u1", "googlecalendar")
-        assert bubbles[1] == (
+        assert bubbles[-1] == (
             "That starts with your calendar, which I can't see yet. "
             "One tap: [Connect Google Calendar](https://gaia.test/connect/googlecalendar)."
         )
@@ -235,4 +237,4 @@ class TestBuildFirstContact:
             bubbles = await build_first_contact(
                 "u1", "telegram", None, _prefs([OnboardingNeed.INBOX])
             )
-        assert bubbles[1] == NEED_ASKS[OnboardingNeed.INBOX]
+        assert bubbles[-1] == NEED_ASKS[OnboardingNeed.INBOX]
