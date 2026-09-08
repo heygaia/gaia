@@ -254,6 +254,16 @@ FEATURE_LIMITS: dict[str, TieredRateLimits] = {
             title="Mail Actions", description="Send emails and manage mail operations"
         ),
     ),
+    "phone_call_operations": TieredRateLimits(
+        free=RateLimitConfig(day=1, month=3),  # TUNE — real per-minute cost
+        pro=RateLimitConfig(day=30, month=900),
+        info=FeatureInfo(title="Phone Calls", description="Place and check voice calls"),
+    ),
+    "sms_operations": TieredRateLimits(
+        free=RateLimitConfig(day=5, month=20),  # TUNE — real per-segment cost
+        pro=RateLimitConfig(day=150, month=4500),
+        info=FeatureInfo(title="SMS", description="Send and check text messages"),
+    ),
     # KNOWLEDGE MANAGEMENT
     "notes": TieredRateLimits(
         free=RateLimitConfig(day=30, month=200),  # Good trial

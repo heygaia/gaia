@@ -68,6 +68,8 @@ tool_fields = [
     "calendar_fetch_data",
     "calendar_list_fetch_data",
     "weather_data",
+    "phone_call_data",
+    "sms_data",
     "search_results",
     "deep_research_results",
     "notification_data",

@@ -137,3 +137,42 @@ export interface ArtifactData {
    */
   body?: string;
 }
+
+// Phone-call card payload streamed as `phone_call_data`. Mirrors the backend
+// contract in apps/api/app/agents/tools/resia_tool.py.
+export interface PhoneCallData {
+  call_id: string;
+  status: string;
+  to_phone_number?: string | null;
+}
+
+// SMS card payload streamed as `sms_data` (send) or returned by status reads.
+export interface SmsMessage {
+  text_message_id: string;
+  to_phone_number: string;
+  status: string;
+}
+
+export interface SmsRejected {
+  to_phone_number: string;
+  reason: string;
+}
+
+export interface SmsCounts {
+  queued: number;
+  canceled: number;
+  sent: number;
+  delivered: number;
+  delivery_unconfirmed: number;
+  failed: number;
+}
+
+export interface SmsData {
+  batch_id: string;
+  status?: string;
+  recipient_count?: number;
+  messages?: SmsMessage[];
+  rejected?: SmsRejected[];
+  counts?: SmsCounts;
+  total?: number;
+}

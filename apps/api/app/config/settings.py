@@ -335,6 +335,14 @@ class ProductionSettings(CommonSettings):
     # openssl rand -hex 32
     EMAIL_UNSUBSCRIBE_SECRET: str
 
+    # Voice calls & SMS (Resia). Server-held org credential — one balance for
+    # all users, per-call attribution via client_reference. Inject via
+    # Infisical; never commit. The default call agent is provisioned once via
+    # POST /v1/call-agents (see .agents/plans/resia-native-calls-sms.md).
+    RESIA_API_KEY: str
+    RESIA_DEFAULT_CALL_AGENT_ID: str
+    RESIA_DEFAULT_FROM_NUMBER: str | None = None
+
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str
     CLOUDINARY_API_KEY: str
@@ -556,6 +564,11 @@ class DevelopmentSettings(CommonSettings):
     RESEND_AUDIENCE_ID: str | None = None
     EMAIL_FROM: str = "brief@heygaia.io"
     EMAIL_UNSUBSCRIBE_SECRET: str | None = None
+
+    # Voice calls & SMS (Resia). Optional in dev so local boot never needs them.
+    RESIA_API_KEY: str | None = None
+    RESIA_DEFAULT_CALL_AGENT_ID: str | None = None
+    RESIA_DEFAULT_FROM_NUMBER: str | None = None
 
     # Media Storage
     CLOUDINARY_CLOUD_NAME: str | None = None

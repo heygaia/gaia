@@ -370,6 +370,7 @@ class ToolRegistry:
             playbook_tools,
             reminder_tool,
             research_tool,
+            resia_tool,
             skill_tools,
             subscription_tool,
             support_tool,
@@ -401,6 +402,14 @@ class ToolRegistry:
             "notifications",
             tools=[*notification_tool.tools],
             risk=CategoryRisk(destructive_tools={"send_notification"}),
+        )
+        # Outward voice calls + SMS via Resia (centrally billed org credential).
+        # Placing a call or sending a text costs money and touches a real
+        # person, so both are destructive (HIL-gated); status reads are safe.
+        self._add_category(
+            "calls",
+            tools=[*resia_tool.tools],
+            risk=CategoryRisk(destructive_tools={"place_phone_call", "send_sms"}),
         )
         # Account-center mutations: settings on the user's own account. The
         # settings tools are forced-ask — they change state the user owns

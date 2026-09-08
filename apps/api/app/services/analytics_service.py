@@ -93,6 +93,10 @@ class AnalyticsEvents(StrEnum):
     # different action that happened to be wearing the same name.
     EMAIL_COMPOSED = "email:draft_composed"
 
+    # Voice calls + SMS (Resia, centrally billed)
+    PHONE_CALL_PLACED = "phone:call_placed"
+    SMS_SENT = "sms:sent"
+
     # Memory
     MEMORY_CLEARED = "memory:cleared"
     MEMORY_ITEM_DELETED = "memory:item_deleted"

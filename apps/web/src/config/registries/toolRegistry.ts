@@ -45,6 +45,8 @@ import type {
   ArtifactData,
   CodeData,
   GoogleDocsData,
+  PhoneCallData,
+  SmsData,
   WorkflowCreatedData,
   WorkflowDraftData,
 } from "@/types/features/toolDataTypes";
@@ -187,6 +189,8 @@ const TOOL_REGISTRY = {
   todo_progress: null as unknown as TodoProgressData,
   rate_limit_data: null as unknown as SharedRateLimitData,
   artifact_data: null as unknown as ArtifactData[],
+  phone_call_data: null as unknown as PhoneCallData,
+  sms_data: null as unknown as SmsData,
   screenshot_data: null as unknown as ScreenshotData,
   memory_data: null as unknown as MemoryData,
   approval_request: null as unknown as ApprovalRequestData,

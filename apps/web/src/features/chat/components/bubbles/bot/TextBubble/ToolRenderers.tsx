@@ -51,6 +51,7 @@ import GoogleDocsSection from "../GoogleDocsSection";
 import MemoryCard from "../MemoryCard";
 import NotificationListSection from "../NotificationListSection";
 import PeopleSearchSection from "../PeopleSearchSection";
+import { PhoneCallSection } from "../PhoneCallSection";
 import RateLimitCard from "../RateLimitCard";
 import RedditCommentSection from "../RedditCommentSection";
 import RedditCreatedSection from "../RedditCreatedSection";
@@ -58,6 +59,7 @@ import RedditPostSection from "../RedditPostSection";
 import RedditSearchSection from "../RedditSearchSection";
 import ScreenshotSection from "../ScreenshotSection";
 import SendNotificationSection from "../SendNotificationSection";
+import { SmsSection } from "../SmsSection";
 import SupportTicketSection from "../SupportTicketSection";
 import TodoSection from "../TodoSection";
 import TwitterSearchSection from "../TwitterSearchSection";
@@ -126,6 +128,10 @@ const TOOL_RENDERERS: Partial<RendererMap> = {
 
   // Weather
   weather_data: (data) => <WeatherCard weatherData={data} />,
+
+  // Voice calls + SMS (Resia)
+  phone_call_data: (data) => <PhoneCallSection phone_call_data={data} />,
+  sms_data: (data) => <SmsSection sms_data={data} />,
 
   // Desktop
   screenshot_data: (data) => <ScreenshotSection screenshot_data={data} />,
