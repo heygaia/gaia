@@ -147,7 +147,7 @@ NEED_ASKS: dict[OnboardingNeed, str] = {
         "Your calendar's on, so the brief for your next call is mine. Which call is it?"
     ),
     OnboardingNeed.PRODUCT_FEEDBACK: (
-        "For the feedback, where does most of it land right now? Email, Slack, a doc?"
+        "For the feedback, where does most of it land right now, email, Slack or a doc?"
     ),
     OnboardingNeed.PRODUCT_SPECS: (
         "For the specs, what's the next one you need? One line is enough and I'll draft it."
