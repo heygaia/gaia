@@ -5,10 +5,15 @@ export interface Message {
   questionFieldName?: string;
 }
 
+/** Who the copy is talking to; ``firstName`` is absent for email-only accounts. */
+export interface Addressee {
+  firstName?: string;
+}
+
 export interface Question {
   id: string;
   /** GAIA's side of the turn, one bubble per line, given the answers so far. */
-  lines: (responses: Record<string, string>) => string[];
+  lines: (responses: Record<string, string>, who: Addressee) => string[];
   fieldName: string;
 }
 

@@ -12,13 +12,15 @@
 
 import { Spinner } from "@heroui/spinner";
 import * as m from "motion/react-m";
-import { useState } from "react";
+import { useMemo, useState } from "react";
+import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
+import { firstNameOf } from "@/features/auth/utils/firstName";
 import { BillingPeriodTabs } from "@/features/pricing/components/BillingPeriodTabs";
 import { CheckoutConfirming } from "@/features/pricing/components/CheckoutConfirming";
 import { CheckoutFailed } from "@/features/pricing/components/CheckoutFailed";
 import { PricingCards } from "@/features/pricing/components/PricingCards";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
-import { PAYMENT_INTRO_LINES } from "../../constants/messages";
+import { paymentIntroLines } from "../../constants/messages";
 import { MOTION_FADE_UP } from "../../constants/motion";
 import { useCheckoutReturn } from "../../hooks/useCheckoutReturn";
 import { usePaceDone } from "../../hooks/useTypedLines";
@@ -31,12 +33,17 @@ export function Payment() {
   const { isUnknown } = useIsPaid();
   const { returned, isLate, failed, timedOut, retry } = useCheckoutReturn();
   const gaiaDone = usePaceDone(PAYMENT_REVEAL_KEY);
+  const { name, email } = useCurrentUser();
+  const introLines = useMemo(
+    () => paymentIntroLines(firstNameOf(name, email)),
+    [name, email],
+  );
 
   return (
     <m.div className="flex flex-col items-center gap-4" {...MOTION_FADE_UP}>
       <div className="w-full">
         <OnboardingBotBubbles
-          lines={PAYMENT_INTRO_LINES}
+          lines={introLines}
           revealKey={PAYMENT_REVEAL_KEY}
         />
       </div>
