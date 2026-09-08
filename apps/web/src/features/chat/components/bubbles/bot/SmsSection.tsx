@@ -80,7 +80,7 @@ export function SmsSection({ sms_data }: { sms_data: SmsData }) {
             ))}
             {rejected?.map((r) => (
               <div
-                key={r.to_phone_number}
+                key={`${r.position}-${r.to_phone_number}`}
                 className="flex items-center justify-between gap-3"
               >
                 <span className="truncate text-xs text-zinc-300">

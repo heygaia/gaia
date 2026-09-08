@@ -156,6 +156,7 @@ export interface SmsMessage {
 export interface SmsRejected {
   to_phone_number: string;
   reason: string;
+  position: number;
 }
 
 export interface SmsCounts {
