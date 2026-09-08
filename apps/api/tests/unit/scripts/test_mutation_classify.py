@@ -274,6 +274,42 @@ class TestPopThroughCastWithEarlyExit:
         assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
 
 
+class TestLookupThroughAConditionalExpression:
+    """The reasoning extractor's shape: the lookup is one arm of ``a if c else b``
+    and only the conditional's value is bound and truth-tested."""
+
+    _BODY = (
+        '    text = d.get("k") if isinstance(d, dict) else getattr(d, "k", "")\n'
+        "    if text:\n"
+        "        return 1\n"
+        "    return None"
+    )
+
+    def _write_real_module(self, workdir: Path, body: str) -> None:
+        (workdir / MODULE_REL).write_text(f"def probe(d):\n{body}\n")
+
+    def test_a_default_behind_the_conditional_is_equivalent(self, workdir: Path) -> None:
+        self._write_real_module(workdir, self._BODY)
+        _write_mutants(
+            workdir, self._BODY, self._BODY.replace('getattr(d, "k", "")', 'getattr(d, "k", None)')
+        )
+
+        result = _classify(workdir)
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_conditional_whose_value_is_returned_is_still_reported(self, workdir: Path) -> None:
+        body = (
+            '    text = d.get("k") if isinstance(d, dict) else getattr(d, "k", "")\n    return text'
+        )
+        self._write_real_module(workdir, body)
+        _write_mutants(workdir, body, body.replace('getattr(d, "k", "")', 'getattr(d, "k", None)'))
+
+        result = _classify(workdir)
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+
 class TestTwoLookupsGuardedByOneEarlyExit:
     """The runner's viewport shape: two getattr defaults, one ``if not w or not h:
     return`` guard, and real arithmetic on both past it."""

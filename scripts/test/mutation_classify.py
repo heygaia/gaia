@@ -356,9 +356,21 @@ def _through_casts(node):
     return node
 
 
+def _through_conditionals(node):
+    """Hop out of an enclosing ``a if c else node`` — on that arm the expression IS the node.
+
+    The reasoning extractor binds ``x.get(k) if isinstance(x, dict) else getattr(x, k, "")``
+    and truth-tests the name; the lookup's consumer is the conditional's consumer.
+    """
+    parent = getattr(node, "parent", None)
+    while isinstance(parent, ast.IfExp) and (parent.body is node or parent.orelse is node):
+        node, parent = parent, getattr(parent, "parent", None)
+    return node
+
+
 def _only_boolean_uses(call) -> bool:
     """True when nothing downstream of `call` can tell one falsy value from another."""
-    call = _through_casts(call)
+    call = _through_conditionals(_through_casts(call))
     if _boolean_consumer(call):
         return True
     # Bound to a name first: then EVERY read of that name has to be blind to
