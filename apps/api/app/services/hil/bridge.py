@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 import hashlib
 import json
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from app.agents.core.background.session import get_session
 from app.constants.cache import HIL_DECLINED_PREFIX
@@ -63,6 +63,29 @@ class GatedApproval:
     stream_id: str
     user_id: str
     conversation_id: str
+    tool_call: GatedCall
+    summary: str
+    integration_name: str | None
+
+
+class ApprovalCard(Protocol):
+    """What an approval card renders — the slice of ``GatedApproval`` the entry reads."""
+
+    @property
+    def approval_id(self) -> str: ...
+    @property
+    def tool_call(self) -> GatedCall: ...
+    @property
+    def summary(self) -> str: ...
+    @property
+    def integration_name(self) -> str | None: ...
+
+
+@dataclass(frozen=True)
+class SettledApprovalCard:
+    """A decided call's card, rebuilt from its persisted record to redraw it settled."""
+
+    approval_id: str
     tool_call: GatedCall
     summary: str
     integration_name: str | None
@@ -115,16 +138,13 @@ async def publish_decision(
     closed. The client follows the new stream via ``executor.stream_started``, so a card
     settled on the old one resolves where nobody is looking.
     """
-    approval = GatedApproval(
+    card = SettledApprovalCard(
         approval_id=record.approval_id,
-        stream_id=stream_id,
-        user_id=record.user_id,
-        conversation_id=record.conversation_id,
         tool_call=GatedCall(name=record.tool_name, id=record.tool_call_id, args=record.args),
         summary=record.summary,
         integration_name=record.integration_name,
     )
-    await _publish_entry(stream_id, _approval_entry(approval, status, feedback=feedback))
+    await _publish_entry(stream_id, _approval_entry(card, status, feedback=feedback))
     # Also settle the PERSISTED frame right now. Final delivery reconciles too,
     # but the run may pause again on a later gate first — a revisit in that
     # window would otherwise render a dead pending card for a decided approval.
@@ -275,21 +295,21 @@ async def _publish_entry(stream_id: str, entry: ApprovalRequestEntry) -> None:
 
 
 def _approval_entry(
-    approval: GatedApproval,
+    card: ApprovalCard,
     status: HILApprovalStatus,
     feedback: str | None = None,
     auto_reason: str | None = None,
 ) -> ApprovalRequestEntry:
-    tool_call = approval.tool_call
+    tool_call = card.tool_call
     return ApprovalRequestEntry(
         tool_name=APPROVAL_REQUEST_TOOL_NAME,
         tool_category=APPROVAL_TOOL_CATEGORY,
         data=ApprovalRequestEntryData(
-            approval_id=approval.approval_id,
+            approval_id=card.approval_id,
             tool_call_id=tool_call.id,
             gated_tool_name=tool_call.name,
-            integration_name=approval.integration_name,
-            summary=approval.summary,
+            integration_name=card.integration_name,
+            summary=card.summary,
             args_preview=tool_call.args,
             status=status,
             feedback=feedback,
