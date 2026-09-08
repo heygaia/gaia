@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+from dataclasses import dataclass
 import subprocess
 
 from app.browser_host.obscura_launch import obscura_serve_argv, poll_obscura_endpoint
@@ -27,8 +28,17 @@ _PORT_ATTEMPTS = 5
 # died before we decide the port took and start the (30s) readiness poll.
 _BIND_SETTLE_SECONDS = 0.5
 
-_proc: asyncio.subprocess.Process | None = None
-_cdp_url: str | None = None
+
+@dataclass(frozen=True)
+class _CrawlEngine:
+    """The running crawl Obscura and the CDP endpoint it publishes — one value, so
+    the process and its URL can never disagree about whether an engine exists."""
+
+    proc: asyncio.subprocess.Process
+    cdp_url: str
+
+
+_engine: _CrawlEngine | None = None
 _lock = asyncio.Lock()
 
 
@@ -47,10 +57,10 @@ async def ensure_crawl_obscura() -> str:
     local Chrome) doesn't wedge crawling — Obscura publishes its endpoint only at
     a port we name, so an occupied one is a fast exit we skip past.
     """
-    global _proc, _cdp_url
+    global _engine
     async with _lock:
-        if _proc is not None and _proc.returncode is None and _cdp_url is not None:
-            return _cdp_url
+        if _engine is not None and _engine.proc.returncode is None:
+            return _engine.cdp_url
         base = settings.OBSCURA_CRAWL_PORT
         last_error: Exception | None = None
         for port in range(base, base + _PORT_ATTEMPTS):
@@ -66,10 +76,9 @@ async def ensure_crawl_obscura() -> str:
                 last_error = exc
                 await _terminate(proc)
                 continue
-            _proc = proc
-            _cdp_url = f"http://127.0.0.1:{port}"
+            _engine = _CrawlEngine(proc=proc, cdp_url=f"http://127.0.0.1:{port}")
             log.info(f"{LogTag.TOOL} crawl4ai Obscura engine started", port=port)
-            return _cdp_url
+            return _engine.cdp_url
         raise RuntimeError(
             f"crawl Obscura could not bind a port in {base}..{base + _PORT_ATTEMPTS - 1}"
         ) from last_error
@@ -77,13 +86,13 @@ async def ensure_crawl_obscura() -> str:
 
 async def shutdown_crawl_obscura() -> None:
     """Terminate the crawl Obscura on app shutdown (no-op if it never started)."""
-    global _proc, _cdp_url
+    global _engine
     async with _lock:
-        if _proc is not None and _proc.returncode is None:
-            _proc.terminate()
-            try:
-                await asyncio.wait_for(_proc.wait(), timeout=5)
-            except TimeoutError:
-                _proc.kill()
-        _proc = None
-        _cdp_url = None
+        engine, _engine = _engine, None
+        if engine is None or engine.proc.returncode is not None:
+            return
+        engine.proc.terminate()
+        try:
+            await asyncio.wait_for(engine.proc.wait(), timeout=5)
+        except TimeoutError:
+            engine.proc.kill()

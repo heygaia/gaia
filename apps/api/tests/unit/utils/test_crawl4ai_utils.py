@@ -11,6 +11,7 @@ import pytest
 
 from app.config.settings import settings
 from app.constants.browser import BrowserEngine
+from app.constants.log_tags import LogTag
 
 
 def _pin_engine(monkeypatch: pytest.MonkeyPatch, engine: BrowserEngine) -> None:
@@ -75,13 +76,21 @@ def _make_result(markdown: str = "ok", *, success: bool = True, error: str = "")
     return result
 
 
-def _warning_kwargs(mock_log: MagicMock, needle: str) -> dict[str, Any]:
-    """The kwargs of the single ``log.warning`` whose message contains ``needle``."""
-    matches = [
-        call.kwargs for call in mock_log.warning.call_args_list if needle in str(call.args[0])
-    ]
+def _warning_call(mock_log: MagicMock, needle: str) -> Any:
+    """The single ``log.warning`` call whose message contains ``needle``.
+
+    warning/error both append their message AND kwargs to the wide event's
+    ``warnings[]``, so the whole call is the observable artefact — assert the
+    message and every field, not just that something was logged.
+    """
+    matches = [call for call in mock_log.warning.call_args_list if needle in str(call.args[0])]
     assert len(matches) == 1, f"expected exactly one {needle!r} warning, got {len(matches)}"
     return matches[0]
+
+
+def _warning_kwargs(mock_log: MagicMock, needle: str) -> dict[str, Any]:
+    """The kwargs of the single ``log.warning`` whose message contains ``needle``."""
+    return dict(_warning_call(mock_log, needle).kwargs)
 
 
 def _stub_crawler(mock_crawler_cls: MagicMock) -> AsyncMock:
@@ -346,24 +355,10 @@ class TestBuildRunConfig:
 
 
 class TestManagedCrawler:
-    """The caller's config wins; without one the engine's default is built."""
+    """The crawler always runs on the active engine's config; nobody pre-builds one."""
 
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
-    async def test_explicit_config_is_the_one_the_crawler_runs_on(
-        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
-        _stub_crawler(mock_crawler_cls)
-        from app.utils.crawl4ai_utils import managed_crawler
-
-        explicit = BrowserConfig(headless=False, browser_mode="dedicated", verbose=True)
-        async with managed_crawler(explicit, context_name="test"):
-            pass
-
-        assert mock_crawler_cls.call_args.kwargs["config"] is explicit
-
-    @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
-    async def test_no_config_falls_back_to_the_engine_default(
+    async def test_the_crawler_is_built_on_the_engine_default(
         self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
@@ -752,9 +747,10 @@ class TestChromiumBatchWiring:
         assert call.kwargs["config"].page_timeout == 11_000
         assert call.kwargs["config"].semaphore_count == 5
 
+    @patch("app.utils.crawl4ai_utils.log")
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
     async def test_a_batch_error_is_reported_for_every_url(
-        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+        self, mock_crawler_cls: MagicMock, mock_log: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
         crawler_inst = _stub_crawler(mock_crawler_cls)
@@ -768,6 +764,9 @@ class TestChromiumBatchWiring:
 
         assert contents == {}
         assert errors == dict.fromkeys(urls, "deep_research batch error: boom")
+        call = _warning_call(mock_log, "batch error")
+        assert call.args == (f"{LogTag.TOOL} batch error",)
+        assert call.kwargs == {"context_name": "deep_research", "error_type": "ValueError"}
 
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
     async def test_urls_the_batch_returned_nothing_for_are_reported(
@@ -784,9 +783,10 @@ class TestChromiumBatchWiring:
 
         assert errors == {"https://a.example": "deep_research returned no result"}
 
+    @patch("app.utils.crawl4ai_utils.log")
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")
     async def test_the_batch_deadline_falls_back_to_per_url_recovery(
-        self, mock_crawler_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+        self, mock_crawler_cls: MagicMock, mock_log: MagicMock, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         _pin_engine(monkeypatch, BrowserEngine.CHROMIUM)
         never = asyncio.Event()
@@ -807,6 +807,9 @@ class TestChromiumBatchWiring:
 
         assert errors == {}
         assert contents == dict.fromkeys(urls, "recovered")
+        call = _warning_call(mock_log, "batch timed out")
+        assert call.args == (f"{LogTag.TOOL} batch timed out ; retrying URLs individually",)
+        assert call.kwargs == {"context_name": "test", "total_timeout_seconds": 0.05}
 
     @patch("app.utils.crawl4ai_utils.log")
     @patch("app.utils.crawl4ai_utils.AsyncWebCrawler")

@@ -142,12 +142,8 @@ def _spawn_shielded_close(crawler: AsyncWebCrawler, context_name: str) -> asynci
 
 
 @asynccontextmanager
-async def managed_crawler(
-    config: BrowserConfig | None = None,
-    *,
-    context_name: str = "crawl4ai",
-) -> AsyncIterator[AsyncWebCrawler]:
-    """Yield a started ``AsyncWebCrawler`` whose teardown survives cancellation.
+async def managed_crawler(*, context_name: str = "crawl4ai") -> AsyncIterator[AsyncWebCrawler]:
+    """Yield a started ``AsyncWebCrawler`` for the active engine, whose teardown survives cancellation.
 
     ``async with AsyncWebCrawler()`` runs ``close()`` inside ``__aexit__``, so a
     ``CancelledError`` arriving mid-close (stream cancellation, tool timeout,
@@ -157,7 +153,7 @@ async def managed_crawler(
     no longer interrupt the browser teardown; ``app.utils.browser_reaper`` is
     the backstop for anything that still slips through.
     """
-    crawler = AsyncWebCrawler(config=config or await _build_browser_config())
+    crawler = AsyncWebCrawler(config=await _build_browser_config())
     try:
         await crawler.start()
     except BaseException:
@@ -287,7 +283,6 @@ async def _recover_with_single_url_crawls(
     )
 
     run_config = _build_run_config(replace(params, semaphore_count=1))
-    browser_config = await _build_browser_config()  # pragma: no mutate — managed_crawler rebuilds the identical config from None (config or await _build_browser_config()), and recovery only runs on the Chromium path, so no engine side effect differs
 
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}
@@ -295,7 +290,7 @@ async def _recover_with_single_url_crawls(
     try:
         async with (
             get_browser_semaphore(),
-            managed_crawler(browser_config, context_name=context_name) as crawler,
+            managed_crawler(context_name=context_name) as crawler,
         ):
             for url in urls:
                 try:
@@ -367,8 +362,7 @@ async def _batch_fetch_per_url(
     async def fetch(url: str) -> None:
         async with sem, get_browser_semaphore():
             try:
-                config = await _build_browser_config()
-                async with managed_crawler(config, context_name=context_name) as crawler:
+                async with managed_crawler(context_name=context_name) as crawler:
                     result = await asyncio.wait_for(
                         crawler.arun(url=url, config=run_config), timeout=per_url_timeout
                     )
@@ -522,12 +516,10 @@ async def batch_fetch_with_crawl4ai(
     if _is_obscura():
         return await _batch_fetch_per_url(urls, run_config=run_config, params=params)
 
-    browser_config = await _build_browser_config()
-
     try:
         async with (
             get_browser_semaphore(),
-            managed_crawler(browser_config, context_name=context_name) as crawler,
+            managed_crawler(context_name=context_name) as crawler,
         ):
             results = await asyncio.wait_for(
                 crawler.arun_many(urls=list(urls), config=run_config),

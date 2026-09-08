@@ -2,7 +2,8 @@
 
 import asyncio
 from collections.abc import Awaitable, Iterator
-from typing import Any
+import subprocess
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -20,16 +21,22 @@ class FakeProcess:
     """Stands in for ``asyncio.subprocess.Process`` — records terminate/kill/wait."""
 
     def __init__(
-        self, returncode: int | None = None, wait_error: type[BaseException] | None = None
+        self,
+        returncode: int | None = None,
+        wait_error: type[BaseException] | None = None,
+        terminate_error: type[BaseException] | None = None,
     ):
         self.returncode = returncode
         self.wait_error = wait_error
+        self.terminate_error = terminate_error
         self.terminated = False
         self.killed = False
         self.waited = False
 
     def terminate(self) -> None:
         self.terminated = True
+        if self.terminate_error is not None:
+            raise self.terminate_error()
 
     def kill(self) -> None:
         self.killed = True
@@ -47,9 +54,11 @@ class _Spawner:
     def __init__(self, processes: list[FakeProcess]):
         self._processes = processes
         self.argvs: list[list[str]] = []
+        self.kwargs: list[dict[str, Any]] = []
 
-    async def __call__(self, *argv: str, **_kwargs: Any) -> FakeProcess:
+    async def __call__(self, *argv: str, **kwargs: Any) -> FakeProcess:
         self.argvs.append(list(argv))
+        self.kwargs.append(kwargs)
         return self._processes[len(self.argvs) - 1]
 
     @property
@@ -62,11 +71,17 @@ def _isolated_engine_state(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
     """No engine at the start of a test, and none left behind for the next one."""
     monkeypatch.setattr(settings, "OBSCURA_CRAWL_PORT", _BASE_PORT)
     monkeypatch.setattr(settings, "OBSCURA_BIN", "/usr/bin/obscura")
-    crawl_obscura._proc = None
-    crawl_obscura._cdp_url = None
+    crawl_obscura._engine = None
     yield
-    crawl_obscura._proc = None
-    crawl_obscura._cdp_url = None
+    crawl_obscura._engine = None
+
+
+def _running(monkeypatch: pytest.MonkeyPatch, proc: FakeProcess) -> None:
+    """Install ``proc`` as the engine on record, published at the base port."""
+    engine = crawl_obscura._CrawlEngine(
+        proc=cast(asyncio.subprocess.Process, proc), cdp_url=f"http://127.0.0.1:{_BASE_PORT}"
+    )
+    monkeypatch.setattr(crawl_obscura, "_engine", engine)
 
 
 @pytest.fixture
@@ -206,6 +221,70 @@ class TestEnsureCrawlObscura:
         assert url == f"http://127.0.0.1:{_BASE_PORT}"
         assert len(spawner.ports) == attempts + 1
 
+    async def test_every_port_taken_raises_with_no_underlying_error(
+        self, mock_poll: AsyncMock, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
+    ) -> None:
+        """Nothing failed on the way — every port was simply occupied."""
+        attempts = _PORT_ATTEMPTS
+        _spawn(monkeypatch, [FakeProcess(returncode=1) for _ in range(attempts)])
+
+        with pytest.raises(RuntimeError) as exc_info:
+            await crawl_obscura.ensure_crawl_obscura()
+
+        assert exc_info.value.__cause__ is None
+        mock_poll.assert_not_awaited()
+
+    async def test_the_engines_own_output_is_discarded(
+        self, mock_poll: AsyncMock, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
+    ) -> None:
+        """Obscura is chatty; its pipes must not land in the API's own streams."""
+        spawner = _spawn(monkeypatch, [FakeProcess()])
+
+        await crawl_obscura.ensure_crawl_obscura()
+
+        assert spawner.kwargs == [
+            {"stdout": subprocess.DEVNULL, "stderr": subprocess.DEVNULL},
+        ]
+
+    async def test_a_process_that_dies_before_termination_does_not_break_the_probe(
+        self, mock_poll: AsyncMock, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
+    ) -> None:
+        """The engine can exit between the returncode check and terminate(); that is not an error."""
+        vanishing = FakeProcess(terminate_error=ProcessLookupError)
+        spawner = _spawn(monkeypatch, [vanishing, FakeProcess()])
+        mock_poll.side_effect = [RuntimeError("no endpoint"), "ws://ready"]
+
+        url = await crawl_obscura.ensure_crawl_obscura()
+
+        assert url == f"http://127.0.0.1:{_BASE_PORT + 1}"
+        assert spawner.ports == [_BASE_PORT, _BASE_PORT + 1]
+
+    async def test_a_process_that_ignores_termination_does_not_wedge_the_probe(
+        self, mock_poll: AsyncMock, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
+    ) -> None:
+        """A half-started engine that never reaps must not stop us trying the next port."""
+        unreapable = FakeProcess(wait_error=TimeoutError)
+        spawner = _spawn(monkeypatch, [unreapable, FakeProcess()])
+        mock_poll.side_effect = [RuntimeError("no endpoint"), "ws://ready"]
+
+        url = await crawl_obscura.ensure_crawl_obscura()
+
+        assert url == f"http://127.0.0.1:{_BASE_PORT + 1}"
+        assert spawner.ports == [_BASE_PORT, _BASE_PORT + 1]
+
+    async def test_a_terminated_engine_gets_two_seconds_to_go(
+        self, mock_poll: AsyncMock, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
+    ) -> None:
+        _spawn(monkeypatch, [FakeProcess(), FakeProcess()])
+        mock_poll.side_effect = [RuntimeError("no endpoint"), "ws://ready"]
+        recorded = _record_wait_for_timeouts(monkeypatch)
+
+        await crawl_obscura.ensure_crawl_obscura()
+
+        # Shorter than the shutdown grace: this reap is on the hot path of a
+        # crawl that is still waiting for an engine.
+        assert recorded == [2]
+
 
 class TestShutdownCrawlObscura:
     """Teardown: terminate, five-second grace, then kill — and always forget the engine."""
@@ -214,8 +293,7 @@ class TestShutdownCrawlObscura:
         self, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
     ) -> None:
         running = FakeProcess()
-        monkeypatch.setattr(crawl_obscura, "_proc", running)
-        crawl_obscura._cdp_url = f"http://127.0.0.1:{_BASE_PORT}"
+        _running(monkeypatch, running)
         spawner = _spawn(monkeypatch, [FakeProcess()])
 
         await crawl_obscura.shutdown_crawl_obscura()
@@ -232,7 +310,7 @@ class TestShutdownCrawlObscura:
     async def test_the_engine_gets_five_seconds_to_exit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        monkeypatch.setattr(crawl_obscura, "_proc", FakeProcess())
+        _running(monkeypatch, FakeProcess())
         recorded = _record_wait_for_timeouts(monkeypatch)
 
         await crawl_obscura.shutdown_crawl_obscura()
@@ -243,7 +321,7 @@ class TestShutdownCrawlObscura:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         stuck = FakeProcess(wait_error=TimeoutError)
-        monkeypatch.setattr(crawl_obscura, "_proc", stuck)
+        _running(monkeypatch, stuck)
 
         await crawl_obscura.shutdown_crawl_obscura()
 
@@ -253,7 +331,7 @@ class TestShutdownCrawlObscura:
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         exited = FakeProcess(returncode=0)
-        monkeypatch.setattr(crawl_obscura, "_proc", exited)
+        _running(monkeypatch, exited)
 
         await crawl_obscura.shutdown_crawl_obscura()
 
@@ -264,4 +342,4 @@ class TestShutdownCrawlObscura:
     async def test_shutting_down_without_a_launch_is_a_no_op(self) -> None:
         await crawl_obscura.shutdown_crawl_obscura()
 
-        assert crawl_obscura._proc is None
+        assert crawl_obscura._engine is None
