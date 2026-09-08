@@ -110,8 +110,10 @@ function professionAck(responses: Record<string, string>): string {
 export const questions: Question[] = [
   {
     id: "1",
-    lines: () => [
-      "Hey! I'm GAIA. Nice to meet you.",
+    lines: (_responses, { firstName }) => [
+      firstName
+        ? `Hey ${firstName}! I'm GAIA. Nice to meet you.`
+        : "Hey! I'm GAIA. Nice to meet you.",
       "Think about everything you did yesterday. Email, calendar, meetings, sure, that's the obvious stuff.",
       "But also the research, the chasing people, the spreadsheet, the booking, that one thing you do every week and hate. I do all of that. Not you.",
       "So, what do you do for work?",

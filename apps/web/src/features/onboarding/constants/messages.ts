@@ -1,10 +1,14 @@
 // ── Stage copy ────────────────────────────────────────────────────────────────
 
-export const PAYMENT_INTRO_LINES = [
-  "Quick thing before we go on. I'm not an app you're buying, I'm someone you're hiring.",
-  "A person doing all this costs a salary. I cost about a dollar a day.",
-  "So, monthly or yearly?",
-];
+export function paymentIntroLines(firstName: string | undefined): string[] {
+  return [
+    firstName
+      ? `So ${firstName}, quick thing before we go on. I'm not an app you're buying, I'm someone you're hiring.`
+      : "Quick thing before we go on. I'm not an app you're buying, I'm someone you're hiring.",
+    "A person doing all this costs a salary. I cost about a dollar a day.",
+    "So, monthly or yearly?",
+  ];
+}
 
 export const FINISHING_MESSAGE = "One sec, starting our first chat…";
 

@@ -22,6 +22,8 @@ export interface TranscriptInputs {
   questionIndex: number;
   selectedNeeds: string[];
   otherNeed: string;
+  /** Given name of the signed-in user, if their account has one. */
+  firstName?: string;
 }
 
 function answerFor(fieldName: string, state: TranscriptInputs): string | null {
@@ -51,7 +53,9 @@ export function getMessages(state: TranscriptInputs): Message[] {
     messages.push({
       id: q.id,
       type: "bot",
-      content: q.lines(state.responses).join(NEW_MESSAGE_BREAK_TOKEN),
+      content: q
+        .lines(state.responses, { firstName: state.firstName })
+        .join(NEW_MESSAGE_BREAK_TOKEN),
     });
 
     const answer = answerFor(q.fieldName, state);
