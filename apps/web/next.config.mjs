@@ -64,6 +64,7 @@ const nextConfig = {
     "100.*.*.*",
     "*.local",
     "*.ts.net",
+    "*.*.ts.net",
   ],
   // Next's dev-server dedup locks on distDir, refusing a second `next dev` for
   // the same directory. A dedicated dist dir (agents driving the app while a
