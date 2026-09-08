@@ -610,9 +610,7 @@ class TestCreateSubscription:
             "zipcode": "94104",
         }
         assert dev_kwargs["customer"]["phone_number"] == "+14155550123"
-        # No saved cards: the overlay auto-selects one, and a card saved under
-        # an earlier currency or country declines against this prefill.
-        assert "show_saved_payment_methods" not in dev_kwargs
+        assert dev_kwargs["show_saved_payment_methods"] is True
 
         with patch.object(payment_service_module.settings, "ENV", "production"):
             await payment_service.create_subscription(
