@@ -14,6 +14,7 @@ lives here rather than in ``platform_link_service`` because
 
 from collections.abc import Mapping
 
+from app.constants.outbound import OUTBOUND_TTL_SECONDS_GREETING
 from app.models.chat_models import ConversationSource
 from app.models.platform_models import PlatformLinkResult
 from app.services.account_fs import schedule_account_sync
@@ -75,6 +76,7 @@ async def complete_platform_link(
             ConversationSource.coerce(platform) or ConversationSource.WEB,
             user_id,
             first_contact,
+            ttl_seconds=OUTBOUND_TTL_SECONDS_GREETING,
         )
         if delivery is not OutboundResult.PUBLISHED:
             # The link itself held; the one message a new user is guaranteed
