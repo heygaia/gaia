@@ -19,11 +19,11 @@ export function OnboardingBotBubble({
   partChoreography,
 }: OnboardingBotBubbleProps) {
   // On a phone the chat bubble's 80% cap wastes the little width there is;
-  // the onboarding column is already narrow, so let the bubble fill it, drop
+  // the onboarding column is already narrow, so let a long line use all of it, drop
   // the avatar lane (and the logo that sits in it) and tighten the right pad.
   const isMobile = useIsMobile();
   return (
-    <div className="max-sm:[&_.imessage-bubble]:w-full max-sm:[&_.imessage-bubble]:max-w-full max-sm:[&_.imessage-bubble]:pr-3">
+    <div className="max-sm:[&_.imessage-bubble]:max-w-full max-sm:[&_.imessage-bubble]:pr-3">
       <ChatBubbleBot
         {...BOT_BUBBLE_DEFAULTS}
         text={text}
