@@ -23,9 +23,11 @@ MODULE_REL = "app/sample.py"
 MODULE_DOTTED = "app.sample"
 
 
-def _write_mutants(workdir: Path, orig_body: str, mutant_body: str) -> None:
+def _write_mutants(
+    workdir: Path, orig_body: str, mutant_body: str, *, module_rel: str = MODULE_REL
+) -> None:
     """Lay out the mutants file the classifier reads, as mutmut emits it."""
-    target = workdir / "mutants" / MODULE_REL
+    target = workdir / "mutants" / module_rel
     target.parent.mkdir(parents=True, exist_ok=True)
     # The trailing dict entry is how mutmut points a mutant back at its
     # original, and it is what the classifier resolves through — without it the
@@ -37,17 +39,20 @@ def _write_mutants(workdir: Path, orig_body: str, mutant_body: str) -> None:
     )
 
 
-def _classify(workdir: Path, ranges: str = "[[1,200]]") -> subprocess.CompletedProcess[str]:
+def _classify(
+    workdir: Path, ranges: str = "[[1,200]]", *, module_rel: str = MODULE_REL
+) -> subprocess.CompletedProcess[str]:
+    dotted = module_rel.removesuffix(".py").replace("/", ".")
     return subprocess.run(
         [
             # The lane runs the classifier under the project venv; a bare
             # "python3" can be an older interpreter than its syntax needs.
             sys.executable,
             str(CLASSIFIER),
-            f"{MODULE_DOTTED}.x_probe__mutmut_1: survived",
+            f"{dotted}.x_probe__mutmut_1: survived",
             str(workdir),
             ranges,
-            MODULE_REL,
+            module_rel,
         ],
         capture_output=True,
         text=True,
@@ -267,6 +272,118 @@ class TestPopThroughCastWithEarlyExit:
         result = _classify(workdir)
 
         assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+
+class TestTwoLookupsGuardedByOneEarlyExit:
+    """The runner's viewport shape: two getattr defaults, one ``if not w or not h:
+    return`` guard, and real arithmetic on both past it."""
+
+    _BODY = (
+        '    w = getattr(p, "w", 0)\n'
+        '    h = getattr(p, "h", 0)\n'
+        "    if not w or not h:\n"
+        "        return None\n"
+        "    return 1 / w + 1 / h"
+    )
+
+    def _write_real_module(self, workdir: Path) -> None:
+        (workdir / MODULE_REL).write_text(f"def probe(p):\n{self._BODY}\n")
+
+    def test_a_default_behind_the_shared_guard_is_equivalent(self, workdir: Path) -> None:
+        # Every falsy w takes the `return None` arm of the or-chain, so the
+        # division below it only ever sees a truthy w.
+        self._write_real_module(workdir)
+        _write_mutants(
+            workdir, self._BODY, self._BODY.replace('getattr(p, "w", 0)', 'getattr(p, "w", None)')
+        )
+
+        result = _classify(workdir)
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_guard_that_only_exits_on_the_other_name_is_still_reported(
+        self, workdir: Path
+    ) -> None:
+        body = (
+            '    w = getattr(p, "w", 0)\n'
+            '    h = getattr(p, "h", 0)\n'
+            "    if not h:\n"
+            "        return None\n"
+            "    return (w or 0) + 1 / h if w is not None else 0"
+        )
+        (workdir / MODULE_REL).write_text(f"def probe(p):\n{body}\n")
+        _write_mutants(workdir, body, body.replace('getattr(p, "w", 0)', 'getattr(p, "w", None)'))
+
+        result = _classify(workdir)
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+
+class TestToolDumpModeLiteral:
+    """A tools-tree ``model_dump(mode="json")`` is guarded by the tool-dump-boundary
+    lint, not by tests: rewriting the literal fails the lint lane of the same gate,
+    so it is reported under its own verdict — never as an equivalence."""
+
+    _TOOL_REL = "app/agents/tools/sample_tool.py"
+    _BODY = '    return {"out": payload.model_dump(mode="json", exclude_none=True)}'
+
+    def _write_real_module(self, workdir: Path, module_rel: str) -> None:
+        (workdir / module_rel).parent.mkdir(parents=True, exist_ok=True)
+        (workdir / module_rel).write_text(f"def probe(payload):\n{self._BODY}\n")
+
+    def test_a_respelled_mode_is_lint_caught(self, workdir: Path) -> None:
+        self._write_real_module(workdir, self._TOOL_REL)
+        _write_mutants(
+            workdir,
+            self._BODY,
+            self._BODY.replace('mode="json"', 'mode="XXjsonXX"'),
+            module_rel=self._TOOL_REL,
+        )
+
+        result = _classify(workdir, module_rel=self._TOOL_REL)
+
+        assert result.stdout.strip() == "LINTED:2", result.stdout + result.stderr
+        assert result.returncode == 1
+
+    def test_a_dropped_mode_is_lint_caught(self, workdir: Path) -> None:
+        self._write_real_module(workdir, self._TOOL_REL)
+        _write_mutants(
+            workdir,
+            self._BODY,
+            self._BODY.replace('mode="json", ', ""),
+            module_rel=self._TOOL_REL,
+        )
+
+        result = _classify(workdir, module_rel=self._TOOL_REL)
+
+        assert result.stdout.strip() == "LINTED:2", result.stdout + result.stderr
+
+    def test_another_argument_of_the_same_call_is_still_reported(self, workdir: Path) -> None:
+        self._write_real_module(workdir, self._TOOL_REL)
+        _write_mutants(
+            workdir,
+            self._BODY,
+            self._BODY.replace("exclude_none=True", "exclude_none=False"),
+            module_rel=self._TOOL_REL,
+        )
+
+        result = _classify(workdir, module_rel=self._TOOL_REL)
+
+        assert result.stdout.strip() == "CHANGED:2", result.stdout + result.stderr
+
+    def test_the_same_rewrite_outside_the_tools_tree_is_still_reported(self, workdir: Path) -> None:
+        service_rel = "app/services/sample_service.py"
+        self._write_real_module(workdir, service_rel)
+        _write_mutants(
+            workdir,
+            self._BODY,
+            self._BODY.replace('mode="json"', 'mode="XXjsonXX"'),
+            module_rel=service_rel,
+        )
+
+        result = _classify(workdir, module_rel=service_rel)
+
+        assert result.stdout.strip() == "CHANGED:2", result.stdout + result.stderr
 
 
 class TestArgumentThatIsTheCalleeDefault:

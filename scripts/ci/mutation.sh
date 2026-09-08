@@ -932,6 +932,7 @@ sys.exit(proc.returncode)
   EQUIVALENT=""
   UNCHANGED=""
   LOGGING=""
+  LINTED=""
   _phase "classify survivors"
   if [ -n "$SURVIVORS" ]; then
     while IFS= read -r line; do
@@ -956,6 +957,9 @@ sys.exit(proc.returncode)
         LOGGING:*)
           LOGGING="$LOGGING
   $line" ;;
+        LINTED:*)
+          LINTED="$LINTED
+  $line" ;;
         *)
           echo "MUTATION CLASSIFIER FAILED on: $line" >&2
           echo "  exit=$CLASSIFIER_RC verdict='$VERDICT'" >&2
@@ -975,7 +979,7 @@ sys.exit(proc.returncode)
         CHANGED:*)
           NO_TESTS_CHANGED="$NO_TESTS_CHANGED
   $line" ;;
-        UNCHANGED:*|LOGGING:*|EQUIV) ;;
+        UNCHANGED:*|LOGGING:*|LINTED:*|EQUIV) ;;
         *)
           echo "MUTATION CLASSIFIER FAILED on: $line" >&2
           echo "  exit=$CLASSIFIER_RC verdict='$VERDICT'" >&2
@@ -1039,6 +1043,16 @@ sys.exit(proc.returncode)
     echo "      only for mutants on lines the PR changed, and printed before the" >&2
     echo "      verdict so an exclusion is never invisible, including on a failing run:" >&2
     echo "$LOGGING" >&2
+  fi
+  if [ -n "$LINTED" ]; then
+    LINTED_COUNT=$(printf '%s\n' "$LINTED" | grep -c . || true)
+    echo "NOTE: $LINTED_COUNT mutant(s) excluded as lint-caught — the mutation rewrites the" >&2
+    echo "      mode=\"json\" literal of a model_dump under app/agents/tools/, which the" >&2
+    echo "      tool-dump-boundary lint (python-static lane of this same gate, issue" >&2
+    echo "      #917) rejects in every other spelling, so the change cannot reach master." >&2
+    echo "      NOT an equivalence claim — whether the bytes differ depends on the model —" >&2
+    echo "      and printed before the verdict so the exclusion is never invisible:" >&2
+    echo "$LINTED" >&2
   fi
   if [ -n "$REAL_SURVIVORS" ]; then
     echo "MUTATION FAILED — the suite would not notice if this code were wrong:" >&2

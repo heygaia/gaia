@@ -1,4 +1,4 @@
-"""Classify one surviving mutant: CHANGED / UNCHANGED / LOGGING / EQUIV.
+"""Classify one surviving mutant: CHANGED / UNCHANGED / LOGGING / LINTED / EQUIV.
 
 Extracted from mutation.sh, where it lived twice verbatim — once for the
 survivor loop and once for the no-covering-test loop. Two copies of 356 lines
@@ -8,7 +8,7 @@ invoked from both.
 Argv: <survivor-line> <workdir> <changed-ranges-json> <module-path>
 
 Prints exactly one verdict and exits 1 for a verdict the lane must act on
-(CHANGED/UNCHANGED/LOGGING) or 0 for EQUIV. Any other exit is a classifier
+(CHANGED/UNCHANGED/LOGGING/LINTED) or 0 for EQUIV. Any other exit is a classifier
 failure, and the caller fails closed on it rather than dropping the mutant —
 an unclassified survivor silently leaving every bucket is the same
 silence-read-as-success this gate exists to stop.
@@ -276,17 +276,33 @@ def _boolean_consumer(node) -> bool:
     return isinstance(parent, ast.If | ast.IfExp) and parent.test is node
 
 
-def _early_exit_on_falsy(stmt, name: str) -> bool:
-    """True for ``if not name: <exit>`` — everything after runs only on truthy."""
+def _is_not_name(node, name: str) -> bool:
     return (
+        isinstance(node, ast.UnaryOp)
+        and isinstance(node.op, ast.Not)
+        and isinstance(node.operand, ast.Name)
+        and node.operand.id == name
+    )
+
+
+def _early_exit_on_falsy(stmt, name: str) -> bool:
+    """True for ``if not name: <exit>`` — everything after runs only on truthy.
+
+    An ``or`` chain holding ``not name`` is the same guard for that name: a falsy
+    value makes the whole test true, so ``if not w or not h: return`` leaves
+    every later read of ``w`` (and of ``h``) on the truthy side.
+    """
+    if not (
         isinstance(stmt, ast.If)
         and not stmt.orelse
-        and isinstance(stmt.test, ast.UnaryOp)
-        and isinstance(stmt.test.op, ast.Not)
-        and isinstance(stmt.test.operand, ast.Name)
-        and stmt.test.operand.id == name
         and all(isinstance(s, ast.Return | ast.Raise | ast.Continue | ast.Break) for s in stmt.body)
+    ):
+        return False
+    test = stmt.test
+    operands = (
+        test.values if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.Or) else [test]
     )
+    return any(_is_not_name(operand, name) for operand in operands)
 
 
 def _tests_truthy(test, name: str) -> bool:
@@ -883,6 +899,44 @@ def _first_differing_col(before: str, after: str) -> int:
     return min(len(before), len(after))
 
 
+# Mirrors _SCOPE_SEGMENT in tools/lints/tool_dump_boundary.py, as a module path
+# relative to the repo root (the lint matches on an absolute path).
+_TOOL_DUMP_LINT_SCOPE = "app/agents/tools/"
+
+
+def _rejected_by_tool_dump_boundary(
+    module_rel: str, path: str, line_no: int, col: int, orig_line: str
+) -> bool:
+    """True when the mutation rewrote a ``mode="json"`` on a tools-tree ``model_dump``.
+
+    Not an equivalence claim — whether the dumped bytes differ depends on the
+    model's fields. It is a different guard: tools/lints/tool_dump_boundary.py
+    requires that literal on every ``model_dump`` under app/agents/tools/
+    (issue #917), and the lint lane runs in this same gate, so a mutant that
+    deletes, blanks or respells it cannot reach master. Reported under its own
+    verdict so the exclusion is never read as a proof that the value cannot
+    matter. Any other argument of the same call is still reported.
+    """
+    if not module_rel.startswith(_TOOL_DUMP_LINT_SCOPE):
+        return False
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "model_dump"
+        ):
+            continue
+        for kw in node.keywords:
+            if kw.arg == "mode" and _literal_equals(kw.value, "json"):
+                if _argument_at(_node_span(kw), line_no, col, orig_line):
+                    return True
+    return False
+
+
 # Find the first differing line in the ORIGINAL file. `_body` drops only the
 # def line itself, so body index 0 is the line right after it.
 for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
@@ -911,6 +965,9 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
         ):
             print("EQUIV")
             sys.exit(0)
+        if _rejected_by_tool_dump_boundary(module_path, real_path, line_no, col, orig_raw[i]):
+            print(f"LINTED:{line_no}")
+            sys.exit(1)
         span = _excluded_span(real_path, line_no)
         if span is not None and _within(span, line_no, col):
             print(f"LOGGING:{line_no}")
