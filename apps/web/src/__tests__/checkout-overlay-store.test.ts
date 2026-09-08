@@ -79,6 +79,9 @@ describe("checkout overlay state machine", () => {
       .startCheckout("monthly", "paywall_modal");
     useCheckoutOverlayStore
       .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
+    useCheckoutOverlayStore
+      .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
 
     // A closed overlay proves nothing on its own — the phase must not jump
@@ -109,6 +112,9 @@ describe("checkout overlay state machine", () => {
       .startCheckout("monthly", "paywall_modal");
     useCheckoutOverlayStore
       .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
+    useCheckoutOverlayStore
+      .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
 
     await vi.advanceTimersByTimeAsync(61_000);
@@ -126,6 +132,9 @@ describe("checkout overlay state machine", () => {
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
     useCheckoutOverlayStore
       .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
@@ -154,6 +163,9 @@ describe("checkout overlay state machine", () => {
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
     useCheckoutOverlayStore
       .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
@@ -195,6 +207,9 @@ describe("checkout overlay state machine", () => {
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
     useCheckoutOverlayStore
       .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });

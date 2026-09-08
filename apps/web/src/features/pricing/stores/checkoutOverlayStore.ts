@@ -39,6 +39,9 @@ export type CheckoutBillingCycle = "monthly" | "yearly";
 interface CheckoutOverlayStore {
   phase: CheckoutPhase;
   error: string | null;
+  /** The user pressed pay (or Dodo asked to redirect) in this overlay run.
+   *  Without it a close is just a close: nothing to confirm. */
+  paymentAttempted: boolean;
   startCheckout: (
     billingCycle: CheckoutBillingCycle,
     source: CheckoutSource,
@@ -115,10 +118,15 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
       return {
         phase: "idle",
         error: null,
+        paymentAttempted: false,
 
         startCheckout: async (billingCycle, source) => {
           confirmationRun += 1;
-          set({ phase: "creating", error: null }, false, "startCheckout");
+          set(
+            { phase: "creating", error: null, paymentAttempted: false },
+            false,
+            "startCheckout",
+          );
           try {
             // `source` is what the server stamps onto
             // `payment:checkout_started` — the single emitter for this action.
@@ -151,15 +159,28 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
 
         handleCheckoutEvent: (event) => {
           switch (event.event_type) {
+            case "checkout.pay_button_clicked":
+            case "checkout.redirect_requested":
+              set({ paymentAttempted: true }, false, "paymentAttempted");
+              break;
             case "checkout.closed":
-            case "checkout.redirect":
+            case "checkout.redirect": {
+              if (get().phase !== "open") break;
+              // A close before pay was ever pressed is the user backing out:
+              // there is no payment to confirm, so the wizard is theirs again.
+              const backedOut =
+                event.event_type === "checkout.closed" &&
+                !get().paymentAttempted;
+              if (backedOut) {
+                set({ phase: "idle" }, false, "overlayDismissed");
+                break;
+              }
               // Neither event proves payment either way — only the webhook
               // does. Ask the server until it answers.
-              if (get().phase === "open") {
-                set({ phase: "confirming" }, false, "confirming");
-                void confirmPayment(subscriptionIsActive);
-              }
+              set({ phase: "confirming" }, false, "confirming");
+              void confirmPayment(subscriptionIsActive);
               break;
+            }
             case "checkout.error":
             case "checkout.link_expired":
               set(
@@ -186,7 +207,11 @@ export const useCheckoutOverlayStore = create<CheckoutOverlayStore>()(
 
         reset: () => {
           confirmationRun += 1;
-          set({ phase: "idle", error: null }, false, "reset");
+          set(
+            { phase: "idle", error: null, paymentAttempted: false },
+            false,
+            "reset",
+          );
         },
       };
     },
