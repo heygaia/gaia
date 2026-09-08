@@ -713,6 +713,7 @@ exclude = [
   # Basename form on purpose: scripts/ci/changes.sh only honours segment or
   # basename patterns when it scopes a PR scan.
   "**/todo_tool.py",
+  "**/webpage_tool.py",
   "**/tests",
   "**/tests/**",
   "**/conftest.py",
