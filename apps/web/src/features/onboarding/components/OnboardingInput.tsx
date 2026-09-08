@@ -128,6 +128,7 @@ function NeedsInput({
   onContinue,
 }: NeedsModeProps) {
   const selected = new Set(selectedNeeds);
+  const picksLeft = NEEDS_MAX_SELECTION - selected.size - (otherOpen ? 1 : 0);
   const rolePhrase = profession ? ROLE_PHRASES[profession] : undefined;
   const personalisedNote = (value: string) =>
     rolePhrase && isRoleNeed(value)
@@ -151,8 +152,10 @@ function NeedsInput({
         personalisedNote={personalisedNote}
         onSelect={handleSelect}
       />
-      <p className="w-full text-right text-xs text-zinc-500">
-        {needsHint(NEEDS_MAX_SELECTION - selected.size - (otherOpen ? 1 : 0))}
+      <p
+        className={`w-full text-right text-xs ${picksLeft > 0 ? "text-zinc-300" : "text-zinc-500"}`}
+      >
+        {needsHint(picksLeft)}
       </p>
       {otherOpen && (
         <OwnWordsInput
