@@ -9,12 +9,14 @@ from __future__ import annotations
 
 import asyncio
 import os
+from pathlib import Path
 import subprocess
 import sys
 
 import pytest
 from websockets.exceptions import ConnectionClosed
 
+from app.browser_host import pumps
 from app.browser_host.pumps import is_disconnect, pump_until_first_close
 
 # Safety timeout for pumps that should return promptly. If `asyncio.wait`'s
@@ -44,22 +46,30 @@ class TestIsDisconnect:
     def test_connection_closed_is_a_disconnect(self) -> None:
         assert is_disconnect(ConnectionClosed(None, None)) is True
 
-    def test_classifies_in_an_interpreter_that_never_imported_the_submodule(self) -> None:
+    def test_classifies_in_an_interpreter_that_never_imported_the_submodule(
+        self, tmp_path: Path
+    ) -> None:
         """``import websockets`` alone does not bind ``websockets.exceptions`` (15.x).
 
         The pump must import what it reads, or whether a disconnect is
         recognised depends on which other module happened to load first.
+        A real script file, not ``-c``: under the mutation gate the module is
+        trampoline-wrapped and resolves its caller's filename strictly.
         """
-        code = (
+        probe = tmp_path / "probe.py"
+        probe.write_text(
             "from app.browser_host.pumps import is_disconnect\n"
             "print(is_disconnect(RuntimeError('x')))\n"
         )
+        # The package root of the module under test, so the probe imports the
+        # same `app` this process did (the mutants copy under the mutation gate).
+        package_root = Path(pumps.__file__).resolve().parents[2]
         result = subprocess.run(
-            [sys.executable, "-c", code],
+            [sys.executable, str(probe)],
             capture_output=True,
             check=False,
             text=True,
-            env={**os.environ, "ENV": "development"},
+            env={**os.environ, "ENV": "development", "PYTHONPATH": str(package_root)},
         )
 
         assert result.returncode == 0, result.stderr

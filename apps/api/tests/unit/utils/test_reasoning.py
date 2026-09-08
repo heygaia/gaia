@@ -62,6 +62,22 @@ class TestExtractReasoningDelta:
         )
         assert extract_reasoning_delta(chunk) == "thought"  # type: ignore[arg-type]  # SimpleNamespace stub stands in for the real AIMessageChunk
 
+    def test_an_object_block_carrying_no_type_at_all_is_skipped(self) -> None:
+        """``type`` is optional on a block object — a provider that omits it must
+        cost us the block, not the whole turn's thinking."""
+        from types import SimpleNamespace
+
+        from app.utils.reasoning import extract_reasoning_delta
+
+        chunk = SimpleNamespace(
+            content_blocks=[
+                SimpleNamespace(text="untyped"),
+                SimpleNamespace(type="reasoning", reasoning="kept"),
+            ],
+            additional_kwargs={},
+        )
+        assert extract_reasoning_delta(chunk) == "kept"  # type: ignore[arg-type]  # SimpleNamespace stub stands in for the real AIMessageChunk
+
     def test_an_object_block_with_no_reasoning_text_contributes_nothing(self) -> None:
         """The "" default is what makes a reasoning-typed block with no text a
         no-op; any other default would inject junk into the persisted thinking."""
