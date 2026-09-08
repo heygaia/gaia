@@ -226,3 +226,42 @@ async def test_create_context_skips_restore_when_no_local_storage(
 
     assert cdp.sources_for("Page.addScriptToEvaluateOnNewDocument") == []
     assert all(m != "Target.attachToTarget" for m, _, _ in cdp.calls)
+
+
+# ---------------------------------------------------------------------------
+# The exact script, and the exact page session it is registered on
+# ---------------------------------------------------------------------------
+# The tests above check the script's semantics by substring. These pin the whole
+# string: the restore runs as page JS, so a stray character anywhere in it is a
+# syntax error that silently restores nothing on every future navigation.
+# ---------------------------------------------------------------------------
+
+_EXPECTED_RESTORE_JS = (
+    '(() => { if (location.origin !== "https://example.com") return;'
+    ' const entries = [{"name": "token", "value": "abc123"}];'
+    " for (const e of entries) {"
+    " if (localStorage.getItem(e.name) === null)"
+    " localStorage.setItem(e.name, e.value); } })()"
+)
+
+
+@pytest.mark.unit
+def test_restore_js_is_the_exact_script_the_page_will_run() -> None:
+    js = _build_local_storage_restore_js(_ORIGIN, [{"name": "token", "value": "abc123"}])
+    assert js == _EXPECTED_RESTORE_JS
+
+
+@pytest.mark.unit
+async def test_seed_local_storage_registers_the_exact_script_and_detaches_that_session() -> None:
+    """The saved entries reach the page verbatim, and the flat session is released."""
+    cdp = _RecordingCDP({"Target.attachToTarget": {"sessionId": "page-sess"}})
+    host = _make_host(cdp)
+    state = {
+        "cookies": [],
+        "origins": [{"origin": _ORIGIN, "localStorage": [{"name": "token", "value": "abc123"}]}],
+    }
+
+    await host._seed_local_storage("target-1", state)
+
+    assert cdp.sources_for("Page.addScriptToEvaluateOnNewDocument") == [_EXPECTED_RESTORE_JS]
+    assert ("Target.detachFromTarget", {"sessionId": "page-sess"}, None) in cdp.calls

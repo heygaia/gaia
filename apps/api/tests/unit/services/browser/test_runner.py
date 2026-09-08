@@ -22,6 +22,7 @@ from app.constants.log_tags import LogTag
 from app.schemas.browser import BrowserAction, HandoffOutcome
 from app.services.browser import runner as runner_mod
 from app.services.browser.runner import (
+    ActionResultsFn,
     BrowserRunConfig,
     BrowserRunnerCallbacks,
     BrowserTaskRunner,
@@ -161,7 +162,10 @@ class _RunnerOverrides:
     stream_screenshots: bool = True
     user_id: str | None = None
     root_request_id: str | None = None
+    # The runner only ever forwards the llm to Browser-Use, so the tests pass an
+    # identity sentinel rather than constructing a real BaseChatModel.
     llm: Any = None
+    action_results: ActionResultsFn | None = None
 
 
 def _make_runner(*, emit, request_handoff=None, is_cancelled=None, overrides=_RunnerOverrides()):
@@ -173,6 +177,7 @@ def _make_runner(*, emit, request_handoff=None, is_cancelled=None, overrides=_Ru
             request_handoff=request_handoff
             or AsyncMock(return_value=HandoffOutcome(status=HandoffStatus.COMPLETED)),
             is_cancelled=is_cancelled or AsyncMock(return_value=False),
+            action_results=overrides.action_results,
         ),
         config=BrowserRunConfig(
             max_steps=10,
@@ -426,6 +431,71 @@ def test_extract_actions_dumps_without_unset_params() -> None:
 
 
 # ---------------------------------------------------------------------------
+# _summarize_action_result — one action's outcome as short display text
+# ---------------------------------------------------------------------------
+
+
+class _SparseResult:
+    """A Browser-Use action result carrying only the attributes it was given."""
+
+    def __init__(self, **attrs: object) -> None:
+        for key, value in attrs.items():
+            setattr(self, key, value)
+
+
+def test_summarize_action_result_shows_the_error_over_any_content() -> None:
+    # A failed action's reason is the thing worth reading, whatever it also returned.
+    result = _SparseResult(error="element not found", extracted_content="partial page text")
+    assert runner_mod._summarize_action_result(result) == "element not found"
+
+
+def test_summarize_action_result_falls_back_to_the_long_term_memory() -> None:
+    # An action that stored something but extracted no content still has an outcome.
+    result = _SparseResult(
+        error=None, extracted_content=None, long_term_memory="Saved 3 rows to memory"
+    )
+    assert runner_mod._summarize_action_result(result) == "Saved 3 rows to memory"
+
+
+def test_summarize_action_result_is_none_for_a_result_with_no_outcome_fields() -> None:
+    """Browser-Use result shapes differ per action; one missing every text field is a
+    silent success, which needs no output row rather than a crashed step."""
+    assert runner_mod._summarize_action_result(_SparseResult()) is None
+    assert runner_mod._summarize_action_result(_SparseResult(error=None)) is None
+
+
+def test_summarize_action_result_collapses_whitespace_to_one_line() -> None:
+    # Extracted page text arrives with the page's own wrapping; the row is one line.
+    result = _SparseResult(extracted_content="  Total:\n\n   $42  ")
+    assert runner_mod._summarize_action_result(result) == "Total: $42"
+
+
+def test_summarize_action_result_keeps_text_at_the_limit_whole() -> None:
+    # Exactly at the limit is short enough to show — truncation starts past it.
+    at_limit = "c" * runner_mod._OUTPUT_MAX_CHARS
+    assert (
+        runner_mod._summarize_action_result(_SparseResult(extracted_content=at_limit)) == at_limit
+    )
+
+
+def test_summarize_action_result_truncates_longer_text_to_the_limit() -> None:
+    """Over the limit the row is cut one character short and given an ellipsis, so
+    the whole thing is still exactly the limit and reads as continuing."""
+    limit = runner_mod._OUTPUT_MAX_CHARS
+    long_text = "c" * (limit + 50)
+    summary = runner_mod._summarize_action_result(_SparseResult(extracted_content=long_text))
+    assert summary == "c" * (limit - 1) + "…"
+    assert len(summary) == limit
+
+    # A cut landing on a space must not leave the ellipsis floating off the word.
+    on_a_space = "a" * (limit - 2) + " " + "b" * 50
+    assert (
+        runner_mod._summarize_action_result(_SparseResult(extracted_content=on_a_space))
+        == "a" * (limit - 2) + "…"
+    )
+
+
+# ---------------------------------------------------------------------------
 # __init__ — derived timeouts and initial state
 # ---------------------------------------------------------------------------
 
@@ -627,6 +697,13 @@ def test_element_viewport_fraction_is_none_just_past_either_edge() -> None:
     assert runner_mod._element_viewport_fraction(past_bottom, 1) is None
 
 
+def test_element_viewport_fraction_treats_an_unscrolled_page_as_offset_zero() -> None:
+    """A page that never scrolled may not report an offset at all — that is zero
+    displacement, so the element sits where its page coordinates say."""
+    state = _fraction_state(_box(40.0, 40.0, 20.0, 20.0), viewport_width=100, viewport_height=100)
+    assert runner_mod._element_viewport_fraction(state, 1) == (0.5, 0.5)
+
+
 def test_element_viewport_fraction_rounds_to_four_places() -> None:
     # Four places is ~0.1px of a 1000px viewport — enough to place a pulse, and
     # short enough that the fraction stays readable in the emitted event.
@@ -756,8 +833,10 @@ async def test_on_step_end_reports_outputs_keyed_to_the_step_just_executed() -> 
     output — a silent success adds no row.
     """
     calls: list[tuple[int, list]] = []
-    runner = _make_runner(emit=AsyncMock())
-    runner._action_results = lambda step, outs: calls.append((step, outs))
+    runner = _make_runner(
+        emit=AsyncMock(),
+        overrides=_RunnerOverrides(action_results=lambda step, outs: calls.append((step, outs))),
+    )
     runner._last_step = 4
 
     agent = SimpleNamespace(
@@ -776,6 +855,22 @@ async def test_on_step_end_reports_outputs_keyed_to_the_step_just_executed() -> 
     assert step == 4
     by_position = {o.position: o.output for o in outputs}
     assert by_position == {0: "Total: $42", 2: "element not found"}
+
+
+async def test_on_step_end_reports_nothing_for_an_agent_with_no_results_yet() -> None:
+    """Browser-Use does not promise ``state``/``last_result`` on every call — a step
+    that produced nothing reports nothing instead of failing the run."""
+    calls: list[tuple[int, list]] = []
+    runner = _make_runner(
+        emit=AsyncMock(),
+        overrides=_RunnerOverrides(action_results=lambda step, outs: calls.append((step, outs))),
+    )
+
+    await runner._on_step_end(SimpleNamespace())
+    await runner._on_step_end(SimpleNamespace(state=SimpleNamespace()))
+    await runner._on_step_end(SimpleNamespace(state=SimpleNamespace(last_result=None)))
+
+    assert calls == []
 
 
 async def test_on_step_end_is_a_noop_without_an_action_results_sink() -> None:
@@ -833,6 +928,34 @@ async def test_run_configures_the_agent_from_the_runner_settings(patch_browser) 
     assert kwargs["register_new_step_callback"] == runner._on_step
     assert kwargs["register_should_stop_callback"] == runner._should_stop
     assert FakeAgent.last_max_steps == 10
+    # Browser-Use's own prompt suggests todo.md; small models then burn a whole
+    # step writing one for a 3-step form. The counter-instruction is asserted
+    # verbatim so rewording it is a deliberate change, not a silent regression.
+    assert kwargs["extend_system_message"] == (
+        "Do NOT create or update todo.md (or any planning file) unless the task "
+        "genuinely needs more than 10 steps. For short tasks, act on the page "
+        "directly from the first step."
+    )
+
+
+async def test_run_mirrors_each_steps_action_results_into_the_thread(patch_browser) -> None:
+    """The per-action outcomes only exist after the actions execute, so the runner
+    has to be wired into Browser-Use's post-step hook for any of them to arrive."""
+    calls: list[tuple[int, list]] = []
+    _, emit = _collector()
+    runner = _make_runner(
+        emit=emit,
+        overrides=_RunnerOverrides(action_results=lambda step, outs: calls.append((step, outs))),
+    )
+    FakeAgent.script = [
+        {"goal": "Sign in", "actions": [("click", {"index": 1})], "results": [{"error": "nope"}]}
+    ]
+
+    await runner.run("sign in")
+
+    assert [(step, [(o.position, o.output) for o in outs]) for step, outs in calls] == [
+        (1, [(0, "nope")])
+    ]
 
 
 async def test_run_builds_the_tools_with_the_runner_takeover_and_captcha_policy(
@@ -1615,6 +1738,43 @@ async def test_a_step_with_no_thinking_attribute_captions_from_its_actions(patch
     assert events[-1].goal == "Opening example.com"
 
 
+class _GoallessOutput:
+    """A step output Browser-Use gave no ``next_goal`` attribute at all."""
+
+    def __init__(self, actions: list[_Action]):
+        self.thinking = "Deciding what to click"
+        self.action = actions
+
+
+async def test_a_step_output_with_no_goal_attribute_captions_from_its_thinking(
+    patch_browser,
+) -> None:
+    # Browser-Use's output shape varies by mode; a missing field is a fallback,
+    # never a failed step.
+    events, emit = _collector()
+    runner = _make_runner(emit=emit)
+    await runner._on_step(_State("https://x"), _GoallessOutput([_Action("click", {})]), 1)
+    await _drain(runner)
+
+    assert events[-1].goal == "Deciding what to click"
+
+
+async def test_a_step_names_and_locates_the_element_its_actions_target(patch_browser) -> None:
+    """The step card resolves the agent's element index against the state the agent
+    saw, so the row reads as the control's own name and the UI can pulse over it."""
+    events, emit = _collector()
+    runner = _make_runner(emit=emit)
+    state = _targeted_state(4)
+    state.url, state.title, state.screenshot = "https://x", "Page", None
+
+    await runner._on_step(state, _Output("Sign in", [_Action("click", {"index": 4})]), 1)
+    await _drain(runner)
+
+    [action] = events[-1].actions
+    assert action.target == "Sign in"
+    assert action.point == (1.0, 1.0)
+
+
 async def test_a_state_without_url_title_or_screenshot_still_emits_a_step(patch_browser) -> None:
     events, emit = _collector()
     runner = _make_runner(emit=emit)
@@ -1721,6 +1881,30 @@ async def test_the_step_frame_is_uploaded_under_that_steps_index(
     )
 
     assert upload.await_args.args == (b"fake", "s1", 7)
+
+
+async def test_a_step_card_carries_the_time_the_previous_step_took(patch_browser) -> None:
+    """The card shows how long the step took; the very first step has no
+    predecessor to measure, and reports no duration rather than a bogus zero."""
+    events, emit = _collector()
+    runner = _make_runner(emit=emit)
+
+    def _frame(since_prev_ms: int) -> object:
+        return runner_mod._StepFrame(
+            index=1,
+            goal="goal",
+            actions=[],
+            url="https://x",
+            title="Page",
+            raw_screenshot=None,
+            since_prev_ms=since_prev_ms,
+        )
+
+    await runner._emit_step(_frame(2500))
+    assert events[-1].elapsed_ms == 2500
+
+    await runner._emit_step(_frame(0))
+    assert events[-1].elapsed_ms is None
 
 
 async def test_the_step_timing_log_reports_the_screenshot_and_emit_cost(

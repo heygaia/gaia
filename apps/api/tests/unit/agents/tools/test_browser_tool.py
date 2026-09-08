@@ -560,7 +560,10 @@ async def test_runner_is_configured_from_settings_and_config(
     monkeypatch.setattr(tool_mod.settings, "BROWSER_USE_HANDOFF_TIMEOUT_SECONDS", 333)
     monkeypatch.setattr(tool_mod.settings, "BROWSER_USE_STREAM_SCREENSHOTS", False)
     monkeypatch.setattr(tool_mod.settings, "BROWSER_USE_SOLVE_CAPTCHA", False)
-    monkeypatch.setattr(tool_mod.settings, "BROWSER_USE_FLASH_MODE", True)
+    # Deliberately the opposite of ``BrowserRunConfig.flash_mode``'s own default:
+    # pinned to the default, a config that never forwards the setting at all
+    # looks identical to one that does.
+    monkeypatch.setattr(tool_mod.settings, "BROWSER_USE_FLASH_MODE", False)
 
     config: RunnableConfig = {
         "configurable": {
@@ -586,7 +589,7 @@ async def test_runner_is_configured_from_settings_and_config(
         stream_screenshots=False,
         use_vision=False,
         solve_captcha=False,
-        flash_mode=True,
+        flash_mode=False,
     )
     assert kwargs == {
         "session": h.session,
@@ -1493,6 +1496,26 @@ def _session_snapshot(session_id: str | None = "sess-1") -> BrowserSessionSnapsh
     )
 
 
+def test_a_fresh_mirror_belongs_to_no_group() -> None:
+    """``None``, not a falsy placeholder: the group id is the value emitted as
+    ``subagent_id`` on every row, so an empty string would ship as a real (and
+    unattachable) group the moment any guard let it through."""
+    mirror, _ = _mirror()
+
+    assert mirror._group_id is None
+
+
+def test_a_closed_mirror_belongs_to_no_group_again() -> None:
+    """Closing returns the mirror to its fresh state so the next session opens a
+    real group -- not one carrying a leftover placeholder."""
+    mirror, _ = _mirror()
+
+    mirror.mirror(_session_snapshot())
+    mirror.mirror(_result(BrowserSessionStatus.COMPLETED, True, "done"))
+
+    assert mirror._group_id is None
+
+
 def test_mirror_opens_a_browser_group_keyed_on_the_session(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1552,8 +1575,11 @@ def test_mirror_numbers_each_action_within_its_step() -> None:
         )
     )
 
-    ids = [w["tool_data"]["data"]["tool_call_id"] for w in writes if "tool_data" in w]
-    assert ids == ["browser:sess-1:4:0", "browser:sess-1:4:1"]
+    rows = [w["tool_data"] for w in writes if "tool_data" in w]
+    assert [r["data"]["tool_call_id"] for r in rows] == ["browser:sess-1:4:0", "browser:sess-1:4:1"]
+    # The tag is what nests each row under the run's Browser group; untagged, the
+    # actions render as loose top-level rows in the thread.
+    assert [r["subagent_id"] for r in rows] == ["browser:sess-1", "browser:sess-1"]
 
 
 def test_mirror_tags_each_action_output_with_the_group_it_belongs_to() -> None:

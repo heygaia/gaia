@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 from pathlib import Path
 import subprocess
 import time
@@ -30,6 +31,7 @@ from app.browser_host.chromium import (
     _storage_state_cookie_to_cdp,
     cdp_call,
 )
+from app.browser_host.metrics import ProcessSampler
 from app.config.settings import settings
 from app.constants.browser import (
     BROWSER_VIEWPORT_HEIGHT,
@@ -3654,3 +3656,434 @@ def test_cdp_cookie_to_storage_state_carries_every_field_across() -> None:
         "secure": True,
         "sameSite": "Strict",
     }
+
+
+# ---------------------------------------------------------------------------
+# Supervision, admission boundaries, and the resource sampler
+# ---------------------------------------------------------------------------
+# The section above pins the CDP conversation. These pin the parts that have no
+# CDP traffic at all: where the memory-pressure and admission-budget boundaries
+# flip, what the crash watcher writes into the wide event, and whether a
+# resource sample actually lands on the session it belongs to.
+# ---------------------------------------------------------------------------
+
+
+class _FixedSampler:
+    """A ``ProcessSampler`` stand-in that always yields the same reading."""
+
+    def __init__(self, reading: tuple[float, float] = (10.0, 5.0)) -> None:
+        self._reading = reading
+
+    def sample(self) -> tuple[float, float]:
+        return self._reading
+
+
+class _ExitingProc:
+    """An engine process whose exit the test drives explicitly."""
+
+    def __init__(self, pid: int = 4242) -> None:
+        self.returncode: int | None = None
+        self.pid = pid
+        self._exited = asyncio.Event()
+
+    async def wait(self) -> int:
+        await self._exited.wait()
+        assert self.returncode is not None
+        return self.returncode
+
+    def die(self, code: int) -> None:
+        self.returncode = code
+        self._exited.set()
+
+
+def _idle_session(idle_for: float) -> HostSession:
+    return HostSession(
+        session_id="s1",
+        context_id="c1",
+        target_id="t1",
+        created_at=0.0,
+        last_activity_at=time.monotonic() - idle_for,
+    )
+
+
+# --- memory-pressure boundary in the reaper ---
+
+
+@pytest.mark.unit
+async def test_reap_idle_pressure_switch_needs_a_real_limit_and_a_strict_excess(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Each side of ``limit > 0 and used > limit * soft`` decides a session's life."""
+    monkeypatch.setattr(settings, "BROWSER_HOST_IDLE_TTL_SECONDS", 300)
+    monkeypatch.setattr(settings, "BROWSER_HOST_MEMORY_SOFT_WATERMARK", 0.75)
+
+    async def survives_a_100s_idle(used: float, limit: float) -> bool:
+        host = ChromiumHost()
+        host._proc = MagicMock(returncode=None)
+        host._dispose_context_id = AsyncMock()
+        host._sessions = {"s1": _idle_session(100)}
+        monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (used, limit))
+        await host._reap_idle()
+        return "s1" in host._sessions
+
+    # No limit reported at all: pressure is unknowable, so the full 300s TTL stands.
+    assert await survives_a_100s_idle(100.0, 0.0) is True
+    # A 1 MB limit is still a limit — 100 MB over a 0.75 MB watermark is pressure,
+    # so the shortened 75s TTL applies and the 100s-idle session goes.
+    assert await survives_a_100s_idle(100.0, 1.0) is False
+    # Exactly at the watermark is not over it.
+    assert await survives_a_100s_idle(750.0, 1000.0) is True
+    assert await survives_a_100s_idle(750.1, 1000.0) is False
+
+
+# --- admission back-off budget ---
+
+
+@pytest.mark.unit
+async def test_reserve_slot_backs_off_and_admits_once_the_reaper_frees_room(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Over the watermark the create waits out the budget instead of 429-ing at once."""
+    monkeypatch.setattr(settings, "BROWSER_HOST_MEMORY_HIGH_WATERMARK", 0.85)
+    monkeypatch.setattr(settings, "BROWSER_HOST_SESSION_COST_FLOOR_MB", 50)
+    monkeypatch.setattr(settings, "BROWSER_HOST_ADMISSION_WAIT_SECONDS", 5)
+    monkeypatch.setattr(settings, "BROWSER_HOST_MAX_SESSIONS", 10)
+    readings = [(900.0, 1000.0), (700.0, 1000.0)]
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: readings.pop(0))
+    slept: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(chromium.asyncio, "sleep", fake_sleep)
+    host = ChromiumHost()
+
+    await host._reserve_slot()
+
+    assert host._pending_slots == 1
+    assert slept == [chromium._ADMISSION_POLL_SECONDS]
+
+
+@pytest.mark.unit
+async def test_reserve_slot_refuses_immediately_when_the_wait_budget_is_already_spent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A zero wait budget means give up on the first look, not back off once more."""
+    monkeypatch.setattr(settings, "BROWSER_HOST_MEMORY_HIGH_WATERMARK", 0.85)
+    monkeypatch.setattr(settings, "BROWSER_HOST_SESSION_COST_FLOOR_MB", 50)
+    monkeypatch.setattr(settings, "BROWSER_HOST_ADMISSION_WAIT_SECONDS", 0)
+    monkeypatch.setattr(settings, "BROWSER_HOST_MAX_SESSIONS", 10)
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (900.0, 1000.0))
+    monkeypatch.setattr(chromium, "time", SimpleNamespace(monotonic=lambda: 1000.0))
+
+    async def fake_sleep(delay: float) -> None:
+        raise AssertionError("the budget was spent; there is nothing left to wait for")
+
+    monkeypatch.setattr(chromium.asyncio, "sleep", fake_sleep)
+    host = ChromiumHost()
+
+    from app.browser_host.chromium import AtCapacityError
+
+    with pytest.raises(AtCapacityError):
+        await host._reserve_slot()
+    assert host._pending_slots == 0
+
+
+# --- the startup memory baseline ---
+
+
+@pytest.mark.unit
+def test_a_new_host_has_no_memory_baseline_to_subtract(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Before ``start()`` the baseline is zero, so the estimate is the raw usage."""
+    monkeypatch.setattr(settings, "BROWSER_HOST_SESSION_COST_FLOOR_MB", 1)
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (100.0, 1000.0))
+    host = ChromiumHost()
+    host._sessions = {"s1": _session()}
+
+    assert host._estimate_session_cost_mb() == 100.0
+
+
+@pytest.mark.unit
+async def test_start_takes_the_baseline_from_used_memory_not_the_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The baseline is the engine+host floor, so the estimate measures only growth."""
+    monkeypatch.setattr(settings, "BROWSER_HOST_SESSION_COST_FLOOR_MB", 1)
+    monkeypatch.setattr(chromium.asyncio, "to_thread", AsyncMock(return_value="/tmp/chrome"))
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (300.0, 4000.0))
+    host = ChromiumHost()
+    host._launch = AsyncMock()
+    host._reaper_loop = AsyncMock()
+    host._watch_loop = AsyncMock()
+
+    await host.start()
+
+    host._sessions = {"s1": _session()}
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (400.0, 4000.0))
+    # 400 used - 300 baseline = 100 MB attributable to the one live session.
+    assert host._estimate_session_cost_mb() == 100.0
+
+
+@pytest.mark.unit
+async def test_start_arms_the_watcher_so_a_crash_recovers_without_the_reaper(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Recovery must not wait out the 15s reaper sweep after the engine dies."""
+    monkeypatch.setattr(chromium.asyncio, "to_thread", AsyncMock(return_value="/tmp/chrome"))
+    monkeypatch.setattr(chromium, "memory_usage_mb", lambda: (300.0, 4000.0))
+    host = ChromiumHost()
+    proc = _ExitingProc()
+    recovered = asyncio.Event()
+
+    async def launch() -> None:
+        host._proc = proc  # type: ignore[assignment]  # a stub for the typed asyncio Process
+
+    async def recover() -> None:
+        host._stopping.set()
+        recovered.set()
+
+    monkeypatch.setattr(host, "_launch", launch)
+    monkeypatch.setattr(host, "_recover_crash", recover)
+    host._reaper_loop = AsyncMock()
+
+    await host.start()
+    await asyncio.sleep(0)  # let the watcher reach proc.wait()
+    proc.die(-11)
+    await asyncio.wait_for(recovered.wait(), timeout=1.0)
+
+    assert host._watcher_task is not None
+    await _drain(host._watcher_task)
+
+
+async def _drain(task: asyncio.Task[None]) -> None:
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+async def _parked() -> None:
+    """Stands in for the watcher: alive until someone cancels it."""
+    await asyncio.Event().wait()
+
+
+@pytest.mark.unit
+async def test_stop_releases_the_watcher_and_can_be_called_twice() -> None:
+    """``stop()`` cancels the supervisor, swallows its CancelledError, and clears it."""
+    host = ChromiumHost()
+    host._watcher_task = asyncio.create_task(_parked())
+
+    await host.stop()
+
+    assert host._watcher_task is None
+    await host.stop()  # idempotent: nothing left to cancel
+
+
+@pytest.mark.unit
+async def test_watch_loop_reports_the_crash_with_the_engine_exit_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The wide event must name the operation and the returncode that proves the crash."""
+    host = ChromiumHost()
+    proc = _ExitingProc()
+    host._proc = proc  # type: ignore[assignment]  # a stub for the typed asyncio Process
+
+    async def recover() -> None:
+        host._stopping.set()
+
+    monkeypatch.setattr(host, "_recover_crash", recover)
+
+    with patch.object(chromium, "log") as mock_log:
+        task = asyncio.create_task(host._watch_loop())
+        await asyncio.sleep(0)
+        proc.die(-11)
+        await task
+
+    mock_log.error.assert_called_once_with(
+        f"{LogTag.BROWSER} browser engine process exited",
+        browser={"operation": "crash_detect", "returncode": -11},
+    )
+
+
+# --- launch preconditions name what is missing ---
+
+
+@pytest.mark.unit
+def test_chromium_command_names_the_unresolved_binary_path() -> None:
+    host = ChromiumHost()
+    with pytest.raises(RuntimeError, match=r"^chromium_path not set$"):
+        host._chromium_command()
+
+
+@pytest.mark.unit
+async def test_read_devtools_port_names_the_missing_user_data_dir() -> None:
+    host = ChromiumHost()
+    with pytest.raises(RuntimeError, match=r"^user_data_dir not set$"):
+        await host._read_devtools_port()
+
+
+class _CaseSensitiveDir:
+    """A ``Path`` stand-in whose ``exists()`` is case-sensitive on any filesystem.
+
+    macOS's default APFS is case-insensitive, so a real-file test cannot tell
+    ``DevToolsActivePort`` from ``devtoolsactiveport`` — the exact name Chromium
+    writes would go unchecked on a developer machine and only break in the Linux
+    container. This makes the lookup behave the way production's filesystem does.
+    """
+
+    def __init__(self, root: str, name: str = "") -> None:
+        self._root = Path(root)
+        self._name = name
+
+    def __truediv__(self, name: str) -> _CaseSensitiveDir:
+        return _CaseSensitiveDir(str(self._root), name)
+
+    def exists(self) -> bool:
+        return self._name in {entry.name for entry in self._root.iterdir()}
+
+    def read_text(self) -> str:
+        return (self._root / self._name).read_text()
+
+
+@pytest.mark.unit
+async def test_read_devtools_port_reads_the_exact_file_chromium_writes(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Chromium writes ``DevToolsActivePort``; any other spelling never appears."""
+    monkeypatch.setattr(chromium, "_CDP_READY_TIMEOUT_SECONDS", 0.05)
+    monkeypatch.setattr(chromium, "_CDP_READY_POLL_SECONDS", 0.01)
+    monkeypatch.setattr(chromium, "Path", _CaseSensitiveDir)
+    (tmp_path / "DevToolsActivePort").write_text("9222\n/devtools/browser/abc\n")
+    host = ChromiumHost()
+    host._user_data_dir = str(tmp_path)
+
+    assert await host._read_devtools_port() == 9222
+
+
+# --- the resource sampler follows the engine process ---
+
+
+@pytest.mark.unit
+async def test_launch_samples_the_engine_process_it_just_started(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Without a sampler bound to the live pid, every session's metrics stay empty."""
+    host = ChromiumHost()
+    host._chromium_path = str(tmp_path / "headless_shell")
+    monkeypatch.setattr(settings, "BROWSER_HOST_HEADED", True)
+    monkeypatch.setattr(chromium.tempfile, "mkdtemp", lambda prefix: str(tmp_path))
+    monkeypatch.setattr(
+        chromium.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=MagicMock(returncode=None, pid=os.getpid())),
+    )
+    host._await_cdp_ready = AsyncMock(return_value="ws://127.0.0.1:9222")
+    mock_cdp = MagicMock()
+    mock_cdp.start = AsyncMock()
+    with patch.object(chromium, "CDPClient", return_value=mock_cdp):
+        await host._launch()
+
+    host._sessions["s1"] = _session()
+    host.sample_resources("s1")
+
+    rss = host._sessions["s1"].metrics.snapshot()["rss_mb"]
+    assert rss is not None and rss["count"] == 1
+
+
+@pytest.mark.unit
+async def test_shutdown_drops_the_sampler_so_later_samples_are_silent_no_ops() -> None:
+    """Sampling a torn-down engine records nothing rather than exploding."""
+    host = ChromiumHost()
+    host._proc = None
+    host._sampler = _FixedSampler()  # type: ignore[assignment]  # a ProcessSampler stub
+    host._sessions["s1"] = _session()
+
+    await host._shutdown_chromium()
+    host.sample_resources("s1")
+
+    assert host._sessions["s1"].metrics.snapshot()["rss_mb"] is None
+
+
+@pytest.mark.unit
+async def test_create_context_records_a_resource_sample_for_the_new_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(settings, "BROWSER_HOST_MAX_SESSIONS", 5)
+    host = _host_with_low_fake()
+    host._sampler = _FixedSampler((42.0, 7.0))  # type: ignore[assignment]  # a ProcessSampler stub
+
+    session = await host.create_context(None)
+
+    assert session.metrics.snapshot()["rss_mb"] == {
+        "count": 1,
+        "min": 42.0,
+        "max": 42.0,
+        "avg": 42.0,
+    }
+
+
+@pytest.mark.unit
+async def test_dispose_context_samples_and_logs_the_final_metrics_snapshot() -> None:
+    """The disposal event carries the session's real metrics under the browser namespace."""
+    host = _host_with_low_fake()
+    host._sampler = _FixedSampler((42.0, 7.0))  # type: ignore[assignment]  # a ProcessSampler stub
+    host._sessions["s1"] = _session()
+
+    with patch.object(chromium, "log") as mock_log:
+        await host.dispose_context("s1")
+
+    (namespace,) = mock_log.set_ns.call_args.args
+    metrics = mock_log.set_ns.call_args.kwargs["metrics"]
+    assert namespace == "browser"
+    assert metrics["rss_mb"] == {"count": 1, "min": 42.0, "max": 42.0, "avg": 42.0}
+
+
+@pytest.mark.unit
+async def test_note_navigation_finished_samples_only_a_navigation_the_client_asked_for() -> None:
+    """An unsolicited load event closes no timing, so it must not sample either."""
+    host = _host_with_low_fake()
+    host._sampler = _FixedSampler((42.0, 7.0))  # type: ignore[assignment]  # a ProcessSampler stub
+    host._sessions["s1"] = _session()
+
+    host.note_navigation_finished("s1")
+    assert host._sessions["s1"].metrics.snapshot()["rss_mb"] is None
+
+    host.note_navigation_started("s1")
+    host.note_navigation_finished("s1")
+    rss = host._sessions["s1"].metrics.snapshot()["rss_mb"]
+    assert rss is not None and rss["count"] == 1
+
+
+@pytest.mark.unit
+async def test_launch_binds_the_sampler_to_the_engine_pid_not_the_host_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``psutil.Process(None)`` is *this* process, so the pid handed over must be real.
+
+    A sampler seeded with ``None`` still samples happily — it just reports the API
+    process's memory as the browser's, which is worse than no metric at all.
+    """
+    host = ChromiumHost()
+    host._chromium_path = str(tmp_path / "headless_shell")
+    monkeypatch.setattr(settings, "BROWSER_HOST_HEADED", True)
+    monkeypatch.setattr(chromium.tempfile, "mkdtemp", lambda prefix: str(tmp_path))
+    monkeypatch.setattr(
+        chromium.asyncio,
+        "create_subprocess_exec",
+        AsyncMock(return_value=MagicMock(returncode=None, pid=31337)),
+    )
+    host._await_cdp_ready = AsyncMock(return_value="ws://127.0.0.1:9222")
+    sampled_pids: list[int | None] = []
+
+    def record(pid: int | None) -> _FixedSampler:
+        sampled_pids.append(pid)
+        return _FixedSampler()
+
+    monkeypatch.setattr(ProcessSampler, "for_pid", record)
+    mock_cdp = MagicMock()
+    mock_cdp.start = AsyncMock()
+    with patch.object(chromium, "CDPClient", return_value=mock_cdp):
+        await host._launch()
+
+    assert sampled_pids == [31337]
