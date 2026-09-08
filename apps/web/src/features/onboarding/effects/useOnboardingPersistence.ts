@@ -3,7 +3,12 @@
 import { type Dispatch, useEffect, useRef } from "react";
 
 import { initialState } from "../state/initial";
-import { loadIntroSeen, loadPersisted, savePersisted } from "../state/persist";
+import {
+  clearPersisted,
+  loadIntroSeen,
+  loadPersisted,
+  savePersisted,
+} from "../state/persist";
 import type { Action, OnboardingState } from "../state/types";
 
 /**
@@ -17,9 +22,15 @@ import type { Action, OnboardingState } from "../state/types";
  * this, because the hydrate dispatch lands a render later than the mount.
  * Which user is loaded lives in the reducer (`state.hydratedFor`), so this
  * hook holds no state of its own.
+ *
+ * The server outranks the cache. A draft that claims the preferences were
+ * persisted while the account has none is a leftover from before a reset
+ * (the dev reset script, an admin unset); rehydrating it would skip every
+ * stage and re-complete onboarding on the first paint. It is dropped.
  */
 export function useOnboardingPersistence(
   userId: string,
+  serverHasPreferences: boolean,
   state: OnboardingState,
   dispatch: Dispatch<Action>,
 ): boolean {
@@ -30,7 +41,11 @@ export function useOnboardingPersistence(
 
   useEffect(() => {
     if (!userId || hydratedFor === userId) return;
-    const partial = loadPersisted(userId);
+    let partial = loadPersisted(userId);
+    if (partial?.preferencesPersisted && !serverHasPreferences) {
+      clearPersisted(userId);
+      partial = null;
+    }
     if (hydratedFor !== null) dispatch({ type: "reset" });
     // The intro flag resolves on the same beat, cache or no cache: until it
     // does it is `null`, and the page renders neither the intro nor the flow.
@@ -40,7 +55,7 @@ export function useOnboardingPersistence(
     });
     dispatch({ type: "hydrated", userId });
     awaitingHydratedStateRef.current = true;
-  }, [userId, hydratedFor, dispatch]);
+  }, [userId, serverHasPreferences, hydratedFor, dispatch]);
 
   useEffect(() => {
     if (hydratedFor !== userId) return;

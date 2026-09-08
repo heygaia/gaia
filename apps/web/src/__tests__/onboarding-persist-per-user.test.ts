@@ -56,7 +56,7 @@ describe("useOnboardingPersistence follows the signed-in user", () => {
     const { result, rerender } = renderHook(
       ({ userId }: { userId: string }) => {
         const [state, dispatch] = useReducer(reducer, initialState);
-        useOnboardingPersistence(userId, state, dispatch);
+        useOnboardingPersistence(userId, true, state, dispatch);
         return state;
       },
       { initialProps: { userId: ALICE } },
@@ -68,5 +68,52 @@ describe("useOnboardingPersistence follows the signed-in user", () => {
     expect(result.current.questionIndex).toBe(0);
     expect(loadPersisted(BOB)).toBeNull();
     expect(loadPersisted(ALICE)?.questionIndex).toBe(2);
+  });
+});
+
+describe("the server outranks the browser draft", () => {
+  beforeEach(() => localStorage.clear());
+
+  const hydrate = (serverHasPreferences: boolean) =>
+    renderHook(() => {
+      const [state, dispatch] = useReducer(reducer, initialState);
+      useOnboardingPersistence(ALICE, serverHasPreferences, state, dispatch);
+      return state;
+    }).result.current;
+
+  it("drops a draft that claims persisted preferences the account no longer has", () => {
+    // The shape a finished run leaves behind; after a server-side reset it
+    // would walk straight through every stage and complete onboarding again.
+    savePersisted(ALICE, {
+      ...initialState,
+      responses: { profession: "founder" },
+      selectedNeeds: ["inbox", "calendar"],
+      preferencesPersisted: true,
+      paidRevealAcked: true,
+      platformsConfirmed: true,
+    });
+
+    const state = hydrate(false);
+
+    expect(state.preferencesPersisted).toBe(false);
+    expect(state.platformsConfirmed).toBe(false);
+    expect(state.responses).toEqual({});
+    expect(loadPersisted(ALICE)).toBeNull();
+  });
+
+  it("keeps the draft while the account still has the preferences it recorded", () => {
+    savePersisted(ALICE, {
+      ...initialState,
+      responses: { profession: "founder" },
+      preferencesPersisted: true,
+    });
+
+    expect(hydrate(true).preferencesPersisted).toBe(true);
+  });
+
+  it("keeps a draft that never got as far as persisting preferences", () => {
+    savePersisted(ALICE, { ...initialState, questionIndex: 1 });
+
+    expect(hydrate(false).questionIndex).toBe(1);
   });
 });
