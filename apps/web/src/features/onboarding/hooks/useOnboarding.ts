@@ -18,6 +18,7 @@ import {
   patchCurrentUser,
   setCurrentUser,
   useCurrentUser,
+  useCurrentUserIsFresh,
 } from "@/features/auth/hooks/useCurrentUser";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
@@ -52,12 +53,15 @@ interface UseOnboardingReturn {
 export function useOnboarding(): UseOnboardingReturn {
   const queryClient = useQueryClient();
   const { userId, onboarding } = useCurrentUser();
+  // The persisted user cache paints first and may predate a server-side
+  // reset; the draft is only reconciled against an answer from this session.
+  const userIsFresh = useCurrentUserIsFresh();
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isPaid } = useIsPaid();
   const stage = getStage(state, isPaid);
 
   const hydrated = useOnboardingPersistence(
-    userId,
+    userIsFresh ? userId : "",
     onboarding?.preferences !== undefined,
     state,
     dispatch,
