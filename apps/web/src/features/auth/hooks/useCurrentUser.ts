@@ -82,6 +82,30 @@ export const useCurrentUser = (): CurrentUser => {
   return hydrated && data ? data : UNKNOWN_USER;
 };
 
+/**
+ * Whether `dataUpdatedAt` comes from a fetch made in this page session. The
+ * `["current-user"]` entry is replayed from the persisted cache on reload so
+ * the shell paints signed-in immediately, and that replay keeps its original
+ * timestamp: anything older than the page itself is a previous session's
+ * answer, not the server's current one.
+ */
+export const isFetchedThisSession = (
+  dataUpdatedAt: number,
+  pageLoadedAt: number = performance.timeOrigin,
+): boolean => dataUpdatedAt >= pageLoadedAt;
+
+/**
+ * True once `GET /user/me` has answered in this page session. Anything that
+ * must not act on a stale identity (the onboarding wizard reconciling its
+ * browser draft against the account) waits for this instead of the first
+ * paint.
+ */
+export const useCurrentUserIsFresh = (): boolean => {
+  const hydrated = useIsHydrated();
+  const { isSuccess, dataUpdatedAt } = useCurrentUserQuery();
+  return hydrated && isSuccess && isFetchedThisSession(dataUpdatedAt);
+};
+
 /** Replace the cached user with a full server payload. */
 export const setCurrentUser = (
   queryClient: QueryClient,
