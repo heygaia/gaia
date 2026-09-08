@@ -29,7 +29,7 @@ import { useOnboardingAnalytics } from "../effects/useOnboardingAnalytics";
 import { useOnboardingPersistence } from "../effects/useOnboardingPersistence";
 import { useOnboardingPreferences } from "../effects/useOnboardingPreferences";
 import { useOnboardingSubmission } from "../effects/useOnboardingSubmission";
-import { getStage } from "../state/derive";
+import { getStage, serverHasRecordedPreferences } from "../state/derive";
 import { initialState } from "../state/initial";
 import { usePaceStore } from "../state/paceStore";
 import {
@@ -62,7 +62,7 @@ export function useOnboarding(): UseOnboardingReturn {
 
   const hydrated = useOnboardingPersistence(
     userIsFresh ? userId : "",
-    onboarding?.preferences !== undefined,
+    serverHasRecordedPreferences(onboarding),
     state,
     dispatch,
   );
