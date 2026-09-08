@@ -192,7 +192,6 @@ async def _core_agent_logic(
             user_request=request.message,
             user_preferences=user_preferences,
             writing_style=writing_style,
-            onboarding_handoff=request.onboarding_handoff,
         ),
         tracing=AgentTracing(
             usage_metadata_callback=usage_metadata_callback,

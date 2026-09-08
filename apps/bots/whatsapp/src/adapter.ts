@@ -560,7 +560,7 @@ export class WhatsAppAdapter extends BaseBotAdapter {
 
       // Before the welcome: an unlinked sender arriving with a one-tap code is
       // linking, not being greeted with "run /auth".
-      const inbound = await consumeInboundLinkCode({
+      const inbound: string | null = await consumeInboundLinkCode({
         gaia: this.gaia,
         platform: this.platform,
         platformUserId: waId,
@@ -568,8 +568,10 @@ export class WhatsAppAdapter extends BaseBotAdapter {
         target,
         isLinked: () => this.isWaUserLinked(waId),
       });
+      // null: the message was only a code, or a redemption already delivered
+      // GAIA's whole first contact and there is no turn left to run.
       if (inbound === null) return;
-      const { text: chatText, onboardingHandoff } = inbound;
+      const chatText = inbound;
 
       await this.ensureWelcomed(waId, typing.refresh, 2_000);
 
@@ -602,9 +604,7 @@ export class WhatsAppAdapter extends BaseBotAdapter {
         return;
       }
 
-      await this.handleStreamingMessage(waId, chatText, [], {
-        onboardingHandoff,
-      });
+      await this.handleStreamingMessage(waId, chatText);
     } finally {
       typing.stop();
     }
@@ -626,7 +626,6 @@ export class WhatsAppAdapter extends BaseBotAdapter {
     waId: string,
     text: string,
     attachments: BotFileData[] = [],
-    options: { onboardingHandoff?: boolean } = {},
   ): Promise<void> {
     if (!text.trim() && attachments.length === 0) {
       await this.sendWhatsAppText(
@@ -654,7 +653,6 @@ export class WhatsAppAdapter extends BaseBotAdapter {
                 fileData: attachments,
               }
             : {}),
-          ...(options.onboardingHandoff ? { onboardingHandoff: true } : {}),
         },
         // editMessage: no placeholder to edit — send as new message on first call.
         // ``formatted`` already ran through PLATFORM_MARKDOWN in handleStreamingChat.

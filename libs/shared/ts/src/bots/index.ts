@@ -60,7 +60,6 @@ export {
 } from "./consumer/envelope";
 export type {
   InboundLinkCodeArgs,
-  InboundLinkCodeResult,
   ParsedLinkCode,
 } from "./link-codes";
 export {

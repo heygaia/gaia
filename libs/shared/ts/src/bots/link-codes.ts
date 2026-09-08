@@ -4,7 +4,8 @@
  * The web mints a code at the platform-pick step and the user carries it to the
  * bot — invisibly as a Telegram `?start=<code>` payload, visibly as a trailing
  * ` #<code>` on the WhatsApp/iMessage message they send. Redeeming it links the
- * account and returns the opening message, so nobody has to type `/auth`.
+ * account AND sends GAIA's whole first contact, so nobody has to type `/auth`
+ * and no model turn stands between linking and the first real message.
  *
  * Parsing and redemption live here, not per adapter: three platforms accepting
  * three slightly different code shapes is how one of them silently stops
@@ -14,8 +15,10 @@
 import type { GaiaClient } from "./api";
 import { GaiaApiError } from "./api";
 import type { MessageTarget, PlatformName } from "./types";
-import { hashLogIdentifier } from "./utils/logger";
+import { createBotLogger, hashLogIdentifier } from "./utils/logger";
 import { wideLog, withWideEvent } from "./utils/wide-events";
+
+const logger = createBotLogger("shared", "link-codes");
 
 /**
  * Exact code width. `secrets.token_urlsafe(PLATFORM_LINK_CODE_BYTES)` with 16
@@ -59,36 +62,30 @@ export interface InboundLinkCodeArgs {
   profile?: { username?: string; displayName?: string };
 }
 
-export interface InboundLinkCodeResult {
-  /** The text to run through the normal chat flow. */
-  text: string;
-  /**
-   * The text is the server-composed opener from a redemption, not something the
-   * user typed. The adapter forwards it so the agent opens as a first contact.
-   */
-  onboardingHandoff: boolean;
-}
-
 /**
  * The WhatsApp/iMessage half of one-tap linking: the user's own first message
  * carries the code, so it must be redeemed and stripped before anything else
  * looks at the text.
  *
- * Returns the text to continue through the normal chat flow plus whether it came
- * out of a redemption, or null when there is nothing left to handle — the
- * redemption failed (the user already has a friendly explanation) or the message
- * was only a code.
+ * Returns the text to continue through the normal chat flow, or null when there
+ * is nothing left to handle: an unlinked sender's code was redeemed (GAIA's
+ * first contact IS the reply) or refused (they already have the explanation),
+ * or a linked sender's message was nothing but a stray code.
  */
 export async function consumeInboundLinkCode(
   args: InboundLinkCodeArgs,
-): Promise<InboundLinkCodeResult | null> {
+): Promise<string | null> {
   const parsed = parseTrailingLinkCode(args.text);
-  if (!parsed) return { text: args.text, onboardingHandoff: false };
+  if (!parsed) return args.text;
 
   // An already-linked sender re-sending the prewritten message is not an error
   // worth a reply: drop the code and let the rest through.
   if (!(await args.isLinked())) {
-    const redeemed = await redeemLinkCode(
+    // Either outcome ends the turn. A success has already delivered the whole
+    // first contact, so running the stripped text on top of it would answer the
+    // user's own prewritten opener a second time; a failure has already told
+    // them why, and chatting past it strands them mid-explanation.
+    await redeemLinkCode(
       args.gaia,
       args.platform,
       args.platformUserId,
@@ -96,16 +93,10 @@ export async function consumeInboundLinkCode(
       args.target,
       args.profile,
     );
-    if (redeemed === null) return null;
-    // The server composed the opener from onboarding; it is the turn to run,
-    // as on Telegram, even when the user edited the prewritten text. Only that
-    // server-composed text is a handoff: the user's own edited message is
-    // something they typed and watched send.
-    if (redeemed) return { text: redeemed, onboardingHandoff: true };
-    return parsed.text ? { text: parsed.text, onboardingHandoff: false } : null;
+    return null;
   }
 
-  return parsed.text ? { text: parsed.text, onboardingHandoff: false } : null;
+  return parsed.text || null;
 }
 
 /** Sent when the code is stale, already used, or the handle belongs elsewhere. */
@@ -135,14 +126,18 @@ export function buildLinkCodeFailureMessage(
 }
 
 /**
- * Redeems `code` for `platformUserId`, returning the composed first message.
+ * Redeems `code` for `platformUserId` and delivers GAIA's first contact.
  *
- * On success it first sends the server-composed greeting to `target`, so the
- * user is greeted deterministically before the opener turn runs.
+ * The API composes every bubble — the hello, one promise per thing the user
+ * picked at onboarding, then the connect links — and this sends them in order
+ * through `target`. No model turn runs: the opener turn used to skip the
+ * per-pick lines and lose the links, and the one message a new user is
+ * guaranteed to read does not get to be unreliable.
  *
- * On a failure the user can act on (expired/used code, handle already linked
- * elsewhere) it messages them and returns null — never a stack trace. Any other
- * failure propagates so it surfaces as a real error.
+ * Returns true once the bubbles are out. On a failure the user can act on
+ * (expired/used code, handle already linked elsewhere) it messages them and
+ * returns false — never a stack trace. Any other failure propagates so it
+ * surfaces as a real error.
  */
 export async function redeemLinkCode(
   gaia: GaiaClient,
@@ -151,7 +146,7 @@ export async function redeemLinkCode(
   code: string,
   target: MessageTarget,
   profile?: { username?: string; displayName?: string },
-): Promise<string | null> {
+): Promise<boolean> {
   return withWideEvent(
     "link_code_redemption",
     {
@@ -161,22 +156,32 @@ export async function redeemLinkCode(
     },
     async () => {
       try {
-        const { firstMessage, greeting } = await gaia.redeemLinkCode(
+        const { bubbles } = await gaia.redeemLinkCode(
           platform,
           platformUserId,
           code,
           profile,
         );
-        // Hello first, then the opener turn. The greeting is the server's line
-        // rather than the model's because the model kept skipping it, and the
-        // ordering matters: the opener answers what the user picked, so it
-        // arriving first reads like GAIA resuming a conversation nobody started.
-        if (greeting) await target.send(greeting);
+        // Awaited one at a time, never fanned out: these are a conversation, so
+        // arriving out of order reads as GAIA talking over itself. Same
+        // `bubble_delivered` line the streamer emits per finished bubble, so a
+        // first contact and a normal reply look identical in Loki.
+        let index = 0;
+        for (const bubble of bubbles) {
+          if (!bubble.trim()) continue;
+          await target.send(bubble);
+          logger.info("bubble_delivered", {
+            method: "new",
+            index,
+            chars: bubble.length,
+          });
+          index += 1;
+        }
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),
         });
-        wideLog.set({ link_result: "linked" });
-        return firstMessage;
+        wideLog.set({ link_result: "linked", bubbles: bubbles.length });
+        return true;
       } catch (error: unknown) {
         const status = error instanceof GaiaApiError ? error.status : undefined;
         if (status !== 400 && status !== 409 && status !== 429) throw error;
@@ -191,7 +196,7 @@ export async function redeemLinkCode(
         await target.send(
           buildLinkCodeFailureMessage(reason, gaia.getFrontendUrl()),
         );
-        return null;
+        return false;
       }
     },
   );

@@ -251,12 +251,6 @@ def _inherit_from_parent_configurable(
         base_configurable.get("user_preferences") or merged["user_preferences"]
     )
     merged["writing_style"] = base_configurable.get("writing_style") or merged["writing_style"]
-    # Same rule again: the handoff is a property of the USER's turn, established
-    # by comms. A child agent building its own turn would clear it and the
-    # executor's context would forget this is a first contact.
-    merged["onboarding_handoff"] = base_configurable.get("onboarding_handoff") or merged.get(
-        "onboarding_handoff", False
-    )
     # Child wins; the parent only fills a blank. Written out per key rather than
     # driven by a table so each one is a checked TypedDict access.
     merged["selected_tool"] = merged.get("selected_tool") or base_configurable.get("selected_tool")
@@ -403,11 +397,6 @@ class AgentTurn:
     writing_style: dict[str, Any] | None = None
     """Onboarding data; same inheritance rule as ``user_preferences``."""
 
-    onboarding_handoff: bool = False
-    """This turn is the one-tap opener a bot redeemed at linking, not something the
-    user typed. Set once by comms and inherited like ``user_preferences``; the
-    first-conversation context section reads it to open as a first contact."""
-
 
 @dataclass(frozen=True)
 class AgentTracing:
@@ -498,7 +487,6 @@ async def build_agent_config(
         user_request,
         user_preferences,
         writing_style,
-        onboarding_handoff,
     ) = (
         turn.selected_tool,
         turn.tool_category,
@@ -509,7 +497,6 @@ async def build_agent_config(
         turn.user_request,
         turn.user_preferences,
         turn.writing_style,
-        turn.onboarding_handoff,
     )
 
     callbacks = _build_agent_callbacks(
@@ -549,7 +536,6 @@ async def build_agent_config(
         "user_request": user_request,
         "user_preferences": user_preferences,
         "writing_style": writing_style,
-        "onboarding_handoff": onboarding_handoff,
     }
     if execution_mode:
         current["execution_mode"] = execution_mode
@@ -609,7 +595,6 @@ async def build_agent_config(
         "user_request": resolved["user_request"],
         "user_preferences": resolved["user_preferences"],
         "writing_style": resolved["writing_style"],
-        "onboarding_handoff": resolved["onboarding_handoff"],
         "user_id": user.get("user_id"),
         "email": user.get("email"),
         "user_name": user.get("name", ""),

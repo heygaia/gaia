@@ -271,33 +271,6 @@ class TestBuildBotMessageRequest:
             result = await build_bot_message_request(body, "conv-4", "user-1")
         assert result.fileData == file_data
 
-    async def test_carries_the_onboarding_handoff_flag_to_the_agent_turn(self):
-        """The redeemed-opener turn is the only one the comms agent may greet on,
-        so the flag has to survive the hop from the bot request to the turn."""
-        body = BotChatRequest(
-            message="I'm a founder. Inbox out of control. Where do we start?",
-            platform="telegram",
-            platform_user_id="u1",
-            onboarding_handoff=True,
-        )
-        with patch(
-            "app.services.bot_service.BotService.load_conversation_history",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await build_bot_message_request(body, "conv-5", "user-1")
-        assert result.onboarding_handoff is True
-
-    async def test_an_ordinary_turn_carries_no_handoff_flag(self):
-        body = BotChatRequest(message="hi", platform="telegram", platform_user_id="u1")
-        with patch(
-            "app.services.bot_service.BotService.load_conversation_history",
-            new_callable=AsyncMock,
-            return_value=[],
-        ):
-            result = await build_bot_message_request(body, "conv-6", "user-1")
-        assert result.onboarding_handoff is False
-
 
 class TestBotStreamFailureLogger:
     """``_bot_stream_failure_logger`` — the ``on_done`` callback for the background stream task."""

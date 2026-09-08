@@ -63,7 +63,6 @@ def ctx(
     execution_mode: ExecutionMode = "interactive",
     user_preferences: dict[str, Any] | None = None,
     source: str | None = None,
-    onboarding_handoff: bool = False,
 ) -> SectionContext:
     """A comms context carrying everything these sections read, minus overrides."""
     return SectionContext(
@@ -74,7 +73,6 @@ def ctx(
         execution_mode=execution_mode,
         user_preferences=user_preferences,
         source=source,
-        onboarding_handoff=onboarding_handoff,
     )
 
 
@@ -604,7 +602,7 @@ class TestNewUserGuidanceBlock:
             await build_new_user_guidance_block(
                 ctx(user_preferences={"profession": "Founder", "needs": ["inbox"], "other_need": 7})
             )
-        build.assert_called_once_with("Founder", [OnboardingNeed.INBOX], None, [], None)
+        build.assert_called_once_with("Founder", [OnboardingNeed.INBOX], None, [])
 
     async def test_the_block_stops_once_the_user_is_no_longer_new(self) -> None:
         with self._patch_count(self._count(NEW_USER_CONVERSATION_LIMIT + 1)):
@@ -707,75 +705,6 @@ class TestNewUserGuidanceBlock:
                 )
             )
         counter.assert_awaited_once_with("user-9")
-
-    async def test_the_redeemed_opener_turn_opens_as_a_first_contact(self) -> None:
-        """The user never typed that message and never saw it on Telegram, so the
-        reply has to be told that instead of answering it as a question. The
-        hello is the server's job, sent before this turn ever runs."""
-        with self._patch_count(self._count(1)):
-            block = await build_new_user_guidance_block(
-                ctx(
-                    user_preferences={"profession": "Founder", "needs": ["inbox"]},
-                    source="telegram",
-                    onboarding_handoff=True,
-                )
-            )
-        assert block.startswith("FIRST CONTACT ON Telegram")
-        assert "They did not type this message" in block
-        assert "exactly one concrete first move" in block
-
-    async def test_the_first_contact_block_never_asks_for_a_greeting(self) -> None:
-        """The greeting is sent by the bot before this turn runs. Asking for one
-        here is how the user gets hello twice, and asking for one INSTEAD of the
-        deterministic line is what shipped a first contact with no hello at all."""
-        with self._patch_count(self._count(1)):
-            block = await build_new_user_guidance_block(
-                ctx(
-                    user_preferences={"profession": "Founder", "needs": ["inbox"]},
-                    source="telegram",
-                    onboarding_handoff=True,
-                )
-            )
-        assert "A greeting has already been sent; do not greet again." in block
-        assert "warm greeting" not in block
-
-    async def test_a_first_contact_renders_for_a_long_time_user_without_counting(self) -> None:
-        """Linking a bot is first contact on that platform however long the user
-        has used GAIA on the web, so the new-user gate must not swallow it."""
-        counter = self._count(NEW_USER_CONVERSATION_LIMIT + 50)
-        with self._patch_count(counter):
-            block = await build_new_user_guidance_block(
-                ctx(
-                    user_preferences={"profession": "Founder", "needs": ["inbox"]},
-                    source="telegram",
-                    onboarding_handoff=True,
-                )
-            )
-        assert block.startswith("FIRST CONTACT ON Telegram")
-        counter.assert_not_awaited()
-
-    async def test_an_ordinary_bot_turn_gets_no_first_contact_instruction(self) -> None:
-        """Every turn after the opener IS something the user typed; greeting them
-        again on each one is the bug this block must not become."""
-        with self._patch_count(self._count(1)):
-            block = await build_new_user_guidance_block(
-                ctx(
-                    user_preferences={"profession": "Founder", "needs": ["inbox"]},
-                    source="telegram",
-                )
-            )
-        assert "FIRST CONTACT" not in block
-
-    async def test_a_handoff_with_no_platform_names_none(self) -> None:
-        """Web has no platform to confirm, so there is nothing to say."""
-        with self._patch_count(self._count(1)):
-            block = await build_new_user_guidance_block(
-                ctx(
-                    user_preferences={"profession": "Founder", "needs": ["inbox"]},
-                    onboarding_handoff=True,
-                )
-            )
-        assert "FIRST CONTACT" not in block
 
     async def test_every_need_has_a_playbook(self) -> None:
         assert set(NEED_PLAYBOOKS) == set(OnboardingNeed)

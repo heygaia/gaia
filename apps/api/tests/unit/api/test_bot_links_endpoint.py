@@ -6,7 +6,7 @@ link-token-info). Assertions are unchanged from the original module — only the
 patch targets moved with the code.
 """
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from httpx import AsyncClient
@@ -22,6 +22,7 @@ from app.models.bot_models import (
 )
 from app.models.payment_models import PlanType
 from app.models.platform_models import PlatformLinkResult
+from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.platform_link_code_service import PlatformLinkCodePayload
 from app.utils.errors import AppError
 from shared.py.wide_events import log, log_context
@@ -281,12 +282,19 @@ class TestCreateLinkToken:
 # ---------------------------------------------------------------------------
 
 REDEEM_BODY = {"platform": "telegram", "platform_user_id": "TG42", "code": "CODE123"}
-FIRST_MESSAGE = "Hi! I'm a founder. I could use help with my inbox. Who are you?"
+PREFS = OnboardingPreferences(profession="founder", needs=[OnboardingNeed.INBOX])
+BUBBLES = [
+    "Hey. I'm with you on Telegram now.",
+    "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted.",
+    "One tap and that switches on. The link is live for the next hour:",
+    "Gmail: https://gaia.test/connect/abc",
+]
 PEEK_PATCH = "app.api.v1.endpoints.bot_links.peek_platform_link_code"
 DISCARD_PATCH = "app.api.v1.endpoints.bot_links.discard_platform_link_code"
 COMPLETE_PATCH = "app.api.v1.endpoints.bot_links.complete_platform_link"
 USER_PATCH = "app.api.v1.endpoints.bot_links.get_user_by_id"
-NAMELESS_GREETING = "Hey. I'm with you on Telegram now."
+CONTACT_PATCH = "app.api.v1.endpoints.bot_links.build_first_contact"
+PERSIST_PATCH = "app.api.v1.endpoints.bot_links._persist_first_contact"
 
 
 def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
@@ -313,19 +321,31 @@ class TestRedeemLinkCode:
         with patch(USER_PATCH, new_callable=AsyncMock, return_value=None) as mock_get_user:
             yield mock_get_user
 
+    @pytest.fixture(autouse=True)
+    def _first_contact(self):
+        """Composing the bundle reads Mongo (connected integrations) and mints
+        Redis-backed connect links. Its copy is proven in
+        ``tests/unit/services/onboarding/test_first_contact.py``; here only the
+        fact that the endpoint returns whatever it composed matters."""
+        with (
+            patch(CONTACT_PATCH, new_callable=AsyncMock, return_value=BUBBLES) as mock_contact,
+            patch(PERSIST_PATCH, new_callable=AsyncMock),
+        ):
+            yield mock_contact
+
     async def test_no_api_key(self, client: AsyncClient):
         response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
         assert response.status_code == 401
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
-    async def test_happy_path_links_and_returns_the_first_message(
+    async def test_happy_path_links_and_returns_the_first_contact_bubbles(
         self, _auth: AsyncMock, client: AsyncClient
     ):
         with (
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
@@ -338,11 +358,7 @@ class TestRedeemLinkCode:
             )
 
         assert response.status_code == 200
-        assert response.json() == {
-            "linked": True,
-            "first_message": FIRST_MESSAGE,
-            "greeting": NAMELESS_GREETING,
-        }
+        assert response.json() == {"linked": True, "bubbles": BUBBLES}
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
         mock_complete.assert_awaited_once_with(
@@ -353,17 +369,22 @@ class TestRedeemLinkCode:
         )
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
-    async def test_the_greeting_uses_the_linked_users_first_name(
-        self, _auth: AsyncMock, client: AsyncClient, _linked_user: AsyncMock
+    async def test_the_bundle_is_composed_for_the_linked_user_not_the_platform_handle(
+        self,
+        _auth: AsyncMock,
+        client: AsyncClient,
+        _linked_user: AsyncMock,
+        _first_contact: AsyncMock,
     ):
-        """The bot sends this before the opener runs, so the name has to come
-        from the GAIA account the code linked, not from the platform profile."""
+        """The greeting names the GAIA account the code linked and the connect
+        links are minted for it, so composing off the platform profile (or off
+        nobody) would greet the wrong person and hand out useless links."""
         _linked_user.return_value = {"_id": "user1", "name": "Aryan Randeriya"}
         with (
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
             patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
@@ -371,8 +392,30 @@ class TestRedeemLinkCode:
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
-        assert response.json()["greeting"] == "Hey Aryan. I'm with you on Telegram now."
         _linked_user.assert_awaited_once_with("user1")
+        _first_contact.assert_awaited_once_with("user1", "telegram", "Aryan Randeriya", PREFS)
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_the_exchange_is_persisted_so_the_next_turn_has_context(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """No chat turn ran, so nothing else writes this. Without it the user's
+        next message lands in an empty thread and GAIA has no idea it just
+        introduced itself."""
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(PERSIST_PATCH, new_callable=AsyncMock) as mock_persist,
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        mock_persist.assert_awaited_once_with("user1", ANY, None, PREFS, BUBBLES)
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_expired_or_unknown_code_is_rejected_without_linking(
@@ -394,7 +437,7 @@ class TestRedeemLinkCode:
         self, _auth: AsyncMock, client: AsyncClient
     ):
         """Single-use: the store hands the binding over exactly once."""
-        payload = PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE)
+        payload = PlatformLinkCodePayload(user_id="user1", preferences=PREFS)
         with (
             patch(PEEK_PATCH, new_callable=AsyncMock, side_effect=[payload, None]),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
@@ -414,7 +457,7 @@ class TestRedeemLinkCode:
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
@@ -545,7 +588,7 @@ class TestRedeemLinkCode:
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
             patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
@@ -564,7 +607,7 @@ class TestRedeemLinkCode:
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ) as mock_peek,
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
@@ -590,7 +633,7 @@ class TestRedeemLinkCode:
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
@@ -620,7 +663,7 @@ class TestRedeemLinkCode:
             patch(
                 PEEK_PATCH,
                 new_callable=AsyncMock,
-                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
             patch("app.api.v1.endpoints.bot_links.require_platform_plan", new=AsyncMock()),

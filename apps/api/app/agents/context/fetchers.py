@@ -37,7 +37,6 @@ from app.models.todo_models import TodoDocument
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.gaia_knowledge_service import gaia_knowledge_service
 from app.services.integrations.user_integrations import get_connected_integrations_named
-from app.services.onboarding.first_conversation import platform_label
 from app.services.onboarding.first_question import seeded_chips
 from app.services.tools.tools_service import get_integration_tool_list
 from app.services.tracked_todo_service import tracked_todo_service
@@ -241,25 +240,18 @@ async def build_new_user_guidance_block(ctx: SectionContext) -> str:
         other_need = None
     if not needs and not other_need:
         return ""
-    # Only the redeemed-opener turn carries the flag, and only a bot turn has a
-    # platform to name, so the first-contact instruction can never leak onto a
-    # later turn or onto web. That turn is first contact on this platform no
-    # matter how long the user has used GAIA elsewhere, so it skips the
-    # new-user conversation gate below.
-    handoff_platform = platform_label(ctx.source) if ctx.onboarding_handoff and ctx.source else None
-    if handoff_platform is None:
-        try:
-            conversations = await conversation_repository.count_non_onboarding(ctx.user_id)
-        except Exception as e:
-            log.warning(
-                "Error counting conversations for new-user guidance",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=ctx.user_id,
-            )
-            return ""
-        if conversations > NEW_USER_CONVERSATION_LIMIT:
-            return ""
+    try:
+        conversations = await conversation_repository.count_non_onboarding(ctx.user_id)
+    except Exception as e:
+        log.warning(
+            "Error counting conversations for new-user guidance",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=ctx.user_id,
+        )
+        return ""
+    if conversations > NEW_USER_CONVERSATION_LIMIT:
+        return ""
     profession = ctx.user_preferences.get("profession")
     # The chips GAIA itself offered at the end of the seeded conversation. Their
     # first message is usually one of them, and without this the model treats a
@@ -277,7 +269,6 @@ async def build_new_user_guidance_block(ctx: SectionContext) -> str:
         needs,
         other_need,
         chips,
-        handoff_platform,
     )
 
 

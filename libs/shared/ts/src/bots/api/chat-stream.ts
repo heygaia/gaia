@@ -197,7 +197,6 @@ async function streamChatOnce(
         ...(request.fileData && request.fileData.length > 0
           ? { file_data: request.fileData }
           : {}),
-        ...(request.onboardingHandoff ? { onboarding_handoff: true } : {}),
       },
       {
         responseType: "stream",

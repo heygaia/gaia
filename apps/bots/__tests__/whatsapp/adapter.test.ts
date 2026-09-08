@@ -136,6 +136,13 @@ import { GaiaApiError } from "../../../../libs/shared/ts/src/bots/api";
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
 const LINK_GREETING = "Hey Aryan. I'm with you on WhatsApp now.";
+/** The server-composed first contact: hello, one promise per pick, first move. */
+const LINK_BUBBLES = [
+  LINK_GREETING,
+  "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted.",
+  "One tap and that switches on. The link is live for the next hour:",
+  "Gmail: https://gaia.test/connect/abc",
+];
 const LINK_FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 
@@ -397,8 +404,7 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
     mockMarkRead.mockResolvedValue({});
     const redeemLinkCode = vi.fn().mockResolvedValue({
       linked: true,
-      firstMessage: LINK_FIRST_MESSAGE,
-      greeting: LINK_GREETING,
+      bubbles: LINK_BUBBLES,
     });
     (adapter as unknown as { gaia: unknown }).gaia = {
       checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
@@ -419,25 +425,16 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       LINK_CODE,
       undefined,
     );
-    // The code never reaches the agent, and the turn is marked as the handoff
-    // it is so the reply opens as a first contact.
-    expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
-      message: LINK_FIRST_MESSAGE,
-      platform: "whatsapp",
-      onboardingHandoff: true,
-    });
-    // The hello is deterministic and goes out exactly once, before the opener
-    // turn: the model used to be asked for a greeting and kept skipping it.
-    const greetings = mockSendText.mock.calls.filter((c) =>
-      JSON.stringify(c[0]).includes(LINK_GREETING),
-    );
-    expect(greetings).toHaveLength(1);
-    expect(mockSendText.mock.invocationCallOrder[0]).toBeLessThan(
-      vi.mocked(handleStreamingChat).mock.invocationCallOrder[0],
-    );
+    // The bundle IS the reply. Running the stripped text as a turn on top of it
+    // would answer the user's own prewritten opener a second time.
+    expect(handleStreamingChat).not.toHaveBeenCalled();
+    const sent = mockSendText.mock.calls.map((c) => JSON.stringify(c[0]));
+    for (const bubble of LINK_BUBBLES) {
+      expect(sent.filter((t) => t.includes(bubble))).toHaveLength(1);
+    }
   });
 
-  it("never greets when the #code fails to redeem", async () => {
+  it("sends nothing of the first contact when the #code fails to redeem", async () => {
     mockMarkRead.mockResolvedValue({});
     const redeemLinkCode = vi
       .fn()
@@ -478,10 +475,7 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
     );
 
     expect(redeemLinkCode).not.toHaveBeenCalled();
-    // Nothing was redeemed, so this is the user's own words: not a handoff.
-    expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).not.toHaveProperty(
-      "onboardingHandoff",
-    );
+    // Nothing was redeemed, so this is the user's own words: a normal turn.
     expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
       message: "remind me tomorrow",
     });
