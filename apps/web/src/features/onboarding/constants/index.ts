@@ -56,9 +56,12 @@ export function needLabel(value: string): string | undefined {
   return allNeedOptions.find((option) => option.value === value)?.label;
 }
 
-/** Under the Q2 grid: the picks set up the first thing, they are not a ceiling. */
-export const NEEDS_HINT =
-  "Just a starting point. You can hand me more anytime.";
+/** Under the Q2 grid: how many picks are left, then, once they are spent,
+ * that the picks set up the first thing and are not a ceiling. */
+export function needsHint(picksLeft: number): string {
+  if (picksLeft > 0) return `${picksLeft} left`;
+  return "Don't worry, you can hand me more later.";
+}
 
 /** The catch-all chip; picking it opens a free-text field whose value replaces
  * this marker as the draft. Anything not in `professionOptions` is a typed job. */

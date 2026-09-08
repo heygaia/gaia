@@ -4,6 +4,7 @@
 
 import ChatBubbleBot from "@/features/chat/components/bubbles/bot/ChatBubbleBot";
 import type { PartChoreography } from "@/features/chat/utils/messageBreakUtils";
+import { useIsMobile } from "@/hooks/ui/useMobile";
 
 import { BOT_BUBBLE_DEFAULTS } from "../constants/bubbleDefaults";
 
@@ -18,13 +19,16 @@ export function OnboardingBotBubble({
   partChoreography,
 }: OnboardingBotBubbleProps) {
   // On a phone the chat bubble's 80% cap wastes the little width there is;
-  // the onboarding column is already narrow, so let the bubble fill it.
+  // the onboarding column is already narrow, so let the bubble fill it, drop
+  // the avatar lane (and the logo that sits in it) and tighten the right pad.
+  const isMobile = useIsMobile();
   return (
-    <div className="max-sm:[&_.chat_bubble]:max-w-full">
+    <div className="max-sm:[&_.chat_bubble]:max-w-full max-sm:[&_.chat_bubble]:pr-2">
       <ChatBubbleBot
         {...BOT_BUBBLE_DEFAULTS}
         text={text}
         partChoreography={partChoreography}
+        hideAvatar={isMobile}
       />
     </div>
   );

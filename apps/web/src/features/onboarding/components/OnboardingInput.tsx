@@ -19,8 +19,9 @@ import { memo } from "react";
 import {
   isListedProfession,
   isRoleNeed,
-  NEEDS_HINT,
+  NEEDS_MAX_SELECTION,
   needOptionsFor,
+  needsHint,
   OTHER_NEED,
   OTHER_NEED_MAX_LENGTH,
   OTHER_NEED_OPTION,
@@ -150,7 +151,9 @@ function NeedsInput({
         personalisedNote={personalisedNote}
         onSelect={handleSelect}
       />
-      <p className="w-full text-right text-xs text-zinc-500">{NEEDS_HINT}</p>
+      <p className="w-full text-right text-xs text-zinc-500">
+        {needsHint(NEEDS_MAX_SELECTION - selected.size - (otherOpen ? 1 : 0))}
+      </p>
       {otherOpen && (
         <OwnWordsInput
           label="Something else, in your words"

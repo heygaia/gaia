@@ -38,6 +38,9 @@ export function PricingCardPrice({ list, offer }: PricingCardPriceProps) {
           format={{
             style: "currency",
             currency: "USD",
+            // A phone in en-IN (and most non-US locales) would render "US$30";
+            // the narrow symbol is "$" everywhere, matching the rest of the card.
+            currencyDisplay: "narrowSymbol",
             maximumFractionDigits: 0,
           }}
           willChange
