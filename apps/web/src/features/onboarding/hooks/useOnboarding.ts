@@ -51,12 +51,17 @@ interface UseOnboardingReturn {
 
 export function useOnboarding(): UseOnboardingReturn {
   const queryClient = useQueryClient();
-  const { userId } = useCurrentUser();
+  const { userId, onboarding } = useCurrentUser();
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isPaid } = useIsPaid();
   const stage = getStage(state, isPaid);
 
-  const hydrated = useOnboardingPersistence(userId, state, dispatch);
+  const hydrated = useOnboardingPersistence(
+    userId,
+    onboarding?.preferences !== undefined,
+    state,
+    dispatch,
+  );
   useOnboardingPreferences(state, dispatch);
 
   const handleSubmissionSuccess = useCallback(
