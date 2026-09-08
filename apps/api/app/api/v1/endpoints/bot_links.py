@@ -183,8 +183,22 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
     await require_platform_plan(payload.user_id, body.platform)
 
     profile: dict[str, str | None] = {"username": body.username, "display_name": body.display_name}
+
+    # The WHOLE first contact is composed here, not run as a model turn. The
+    # opener turn skipped the per-pick promises, handed off to the executor, and
+    # sometimes never produced the connect links at all; the one message a new
+    # user is guaranteed to read does not get to be unreliable. Link completion
+    # delivers it on the outbound queue, so the bot has nothing to send.
+    user = await get_user_by_id(payload.user_id)
+    bubbles = await build_first_contact(
+        payload.user_id, body.platform, (user or {}).get("name"), payload.preferences
+    )
     result = await complete_platform_link(
-        payload.user_id, body.platform, body.platform_user_id, profile=profile, announce=False
+        payload.user_id,
+        body.platform,
+        body.platform_user_id,
+        profile=profile,
+        first_contact=bubbles,
     )
     await discard_platform_link_code(body.code)
     log.audit(
@@ -194,17 +208,8 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
         provider=body.platform,
     )
     log.set(outcome="success", is_new_link=result.is_new_link)
-
-    # The WHOLE first contact is composed here, not run as a model turn. The
-    # opener turn skipped the per-pick promises, handed off to the executor, and
-    # sometimes never produced the connect links at all; the one message a new
-    # user is guaranteed to read does not get to be unreliable.
-    user = await get_user_by_id(payload.user_id)
-    bubbles = await build_first_contact(
-        payload.user_id, body.platform, (user or {}).get("name"), payload.preferences
-    )
     await _persist_first_contact(payload.user_id, body, user, payload.preferences, bubbles)
-    return RedeemLinkCodeResponse(linked=True, bubbles=bubbles)
+    return RedeemLinkCodeResponse(linked=True)
 
 
 async def _persist_first_contact(

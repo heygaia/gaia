@@ -634,7 +634,7 @@ export class GaiaClient {
     platformUserId: string,
     code: string,
     profile?: { username?: string; displayName?: string },
-  ): Promise<{ linked: boolean; bubbles: string[] }> {
+  ): Promise<{ linked: boolean }> {
     return this.request(async () => {
       const { data } = await this.client.post(
         "/api/v1/bot/redeem-link-code",
@@ -653,7 +653,7 @@ export class GaiaClient {
           },
         },
       );
-      return { linked: data.linked, bubbles: data.bubbles ?? [] };
+      return { linked: data.linked };
     });
   }
 }

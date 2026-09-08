@@ -23,14 +23,7 @@ const CODE = "Ab3-_xY9zQ1234567890wE";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 const FRONTEND_URL = "https://gaia.test";
-/** What the API composes: hello, one promise per pick, then the first move. */
-const BUBBLES = [
-  "Hey Aryan. I'm with you on WhatsApp now.",
-  "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted.",
-  "One tap and that switches on. The link is live for the next hour:",
-  "Gmail: https://gaia.test/connect/abc",
-];
-const okRedeem = () => vi.fn(async () => ({ linked: true, bubbles: BUBBLES }));
+const okRedeem = () => vi.fn(async () => ({ linked: true }));
 
 function fakeTarget(): MessageTarget & { sent: string[] } {
   const sent: string[] = [];
@@ -101,7 +94,7 @@ describe("parseTrailingLinkCode", () => {
 });
 
 describe("redeemLinkCode", () => {
-  it("delivers every bubble the server composed and reports success", async () => {
+  it("reports success and sends nothing itself: the API delivers the first contact", async () => {
     const redeem = okRedeem();
     const target = fakeTarget();
 
@@ -118,38 +111,7 @@ describe("redeemLinkCode", () => {
     expect(redeem).toHaveBeenCalledWith("telegram", "TG42", CODE, {
       username: "tg_user",
     });
-    expect(target.sent).toEqual(BUBBLES);
-  });
-
-  it("skips a blank bubble rather than sending an empty message", async () => {
-    // Platform send APIs reject empty text, and one bad bubble must not take
-    // the whole first contact down with it.
-    const redeem = vi.fn(async () => ({
-      linked: true,
-      bubbles: [BUBBLES[0], "   ", BUBBLES[1]],
-    }));
-    const target = fakeTarget();
-
-    await redeemLinkCode(fakeGaia(redeem), "telegram", "TG42", CODE, target);
-
-    expect(target.sent).toEqual([BUBBLES[0], BUBBLES[1]]);
-  });
-
-  it("resolves only after the last bubble is out", async () => {
-    // The adapter stops its typing indicator on this promise; resolving early
-    // leaves the rest of the first contact landing after "typing" stopped.
-    const target = fakeTarget();
-
-    const result = await redeemLinkCode(
-      fakeGaia(okRedeem()),
-      "telegram",
-      "TG42",
-      CODE,
-      target,
-    );
-
-    expect(result).toBe(true);
-    expect(target.send).toHaveBeenCalledTimes(BUBBLES.length);
+    expect(target.sent).toEqual([]);
   });
 
   it("explains an expired code instead of throwing", async () => {
@@ -215,17 +177,6 @@ describe("redeemLinkCode", () => {
     expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
   });
 
-  it("sends no bubble at all when the redemption failed", async () => {
-    const target = fakeTarget();
-    const redeem = vi.fn(async () => {
-      throw new GaiaApiError("API error: 400", 400);
-    });
-
-    await redeemLinkCode(fakeGaia(redeem), "telegram", "TG42", CODE, target);
-
-    for (const bubble of BUBBLES) expect(target.sent).not.toContain(bubble);
-  });
-
   it("lets an unexpected failure propagate rather than faking a link", async () => {
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 500", 500);
@@ -282,7 +233,7 @@ describe("consumeInboundLinkCode", () => {
 
     expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
-    expect(target.sent).toEqual(BUBBLES);
+    expect(target.sent).toEqual([]);
   });
 
   it("does not greet when the inbound redemption fails", async () => {
@@ -305,7 +256,7 @@ describe("consumeInboundLinkCode", () => {
     ]);
   });
 
-  it("delivers the bundle even when the user edited the prewritten text", async () => {
+  it("redeems even when the user edited the prewritten text, and sends nothing itself", async () => {
     const target = fakeTarget();
 
     const result = await consumeInboundLinkCode(
@@ -318,7 +269,7 @@ describe("consumeInboundLinkCode", () => {
     );
 
     expect(result).toBeNull();
-    expect(target.sent).toEqual(BUBBLES);
+    expect(target.sent).toEqual([]);
   });
 
   it("strips a stray code from a linked sender without redeeming or replying", async () => {
@@ -355,7 +306,7 @@ describe("consumeInboundLinkCode", () => {
     expect(result).toBeNull();
   });
 
-  it("delivers the bundle when the message was nothing but a code", async () => {
+  it("redeems a message that was nothing but a code, and sends nothing itself", async () => {
     const redeem = okRedeem();
     const target = fakeTarget();
 
@@ -370,24 +321,6 @@ describe("consumeInboundLinkCode", () => {
 
     expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
-    expect(target.sent).toEqual(BUBBLES);
-  });
-
-  it("sends every bubble in the order the server composed them", async () => {
-    // These are a conversation: out of order, GAIA talks over itself and the
-    // connect link arrives before the promise that explains what it is for.
-    const target = fakeTarget();
-
-    await consumeInboundLinkCode(
-      base({
-        gaia: fakeGaia(okRedeem()),
-        text: `#${CODE}`,
-        isLinked: async () => false,
-        target,
-      }),
-    );
-
-    expect(target.sent).toEqual(BUBBLES);
-    expect(target.send).toHaveBeenCalledTimes(BUBBLES.length);
+    expect(target.sent).toEqual([]);
   });
 });

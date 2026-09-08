@@ -342,7 +342,7 @@ class TestRedeemLinkCode:
         assert response.status_code == 401
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
-    async def test_happy_path_links_and_returns_the_first_contact_bubbles(
+    async def test_happy_path_links_and_hands_the_first_contact_to_completion(
         self, _auth: AsyncMock, client: AsyncClient
     ):
         with (
@@ -362,17 +362,17 @@ class TestRedeemLinkCode:
             )
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True, "bubbles": BUBBLES}
+        assert response.json() == {"linked": True}
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
-        # The composed first contact is the confirmation: no generic
-        # "you're connected" on top of it.
+        # The composed first contact travels with the link: completion delivers
+        # it on the outbound queue, so the bot has nothing to send.
         mock_complete.assert_awaited_once_with(
             "user1",
             "telegram",
             "TG42",
             profile={"username": "tg_user", "display_name": "TG User"},
-            announce=False,
+            first_contact=BUBBLES,
         )
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
