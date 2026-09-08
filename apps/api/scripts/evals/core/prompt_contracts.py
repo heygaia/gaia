@@ -118,7 +118,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="delegate_every_real_ask",
         source="comms",
-        starts_at="1. DELEGATE EVERY REAL ASK:",
+        starts_at="1. DELEGATE EVERY REAL ASK (except open-web lookups):",
         ends_before="2. YOU ARE THE USER'S ONLY WINDOW:",
         governs="when a turn must go through call_executor instead of being answered directly",
         depends_on=(

@@ -334,6 +334,10 @@ class ProductionSettings(CommonSettings):
     # Signs stateless one-click unsubscribe tokens (itsdangerous). Generate with:
     # openssl rand -hex 32
     EMAIL_UNSUBSCRIBE_SECRET: str
+    # Signs single-purpose file-share grants (fetched by Composio during tool
+    # execution). Dedicated secret so share tokens are domain-separated from
+    # unsubscribe links.
+    SHARE_GRANT_SECRET: str
 
     # Voice calls & SMS (Resia). Server-held org credential — one balance for
     # all users, per-call attribution via client_reference. Inject via
@@ -564,6 +568,7 @@ class DevelopmentSettings(CommonSettings):
     RESEND_AUDIENCE_ID: str | None = None
     EMAIL_FROM: str = "brief@heygaia.io"
     EMAIL_UNSUBSCRIBE_SECRET: str | None = None
+    SHARE_GRANT_SECRET: str | None = None
 
     # Voice calls & SMS (Resia). Optional in dev so local boot never needs them.
     RESIA_API_KEY: str | None = None

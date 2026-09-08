@@ -36,7 +36,7 @@ nx run api:test:coverage
 
 The agent system uses two compiled LangGraph graphs registered via `GraphManager` / `ProviderRegistry`:
 
-- **`comms_agent`** — thin front-door agent. Has only three tools: `call_executor`, `add_memory`, `search_memory`. Handles user-facing chat (streaming or silent).
+- **`comms_agent`** — thin front-door agent. Statically bound to a small fixed tool set (no semantic retrieval): `call_executor` / `cancel_executor`, the memory tools, and the open-web tools `web_search_tool` / `fetch_webpages` (comms runs quick outside-world lookups itself; everything touching the user's own data or accounts still delegates via `call_executor`). Handles user-facing chat (streaming or silent).
 - **`executor_agent`** — full-tool agent. Receives tasks from `comms_agent` via the `call_executor` tool. Has access to the entire tool registry retrieved from ChromaDB.
 
 Both graphs are built in `app/agents/core/graph_builder/build_graph.py` and registered during startup via `build_graphs()`.

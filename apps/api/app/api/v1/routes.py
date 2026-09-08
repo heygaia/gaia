@@ -36,6 +36,7 @@ from app.api.v1.endpoints import (
     reminders,
     search,
     sessions,
+    shares,
     short_links,
     skills,
     support,
@@ -61,6 +62,7 @@ router.include_router(device_ws.router)
 router.include_router(approvals.router, tags=["Approvals"])
 router.include_router(conversations.router, tags=["Conversations"])
 router.include_router(sessions.router)
+router.include_router(shares.router, tags=["Shares"])
 router.include_router(feedback.router, tags=["Feedback"])
 router.include_router(image.router, tags=["Image"])
 router.include_router(search.router, tags=["Search"])
