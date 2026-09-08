@@ -86,6 +86,10 @@ class MessageRequestWithHistory(BaseModel):
     # reload or sync. Path-safe: message ids appear in URL paths (pin route).
     turn_id: SafePathId | None = None
     is_onboarding_demo: bool = False
+    # The turn carrying the one-tap opener a bot redeemed at linking. The user
+    # never typed it (it was composed from their onboarding answers), so the
+    # comms agent has to greet and orient instead of replying to a message.
+    onboarding_handoff: bool = False
     # Voice sessions set this so the stream holds open until a delegated
     # executor delivers its narrated answer (pushed as a `voice_tts` SSE frame
     # for the voice agent to speak). Text clients leave it False — the executor

@@ -59,8 +59,8 @@ def _prefs(
 #: model, so the expected value is written by hand rather than derived.
 DEFAULT_BLOCK = (
     "- Their job, as they answered it: founder\n"
-    "- In their words: my inbox is out of control\n"
-    "- In their words: I walk into meetings cold"
+    "- In their words: inbox out of control\n"
+    "- In their words: meetings cold"
 )
 
 
@@ -83,8 +83,8 @@ class TestAnswersBlock:
 
         assert block == (
             "- Their job, as they answered it: Bakery owner\n"
-            "- In their words: I walk into meetings cold\n"
-            "- In their words: my inbox is out of control\n"
+            "- In their words: meetings cold\n"
+            "- In their words: inbox out of control\n"
             '- In their own words: "chasing invoices"\n'
             "- They already text you on telegram"
         )
@@ -98,13 +98,13 @@ class TestAnswersBlock:
         the model write a question about being an "other"."""
         block = _answers_block(_prefs(profession=profession, needs=[OnboardingNeed.INBOX]), None)
 
-        assert block == "- In their words: my inbox is out of control"
+        assert block == "- In their words: inbox out of control"
 
     @pytest.mark.parametrize("profession", [None])
     def test_an_unanswered_job_is_left_out(self, profession: str | None) -> None:
         block = _answers_block(_prefs(profession=profession, needs=[OnboardingNeed.INBOX]), None)
 
-        assert block == "- In their words: my inbox is out of control"
+        assert block == "- In their words: inbox out of control"
 
     def test_a_platform_alone_still_renders_its_line(self) -> None:
         block = _answers_block(_prefs(profession=None, needs=[]), "whatsapp")

@@ -23,6 +23,7 @@ const CODE = "Ab3-_xY9zQ1234567890wE";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 const FRONTEND_URL = "https://gaia.test";
+const GREETING = "Hey Aryan. I'm with you on Telegram now.";
 
 function fakeTarget(): MessageTarget & { sent: string[] } {
   const sent: string[] = [];
@@ -97,6 +98,7 @@ describe("redeemLinkCode", () => {
     const redeem = vi.fn(async () => ({
       linked: true,
       firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
     }));
     const target = fakeTarget();
 
@@ -113,7 +115,8 @@ describe("redeemLinkCode", () => {
     expect(redeem).toHaveBeenCalledWith("telegram", "TG42", CODE, {
       username: "tg_user",
     });
-    expect(target.sent).toEqual([]);
+    // The greeting goes out here, once, before the caller runs the opener turn.
+    expect(target.sent).toEqual([GREETING]);
   });
 
   it("explains an expired code instead of throwing", async () => {
@@ -179,6 +182,40 @@ describe("redeemLinkCode", () => {
     expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
   });
 
+  it("sends the greeting exactly once, and returns only after it is out", async () => {
+    const target = fakeTarget();
+    const redeem = vi.fn(async () => ({
+      linked: true,
+      firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
+    }));
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "telegram",
+      "TG42",
+      CODE,
+      target,
+    );
+
+    // The caller runs the opener turn on the returned text, so a greeting that
+    // is still in flight when this resolves would land after GAIA's reply.
+    expect(target.sent).toEqual([GREETING]);
+    expect(target.send).toHaveBeenCalledOnce();
+    expect(result).toBe(FIRST_MESSAGE);
+  });
+
+  it("never greets a redemption that failed", async () => {
+    const target = fakeTarget();
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 400", 400);
+    });
+
+    await redeemLinkCode(fakeGaia(redeem), "telegram", "TG42", CODE, target);
+
+    expect(target.sent).not.toContain(GREETING);
+  });
+
   it("lets an unexpected failure propagate rather than faking a link", async () => {
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 500", 500);
@@ -212,7 +249,10 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBe("what's on my calendar?");
+    expect(result).toEqual({
+      text: "what's on my calendar?",
+      onboardingHandoff: false,
+    });
     expect(redeem).not.toHaveBeenCalled();
     expect(isLinked).not.toHaveBeenCalled();
   });
@@ -221,6 +261,7 @@ describe("consumeInboundLinkCode", () => {
     const redeem = vi.fn(async () => ({
       linked: true,
       firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
     }));
 
     const result = await consumeInboundLinkCode(
@@ -231,14 +272,56 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toEqual({ text: FIRST_MESSAGE, onboardingHandoff: true });
     expect(redeem).toHaveBeenCalledOnce();
+  });
+
+  it("greets once on the inbound redemption, before the opener is returned", async () => {
+    const redeem = vi.fn(async () => ({
+      linked: true,
+      firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
+    }));
+    const target = fakeTarget();
+
+    const result = await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `${FIRST_MESSAGE} #${CODE}`,
+        isLinked: async () => false,
+        target,
+      }),
+    );
+
+    expect(target.sent).toEqual([GREETING]);
+    expect(result).toEqual({ text: FIRST_MESSAGE, onboardingHandoff: true });
+  });
+
+  it("does not greet when the inbound redemption fails", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 409", 409);
+    });
+    const target = fakeTarget();
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `${FIRST_MESSAGE} #${CODE}`,
+        isLinked: async () => false,
+        target,
+      }),
+    );
+
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("conflict", FRONTEND_URL),
+    ]);
   });
 
   it("runs the server-composed opener even when the user edited the text", async () => {
     const redeem = vi.fn(async () => ({
       linked: true,
       firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
     }));
 
     const result = await consumeInboundLinkCode(
@@ -249,7 +332,7 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toEqual({ text: FIRST_MESSAGE, onboardingHandoff: true });
   });
 
   it("strips a stray code from a linked sender without redeeming or replying", async () => {
@@ -265,7 +348,10 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBe("remind me tomorrow");
+    expect(result).toEqual({
+      text: "remind me tomorrow",
+      onboardingHandoff: false,
+    });
     expect(redeem).not.toHaveBeenCalled();
     expect(target.sent).toEqual([]);
   });
@@ -290,6 +376,7 @@ describe("consumeInboundLinkCode", () => {
     const redeem = vi.fn(async () => ({
       linked: true,
       firstMessage: FIRST_MESSAGE,
+      greeting: GREETING,
     }));
 
     const result = await consumeInboundLinkCode(
@@ -300,7 +387,7 @@ describe("consumeInboundLinkCode", () => {
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toEqual({ text: FIRST_MESSAGE, onboardingHandoff: true });
     expect(redeem).toHaveBeenCalledOnce();
   });
 });

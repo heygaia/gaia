@@ -270,8 +270,12 @@ export class TelegramAdapter extends BaseBotAdapter {
       if (firstMessage === null) return;
 
       // Run the composed opener through the exact path an inbound text takes,
-      // so GAIA answers it as the user's own first turn.
-      await this.handleTelegramStreaming(ctx, userId, firstMessage);
+      // so GAIA answers it as the user's own first turn — flagged as the
+      // handoff it is, because on Telegram the user never even saw this message
+      // go out under their name.
+      await this.handleTelegramStreaming(ctx, userId, firstMessage, [], {
+        onboardingHandoff: true,
+      });
     });
 
     for (const cmd of commands) {
@@ -586,6 +590,7 @@ export class TelegramAdapter extends BaseBotAdapter {
     userId: string,
     message: string,
     attachments: BotFileData[] = [],
+    options: { onboardingHandoff?: boolean } = {},
   ): Promise<void> {
     const chatId = ctx.chat?.id;
     if (!chatId) return;
@@ -614,6 +619,7 @@ export class TelegramAdapter extends BaseBotAdapter {
                 fileData: attachments,
               }
             : {}),
+          ...(options.onboardingHandoff ? { onboardingHandoff: true } : {}),
         },
         async (text: string) => {
           await this.editHtml(

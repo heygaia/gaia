@@ -285,6 +285,8 @@ FIRST_MESSAGE = "Hi! I'm a founder. I could use help with my inbox. Who are you?
 PEEK_PATCH = "app.api.v1.endpoints.bot_links.peek_platform_link_code"
 DISCARD_PATCH = "app.api.v1.endpoints.bot_links.discard_platform_link_code"
 COMPLETE_PATCH = "app.api.v1.endpoints.bot_links.complete_platform_link"
+USER_PATCH = "app.api.v1.endpoints.bot_links.get_user_by_id"
+NAMELESS_GREETING = "Hey. I'm with you on Telegram now."
 
 
 def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
@@ -299,6 +301,17 @@ def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
 
 class TestRedeemLinkCode:
     """POST /api/v1/bot/redeem-link-code"""
+
+    @pytest.fixture(autouse=True)
+    def _linked_user(self):
+        """The greeting reads the linked user's name, which lives in Mongo.
+
+        Unit tests have no Mongo, so the lookup is stubbed for the whole class
+        and returns a user with no name; the tests that care about the name
+        override the return value.
+        """
+        with patch(USER_PATCH, new_callable=AsyncMock, return_value=None) as mock_get_user:
+            yield mock_get_user
 
     async def test_no_api_key(self, client: AsyncClient):
         response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
@@ -325,7 +338,11 @@ class TestRedeemLinkCode:
             )
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True, "first_message": FIRST_MESSAGE}
+        assert response.json() == {
+            "linked": True,
+            "first_message": FIRST_MESSAGE,
+            "greeting": NAMELESS_GREETING,
+        }
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
         mock_complete.assert_awaited_once_with(
@@ -334,6 +351,28 @@ class TestRedeemLinkCode:
             "TG42",
             profile={"username": "tg_user", "display_name": "TG User"},
         )
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_the_greeting_uses_the_linked_users_first_name(
+        self, _auth: AsyncMock, client: AsyncClient, _linked_user: AsyncMock
+    ):
+        """The bot sends this before the opener runs, so the name has to come
+        from the GAIA account the code linked, not from the platform profile."""
+        _linked_user.return_value = {"_id": "user1", "name": "Aryan Randeriya"}
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", first_message=FIRST_MESSAGE),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json()["greeting"] == "Hey Aryan. I'm with you on Telegram now."
+        _linked_user.assert_awaited_once_with("user1")
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_expired_or_unknown_code_is_rejected_without_linking(

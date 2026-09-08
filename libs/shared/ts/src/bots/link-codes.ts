@@ -59,20 +59,31 @@ export interface InboundLinkCodeArgs {
   profile?: { username?: string; displayName?: string };
 }
 
+export interface InboundLinkCodeResult {
+  /** The text to run through the normal chat flow. */
+  text: string;
+  /**
+   * The text is the server-composed opener from a redemption, not something the
+   * user typed. The adapter forwards it so the agent opens as a first contact.
+   */
+  onboardingHandoff: boolean;
+}
+
 /**
  * The WhatsApp/iMessage half of one-tap linking: the user's own first message
  * carries the code, so it must be redeemed and stripped before anything else
  * looks at the text.
  *
- * Returns the text to continue through the normal chat flow, or null when
- * there is nothing left to handle — the redemption failed (the user already has
- * a friendly explanation) or the message was only a code.
+ * Returns the text to continue through the normal chat flow plus whether it came
+ * out of a redemption, or null when there is nothing left to handle — the
+ * redemption failed (the user already has a friendly explanation) or the message
+ * was only a code.
  */
 export async function consumeInboundLinkCode(
   args: InboundLinkCodeArgs,
-): Promise<string | null> {
+): Promise<InboundLinkCodeResult | null> {
   const parsed = parseTrailingLinkCode(args.text);
-  if (!parsed) return args.text;
+  if (!parsed) return { text: args.text, onboardingHandoff: false };
 
   // An already-linked sender re-sending the prewritten message is not an error
   // worth a reply: drop the code and let the rest through.
@@ -87,11 +98,14 @@ export async function consumeInboundLinkCode(
     );
     if (redeemed === null) return null;
     // The server composed the opener from onboarding; it is the turn to run,
-    // as on Telegram, even when the user edited the prewritten text.
-    return redeemed || parsed.text || null;
+    // as on Telegram, even when the user edited the prewritten text. Only that
+    // server-composed text is a handoff: the user's own edited message is
+    // something they typed and watched send.
+    if (redeemed) return { text: redeemed, onboardingHandoff: true };
+    return parsed.text ? { text: parsed.text, onboardingHandoff: false } : null;
   }
 
-  return parsed.text || null;
+  return parsed.text ? { text: parsed.text, onboardingHandoff: false } : null;
 }
 
 /** Sent when the code is stale, already used, or the handle belongs elsewhere. */
@@ -123,6 +137,9 @@ export function buildLinkCodeFailureMessage(
 /**
  * Redeems `code` for `platformUserId`, returning the composed first message.
  *
+ * On success it first sends the server-composed greeting to `target`, so the
+ * user is greeted deterministically before the opener turn runs.
+ *
  * On a failure the user can act on (expired/used code, handle already linked
  * elsewhere) it messages them and returns null — never a stack trace. Any other
  * failure propagates so it surfaces as a real error.
@@ -144,12 +161,17 @@ export async function redeemLinkCode(
     },
     async () => {
       try {
-        const { firstMessage } = await gaia.redeemLinkCode(
+        const { firstMessage, greeting } = await gaia.redeemLinkCode(
           platform,
           platformUserId,
           code,
           profile,
         );
+        // Hello first, then the opener turn. The greeting is the server's line
+        // rather than the model's because the model kept skipping it, and the
+        // ordering matters: the opener answers what the user picked, so it
+        // arriving first reads like GAIA resuming a conversation nobody started.
+        if (greeting) await target.send(greeting);
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),
         });

@@ -99,7 +99,8 @@ class FirstConversation(BaseModel):
         return {"tool_name": CONNECT_OPTIONS_TOOL_NAME, "data": {"options": CONNECT_OPTIONS}}
 
 
-def _platform_label(connected_platform: str) -> str:
+def platform_label(connected_platform: str) -> str:
+    """The platform's friendly name for user-facing copy and prompt text."""
     source = ConversationSource.coerce(connected_platform)
     if source is None:
         return connected_platform.capitalize()
@@ -109,7 +110,7 @@ def _platform_label(connected_platform: str) -> str:
 def _handover_line(connected_platform: str | None) -> str:
     if not connected_platform:
         return HANDOVER_LINE
-    return HANDOVER_LINE + PLATFORM_TEMPLATE.format(platform=_platform_label(connected_platform))
+    return HANDOVER_LINE + PLATFORM_TEMPLATE.format(platform=platform_label(connected_platform))
 
 
 def _handover(profession: str | None) -> str:

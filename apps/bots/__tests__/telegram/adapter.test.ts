@@ -151,6 +151,7 @@ import {
 
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
+const LINK_GREETING = "Hey Aryan. I'm with you on Telegram now.";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 
@@ -871,9 +872,11 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       "help",
       helpCommand,
     );
-    const redeemLinkCode = vi
-      .fn()
-      .mockResolvedValue({ linked: true, firstMessage: FIRST_MESSAGE });
+    const redeemLinkCode = vi.fn().mockResolvedValue({
+      linked: true,
+      firstMessage: FIRST_MESSAGE,
+      greeting: LINK_GREETING,
+    });
     (adapter as unknown as { gaia: unknown }).gaia = {
       redeemLinkCode,
       getFrontendUrl: () => "https://gaia.test",
@@ -891,7 +894,8 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       ctx: ReturnType<typeof makeCtx>,
     ) => Promise<void>;
 
-    await startHandler(makeCtx({ match: LINK_CODE }));
+    const sendMessageFn = vi.fn().mockResolvedValue({ message_id: 55 });
+    await startHandler(makeCtx({ match: LINK_CODE, sendMessageFn }));
 
     expect(redeemLinkCode).toHaveBeenCalledWith(
       "telegram",
@@ -899,14 +903,42 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       LINK_CODE,
       expect.objectContaining({ username: "aliceuser", displayName: "Alice" }),
     );
-    // The opener runs through the normal chat path, as the user's own turn.
+    // The opener runs through the normal chat path, as the user's own turn —
+    // flagged so the agent greets instead of answering a message the user on
+    // Telegram never even saw.
     expect(handleStreamingChat).toHaveBeenCalledOnce();
     expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
       message: FIRST_MESSAGE,
       platform: "telegram",
       platformUserId: "999",
+      onboardingHandoff: true,
     });
+    // The hello is the server's line, sent once and before the opener turn: the
+    // model was asked for a greeting and kept skipping it.
+    const greetings = sendMessageFn.mock.calls.filter((c) =>
+      String(c[1]).includes("with you on Telegram now"),
+    );
+    expect(greetings).toHaveLength(1);
+    expect(sendMessageFn.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(handleStreamingChat).mock.invocationCallOrder[0],
+    );
     expect(helpExecute).not.toHaveBeenCalled();
+  });
+
+  it("does not flag an ordinary typed message as an onboarding handoff", async () => {
+    await (
+      adapter as unknown as {
+        handleTelegramStreaming: (
+          ctx: ReturnType<typeof makeCtx>,
+          userId: string,
+          message: string,
+        ) => Promise<void>;
+      }
+    ).handleTelegramStreaming(makeCtx({}), "999", "what's on my calendar?");
+
+    expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).not.toHaveProperty(
+      "onboardingHandoff",
+    );
   });
 
   it("does not chat when the /start payload fails to redeem", async () => {
@@ -930,9 +962,14 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       ctx: ReturnType<typeof makeCtx>,
     ) => Promise<void>;
 
-    await startHandler(makeCtx({ match: LINK_CODE }));
+    const sendMessageFn = vi.fn().mockResolvedValue({ message_id: 55 });
+    await startHandler(makeCtx({ match: LINK_CODE, sendMessageFn }));
 
     expect(handleStreamingChat).not.toHaveBeenCalled();
+    // The failure explanation goes out, never the greeting.
+    expect(JSON.stringify(sendMessageFn.mock.calls)).not.toContain(
+      "with you on Telegram now",
+    );
   });
 
   it("skips the 'gaia' command from the loop (routes to registerGaiaCommand)", async () => {
