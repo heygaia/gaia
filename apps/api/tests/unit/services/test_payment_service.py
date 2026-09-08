@@ -17,7 +17,7 @@ from bson import ObjectId
 from fastapi import HTTPException
 import pytest
 
-from app.constants.cache import UPGRADE_LINK_CACHE_TTL
+from app.constants.cache import ACTIVE_PLANS_CACHE_KEY
 from app.constants.log_tags import LogTag
 from app.constants.payments import PAYMENT_HISTORY_LIMIT
 from app.models.payment_models import (
@@ -27,7 +27,6 @@ from app.models.payment_models import (
     PlanDuration,
     PlanResponse,
     PlanType,
-    ProCheckout,
     SubscriptionDocument,
     SubscriptionStatus,
     UserSubscriptionStatus,
@@ -176,7 +175,11 @@ class TestGetPlans:
         assert plans[0].name == "Pro Monthly"
         assert plans[0].dodo_product_id == "prod_abc123"
         mock_plan_repository.list_plans.assert_awaited_once_with(active_only=True)
-        mock_redis_cache.set.assert_awaited_once()
+        # The cache mirrors the catalogue verbatim: the serialized plan list
+        # under the active-plans key, nothing less.
+        mock_redis_cache.set.assert_awaited_once_with(
+            ACTIVE_PLANS_CACHE_KEY, [plans[0].model_dump()]
+        )
 
     async def test_returns_all_plans_when_active_only_false(
         self,
@@ -430,6 +433,10 @@ class TestCreateSubscription:
         assert result.subscription_id == "sess_001"
         assert result.payment_link == "https://checkout.dodo.dev/sess_001"
         assert result.status == "payment_link_created"
+        # The product's stored price is used as-is: no trial or price override
+        # rides along under Dodo's ``subscription_data`` key.
+        create_kwargs = mock_dodo_client.checkout_sessions.create.call_args.kwargs
+        assert create_kwargs["subscription_data"] == {}
         # The checkout session is recorded verbatim — the verify fallback
         # resolves the purchase against Dodo through this record.
         recorded = mock_checkout_session_repository.create.call_args.args[0]
@@ -603,7 +610,9 @@ class TestCreateSubscription:
             "zipcode": "94104",
         }
         assert dev_kwargs["customer"]["phone_number"] == "+14155550123"
-        assert dev_kwargs["show_saved_payment_methods"] is True
+        # No saved cards: the overlay auto-selects one, and a card saved under
+        # an earlier currency or country declines against this prefill.
+        assert "show_saved_payment_methods" not in dev_kwargs
 
         with patch.object(payment_service_module.settings, "ENV", "production"):
             await payment_service.create_subscription(
@@ -733,6 +742,35 @@ class TestCreateSubscription:
 
         call_kwargs = mock_dodo_client.checkout_sessions.create.call_args[1]
         assert call_kwargs["product_cart"][0]["quantity"] == 3
+
+    @pytest.mark.usefixtures("mock_redis_cache", "mock_checkout_session_repository")
+    async def test_stamps_the_wide_event_as_an_initiated_subscription_create(
+        self,
+        payment_service,
+        mock_users_collection,
+        mock_subscription_repository,
+        mock_plan_repository,
+        mock_dodo_client,
+    ):
+        """The payment context on the request's wide event is how a failed
+        mint is found in the logs; it is set before Dodo is called."""
+        _set_user(mock_users_collection, SAMPLE_USER_DOC)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        checkout_response = MagicMock()
+        checkout_response.session_id = "sess_001"
+        checkout_response.checkout_url = "https://checkout.dodo.dev/sess_001"
+        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=checkout_response)
+        mock_plan_repository.list_plans = AsyncMock(return_value=[])
+
+        with patch("app.services.payments.payment_service.log") as mock_log:
+            await payment_service.create_subscription(
+                user_id=FAKE_USER_ID, product_id="prod_abc123"
+            )
+
+        mock_log.set.assert_any_call(
+            payment={"event_type": "create_subscription", "status": "initiated"}
+        )
 
 
 @pytest.mark.unit
@@ -1629,7 +1667,7 @@ class TestGetProPlan:
 class TestCreateProCheckout:
     """Tests for DodoPaymentService.create_pro_checkout."""
 
-    async def test_uses_the_exact_cache_key_and_mint_arguments(
+    async def test_mints_for_this_user_with_the_resolved_product_and_return_path(
         self,
         payment_service,
         mock_plan_repository,
@@ -1639,11 +1677,6 @@ class TestCreateProCheckout:
         mock_dodo_client,
     ):
         mock_plan_repository.list_plans = AsyncMock(return_value=CATALOGUE)
-        session = MagicMock()
-        session.session_id = "cs_1"
-        session.checkout_url = "https://checkout.dodopayments.com/s/cs_1"
-        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=session)
-
         mint = AsyncMock(
             return_value=CreateSubscriptionResponse(
                 subscription_id="cs_1",
@@ -1654,12 +1687,6 @@ class TestCreateProCheckout:
         with patch.object(payment_service, "create_subscription", mint):
             await payment_service.create_pro_checkout(FAKE_USER_ID, PlanDuration.YEARLY)
 
-        upgrade_gets = [
-            call
-            for call in mock_redis_cache.get.await_args_list
-            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:yearly:/payment/success"
-        ]
-        assert len(upgrade_gets) == 1
         # The checkout session must be created for THIS user, tied by metadata.
         mint.assert_awaited_once_with(
             FAKE_USER_ID, "prod_y", discount_code=None, return_path="/payment/success"
@@ -1674,58 +1701,24 @@ class TestCreateProCheckout:
         mock_redis_cache,
         mock_dodo_client,
     ):
-        """Every surface that hands out this link also advertises
-        PAYWALL_DISCOUNT_CODE, so the code must actually reach Dodo — otherwise
-        the 402 body and the bot notice promise a discount the page never applies.
-        """
+        """Every surface advertises ``PAYWALL_DISCOUNT_CODE``; the one place the
+        session is minted must apply it, or the link and the pitch drift."""
         mock_plan_repository.list_plans = AsyncMock(return_value=CATALOGUE)
-        session = MagicMock()
-        session.session_id = "cs_d"
-        session.checkout_url = "https://checkout.dodopayments.com/s/cs_d"
-        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=session)
-
         mint = AsyncMock(
             return_value=CreateSubscriptionResponse(
-                subscription_id="cs_d",
-                payment_link="https://checkout.dodopayments.com/s/cs_d",
+                subscription_id="cs_1",
+                payment_link="https://checkout.dodopayments.com/s/cs_1",
                 status="payment_link_created",
             )
         )
         with (
+            patch("app.services.payments.payment_service.settings") as mock_settings,
             patch.object(payment_service, "create_subscription", mint),
-            patch(
-                "app.services.payments.payment_service.settings.PAYWALL_DISCOUNT_CODE",
-                "SAVE20",
-            ),
         ):
+            mock_settings.PAYWALL_DISCOUNT_CODE = "SAVE20"
             await payment_service.create_pro_checkout(FAKE_USER_ID)
 
         assert mint.await_args.kwargs["discount_code"] == "SAVE20"
-
-    async def test_caches_the_session_under_the_one_hour_ttl(
-        self,
-        payment_service,
-        mock_plan_repository,
-        mock_subscription_repository,
-        mock_users_collection,
-        mock_redis_cache,
-        mock_dodo_client,
-    ):
-        mock_plan_repository.list_plans = AsyncMock(return_value=CATALOGUE)
-        session = MagicMock()
-        session.session_id = "cs_2"
-        session.checkout_url = "https://checkout.dodopayments.com/s/cs_2"
-        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=session)
-
-        await payment_service.create_pro_checkout(FAKE_USER_ID)
-
-        upgrade_calls = [
-            call
-            for call in mock_redis_cache.set.await_args_list
-            if call.args[0] == f"upgrade_link:{FAKE_USER_ID}:monthly:/payment/success"
-        ]
-        assert len(upgrade_calls) == 1
-        assert upgrade_calls[0].kwargs["ttl"] == UPGRADE_LINK_CACHE_TTL
 
     async def test_mints_a_session_for_the_resolved_pro_product(
         self,
@@ -1749,7 +1742,7 @@ class TestCreateProCheckout:
         cart = mock_dodo_client.checkout_sessions.create.call_args.kwargs["product_cart"]
         assert cart[0]["product_id"] == "prod_y"
 
-    async def test_reuses_the_cached_session_instead_of_minting_another(
+    async def test_every_call_mints_a_fresh_session(
         self,
         payment_service,
         mock_plan_repository,
@@ -1758,61 +1751,26 @@ class TestCreateProCheckout:
         mock_redis_cache,
         mock_dodo_client,
     ):
-        """A user who hits limits repeatedly must not strand a session per hit."""
-        cached = ProCheckout(
-            plan=PlanResponse(
-                id="plan_pro",
-                dodo_product_id="prod_y",
-                name="Pro",
-                amount=30000,
-                currency="USD",
-                duration=PlanDuration.YEARLY,
-                is_active=True,
-                created_at=datetime(2026, 1, 1, tzinfo=UTC),
-                updated_at=datetime(2026, 1, 1, tzinfo=UTC),
-            ),
-            checkout=CreateSubscriptionResponse(
-                subscription_id="cs_cached",
-                payment_link="https://checkout.dodopayments.com/s/cs_cached",
-                status="payment_link_created",
-            ),
-        )
-        mock_redis_cache.get = AsyncMock(return_value=cached.model_dump())
-        mock_dodo_client.checkout_sessions.create = MagicMock()
-
-        pro = await payment_service.create_pro_checkout(FAKE_USER_ID)
-
-        assert pro.checkout.payment_link == "https://checkout.dodopayments.com/s/cs_cached"
-        # The price comes from the cached resolution, not a fresh catalogue read.
-        assert pro.plan.amount == 30000
-        mock_dodo_client.checkout_sessions.create.assert_not_called()
-
-    async def test_caches_the_session_it_mints(
-        self,
-        payment_service,
-        mock_plan_repository,
-        mock_subscription_repository,
-        mock_users_collection,
-        mock_redis_cache,
-        mock_dodo_client,
-    ):
+        """Dodo sessions are single-use: after a declined card the old one only
+        renders "link expired". Handing a remembered session back stranded the
+        user on that page (seen live on the dev drive), so nothing is remembered."""
         mock_plan_repository.list_plans = AsyncMock(return_value=CATALOGUE)
-        session = MagicMock()
-        session.session_id = "cs_2"
-        session.checkout_url = "https://checkout.dodopayments.com/s/cs_2"
-        mock_dodo_client.checkout_sessions.create = MagicMock(return_value=session)
+        sessions = []
+        for sid in ("cs_1", "cs_2"):
+            session = MagicMock()
+            session.session_id = sid
+            session.checkout_url = f"https://checkout.dodopayments.com/s/{sid}"
+            sessions.append(session)
+        mock_dodo_client.checkout_sessions.create = MagicMock(side_effect=sessions)
 
-        await payment_service.create_pro_checkout(FAKE_USER_ID)
+        first = await payment_service.create_pro_checkout(FAKE_USER_ID)
+        second = await payment_service.create_pro_checkout(FAKE_USER_ID)
 
-        cached_keys = [call.args[0] for call in mock_redis_cache.set.await_args_list]
-        upgrade_key = f"upgrade_link:{FAKE_USER_ID}:monthly:/payment/success"
-        assert upgrade_key in cached_keys
-        cached_payload = next(
-            call.args[1]
-            for call in mock_redis_cache.set.await_args_list
-            if call.args[0] == upgrade_key
-        )
-        assert set(cached_payload) == {"plan", "checkout"}
+        assert (first.checkout.subscription_id, second.checkout.subscription_id) == ("cs_1", "cs_2")
+        assert mock_dodo_client.checkout_sessions.create.call_count == 2
+        assert not [
+            c for c in mock_redis_cache.set.await_args_list if c.args[0].startswith("upgrade_link:")
+        ]
 
 
 class TestGetPaymentHistory:
