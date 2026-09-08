@@ -16,7 +16,6 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { ArrowRightDoubleIcon } from "@icons";
 import * as m from "motion/react-m";
 import Image from "next/image";
 import type { FC } from "react";
@@ -40,7 +39,7 @@ interface OnboardingPlatformConnectProps {
 }
 
 const PlatformMention: FC<{ platform: BotPlatform }> = ({ platform }) => (
-  <span className="inline-flex items-center gap-1 text-zinc-400">
+  <span className="inline-flex items-center gap-1 text-zinc-300">
     <Image
       src={BOT_PLATFORM_ICONS[platform]}
       alt=""
@@ -108,17 +107,10 @@ export const OnboardingPlatformConnect: FC<OnboardingPlatformConnectProps> = ({
           animate={{ opacity: 1 }}
           transition={{ duration: 0.25, delay: PLATFORMS.length * 0.08 }}
         >
-          <Button
-            variant="light"
-            size="sm"
-            radius="full"
-            onPress={onSkip}
-            startContent={<ArrowRightDoubleIcon className="size-4" />}
-            className="text-zinc-400 hover:text-zinc-200"
-          >
+          <Button variant="flat" size="sm" onPress={onSkip}>
             Skip
           </Button>
-          <p className="flex flex-wrap items-center gap-1 px-3 text-xs text-zinc-500">
+          <p className="flex flex-wrap items-center gap-1 px-1 text-xs text-zinc-400">
             Don't worry, you can connect more platforms like
             <PlatformMention platform="slack" />
             and
