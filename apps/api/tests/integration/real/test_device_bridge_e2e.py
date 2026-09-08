@@ -66,8 +66,10 @@ EVERYTHING_PACKAGE = "@modelcontextprotocol/server-everything"
 # registry.npmjs.org on every run even when the package is already in its
 # cache — 15-19s on the CI box's residential uplink under load. To bump, run
 # `npx -y @modelcontextprotocol/server-everything@<new> stdio </dev/null` once
-# and set the new version here.
-EVERYTHING_VERSION = "2026.8.31"
+# and set the new version here. Keep it to a version the self-hosted runner's
+# npm mirror already has: a brand-new version it has never fetched resolves to
+# ETARGET on the box even while it exists on public npm (2026.8.31 did this).
+EVERYTHING_VERSION = "2026.8.18"
 
 
 @cache

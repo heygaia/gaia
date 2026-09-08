@@ -235,9 +235,10 @@ class TestListIntegrations:
 
         result = await _list(_cfg())
 
-        # The custom docs are fetched by the user's integration ids (order is a
-        # set, so compare as a set), and each doc's connection is checked for
-        # this user by that doc's id.
+        # The user's integrations are listed for this user, the custom docs are
+        # fetched by their ids (order is a set, so compare as a set), and each
+        # doc's connection is checked for this user by that doc's id.
+        mock_repo.list_for_user.assert_awaited_once_with(FAKE_USER_ID)
         assert set(mock_int_repo.find_custom_by_ids.await_args.args[0]) == {"c1", "c2"}
         assert mock_repo.is_connected.await_args_list == [
             call(FAKE_USER_ID, "c1"),
@@ -290,7 +291,10 @@ class TestListIntegrations:
     @patch(f"{MODULE}.user_integration_repository")
     @patch(f"{MODULE}.get_stream_writer")
     @patch(f"{MODULE}.check_multiple_integrations_status", new_callable=AsyncMock)
-    @patch(f"{MODULE}.OAUTH_INTEGRATIONS", [])
+    @patch(
+        f"{MODULE}.OAUTH_INTEGRATIONS",
+        [_make_integration("gmail", "Gmail"), _make_integration("notion", "Notion")],
+    )
     async def test_search_streams_and_returns_exact_suggestions(
         self,
         mock_status: AsyncMock,
@@ -300,7 +304,8 @@ class TestListIntegrations:
     ) -> None:
         writer = _writer()
         mock_gsw.return_value = writer
-        mock_status.return_value = {}
+        # gmail connected, notion available — both must be excluded from search.
+        mock_status.return_value = {"gmail": True, "notion": False}
         mock_repo.list_for_user = AsyncMock(return_value=[])
         suggested_doc = MagicMock()
         suggested_doc.integration_id = "pub-1"
@@ -318,9 +323,13 @@ class TestListIntegrations:
 
         # The marketplace query carries the split words, the raw query, and the
         # per-LLM cap; the slug is built from the doc's own name and category.
-        mock_int_repo.search_public.assert_awaited_once_with(
-            words=["monitoring"], query="monitoring", exclude_ids=[], limit=MAX_SUGGESTED_FOR_LLM
-        )
+        search_call = mock_int_repo.search_public.await_args
+        assert search_call.kwargs["words"] == ["monitoring"]
+        assert search_call.kwargs["query"] == "monitoring"
+        assert search_call.kwargs["limit"] == MAX_SUGGESTED_FOR_LLM
+        # The user's existing connected + available integrations are excluded by
+        # id (a set, so compare unordered).
+        assert set(search_call.kwargs["exclude_ids"]) == {"gmail", "notion"}
         mock_slug.assert_called_once_with(name="Datadog", category="observability")
         assert result["suggested"] == [
             {
@@ -401,8 +410,13 @@ class TestListIntegrations:
     @patch(f"{MODULE}.OAUTH_INTEGRATIONS", [_make_integration()])
     async def test_service_error(self, mock_status: AsyncMock, mock_gsw: MagicMock) -> None:
         mock_gsw.return_value = _writer()
-        result = await _list(_cfg())
+        async with captured_wide_event() as event:
+            result = await _list(_cfg())
         assert result == "Error listing integrations: err"
+        # The failure is surfaced on the wide event with the real exception type.
+        (error,) = event["errors"]
+        assert "Error listing integrations" in error["msg"]
+        assert error["error_type"] == "RuntimeError"
 
 
 # ---------------------------------------------------------------------------
