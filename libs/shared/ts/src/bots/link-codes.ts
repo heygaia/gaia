@@ -145,22 +145,24 @@ export function buildLinkCodeFailureMessage(
  * Emits the same `bubble_delivered` line the streamer emits per finished
  * bubble, so a first contact and a normal reply look identical in Loki.
  */
-export function deliverInOrder(
+function deliverInOrder(
   bubbles: readonly string[],
   send: (bubble: string) => Promise<unknown>,
 ): Promise<number> {
-  return bubbles
-    .filter((bubble) => bubble.trim())
-    .reduce<Promise<number>>(async (previous, bubble) => {
-      const index = await previous;
-      await send(bubble);
+  const queue = bubbles.filter((bubble) => bubble.trim());
+  const deliver = (index: number): Promise<number> => {
+    const bubble = queue[index];
+    if (bubble === undefined) return Promise.resolve(index);
+    return send(bubble).then(() => {
       logger.info("bubble_delivered", {
         method: "new",
         index,
         chars: bubble.length,
       });
-      return index + 1;
-    }, Promise.resolve(0));
+      return deliver(index + 1);
+    });
+  };
+  return deliver(0);
 }
 
 export async function redeemLinkCode(
