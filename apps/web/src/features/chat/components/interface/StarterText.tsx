@@ -19,6 +19,7 @@ export default function StarterText() {
             src="/images/logos/logo.webp"
             width={40}
             height={40}
+            className="hidden sm:block"
           />
           <span
             suppressHydrationWarning

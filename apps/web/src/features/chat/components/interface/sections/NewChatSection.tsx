@@ -24,7 +24,7 @@ export const NewChatSection: React.FC<NewChatSectionProps> = ({
   showUseCases,
 }) => {
   return (
-    <div className="relative flex w-full snap-start items-center justify-center px-4 pt-[25vh] scrollbar-default">
+    <div className="relative flex w-full snap-start items-center justify-center px-4 pt-[18vh] scrollbar-default sm:pt-[25vh]">
       <div className="flex w-full max-w-7xl flex-col items-center justify-center">
         <PaywallNotice className="mb-8" />
         <div className="flex flex-col items-center gap-2">
