@@ -24,7 +24,6 @@ import {
   PaidRevealComposer,
   Payment,
   Platforms,
-  PlatformsComposer,
   QuestionsReply,
 } from "@/features/onboarding/components/stages";
 import { EASE_OUT_QUART } from "@/features/onboarding/constants/motion";
@@ -63,12 +62,11 @@ export default function Onboarding() {
     switch (stage) {
       case "questions":
       case "payment":
+      case "platformPick":
       case "chat":
         return null;
       case "paidReveal":
         return <PaidRevealComposer dispatch={dispatch} />;
-      case "platformPick":
-        return <PlatformsComposer state={state} dispatch={dispatch} />;
     }
   })();
 
