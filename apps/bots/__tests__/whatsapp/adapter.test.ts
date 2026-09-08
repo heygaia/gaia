@@ -129,9 +129,13 @@ vi.mock("@gaia/shared/bots", async () => {
 // ---------------------------------------------------------------------------
 
 import { handleStreamingChat, richMessageToMarkdown } from "@gaia/shared/bots";
+// From source, not the mocked barrel: GaiaApiError is the error class the real
+// redeemLinkCode branches on, so a stub would prove nothing about the failure path.
+import { GaiaApiError } from "../../../../libs/shared/ts/src/bots/api";
 
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
+const LINK_GREETING = "Hey Aryan. I'm with you on WhatsApp now.";
 const LINK_FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 
@@ -391,9 +395,11 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
 
   it("links an unlinked sender from a trailing #code and chats the stripped text", async () => {
     mockMarkRead.mockResolvedValue({});
-    const redeemLinkCode = vi
-      .fn()
-      .mockResolvedValue({ linked: true, firstMessage: LINK_FIRST_MESSAGE });
+    const redeemLinkCode = vi.fn().mockResolvedValue({
+      linked: true,
+      firstMessage: LINK_FIRST_MESSAGE,
+      greeting: LINK_GREETING,
+    });
     (adapter as unknown as { gaia: unknown }).gaia = {
       checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
       redeemLinkCode,
@@ -413,11 +419,46 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       LINK_CODE,
       undefined,
     );
-    // The code never reaches the agent.
+    // The code never reaches the agent, and the turn is marked as the handoff
+    // it is so the reply opens as a first contact.
     expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
       message: LINK_FIRST_MESSAGE,
       platform: "whatsapp",
+      onboardingHandoff: true,
     });
+    // The hello is deterministic and goes out exactly once, before the opener
+    // turn: the model used to be asked for a greeting and kept skipping it.
+    const greetings = mockSendText.mock.calls.filter((c) =>
+      JSON.stringify(c[0]).includes(LINK_GREETING),
+    );
+    expect(greetings).toHaveLength(1);
+    expect(mockSendText.mock.invocationCallOrder[0]).toBeLessThan(
+      vi.mocked(handleStreamingChat).mock.invocationCallOrder[0],
+    );
+  });
+
+  it("never greets when the #code fails to redeem", async () => {
+    mockMarkRead.mockResolvedValue({});
+    const redeemLinkCode = vi
+      .fn()
+      .mockRejectedValue(new GaiaApiError("expired", 400));
+    (adapter as unknown as { gaia: unknown }).gaia = {
+      checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
+      redeemLinkCode,
+      getFrontendUrl: () => "https://gaia.test",
+      getPricingUrl: () => "https://gaia.test/pricing",
+    };
+
+    await priv.handleIncomingMessage(
+      "15551234567",
+      `${LINK_FIRST_MESSAGE} #${LINK_CODE}`,
+      "wamid.001",
+    );
+
+    expect(JSON.stringify(mockSendText.mock.calls)).not.toContain(
+      LINK_GREETING,
+    );
+    expect(handleStreamingChat).not.toHaveBeenCalled();
   });
 
   it("strips a stray #code from an already-linked sender without redeeming", async () => {
@@ -437,6 +478,10 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
     );
 
     expect(redeemLinkCode).not.toHaveBeenCalled();
+    // Nothing was redeemed, so this is the user's own words: not a handoff.
+    expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).not.toHaveProperty(
+      "onboardingHandoff",
+    );
     expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
       message: "remind me tomorrow",
     });

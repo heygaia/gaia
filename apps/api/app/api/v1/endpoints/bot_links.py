@@ -23,12 +23,14 @@ from app.models.bot_models import (
     RedeemLinkCodeRequest,
     RedeemLinkCodeResponse,
 )
+from app.services.onboarding.first_message import compose_link_greeting
 from app.services.platform_link_code_service import (
     discard_platform_link_code,
     peek_platform_link_code,
 )
 from app.services.platform_link_completion import complete_platform_link
 from app.services.platform_link_service import require_platform_plan
+from app.services.user_service import get_user_by_id
 from app.utils.errors import create_error
 from shared.py.wide_events import log
 
@@ -185,7 +187,14 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
         provider=body.platform,
     )
     log.set(outcome="success", is_new_link=result.is_new_link)
-    return RedeemLinkCodeResponse(linked=True, first_message=payload.first_message)
+    # The greeting is composed here rather than left to the opener turn: the
+    # model reliably skipped it, and a first contact that opens by restating the
+    # user's onboarding picks reads like nobody said hello.
+    user = await get_user_by_id(payload.user_id)
+    greeting = compose_link_greeting(body.platform, (user or {}).get("name"))
+    return RedeemLinkCodeResponse(
+        linked=True, first_message=payload.first_message, greeting=greeting
+    )
 
 
 @router.get(

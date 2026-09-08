@@ -314,7 +314,7 @@ export class ImessageAdapter extends BaseBotAdapter {
 
       // Before the welcome: an unlinked sender arriving with a one-tap code is
       // linking, not being greeted with "run /auth".
-      const chatText = await consumeInboundLinkCode({
+      const inbound = await consumeInboundLinkCode({
         gaia: this.gaia,
         platform: this.platform,
         platformUserId: handle,
@@ -323,7 +323,8 @@ export class ImessageAdapter extends BaseBotAdapter {
         isLinked: () =>
           this.isUserLinked(handle, WELCOME_AUTH_CHECK_TIMEOUT_MS),
       });
-      if (chatText === null) return;
+      if (inbound === null) return;
+      const { text: chatText, onboardingHandoff } = inbound;
 
       await this.ensureWelcomed(handle, space);
 
@@ -355,7 +356,9 @@ export class ImessageAdapter extends BaseBotAdapter {
         return;
       }
 
-      await this.handleStreamingMessage(handle, space, chatText);
+      await this.handleStreamingMessage(handle, space, chatText, [], {
+        onboardingHandoff,
+      });
     } finally {
       await space.stopTyping().catch(() => undefined);
     }
@@ -366,6 +369,7 @@ export class ImessageAdapter extends BaseBotAdapter {
     space: Space,
     text: string,
     attachments: BotFileData[] = [],
+    options: { onboardingHandoff?: boolean } = {},
   ): Promise<void> {
     if (!text.trim() && attachments.length === 0) {
       await this.sendImessageText(
@@ -394,6 +398,7 @@ export class ImessageAdapter extends BaseBotAdapter {
                 fileData: attachments,
               }
             : {}),
+          ...(options.onboardingHandoff ? { onboardingHandoff: true } : {}),
         },
         async (formatted: string) => {
           if (finalMessageSent) return;

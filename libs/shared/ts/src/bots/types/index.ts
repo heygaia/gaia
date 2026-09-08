@@ -60,6 +60,13 @@ export interface ChatRequest {
    * the web app's chat payload shape.
    */
   fileData?: BotFileData[];
+  /**
+   * True only for the turn carrying the opener the API composed at one-tap
+   * linking. The user never typed it, so the agent has to open as a first
+   * contact on this platform instead of answering it. Every later turn omits
+   * it.
+   */
+  onboardingHandoff?: boolean;
 }
 
 /**

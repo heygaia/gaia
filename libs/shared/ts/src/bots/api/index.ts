@@ -625,7 +625,8 @@ export class GaiaClient {
    * The reverse of {@link createLinkToken}: the code — not this request —
    * decides which GAIA user gets linked. Returns the opening message composed
    * from the user's onboarding answers, to be run through the normal chat flow
-   * as their own turn. Throws {@link GaiaApiError} with status 400 (expired or
+   * as their own turn, plus the server-composed `greeting` to send before it so
+   * the first contact says hello. Throws {@link GaiaApiError} with status 400 (expired or
    * already used) or 409 (handle linked to another account).
    */
   async redeemLinkCode(
@@ -633,7 +634,7 @@ export class GaiaClient {
     platformUserId: string,
     code: string,
     profile?: { username?: string; displayName?: string },
-  ): Promise<{ linked: boolean; firstMessage: string }> {
+  ): Promise<{ linked: boolean; firstMessage: string; greeting: string }> {
     return this.request(async () => {
       const { data } = await this.client.post(
         "/api/v1/bot/redeem-link-code",
@@ -652,7 +653,11 @@ export class GaiaClient {
           },
         },
       );
-      return { linked: data.linked, firstMessage: data.first_message };
+      return {
+        linked: data.linked,
+        firstMessage: data.first_message,
+        greeting: data.greeting,
+      };
     });
   }
 }

@@ -188,6 +188,10 @@ class AgentConfigurable(TypedDict, total=False):
     #: Set only on a HIL resume re-dispatch; the handoff tool probes it to tell
     #: a replayed call from a fresh one. Keyed by ``HIL_RESUME_CONFIG_KEY``.
     hil_resume_replay: bool
+    #: This turn is the one-tap opener a bot redeemed at linking. The user never
+    #: typed it, so the first-conversation context section opens as a first
+    #: contact on the platform instead of answering it.
+    onboarding_handoff: bool
     #: DEV-ONLY: the DEV_MODEL_OPTIONS key picked for the executor in the dev
     #: model switcher. The executor builds its own configurable rather than
     #: inheriting comms's lane wholesale, so the choice rides down here.
