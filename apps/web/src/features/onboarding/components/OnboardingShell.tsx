@@ -13,6 +13,7 @@
 import type { ReactNode } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import BlurStack, { type BlurLayer } from "@/components/ui/blur-stack";
+import { useIsMobile } from "@/hooks/ui/useMobile";
 import { getProgress, PROGRESS_TOTAL_STEPS } from "../state/derive";
 import type { OnboardingState, Stage } from "../state/types";
 import { DevSkipOnboarding } from "./DevSkipOnboarding";
@@ -82,7 +83,12 @@ export function OnboardingShell({
     return () => obs.disconnect();
   }, [hasComposer, stage]);
 
+  // On a desktop the column keeps its bottom in view as a stage grows. On a
+  // phone that same scroll yanks the page every time a bubble lands, so the
+  // user scrolls themselves there.
+  const isMobile = useIsMobile();
   useEffect(() => {
+    if (isMobile) return;
     const scroller = scrollRef.current;
     const content = contentRef.current;
     if (!scroller || !content) return;
@@ -92,7 +98,7 @@ export function OnboardingShell({
     const obs = new ResizeObserver(toBottom);
     obs.observe(content);
     return () => obs.disconnect();
-  }, [fingerprint, composerHeight]);
+  }, [fingerprint, composerHeight, isMobile]);
 
   return (
     <div className="fixed inset-0 z-50 flex flex-col bg-primary-bg backdrop-blur-2xl">
