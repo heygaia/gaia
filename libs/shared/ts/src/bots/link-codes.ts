@@ -139,6 +139,30 @@ export function buildLinkCodeFailureMessage(
  * returns false — never a stack trace. Any other failure propagates so it
  * surfaces as a real error.
  */
+/**
+ * Sends bubbles strictly one after another, never fanned out: they are a
+ * conversation, and arriving out of order reads as GAIA talking over itself.
+ * Emits the same `bubble_delivered` line the streamer emits per finished
+ * bubble, so a first contact and a normal reply look identical in Loki.
+ */
+export function deliverInOrder(
+  bubbles: readonly string[],
+  send: (bubble: string) => Promise<unknown>,
+): Promise<number> {
+  return bubbles
+    .filter((bubble) => bubble.trim())
+    .reduce<Promise<number>>(async (previous, bubble) => {
+      const index = await previous;
+      await send(bubble);
+      logger.info("bubble_delivered", {
+        method: "new",
+        index,
+        chars: bubble.length,
+      });
+      return index + 1;
+    }, Promise.resolve(0));
+}
+
 export async function redeemLinkCode(
   gaia: GaiaClient,
   platform: PlatformName,
@@ -162,21 +186,7 @@ export async function redeemLinkCode(
           code,
           profile,
         );
-        // Awaited one at a time, never fanned out: these are a conversation, so
-        // arriving out of order reads as GAIA talking over itself. Same
-        // `bubble_delivered` line the streamer emits per finished bubble, so a
-        // first contact and a normal reply look identical in Loki.
-        let index = 0;
-        for (const bubble of bubbles) {
-          if (!bubble.trim()) continue;
-          await target.send(bubble);
-          logger.info("bubble_delivered", {
-            method: "new",
-            index,
-            chars: bubble.length,
-          });
-          index += 1;
-        }
+        await deliverInOrder(bubbles, (bubble) => target.send(bubble));
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),
         });
