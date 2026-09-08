@@ -14,10 +14,15 @@ lives here rather than in ``platform_link_service`` because
 
 from collections.abc import Mapping
 
+from app.models.chat_models import ConversationSource
 from app.models.platform_models import PlatformLinkResult
 from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import AnalyticsEvents, capture_event
-from app.services.outbound_delivery import notify_account_linked
+from app.services.outbound_delivery import (
+    OutboundResult,
+    notify_account_linked,
+    publish_outbound_message,
+)
 from app.services.platform_link_service import PlatformLinkService
 from app.utils.errors import create_error
 from shared.py.wide_events import log
@@ -29,14 +34,15 @@ async def complete_platform_link(
     platform_user_id: str,
     profile: Mapping[str, str | None] | None = None,
     *,
-    announce: bool = True,
+    first_contact: list[str] | None = None,
 ) -> PlatformLinkResult:
     """Link the account and run every side effect a successful link owes.
 
-    ``announce`` sends the "you're connected" text to the bot account. The
-    one-tap onboarding link passes ``False``: GAIA's composed first contact is
-    the confirmation there, and a generic "send me a message or use /help" on
-    top of it reads like two bots talking.
+    Whatever GAIA says after the link is sent from here, on the outbound queue
+    every other server-initiated message uses. ``first_contact`` is the
+    composed opening for the one-tap onboarding link (hello, promise, first
+    move) and is delivered as-is; without it a new link gets the generic
+    "you're connected" text. The bots deliver, they never compose.
 
     Raises AppError(409) when the platform account belongs to another GAIA user
     (or the user already has a different account on this platform) — the one
@@ -64,7 +70,22 @@ async def complete_platform_link(
             status_code=409,
         ) from e
 
-    if result.is_new_link and announce:
+    if first_contact:
+        delivery = await publish_outbound_message(
+            ConversationSource.coerce(platform) or ConversationSource.WEB,
+            user_id,
+            first_contact,
+        )
+        if delivery is not OutboundResult.PUBLISHED:
+            # The link itself held; the one message a new user is guaranteed
+            # to read did not. Loud, because nothing else will retry it.
+            log.warning(
+                "first contact was not delivered after a one-tap link",
+                platform=platform,
+                user_id=user_id,
+                outcome=delivery.value,
+            )
+    elif result.is_new_link:
         await notify_account_linked(platform, user_id)
     schedule_account_sync(user_id)
     # capture_event, not capture_context_event: the bot route resolves its user

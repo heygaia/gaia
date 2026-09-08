@@ -15,10 +15,8 @@
 import type { GaiaClient } from "./api";
 import { GaiaApiError } from "./api";
 import type { MessageTarget, PlatformName } from "./types";
-import { createBotLogger, hashLogIdentifier } from "./utils/logger";
+import { hashLogIdentifier } from "./utils/logger";
 import { wideLog, withWideEvent } from "./utils/wide-events";
-
-const logger = createBotLogger("shared", "link-codes");
 
 /**
  * Exact code width. `secrets.token_urlsafe(PLATFORM_LINK_CODE_BYTES)` with 16
@@ -126,45 +124,19 @@ export function buildLinkCodeFailureMessage(
 }
 
 /**
- * Redeems `code` for `platformUserId` and delivers GAIA's first contact.
+ * Redeems `code` for `platformUserId`.
  *
- * The API composes every bubble — the hello, one promise per thing the user
- * picked at onboarding, then the connect links — and this sends them in order
- * through `target`. No model turn runs: the opener turn used to skip the
- * per-pick lines and lose the links, and the one message a new user is
- * guaranteed to read does not get to be unreliable.
+ * The API composes GAIA's whole first contact and delivers it itself on the
+ * outbound queue the moment the link completes, so this sends nothing on
+ * success. No model turn runs: the opener turn used to skip the per-pick lines
+ * and lose the links, and the one message a new user is guaranteed to read does
+ * not get to be unreliable.
  *
- * Returns true once the bubbles are out. On a failure the user can act on
+ * Returns true once the link is in. On a failure the user can act on
  * (expired/used code, handle already linked elsewhere) it messages them and
  * returns false — never a stack trace. Any other failure propagates so it
  * surfaces as a real error.
  */
-/**
- * Sends bubbles strictly one after another, never fanned out: they are a
- * conversation, and arriving out of order reads as GAIA talking over itself.
- * Emits the same `bubble_delivered` line the streamer emits per finished
- * bubble, so a first contact and a normal reply look identical in Loki.
- */
-function deliverInOrder(
-  bubbles: readonly string[],
-  send: (bubble: string) => Promise<unknown>,
-): Promise<number> {
-  const queue = bubbles.filter((bubble) => bubble.trim());
-  const deliver = (index: number): Promise<number> => {
-    const bubble = queue[index];
-    if (bubble === undefined) return Promise.resolve(index);
-    return send(bubble).then(() => {
-      logger.info("bubble_delivered", {
-        method: "new",
-        index,
-        chars: bubble.length,
-      });
-      return deliver(index + 1);
-    });
-  };
-  return deliver(0);
-}
-
 export async function redeemLinkCode(
   gaia: GaiaClient,
   platform: PlatformName,
@@ -182,17 +154,11 @@ export async function redeemLinkCode(
     },
     async () => {
       try {
-        const { bubbles } = await gaia.redeemLinkCode(
-          platform,
-          platformUserId,
-          code,
-          profile,
-        );
-        await deliverInOrder(bubbles, (bubble) => target.send(bubble));
+        await gaia.redeemLinkCode(platform, platformUserId, code, profile);
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),
         });
-        wideLog.set({ link_result: "linked", bubbles: bubbles.length });
+        wideLog.set({ link_result: "linked" });
         return true;
       } catch (error: unknown) {
         const status = error instanceof GaiaApiError ? error.status : undefined;

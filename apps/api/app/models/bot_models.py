@@ -123,15 +123,6 @@ class RedeemLinkCodeResponse(BaseModel):
     """Response model for a redeemed one-tap link code."""
 
     linked: bool = Field(..., description="Whether the platform account is now linked")
-    bubbles: list[str] = Field(
-        default_factory=list,
-        description=(
-            "GAIA's whole first contact, composed by the server: the hello, one promise "
-            "per thing the user picked at onboarding, then the first move. The bot sends "
-            "them in order as separate messages and runs no model turn — the model kept "
-            "skipping the per-pick lines and losing the connect links."
-        ),
-    )
 
 
 class ResetSessionRequest(BaseModel):
