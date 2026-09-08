@@ -31,7 +31,7 @@ from app.services.chat.persistence import (
     initialize_new_conversation as _initialize_new_conversation,
     save_conversation_async as _save_conversation_async,
 )
-from app.services.chat.stream import run_chat_stream_background
+from app.services.chat.stream import _StreamState, run_chat_stream_background
 
 
 def _created_conversation(conversation_id: str, description: str) -> ConversationModel:
@@ -1535,3 +1535,13 @@ class TestRunChatStreamBackground:
             "error_type": "RuntimeError",
             "conversation_id": "conv_existing_123",
         }
+
+
+class TestAFreshStreamState:
+    """A new turn starts with nothing saved and nothing attached, as real bools."""
+
+    def test_starts_with_nothing_saved_or_attached(self) -> None:
+        state = _StreamState()
+
+        assert state.saved is False
+        assert state.attached is False

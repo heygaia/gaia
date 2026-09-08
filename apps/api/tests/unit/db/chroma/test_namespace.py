@@ -57,3 +57,26 @@ class TestChromaStoreAppliesNamespace:
                 collection_name="langgraph_tools_store",
             )
         assert store.collection_name == "langgraph_tools_store__wt510"
+
+    def test_store_namespaces_the_name_it_was_given(self) -> None:
+        """The name the caller passed is what gets namespaced — a store that
+        namespaced something else would address one shared collection for every
+        store, which is the collision this suffix exists to prevent."""
+        from app.db.chroma.chroma_store import ChromaStore
+
+        with patch.object(namespace_mod, "get_settings") as get_settings:
+            get_settings.return_value = MagicMock(CHROMA_COLLECTION_NAMESPACE="wt510")
+            tools = ChromaStore(client=MagicMock(), collection_name="langgraph_tools_store")
+            triggers = ChromaStore(client=MagicMock(), collection_name="langgraph_triggers_store")
+
+        assert tools.collection_name == "langgraph_tools_store__wt510"
+        assert triggers.collection_name == "langgraph_triggers_store__wt510"
+
+    def test_store_keeps_the_bare_name_when_no_namespace_is_set(self) -> None:
+        from app.db.chroma.chroma_store import ChromaStore
+
+        with patch.object(namespace_mod, "get_settings") as get_settings:
+            get_settings.return_value = MagicMock(CHROMA_COLLECTION_NAMESPACE="")
+            store = ChromaStore(client=MagicMock(), collection_name="langgraph_tools_store")
+
+        assert store.collection_name == "langgraph_tools_store"

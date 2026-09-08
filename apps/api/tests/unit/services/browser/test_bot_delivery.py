@@ -430,6 +430,38 @@ class TestBotProgressDeliveryHandoff:
             await delivery.handoff(snap)
             assert BROWSER_CREDENTIALS_SAVED_NOTE in mp.call_args[0][2][0]
 
+    async def test_credentials_note_is_appended_not_substituted(self, delivery):
+        """The saved-login note is an addition to the takeover request, never a
+        replacement — a sign-in handoff that dropped the reason and the
+        done/stop instructions would leave the user with reassurance and no
+        idea what to do."""
+        from app.constants.browser import BROWSER_CREDENTIALS_SAVED_NOTE, SensitiveCategory
+
+        snap = BrowserHandoffSnapshot(
+            handoff_id="h1",
+            reason="Enter your password and click Sign in.",
+            session_id="sess-1",
+            status=HandoffStatus.PENDING,
+            category=SensitiveCategory.CREDENTIALS,
+        )
+        with (
+            patch(
+                "app.services.browser.bot_delivery.create_live_view_link",
+                new=AsyncMock(return_value="https://live/x"),
+            ),
+            patch(
+                "app.services.browser.bot_delivery.publish_outbound_message", new=AsyncMock()
+            ) as mp,
+        ):
+            await delivery.handoff(snap)
+            assert mp.call_args[0][2][0] == (
+                "I need you to take over for this step:\n"
+                "Enter your password and click Sign in.\n\n"
+                "Reply *done* when you've finished, or *stop* to cancel."
+                f"\n\n{BROWSER_CREDENTIALS_SAVED_NOTE}"
+                "\n\nOpen the live browser: https://live/x"
+            )
+
     async def test_non_credentials_handoff_omits_the_saved_note(self, delivery):
         """A payment handoff must NOT promise to store anything — nothing is saved
         for a payment, so the note would be a false reassurance."""
