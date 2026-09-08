@@ -11,7 +11,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.constants.auth import PLATFORM_LINK_CODE_BYTES
-from app.constants.cache import PLATFORM_LINK_CODE_TTL
+from app.constants.cache import PLATFORM_LINK_CODE_PREFIX, PLATFORM_LINK_CODE_TTL
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 import app.services.platform_link_code_service as svc
 from app.services.platform_link_code_service import (
@@ -98,6 +98,33 @@ class TestMintPeekDiscard:
         code = await mint_platform_link_code("user1", PREFS)
         _value, ttl = fake_store[f"platform_link_code:{code}"]
         assert ttl == PLATFORM_LINK_CODE_TTL == 1_800
+
+    async def test_the_stored_payload_is_json_native_under_the_prefixed_key(
+        self, fake_store: dict[str, tuple[object, int | None]]
+    ) -> None:
+        """What lands in Redis, exactly: the code's own key, the full binding as
+        plain JSON types, and the bounded TTL. The needs must be `str`, not
+        `OnboardingNeed` members — an enum instance handed to the cache is a
+        value only this process knows how to write."""
+        prefs = OnboardingPreferences(
+            profession="founder", needs=[OnboardingNeed.INBOX, OnboardingNeed.CALENDAR]
+        )
+        code = await mint_platform_link_code("user1", prefs)
+
+        assert list(fake_store) == [f"{PLATFORM_LINK_CODE_PREFIX}:{code}"]
+        value, ttl = fake_store[f"{PLATFORM_LINK_CODE_PREFIX}:{code}"]
+        assert value == {
+            "user_id": "user1",
+            "preferences": {
+                "profession": "founder",
+                "needs": ["inbox", "calendar"],
+                "response_style": None,
+                "other_need": None,
+                "custom_instructions": None,
+            },
+        }
+        assert [type(need) for need in value["preferences"]["needs"]] == [str, str]
+        assert ttl == PLATFORM_LINK_CODE_TTL
 
     async def test_code_length_matches_the_adapters_regex(
         self, fake_store: dict[str, tuple[object, int | None]]
