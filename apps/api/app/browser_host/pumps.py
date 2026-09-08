@@ -11,7 +11,7 @@ import asyncio
 from collections.abc import Coroutine
 from typing import Any
 
-import websockets
+from websockets.exceptions import ConnectionClosed
 
 # Starlette raises a bare RuntimeError (not a typed disconnect) when a websocket
 # is read after it closed or before it was accepted — which happens normally
@@ -28,7 +28,7 @@ _STARLETTE_NOT_CONNECTED_MESSAGES = frozenset(
 
 def is_disconnect(exc: BaseException) -> bool:
     """Whether ``exc`` is an ordinary peer close (client gone or Chromium closed)."""
-    if isinstance(exc, websockets.exceptions.ConnectionClosed):
+    if isinstance(exc, ConnectionClosed):
         return True
     # FastAPI's WebSocketDisconnect is checked by name so this module need not
     # import fastapi (the host may run without the web stack loaded).

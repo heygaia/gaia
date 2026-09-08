@@ -8,9 +8,12 @@ disconnect, but re-raise a real error so the caller's teardown sees it.
 from __future__ import annotations
 
 import asyncio
+import os
+import subprocess
+import sys
 
 import pytest
-import websockets
+from websockets.exceptions import ConnectionClosed
 
 from app.browser_host.pumps import is_disconnect, pump_until_first_close
 
@@ -39,7 +42,28 @@ class WebSocketDisconnect(Exception):
 @pytest.mark.unit
 class TestIsDisconnect:
     def test_connection_closed_is_a_disconnect(self) -> None:
-        assert is_disconnect(websockets.exceptions.ConnectionClosed(None, None)) is True
+        assert is_disconnect(ConnectionClosed(None, None)) is True
+
+    def test_classifies_in_an_interpreter_that_never_imported_the_submodule(self) -> None:
+        """``import websockets`` alone does not bind ``websockets.exceptions`` (15.x).
+
+        The pump must import what it reads, or whether a disconnect is
+        recognised depends on which other module happened to load first.
+        """
+        code = (
+            "from app.browser_host.pumps import is_disconnect\n"
+            "print(is_disconnect(RuntimeError('x')))\n"
+        )
+        result = subprocess.run(
+            [sys.executable, "-c", code],
+            capture_output=True,
+            check=False,
+            text=True,
+            env={**os.environ, "ENV": "development"},
+        )
+
+        assert result.returncode == 0, result.stderr
+        assert result.stdout.strip() == "False"
 
     def test_websocket_disconnect_by_name_is_a_disconnect(self) -> None:
         assert is_disconnect(WebSocketDisconnect()) is True
@@ -95,11 +119,11 @@ class TestPumpUntilFirstClose:
     async def test_not_connected_runtimeerror_exits_cleanly_not_raised(self) -> None:
         # A viewer socket read during teardown must not blow up the pump.
         err = RuntimeError('WebSocket is not connected. Need to call "accept" first.')
-        # returns None (no raise) — the whole point of the fix.
-        assert (await pump_until_first_close(_instant_raise(err), _blocks_forever())) is None
+        # Returns without raising — the whole point of the fix.
+        await pump_until_first_close(_instant_raise(err), _blocks_forever())
 
     async def test_ordinary_disconnect_is_swallowed_not_raised(self) -> None:
-        disconnect = websockets.exceptions.ConnectionClosed(None, None)
+        disconnect = ConnectionClosed(None, None)
         await asyncio.wait_for(
             pump_until_first_close(_instant_raise(disconnect), _blocks_forever()),
             timeout=_TIMEOUT,
