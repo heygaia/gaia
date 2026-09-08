@@ -6,7 +6,8 @@ link-token-info). Assertions are unchanged from the original module — only the
 patch targets moved with the code.
 """
 
-from unittest.mock import ANY, AsyncMock, MagicMock, patch
+from datetime import datetime, timedelta
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import HTTPException
 from httpx import AsyncClient
@@ -15,6 +16,7 @@ import pytest
 from app.config.settings import settings
 from app.constants.auth import AUDIT_ACTOR_BOT_API, AUDIT_ACTOR_UNAUTHENTICATED
 from app.constants.cache import PLATFORM_LINK_TOKEN_PREFIX, PLATFORM_LINK_TOKEN_TTL
+from app.constants.general import NEW_MESSAGE_BREAKER
 from app.models.bot_models import (
     CreateLinkTokenRequest,
     CreateLinkTokenResponse,
@@ -23,11 +25,13 @@ from app.models.bot_models import (
 from app.models.payment_models import PlanType
 from app.models.platform_models import PlatformLinkResult
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
+from app.services.onboarding.first_message import compose_first_message
 from app.services.platform_link_code_service import PlatformLinkCodePayload
 from app.utils.errors import AppError
 from shared.py.wide_events import log, log_context
 
 from app.api.v1.endpoints.bot_links import (  # isort: skip
+    _persist_first_contact,
     create_link_token,
     get_link_token_info,
     redeem_link_code,
@@ -397,11 +401,15 @@ class TestRedeemLinkCode:
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_the_exchange_is_persisted_so_the_next_turn_has_context(
-        self, _auth: AsyncMock, client: AsyncClient
+        self, _auth: AsyncMock, client: AsyncClient, _linked_user: AsyncMock
     ):
         """No chat turn ran, so nothing else writes this. Without it the user's
         next message lands in an empty thread and GAIA has no idea it just
-        introduced itself."""
+        introduced itself. The request body and the linked user go through
+        as-is: the body names the platform thread to write into and the user
+        is the actor the write is scoped to."""
+        linked_user = {"_id": "user1", "name": "Aryan Randeriya"}
+        _linked_user.return_value = linked_user
         with (
             patch(
                 PEEK_PATCH,
@@ -415,7 +423,9 @@ class TestRedeemLinkCode:
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
-        mock_persist.assert_awaited_once_with("user1", ANY, None, PREFS, BUBBLES)
+        mock_persist.assert_awaited_once_with(
+            "user1", RedeemLinkCodeRequest(**REDEEM_BODY), linked_user, PREFS, BUBBLES
+        )
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_expired_or_unknown_code_is_rejected_without_linking(
@@ -750,6 +760,71 @@ class TestRedeemLinkCode:
 # ---------------------------------------------------------------------------
 # GET /bot/link-token-info/{token}
 # ---------------------------------------------------------------------------
+
+
+SESSION_PATCH = "app.api.v1.endpoints.bot_links.BotService.get_or_create_session"
+UPDATE_PATCH = "app.api.v1.endpoints.bot_links.update_messages"
+LOG_PATCH = "app.api.v1.endpoints.bot_links.log"
+
+
+class TestPersistFirstContact:
+    """The redeem endpoint stores the first contact as the bot thread's opening
+    turns, through the same write path the chat stream uses."""
+
+    async def test_writes_the_opener_and_the_bundle_as_the_threads_first_turns(self):
+        body = RedeemLinkCodeRequest(**REDEEM_BODY)
+        user = {"_id": "user1", "name": "Aryan Randeriya"}
+        with (
+            patch(SESSION_PATCH, new_callable=AsyncMock, return_value="conv-1") as session,
+            patch(UPDATE_PATCH, new_callable=AsyncMock) as update,
+        ):
+            await _persist_first_contact("user1", body, user, PREFS, BUBBLES)
+
+        actor = {"_id": "user1", "name": "Aryan Randeriya", "user_id": "user1"}
+        session.assert_awaited_once_with("telegram", "TG42", None, actor, is_dm=True)
+        update.assert_awaited_once()
+        request = update.await_args.args[0]
+        assert update.await_args.kwargs == {"user": actor}
+        assert request.conversation_id == "conv-1"
+        opener, reply = request.messages
+        assert (opener.type, opener.response) == ("user", compose_first_message(PREFS))
+        assert (reply.type, reply.response) == ("bot", NEW_MESSAGE_BREAKER.join(BUBBLES))
+        # Stored the way the chat stream stores turns: UTC with an offset, the
+        # opener a beat before the reply so the thread orders the same on reload.
+        opener_at, reply_at = (
+            datetime.fromisoformat(opener.date),
+            datetime.fromisoformat(reply.date),
+        )
+        assert reply_at.utcoffset() == timedelta(0)
+        assert reply_at - opener_at == timedelta(milliseconds=100)
+
+    async def test_a_user_without_a_profile_still_gets_the_thread(self):
+        with (
+            patch(SESSION_PATCH, new_callable=AsyncMock, return_value="conv-1") as session,
+            patch(UPDATE_PATCH, new_callable=AsyncMock),
+        ):
+            await _persist_first_contact(
+                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, PREFS, BUBBLES
+            )
+        assert session.await_args.args[3] == {"user_id": "user1"}
+
+    async def test_a_failed_write_is_logged_and_never_raised(self):
+        """The link already succeeded and the code is spent; a transcript
+        failure must not turn that into an error the user cannot retry."""
+        with (
+            patch(SESSION_PATCH, new_callable=AsyncMock, side_effect=RuntimeError("mongo down")),
+            patch(UPDATE_PATCH, new_callable=AsyncMock) as update,
+            patch(LOG_PATCH) as mock_log,
+        ):
+            await _persist_first_contact(
+                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, PREFS, BUBBLES
+            )
+        update.assert_not_awaited()
+        mock_log.warning.assert_called_once_with(
+            "could not persist the first-contact exchange",
+            error="mongo down",
+            error_type="RuntimeError",
+        )
 
 
 class TestGetLinkTokenInfo:
