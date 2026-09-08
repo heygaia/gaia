@@ -184,7 +184,7 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
 
     profile: dict[str, str | None] = {"username": body.username, "display_name": body.display_name}
     result = await complete_platform_link(
-        payload.user_id, body.platform, body.platform_user_id, profile=profile
+        payload.user_id, body.platform, body.platform_user_id, profile=profile, announce=False
     )
     await discard_platform_link_code(body.code)
     log.audit(
