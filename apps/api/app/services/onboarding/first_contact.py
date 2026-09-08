@@ -6,11 +6,20 @@ runs showed it skipping the per-pick lines, delegating to the executor, and
 sometimes never producing the connect links at all. The one message a user is
 guaranteed to read is not something to leave to sampling.
 
-The shape, in order, one bubble each:
+Two bubbles:
 
-1. the hello (:func:`compose_link_greeting`),
-2. one line per thing they picked — their problem, then what GAIA will do,
-3. the first move: the connect links those picks need, or the offer to start.
+1. the hello, then one sentence that says what GAIA does from here for the
+   things they picked (their picks become clauses, not a list),
+2. the first move: either the connect links the picks cannot work without,
+   with the reason, or one question about their first pick that they can
+   answer in five words.
+
+A connect link is only asked for when the job is impossible without the
+account (the inbox needs Gmail, a meeting brief needs the calendar). Everything
+else is a question, and the answer's playbook offers a link later, in context.
+
+Links are written as markdown; every bot's ``send`` renders markdown for its
+platform (Telegram: a real hyperlink; WhatsApp and iMessage: ``label (url)``).
 
 The rules of the voice apply here as everywhere (``agents/prompts/comms_prompts``):
 short lines, plain words, no exclamation marks, no emoji, never a feature list.
@@ -21,14 +30,12 @@ from app.db.repositories.user_integrations import user_integration_repository
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.connect_link_service import build_connect_link_url
 
-#: The hello a bot sends the moment a link code is redeemed. Deterministic and
-#: server-owned because a first contact that opens on a restatement of the
-#: user's onboarding picks reads like a machine resuming a thread they never
-#: started.
-LINK_GREETING_WITH_NAME = "Hey {name}. I'm with you on {platform} now."
+#: The hello a bot sends the moment a link code is redeemed. It opens the
+#: promise sentence, so it ends on a comma and never stands alone as a bubble.
+LINK_GREETING_WITH_NAME = "Hey {name}, I'm with you on {platform} now."
 #: Same line with the name clause dropped: greeting a blank is worse than not
 #: using a name at all.
-LINK_GREETING = "Hey. I'm with you on {platform} now."
+LINK_GREETING = "Hey, I'm with you on {platform} now."
 
 
 def compose_link_greeting(platform: str, name: str | None) -> str:
@@ -48,126 +55,159 @@ def compose_link_greeting(platform: str, name: str | None) -> str:
     return LINK_GREETING.format(platform=label)
 
 
-#: One promise per pick: their problem in GAIA's words, then the thing GAIA will
-#: do about it. Second person, two short sentences, present problem then future
-#: promise — the shape Aryan asked for ("since you face X, I'll do Y"), written
-#: as speech rather than as that literal template.
+#: What GAIA does about each pick, as a clause that follows "From here, ...".
+#: Present tense, second person, no full stop: the clauses are joined into one
+#: sentence in the order the user tapped.
 #:
 #: Every member of ``OnboardingNeed`` has an entry and a drift test enforces it:
-#: a need with no promise renders as a silently skipped pick, which is the one
+#: a need with no clause renders as a silently skipped pick, which is the one
 #: failure this whole module exists to stop.
-NEED_PROMISES: dict[OnboardingNeed, str] = {
-    OnboardingNeed.INBOX: (
-        "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted."
+NEED_CLAUSES: dict[OnboardingNeed, str] = {
+    OnboardingNeed.INBOX: "every morning your inbox comes sorted with replies drafted",
+    OnboardingNeed.CALENDAR: "you get a brief before each meeting",
+    OnboardingNeed.MORNINGS: "your day starts with a brief, not a scramble",
+    OnboardingNeed.REMINDERS: "tell me once and I'll remind you when it matters",
+    OnboardingNeed.GRUNT_WORK: "whatever grunt work you hand me gets done",
+    OnboardingNeed.TOOLS: "name the tool you live in and I'll run it from here",
+    OnboardingNeed.FOUNDER_TEAM_UPDATES: "I bring you what your team moved on, every day",
+    OnboardingNeed.FOUNDER_COMPETITORS: "I watch your competitors and tell you what changed",
+    OnboardingNeed.EXECUTIVE_REPORTS: "every report comes back as one page of what moved",
+    OnboardingNeed.EXECUTIVE_DECISIONS: (
+        "blocked decisions reach you with enough context to decide in one read"
     ),
-    OnboardingNeed.CALENDAR: "You walk into meetings cold. I'll brief you before each one.",
-    OnboardingNeed.MORNINGS: "Mornings start behind. You'll get a brief before the day does.",
-    OnboardingNeed.REMINDERS: "Things slip. Tell me once and I'll remind you when it matters.",
-    OnboardingNeed.GRUNT_WORK: "Grunt work eats your week. Hand it to me and it's done.",
+    OnboardingNeed.SALES_LEADS: "I hold your open deals and nudge you the moment one goes quiet",
+    OnboardingNeed.SALES_CALL_RESEARCH: "the brief is waiting before you dial",
+    OnboardingNeed.PRODUCT_FEEDBACK: "feedback lands in one digest, grouped by theme",
+    OnboardingNeed.PRODUCT_SPECS: "I draft the next spec from the feedback and you edit",
+    OnboardingNeed.MARKETING_CONTENT: "the next piece is drafted before its slot, in your voice",
+    OnboardingNeed.MARKETING_REPORTS: "the weekly report writes itself from your numbers",
+    OnboardingNeed.ENGINEERING_PRS: "you get the list of PRs needing you, each with a summary",
+    OnboardingNeed.ENGINEERING_NOTIFICATIONS: (
+        "notifications become one digest a day, only what needs you"
+    ),
+    OnboardingNeed.FINANCE_NUMBERS: "I chase the numbers and track who has sent",
+    OnboardingNeed.FINANCE_REPORTS: "the report drafts itself on schedule with what changed flagged",
+    OnboardingNeed.CREATIVE_REVISIONS: "every revision sits in one list, open versus done",
+    OnboardingNeed.CREATIVE_DEADLINES: "I hold your deadlines and warn you early",
+    OnboardingNeed.STUDENT_ASSIGNMENTS: "I hold your assignments and nudge you before each is due",
+    OnboardingNeed.STUDENT_EXAMS: "your notes become a study digest with practice questions",
+}
+
+#: Their own words under "Something else". Nobody parsed the text, so GAIA
+#: says it back and commits rather than inventing a plan for it.
+OTHER_NEED_SENTENCE = 'You also said "{other_need}". That\'s mine too.'
+
+#: The first move when nothing needs connecting: one question about their
+#: first pick, with the reason it is being asked, answerable in a few words.
+#: For a pick that normally needs an account, this is the version for when the
+#: account is already connected.
+#:
+#: Every member of ``OnboardingNeed`` has an entry (drift test).
+NEED_ASKS: dict[OnboardingNeed, str] = {
+    OnboardingNeed.INBOX: (
+        "Gmail's already on, so the inbox starts tomorrow morning. "
+        "Anyone whose emails I should always flag?"
+    ),
+    OnboardingNeed.CALENDAR: (
+        "Your calendar's already on, so the briefs start with your next meeting. "
+        "Want one for today's?"
+    ),
+    OnboardingNeed.MORNINGS: (
+        "Gmail's on, so your first brief lands tomorrow morning. What time do you want it?"
+    ),
+    OnboardingNeed.REMINDERS: (
+        "For the forgetting, start me off with the first thing you don't want to lose. "
+        "Tell me once and it's held."
+    ),
+    OnboardingNeed.GRUNT_WORK: (
+        "The grunt work is the fastest win, so tell me the first thing you want off your "
+        "plate this week."
+    ),
     OnboardingNeed.TOOLS: (
-        "You live in too many tools. Name the one you're in most and I'll run it from here."
+        "Since you're spread across tools, which one are you in most? I'll run it from here."
     ),
     OnboardingNeed.FOUNDER_TEAM_UPDATES: (
-        "You chase your team for updates. I'll bring you what moved, every day."
+        "For the team updates, where does your team post them, Slack or email? "
+        "I'll pick them up from there."
     ),
     OnboardingNeed.FOUNDER_COMPETITORS: (
-        "Nobody is watching your competitors. I'll track them and tell you what changed."
+        "For the competitor watch, name two and I'll start today."
     ),
     OnboardingNeed.EXECUTIVE_REPORTS: (
-        "Reports pile up unread. I'll cut each one to a page with the numbers that moved."
+        "For the reports, forward me the next one you're dreading and I'll cut it to a page."
     ),
     OnboardingNeed.EXECUTIVE_DECISIONS: (
-        "Decisions pile up on you. I'll bring you the blocked ones with enough context to "
-        "decide in one read."
+        "For the decisions, what's one stuck on you right now? "
+        "I'll bring you what you need to call it."
     ),
     OnboardingNeed.SALES_LEADS: (
-        "Leads go cold. I'll hold the open deals and nudge you the moment one goes quiet."
+        "Gmail's on, so I'll start on the open deals. Which one worries you most?"
     ),
     OnboardingNeed.SALES_CALL_RESEARCH: (
-        "You research before every call. I'll have the brief waiting before you dial."
+        "Your calendar's on, so the brief for your next call is mine. Which call is it?"
     ),
     OnboardingNeed.PRODUCT_FEEDBACK: (
-        "Feedback is scattered. I'll gather it into one digest, grouped by theme."
+        "For the feedback, where does most of it land right now? Email, Slack, a doc?"
     ),
     OnboardingNeed.PRODUCT_SPECS: (
-        "Specs take forever. I'll draft the next one from the feedback and you edit it."
+        "For the specs, what's the next one you need? One line is enough and I'll draft it."
     ),
     OnboardingNeed.MARKETING_CONTENT: (
-        "Content is always behind. I'll draft the next piece ahead of its slot, in your voice."
+        "For the content, what's the next piece due and when? I'll have a draft ahead of it."
     ),
     OnboardingNeed.MARKETING_REPORTS: (
-        "You build the same report by hand. I'll write it on schedule from your numbers."
+        "For the reports, send me last week's and I'll build the next one from it."
     ),
     OnboardingNeed.ENGINEERING_PRS: (
-        "PRs wait on you. I'll list what needs your review, with a summary of each."
+        "For the PRs, paste the repo link and I'll pull what's waiting on you."
     ),
     OnboardingNeed.ENGINEERING_NOTIFICATIONS: (
-        "Notifications drown you. I'll turn them into one digest a day, only what needs you."
+        "For the notifications, which are loudest, Slack or GitHub? I'll start the digest there."
     ),
     OnboardingNeed.FINANCE_NUMBERS: (
-        "You chase people for numbers. I'll do the chasing and track who has sent."
+        "For the numbers, who do you chase most? I'll take over the chasing."
     ),
     OnboardingNeed.FINANCE_REPORTS: (
-        "The same report every week. I'll draft it on schedule and flag what changed."
+        "For the weekly report, send me the last one and I'll take the next."
     ),
     OnboardingNeed.CREATIVE_REVISIONS: (
-        "Revisions pile up. I'll gather every one into a single list, open versus done."
+        "For the revisions, where do they come in, email or a doc? I'll gather them into one list."
     ),
     OnboardingNeed.CREATIVE_DEADLINES: (
-        "Deadlines sneak up. I'll hold them for you and warn you early."
+        "For the deadlines, what's the next one? I'll hold it and warn you early."
     ),
     OnboardingNeed.STUDENT_ASSIGNMENTS: (
-        "Assignments pile up. I'll hold them with their due dates and nudge you before each one."
+        "For the assignments, what's due first? I'll hold the dates and nudge you."
     ),
     OnboardingNeed.STUDENT_EXAMS: (
-        "Exams arrive before you're ready. I'll turn your notes into a study digest and "
-        "practice questions."
+        "For the exam, when is the next one? Send me your notes and I'll start the digest."
     ),
 }
 
-#: Their own words under "Something else". No promise exists for it, so GAIA
-#: says it back and commits, rather than inventing a plan for text nobody parsed.
-OTHER_NEED_PROMISE = 'You said: "{other_need}". I\'ll take that on too.'
+#: The first move when they typed something and picked nothing else.
+OTHER_NEED_ASK = "Tell me a bit more about that and I'll start on it."
+#: The first move when they picked nothing at all.
+NO_PICKS_ASK = "Tell me one thing off your plate and I'll start there."
 
-#: What each pick actually needs switched on, in ``OAUTH_INTEGRATIONS`` ids.
-#: Derived from ``NEED_PLAYBOOKS`` in ``agents/prompts/new_user_prompts``: a pick
-#: whose playbook opens by ASKING where the work lives (which tool, where
-#: feedback lands, which notifications are loudest) has no entry here, because
-#: minting a connect link for a guess is a link the user has no reason to tap.
+#: What each pick cannot work without, in ``OAUTH_INTEGRATIONS`` ids. Only the
+#: jobs that are impossible without the account: sorting an inbox needs Gmail,
+#: a meeting brief needs the calendar. Every other pick asks a question first
+#: and its playbook offers a link later, in context, once the answer says where
+#: the work lives.
 NEED_INTEGRATIONS: dict[OnboardingNeed, tuple[str, ...]] = {
     OnboardingNeed.INBOX: ("gmail",),
     OnboardingNeed.CALENDAR: ("googlecalendar",),
-    OnboardingNeed.MORNINGS: ("gmail", "googlecalendar"),
-    OnboardingNeed.REMINDERS: ("googlecalendar",),
-    OnboardingNeed.GRUNT_WORK: (),
-    OnboardingNeed.TOOLS: (),
-    OnboardingNeed.FOUNDER_TEAM_UPDATES: ("slack",),
-    OnboardingNeed.FOUNDER_COMPETITORS: (),
-    OnboardingNeed.EXECUTIVE_REPORTS: (),
-    OnboardingNeed.EXECUTIVE_DECISIONS: ("slack", "gmail"),
+    OnboardingNeed.MORNINGS: ("gmail",),
     OnboardingNeed.SALES_LEADS: ("gmail",),
     OnboardingNeed.SALES_CALL_RESEARCH: ("googlecalendar",),
-    OnboardingNeed.PRODUCT_FEEDBACK: (),
-    OnboardingNeed.PRODUCT_SPECS: ("notion",),
-    OnboardingNeed.MARKETING_CONTENT: (),
-    OnboardingNeed.MARKETING_REPORTS: (),
-    OnboardingNeed.ENGINEERING_PRS: ("github",),
-    OnboardingNeed.ENGINEERING_NOTIFICATIONS: (),
-    OnboardingNeed.FINANCE_NUMBERS: ("slack", "gmail"),
-    OnboardingNeed.FINANCE_REPORTS: (),
-    OnboardingNeed.CREATIVE_REVISIONS: (),
-    OnboardingNeed.CREATIVE_DEADLINES: ("googlecalendar",),
-    OnboardingNeed.STUDENT_ASSIGNMENTS: ("googlecalendar",),
-    OnboardingNeed.STUDENT_EXAMS: (),
 }
 
-#: Counts spelled out, because "2 taps" in a text message reads like a receipt.
-#: Beyond three the digit is clearer than the word anyway.
-_TAP_COUNTS = {1: "One", 2: "Two", 3: "Three"}
-
-#: No links to hand over: the first move is still GAIA's to offer, and a first
-#: contact that ends on the promises alone ends on nothing to say yes to.
-NO_LINKS_LINE = "Say the word and I'll start."
+#: How the connect ask names each account: what of theirs it unlocks, and the
+#: link label. The reason is what makes the ask read as a step, not a demand.
+_CONNECT_PHRASES: dict[str, tuple[str, str]] = {
+    "gmail": ("your inbox", "Connect Gmail"),
+    "googlecalendar": ("your calendar", "Connect Google Calendar"),
+}
 
 
 def needed_integration_ids(preferences: OnboardingPreferences) -> list[str]:
@@ -190,21 +230,55 @@ def _integration_display_name(integration_id: str) -> str:
     return integration.name if integration else integration_id
 
 
-def _first_move_bubbles(connect_links: list[tuple[str, str]]) -> list[str]:
-    if not connect_links:
-        return [NO_LINKS_LINE]
-    count = len(connect_links)
-    if count == 1:
-        lead = "One tap and that switches on. The link is live for the next hour:"
-    else:
-        lead = (
-            f"{_TAP_COUNTS.get(count, str(count))} taps and those switch on. "
-            "Links are live for the next hour:"
+def _join_clauses(clauses: list[str]) -> str:
+    """Speech, not a list: "a and b", "a, b, and c"."""
+    if len(clauses) == 1:
+        return clauses[0]
+    if len(clauses) == 2:
+        return f"{clauses[0]} and {clauses[1]}"
+    return ", ".join(clauses[:-1]) + ", and " + clauses[-1]
+
+
+def _promise_bubble(platform: str, name: str | None, preferences: OnboardingPreferences) -> str:
+    sentences = [compose_link_greeting(platform, name)]
+    clauses = [NEED_CLAUSES[need] for need in preferences.needs or [] if need in NEED_CLAUSES]
+    if clauses:
+        sentences.append(f"From here, {_join_clauses(clauses)}.")
+    other = (preferences.other_need or "").strip().rstrip(".!")
+    if other:
+        sentences.append(OTHER_NEED_SENTENCE.format(other_need=other))
+    return " ".join(sentences)
+
+
+def _connect_bubble(connect_links: list[tuple[str, str]]) -> str:
+    unlocks: list[str] = []
+    links: list[str] = []
+    for integration_id, url in connect_links:
+        unlock, label = _CONNECT_PHRASES.get(
+            integration_id,
+            (
+                _integration_display_name(integration_id),
+                f"Connect {_integration_display_name(integration_id)}",
+            ),
         )
-    return [lead] + [
-        f"{_integration_display_name(integration_id)}: {url}"
-        for integration_id, url in connect_links
-    ]
+        unlocks.append(unlock)
+        links.append(f"[{label}]({url})")
+    if len(links) == 1:
+        return f"That starts with {unlocks[0]}, which I can't see yet. One tap: {links[0]}."
+    return (
+        f"{_join_clauses(unlocks).capitalize()} are where I start, and I can't see them yet. "
+        f"{_join_clauses(links)}. Either one first."
+    )
+
+
+def _ask_bubble(preferences: OnboardingPreferences) -> str:
+    for need in preferences.needs or []:
+        ask = NEED_ASKS.get(need)
+        if ask:
+            return ask
+    if (preferences.other_need or "").strip():
+        return OTHER_NEED_ASK
+    return NO_PICKS_ASK
 
 
 def compose_first_contact(
@@ -213,26 +287,19 @@ def compose_first_contact(
     preferences: OnboardingPreferences,
     connect_links: list[tuple[str, str]],
 ) -> list[str]:
-    """Every bubble a bot sends right after a one-tap link, in order.
+    """Both bubbles a bot sends right after a one-tap link, in order.
 
     ``connect_links`` are ``(integration_id, url)`` pairs already minted by the
     caller for whatever :func:`needed_integration_ids` returned MINUS what the
     user already has connected. Minting is I/O and this stays pure, so the copy
     can be asserted without a Redis or a Mongo in the room.
+
+    With links, the second bubble is the connect ask: a tap does more than a
+    typed answer, so it wins over the question even for mixed picks. Without
+    links it is one question about the first pick.
     """
-    bubbles = [compose_link_greeting(platform, name)]
-
-    for need in preferences.needs or []:
-        promise = NEED_PROMISES.get(need)
-        if promise:
-            bubbles.append(promise)
-
-    other = (preferences.other_need or "").strip().rstrip(".!")
-    if other:
-        bubbles.append(OTHER_NEED_PROMISE.format(other_need=other))
-
-    bubbles.extend(_first_move_bubbles(connect_links))
-    return bubbles
+    first_move = _connect_bubble(connect_links) if connect_links else _ask_bubble(preferences)
+    return [_promise_bubble(platform, name, preferences), first_move]
 
 
 async def build_first_contact(
