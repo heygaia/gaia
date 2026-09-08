@@ -12,6 +12,7 @@ invalid. storage_state contents (cookies, tokens, localStorage values) are
 never logged — only counts and the domain.
 """
 
+from collections.abc import Mapping
 import json
 from urllib.parse import urlparse
 
@@ -142,6 +143,32 @@ def _cookie_applies_to_host(cookie_domain: str, host: str) -> bool:
     return cookie_domain == host
 
 
+def _cookie_host(cookie: Mapping[str, object]) -> str | None:
+    """The registrable host a cookie is scoped to (leading dot stripped,
+    lowercased), or None when it carries no usable domain and so applies nowhere.
+
+    Uploads are validated at the boundary, but a slice must never be created
+    for a cookie that lost its domain — hence the runtime check, not a cast."""
+    domain = cookie.get("domain")
+    if not isinstance(domain, str):
+        return None
+    host = domain.lower().removeprefix(".")
+    if not host:
+        return None
+    return host
+
+
+def _origin_host(origin: Mapping[str, object]) -> str | None:
+    """Lowercased host of an origin entry, or None when it has no usable URL."""
+    url = origin.get("origin")
+    return domain_of(url) if isinstance(url, str) else None
+
+
+def _cookie_scopes_to(cookie: Mapping[str, object], host: str) -> bool:
+    domain = cookie.get("domain")
+    return isinstance(domain, str) and _cookie_applies_to_host(domain, host)
+
+
 def split_storage_state_by_host(state: StorageState) -> dict[str, StorageState]:
     """Split one browser export into per-host slices keyed the way reuse loads them.
 
@@ -158,20 +185,16 @@ def split_storage_state_by_host(state: StorageState) -> dict[str, StorageState]:
 
     hosts: set[str] = set()
     for origin in origins:
-        host = urlparse(origin.get("origin", "")).hostname
-        if host:
-            hosts.add(host.lower())
+        if origin_host := _origin_host(origin):
+            hosts.add(origin_host)
     for cookie in cookies:
-        domain = cookie.get("domain", "").lower()
-        hosts.add(domain.removeprefix("."))
-    hosts.discard("")
+        if cookie_host := _cookie_host(cookie):
+            hosts.add(cookie_host)
 
     slices: dict[str, StorageState] = {}
     for host in hosts:
-        host_cookies = [c for c in cookies if _cookie_applies_to_host(c.get("domain", ""), host)]
-        host_origins = [
-            o for o in origins if (urlparse(o.get("origin", "")).hostname or "").lower() == host
-        ]
+        host_cookies = [c for c in cookies if _cookie_scopes_to(c, host)]
+        host_origins = [o for o in origins if _origin_host(o) == host]
         if host_cookies or host_origins:
             slices[host] = StorageState(cookies=host_cookies, origins=host_origins)
     return slices

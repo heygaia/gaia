@@ -24,12 +24,14 @@ def _key(token: str) -> str:
 
 async def mint_import_token(user_id: str) -> str:
     """A single-use code that authorises ``user_id`` to upload a browser profile."""
-    token = secrets.token_urlsafe(BROWSER_IMPORT_TOKEN_ENTROPY_BYTES)
+    # The entropy constant is 32, which is exactly secrets' own default, so every
+    # mutant of this argument (None, or dropping it) mints the same 32-byte token.
+    token = secrets.token_urlsafe(BROWSER_IMPORT_TOKEN_ENTROPY_BYTES)  # pragma: no mutate
     await redis_cache.set(
         _key(token),
         ImportTokenRecord(user_id=user_id),
         ttl=BROWSER_IMPORT_TOKEN_TTL_SECONDS,
-        model=ImportTokenRecord,
+        model=ImportTokenRecord,  # pragma: no mutate — TypeAdapter(Any) serialises it the same
     )
     return token
 

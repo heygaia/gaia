@@ -1015,6 +1015,12 @@ sys.exit(proc.returncode)
     echo "      and a case-ONLY rewrite of a header name in an x.headers.get()" >&2
     echo "      lookup, which every .headers mapping resolves case-insensitively" >&2
     echo "      (RFC 9110 5.1); asking for a DIFFERENT header still fails." >&2
+    echo "      Two more: an argument DELETED whose value is the callee's own" >&2
+    echo "      default (BrowserConfig(headless=True) builds a byte-identical" >&2
+    echo "      object without it) — re-VALUING that same argument is reported —" >&2
+    echo "      and a lookup default feeding urlparse(...).hostname, which is None" >&2
+    echo "      for every non-URL, so \"\", None and \"XXXX\" are indistinguishable;" >&2
+    echo "      mutating the lookup's KEY there is still reported." >&2
     echo "$EQUIVALENT" >&2
   fi
   if [ -n "$LOGGING" ]; then

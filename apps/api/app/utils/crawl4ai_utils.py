@@ -287,7 +287,7 @@ async def _recover_with_single_url_crawls(
     )
 
     run_config = _build_run_config(replace(params, semaphore_count=1))
-    browser_config = await _build_browser_config()
+    browser_config = await _build_browser_config()  # pragma: no mutate — managed_crawler rebuilds the identical config from None (config or await _build_browser_config()), and recovery only runs on the Chromium path, so no engine side effect differs
 
     contents: dict[str, str] = {}
     errors: dict[str, str] = {}

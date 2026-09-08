@@ -19,6 +19,7 @@ import json
 from pathlib import Path
 import re
 import sys
+from urllib.parse import urlparse
 
 survivor, workdir, changed_ranges = sys.argv[1].strip().split(": ", 1)[0], sys.argv[2], sys.argv[3]
 module_path = sys.argv[4]
@@ -601,6 +602,207 @@ def _unreachable_match_arm(path: str, line_no: int) -> bool:
     return False
 
 
+# The callee defaults compared against below, hard-coded rather than read off
+# the real callable with inspect.signature. The classifier is pure-AST and
+# imports nothing outside the stdlib on purpose: the lane runs it once per
+# survivor, and importing the callee's module to read a default would mean
+# importing crawl4ai (which pulls in playwright and litellm) on every
+# invocation — seconds of startup each, and a whole new failure mode, since an
+# ImportError here fails the classifier closed and reports an unobservable
+# mutant as CHANGED. Every value below was verified against the constructed
+# object, not read off documentation: two BrowserConfigs built with and without
+# these arguments have identical vars().
+_CALLEE_ARG_DEFAULTS: dict[tuple[str, str], object] = {
+    ("BrowserConfig", "headless"): True,
+    ("BrowserConfig", "browser_mode"): "dedicated",
+    ("BrowserConfig", "cdp_cleanup_on_close"): False,
+    # int.from_bytes(bytes, byteorder="big", *, signed=False) — the default has
+    # been "big" since Python 3.11, and this repo runs 3.12.
+    ("int.from_bytes", "byteorder"): "big",
+}
+
+# The same defaults for callees that take the argument positionally, by slot.
+_CALLEE_POSITIONAL_NAMES: dict[tuple[str, int], str] = {
+    ("int.from_bytes", 1): "byteorder",
+}
+
+_MISSING = object()
+
+
+def _callee_name(func) -> str | None:
+    """Dotted source name of a call's callee — ``BrowserConfig``, ``int.from_bytes``."""
+    if isinstance(func, ast.Name):
+        return func.id
+    if isinstance(func, ast.Attribute):
+        prefix = _callee_name(func.value)
+        return f"{prefix}.{func.attr}" if prefix else None
+    return None
+
+
+def _node_span(node):
+    return (node.lineno, node.col_offset, node.end_lineno or node.lineno, node.end_col_offset)
+
+
+def _literal_equals(node, expected: object) -> bool:
+    """True when ``node`` is a literal equal to ``expected``, same type and all."""
+    try:
+        value = ast.literal_eval(node)
+    except (ValueError, SyntaxError):
+        return False
+    # `True == 1` in Python, and a headless=1 would NOT be the default it looks like.
+    return type(value) is type(expected) and value == expected
+
+
+def _argument_at(span, line_no: int, col: int, orig_line: str) -> bool:
+    """True when the mutation's column, or its whole line, is the argument at ``span``.
+
+    The column alone is not enough for an argument mutmut DELETED off its own
+    line: the body then shifts up, so the "differing column" is computed against
+    whatever followed, and a closing ``)`` differs from the argument's indent
+    rather than from the argument itself. An argument that occupies its entire
+    line is identified by the line, not the column.
+    """
+    if _within(span, line_no, col):
+        return True
+    start_line, start_col, end_line, end_col = span
+    if start_line != line_no or end_line != line_no:
+        return False
+    return not orig_line[:start_col].strip() and orig_line[end_col:].strip() in ("", ",")
+
+
+def _argument_deleted(orig_line: str, mut_line: str, span, keyword: str | None) -> bool:
+    """True when the mutant DELETED the argument at ``span`` rather than re-valuing it.
+
+    mutmut removes the argument's text and its separator, so what is left of the
+    original line is exactly what the mutant line must be. The second branch is
+    the argument that WAS the whole line: mutmut drops the line outright, so the
+    "mutant line" at this index is whatever followed it. Requiring the keyword to
+    be gone from that line is what separates a deleted line from a re-valued one
+    — ``headless=None,`` still reads ``headless=``.
+    """
+    start_line, start_col, end_line, end_col = span
+    if start_line != end_line:
+        return False
+    end = end_col
+    while end < len(orig_line) and orig_line[end] in ", ":
+        end += 1
+    without = orig_line[:start_col] + orig_line[end:]
+    if without.rstrip() == mut_line.rstrip():
+        return True
+    if keyword is None:
+        return False
+    return not without.strip() and f"{keyword}=" not in mut_line
+
+
+def _unobservable_default_argument(
+    path: str, line_no: int, col: int, orig_line: str, mut_line: str
+) -> bool:
+    """True when the mutation only deleted an argument whose value IS the callee's default.
+
+    ``BrowserConfig(headless=True, ...)`` states a value the class already
+    defaults to, so dropping it constructs a byte-identical object and no test
+    can tell. The argument is stated deliberately — it documents the intent and
+    survives the library changing its default — so the line must stay, and the
+    mutant cannot be killed. Deliberately NOT a blanket "a dropped argument is
+    fine": the (callee, argument) pair must be in the table above AND carry
+    exactly the default value there, and the mutation must be a DELETION —
+    ``headless=False`` is the same argument with a real behavioral change, and
+    is reported.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        name = _callee_name(node.func)
+        if name is None:
+            continue
+        for kw in node.keywords:
+            if kw.arg is None or not _argument_at(_node_span(kw), line_no, col, orig_line):
+                continue
+            expected = _CALLEE_ARG_DEFAULTS.get((name, kw.arg), _MISSING)
+            if expected is _MISSING or not _literal_equals(kw.value, expected):
+                return False
+            return _argument_deleted(orig_line, mut_line, _node_span(kw), kw.arg)
+        for index, arg in enumerate(node.args):
+            if not _argument_at(_node_span(arg), line_no, col, orig_line):
+                continue
+            slot = _CALLEE_POSITIONAL_NAMES.get((name, index))
+            expected = (
+                _CALLEE_ARG_DEFAULTS.get((name, slot), _MISSING) if slot is not None else _MISSING
+            )
+            if expected is _MISSING or not _literal_equals(arg, expected):
+                return False
+            return _argument_deleted(orig_line, mut_line, _node_span(arg), None)
+    return False
+
+
+def _hostname_is_none(value: object) -> bool:
+    """True when ``urlparse(value).hostname`` is None — i.e. the value names no host.
+
+    Only ValueError is caught, which urlparse raises for a genuinely malformed
+    URL (an unparseable IPv6 literal) — that is an answer, not a bug. Anything
+    else propagates: a swallowed NameError here once made this rule silently
+    answer False for every mutant, which reads exactly like a correct classifier
+    that simply never fires.
+    """
+    try:
+        return urlparse(value).hostname is None  # type: ignore[type-var]
+    except ValueError:
+        return False
+
+
+def _unobservable_urlparse_host_default(
+    path: str, line_no: int, col: int, orig_line: str, mut_line: str
+) -> bool:
+    """True when the mutation changed a ``.get()`` default that urlparse reads as no host.
+
+    ``urlparse(origin.get("origin", "")).hostname`` is None for every value that
+    is not a URL — "", None (what the lookup returns once mutmut drops the
+    default), and mutmut's "XXXX" alike — so on the missing-key path every
+    mutant yields the identical None and nothing downstream can tell them apart.
+    Narrow on purpose: the mutated literal must be the DEFAULT of a lookup that
+    is the sole argument of a ``urlparse()`` read only through ``.hostname``, and
+    both the original and the replacement must actually resolve to no host.
+    Mutating the lookup's KEY is a different span and stays reported — asking for
+    a key that is not there really does lose the origin.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        for child in ast.iter_child_nodes(node):
+            child.parent = node
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and _callee_name(node.func) == "urlparse"):
+            continue
+        parent = getattr(node, "parent", None)
+        if not (isinstance(parent, ast.Attribute) and parent.attr == "hostname"):
+            continue
+        if len(node.args) != 1 or not _lookup_with_default(node.args[0]):
+            continue
+        default = node.args[0].args[-1]
+        span = _node_span(default)
+        if not _within(span, line_no, col):
+            continue
+        replacement = _mutated_token(span, line_no, orig_line, mut_line)
+        if replacement is None:
+            return False
+        stripped = replacement.strip()
+        try:
+            # An emptied slot is mutmut dropping the default entirely, and
+            # ``.get(k)`` then hands back None.
+            mutated = None if not stripped else ast.literal_eval(stripped)
+            original = ast.literal_eval(default)
+        except (ValueError, SyntaxError):
+            return False
+        return _hostname_is_none(original) and _hostname_is_none(mutated)
+    return False
+
+
 def _within(span, line_no: int, col: int) -> bool:
     start_line, start_col, end_line, end_col = span
     if line_no < start_line or line_no > end_line:
@@ -639,6 +841,8 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
             or _unobservable_ensure_ascii(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_header_case(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unreachable_match_arm(real_path, line_no)
+            or _unobservable_default_argument(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unobservable_urlparse_host_default(real_path, line_no, col, orig_raw[i], mut_raw[i])
         ):
             print("EQUIV")
             sys.exit(0)

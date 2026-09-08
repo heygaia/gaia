@@ -269,6 +269,189 @@ class TestPopThroughCastWithEarlyExit:
         assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
 
 
+class TestArgumentThatIsTheCalleeDefault:
+    """An argument stating the callee's own default constructs an identical
+    object, so deleting it cannot be killed — while re-valuing it can, and must
+    stay reported. Both directions are pinned, on the real shapes from
+    ``_build_browser_config`` (crawl4ai) and ``seed_for_user`` (fingerprint).
+    """
+
+    _WRAPPED = (
+        "    return BrowserConfig(\n"
+        '        browser_mode="cdp",\n'
+        "        headless=True,\n"
+        "        verbose=False,\n"
+        "        cdp_cleanup_on_close=False,\n"
+        "    )"
+    )
+    _INLINE = '    return BrowserConfig(headless=True, browser_mode="dedicated", verbose=False)'
+    _POSITIONAL = '    return int.from_bytes(digest[:4], "big")'
+
+    def _probe(self, workdir: Path, body: str, mutant: str) -> subprocess.CompletedProcess[str]:
+        (workdir / MODULE_REL).write_text(f"def probe(digest):\n{body}\n")
+        _write_mutants(workdir, body, mutant)
+        return _classify(workdir)
+
+    def test_a_dropped_headless_on_its_own_line_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._WRAPPED, self._WRAPPED.replace("        headless=True,\n", "")
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_cdp_cleanup_on_close_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir,
+            self._WRAPPED,
+            self._WRAPPED.replace("        cdp_cleanup_on_close=False,\n", ""),
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_inline_headless_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(workdir, self._INLINE, self._INLINE.replace("headless=True, ", ""))
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_inline_browser_mode_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._INLINE, self._INLINE.replace('browser_mode="dedicated", ', "")
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_positional_byteorder_is_equivalent(self, workdir: Path) -> None:
+        # mutmut leaves the separator behind: int.from_bytes(digest[:4], )
+        result = self._probe(workdir, self._POSITIONAL, self._POSITIONAL.replace('"big"', ""))
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_headless_set_to_none_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._WRAPPED, self._WRAPPED.replace("headless=True,", "headless=None,")
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_cdp_cleanup_on_close_flipped_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir,
+            self._WRAPPED,
+            self._WRAPPED.replace("cdp_cleanup_on_close=False,", "cdp_cleanup_on_close=True,"),
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_headless_flipped_to_false_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._INLINE, self._INLINE.replace("headless=True", "headless=False")
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_re_spelled_browser_mode_value_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._INLINE, self._INLINE.replace('"dedicated"', '"XXdedicatedXX"')
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_widened_digest_slice_is_still_reported(self, workdir: Path) -> None:
+        # Same call, a DIFFERENT argument — the byteorder entry must not cover it.
+        result = self._probe(
+            workdir, self._POSITIONAL, self._POSITIONAL.replace("digest[:4]", "digest[:5]")
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_an_argument_outside_the_table_is_still_reported(self, workdir: Path) -> None:
+        # verbose=False is NOT crawl4ai's default (it defaults to True), so
+        # dropping it is a real change and the rule must not generalise to it.
+        result = self._probe(workdir, self._INLINE, self._INLINE.replace(", verbose=False", ""))
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+
+class TestUrlparseHostDefault:
+    """``urlparse(x).hostname`` is None for every non-URL, so the lookup default
+    feeding it cannot be observed — but the lookup's KEY still can be."""
+
+    _BODY = (
+        '    host = urlparse(origin.get("origin", "")).hostname\n'
+        "    if host:\n"
+        "        return host.lower()\n"
+        "    return None"
+    )
+    _COMPREHENSION = (
+        '    return [o for o in origins if (urlparse(o.get("origin", "")).hostname or "") == host]'
+    )
+
+    def _probe(self, workdir: Path, body: str, mutant: str) -> subprocess.CompletedProcess[str]:
+        (workdir / MODULE_REL).write_text(f"def probe(origin, origins, host):\n{body}\n")
+        _write_mutants(workdir, body, mutant)
+        return _classify(workdir)
+
+    def test_a_none_default_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._BODY, self._BODY.replace('"origin", ""', '"origin", None')
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_dropped_default_is_equivalent(self, workdir: Path) -> None:
+        # mutmut drops the value and leaves the separator behind: .get("origin", )
+        result = self._probe(workdir, self._BODY, self._BODY.replace('"origin", ""', '"origin", '))
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_non_url_string_default_is_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._BODY, self._BODY.replace('"origin", ""', '"origin", "XXXX"')
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_the_same_defaults_inside_a_comprehension_are_equivalent(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir,
+            self._COMPREHENSION,
+            self._COMPREHENSION.replace('"origin", ""', '"origin", "XXXX"'),
+        )
+
+        assert result.stdout.strip() == "EQUIV", result.stdout + result.stderr
+
+    def test_a_default_that_IS_a_url_is_still_reported(self, workdir: Path) -> None:
+        # The rule proves both values name no host; a real URL names one.
+        result = self._probe(
+            workdir, self._BODY, self._BODY.replace('"origin", ""', '"origin", "https://a.com"')
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_changed_lookup_key_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._BODY, self._BODY.replace('"origin", ""', '"XXoriginXX", ""')
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_changed_key_inside_the_comprehension_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir,
+            self._COMPREHENSION,
+            self._COMPREHENSION.replace('"origin", ""', '"XXoriginXX", ""'),
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+    def test_a_flipped_host_comparison_is_still_reported(self, workdir: Path) -> None:
+        result = self._probe(
+            workdir, self._COMPREHENSION, self._COMPREHENSION.replace('"") == host', '"") != host')
+        )
+
+        assert result.stdout.strip() != "EQUIV", result.stdout + result.stderr
+
+
 class TestContainerFunctionWithNestedDefs:
     """A mutated CONTAINER function (tool registrars) holds nested defs; the
     block split must not truncate its body at the first one — the header alone
