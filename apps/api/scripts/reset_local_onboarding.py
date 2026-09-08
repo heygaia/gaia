@@ -5,9 +5,11 @@ For each user in the local Mongo this runs the ``reset_onboarding`` behind the
 product's "Restart onboarding" button with ``keep_connections``: seeded
 conversations, onboarding todos and legacy suggested workflows are deleted and
 the ``onboarding`` subdocument is unset, while connected integrations and
-memories stay. It then empties the local Redis so no cached user document, plan cache, rate-limit bucket or link code
-survives. Subscriptions are untouched: a locally-paid user skips the payment
-stage and lands on the questions; a free one hits the paywall first.
+memories stay. Every subscription record of the user is deleted too, so the
+wizard shows the paywall again (the Dodo test-mode side is untouched: run a
+fresh test checkout, with ``dodo wh listen`` pointed at this API so the
+activation webhook lands). It then empties the local Redis so no cached user
+document, cached plan, rate-limit bucket or link code survives.
 
 The wizard also keeps in-progress answers in the browser under
 ``gaia-onboarding-state-v3:<userId>``; clear site data (or use the product's
@@ -26,7 +28,7 @@ Run from the repo root so Infisical's dev secrets are injected:
 
 Flags:
 --dry-run  List the users that would be reset. Default.
---execute  Actually reset them and flush Redis. Required to write anything.
+--execute  Actually reset them, drop subscriptions and flush Redis. Required to write anything.
 """
 
 import argparse
@@ -41,6 +43,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from app.config.settings import settings
 from app.db.redis import redis_cache
+from app.db.repositories.subscriptions import subscription_repository
 from app.db.repositories.users import user_repository
 from app.services.onboarding.onboarding_service import reset_onboarding
 
@@ -81,6 +84,7 @@ class ResetResult:
     dry_run: bool
     user_ids: list[str] = field(default_factory=list)
     users_reset: int = 0
+    subscriptions_deleted: int = 0
     redis_keys_deleted: int = 0
 
 
@@ -102,6 +106,7 @@ async def run_reset(*, dry_run: bool) -> ResetResult:
     for user_id in result.user_ids:
         await reset_onboarding(user_id, keep_connections=True)
         result.users_reset += 1
+        result.subscriptions_deleted += await subscription_repository.delete_all_for_user(user_id)
     result.redis_keys_deleted = await flush_local_redis()
     return result
 
@@ -113,6 +118,7 @@ def _render(result: ResetResult) -> None:
         print(f"  {user_id}")
     if not result.dry_run:
         print(f"onboarding reset: {result.users_reset}")
+        print(f"subscriptions deleted: {result.subscriptions_deleted}")
         print(f"redis keys deleted: {result.redis_keys_deleted}")
 
 
@@ -120,7 +126,9 @@ async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument(
-        "--execute", action="store_true", help="reset every local user and flush Redis"
+        "--execute",
+        action="store_true",
+        help="reset every local user, drop their subscriptions and flush Redis",
     )
     mode.add_argument("--dry-run", action="store_true", help="preview only (default)")
     args = parser.parse_args()

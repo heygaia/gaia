@@ -32,7 +32,9 @@ import {
   type PlatformPreviewPlatform,
 } from "../constants/platformPreviewMessages";
 
-const DWELL_MS = 1800;
+// How long a finished demo stays on screen before the next platform takes
+// over: long enough to read the last reply, not just to notice it landed.
+const DWELL_MS = 4000;
 
 interface OnboardingPlatformPreviewProps {
   profession: string | undefined;
