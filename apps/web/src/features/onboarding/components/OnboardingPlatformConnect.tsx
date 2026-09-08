@@ -107,7 +107,7 @@ export const OnboardingPlatformConnect: FC<OnboardingPlatformConnectProps> = ({
           animate={{ opacity: 1 }}
           transition={{ duration: 0.25, delay: PLATFORMS.length * 0.08 }}
         >
-          <Button variant="flat" size="sm" onPress={onSkip}>
+          <Button variant="flat" size="md" onPress={onSkip}>
             Skip
           </Button>
           <p className="flex flex-wrap items-center gap-1 px-1 text-xs text-zinc-400">
