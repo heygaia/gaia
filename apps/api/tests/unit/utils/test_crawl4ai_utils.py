@@ -2,6 +2,7 @@
 
 import asyncio
 from collections.abc import Awaitable
+from contextlib import suppress
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,6 +33,38 @@ def _record_wait_for_timeouts(monkeypatch: pytest.MonkeyPatch) -> list[float | N
 
     monkeypatch.setattr(asyncio, "wait_for", spy)
     return recorded
+
+
+def _expire_batch_deadline_once_only_a_straggler_remains(
+    monkeypatch: pytest.MonkeyPatch, *, batch_timeout: float
+) -> None:
+    """Fire the batch deadline the moment every fetch that can finish has.
+
+    A real deadline races the event loop: on a loaded CI box a 50 ms budget
+    expired before the fast fetch had stored its result, and a budget long
+    enough to be safe is a real sleep. So the batch ``wait_for`` (recognised by
+    its budget; the per-URL and teardown waits keep the real one) is driven by
+    the loop's own state instead — it expires once exactly one fetch, the one
+    parked on an Event, is still pending — and the outcome depends only on the
+    code's ordering, never on machine speed.
+    """
+    real_wait_for = asyncio.wait_for
+
+    async def wait_for(awaitable: Awaitable[Any], timeout: float | None = None) -> Any:
+        if timeout != batch_timeout:
+            return await real_wait_for(awaitable, timeout)
+        # At this point the only other tasks on the loop are the per-URL fetches,
+        # just created and not yet run.
+        pending = {t for t in asyncio.all_tasks() if t is not asyncio.current_task()}
+        gathered = asyncio.ensure_future(awaitable)
+        while len(pending) > 1:
+            _done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        gathered.cancel()
+        with suppress(asyncio.CancelledError):
+            await gathered
+        raise TimeoutError
+
+    monkeypatch.setattr(asyncio, "wait_for", wait_for)
 
 
 def _make_result(markdown: str = "ok", *, success: bool = True, error: str = "") -> MagicMock:
@@ -648,6 +681,7 @@ class TestObscuraPerUrlFanout:
 
         crawler_inst = _stub_crawler(mock_crawler_cls)
         crawler_inst.arun = AsyncMock(side_effect=arun)
+        _expire_batch_deadline_once_only_a_straggler_remains(monkeypatch, batch_timeout=0.05)
         from app.utils.crawl4ai_utils import batch_fetch_with_crawl4ai
 
         contents, errors = await batch_fetch_with_crawl4ai(

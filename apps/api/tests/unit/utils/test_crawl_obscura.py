@@ -214,7 +214,7 @@ class TestShutdownCrawlObscura:
         self, monkeypatch: pytest.MonkeyPatch, no_bind_settle: list[float]
     ) -> None:
         running = FakeProcess()
-        crawl_obscura._proc = running  # type: ignore[assignment]
+        monkeypatch.setattr(crawl_obscura, "_proc", running)
         crawl_obscura._cdp_url = f"http://127.0.0.1:{_BASE_PORT}"
         spawner = _spawn(monkeypatch, [FakeProcess()])
 
@@ -232,24 +232,28 @@ class TestShutdownCrawlObscura:
     async def test_the_engine_gets_five_seconds_to_exit(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        crawl_obscura._proc = FakeProcess()  # type: ignore[assignment]
+        monkeypatch.setattr(crawl_obscura, "_proc", FakeProcess())
         recorded = _record_wait_for_timeouts(monkeypatch)
 
         await crawl_obscura.shutdown_crawl_obscura()
 
         assert recorded == [5]
 
-    async def test_an_engine_that_will_not_exit_is_killed(self) -> None:
+    async def test_an_engine_that_will_not_exit_is_killed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         stuck = FakeProcess(wait_error=TimeoutError)
-        crawl_obscura._proc = stuck  # type: ignore[assignment]
+        monkeypatch.setattr(crawl_obscura, "_proc", stuck)
 
         await crawl_obscura.shutdown_crawl_obscura()
 
         assert stuck.killed is True
 
-    async def test_an_already_exited_engine_is_left_alone(self) -> None:
+    async def test_an_already_exited_engine_is_left_alone(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         exited = FakeProcess(returncode=0)
-        crawl_obscura._proc = exited  # type: ignore[assignment]
+        monkeypatch.setattr(crawl_obscura, "_proc", exited)
 
         await crawl_obscura.shutdown_crawl_obscura()
 

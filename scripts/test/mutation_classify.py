@@ -796,16 +796,22 @@ def _unobservable_serialised_model_argument(
 
 
 def _hostname_is_none(value: object) -> bool:
-    """True when ``urlparse(value).hostname`` is None — i.e. the value names no host.
+    """True when the default names no host: it is None, or a string urlparse finds no host in.
 
-    Only ValueError is caught, which urlparse raises for a genuinely malformed
-    URL (an unparseable IPv6 literal) — that is an answer, not a bug. Anything
-    else propagates: a swallowed NameError here once made this rule silently
-    answer False for every mutant, which reads exactly like a correct classifier
-    that simply never fires.
+    Any other literal (an int, bytes) is not something this rule can reason
+    about, so it answers False and the mutant stays a survivor. Only ValueError
+    is caught, which urlparse raises for a genuinely malformed URL (an
+    unparseable IPv6 literal) — that is an answer, not a bug. Anything else
+    propagates: a swallowed NameError here once made this rule silently answer
+    False for every mutant, which reads exactly like a correct classifier that
+    simply never fires.
     """
+    if value is None:
+        return True
+    if not isinstance(value, str):
+        return False
     try:
-        return urlparse(value).hostname is None  # type: ignore[type-var]
+        return urlparse(value).hostname is None
     except ValueError:
         return False
 

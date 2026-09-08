@@ -12,6 +12,7 @@ directory in place of curl, and `uname` is shimmed per target.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import hashlib
 import json
 import os
@@ -103,16 +104,16 @@ def release(tmp_path: Path) -> Path:
     return tmp_path / "release"
 
 
-@pytest.fixture
-def run(tmp_path: Path, release: Path):
-    bin_dir = tmp_path / "shims"
-    bin_dir.mkdir()
-    _write_exec(bin_dir / "curl", CURL_SHIM)
-    _write_exec(bin_dir / "uname", UNAME_SHIM)
-    home = tmp_path / "home"
-    home.mkdir()
+@dataclass(frozen=True)
+class _Installer:
+    """Runs install.sh with curl and uname shimmed onto PATH and a throwaway HOME."""
 
-    def _run(
+    home: Path
+    bin_dir: Path
+    release: Path
+
+    def __call__(
+        self,
         *args: str,
         uname_s: str = "Darwin",
         uname_m: str = "arm64",
@@ -125,17 +126,25 @@ def run(tmp_path: Path, release: Path):
             check=False,
             text=True,
             env={
-                "PATH": f"{bin_dir}:{real_path}",
-                "HOME": str(home),
-                "RELEASE_DIR": str(release),
+                "PATH": f"{self.bin_dir}:{real_path}",
+                "HOME": str(self.home),
+                "RELEASE_DIR": str(self.release),
                 "FAKE_UNAME_S": uname_s,
                 "FAKE_UNAME_M": uname_m,
                 **(env or {}),
             },
         )
 
-    _run.home = home  # type: ignore[attr-defined]
-    return _run
+
+@pytest.fixture
+def run(tmp_path: Path, release: Path) -> _Installer:
+    bin_dir = tmp_path / "shims"
+    bin_dir.mkdir()
+    _write_exec(bin_dir / "curl", CURL_SHIM)
+    _write_exec(bin_dir / "uname", UNAME_SHIM)
+    home = tmp_path / "home"
+    home.mkdir()
+    return _Installer(home=home, bin_dir=bin_dir, release=release)
 
 
 def _installed(home: Path) -> list[Path]:
