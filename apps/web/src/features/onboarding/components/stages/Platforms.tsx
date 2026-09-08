@@ -13,6 +13,7 @@ import { useState } from "react";
 import { PhoneLinkModal } from "@/components/shared/PhoneLinkModal";
 import { BOT_PLATFORM_LABELS } from "@/config/botPlatforms";
 import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
+import { firstNameOf } from "@/features/auth/utils/firstName";
 import { FIELD_NAMES } from "../../constants";
 import { PLATFORM_INTRO_LINES } from "../../constants/messages";
 import { MOTION_FADE_UP } from "../../constants/motion";
@@ -37,7 +38,8 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
     useState<PlatformPreviewPlatform | null>(null);
 
   const profession = state.responses[FIELD_NAMES.PROFESSION];
-  const { name: userName, profilePicture: userAvatar } = useCurrentUser();
+  const { name, email } = useCurrentUser();
+  const userFirstName = firstNameOf(name, email);
 
   const {
     connect,
@@ -56,8 +58,7 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
           <OnboardingPlatformPreview
             profession={profession}
             hoveredPlatform={hoveredPlatform}
-            userName={userName}
-            userAvatar={userAvatar}
+            userFirstName={userFirstName}
           />
         </m.div>
       )}
