@@ -201,6 +201,46 @@ class TestSplitStorageStateByHost:
         state = {"cookies": [], "origins": []}
         assert sp.split_storage_state_by_host(state) == {}  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
 
+    def test_export_with_no_cookies_key_still_splits_its_origins(self) -> None:
+        """A localStorage-only export omits ``cookies`` entirely — it must still
+        yield that origin's slice, not blow up on a missing key."""
+        state = {"origins": [{"origin": "https://github.com", "localStorage": []}]}
+
+        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
+
+        assert set(slices) == {"github.com"}
+        assert slices["github.com"]["cookies"] == []
+
+    def test_export_with_no_origins_key_still_splits_its_cookies(self) -> None:
+        """A cookies-only export omits ``origins`` entirely."""
+        state = {"cookies": [{"name": "s", "value": "1", "domain": ".github.com"}]}
+
+        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
+
+        assert set(slices) == {"github.com"}
+        assert slices["github.com"]["origins"] == []
+
+    def test_entries_missing_their_domain_or_origin_are_ignored(self) -> None:
+        """A cookie with no ``domain`` and an origin entry with no ``origin`` URL
+        belong to no host: they must neither crash the split nor create a
+        junk slice that would be saved as a login under an empty domain."""
+        state = {
+            "cookies": [
+                {"name": "good", "value": "1", "domain": "github.com"},
+                {"name": "orphan", "value": "2"},
+            ],
+            "origins": [
+                {"origin": "https://github.com", "localStorage": []},
+                {"localStorage": []},
+            ],
+        }
+
+        slices = sp.split_storage_state_by_host(state)  # type: ignore[arg-type]  # passes a plain dict literal in place of the StorageState TypedDict
+
+        assert set(slices) == {"github.com"}
+        assert [c["name"] for c in slices["github.com"]["cookies"]] == ["good"]
+        assert [o["origin"] for o in slices["github.com"]["origins"]] == ["https://github.com"]
+
 
 @pytest.mark.unit
 class TestImportBrowserProfile:

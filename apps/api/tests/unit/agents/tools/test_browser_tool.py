@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, NamedTuple
 from unittest.mock import AsyncMock, MagicMock
 
 from langchain_core.runnables.config import RunnableConfig
@@ -1239,3 +1239,77 @@ async def test_run_context_is_logged_for_the_task_and_its_session(
     logged = [call.kwargs["browser"] for call in fake_log.set.call_args_list]
     assert {"operation": "task", "source_category": "bot"} in logged
     assert {"session_id": "sess-1"} in logged
+
+
+# ---------------------------------------------------------------------------
+# _spawn_handoff_watchers -- which background watchers a paused session gets
+# ---------------------------------------------------------------------------
+
+
+class _Watchers(NamedTuple):
+    spawned: list[tuple[Any, str | None]]
+    keep_alive: MagicMock
+    auto_resolve: MagicMock
+
+
+def _record_watchers(monkeypatch: pytest.MonkeyPatch) -> _Watchers:
+    """Capture (coroutine, name) for each spawned watcher without running it."""
+    spawned: list[tuple[Any, str | None]] = []
+
+    def _spawn(coro: Any, *, name: str | None = None) -> MagicMock:
+        spawned.append((coro, name))
+        return MagicMock()
+
+    keep_alive = MagicMock(name="keep_session_alive")
+    auto_resolve = MagicMock(name="auto_resolve_handoff_on_navigation")
+    monkeypatch.setattr(tool_mod, "spawn_background_task", _spawn)
+    monkeypatch.setattr(tool_mod, "keep_session_alive", keep_alive)
+    monkeypatch.setattr(tool_mod, "auto_resolve_handoff_on_navigation", auto_resolve)
+    return _Watchers(spawned, keep_alive, auto_resolve)
+
+
+async def test_credentials_handoff_also_watches_for_the_navigation_that_ends_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A login handoff resolves itself when the page navigates off the sign-in
+    URL, so it gets the auto-resolve watcher on top of the keepalive -- and both
+    must be aimed at the session/handoff actually being waited on."""
+    w = _record_watchers(monkeypatch)
+
+    watchers = tool_mod._spawn_handoff_watchers(
+        "handoff-7",
+        HandoffRequest(category=SensitiveCategory.CREDENTIALS, reason="log in"),
+        "s-9",
+        "u1",
+    )
+
+    assert len(watchers) == 2
+    assert [name for _, name in w.spawned] == [
+        "browser_handoff_keepalive",
+        "browser_handoff_autoresolve",
+    ]
+    w.keep_alive.assert_called_once_with("s-9")
+    w.auto_resolve.assert_called_once_with("handoff-7", "s-9", "u1")
+    assert [coro for coro, _ in w.spawned] == [
+        w.keep_alive.return_value,
+        w.auto_resolve.return_value,
+    ]
+
+
+@pytest.mark.parametrize(
+    "category", [SensitiveCategory.PAYMENT, SensitiveCategory.IRREVERSIBLE, SensitiveCategory.NONE]
+)
+async def test_non_credentials_handoff_gets_only_the_keepalive(
+    monkeypatch: pytest.MonkeyPatch, category: SensitiveCategory
+) -> None:
+    """Only a credentials handoff has a navigation that means "done" -- auto-
+    resolving a payment or confirmation would close one the user never answered."""
+    w = _record_watchers(monkeypatch)
+
+    watchers = tool_mod._spawn_handoff_watchers(
+        "handoff-7", HandoffRequest(category=category, reason="confirm"), "s-9", "u1"
+    )
+
+    assert len(watchers) == 1
+    assert [name for _, name in w.spawned] == ["browser_handoff_keepalive"]
+    w.auto_resolve.assert_not_called()

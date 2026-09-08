@@ -12,6 +12,7 @@ from app.constants.browser import (
     HandoffStatus,
 )
 from app.schemas.browser import HandoffRecord
+from app.services.analytics_service import AnalyticsEvents
 from app.services.browser import handoff as handoff_mod
 from app.services.browser.exceptions import BrowserHandoffNotOwned, BrowserUnavailableError
 
@@ -261,6 +262,45 @@ async def test_resolve_handoff_no_message_argument_becomes_none(fake_redis):
     record = await handoff_mod.get_handoff("h14b")
     assert record is not None
     assert record.message is None
+
+
+@pytest.fixture
+def captured_events(monkeypatch):
+    """Record every ``capture_event`` call the module makes, with its exact args."""
+    calls: list[tuple[object, ...]] = []
+    monkeypatch.setattr(handoff_mod, "capture_event", lambda *args: calls.append(args))
+    return calls
+
+
+async def test_resolve_handoff_attributes_the_event_to_the_resolving_user(
+    fake_redis, captured_events
+):
+    """Resolution can run in the stream's background task, where no request
+    context exists — the user id must travel explicitly or the event lands on an
+    anonymous profile and never joins that user's funnel."""
+    await handoff_mod.create_pending_handoff("h-an1", "user-1", "conv-an1")
+    await handoff_mod.resolve_handoff("h-an1", HandoffDecision.CONTINUE, "user-1", "buy the small")
+
+    assert captured_events == [
+        (
+            "user-1",
+            AnalyticsEvents.BROWSER_HANDOFF_RESOLVED,
+            {"decision": HandoffDecision.CONTINUE.value, "with_note": True},
+        )
+    ]
+
+
+async def test_resolve_handoff_event_reports_a_cancel_without_a_note(fake_redis, captured_events):
+    await handoff_mod.create_pending_handoff("h-an2", "user-1", "conv-an2")
+    await handoff_mod.resolve_handoff("h-an2", HandoffDecision.CANCEL, "user-1")
+
+    assert captured_events == [
+        (
+            "user-1",
+            AnalyticsEvents.BROWSER_HANDOFF_RESOLVED,
+            {"decision": HandoffDecision.CANCEL.value, "with_note": False},
+        )
+    ]
 
 
 async def test_resolve_handoff_deletes_conv_lookup(fake_redis):

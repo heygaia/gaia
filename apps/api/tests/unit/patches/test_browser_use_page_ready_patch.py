@@ -59,6 +59,16 @@ class TestPageReadyPatch:
         assert args == (session, "https://x", "target-9")
         assert kwargs["wait_until"] == "domcontentloaded"
 
+    async def test_omitted_wait_until_forwards_the_cdp_load_lifecycle_event(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # "load" is the CDP lifecycle event name; any other spelling never fires
+        # and every navigation would then burn the full timeout.
+        original = AsyncMock()
+        monkeypatch.setattr(patch_module, "_original_navigate_and_wait", original)
+        await patch_module._navigate_and_wait(object(), "https://x", "t1")
+        assert original.await_args.kwargs["wait_until"] == "load"
+
     def test_import_installed_the_wrapper_on_the_class(self) -> None:
         # apply() runs at import time; the class method must be the wrapper.
         assert BrowserSession._navigate_and_wait is patch_module._navigate_and_wait

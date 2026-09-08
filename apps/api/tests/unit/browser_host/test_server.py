@@ -107,6 +107,19 @@ def test_touch_session_returns_200_and_touches_the_host(client) -> None:
     host.touch.assert_called_once_with("s1")
 
 
+def test_touch_session_stamps_the_wide_event_with_session_and_operation(client) -> None:
+    """A touch is how a pending handoff keeps its browser alive, so the wide event
+    must name both the session it kept and the operation that kept it -- that pair
+    is the only way to tell a reaped session from a touched one after the fact."""
+    _, host = client
+    host.get.return_value = SESSION
+    with patch.object(server_mod, "log") as mock_log:
+        resp = client[0].post("/sessions/s1/touch")
+
+    assert resp.status_code == 200
+    mock_log.set.assert_called_once_with(browser={"session_id": "s1", "operation": "touch"})
+
+
 def test_touch_unknown_session_404_and_never_touches(client) -> None:
     _, host = client
     host.get.return_value = None

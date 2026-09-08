@@ -10,7 +10,9 @@ import pytest
 
 from app.schemas.browser import BrowserAction
 from app.services.browser.captions import (
+    _TARGET_MAX_CHARS,
     _dedupe_join,
+    _shorten,
     caption_from_action_list,
     describe_action,
 )
@@ -130,11 +132,32 @@ class TestDescribeAction:
     def test_select_dropdown_missing(self):
         assert describe_action("select_dropdown", {}) == "Choosing an option"
 
+    def test_select_dropdown_without_text_names_the_field(self):
+        assert describe_action("select_dropdown", {}, target="Country") == 'Choosing in "Country"'
+
+    def test_input_without_text_names_the_field(self):
+        assert describe_action("input", {}, target="Full name") == 'Typing into "Full name"'
+
     def test_click(self):
         assert describe_action("click", {}) == "Clicking"
 
     def test_click_ignores_params(self):
         assert describe_action("click", {"text": "ignored", "x": 1}) == "Clicking"
+
+    @pytest.mark.parametrize(
+        "params",
+        [
+            {"coordinate_x": 412},
+            {"coordinate_y": 680},
+            {"coordinate_x": 412, "coordinate_y": None},
+            {"coordinate_x": None, "coordinate_y": 680},
+        ],
+        ids=["x-only", "y-only", "y-none", "x-none"],
+    )
+    def test_click_needs_both_coordinates_to_name_a_point(self, params):
+        """Half a coordinate pair names no point on the page -- the caption has
+        to fall back to the bare verb rather than print "Clicking at 412, None"."""
+        assert describe_action("click", params) == "Clicking"
 
     @pytest.mark.parametrize("name", ["scroll", "scroll_to_text"])
     def test_scroll(self, name):
@@ -266,3 +289,28 @@ class TestCaptionFromActionList:
         caption = caption_from_action_list(actions)
         assert caption.endswith('…"')
         assert len(caption) < 60
+
+
+# ---------------------------------------------------------------------------
+# _shorten — the truncation boundary a caption's readable length depends on
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestShorten:
+    def test_collapses_internal_whitespace(self):
+        assert _shorten("a  \n b\tc") == "a b c"
+
+    def test_exactly_at_the_limit_is_kept_whole(self):
+        """40 chars is the last length that still fits, so it must survive
+        untouched -- truncating it would put an ellipsis on a caption that had
+        room to spare."""
+        text = "y" * _TARGET_MAX_CHARS
+        assert _shorten(text) == text
+
+    def test_one_over_the_limit_keeps_39_chars_plus_the_ellipsis(self):
+        assert _shorten("x" * (_TARGET_MAX_CHARS + 1)) == "x" * (_TARGET_MAX_CHARS - 1) + "…"
+
+    def test_truncation_does_not_leave_a_dangling_space_before_the_ellipsis(self):
+        text = "a" * (_TARGET_MAX_CHARS - 2) + " " + "b" * 20
+        assert _shorten(text) == "a" * (_TARGET_MAX_CHARS - 2) + "…"

@@ -473,3 +473,63 @@ class TestVisionFollowsResolvedModel:
         from app.services.browser.llm import resolve_use_vision
 
         assert await resolve_use_vision() is True
+
+
+@pytest.mark.unit
+class TestCustomLaneNeedsAllThreeSettings:
+    """A half-configured DEV_LLM_* endpoint is not a lane and must not be inherited.
+
+    Inheriting one would route the browser at a null model or a null key and
+    surface as an opaque provider error mid-run, instead of the prod lane.
+    """
+
+    @pytest.mark.parametrize(
+        ("base_url", "api_key", "model"),
+        [
+            (None, None, "zai/glm-5.3-flash"),
+            (None, "shared-key", "zai/glm-5.3-flash"),
+            ("https://gw/v1", None, None),
+            ("https://gw/v1", "shared-key", None),
+            ("https://gw/v1", None, "zai/glm-5.3-flash"),
+        ],
+    )
+    def test_partial_custom_lane_falls_back_to_the_prod_lane(
+        self, monkeypatch, base_url, api_key, model
+    ):
+        from app.constants.llm import DEFAULT_MODEL_NAME
+        from app.services.browser.llm import _resolve_browser_lane
+
+        for name, value in (
+            ("BROWSER_USE_LLM_API_KEY", None),
+            ("DEV_LLM_BASE_URL", base_url),
+            ("DEV_LLM_API_KEY", api_key),
+            ("DEV_LLM_MODEL", model),
+            ("OPENROUTER_API_KEY", "or-key"),
+        ):
+            monkeypatch.setattr(f"app.services.browser.llm.settings.{name}", value)
+
+        assert _resolve_browser_lane() == ("openrouter", DEFAULT_MODEL_NAME, "or-key", None)
+
+
+@pytest.mark.unit
+class TestOpenRouterVisionIsAlwaysCatalogJudged:
+    async def test_bare_model_id_on_openrouter_is_still_judged_by_the_catalog(self, monkeypatch):
+        """Vision support varies per model on OpenRouter, so the provider alone
+        decides the lookup — a bare (slash-less) id must not be assumed sighted."""
+        monkeypatch.setattr("app.services.browser.llm.settings.BROWSER_USE_VISION", True)
+        monkeypatch.setattr(
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_PROVIDER", "openrouter"
+        )
+        monkeypatch.setattr(
+            "app.services.browser.llm.settings.BROWSER_USE_LLM_MODEL", "text-only-model"
+        )
+        cat = AsyncMock()
+        cat.accepts_images = AsyncMock(return_value=False)
+        monkeypatch.setattr(
+            "app.services.browser.llm.get_openrouter_catalog", AsyncMock(return_value=cat)
+        )
+
+        from app.services.browser.llm import resolve_use_vision
+
+        assert await resolve_use_vision() is False
+        cat.accepts_images.assert_awaited_once_with("text-only-model")

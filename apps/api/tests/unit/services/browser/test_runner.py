@@ -464,6 +464,63 @@ def test_element_viewport_fraction_is_none_when_the_centre_is_off_screen() -> No
     assert runner_mod._element_viewport_fraction(state, 1) is None
 
 
+class _LabelNode:
+    """A DOM node that only carries the label sources a test explicitly gives it."""
+
+    def __init__(self, *, text: str = "", node_name: str = "BUTTON", **attrs: Any) -> None:
+        self._text = text
+        self.node_name = node_name
+        # ax_node/attributes are set only when asked for, so a test can prove the
+        # code copes with a node shape that lacks them entirely.
+        for key, value in attrs.items():
+            setattr(self, key, value)
+
+    def get_meaningful_text_for_llm(self) -> str:
+        return self._text
+
+
+def _label_state(node: object, index: int = 3) -> SimpleNamespace:
+    return SimpleNamespace(dom_state=SimpleNamespace(selector_map={index: node}))
+
+
+def test_element_label_prefers_the_accessibility_name() -> None:
+    """The a11y name is what a person calls the control, and it is the only label
+    an icon-only button has — it must win over every other source."""
+    node = _LabelNode(
+        text="",
+        ax_node=SimpleNamespace(name="Submit application"),
+        attributes={"aria-label": "ignored", "id": "btn-1"},
+    )
+    assert runner_mod._element_label(_label_state(node), 3) == "Submit application"
+
+
+def test_element_label_falls_back_to_visible_text_on_a_node_with_no_ax_node() -> None:
+    # Browser-Use nodes do not all carry ax_node/attributes; a missing one is a
+    # fallback, never a lost caption.
+    node = _LabelNode(text="  Sign in  ", node_name="A")
+    assert runner_mod._element_label(_label_state(node), 3) == "Sign in"
+
+
+def test_element_label_falls_back_to_a_labelling_attribute() -> None:
+    node = _LabelNode(text="   ", ax_node=None, attributes={"aria-label": "Close dialog"})
+    assert runner_mod._element_label(_label_state(node), 3) == "Close dialog"
+
+
+def test_element_label_falls_back_to_the_lowercased_tag_name() -> None:
+    node = _LabelNode(text="", ax_node=None, attributes={})
+    assert runner_mod._element_label(_label_state(node), 3) == "button"
+
+
+def test_element_label_is_none_for_an_index_that_is_not_an_int() -> None:
+    node = _LabelNode(text="Sign in")
+    assert runner_mod._element_label(_label_state(node), "3") is None
+    assert runner_mod._element_label(_label_state(node), None) is None
+
+
+def test_element_label_is_none_when_the_index_is_not_in_the_selector_map() -> None:
+    assert runner_mod._element_label(_label_state(_LabelNode(text="Sign in")), 99) is None
+
+
 async def test_on_step_end_reports_outputs_keyed_to_the_step_just_executed() -> None:
     """Browser-Use runs on_step_end AFTER the actions, so results exist there.
 

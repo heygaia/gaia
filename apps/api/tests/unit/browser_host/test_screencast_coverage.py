@@ -26,6 +26,7 @@ from app.browser_host.screencast import (
     _send_frames,
     _start_screencast,
 )
+from app.constants.log_tags import LogTag
 
 
 def _make_host_and_session() -> tuple[MagicMock, MagicMock]:
@@ -717,6 +718,10 @@ async def test_run_live_view_registers_handlers_with_expected_args() -> None:
     assert nav_args[1] == "target-1"
     assert isinstance(nav_args[2], _PageMeta)
     assert nav_args[3] is frame_args[3]  # same background set shared by both handlers
+    # Without the page session the post-navigation refresh cannot read the favicon
+    # (_refresh_meta skips it when page_session is falsy), so the tab icon would
+    # freeze on whatever the first page declared.
+    assert nav_args[4] == "page-sess"
 
     mock_start.assert_awaited_once_with(
         mock_cdp, "page-sess", _DEFAULT_MAX_WIDTH, _DEFAULT_MAX_HEIGHT
@@ -975,3 +980,58 @@ async def test_apply_input_resize_coerces_string_dimensions_to_int() -> None:
         assert isinstance(args[2], int)
         assert args[3] == 555
         assert isinstance(args[3], int)
+
+
+# ---------------------------------------------------------------------------
+# _read_favicon
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+async def test_read_favicon_returns_the_evaluated_href() -> None:
+    """The icon shown in the live-view tab is whatever the page's own JS resolved,
+    read out of the CDP ``Runtime.evaluate`` result envelope."""
+    with patch.object(
+        screencast,
+        "cdp_call",
+        new=AsyncMock(return_value={"result": {"value": "https://example.com/icon.png"}}),
+    ):
+        assert (
+            await screencast._read_favicon(MagicMock(), "page-sess")
+            == "https://example.com/icon.png"
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "envelope",
+    [
+        {},
+        {"result": {}},
+        {"result": {"value": None}},
+        {"result": {"value": 123}},
+    ],
+    ids=["no-result", "no-value", "null-value", "non-string-value"],
+)
+async def test_read_favicon_returns_none_for_a_missing_or_non_string_value(
+    envelope: dict[str, Any],
+) -> None:
+    with patch.object(screencast, "cdp_call", new=AsyncMock(return_value=envelope)):
+        assert await screencast._read_favicon(MagicMock(), "page-sess") is None
+
+
+@pytest.mark.unit
+async def test_read_favicon_swallows_evaluation_failure_and_names_the_exception() -> None:
+    """A page that blocks evaluation must not break the tab's real metadata, but a
+    persistent failure has to be diagnosable -- the warning carries the real
+    exception type, which is all an operator gets."""
+    with (
+        patch.object(screencast, "cdp_call", new=AsyncMock(side_effect=TimeoutError("boom"))),
+        patch.object(screencast.log, "warning") as mock_warning,
+    ):
+        assert await screencast._read_favicon(MagicMock(), "page-sess") is None
+
+    mock_warning.assert_called_once_with(
+        f"{LogTag.BROWSER} Could not read page favicon",
+        error_type="TimeoutError",
+    )

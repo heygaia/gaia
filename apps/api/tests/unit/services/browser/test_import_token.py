@@ -6,12 +6,18 @@ from typing import Any
 
 import pytest
 
+from app.constants.browser import BROWSER_IMPORT_TOKEN_TTL_SECONDS
 from app.services.browser import import_token as mod
+
+DEFAULT_REDIS_TTL_SECONDS = 3600
 
 
 class _FakeRedis:
+    """Mirrors ``RedisCache``'s contract, including its 1-hour default TTL."""
+
     def __init__(self) -> None:
         self.store: dict[str, object] = {}
+        self.ttls: dict[str, int] = {}
 
     async def get(self, key: str, model: type[Any] | None = None) -> object:
         raw = self.store.get(key)
@@ -20,13 +26,19 @@ class _FakeRedis:
         return model.model_validate(raw) if isinstance(raw, dict) else raw
 
     async def set(
-        self, key: str, value: object, ttl: int | None = None, model: type[Any] | None = None
+        self,
+        key: str,
+        value: object,
+        ttl: int = DEFAULT_REDIS_TTL_SECONDS,
+        model: type[Any] | None = None,
     ) -> bool:
         self.store[key] = value.model_dump() if hasattr(value, "model_dump") else value
+        self.ttls[key] = ttl or DEFAULT_REDIS_TTL_SECONDS
         return True
 
     async def delete(self, key: str) -> None:
         self.store.pop(key, None)
+        self.ttls.pop(key, None)
 
 
 @pytest.fixture
@@ -54,3 +66,13 @@ class TestImportToken:
 
     async def test_each_mint_is_unique(self, fake_redis: _FakeRedis) -> None:
         assert await mod.mint_import_token("u") != await mod.mint_import_token("u")
+
+    async def test_code_expires_after_the_import_ttl_not_the_cache_default(
+        self, fake_redis: _FakeRedis
+    ) -> None:
+        """The code authorises a login overwrite — it must live 10 minutes, not
+        the cache's 1-hour default."""
+        token = await mod.mint_import_token("user-1")
+
+        assert fake_redis.ttls[mod._key(token)] == BROWSER_IMPORT_TOKEN_TTL_SECONDS
+        assert BROWSER_IMPORT_TOKEN_TTL_SECONDS < DEFAULT_REDIS_TTL_SECONDS

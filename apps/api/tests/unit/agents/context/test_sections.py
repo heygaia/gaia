@@ -229,7 +229,16 @@ class TestPlatformBanner:
         web/bot turn read it and reasoned about whether it applied."""
         rendered = await section("platform_banner").fetch(ctx(source="desktop"))
 
-        assert "take_screenshot" in rendered
+        # Exact, not a substring match: the tool names are the payload, and a
+        # substring assert stays true against a banner whose surrounding
+        # sentence has been mangled.
+        assert rendered == (
+            "You are on the user's desktop app, so desktop tools are available "
+            "(discover them with retrieve_tools): take_screenshot, "
+            "read_clipboard/write_clipboard, open_app, open_url, list_windows. "
+            "Use take_screenshot whenever the user references what they are "
+            "currently looking at."
+        )
         # Not the messaging-voice banner: desktop renders rich UI like the web app.
         assert "plain text, short" not in rendered
 

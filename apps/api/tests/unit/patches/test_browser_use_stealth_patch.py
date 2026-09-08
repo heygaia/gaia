@@ -17,7 +17,7 @@ import pytest
 
 from app.browser_host.stealth import build_stealth_script
 import app.patches.browser_use_stealth_patch as patch_module
-from app.services.browser.fingerprint import current_fingerprint_seed
+from app.services.browser.fingerprint import current_fingerprint_seed, seed_for_user
 
 
 def _fake_cdp_session(target_id: str) -> SimpleNamespace:
@@ -177,3 +177,29 @@ def test_apply_binds_the_wrapper_onto_browser_session():
         )
     finally:
         type.__setattr__(real_browser_session, "get_or_create_cdp_session", previous)
+
+
+@pytest.mark.unit
+def test_build_stealth_script_bakes_the_seed_into_the_template() -> None:
+    """The seed must actually reach the script: an unsubstituted placeholder ships
+    a literal ``__FINGERPRINT_SEED__`` to the page (a syntax error, so no stealth at
+    all), and a substituted-but-constant value gives every user one fingerprint."""
+    script = build_stealth_script(1234567)
+
+    assert "__FINGERPRINT_SEED__" not in script
+    assert "1234567" in script
+    assert build_stealth_script(7654321) != script
+
+
+@pytest.mark.unit
+def test_seed_for_user_is_a_stable_32_bit_value_that_differs_per_user() -> None:
+    """The seed baked into the script above is a 32-bit number the page's PRNG
+    consumes. Widening it re-fingerprints every user; a per-user seed that were
+    not stable (or not distinct) is itself the bot signal the script exists to
+    remove."""
+    users = ("user-1", "user-2", "alice@example.com")
+    seeds = {user: seed_for_user(user) for user in users}
+
+    assert all(0 <= seed < 2**32 for seed in seeds.values())
+    assert len(set(seeds.values())) == len(users)
+    assert {user: seed_for_user(user) for user in users} == seeds

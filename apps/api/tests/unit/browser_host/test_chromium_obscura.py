@@ -66,7 +66,9 @@ async def test_launch_obscura_without_bin_fails_loud(
     monkeypatch.setattr(settings, "OBSCURA_BIN", None)
     host = ChromiumHost()
 
-    with pytest.raises(RuntimeError, match="requires OBSCURA_BIN"):
+    # Anchored: the message is the operator's entire diagnosis, so it must be
+    # exactly the setting name and nothing padded around it.
+    with pytest.raises(RuntimeError, match=r"^Obscura requires OBSCURA_BIN to be set$"):
         await host._launch()
 
 

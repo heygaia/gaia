@@ -448,3 +448,195 @@ class TestDeepResearch:
         assert found, (
             f"Expected '1/3 searches returned results' in progress calls: {progress_calls}"
         )
+
+
+# ---------------------------------------------------------------------------
+# _fetch_source_contents — the three-tier resolution of a ranked URL
+# ---------------------------------------------------------------------------
+
+
+class TestFetchSourceContents:
+    """The tiering itself: crawl4ai batch → httpx → search snippet, and the
+    progress frames the UI counts sources with."""
+
+    @staticmethod
+    def _writer_frames(writer: MagicMock) -> list[dict[str, Any]]:
+        return [call.args[0] for call in writer.call_args_list]
+
+    @pytest.mark.asyncio
+    async def test_batch_content_wins_and_reports_progress(self) -> None:
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        writer = MagicMock()
+        with patch(f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock) as httpx:
+            sources = await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "s"}],
+                {"https://a.com": "page body"},
+                {},
+                writer,
+            )
+
+        httpx.assert_not_awaited()
+        assert sources == [
+            {
+                "url": "https://a.com",
+                "snippet": "s",
+                "content": "page body",
+                "fetch_error": None,
+            }
+        ]
+        assert self._writer_frames(writer) == [{"progress": "Fetched source 1/1..."}]
+
+    @pytest.mark.asyncio
+    async def test_blank_batch_content_falls_through_to_httpx(self) -> None:
+        """crawl4ai returning whitespace is a miss, not a hit -- a blank page
+        must not be handed to the model as the source's content."""
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        writer = MagicMock()
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, return_value="real body"
+        ) as httpx:
+            sources = await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "s"}], {"https://a.com": "   "}, {}, writer
+            )
+
+        httpx.assert_awaited_once_with("https://a.com")
+        assert sources[0]["content"] == "real body"
+        assert sources[0]["fetch_error"] is None
+        assert self._writer_frames(writer) == [{"progress": "Fetched source 1/1..."}]
+
+    @pytest.mark.asyncio
+    async def test_progress_counts_each_source_once_over_the_total(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """The counter is what the UI renders as "2/3 fetched" -- it has to
+        advance by exactly one per resolved source and be bounded by the total."""
+        monkeypatch.setattr(f"{MODULE}.DEEP_RESEARCH_FALLBACK_SEMAPHORE_COUNT", 1)
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        writer = MagicMock()
+        ranked = [{"url": f"https://{n}.com", "snippet": "s"} for n in "abc"]
+        with patch(f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, return_value="via httpx"):
+            await _fetch_source_contents(
+                ranked, {"https://a.com": "batched"}, {"https://c.com": "boom"}, writer
+            )
+
+        assert self._writer_frames(writer) == [
+            {"progress": "Fetched source 1/3..."},
+            {"progress": "Fetched source 2/3..."},
+            {"progress": "Fetched source 3/3..."},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_snippet_fallback_still_advances_the_counter(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A source that only yields a snippet is still a resolved source: it
+        emits no frame of its own, but the source after it must be numbered
+        3/3 rather than repeating the number the snippet consumed."""
+        monkeypatch.setattr(f"{MODULE}.DEEP_RESEARCH_FALLBACK_SEMAPHORE_COUNT", 1)
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        writer = MagicMock()
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("down")
+        ):
+            await _fetch_source_contents(
+                [
+                    {"url": "https://a.com"},
+                    {"url": "https://b.com", "snippet": "only a snippet"},
+                    {"url": "https://c.com"},
+                ],
+                {"https://a.com": "batched", "https://c.com": "batched"},
+                {},
+                writer,
+            )
+
+        assert self._writer_frames(writer) == [
+            {"progress": "Fetched source 1/3..."},
+            {"progress": "Fetched source 3/3..."},
+        ]
+
+    @pytest.mark.asyncio
+    async def test_snippet_fallback_reports_every_tier_that_failed(self) -> None:
+        """``fetch_error`` is the only record of why the full page is missing --
+        both tiers' reasons, joined, or a silent snippet looks like a real fetch."""
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("timeout")
+        ):
+            (source,) = await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "the snippet"}],
+                {},
+                {"https://a.com": "403 blocked"},
+                MagicMock(),
+            )
+
+        assert source["content"] == "[Snippet only: full page unavailable]\n\nthe snippet"
+        assert source["fetch_error"] == "crawl4ai: 403 blocked; httpx: timeout"
+
+    @pytest.mark.asyncio
+    async def test_missing_crawl_error_is_reported_as_no_content(self) -> None:
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("timeout")
+        ):
+            (source,) = await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "the snippet"}], {}, {}, MagicMock()
+            )
+
+        assert source["fetch_error"] == "crawl4ai: returned no content; httpx: timeout"
+
+    @pytest.mark.asyncio
+    async def test_no_snippet_at_all_yields_null_content(self) -> None:
+        """A source with no snippet key must resolve to ``content: None`` -- the
+        caller drops those, and a placeholder would be cited as if it were real."""
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("timeout")
+        ):
+            (source,) = await _fetch_source_contents(
+                [{"url": "https://a.com"}], {}, {"https://a.com": "403"}, MagicMock()
+            )
+
+        assert source == {
+            "url": "https://a.com",
+            "content": None,
+            "fetch_error": "crawl4ai: 403; httpx: timeout",
+        }
+
+    @pytest.mark.asyncio
+    async def test_whitespace_only_snippet_yields_null_content(self) -> None:
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        with patch(
+            f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("timeout")
+        ):
+            (source,) = await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "   "}], {}, {}, MagicMock()
+            )
+
+        assert source["content"] is None
+
+    @pytest.mark.asyncio
+    async def test_snippet_fallback_is_logged_against_the_url(self) -> None:
+        """The wide event is the only place a degraded source shows up, so the
+        warning has to name both the fallback and which URL took it."""
+        from app.agents.tools.research_tool import _fetch_source_contents
+
+        with (
+            patch(f"{MODULE}.log") as mock_log,
+            patch(f"{MODULE}.fetch_with_httpx", new_callable=AsyncMock, side_effect=Exception("x")),
+        ):
+            await _fetch_source_contents(
+                [{"url": "https://a.com", "snippet": "s"}], {}, {}, MagicMock()
+            )
+
+        mock_log.warning.assert_called_once()
+        message, kwargs = mock_log.warning.call_args
+        assert "All fetchers failed, using search snippet" in message[0]
+        assert kwargs == {"url": "https://a.com"}

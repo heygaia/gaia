@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 from fastapi import HTTPException
 import pytest
+from tests.helpers import captured_wide_event
 
 from app.api.v1.endpoints import browser as browser_ep
 from app.constants.browser import BrowserSessionStatus, HandoffDecision, HandoffStatus
@@ -318,16 +319,32 @@ class TestRouterRegistration:
 
 class TestMintBrowserImportToken:
     async def test_owner_gets_a_token(self, monkeypatch):
-        monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock(return_value="tok-123"))
+        mint = AsyncMock(return_value="tok-123")
+        monkeypatch.setattr(browser_ep, "mint_import_token", mint)
         resp = await browser_ep.mint_browser_import_token({"user_id": "u1"})
         assert resp.token == "tok-123"
         assert resp.expires_in_seconds > 0
+        # The code authorises overwriting this user's logins — it must be minted
+        # against the caller's real id, not a placeholder.
+        assert mint.await_args.args[0] == "u1"
 
     async def test_missing_user_id_400(self, monkeypatch):
         monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock())
         with pytest.raises(HTTPException) as exc:
             await browser_ep.mint_browser_import_token({})
         assert exc.value.status_code == 400
+        assert exc.value.detail == "User id required"
+
+    async def test_wide_event_names_the_actor_and_operation(self, monkeypatch):
+        """Support reads these fields to answer "who minted an import code, and
+        when" — an unattributed event cannot answer it."""
+        monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock(return_value="tok-123"))
+
+        async with captured_wide_event() as event:
+            await browser_ep.mint_browser_import_token({"user_id": "u1"})
+
+        assert event["user"]["id"] == "u1"
+        assert event["browser"]["operation"] == "mint_import_token"
 
     async def test_captures_analytics_via_request_context(self, monkeypatch):
         monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock(return_value="tok-123"))
@@ -338,7 +355,10 @@ class TestMintBrowserImportToken:
 
         # Session-authenticated route: identity comes from the request context,
         # so the event carries no distinct_id of its own.
-        assert captured.call_args.args[0] == AnalyticsEvents.BROWSER_IMPORT_TOKEN_MINTED
+        event, props = captured.call_args.args
+        assert event == AnalyticsEvents.BROWSER_IMPORT_TOKEN_MINTED
+        # No PII on the event — minting carries no properties at all.
+        assert props == {}
 
     async def test_no_analytics_when_user_id_missing(self, monkeypatch):
         monkeypatch.setattr(browser_ep, "mint_import_token", AsyncMock())
@@ -356,8 +376,14 @@ class TestImportBrowserSessions:
         return BrowserImportRequest(
             token=token,
             cookies=[{"name": "s", "value": "1", "domain": ".github.com"}],
+            origins=[{"origin": "https://github.com", "localStorage": []}],
             source_browser=source_browser,
         )
+
+    def _consume(self, valid_token="tok", user_id="u1"):
+        """Resolves only the code it was handed, the way the real single-use
+        store does — a blanket stub would accept any token."""
+        return AsyncMock(side_effect=lambda tok: user_id if tok == valid_token else None)
 
     def _request(self, forwarded=None, client_host="198.51.100.9"):
         from starlette.requests import Request
@@ -371,7 +397,7 @@ class TestImportBrowserSessions:
         return Request(scope)
 
     async def test_valid_token_imports_and_reports_hosts(self, monkeypatch):
-        monkeypatch.setattr(browser_ep, "consume_import_token", AsyncMock(return_value="u1"))
+        monkeypatch.setattr(browser_ep, "consume_import_token", self._consume("tok"))
         monkeypatch.setattr(browser_ep.settings, "BROWSER_PERSIST_LOGINS", True)
         imp = AsyncMock(return_value=[("github.com", 1)])
         monkeypatch.setattr(browser_ep, "import_browser_profile", imp)
@@ -388,6 +414,36 @@ class TestImportBrowserSessions:
         assert imp.await_args.args[0] == "u1"
         assert imp.await_args.kwargs["source_browser"] == "Arc"
         assert imp.await_args.kwargs["source_ip"] == "203.0.113.7"
+
+    async def test_uploaded_cookies_and_origins_reach_the_store(self, monkeypatch):
+        """The payload is rebuilt into Playwright's ``{cookies, origins}`` shape —
+        the only shape the storage layer can split by host. A wrong key silently
+        imports nothing."""
+        monkeypatch.setattr(browser_ep, "consume_import_token", self._consume("tok"))
+        monkeypatch.setattr(browser_ep.settings, "BROWSER_PERSIST_LOGINS", True)
+        imp = AsyncMock(return_value=[("github.com", 1)])
+        monkeypatch.setattr(browser_ep, "import_browser_profile", imp)
+
+        await browser_ep.import_browser_sessions(self._payload(), self._request())
+
+        state = imp.await_args.args[1]
+        assert [c["name"] for c in state["cookies"]] == ["s"]
+        assert [c["domain"] for c in state["cookies"]] == [".github.com"]
+        assert [o["origin"] for o in state["origins"]] == ["https://github.com"]
+
+    async def test_wide_event_attributes_the_import_to_the_token_owner(self, monkeypatch):
+        """No session cookie on this route — without the token owner on the event,
+        an import of someone's whole login state is untraceable."""
+        monkeypatch.setattr(browser_ep, "consume_import_token", self._consume("tok", "u1"))
+        monkeypatch.setattr(browser_ep.settings, "BROWSER_PERSIST_LOGINS", True)
+        monkeypatch.setattr(
+            browser_ep, "import_browser_profile", AsyncMock(return_value=[("github.com", 1)])
+        )
+
+        async with captured_wide_event() as event:
+            await browser_ep.import_browser_sessions(self._payload(), self._request())
+
+        assert event["user"]["id"] == "u1"
 
     async def test_client_ip_falls_back_to_peer(self, monkeypatch):
         monkeypatch.setattr(browser_ep, "consume_import_token", AsyncMock(return_value="u1"))
@@ -437,6 +493,7 @@ class TestImportBrowserSessions:
         with pytest.raises(HTTPException) as exc:
             await browser_ep.import_browser_sessions(self._payload("expired"), self._request())
         assert exc.value.status_code == 401
+        assert exc.value.detail == "Import code invalid, expired, or already used"
         imp.assert_not_awaited()  # never touch storage on a bad code
 
     async def test_persistence_disabled_409(self, monkeypatch):
@@ -447,4 +504,5 @@ class TestImportBrowserSessions:
         with pytest.raises(HTTPException) as exc:
             await browser_ep.import_browser_sessions(self._payload(), self._request())
         assert exc.value.status_code == 409
+        assert exc.value.detail == "Browser login persistence is disabled"
         imp.assert_not_awaited()

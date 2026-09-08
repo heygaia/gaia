@@ -380,6 +380,9 @@ class TestTouchSession:
         inner, cm, cls_mock = _patch_async_client(None, resp, verb="post")
         with patch.object(host_client.httpx, "AsyncClient", cls_mock):
             await host_client.touch_session("sess-123")
+        # Without the configured base_url the relative touch path would never
+        # reach the host, so the keepalive would silently stop working.
+        assert cls_mock.call_args[1]["base_url"] == "http://browser-host:8930"
         assert cls_mock.call_args[1]["timeout"] == host_client._DEFAULT_TIMEOUT_SECONDS
         assert cls_mock.call_args[1]["headers"] == {"X-Host-Key": "k3"}
         inner.post.assert_awaited_once_with("/sessions/sess-123/touch")

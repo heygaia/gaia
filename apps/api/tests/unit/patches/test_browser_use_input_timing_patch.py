@@ -86,6 +86,32 @@ class TestInputTimingPatch:
         baseline = 100 * (HOLD_SECONDS + GAP_SECONDS)
         assert baseline < sum(requested) < baseline * 3
 
+    async def test_ceiling_delay_is_jittered_and_anything_slower_is_not(self) -> None:
+        # The ceiling separates keystroke rhythm from page timing: a delay *at* it
+        # is still a keystroke, the next float up is a load-bearing page wait.
+        ceiling = patch_module._KEYSTROKE_DELAY_CEILING_SECONDS
+        just_above = ceiling * 1.01
+
+        assert len(set(await _armed_record([ceiling] * 40))) > 1
+        assert await _armed_record([just_above] * 3) == [just_above] * 3
+
+    async def test_sleep_returns_the_result_it_was_given(self) -> None:
+        # asyncio.sleep's second argument is the awaited value; the proxy must not
+        # swallow it, or a caller relying on `await sleep(d, x)` silently gets None.
+        assert await patch_module._sleep(0, "page-ready") == "page-ready"
+
+    async def test_wrapper_forwards_positional_and_keyword_arguments(self) -> None:
+        received: list[tuple[tuple[object, ...], dict[str, object]]] = []
+
+        async def method(*args: object, **kwargs: object) -> str:
+            received.append((args, kwargs))
+            return "typed"
+
+        result = await patch_module._arm_typing_rhythm(method)("element", text="hello")
+
+        assert result == "typed"
+        assert received == [(("element",), {"text": "hello"})]
+
     async def test_rhythm_is_stable_per_user_and_differs_across_users(self) -> None:
         async def rhythm(user: str) -> list[float]:
             token = set_fingerprint_seed(user)

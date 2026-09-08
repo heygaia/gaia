@@ -445,6 +445,30 @@ class TestIndexToolsToStore:
 
         mock_set_cache.assert_awaited_once()
 
+    async def test_warmup_is_labelled_with_the_namespace_being_indexed(self):
+        """A degraded-catalog log has to name which namespace lost its tools."""
+        tool = SimpleNamespace(name="t", description="d")
+
+        mock_store = AsyncMock()
+        mock_collection = AsyncMock()
+        mock_collection.get.return_value = {"ids": [], "metadatas": []}
+        mock_store._get_collection = AsyncMock(return_value=mock_collection)
+
+        with (
+            patch(
+                "app.db.chroma.chroma_tools_store.get_cache",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch("app.db.chroma.chroma_tools_store.set_cache", new_callable=AsyncMock),
+            patch("app.db.chroma.chroma_tools_store.providers") as mock_providers,
+            patch("app.db.chroma.index_warmup.log") as mock_log,
+        ):
+            mock_providers.aget = AsyncMock(return_value=mock_store)
+            await index_tools_to_store([(tool, "ns")])
+
+        assert mock_log.info.call_args.kwargs["label"] == "index_tools_to_store[ns]"
+
     async def test_skips_when_store_unavailable(self):
         tool = SimpleNamespace(name="t", description="d")
         with (
@@ -833,7 +857,9 @@ class TestInitializeChromaToolsStore:
         p.current_mock.assert_called_once_with(p.registry)
         p.existing_mock.assert_awaited_once_with(p.collection, {"general"})
         p.execute.assert_awaited_once()
-        # Executed against the real store with the built put-ops (one upsert).
+        # Executed against the real store with the built put-ops (one upsert),
+        # labelled so a degraded-catalog log names the boot seed it came from.
+        assert p.execute.await_args.kwargs["label"] == "tools_store_seed"
         store_arg, put_ops = p.execute.await_args.args
         assert store_arg is p.store
         assert len(put_ops) == 1

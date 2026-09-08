@@ -1198,3 +1198,75 @@ async def test_run_cdp_proxy_handles_non_int_refusal_id() -> None:
     reply = json.loads(client_ws.send_text.call_args_list[0][0][0])
     assert reply["id"] is None
     assert reply["error"]["code"] == -32000
+
+
+@pytest.mark.unit
+async def test_run_cdp_proxy_records_navigation_and_page_metrics_for_this_session() -> None:
+    """The per-session metrics the host reports (navigation count, page count,
+    navigation duration) are fed exclusively from this proxy: a ``Page.navigate``
+    opens a navigation, a ``Target.createTarget`` counts a page, and the
+    downstream ``Page.loadEventFired`` closes the navigation's timing. Each must
+    be attributed to THIS session id, and nothing else may trigger them.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock, MagicMock, call, patch
+
+    from app.browser_host import proxy as proxy_mod
+    from app.browser_host.chromium import HostSession
+
+    host = MagicMock()
+    host.root_ws_url = "ws://fake"
+    session = HostSession(
+        session_id="sess-metrics",
+        context_id="ctx-1",
+        target_id="t1",
+        created_at=0,
+        last_activity_at=0,
+    )
+
+    client_ws = MagicMock()
+    client_ws.receive_text = AsyncMock(
+        side_effect=[
+            # Two inert commands: neither may be counted as a navigation or a page.
+            json.dumps({"id": 1, "method": "Page.enable", "params": {}}),
+            json.dumps({"id": 4, "method": "Runtime.evaluate", "params": {}}),
+            json.dumps({"id": 2, "method": "Page.navigate", "params": {"url": "https://a.test"}}),
+            json.dumps(
+                {"id": 3, "method": "Target.createTarget", "params": {"url": "https://b.test"}}
+            ),
+            _WSDisconnect(),
+        ]
+    )
+    client_ws.send_text = AsyncMock()
+
+    downstream = [
+        json.dumps({"method": "Page.frameNavigated", "params": {}}),
+        json.dumps({"method": "Page.loadEventFired", "params": {"timestamp": 1.0}}),
+    ]
+
+    class FakeChromium:
+        def __init__(self) -> None:
+            self._iter = iter(downstream)
+
+        async def send(self, data: str) -> None:
+            pass
+
+        def __aiter__(self):
+            return self
+
+        async def __anext__(self):
+            try:
+                return next(self._iter)
+            except StopIteration:
+                await asyncio.sleep(0.2)
+                raise StopAsyncIteration from None
+
+    mock_ctx = MagicMock()
+    mock_ctx.__aenter__ = AsyncMock(return_value=FakeChromium())
+    mock_ctx.__aexit__ = AsyncMock(return_value=False)
+    with patch.object(proxy_mod.websockets, "connect", return_value=mock_ctx):
+        await proxy_mod.run_cdp_proxy(host, session, client_ws)
+
+    assert host.note_navigation_started.call_args_list == [call("sess-metrics")]
+    assert host.note_page_created.call_args_list == [call("sess-metrics")]
+    assert host.note_navigation_finished.call_args_list == [call("sess-metrics")]

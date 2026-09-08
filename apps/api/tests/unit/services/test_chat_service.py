@@ -1209,3 +1209,157 @@ class TestRunChatStreamBackground:
             )
 
         mock_desc.assert_not_called()
+
+    # ── chunk dispatch ────────────────────────────────────────────────
+    #
+    # Every frame the agent yields goes through ``_dispatch_stream_chunk``,
+    # which decides whether the client sees it verbatim and what the persisted
+    # turn keeps from it. The tests above drive the loop but only ever assert
+    # the happy text path, so a frame routed to the wrong branch — an error
+    # never recorded, thinking never persisted, a passthrough frame published
+    # to the wrong stream — reads as a pass.
+
+    async def _drive(self, agent_chunks, sm, save, *, stream_id="stream_dispatch"):
+        async def agent_stream():
+            for chunk in agent_chunks:
+                yield chunk
+
+        with (
+            _patch_stream_manager(sm),
+            patch(
+                "app.services.chat.stream.call_agent",
+                new=AsyncMock(return_value=agent_stream()),
+            ),
+            patch("app.services.chat.stream.save_conversation_async", new=save),
+            patch("app.services.chat.stream.UsageMetadataCallbackHandler", _usage_callback_class()),
+        ):
+            await run_chat_stream_background(
+                stream_id=stream_id,
+                body=self.dispatch_body(),
+                user={"user_id": "user_1", "email": "a@b.com"},
+                conversation_id="conv_existing_123",
+            )
+
+    @staticmethod
+    def dispatch_body() -> MessageRequestWithHistory:
+        return MessageRequestWithHistory(
+            message="hi", messages=[], conversation_id="conv_existing_123"
+        )
+
+    async def test_a_non_data_frame_is_published_verbatim_on_its_own_stream(
+        self, test_user
+    ) -> None:
+        """Anything that is not a ``data:`` frame is not ours to parse — it goes
+        through untouched, and to the stream the client is actually listening on."""
+        sm = _make_stream_manager_mock()
+
+        await self._drive(["keepalive\n\n", "data: [DONE]\n\n"], sm, AsyncMock())
+
+        assert ("stream_dispatch", "keepalive\n\n") in [
+            call.args for call in sm.publish_chunk.call_args_list
+        ]
+
+    async def test_an_error_frame_from_the_agent_is_persisted_onto_the_turn(
+        self, test_user
+    ) -> None:
+        """Errors reach the loop two ways; a frame YIELDED by call_agent's setup
+        guard is the one nothing else records. Without it the reloaded turn is an
+        empty bubble with no explanation."""
+        save = AsyncMock()
+
+        await self._drive(
+            [f"data: {json.dumps({'error': 'model unavailable'})}\n\n", "data: [DONE]\n\n"],
+            _make_stream_manager_mock(),
+            save,
+        )
+
+        assert save.call_args.kwargs["error"] == "model unavailable"
+
+    async def test_a_data_frame_without_an_error_leaves_the_turn_unmarked(self, test_user) -> None:
+        save = AsyncMock()
+
+        await self._drive(
+            [f"data: {json.dumps({'response': 'hello'})}\n\n", "data: [DONE]\n\n"],
+            _make_stream_manager_mock(),
+            save,
+        )
+
+        assert save.call_args.kwargs["error"] is None
+
+    async def test_comms_thinking_is_folded_into_the_persisted_tool_data(self, test_user) -> None:
+        """Comms streams its own reasoning as a plain frame (the executor's rides
+        the tool-event collector). Folding it in with the same helper is what lets
+        a reloaded turn keep the thinking block for both agents."""
+        save = AsyncMock()
+
+        await self._drive(
+            [
+                f"data: {json.dumps({'reasoning': {'content': 'weighing it up'}})}\n\n",
+                "data: [DONE]\n\n",
+            ],
+            _make_stream_manager_mock(),
+            save,
+        )
+
+        assert save.call_args.kwargs["tool_data"]["tool_data"] == [
+            {
+                "tool_name": "tool_calls_data",
+                "tool_category": "reasoning",
+                "data": {
+                    "tool_name": "reasoning",
+                    "tool_category": "reasoning",
+                    "message": "",
+                    "reasoning": "weighing it up",
+                },
+            }
+        ]
+
+    async def test_a_frame_with_no_reasoning_adds_no_thinking_entry(self, test_user) -> None:
+        save = AsyncMock()
+
+        await self._drive(
+            [f"data: {json.dumps({'response': 'hello'})}\n\n", "data: [DONE]\n\n"],
+            _make_stream_manager_mock(),
+            save,
+        )
+
+        assert save.call_args.kwargs["tool_data"]["tool_data"] == []
+
+    async def test_a_frame_the_processor_chokes_on_still_reaches_the_client(
+        self, test_user
+    ) -> None:
+        """Passthrough is the fallback: a frame we cannot parse is still the
+        agent's output, and swallowing it would blank the bubble."""
+        sm = _make_stream_manager_mock()
+        frame = f"data: {json.dumps({'response': 'hello'})}\n\n"
+
+        with patch(
+            "app.services.chat.stream.process_data_chunk",
+            new=AsyncMock(side_effect=RuntimeError("collector blew up")),
+        ):
+            await self._drive([frame, "data: [DONE]\n\n"], sm, AsyncMock())
+
+        assert ("stream_dispatch", frame) in [call.args for call in sm.publish_chunk.call_args_list]
+
+    @pytest.mark.parametrize(
+        "frame",
+        [
+            pytest.param('data: {"error": "trunc', id="truncated-error-json"),
+            pytest.param('data: {"reasoning": {"content": "half', id="truncated-reasoning-json"),
+            pytest.param('data: ["error", "reasoning"]', id="json-array-not-object"),
+        ],
+    )
+    async def test_a_malformed_data_frame_does_not_take_the_turn_down(
+        self, test_user, frame: str
+    ) -> None:
+        """SSE frames arrive split and third-party tools inject their own, so a
+        ``data:`` line that mentions error/reasoning but is not a JSON object is
+        a frame we cannot read — not a reason to fail the user's turn."""
+        sm = _make_stream_manager_mock()
+        save = AsyncMock()
+
+        await self._drive([f"{frame}\n\n", "data: [DONE]\n\n"], sm, save)
+
+        save.assert_awaited()
+        assert save.call_args.kwargs["error"] is None
+        assert save.call_args.kwargs["tool_data"]["tool_data"] == []
