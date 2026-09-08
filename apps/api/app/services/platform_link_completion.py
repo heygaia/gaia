@@ -28,8 +28,15 @@ async def complete_platform_link(
     platform: str,
     platform_user_id: str,
     profile: Mapping[str, str | None] | None = None,
+    *,
+    announce: bool = True,
 ) -> PlatformLinkResult:
     """Link the account and run every side effect a successful link owes.
+
+    ``announce`` sends the "you're connected" text to the bot account. The
+    one-tap onboarding link passes ``False``: GAIA's composed first contact is
+    the confirmation there, and a generic "send me a message or use /help" on
+    top of it reads like two bots talking.
 
     Raises AppError(409) when the platform account belongs to another GAIA user
     (or the user already has a different account on this platform) — the one
@@ -57,7 +64,7 @@ async def complete_platform_link(
             status_code=409,
         ) from e
 
-    if result.is_new_link:
+    if result.is_new_link and announce:
         await notify_account_linked(platform, user_id)
     schedule_account_sync(user_id)
     # capture_event, not capture_context_event: the bot route resolves its user

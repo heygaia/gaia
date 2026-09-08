@@ -365,11 +365,14 @@ class TestRedeemLinkCode:
         assert response.json() == {"linked": True, "bubbles": BUBBLES}
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
+        # The composed first contact is the confirmation: no generic
+        # "you're connected" on top of it.
         mock_complete.assert_awaited_once_with(
             "user1",
             "telegram",
             "TG42",
             profile={"username": "tg_user", "display_name": "TG User"},
+            announce=False,
         )
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
