@@ -23,6 +23,16 @@
     // excludes .claude and .agents outright.
     "files": [".agents/skills/**", ".claude/skills/**"],
     "overrides": [
+      // The bridge `add`/setup wizard collects a URL server's headers and then
+      // its name through interactive terminal prompts. server-sequential-
+      // independent-await wants these two awaits wrapped in Promise.all, but
+      // they each read from stdin — running them concurrently would race two
+      // readline prompts on the same terminal and corrupt both. Sequential is
+      // the only correct order for interactive I/O, not a missed optimization.
+      {
+        "files": ["**/commands/bridge/wizard.ts"],
+        "rules": ["react-doctor/server-sequential-independent-await"]
+      },
       // deliverSources MUST await each send before the next: the bubbles of one
       // logical message have to arrive in published order, so fanning them out
       // with Promise.all (what async-await-in-loop suggests) would reorder the

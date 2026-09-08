@@ -23,15 +23,19 @@ export async function registerConfiguredServers(): Promise<void> {
   const token = await exchangeToken(creds.apiUrl, creds.refreshToken);
   // Persist the rotated token before anything else can use the old one.
   saveCredentials({ ...creds, refreshToken: token.refresh_token });
-  for (const server of servers) {
-    await registerServer(
-      creds.apiUrl,
-      token.access_token,
-      server.key,
-      server.name,
-      server.type,
-    );
-  }
+  // Independent registrations that all share the one already-exchanged access
+  // token — register them concurrently rather than one round trip at a time.
+  await Promise.all(
+    servers.map((server) =>
+      registerServer(
+        creds.apiUrl,
+        token.access_token,
+        server.key,
+        server.name,
+        server.type,
+      ),
+    ),
+  );
 }
 
 export async function runUp(): Promise<void> {
