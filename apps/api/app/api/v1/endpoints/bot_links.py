@@ -6,6 +6,7 @@ metadata) and share nothing with the chat/stream transport beyond the bot API
 key check. Mounted on the same ``/api/v1/bot`` prefix, so no URL moved.
 """
 
+from datetime import UTC, datetime, timedelta
 import secrets
 
 from fastapi import APIRouter, HTTPException, Request
@@ -14,6 +15,7 @@ from app.api.v1.endpoints.bot import require_bot_api_key
 from app.config.settings import settings
 from app.constants.auth import AUDIT_ACTOR_BOT_API, AUDIT_ACTOR_UNAUTHENTICATED
 from app.constants.cache import PLATFORM_LINK_TOKEN_PREFIX, PLATFORM_LINK_TOKEN_TTL
+from app.constants.general import NEW_MESSAGE_BREAKER
 from app.db.redis import redis_cache
 from app.models.bot_models import (
     CreateLinkTokenRequest,
@@ -23,7 +25,12 @@ from app.models.bot_models import (
     RedeemLinkCodeRequest,
     RedeemLinkCodeResponse,
 )
-from app.services.onboarding.first_message import compose_link_greeting
+from app.models.chat_models import MessageModel, UpdateMessagesRequest
+from app.models.user_models import AuthenticatedUser, OnboardingPreferences
+from app.services.bot_service import BotService
+from app.services.conversation_service import update_messages
+from app.services.onboarding.first_contact import build_first_contact
+from app.services.onboarding.first_message import compose_first_message
 from app.services.platform_link_code_service import (
     discard_platform_link_code,
     peek_platform_link_code,
@@ -129,8 +136,8 @@ async def create_link_token(
 async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> RedeemLinkCodeResponse:
     """Consume a web-minted code and link the platform account that presented it.
 
-    Returns the opening message composed during onboarding so the caller can
-    start the conversation as the user's own turn.
+    Returns GAIA's whole first contact as ordered bubbles for the bot to send.
+    No model turn runs: the bubbles ARE the first message.
     """
     await require_bot_api_key(request)
     log.set(operation="redeem_link_code", platform=body.platform)
@@ -187,14 +194,70 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
         provider=body.platform,
     )
     log.set(outcome="success", is_new_link=result.is_new_link)
-    # The greeting is composed here rather than left to the opener turn: the
-    # model reliably skipped it, and a first contact that opens by restating the
-    # user's onboarding picks reads like nobody said hello.
+
+    # The WHOLE first contact is composed here, not run as a model turn. The
+    # opener turn skipped the per-pick promises, handed off to the executor, and
+    # sometimes never produced the connect links at all; the one message a new
+    # user is guaranteed to read does not get to be unreliable.
     user = await get_user_by_id(payload.user_id)
-    greeting = compose_link_greeting(body.platform, (user or {}).get("name"))
-    return RedeemLinkCodeResponse(
-        linked=True, first_message=payload.first_message, greeting=greeting
+    bubbles = await build_first_contact(
+        payload.user_id, body.platform, (user or {}).get("name"), payload.preferences
     )
+    await _persist_first_contact(payload.user_id, body, user, payload.preferences, bubbles)
+    return RedeemLinkCodeResponse(linked=True, bubbles=bubbles)
+
+
+async def _persist_first_contact(
+    user_id: str,
+    body: RedeemLinkCodeRequest,
+    user: dict | None,
+    preferences: OnboardingPreferences,
+    bubbles: list[str],
+) -> None:
+    """Write the exchange into the platform's bot conversation.
+
+    Nothing else does it: no chat turn ran, so without this the user's next
+    message arrives into an empty thread and GAIA has no idea it just introduced
+    itself. Stored through the same ``update_messages`` path the chat stream
+    uses, so the turn looks identical to a real one on reload and on the web.
+
+    Best-effort: a linked account is the thing the caller asked for, and losing
+    the transcript must never turn a successful link into an error the user has
+    to retry with a code that is already spent.
+    """
+    try:
+        actor: AuthenticatedUser = {**(user or {}), "user_id": user_id}
+        conversation_id = await BotService.get_or_create_session(
+            body.platform, body.platform_user_id, None, actor, is_dm=True
+        )
+        now = datetime.now(UTC)
+        await update_messages(
+            UpdateMessagesRequest(
+                conversation_id=conversation_id,
+                messages=[
+                    # The user's own opener: on WhatsApp and iMessage they
+                    # literally sent this text, and on Telegram it is what the
+                    # deep link stood in for. Either way it is their turn.
+                    MessageModel(
+                        type="user",
+                        response=compose_first_message(preferences),
+                        date=(now - timedelta(milliseconds=100)).isoformat(),
+                    ),
+                    MessageModel(
+                        type="bot",
+                        response=NEW_MESSAGE_BREAKER.join(bubbles),
+                        date=now.isoformat(),
+                    ),
+                ],
+            ),
+            user=actor,
+        )
+    except Exception as e:
+        log.warning(
+            "could not persist the first-contact exchange",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 @router.get(

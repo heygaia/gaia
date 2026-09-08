@@ -133,8 +133,11 @@ class TestMintLinkCode:
         assert body["code"] == "CODE123"
         assert body["first_message"] == expected_message
         assert body["handoff_text"] == f"{expected_message} #CODE123"
-        # Bound to the session's user, never to a client-supplied id.
-        mock_mint.assert_awaited_once_with(FAKE_USER_ID, expected_message)
+        # Bound to the session's user, never to a client-supplied id, and the
+        # code carries the ANSWERS rather than a rendered string: GAIA's side of
+        # the first contact is composed at redeem, when the connected
+        # integrations are known.
+        mock_mint.assert_awaited_once_with(FAKE_USER_ID, self._status().preferences)
         # The opening line is composed from THIS user's onboarding answers —
         # read for anyone else and the message describes the wrong person.
         mock_status.assert_awaited_once_with(FAKE_USER_ID)

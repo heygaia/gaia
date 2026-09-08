@@ -39,9 +39,6 @@ class SectionContext:
     execution_mode: ExecutionMode = "interactive"
     #: Conversation channel. Observability only; no section branches on it.
     source: str | None = None
-    #: This turn is the one-tap opener a bot redeemed at linking, not something
-    #: the user typed. The first-conversation section opens on it.
-    onboarding_handoff: bool = False
 
     @classmethod
     def from_configurable(
@@ -76,5 +73,4 @@ class SectionContext:
             active_todo_id=configurable.get("active_todo_id"),
             execution_mode="background" if mode == "background" else "interactive",
             source=configurable.get("conversation_source"),
-            onboarding_handoff=bool(configurable.get("onboarding_handoff")),
         )

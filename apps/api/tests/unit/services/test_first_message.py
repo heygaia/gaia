@@ -8,11 +8,8 @@ changes phrasing, joining, or ordering must go red here.
 import pytest
 
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
-from app.services.onboarding.first_message import (
-    NEED_PHRASES,
-    compose_first_message,
-    compose_link_greeting,
-)
+from app.services.onboarding.first_contact import compose_link_greeting
+from app.services.onboarding.first_message import NEED_PHRASES, compose_first_message
 
 
 def _prefs(

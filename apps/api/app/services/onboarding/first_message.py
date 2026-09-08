@@ -100,34 +100,6 @@ def _profession_sentence(profession: str | None) -> str | None:
     return _sentence(f"I'm {article} {cleaned}")
 
 
-#: The hello a bot sends the moment a link code is redeemed, before the composed
-#: opener runs. It is deterministic and server-owned because the model kept
-#: skipping the greeting when the prompt merely asked for one: a first contact
-#: that opens on a restatement of their onboarding picks reads like a machine
-#: resuming a thread the user never started.
-LINK_GREETING_WITH_NAME = "Hey {name}. I'm with you on {platform} now."
-#: Same line with the name clause dropped: greeting a blank is worse than not
-#: using a name at all.
-LINK_GREETING = "Hey. I'm with you on {platform} now."
-
-
-def compose_link_greeting(platform: str, name: str | None) -> str:
-    """GAIA's hello on a freshly linked platform, sent before the opener turn.
-
-    ``name`` is the GAIA user's full name; only the first token is used, because
-    a greeting that says the surname is an email, not a text.
-    """
-    from app.services.onboarding.first_conversation import (  # noqa: PLC0415 -- first_conversation imports this module for its profession phrases; a top-level import back would be a cycle
-        platform_label,
-    )
-
-    label = platform_label(platform)
-    tokens = (name or "").split()
-    if tokens:
-        return LINK_GREETING_WITH_NAME.format(name=tokens[0], platform=label)
-    return LINK_GREETING.format(platform=label)
-
-
 def compose_first_message(preferences: OnboardingPreferences) -> str:
     """The opening line the user sends GAIA, built from Q1 (profession) and Q2 (needs)."""
     parts: list[str] = []

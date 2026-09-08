@@ -43,14 +43,6 @@ class BotChatRequest(BaseModel):
             "the agent can resolve URL/filename without an extra DB lookup."
         ),
     )
-    onboarding_handoff: bool = Field(
-        False,
-        description=(
-            "True only for the turn carrying the redeemed one-tap opener. The user "
-            "did not type that message, so the agent has to open as a first contact "
-            "on this platform rather than answering a question someone asked it."
-        ),
-    )
 
     @field_validator("platform")
     @classmethod
@@ -131,14 +123,13 @@ class RedeemLinkCodeResponse(BaseModel):
     """Response model for a redeemed one-tap link code."""
 
     linked: bool = Field(..., description="Whether the platform account is now linked")
-    first_message: str = Field(
-        ..., description="Opening message to run through the normal chat flow as the user's turn"
-    )
-    greeting: str = Field(
-        ...,
+    bubbles: list[str] = Field(
+        default_factory=list,
         description=(
-            "GAIA's hello for the bot to send before the opening message runs, so the "
-            "first contact is greeted deterministically instead of hoping the model does it"
+            "GAIA's whole first contact, composed by the server: the hello, one promise "
+            "per thing the user picked at onboarding, then the first move. The bot sends "
+            "them in order as separate messages and runs no model turn — the model kept "
+            "skipping the per-pick lines and losing the connect links."
         ),
     )
 

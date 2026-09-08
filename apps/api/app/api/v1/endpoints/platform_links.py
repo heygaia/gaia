@@ -91,8 +91,10 @@ async def mint_link_code(
     await enforce_rate_limit(user_id, PLATFORM_LINK_CODE_FEATURE_KEY)
 
     status = await get_user_onboarding_status(user_id)
+    # The prewritten WhatsApp/iMessage text is still the user's own opener, so it
+    # is composed here; GAIA's side of the first contact is composed at redeem.
     first_message = compose_first_message(status.preferences)
-    code = await mint_platform_link_code(user_id, first_message)
+    code = await mint_platform_link_code(user_id, status.preferences)
 
     # The code is the credential — the audit names the actor and the outcome,
     # never the code itself.

@@ -164,15 +164,6 @@ TARGET_REPLY_EXAMPLE = (
     "yourself. Want to start with the list?"
 )
 
-#: Rendered above everything else on the ONE turn a bot redeemed a one-tap code
-#: on. That turn's message was composed from the onboarding answers and sent
-#: under the user's name, so on Telegram they never even saw it: a reply that
-#: just answers it lands with no greeting and no sign of where they now are.
-FIRST_CONTACT_TEMPLATE = """FIRST CONTACT ON {platform}
-This is the user's first contact right after linking their {platform} account from onboarding. They did not type this message; it was composed from their onboarding answers. A greeting has already been sent; do not greet again. Restate what they picked in one line in your own words, then propose exactly one concrete first move. No questions about who they are.
-
-"""
-
 #: Rendered above the playbooks. ``profession`` is the user's own Q1 answer.
 NEW_USER_GUIDANCE_TEMPLATE = """FIRST CONVERSATIONS (you just met this {profession})
 They signed up minutes ago. All you know is their job and the needs below. Skip this block
@@ -275,7 +266,6 @@ def build_new_user_guidance(
     needs: list[OnboardingNeed],
     other_need: str | None = None,
     seeded_chips: list[str] | None = None,
-    handoff_platform: str | None = None,
 ) -> str:
     """The guidance block for a user with these onboarding answers, or ``""``.
 
@@ -285,11 +275,6 @@ def build_new_user_guidance(
     ``seeded_chips`` are the answers the seeded conversation offered. They are
     the user's likely first message, and without them the model met "Growth"
     with no idea it was answering its own question.
-
-    ``handoff_platform`` is the friendly platform name when this turn is the
-    opener a bot just redeemed, and nothing otherwise. It prefixes the block
-    with the first-contact instruction: only that one turn gets it, because
-    every later turn on the platform IS something the user typed.
     """
     chips = seeded_chips or []
     lines = [f"- {NEED_PLAYBOOKS[need]}" for need in needs if need in NEED_PLAYBOOKS]
@@ -297,10 +282,7 @@ def build_new_user_guidance(
         lines.append(f"- {OTHER_NEED_PLAYBOOK.format(other_need=other_need)}")
     if not lines:
         return ""
-    first_contact = (
-        FIRST_CONTACT_TEMPLATE.format(platform=handoff_platform) if handoff_platform else ""
-    )
-    return first_contact + NEW_USER_GUIDANCE_TEMPLATE.format(
+    return NEW_USER_GUIDANCE_TEMPLATE.format(
         profession=profession or "person",
         playbooks="\n".join(lines),
         target=TARGET_REPLY_EXAMPLE,

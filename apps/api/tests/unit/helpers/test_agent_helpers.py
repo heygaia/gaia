@@ -509,40 +509,6 @@ class TestBuildAgentConfig:
         assert configurable["writing_style"] is None
 
     @patch("app.helpers.agent_helpers.providers")
-    async def test_the_onboarding_handoff_turn_is_stamped_on_the_configurable(
-        self, mock_providers
-    ) -> None:
-        """The context section reads the flag off the configurable, so a turn that
-        set it on ``AgentTurn`` must arrive with it."""
-        mock_providers.get.return_value = None
-
-        configurable = (
-            await build_agent_config(
-                identity=AgentIdentity(
-                    conversation_id="conv-1", user=FAKE_USER, agent_name="comms_agent"
-                ),
-                turn=AgentTurn(onboarding_handoff=True, source="telegram"),
-            )
-        )["configurable"]
-
-        assert configurable["onboarding_handoff"] is True
-
-    @patch("app.helpers.agent_helpers.providers")
-    async def test_an_ordinary_turn_is_not_a_handoff(self, mock_providers) -> None:
-        mock_providers.get.return_value = None
-
-        configurable = (
-            await build_agent_config(
-                identity=AgentIdentity(
-                    conversation_id="conv-1", user=FAKE_USER, agent_name="comms_agent"
-                ),
-                turn=AgentTurn(source="telegram"),
-            )
-        )["configurable"]
-
-        assert configurable["onboarding_handoff"] is False
-
-    @patch("app.helpers.agent_helpers.providers")
     async def test_session_id_is_the_conversation_when_there_is_no_parent(self, mock_providers):
         """The sticky-routing key defaults to the conversation id itself."""
         mock_providers.get.return_value = None
