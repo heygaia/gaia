@@ -15,6 +15,7 @@ import {
   RECONNECT_MIN_MS,
   RECONNECT_SPREAD_MS,
 } from "./constants.js";
+import { runDeviceExec } from "./exec.js";
 import { openServerSession, type ServerSession } from "./servers.js";
 
 interface Frame {
@@ -23,6 +24,11 @@ interface Frame {
   server?: string;
   data?: string;
   error?: string;
+  // exec.open carries the shell command (and optional cwd); exec.exit carries
+  // the process exit code.
+  command?: string;
+  cwd?: string;
+  code?: number;
   // Consumer pod id from mcp.open; echoed on every up-frame so the owning pod
   // routes replies to the pod running the session. Explicitly `| undefined`
   // (not just optional) because call sites forward `frame.pod` verbatim,
@@ -158,6 +164,9 @@ export class Tunnel {
       case FRAME.MCP_CLOSE:
         await this.closeSession(frame.sid);
         return;
+      case FRAME.EXEC_OPEN:
+        await this.runExec(frame);
+        return;
       case FRAME.REVOKE:
         console.error("[gaia bridge] this device was revoked — exiting.");
         await this.stop();
@@ -245,6 +254,20 @@ export class Tunnel {
         `[gaia bridge] forward error: ${e instanceof Error ? e.message : e}`,
       );
     }
+  }
+
+  private async runExec(frame: Frame): Promise<void> {
+    const sid = frame.sid;
+    const pod = frame.pod;
+    const command = frame.command;
+    if (!sid || !command) return;
+    // Echo the consumer pod on every up-frame so the cloud routes the stream to
+    // the pod that opened the session (same contract as the MCP path).
+    await runDeviceExec(command, frame.cwd, {
+      stdout: (data) => this.send({ t: FRAME.EXEC_STDOUT, sid, pod, data }),
+      stderr: (data) => this.send({ t: FRAME.EXEC_STDERR, sid, pod, data }),
+      exit: (code) => this.send({ t: FRAME.EXEC_EXIT, sid, pod, code }),
+    });
   }
 
   private async closeSession(sid: string | undefined): Promise<void> {

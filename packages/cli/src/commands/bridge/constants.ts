@@ -14,6 +14,11 @@ export const FRAME = {
   HELLO: "hello",
   MCP_OPENED: "mcp.opened",
   MCP_ERROR: "mcp.error",
+  // exec-over-bridge (run_on_device): cloud -> device open, device -> cloud stream.
+  EXEC_OPEN: "exec.open",
+  EXEC_STDOUT: "exec.stdout",
+  EXEC_STDERR: "exec.stderr",
+  EXEC_EXIT: "exec.exit",
 } as const;
 
 export const DEFAULT_API_URL = "https://api.heygaia.io";
@@ -40,3 +45,8 @@ export const MAX_READ_BYTES = 1_000_000;
 // Images ride the tunnel as base64 MCP image blocks; allow them a larger cap —
 // the backend downsizes before anything is inlined into model context.
 export const MAX_IMAGE_READ_BYTES = 5_000_000;
+
+// run_on_device: kill a command after this long, and stop streaming once its
+// combined stdout+stderr passes the cap (mirrors DEVICE_EXEC_* in device_bridge.py).
+export const DEVICE_EXEC_TIMEOUT_MS = 120_000;
+export const DEVICE_EXEC_MAX_OUTPUT_BYTES = 1_000_000;
