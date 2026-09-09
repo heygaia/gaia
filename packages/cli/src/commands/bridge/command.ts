@@ -14,7 +14,7 @@ import {
 } from "./config.js";
 import { runLogin } from "./login.js";
 import { daemonStatusLine, runServe, runUp, stopDaemon } from "./up.js";
-import { runAdd, runRemove } from "./wizard.js";
+import { type AddOptions, runAdd, runRemove } from "./wizard.js";
 
 function cmdFs(dirs: string[], write: boolean): void {
   const allow = dirs.map((p) => resolve(expandTilde(p)));
@@ -81,9 +81,25 @@ export const bridgeCommand = new Command("bridge")
 
 bridgeCommand
   .command("add")
-  .description("Connect a local MCP server (guided — start here!)")
-  .action(async () => {
-    await run(runAdd);
+  .description(
+    "Connect a local MCP server (guided; or non-interactive with --type)",
+  )
+  .option(
+    "--type <type>",
+    "stdio | url | filesystem — enables non-interactive mode (no prompts)",
+  )
+  .option("--name <name>", "display name (stdio/url)")
+  .option("--command <command>", "stdio: the command that starts the server")
+  .option("--url <url>", "url: the local MCP server URL")
+  .option(
+    "--path <path...>",
+    "filesystem: folder(s) to expose, or / for everything",
+  )
+  .option("--write", "filesystem: allow writes too (default read-only)")
+  .option("--env <pair...>", "stdio: KEY=VALUE env var (repeatable)")
+  .option("--header <pair...>", "url: Header:Value request header (repeatable)")
+  .action(async (opts: AddOptions) => {
+    await run(() => runAdd(opts));
   });
 
 bridgeCommand

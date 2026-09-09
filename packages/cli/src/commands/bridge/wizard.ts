@@ -281,12 +281,113 @@ async function verifyServer(config: ServerConfig): Promise<boolean> {
   }
 }
 
-export async function runAdd(): Promise<void> {
+// Non-interactive add: every value comes from a flag, so `run_on_device` (which
+// has no stdin) can set up a server without hitting the wizard's prompts.
+export interface AddOptions {
+  type?: string;
+  name?: string;
+  command?: string;
+  url?: string;
+  path?: string[];
+  write?: boolean;
+  env?: string[];
+  header?: string[];
+}
+
+function parsePairs(
+  items: string[] | undefined,
+  sep: string,
+  flag: string,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const item of items ?? []) {
+    const at = item.indexOf(sep);
+    if (at <= 0)
+      throw new Error(`invalid ${flag} '${item}', expected KEY${sep}VALUE`);
+    out[item.slice(0, at).trim()] = item.slice(at + 1);
+  }
+  return out;
+}
+
+function keyFromName(name: string | undefined): string {
+  const key = slugify(name ?? "");
+  if (!name || !key || key === FILESYSTEM_SERVER_KEY) {
+    throw new Error("--name is required and must contain letters or digits");
+  }
+  return key;
+}
+
+function buildConfigFromFlags(opts: AddOptions): ServerConfig {
+  if (opts.type === "stdio") {
+    if (!opts.command)
+      throw new Error("--command is required for --type stdio");
+    const { command, args } = tokenizeCommand(opts.command);
+    return {
+      type: "stdio",
+      key: keyFromName(opts.name),
+      name: opts.name as string,
+      command,
+      args,
+      env: parsePairs(opts.env, "=", "--env"),
+    };
+  }
+  if (opts.type === "url") {
+    if (!opts.url) throw new Error("--url is required for --type url");
+    assertLoopbackUrl(opts.url);
+    const headers = parsePairs(opts.header, ":", "--header");
+    return {
+      type: "url",
+      key: keyFromName(opts.name),
+      name: opts.name as string,
+      url: opts.url,
+      ...(Object.keys(headers).length ? { headers } : {}),
+    };
+  }
+  if (opts.type === "filesystem") {
+    const paths = opts.path ?? [];
+    if (paths.length === 0)
+      throw new Error("--path is required for --type filesystem");
+    const allow = paths.includes(ENTIRE_FS_ROOT)
+      ? [ENTIRE_FS_ROOT]
+      : paths.map((p) => resolve(expandTilde(p)));
+    return filesystemServer(allow, Boolean(opts.write));
+  }
+  throw new Error("--type must be one of: stdio, url, filesystem");
+}
+
+async function addNonInteractive(opts: AddOptions): Promise<void> {
+  const config = buildConfigFromFlags(opts);
+  let tools: string[];
+  try {
+    tools = await testServer(config);
+  } catch (e) {
+    throw new Error(
+      `Could not start '${config.key}': ${e instanceof Error ? e.message : e}`,
+    );
+  }
+  upsertServer(config);
+  await registerConfiguredServers();
+  console.info(
+    `Saved '${config.key}' (${tools.length} tools) and registered with GAIA. A running 'gaia bridge up' daemon serves it automatically; otherwise start one.`,
+  );
+}
+
+export async function runAdd(opts: AddOptions = {}): Promise<void> {
   if (!isPaired()) {
+    if (opts.type) {
+      throw new Error(
+        "This device isn't paired yet. Run `gaia bridge login` on it first.",
+      );
+    }
     console.info(
-      "This device isn't paired with GAIA yet — let's do that first.",
+      "This device isn't paired with GAIA yet, let's do that first.",
     );
     await runLogin();
+  }
+
+  if (opts.type) {
+    await addNonInteractive(opts);
+    return;
   }
 
   const kind = await choose("What do you want to connect?", [
