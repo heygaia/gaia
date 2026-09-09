@@ -53,11 +53,12 @@ CONNECTED_DEVICES_HEADER = (
 #: container that CANNOT see them. This is what stops the executor from
 #: answering "what's in my downloads" by running `ls` in the sandbox.
 EXECUTOR_CONNECTED_DEVICES_HEADER = (
-    "CONNECTED DEVICES (the user's own machines). To read or change files on the user's "
-    "machine, use that device's tools: call list_devices to see what each device exposes "
-    "and whether it is online, then use the device's file/MCP tools (retrieve them). The "
-    "sandbox shell runs in a cloud container and CANNOT see the user's machine - NEVER "
-    "answer a question about the user's own files by running shell commands in the sandbox:"
+    "CONNECTED DEVICES (the user's own machines). To read, change, or run anything on the "
+    "user's machine, use run_on_device(device_id, command) - pass the id shown in each line "
+    "below VERBATIM as device_id (never the name). Its shell runs on the user's real machine; "
+    "the sandbox shell is a cloud container that CANNOT see it, so NEVER answer a question "
+    "about the user's own files or apps by running commands in the sandbox. Use list_devices "
+    "for live online status and the MCP servers a device exposes:"
 )
 
 

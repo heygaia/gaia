@@ -343,5 +343,8 @@ async def build_connected_devices_manifest(user_id: str, header: str) -> str:
         servers = servers_by_device.get(device.id, [])
         names = ", ".join(s.display_name for s in servers)
         exposing = f" exposing: {names}" if names else ""
-        lines.append(f"- {device.name} ({device.platform}){exposing}")
+        # Include the id verbatim: it is the device_id run_on_device / the device
+        # tools take. Without it the model invents one from the name and the call
+        # fails the ownership check.
+        lines.append(f"- {device.name} ({device.platform}, id: {device.id}){exposing}")
     return "\n".join(lines)

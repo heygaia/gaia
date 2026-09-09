@@ -30,7 +30,9 @@ async def test_lists_each_device_with_its_servers():
         out = await mod.build_connected_devices_manifest("u1", "HEADER:")
 
     assert out.startswith("HEADER:")
-    assert "- MacBook (macOS) exposing: Local Files, Everything" in out
+    # The id is in the line verbatim: it's what run_on_device / the device tools
+    # take, and the model invents a wrong one from the name without it.
+    assert "- MacBook (macOS, id: d1) exposing: Local Files, Everything" in out
 
 
 @pytest.mark.unit
@@ -43,7 +45,7 @@ async def test_device_with_no_servers_still_listed():
         patch.object(mod, "list_device_servers", AsyncMock(return_value={})),
     ):
         out = await mod.build_connected_devices_manifest("u1", "HEADER:")
-    assert out == "HEADER:\n- Box (linux)"
+    assert out == "HEADER:\n- Box (linux, id: d1)"
 
 
 @pytest.mark.unit
