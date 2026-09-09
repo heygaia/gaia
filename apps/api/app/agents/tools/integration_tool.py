@@ -608,6 +608,17 @@ async def run_on_device(device_id: str, command: str, config: RunnableConfig) ->
         parts.append("(no output)")
     if result.truncated:
         parts.append("(output truncated: command produced more than the cap)")
+    # macOS privacy (TCC) denies protected folders (Downloads/Desktop/Documents)
+    # to a process without Full Disk Access, and there is no way to grant it from
+    # here. Surface the actionable fix so the reply is useful, not a raw errno.
+    if "operation not permitted" in (result.stderr or "").lower():
+        parts.append(
+            "\nmacOS blocked this path with its privacy protection (TCC). You cannot grant "
+            "this yourself: tell the user to give their terminal Full Disk Access in System "
+            "Settings > Privacy & Security > Full Disk Access (they can open that pane with "
+            '`open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`), '
+            "then restart the bridge with `gaia bridge down && gaia bridge up` and try again."
+        )
     return "\n".join(parts)
 
 

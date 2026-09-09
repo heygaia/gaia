@@ -77,7 +77,10 @@ MCP_SESSION_CALL_TIMEOUT_SECONDS: Final[float] = 120.0
 
 # --- exec-over-bridge session (run_on_device) ---
 # Hard ceiling on a single device command; the daemon kills the process here.
-DEVICE_EXEC_TIMEOUT_SECONDS: Final[float] = 120.0
+# Kept below the generic per-tool guard (TOOL_EXECUTION_TIMEOUT_SECONDS = 120s in
+# constants/llm.py) so the cloud collector (this + a short grace) returns its own
+# partial-output result BEFORE that guard fires with a generic timeout message.
+DEVICE_EXEC_TIMEOUT_SECONDS: Final[float] = 90.0
 # Total captured output (stdout+stderr) per exec before the daemon truncates and
 # stops streaming — bounds a runaway command from flooding the tunnel.
 DEVICE_EXEC_MAX_OUTPUT_BYTES: Final[int] = 1_000_000

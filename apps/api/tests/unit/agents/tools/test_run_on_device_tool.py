@@ -87,6 +87,26 @@ async def test_offline_device_error_is_reported_not_raised():
     assert "offline" in result
 
 
+async def test_macos_permission_denied_surfaces_full_disk_access_hint():
+    with (
+        patch(f"{_MODULE}.list_devices_service", AsyncMock(return_value=[_device("dev-1")])),
+        patch(
+            f"{_MODULE}.run_device_command",
+            AsyncMock(
+                return_value=_result(
+                    exit_code=1, stderr="ls: /Users/x/Downloads: Operation not permitted"
+                )
+            ),
+        ),
+    ):
+        result = await _run(command="ls ~/Downloads")
+
+    # A raw errno is useless to the user; the tool must explain the macOS TCC
+    # grant so the model can relay an actionable fix.
+    assert "Full Disk Access" in result
+    assert "gaia bridge down" in result
+
+
 async def test_missing_user_id_fails_loud():
     result = await _run(config={"configurable": {}})
     assert result == "Error: User ID not found in configuration."
