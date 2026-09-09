@@ -1,16 +1,13 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Input } from "@heroui/input";
 import { Link } from "@heroui/link";
 import { Snippet } from "@heroui/snippet";
 import { BookOpen01Icon, CommandLineIcon, ComputerIcon } from "@icons";
-import NextLink from "next/link";
 import { type ReactNode, useState } from "react";
 import CollapsibleListWrapper from "@/components/shared/CollapsibleListWrapper";
 import type { DeviceOnboardingRequiredData } from "@/features/devices/types";
 
-const APPROVE_PATH = "/settings/devices/approve";
 const PACKAGE_MANAGERS = ["npm", "pnpm", "bun"] as const;
 type PackageManager = (typeof PACKAGE_MANAGERS)[number];
 
@@ -64,12 +61,6 @@ export function DeviceOnboardingPrompt({
   const { install_commands, docs_url, pair_command, up_command, message } =
     device_onboarding_required;
   const [packageManager, setPackageManager] = useState<PackageManager>("npm");
-  const [code, setCode] = useState("");
-
-  const trimmedCode = code.trim();
-  const approveHref = trimmedCode
-    ? `${APPROVE_PATH}?code=${encodeURIComponent(trimmedCode)}`
-    : APPROVE_PATH;
 
   return (
     <CollapsibleListWrapper
@@ -125,28 +116,13 @@ export function DeviceOnboardingPrompt({
             <CommandSnippet command={pair_command} />
           </StepCard>
 
-          <StepCard index={3} title="Enter the pairing code">
-            <div className="flex flex-wrap items-center gap-2">
-              <Input
-                size="sm"
-                className="max-w-[12rem]"
-                placeholder="e.g. NS2V-YC5S"
-                autoComplete="off"
-                value={code}
-                onValueChange={setCode}
-                aria-label="Pairing code"
-              />
-              <Button
-                as={NextLink}
-                href={approveHref}
-                color="primary"
-                isDisabled={!trimmedCode}
-              >
-                Approve device
-              </Button>
-            </div>
+          <StepCard index={3} title="Paste the code in this chat">
+            <p className="text-xs font-light text-zinc-400">
+              Paste the pairing code the command printed into the chat below.
+              I&apos;ll show you a button to review and approve this device.
+            </p>
             <p className="text-xs text-zinc-500">
-              After approving, bring the device online with:
+              Once approved, bring the device online with:
             </p>
             <CommandSnippet command={up_command} />
           </StepCard>
