@@ -51,6 +51,10 @@ export async function runDeviceExec(
   const child = spawn(shell, ["-c", command], {
     cwd: cwd || undefined,
     env: process.env,
+    // stdin is /dev/null: the agent cannot type, so an interactive command
+    // (a wizard, a REPL, `read`) must get EOF and move on rather than block
+    // until the timeout. stdout/stderr stay pipes so we can stream them.
+    stdio: ["ignore", "pipe", "pipe"],
   });
 
   let sent = 0;

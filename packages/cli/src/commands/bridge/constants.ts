@@ -48,5 +48,5 @@ export const MAX_IMAGE_READ_BYTES = 5_000_000;
 
 // run_on_device: kill a command after this long, and stop streaming once its
 // combined stdout+stderr passes the cap (mirrors DEVICE_EXEC_* in device_bridge.py).
-export const DEVICE_EXEC_TIMEOUT_MS = 120_000;
+export const DEVICE_EXEC_TIMEOUT_MS = 90_000;
 export const DEVICE_EXEC_MAX_OUTPUT_BYTES = 1_000_000;
