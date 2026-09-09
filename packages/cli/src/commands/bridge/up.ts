@@ -105,7 +105,7 @@ export async function runUp(): Promise<void> {
   const existing = runningDaemonPid();
   if (existing) {
     console.info(
-      `Bridge tunnel is already running (pid ${existing}). Stop it with: gaia bridge down`,
+      `Bridge tunnel is already running (pid ${existing}) — it already serves your configured servers, including any you just added. Nothing else to do.`,
     );
     return;
   }
