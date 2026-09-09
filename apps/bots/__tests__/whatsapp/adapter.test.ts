@@ -135,14 +135,6 @@ import { GaiaApiError } from "../../../../libs/shared/ts/src/bots/api";
 
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
-const LINK_GREETING = "Hey Aryan. I'm with you on WhatsApp now.";
-/** The server-composed first contact: hello, one promise per pick, first move. */
-const LINK_BUBBLES = [
-  LINK_GREETING,
-  "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted.",
-  "One tap and that switches on. The link is live for the next hour:",
-  "Gmail: https://gaia.test/connect/abc",
-];
 const LINK_FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 
@@ -400,12 +392,9 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
     });
   });
 
-  it("links an unlinked sender from a trailing #code and chats the stripped text", async () => {
+  it("redeems a trailing #code from an unlinked sender and says nothing itself", async () => {
     mockMarkRead.mockResolvedValue({});
-    const redeemLinkCode = vi.fn().mockResolvedValue({
-      linked: true,
-      bubbles: LINK_BUBBLES,
-    });
+    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
     (adapter as unknown as { gaia: unknown }).gaia = {
       checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
       redeemLinkCode,
@@ -425,13 +414,13 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       LINK_CODE,
       undefined,
     );
-    // The bundle IS the reply. Running the stripped text as a turn on top of it
-    // would answer the user's own prewritten opener a second time.
+    // The API composes the first contact and delivers it on the outbound queue
+    // when the link completes, so the bot must not send anything of its own:
+    // a bubble from here would arrive alongside the server's and duplicate it.
+    expect(mockSendText).not.toHaveBeenCalled();
+    // Nor may the stripped text run as a turn — that would answer the user's
+    // own prewritten opener a second time.
     expect(handleStreamingChat).not.toHaveBeenCalled();
-    const sent = mockSendText.mock.calls.map((c) => JSON.stringify(c[0]));
-    for (const bubble of LINK_BUBBLES) {
-      expect(sent.filter((t) => t.includes(bubble))).toHaveLength(1);
-    }
   });
 
   it("sends nothing of the first contact when the #code fails to redeem", async () => {
@@ -452,9 +441,10 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       "wamid.001",
     );
 
-    expect(JSON.stringify(mockSendText.mock.calls)).not.toContain(
-      LINK_GREETING,
-    );
+    // The only thing a refused code may produce is the explanation of why.
+    const sent = mockSendText.mock.calls.map((c) => JSON.stringify(c[0]));
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain("That link has expired");
     expect(handleStreamingChat).not.toHaveBeenCalled();
   });
 

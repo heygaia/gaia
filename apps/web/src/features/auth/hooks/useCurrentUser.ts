@@ -89,7 +89,7 @@ export const useCurrentUser = (): CurrentUser => {
  * timestamp: anything older than the page itself is a previous session's
  * answer, not the server's current one.
  */
-export const isFetchedThisSession = (
+const isFetchedThisSession = (
   dataUpdatedAt: number,
   pageLoadedAt: number = performance.timeOrigin,
 ): boolean => dataUpdatedAt >= pageLoadedAt;

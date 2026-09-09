@@ -151,14 +151,6 @@ import {
 
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
-const LINK_GREETING = "Hey Aryan. I'm with you on Telegram now.";
-/** The server-composed first contact: hello, one promise per pick, first move. */
-const LINK_BUBBLES = [
-  LINK_GREETING,
-  "Your inbox is out of control. Every morning I'll have it sorted and the replies drafted.",
-  "One tap and that switches on. The link is live for the next hour:",
-  "Gmail: https://gaia.test/connect/abc",
-];
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -877,9 +869,7 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       "help",
       helpCommand,
     );
-    const redeemLinkCode = vi
-      .fn()
-      .mockResolvedValue({ linked: true, bubbles: LINK_BUBBLES });
+    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
     (adapter as unknown as { gaia: unknown }).gaia = {
       redeemLinkCode,
       getFrontendUrl: () => "https://gaia.test",
@@ -906,12 +896,13 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       LINK_CODE,
       expect.objectContaining({ username: "aliceuser", displayName: "Alice" }),
     );
-    // The bundle IS the first message. No model turn runs behind it: the opener
-    // turn skipped the per-pick promises and lost the connect links.
+    // The API composes the first contact and delivers it on the outbound queue
+    // when the link completes, so /start sends nothing of its own — a bubble
+    // from here would arrive alongside the server's and duplicate it.
+    expect(sendMessageFn).not.toHaveBeenCalled();
+    // No model turn runs behind it either: the opener turn skipped the per-pick
+    // promises and lost the connect links.
     expect(handleStreamingChat).not.toHaveBeenCalled();
-    expect(sendMessageFn.mock.calls.map((c) => String(c[1]))).toEqual(
-      LINK_BUBBLES,
-    );
     expect(helpExecute).not.toHaveBeenCalled();
   });
 
@@ -940,9 +931,10 @@ describe("TelegramAdapter - registerCommands command routing", () => {
     await startHandler(makeCtx({ match: LINK_CODE, sendMessageFn }));
 
     expect(handleStreamingChat).not.toHaveBeenCalled();
-    // The failure explanation goes out, never the greeting.
-    expect(JSON.stringify(sendMessageFn.mock.calls)).not.toContain(
-      "with you on Telegram now",
+    // The only thing a refused code may produce is the explanation of why.
+    expect(sendMessageFn).toHaveBeenCalledTimes(1);
+    expect(String(sendMessageFn.mock.calls[0][1])).toContain(
+      "That link has expired",
     );
   });
 

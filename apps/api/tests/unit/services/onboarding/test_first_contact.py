@@ -205,8 +205,11 @@ class TestComposeLinkGreeting:
     ) -> None:
         assert label in compose_link_greeting(platform, "Dev")
 
-    def test_an_unknown_name_drops_the_clause_rather_than_greeting_a_blank(self) -> None:
-        assert compose_link_greeting("telegram", "   ") == "Hey, I'm with you on Telegram now."
+    @pytest.mark.parametrize("name", [None, "", "   "])
+    def test_an_unknown_name_drops_the_clause_rather_than_greeting_a_blank(
+        self, name: str | None
+    ) -> None:
+        assert compose_link_greeting("telegram", name) == "Hey, I'm with you on Telegram now."
 
 
 class TestBuildFirstContact:
