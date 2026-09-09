@@ -12,18 +12,11 @@ import { devicesApi } from "../api/devicesApi";
 import {
   BRIDGE_UP_COMMAND,
   DEVICE_APPROVED_REDIRECT_MS,
-  PAIRING_CODE_GROUP_LENGTH,
   PAIRING_CODE_LENGTH,
-  PAIRING_CODE_SEPARATOR,
 } from "../constants";
-import { normalizePairingCode } from "../utils";
+import { normalizePairingCode, toApiPairingCode } from "../utils";
 import { DeviceSetupGuide } from "./DeviceSetupGuide";
 import { PairingCodeInput } from "./PairingCodeInput";
-
-/** The input holds the code without its separator; the API expects it back in. */
-function toApiCode(digits: string): string {
-  return `${digits.slice(0, PAIRING_CODE_GROUP_LENGTH)}${PAIRING_CODE_SEPARATOR}${digits.slice(PAIRING_CODE_GROUP_LENGTH)}`;
-}
 
 export function ApproveDeviceForm() {
   const searchParams = useSearchParams();
@@ -57,7 +50,7 @@ export function ApproveDeviceForm() {
     if (isApproving) return;
     setIsApproving(true);
     try {
-      const result = await devicesApi.approve(toApiCode(digits));
+      const result = await devicesApi.approve(toApiPairingCode(digits));
       setApproved(result.name);
       trackEvent(ANALYTICS_EVENTS.DEVICE_CONNECTED, {
         source: cameFromCli ? "cli" : "settings",

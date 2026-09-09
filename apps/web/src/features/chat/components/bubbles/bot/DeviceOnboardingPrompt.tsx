@@ -1,12 +1,25 @@
 "use client";
 
 import { Button } from "@heroui/button";
+import { Input } from "@heroui/input";
 import { Link } from "@heroui/link";
 import { Snippet } from "@heroui/snippet";
-import { BookOpen01Icon, CommandLineIcon, ComputerIcon } from "@icons";
+import {
+  BookOpen01Icon,
+  CheckmarkCircle02Icon,
+  CommandLineIcon,
+  ComputerIcon,
+} from "@icons";
 import { type ReactNode, useState } from "react";
 import CollapsibleListWrapper from "@/components/shared/CollapsibleListWrapper";
+import { devicesApi } from "@/features/devices/api/devicesApi";
+import { PAIRING_CODE_LENGTH } from "@/features/devices/constants";
 import type { DeviceOnboardingRequiredData } from "@/features/devices/types";
+import {
+  normalizePairingCode,
+  toApiPairingCode,
+} from "@/features/devices/utils";
+import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "bun"] as const;
 type PackageManager = (typeof PACKAGE_MANAGERS)[number];
@@ -61,6 +74,28 @@ export function DeviceOnboardingPrompt({
   const { install_commands, docs_url, pair_command, up_command, message } =
     device_onboarding_required;
   const [packageManager, setPackageManager] = useState<PackageManager>("npm");
+  const [code, setCode] = useState("");
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvedName, setApprovedName] = useState<string | null>(null);
+
+  const digits = normalizePairingCode(code);
+  const canApprove = digits.length === PAIRING_CODE_LENGTH;
+
+  // Approve right here in the card — no round trip through the model, no jump to
+  // Settings. Pasting the code into the chat still works as the fallback path.
+  const approve = async () => {
+    if (!canApprove || isApproving) return;
+    setIsApproving(true);
+    try {
+      const result = await devicesApi.approve(toApiPairingCode(digits));
+      setApprovedName(result.name);
+      trackEvent(ANALYTICS_EVENTS.DEVICE_CONNECTED, { source: "chat" });
+    } catch {
+      // apiService already surfaced the error toast.
+    } finally {
+      setIsApproving(false);
+    }
+  };
 
   return (
     <CollapsibleListWrapper
@@ -116,11 +151,46 @@ export function DeviceOnboardingPrompt({
             <CommandSnippet command={pair_command} />
           </StepCard>
 
-          <StepCard index={3} title="Paste the code in this chat">
-            <p className="text-xs font-light text-zinc-400">
-              Paste the pairing code the command printed into the chat below.
-              I&apos;ll show you a button to review and approve this device.
-            </p>
+          <StepCard index={3} title="Enter the pairing code">
+            {approvedName ? (
+              <div className="flex items-start gap-2">
+                <CheckmarkCircle02Icon
+                  width={16}
+                  height={16}
+                  className="mt-0.5 shrink-0 text-success"
+                />
+                <p className="text-xs text-zinc-400">
+                  &ldquo;{approvedName}&rdquo; is linked. Bring it online with:
+                </p>
+              </div>
+            ) : (
+              <>
+                <p className="text-xs font-light text-zinc-400">
+                  Paste the code the pairing command printed and approve it
+                  here, or paste it into the chat and I&apos;ll approve it for
+                  you.
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Input
+                    size="sm"
+                    className="max-w-[12rem]"
+                    placeholder="e.g. NS2V-YC5S"
+                    autoComplete="off"
+                    value={code}
+                    onValueChange={setCode}
+                    aria-label="Pairing code"
+                  />
+                  <Button
+                    color="primary"
+                    isLoading={isApproving}
+                    isDisabled={!canApprove}
+                    onPress={approve}
+                  >
+                    Approve device
+                  </Button>
+                </div>
+              </>
+            )}
             <p className="text-xs text-zinc-500">
               Once approved, bring the device online with:
             </p>

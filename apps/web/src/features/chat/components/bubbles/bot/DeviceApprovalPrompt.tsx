@@ -2,9 +2,12 @@
 
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
-import { ArrowUpRight01Icon, ComputerIcon } from "@icons";
-import NextLink from "next/link";
+import { CheckmarkCircle02Icon, ComputerIcon } from "@icons";
+import { useState } from "react";
+import { devicesApi } from "@/features/devices/api/devicesApi";
+import { BRIDGE_UP_COMMAND } from "@/features/devices/constants";
 import type { DeviceApprovalRequiredData } from "@/features/devices/types";
+import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 interface DeviceApprovalPromptProps {
   device_approval_required: DeviceApprovalRequiredData;
@@ -13,7 +16,49 @@ interface DeviceApprovalPromptProps {
 export function DeviceApprovalPrompt({
   device_approval_required,
 }: DeviceApprovalPromptProps) {
-  const { approve_url, code, message } = device_approval_required;
+  const { code, message } = device_approval_required;
+  const [isApproving, setIsApproving] = useState(false);
+  const [approvedName, setApprovedName] = useState<string | null>(null);
+
+  const approve = async () => {
+    if (isApproving) return;
+    setIsApproving(true);
+    try {
+      // `code` is the canonical dashed code the backend stored, so it goes to
+      // the approve endpoint as-is — no page navigation, the user confirms here.
+      const result = await devicesApi.approve(code);
+      setApprovedName(result.name);
+      trackEvent(ANALYTICS_EVENTS.DEVICE_CONNECTED, { source: "chat" });
+    } catch {
+      // apiService already surfaced the error toast.
+    } finally {
+      setIsApproving(false);
+    }
+  };
+
+  if (approvedName) {
+    return (
+      <div className="w-fit max-w-md rounded-2xl bg-zinc-800 p-4 text-white">
+        <div className="flex items-start gap-3">
+          <CheckmarkCircle02Icon
+            width={22}
+            height={22}
+            className="shrink-0 text-success"
+          />
+          <div className="flex min-w-0 flex-col gap-1">
+            <span className="text-sm font-medium">Device linked</span>
+            <p className="text-xs font-light text-zinc-400">
+              &ldquo;{approvedName}&rdquo; is connected to your account. Run{" "}
+              <span className="font-mono text-zinc-300">
+                {BRIDGE_UP_COMMAND}
+              </span>{" "}
+              on it to bring it online.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="w-fit max-w-md rounded-2xl bg-zinc-800 p-4 text-white">
@@ -33,13 +78,12 @@ export function DeviceApprovalPrompt({
             {code}
           </Chip>
           <Button
-            as={NextLink}
-            href={approve_url}
             color="primary"
             size="sm"
-            endContent={<ArrowUpRight01Icon width={16} height={16} />}
+            isLoading={isApproving}
+            onPress={approve}
           >
-            Review &amp; approve
+            Approve
           </Button>
         </div>
       </div>
