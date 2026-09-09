@@ -9,10 +9,13 @@ import type {
 import CalendarListCard from "@/features/calendar/components/CalendarListCard";
 import CalendarListFetchCard from "@/features/calendar/components/CalendarListFetchCard";
 import DeepResearchResultsTabs from "@/features/chat/components/bubbles/bot/DeepResearchResultsTabs";
+import { DeviceApprovalPrompt } from "@/features/chat/components/bubbles/bot/DeviceApprovalPrompt";
+import { DeviceOnboardingPrompt } from "@/features/chat/components/bubbles/bot/DeviceOnboardingPrompt";
 import EmailThreadCard from "@/features/chat/components/bubbles/bot/EmailThreadCard";
 import IntegrationConnectionPrompt from "@/features/chat/components/bubbles/bot/IntegrationConnectionPrompt";
 import SearchResultsTabs from "@/features/chat/components/bubbles/bot/SearchResultsTabs";
 import { MCPAppRenderer } from "@/features/chat/components/tools/MCPAppRenderer";
+import type { DeviceApprovalRequiredData } from "@/features/devices/types";
 import { IntegrationListSection } from "@/features/integrations/components/IntegrationListSection";
 import type {
   IntegrationConnectionData,
@@ -226,6 +229,37 @@ const TOOL_RENDERERS: Partial<RendererMap> = {
           <IntegrationConnectionPrompt
             key={item.integration_id}
             integration_connection_required={item}
+          />
+        ))}
+      </>
+    );
+  },
+
+  // Device onboarding is a single instructional card (install → pair → approve);
+  // not grouped, so `data` is one payload. It routes to the authenticated approve
+  // page rather than approving inline.
+  device_onboarding_required: (data) => (
+    <DeviceOnboardingPrompt device_onboarding_required={data} />
+  ),
+
+  device_approval_required: (data) => {
+    // Grouped: a resumed stream can replay the same waiting-device frame, so
+    // normalize single-or-array and de-duplicate by pairing code.
+    const items = (
+      Array.isArray(data) ? data : [data]
+    ) as DeviceApprovalRequiredData[];
+    const seen = new Set<string>();
+    const uniqueItems = items.filter((item) => {
+      if (seen.has(item.code)) return false;
+      seen.add(item.code);
+      return true;
+    });
+    return (
+      <>
+        {uniqueItems.map((item) => (
+          <DeviceApprovalPrompt
+            key={item.code}
+            device_approval_required={item}
           />
         ))}
       </>

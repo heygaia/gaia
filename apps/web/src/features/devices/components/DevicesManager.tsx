@@ -2,9 +2,21 @@
 
 import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
+import { Link } from "@heroui/link";
 import { Spinner } from "@heroui/spinner";
-import { ComputerIcon, Delete02Icon, Folder01Icon, Link04Icon } from "@icons";
-import { BRIDGE_ADD_COMMAND, BRIDGE_CLI_NAME } from "../constants";
+import {
+  BookOpen01Icon,
+  ComputerIcon,
+  Delete02Icon,
+  Folder01Icon,
+  Link04Icon,
+} from "@icons";
+import {
+  BRIDGE_ADD_COMMAND,
+  BRIDGE_CLI_NAME,
+  BRIDGE_UP_COMMAND,
+  DEVICE_BRIDGE_DOCS_URL,
+} from "../constants";
 import { useDevices } from "../hooks/useDevices";
 import type { Device } from "../types";
 
@@ -66,6 +78,26 @@ function DeviceRow({
               <span>{server.display_name}</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {!device.online && (
+        <div className="mt-3 flex flex-col gap-2 rounded-2xl bg-zinc-900 p-3 text-sm">
+          <p className="text-pretty text-zinc-400">
+            This device is offline. Run{" "}
+            <span className="font-mono text-zinc-200">{BRIDGE_UP_COMMAND}</span>{" "}
+            on this machine to bring it back online.
+          </p>
+          <Link
+            href={DEVICE_BRIDGE_DOCS_URL}
+            isExternal
+            showAnchorIcon
+            size="sm"
+            className="text-xs"
+          >
+            <BookOpen01Icon width={14} height={14} className="mr-1" />
+            Setup guide
+          </Link>
         </div>
       )}
     </div>
