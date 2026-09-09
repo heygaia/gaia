@@ -214,4 +214,9 @@ NOTES:
   cloud container that cannot see their machine.
 - The device must be online (the `gaia bridge up` daemon running). If it is
   offline the call fails with a message telling the user how to bring it up.
+- Commands run with NO stdin, so anything that waits for input gets EOF and
+  fails. Always use non-interactive forms (flags, piped input, heredocs). To add
+  an MCP server on the device, use the flag form, e.g. `gaia bridge add --type
+  stdio --name github --command "npx -y @modelcontextprotocol/server-github"`;
+  the bare `gaia bridge add` is an interactive wizard and will not work here.
 """
