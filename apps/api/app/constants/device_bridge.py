@@ -75,6 +75,13 @@ MCP_SESSION_OPEN_TIMEOUT_SECONDS: Final[float] = 30.0
 # Per JSON-RPC round trip through the tunnel (tool call, list_tools, initialize).
 MCP_SESSION_CALL_TIMEOUT_SECONDS: Final[float] = 120.0
 
+# --- exec-over-bridge session (run_on_device) ---
+# Hard ceiling on a single device command; the daemon kills the process here.
+DEVICE_EXEC_TIMEOUT_SECONDS: Final[float] = 120.0
+# Total captured output (stdout+stderr) per exec before the daemon truncates and
+# stops streaming — bounds a runaway command from flooding the tunnel.
+DEVICE_EXEC_MAX_OUTPUT_BYTES: Final[int] = 1_000_000
+
 # --- Bridge frame types (WS envelope ``t`` field) ---
 # cloud -> device
 FRAME_PING: Final[str] = "ping"
@@ -87,6 +94,11 @@ FRAME_PONG: Final[str] = "pong"
 FRAME_HELLO: Final[str] = "hello"  # daemon announces its exposed servers on connect
 FRAME_MCP_OPENED: Final[str] = "mcp.opened"
 FRAME_MCP_ERROR: Final[str] = "mcp.error"
+# exec-over-bridge (run_on_device): cloud -> device open, device -> cloud stream.
+FRAME_EXEC_OPEN: Final[str] = "exec.open"
+FRAME_EXEC_STDOUT: Final[str] = "exec.stdout"
+FRAME_EXEC_STDERR: Final[str] = "exec.stderr"
+FRAME_EXEC_EXIT: Final[str] = "exec.exit"
 
 # --- Chat-driven onboarding copy (surfaced by the add_device tool's card) ---
 # Global install commands for the `@heygaia/cli` package. MUST match

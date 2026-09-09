@@ -857,6 +857,12 @@ class TestInitializedCategoryContract:
             "add_device": False,
             # Force-gated (always_gate), not destructive — surfaces the approve link.
             "approve_device_pairing": False,
+            # Runs a shell command on the user's paired machine. Deliberately
+            # NEITHER destructive NOR always_gate: the owner's explicit "yolo, no
+            # gating" call for the device — pairing the machine IS the grant. This
+            # is an RCE surface with no HIL stop; the gate is expected to be added
+            # back before this ships to production.
+            "run_on_device": False,
         }
 
     def test_integrations_always_gate_set_is_exactly_the_two_forced_tools(

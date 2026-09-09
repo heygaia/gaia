@@ -45,6 +45,7 @@ from app.services.integrations.custom_crud import (
     create_and_connect_custom_integration,
     create_custom_integration,
 )
+from app.services.mcp.device_exec import DeviceExecError, run_device_command
 from app.services.mcp.mcp_client import MCPClient, get_mcp_client
 from app.services.oauth.oauth_service import (
     check_integration_status as check_single_integration_status,
@@ -58,6 +59,7 @@ from app.templates.docstrings.integration_tool_docs import (
     CONNECT_INTEGRATION,
     LIST_DEVICES,
     LIST_INTEGRATIONS,
+    RUN_ON_DEVICE,
 )
 from app.utils.device_onboarding import request_device_approval, request_device_onboarding
 from app.utils.integration_checker import request_integration_connection
@@ -571,6 +573,44 @@ async def approve_device_pairing(user_code: str) -> str:
     return request_device_approval(code)
 
 
+@tool
+@with_doc(RUN_ON_DEVICE)
+async def run_on_device(device_id: str, command: str, config: RunnableConfig) -> str:
+    log.set(tool={"name": "run_on_device", "action": "exec"})
+    configurable = agent_configurable(config)
+    user_id = configurable.get("user_id") if configurable else None
+    if not user_id:
+        return "Error: User ID not found in configuration."
+
+    # Authz: the device must belong to this user. Never trust a device_id the
+    # model produced — a wrong or spoofed id must not reach another user's machine.
+    devices = await list_devices_service(str(user_id))
+    if not any(d.id == device_id for d in devices):
+        return (
+            f"No device '{device_id}' is linked to your account. "
+            "Call list_devices to see your paired machines and their ids."
+        )
+
+    try:
+        result = await run_device_command(device_id, command)
+    except DeviceExecError as e:
+        return f"Could not run the command: {e}"
+    except Exception as e:
+        log.error(f"{LogTag.TOOL} Error running command on device", error_type=type(e).__name__)
+        return f"Error running the command: {e!s}"
+
+    parts = [f"exit code: {result.exit_code}"]
+    if result.stdout:
+        parts.append(f"--- stdout ---\n{result.stdout}")
+    if result.stderr:
+        parts.append(f"--- stderr ---\n{result.stderr}")
+    if not result.stdout and not result.stderr:
+        parts.append("(no output)")
+    if result.truncated:
+        parts.append("(output truncated: command produced more than the cap)")
+    return "\n".join(parts)
+
+
 # Export all tools
 tools = [
     list_integrations,
@@ -581,4 +621,5 @@ tools = [
     list_devices,
     add_device,
     approve_device_pairing,
+    run_on_device,
 ]

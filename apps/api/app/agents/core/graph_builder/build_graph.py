@@ -139,6 +139,7 @@ async def build_executor_graph(
                 "add_device",
                 "approve_device_pairing",
                 "list_devices",
+                "run_on_device",
             ],
         ),
         hooks_config=HookConfig(

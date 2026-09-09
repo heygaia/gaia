@@ -187,3 +187,31 @@ After they approve, tell them to run the up command to bring the device online.
 Do not include the approval URL in your own text on a UI client, the card
 handles it.
 """
+
+
+RUN_ON_DEVICE = """
+Run a shell command on one of the user's paired machines and get its output.
+
+Use this to do anything on the user's own computer: read or edit files, list a
+directory, run a build or a script, install or launch a local MCP server with
+the `gaia bridge` CLI, inspect the system. The command runs in the user's shell
+on that machine, as that user, so paths, `~`, pipes, and installed tools all
+work as they would in their terminal.
+
+PARAMETERS:
+- device_id: which machine to run on (from list_devices). Call list_devices
+  first if you don't already know the id, and to check the device is online.
+- command: the shell command to run (e.g. `ls ~/Downloads`, `cat report.md`,
+  `gaia bridge add`).
+
+RETURN VALUE:
+The exit code plus captured stdout and stderr (output is capped and the command
+is killed if it runs too long). A non-zero exit code means the command failed:
+read stderr, fix, and re-run rather than assuming success.
+
+NOTES:
+- This is the one way to touch the user's real files; the coding sandbox is a
+  cloud container that cannot see their machine.
+- The device must be online (the `gaia bridge up` daemon running). If it is
+  offline the call fails with a message telling the user how to bring it up.
+"""

@@ -21,6 +21,9 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.constants.device_bridge import (
     DEVICE_HEARTBEAT_INTERVAL_SECONDS,
     DEVICE_HEARTBEAT_TIMEOUT_SECONDS,
+    FRAME_EXEC_EXIT,
+    FRAME_EXEC_STDERR,
+    FRAME_EXEC_STDOUT,
     FRAME_MCP_ERROR,
     FRAME_MCP_MSG,
     FRAME_MCP_OPENED,
@@ -154,10 +157,17 @@ async def _receive_loop(websocket: WebSocket, device_id: str, state: dict[str, f
             # Liveness is tracked by state["last_recv"] above; presence is
             # refreshed by the 30s heartbeat — no need to write it per pong.
             continue
-        if frame_type in (FRAME_MCP_MSG, FRAME_MCP_OPENED, FRAME_MCP_ERROR):
-            # The daemon echoes the consumer pod id (from mcp.open) on every up
-            # frame; route the reply to that pod's shared up-channel, where the
-            # up-listener dispatches by "sid". No per-session subscription.
+        if frame_type in (
+            FRAME_MCP_MSG,
+            FRAME_MCP_OPENED,
+            FRAME_MCP_ERROR,
+            FRAME_EXEC_STDOUT,
+            FRAME_EXEC_STDERR,
+            FRAME_EXEC_EXIT,
+        ):
+            # The daemon echoes the consumer pod id (from mcp.open / exec.open) on
+            # every up frame; route the reply to that pod's shared up-channel, where
+            # the up-listener dispatches by "sid". No per-session subscription.
             pod = frame.get("pod")
             if isinstance(pod, str):
                 await publish_up_to_pod(pod, raw)
