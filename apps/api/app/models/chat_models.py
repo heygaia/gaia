@@ -78,6 +78,8 @@ tool_fields = [
     "google_docs_data",
     "integration_connection_required",
     "integration_list_data",
+    "device_onboarding_required",
+    "device_approval_required",
     "reddit_data",
     "twitter_user_data",
     "twitter_search_data",
