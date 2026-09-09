@@ -2136,6 +2136,45 @@ class TestTheStickyKeyNeverReachesANonOpenRouterFallback:
         assert _is_openrouter_wire(client.bind_tools([])) is True
         assert _is_openrouter_wire(client.with_structured_output(_Extracted)) is True
 
+    @pytest.mark.regression
+    def test_a_chatopenrouter_at_a_non_openrouter_base_is_not_openrouter_wire(self) -> None:
+        """A ChatOpenRouter aimed at another OpenAI-compatible endpoint (the
+        DEV_LLM_* custom lane, e.g. api.openai.com) is NOT talking to OpenRouter:
+        session_id is an OpenRouter-service routing hint and OpenAI rejects it as
+        an unknown argument, killing the call. Only the default base is the wire."""
+        from app.agents.llm.client import _is_openrouter_wire
+
+        custom_openai = ChatOpenRouter(
+            model="gpt-4.1-mini", api_key="k", base_url="https://api.openai.com/v1"
+        )
+
+        assert _is_openrouter_wire(custom_openai) is False
+        assert _is_openrouter_wire(custom_openai.bind_tools([])) is False
+
+    @pytest.mark.regression
+    def test_bind_session_id_skips_a_custom_openai_lane(self) -> None:
+        """The CUSTOM provider is in STICKY_ROUTING_PROVIDERS, so a sticky key IS
+        computed for it — but when that lane points at OpenAI the graph must NOT
+        bind session_id (OpenAI 400s the whole turn). The real OpenRouter lane
+        still gets it. The endpoint check, not the provider, is the guard."""
+        from app.constants.llm import LLMProviderName
+        from app.override.langgraph_bigtool.create_agent import _bind_session_id
+
+        custom = ChatOpenRouter(
+            model="gpt-4.1-mini", api_key="k", base_url="https://api.openai.com/v1"
+        ).bind_tools([])
+        real = ChatOpenRouter(model="m", api_key="k").bind_tools([])
+
+        skipped = _bind_session_id(
+            custom, {"provider": LLMProviderName.CUSTOM, "session_id": "conv-1"}, "comms"
+        )
+        bound = _bind_session_id(
+            real, {"provider": LLMProviderName.OPENROUTER, "session_id": "conv-1"}, "comms"
+        )
+
+        assert getattr(skipped, "kwargs", {}).get("session_id") is None
+        assert getattr(bound, "kwargs", {}).get("session_id") == "conv-1-comms"
+
     def test_another_provider_is_not_mistaken_for_openrouter(self) -> None:
         from app.agents.llm.client import _is_openrouter_wire
 
