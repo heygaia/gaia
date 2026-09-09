@@ -88,6 +88,20 @@ FRAME_HELLO: Final[str] = "hello"  # daemon announces its exposed servers on con
 FRAME_MCP_OPENED: Final[str] = "mcp.opened"
 FRAME_MCP_ERROR: Final[str] = "mcp.error"
 
+# --- Chat-driven onboarding copy (surfaced by the add_device tool's card) ---
+# Global install commands for the `@heygaia/cli` package. MUST match
+# CLI_INSTALL_COMMANDS in libs/shared/ts/src/cli/command-manifest.ts.
+CLI_INSTALL_COMMANDS: Final[dict[str, str]] = {
+    "npm": "npm install -g @heygaia/cli",
+    "pnpm": "pnpm add -g @heygaia/cli",
+    "bun": "bun add -g @heygaia/cli",
+}
+# The commands the user runs after installing.
+DEVICE_PAIR_COMMAND: Final[str] = "gaia bridge login"
+DEVICE_UP_COMMAND: Final[str] = "gaia bridge up"
+# Public setup guide (Mintlify) GAIA links to and can fetch to troubleshoot.
+DEVICE_BRIDGE_DOCS_URL: Final[str] = "https://docs.heygaia.io/cli/device-bridge"
+
 # Integration category for device-tunnel MCP servers. They keep managed_by="mcp"
 # (they ARE MCP servers, just reached over the tunnel); the transport marker below
 # is the real discriminator. Category keeps them out of the public marketplace UI.

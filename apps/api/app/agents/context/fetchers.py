@@ -31,6 +31,10 @@ from app.memory.context import AGENDA_HEADING, RECENT_ACTIVITY_HEADING
 from app.memory.engine import memory_engine
 from app.memory.mappers import entry_to_note
 from app.models.todo_models import TodoDocument
+from app.services.device.device_service import (
+    list_device_servers,
+    list_devices as list_devices_service,
+)
 from app.services.gaia_knowledge_service import gaia_knowledge_service
 from app.services.integrations.user_integrations import get_connected_integrations_named
 from app.services.tracked_todo_service import tracked_todo_service
@@ -313,4 +317,31 @@ async def build_connected_integrations_manifest(user_id: str, header: str) -> st
     for item in connected:
         iid, name = item["id"], item["name"]
         lines.append(f"- {name} ({iid})" if name and name != iid else f"- {iid}")
+    return "\n".join(lines)
+
+
+async def build_connected_devices_manifest(user_id: str, header: str) -> str:
+    """One line per paired device and the servers it exposes, so the agent knows
+    the user has their own machine reachable and routes local-file work there
+    instead of the cloud sandbox. Capability awareness only - live online status
+    and tool schemas come from list_devices / retrieve_tools at call time."""
+    try:
+        devices = await list_devices_service(user_id)
+        if not devices:
+            return ""
+        servers_by_device = await list_device_servers([d.id for d in devices])
+    except Exception as e:
+        log.warning(
+            "Error building connected-devices manifest",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+        )
+        return ""
+    lines = [header]
+    for device in devices:
+        servers = servers_by_device.get(device.id, [])
+        names = ", ".join(s.display_name for s in servers)
+        exposing = f" exposing: {names}" if names else ""
+        lines.append(f"- {device.name} ({device.platform}){exposing}")
     return "\n".join(lines)

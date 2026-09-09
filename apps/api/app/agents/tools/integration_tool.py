@@ -52,11 +52,14 @@ from app.services.oauth.oauth_service import (
 )
 from app.templates.docstrings.integration_tool_docs import (
     ADD_CUSTOM_MCP_SERVER,
+    ADD_DEVICE,
+    APPROVE_DEVICE_PAIRING,
     CHECK_INTEGRATIONS_STATUS,
     CONNECT_INTEGRATION,
     LIST_DEVICES,
     LIST_INTEGRATIONS,
 )
+from app.utils.device_onboarding import request_device_approval, request_device_onboarding
 from app.utils.integration_checker import request_integration_connection
 from app.utils.url_safety import assert_safe_url_shape
 from shared.py.wide_events import log
@@ -548,6 +551,26 @@ async def list_devices(config: RunnableConfig) -> ListDevicesResult | str:
         return f"Error listing devices: {e!s}"
 
 
+@tool
+@with_doc(ADD_DEVICE)
+async def add_device() -> str:
+    log.set(tool={"name": "add_device", "action": "onboard"})
+    return request_device_onboarding()
+
+
+@tool
+@with_doc(APPROVE_DEVICE_PAIRING)
+async def approve_device_pairing(user_code: str) -> str:
+    log.set(tool={"name": "approve_device_pairing", "action": "surface_approval"})
+    code = (user_code or "").strip()
+    if not code:
+        return (
+            "Ask the user for the pairing code that `gaia bridge login` printed, "
+            "then call this again with it."
+        )
+    return request_device_approval(code)
+
+
 # Export all tools
 tools = [
     list_integrations,
@@ -556,4 +579,6 @@ tools = [
     check_integrations_status,
     add_custom_mcp_server,
     list_devices,
+    add_device,
+    approve_device_pairing,
 ]

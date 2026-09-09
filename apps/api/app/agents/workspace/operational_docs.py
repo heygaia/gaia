@@ -874,6 +874,42 @@ Per-topic details live beside the data: `account/GUIDE.md` and
 say so rather than presenting a read as live truth.
 """
 
+DEVICE_SETUP_DOC: Final[str] = """# Device Setup - connecting the user's own machine
+
+The user can connect their own computer to GAIA with the `gaia bridge` CLI, so
+GAIA can use MCP servers running on that machine and read or write files there.
+It runs over one outbound tunnel - no inbound ports.
+
+## Steps to walk the user through
+1. Install the CLI (needs Node 20+):
+     npm install -g @heygaia/cli   (or: pnpm add -g @heygaia/cli / bun add -g @heygaia/cli)
+   Works on macOS, Linux, and Windows (WSL2 recommended). Full guide: /cli/device-bridge
+2. Pair the machine:  gaia bridge login
+   It prints a short code. The user pastes that code in this chat (GAIA shows an
+   approve button that opens the trusted approval page) or approves it at
+   Settings -> Devices. Approving links the device to their account. GAIA never
+   approves a code on its own - the user confirms on the authenticated page.
+3. Expose something:  gaia bridge add  (a guided wizard)
+     - a command-run MCP server (stdio), e.g. npx -y @modelcontextprotocol/server-everything
+     - an MCP server already running at a local URL
+     - local files and folders (no MCP needed): specific folders or the entire
+       filesystem, read-only or read/write
+   Shortcut for folders:  gaia bridge fs ~/dir [--write]
+4. Keep it online:  gaia bridge up   (the device is online only while this runs)
+
+## Using a connected device
+Device servers appear as ordinary connected integrations. To act on the user's
+real files or machine, use that device's tools (list_devices shows what each
+device exposes and whether it is online). Never answer a question about the
+user's own files by running commands in the cloud sandbox - the sandbox cannot
+see the user's machine.
+
+## Managing
+gaia bridge ls (status), gaia bridge rm <key> (remove a server),
+gaia bridge logout (forget local credentials). Revoke a device any time from
+Settings -> Devices.
+"""
+
 MANUAL_DOCS: Final[dict[str, ManualDoc]] = {
     doc.name: doc
     for doc in (
@@ -992,6 +1028,16 @@ MANUAL_DOCS: Final[dict[str, ManualDoc]] = {
             ),
             body=BILLING_DOC,
         ),
+        ManualDoc(
+            name="device-setup",
+            title="Device Setup: connecting the user's own machine",
+            description=(
+                "Connect the user's computer with the gaia bridge CLI: install, "
+                "pair (paste the code in chat or approve in Settings), expose MCP "
+                "servers or local files, and keep it online; how to use a device."
+            ),
+            body=DEVICE_SETUP_DOC,
+        ),
     )
 }
 
@@ -1013,6 +1059,7 @@ ManualTopic = Literal[
     "skills",
     "documents",
     "billing",
+    "device-setup",
 ]
 
 if set(get_args(ManualTopic)) != set(MANUAL_DOCS):

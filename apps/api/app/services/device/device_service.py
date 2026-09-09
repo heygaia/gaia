@@ -123,6 +123,14 @@ async def start_pairing(
     )
 
 
+def build_device_approve_url(user_code: str) -> str:
+    """The signed-in approval page URL with the pairing code prefilled - the
+    trusted surface where the user (not the agent) confirms linking the device.
+    Same shape as ``start_pairing``'s ``verification_url``."""
+    base = get_frontend_url().rstrip("/")
+    return f"{base}{PAIRING_VERIFICATION_PATH}?code={quote(user_code.strip().upper())}"
+
+
 async def lookup_pending_by_user_code(user_code: str) -> dict | None:
     """Resolve a browser-typed ``user_code`` to its pending pairing record."""
     mapping = await get_cache(_user_code_key(user_code.strip().upper()))

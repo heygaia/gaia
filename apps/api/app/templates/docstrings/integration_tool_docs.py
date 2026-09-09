@@ -156,3 +156,34 @@ Examples:
 - User: "Check calendar and notion status" → integration_names: ["calendar", "notion"]
 - User: "What's the status of my integrations?" → Use list_integrations instead
 """
+
+
+ADD_DEVICE = """
+Start connecting the user's own computer (a "device") to GAIA.
+
+Use this when the user asks to connect their laptop, computer, or machine, wants
+GAIA to reach files or apps on their own machine, or has no device connected
+yet. It shows the user a setup card with the install command and the pairing
+command, and needs no input from you.
+
+After they run the pairing command and get a short code, they paste it in chat;
+you then call approve_device_pairing with that code. You cannot approve a code
+yourself, the user confirms on the authenticated page the card links to.
+
+To only look at already-connected devices and what they expose, use list_devices
+instead.
+"""
+
+
+APPROVE_DEVICE_PAIRING = """
+Surface the trusted approval link for a device pairing code the user pasted.
+
+Call this with the short code the pairing command printed (for example
+"NS2V-YC5S"). It shows the user a button that opens the signed-in approval page
+with the code prefilled, where THEY confirm linking the device. You never
+approve it yourself. This action is always confirmed with the user first.
+
+After they approve, tell them to run the up command to bring the device online.
+Do not include the approval URL in your own text on a UI client, the card
+handles it.
+"""
