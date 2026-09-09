@@ -8,6 +8,7 @@ import {
   expandTilde,
   filesystemServer,
   loadConfig,
+  removeServer,
   upsertServer,
 } from "./config.js";
 import type { ServerConfig } from "./config.types.js";
@@ -321,4 +322,49 @@ export async function runAdd(): Promise<void> {
   } else {
     console.info("Run `gaia bridge up` whenever you're ready.");
   }
+}
+
+function serverLabel(server: ServerConfig): string {
+  const where =
+    server.type === "url"
+      ? server.url
+      : server.type === "stdio"
+        ? server.command
+        : server.allow.join(", ");
+  return `${server.name} — ${server.type} (${where})`;
+}
+
+// `gaia bridge remove` — pick a configured server to remove. A bare key still
+// works non-interactively (`gaia bridge remove <key>`); with no key we show a
+// menu of what this device exposes.
+export async function runRemove(key?: string): Promise<void> {
+  if (key) {
+    console.info(
+      removeServer(key) ? `Removed '${key}'.` : `No server '${key}'.`,
+    );
+    return;
+  }
+
+  const servers = loadConfig().servers;
+  if (servers.length === 0) {
+    console.info("No servers configured — nothing to remove.");
+    return;
+  }
+
+  const index = await choose(
+    "Which server do you want to remove?",
+    servers.map(serverLabel),
+  );
+  const chosen = servers[index];
+  if (!chosen) return;
+
+  if (!(await confirm(`Remove '${chosen.key}'?`, false))) {
+    console.info("Left it in place.");
+    return;
+  }
+
+  removeServer(chosen.key);
+  console.info(
+    `Removed '${chosen.key}'. The tunnel stops serving it right away; it stays in GAIA until you remove the device from Settings -> Devices.`,
+  );
 }

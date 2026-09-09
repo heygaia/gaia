@@ -10,12 +10,11 @@ import {
   filesystemServer,
   loadConfig,
   loadCredentials,
-  removeServer,
   upsertServer,
 } from "./config.js";
 import { runLogin } from "./login.js";
 import { daemonStatusLine, runServe, runUp, stopDaemon } from "./up.js";
-import { runAdd } from "./wizard.js";
+import { runAdd, runRemove } from "./wizard.js";
 
 function cmdFs(dirs: string[], write: boolean): void {
   const allow = dirs.map((p) => resolve(expandTilde(p)));
@@ -120,16 +119,14 @@ bridgeCommand
   });
 
 bridgeCommand
-  .command("rm")
-  .alias("remove")
-  .description("Remove a configured server")
-  .argument("<key>", "Server key from `gaia bridge ls`")
-  .action(async (key: string) => {
-    await run(() => {
-      console.info(
-        removeServer(key) ? `Removed '${key}'` : `No server '${key}'`,
-      );
-    });
+  .command("remove")
+  .alias("rm")
+  .description(
+    "Remove a configured server (interactive picker if no key given)",
+  )
+  .argument("[key]", "Server key from `gaia bridge ls` (optional)")
+  .action(async (key: string | undefined) => {
+    await run(() => runRemove(key));
   });
 
 bridgeCommand
