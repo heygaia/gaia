@@ -42,6 +42,18 @@ class TestPublishWithRetry:
         channel.default_exchange.publish.assert_awaited_once()
         channel.declare_queue.assert_not_awaited()  # topology is pre-declared
 
+    async def test_publish_outbound_routes_to_the_queue_it_was_given(
+        self, connected_publisher
+    ) -> None:
+        """The routing key IS the queue name on the default exchange. Publishing
+        under any other key drops the message on the floor: the default exchange
+        has no binding to fall back on, so the bot never sees it."""
+        pub, channel = connected_publisher
+        await pub.publish_outbound("outbound.whatsapp", b"{}")
+        assert (
+            channel.default_exchange.publish.await_args.kwargs["routing_key"] == "outbound.whatsapp"
+        )
+
     async def test_publish_outbound_stamps_the_broker_ttl(self, connected_publisher) -> None:
         """A durable queue outlives a bot outage; the message must not. The TTL
         rides on the AMQP message so the broker expires it with no consumer."""
@@ -49,6 +61,16 @@ class TestPublishWithRetry:
         await pub.publish_outbound("outbound.whatsapp", b"{}", expiration=3600)
         message = channel.default_exchange.publish.await_args.args[0]
         assert message.expiration == 3600
+
+    async def test_every_published_message_is_persistent(self, connected_publisher) -> None:
+        """The outbound queues are durable so a broker restart keeps them, but a
+        durable queue only keeps PERSISTENT messages. Published transient, a
+        queued bot reply is lost on restart while the queue survives — the
+        failure looks like the broker worked."""
+        pub, channel = connected_publisher
+        await pub.publish_outbound("outbound.whatsapp", b"{}")
+        message = channel.default_exchange.publish.await_args.args[0]
+        assert message.delivery_mode == aio_pika.DeliveryMode.PERSISTENT
 
     async def test_publish_outbound_retries_once_then_succeeds(self, connected_publisher) -> None:
         pub, channel = connected_publisher
