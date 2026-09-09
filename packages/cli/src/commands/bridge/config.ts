@@ -83,6 +83,28 @@ export function removeServer(key: string): boolean {
   return config.servers.length < before;
 }
 
+/** Expand a leading ~ so quoted paths like "~/Documents" still resolve to $HOME. */
+export function expandTilde(p: string): string {
+  if (p === "~") return homedir();
+  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
+  return p;
+}
+
+/** The built-in filesystem server config — one canonical shape for both the
+ * `gaia bridge fs` command and the `gaia bridge add` wizard. */
+export function filesystemServer(
+  allow: string[],
+  allowWrite: boolean,
+): FilesystemServer {
+  return {
+    type: "filesystem",
+    key: FILESYSTEM_SERVER_KEY,
+    name: "Local Files",
+    allow,
+    allowWrite,
+  };
+}
+
 export function getFilesystemServer(): FilesystemServer | undefined {
   return loadConfig().servers.find(
     (s): s is FilesystemServer =>

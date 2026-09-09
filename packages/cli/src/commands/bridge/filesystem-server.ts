@@ -47,6 +47,9 @@ async function isSymlink(path: string): Promise<boolean> {
 }
 
 function isInside(child: string, root: string): boolean {
+  // Entire-filesystem root: `root + sep` would be "//", matching nothing, so
+  // treat any absolute path as contained.
+  if (root === sep) return child.startsWith(sep);
   return child === root || child.startsWith(root + sep);
 }
 

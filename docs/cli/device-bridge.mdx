@@ -1,0 +1,216 @@
+---
+title: "Device Bridge"
+description: "Connect your machine's local MCP servers and files to GAIA over one secure outbound tunnel using the gaia bridge command."
+icon: "plug"
+---
+
+## Overview
+
+The device bridge connects tools that live on your own machine to GAIA. Run
+`gaia bridge` to expose local MCP servers and folders through a single outbound
+tunnel, so GAIA can use them the same way it uses any other integration.
+
+- **Local MCP servers** — anything you can start with a command (`npx`, `uvx`,
+  `docker`, `python`) or that already runs at a local URL.
+- **Files and folders** — a built-in filesystem server, no MCP setup required.
+- **One outbound tunnel** — the bridge dials out to GAIA; it opens **no inbound
+  ports** on your machine. Your device is reachable only while the tunnel runs,
+  and you can revoke it anytime from **Settings → Devices**.
+
+<Note>
+  The bridge is separate from self-hosting. You can pair a machine with GAIA
+  Cloud or your own instance — it does not require running GAIA locally.
+</Note>
+
+## Requirements
+
+- **macOS, Linux, or Windows (WSL2 recommended)**
+- **Node.js 20+**
+- A GAIA account to pair with
+
+## Install the CLI
+
+The bridge ships with the GAIA CLI (`@heygaia/cli`). Install it globally with
+your package manager:
+
+<Snippet file="cli-install.mdx" />
+
+Verify it is available:
+
+```bash
+gaia bridge --help
+```
+
+## Pair your machine
+
+Pairing links this machine to your GAIA account. You only do it once per
+machine.
+
+<Steps>
+  <Step title="Start pairing">
+    Run:
+
+    ```bash
+    gaia bridge login
+    ```
+
+    The CLI prints a short code and a link, then waits for approval.
+  </Step>
+
+  <Step title="Approve the device">
+    Approve the code in either place:
+
+    - **In GAIA chat** — paste the code into a chat. GAIA shows an approve
+      button for it.
+    - **In settings** — open **Settings → Devices**
+      (`/settings/devices/approve`) and enter the code.
+
+    Once approved, the CLI confirms the device is paired.
+  </Step>
+</Steps>
+
+**Options for `gaia bridge login`:**
+
+| Flag            | Description                                     |
+| --------------- | ----------------------------------------------- |
+| `--name <name>` | Name to show for this device in **Settings**    |
+| `--api <url>`   | Pair against a specific GAIA API base URL       |
+
+```bash
+gaia bridge login --name my-laptop
+```
+
+## Expose something to GAIA
+
+Run the guided wizard and pick what to connect:
+
+```bash
+gaia bridge add
+```
+
+The wizard connects any of three kinds of thing. If the machine isn't paired
+yet, it walks you through pairing first.
+
+<AccordionGroup>
+  <Accordion title="A command that starts an MCP server (stdio)">
+    Give the wizard the command that launches your server, for example:
+
+    ```bash
+    npx -y @modelcontextprotocol/server-everything
+    ```
+
+    Other examples: `uvx some-server`, `docker run -i --rm my/image`. The
+    wizard collects any environment variables or secrets the server needs, then
+    starts it and lists its tools to confirm it works before saving.
+  </Accordion>
+
+  <Accordion title="An MCP server already running at a local URL">
+    Point the wizard at a server already listening on your machine, for example
+    `http://localhost:3000/mcp`. The URL must be loopback
+    (`localhost`, `127.0.0.1`, or `::1`). You can add optional request headers
+    such as `Authorization`.
+  </Accordion>
+
+  <Accordion title="Local files & folders (no MCP needed)">
+    Exposes GAIA's built-in filesystem server so it can list, read, and search
+    files. You choose:
+
+    - **Scope** — specific folders, or your **entire filesystem** (everything
+      this user account can read).
+    - **Access** — **read-only** (default), or **read/write** so GAIA can modify
+      files too.
+
+    <Warning>
+      Exposing your entire filesystem includes sensitive paths like `~/.ssh`.
+      Prefer specific folders unless you really need everything.
+    </Warning>
+  </Accordion>
+</AccordionGroup>
+
+Secrets you enter (env vars, headers) are stored locally and never leave your
+machine. After saving, the wizard registers the server with GAIA and offers to
+start the tunnel right away.
+
+### Shortcut: expose folders in one command
+
+To share folders without the wizard, use `gaia bridge fs`:
+
+```bash
+gaia bridge fs ~/Documents ~/code    # read-only access to these folders
+gaia bridge fs --write ~/notes       # also allow GAIA to modify files here
+```
+
+`~` expands to your home directory; quote paths that contain spaces. This is the
+same built-in filesystem server the wizard configures — re-running it replaces
+the folder list.
+
+<Note>
+  Exposing your **entire filesystem** is only available through the
+  `gaia bridge add` wizard, not `gaia bridge fs`.
+</Note>
+
+## Keep the device online
+
+Your device is online only while the tunnel is running:
+
+```bash
+gaia bridge up
+```
+
+This holds the outbound tunnel in the foreground. Leave it running while you
+want GAIA to reach your machine; press **Ctrl+C** to stop. When it isn't
+running, GAIA sees the device as offline.
+
+## Manage devices and servers
+
+```bash
+gaia bridge ls          # show pairing status and configured servers
+gaia bridge rm <key>    # remove one configured server
+gaia bridge logout      # forget this machine's local credentials
+```
+
+Use the `<key>` shown by `gaia bridge ls` when removing a server:
+
+```bash
+gaia bridge rm filesystem
+```
+
+<Note>
+  `gaia bridge logout` only clears local credentials on this machine. To fully
+  revoke a device from your account, remove it in GAIA under **Settings →
+  Devices**.
+</Note>
+
+## Command reference
+
+| Command                         | Description                                                              |
+| ------------------------------- | ------------------------------------------------------------------------ |
+| `gaia bridge login`             | Pair this machine with your GAIA account                                 |
+| `gaia bridge add`               | Guided wizard to connect an MCP server or expose files                   |
+| `gaia bridge fs <dirs...>`      | Expose folders via the built-in filesystem server (read-only by default) |
+| `gaia bridge up`                | Hold the outbound tunnel (device is online only while it runs)           |
+| `gaia bridge ls`                | Show pairing status and configured servers                               |
+| `gaia bridge rm <key>`          | Remove a configured server                                               |
+| `gaia bridge logout`            | Forget local credentials on this machine                                 |
+
+## Security
+
+- **Outbound-only.** The bridge dials out to GAIA. It opens no inbound ports and
+  requires no port forwarding.
+- **Contained access.** Filesystem access is limited to the folders you approve;
+  paths are resolved and checked so the agent can't escape them.
+- **Secrets stay local.** Environment variables and request headers you enter
+  are stored on your machine and are not uploaded.
+- **Revoke anytime.** Remove a device from **Settings → Devices** to cut off
+  access immediately.
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Commands Reference" icon="terminal" href="/cli/commands">
+    See all GAIA CLI commands
+  </Card>
+  <Card title="Installation" icon="download" href="/cli/installation">
+    Install and upgrade the CLI
+  </Card>
+</CardGroup>

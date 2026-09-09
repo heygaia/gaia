@@ -1,5 +1,7 @@
 // Bridge frame protocol — must mirror apps/api/app/constants/device_bridge.py.
 
+import { sep } from "node:path";
+
 export const FRAME = {
   // cloud -> device
   PING: "ping",
@@ -18,6 +20,11 @@ export const DEFAULT_API_URL = "https://api.heygaia.io";
 
 // The built-in filesystem server always uses this stable key.
 export const FILESYSTEM_SERVER_KEY = "filesystem";
+
+// Sentinel allow-root meaning "the entire filesystem" — the OS root ("/"). A
+// filesystem server whose `allow` is [ENTIRE_FS_ROOT] grants every path this
+// user can read (and write, if enabled). See isInside() in filesystem-server.ts.
+export const ENTIRE_FS_ROOT = sep;
 
 // Reconnect backoff (ms) with full jitter.
 export const RECONNECT_MIN_MS = 500;

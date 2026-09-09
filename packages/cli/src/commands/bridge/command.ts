@@ -1,38 +1,25 @@
 // `gaia bridge` — connects this machine's MCP servers and files to GAIA over
 // one secure outbound tunnel.
 
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
+import { resolve } from "node:path";
 import { Command } from "commander";
 import {
   apiUrlFromEnvOrCreds,
   clearCredentials,
+  expandTilde,
+  filesystemServer,
   loadConfig,
   loadCredentials,
   removeServer,
   upsertServer,
 } from "./config.js";
-import { FILESYSTEM_SERVER_KEY } from "./constants.js";
 import { runLogin } from "./login.js";
-import { runUp } from "./up.js";
+import { daemonStatusLine, runServe, runUp, stopDaemon } from "./up.js";
 import { runAdd } from "./wizard.js";
-
-/** Expand a leading ~ so quoted paths like "~/Documents" still resolve to $HOME. */
-function expandTilde(p: string): string {
-  if (p === "~") return homedir();
-  if (p.startsWith("~/")) return join(homedir(), p.slice(2));
-  return p;
-}
 
 function cmdFs(dirs: string[], write: boolean): void {
   const allow = dirs.map((p) => resolve(expandTilde(p)));
-  upsertServer({
-    type: "filesystem",
-    key: FILESYSTEM_SERVER_KEY,
-    name: "Local Files",
-    allow,
-    allowWrite: write,
-  });
+  upsertServer(filesystemServer(allow, write));
   console.info(
     `Filesystem access configured for:\n  ${allow.join("\n  ")}\n` +
       `Writes: ${write ? "ENABLED" : "disabled (read-only)"}\n` +
@@ -47,6 +34,7 @@ function cmdList(): void {
       ? `Paired (device ${creds.deviceId}, ${apiUrlFromEnvOrCreds()})`
       : "Not paired — run: gaia bridge login",
   );
+  console.info(daemonStatusLine());
   const servers = loadConfig().servers;
   if (servers.length === 0) {
     console.info("No servers configured — run: gaia bridge add");
@@ -147,9 +135,23 @@ bridgeCommand
 bridgeCommand
   .command("up")
   .alias("start")
-  .description("Connect and serve (holds the tunnel; Ctrl+C to stop)")
+  .description(
+    "Connect and serve in the background (stop with: gaia bridge down)",
+  )
+  .option(
+    "--serve",
+    "(internal) hold the tunnel in the foreground; used by the background daemon",
+  )
+  .action(async (options: { serve?: boolean }) => {
+    await run(options.serve ? runServe : runUp);
+  });
+
+bridgeCommand
+  .command("down")
+  .alias("stop")
+  .description("Stop the background tunnel started by `gaia bridge up`")
   .action(async () => {
-    await run(runUp);
+    await run(stopDaemon);
   });
 
 bridgeCommand
