@@ -117,7 +117,9 @@ class TestSubscriptionActiveReactivatesWorkflows:
                 f"{PAUSE}.reactivate_workflows_for_restored_subscription", new_callable=AsyncMock
             ),
         ):
-            sub_repo.get_by_dodo_id = AsyncMock(return_value=MagicMock(user_id=USER_ID))
+            sub_repo.get_by_dodo_id = AsyncMock(
+                return_value=MagicMock(user_id=USER_ID, status="active")
+            )
             await service._handle_subscription_active(
                 _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
             )
@@ -141,11 +143,63 @@ class TestSubscriptionActiveReactivatesWorkflows:
             )
         invalidate.assert_awaited_once_with(USER_ID)
 
+    async def test_a_recovered_subscription_is_written_back_to_active(self) -> None:
+        """A row that exists is not necessarily an ACTIVE row.
+
+        `_handle_subscription_on_hold` writes status="on_hold"; Dodo's recovery
+        then sends `subscription.active` for that same subscription. The existing
+        branch restored the workflows and dropped the cache but never wrote the
+        status back, and `get_active_for_user` filters on {"status": "active"} —
+        so the customer kept reading FREE. Under the paid-only gate that is not a
+        degraded experience, it is a 402 on every authenticated request for
+        someone who has paid, and the workflows just restored are switched off
+        again on the next lapse sweep.
+        """
+        service = PaymentWebhookService()
+        existing = MagicMock(user_id=USER_ID, status="on_hold")
+        with (
+            patch(f"{ACTIVATION}.subscription_repository") as sub_repo,
+            patch(f"{ACTIVATION}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(
+                f"{PAUSE}.reactivate_workflows_for_restored_subscription", new_callable=AsyncMock
+            ),
+        ):
+            sub_repo.get_by_dodo_id = AsyncMock(return_value=existing)
+            sub_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
+            await service._handle_subscription_active(
+                _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
+            )
+
+        sub_repo.apply_update_by_dodo_id.assert_awaited_once()
+        dodo_id, update = sub_repo.apply_update_by_dodo_id.await_args.args
+        # The row it corrects is the one it looked up, not some other id.
+        assert dodo_id == sub_repo.get_by_dodo_id.await_args.args[0]
+        assert update.status == "active"
+
+    async def test_an_already_active_row_is_not_written_again(self) -> None:
+        """The replayed-webhook case: nothing to correct, so no write."""
+        service = PaymentWebhookService()
+        existing = MagicMock(user_id=USER_ID, status="active")
+        with (
+            patch(f"{ACTIVATION}.subscription_repository") as sub_repo,
+            patch(f"{ACTIVATION}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(
+                f"{PAUSE}.reactivate_workflows_for_restored_subscription", new_callable=AsyncMock
+            ),
+        ):
+            sub_repo.get_by_dodo_id = AsyncMock(return_value=existing)
+            sub_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
+            await service._handle_subscription_active(
+                _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
+            )
+
+        sub_repo.apply_update_by_dodo_id.assert_not_awaited()
+
     async def test_existing_subscription_reactivates_paused_workflows(self) -> None:
         """The common resubscribe path: Dodo re-fires `subscription.active` for a
         subscription row that already exists (early-return branch)."""
         service = PaymentWebhookService()
-        existing = MagicMock(user_id=USER_ID)
+        existing = MagicMock(user_id=USER_ID, status="active")
         with (
             patch(f"{ACTIVATION}.subscription_repository") as sub_repo,
             patch(
@@ -250,7 +304,9 @@ class TestSubscriptionActivatedAnalytics:
             ),
             patch(f"{ACTIVATION}.track_subscription_event") as track,
         ):
-            sub_repo.get_by_dodo_id = AsyncMock(return_value=MagicMock(user_id=USER_ID))
+            sub_repo.get_by_dodo_id = AsyncMock(
+                return_value=MagicMock(user_id=USER_ID, status="active")
+            )
             await service._handle_subscription_active(
                 _event(DodoWebhookEventType.SUBSCRIPTION_ACTIVE)
             )
@@ -666,14 +722,18 @@ class TestActivateSubscription:
             patch(f"{ACTIVATION}.reactivate_workflows_safely", new_callable=AsyncMock),
             patch(f"{ACTIVATION}.log") as mock_log,
         ):
-            sub_repo.get_by_dodo_id = AsyncMock(return_value=MagicMock(user_id=USER_ID))
+            sub_repo.get_by_dodo_id = AsyncMock(
+                return_value=MagicMock(user_id=USER_ID, status="active")
+            )
             sub_repo.create = AsyncMock()
             result = await activate_subscription(_subscription_data())
 
         sub_repo.create.assert_not_awaited()
         assert result == SubscriptionActivation(user_id=USER_ID, created=False)
         mock_log.info.assert_called_once_with(
-            "[PAYMENT] Subscription already exists", subscription_id="sub_123"
+            "[PAYMENT] Subscription already exists",
+            subscription_id="sub_123",
+            subscription_status="active",
         )
 
     async def test_a_subscription_belonging_to_nobody_is_not_written(self) -> None:
