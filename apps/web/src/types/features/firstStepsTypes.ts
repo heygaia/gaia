@@ -3,7 +3,6 @@ export const FIRST_STEP_KEYS = [
   "connect_integration",
   "link_platform",
   "create_workflow",
-  "publish_workflow",
 ] as const;
 
 export type FirstStepKey = (typeof FIRST_STEP_KEYS)[number];
@@ -16,7 +15,9 @@ export interface FirstStepStatus {
 
 export interface FirstStepsResponse {
   steps: FirstStepStatus[];
-  dismissed: boolean;
+  /** Whether the user collapsed the checklist to its header. Persisted, so it
+   * survives a reload and follows the user across devices. */
+  collapsed: boolean;
 }
 
-export type FirstStepsSurface = "banner" | "widget";
+export type FirstStepsSurface = "dashboard" | "widget";

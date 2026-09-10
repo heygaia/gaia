@@ -43,7 +43,7 @@ class AnalyticsEvents(StrEnum):
     PROFILE_UPDATED = "profile:updated"
     # Activation checklist hidden by the user — carries how many steps were
     # done at that moment, never which.
-    FIRST_STEPS_DISMISSED = "first_steps:dismissed"
+    FIRST_STEPS_COLLAPSED = "first_steps:collapsed"
 
     # Lifecycle email
     NURTURE_EMAIL_SENT = "nurture:email_sent"

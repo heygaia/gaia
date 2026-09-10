@@ -1,69 +1,160 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Chip } from "@heroui/chip";
-import { ArrowDown01Icon, ArrowUp01Icon, Cancel01Icon } from "@icons";
-import { useState } from "react";
+import { Progress } from "@heroui/progress";
+import { ArrowExpand01Icon, ArrowShrink02Icon } from "@icons";
+import { AnimatePresence, useReducedMotion } from "motion/react";
+import * as m from "motion/react-m";
 import { FirstStepRow } from "@/features/first-steps/components/FirstStepRow";
-import { FIRST_STEPS_WIDGET_HIDDEN_PATHS } from "@/features/first-steps/constants";
+import {
+  FIRST_STEPS_ROW_STAGGER_SECONDS,
+  FIRST_STEPS_TRANSITION,
+  FIRST_STEPS_WIDGET_HIDDEN_PATHS,
+} from "@/features/first-steps/constants";
 import { useFirstStepAction } from "@/features/first-steps/hooks/useFirstStepAction";
 import { useFirstSteps } from "@/features/first-steps/hooks/useFirstSteps";
 import { usePathname } from "@/i18n/navigation";
+import { cn } from "@/lib/utils";
 
-/** Floating bottom-right version of the checklist, mounted once in the main layout. */
+/**
+ * Floating bottom-right version of the checklist, mounted once in the main
+ * layout. It overlays the app, so unlike the dashboard card it carries a
+ * collapse control — that is what the persisted `collapsed` flag is about.
+ *
+ * The progress bar belongs to the collapsed state only. Expanded, the rows are
+ * the progress and a bar would just say the same thing twice; collapsed, it is
+ * the only thing left saying how far along you are, so it rides in the header
+ * beside the title.
+ *
+ * Desktop only. A floating corner panel needs a corner to float in: at phone
+ * widths it spans the viewport and sits on top of the composer, so the first
+ * thing the checklist asks you to do is the one thing it blocks. Phones get the
+ * checklist as a card on the dashboard instead.
+ */
 export function FirstStepsWidget() {
   const pathname = usePathname();
-  const { steps, doneCount, totalCount, isVisible, dismiss, isDismissing } =
-    useFirstSteps();
+  const {
+    steps,
+    doneCount,
+    totalCount,
+    isVisible,
+    collapsed,
+    toggleCollapsed,
+  } = useFirstSteps();
   const runStep = useFirstStepAction("widget");
-  const [collapsed, setCollapsed] = useState(false);
+  const reduceMotion = useReducedMotion();
 
   if (FIRST_STEPS_WIDGET_HIDDEN_PATHS.includes(pathname) || !isVisible) {
     return null;
   }
 
-  const CollapseIcon = collapsed ? ArrowUp01Icon : ArrowDown01Icon;
-
   return (
     <aside
       aria-label="First steps"
-      className="fixed right-4 bottom-4 z-40 w-[calc(100vw-2rem)] max-w-80 rounded-2xl bg-zinc-800 p-3 shadow-lg"
+      className={cn(
+        "fixed right-4 bottom-4 z-40 hidden w-64 bg-zinc-800 shadow-lg sm:block",
+        // Collapsed it is a single line of content, so it reads as a pill
+        // rather than a panel with an empty body.
+        collapsed ? "rounded-full px-4 py-2" : "rounded-3xl p-3",
+      )}
     >
-      <div className="flex items-center gap-2">
-        <p className="text-sm font-semibold text-zinc-100">First steps</p>
-        <Chip size="sm" variant="flat">
-          {doneCount}/{totalCount}
-        </Chip>
-        <div className="ml-auto flex items-center">
+      <div className="flex items-center gap-3">
+        <h3 className="shrink-0 text-sm font-medium text-zinc-300">
+          First steps
+        </h3>
+
+        <AnimatePresence initial={false}>
+          {collapsed && (
+            <m.div
+              key="progress"
+              className="min-w-0 flex-1"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={FIRST_STEPS_TRANSITION}
+            >
+              <Progress
+                aria-label={`${doneCount} of ${totalCount} first steps done`}
+                value={doneCount}
+                maxValue={totalCount}
+                size="sm"
+                classNames={{
+                  track: "bg-zinc-700",
+                  indicator: "bg-success transition-all duration-500 ease-out",
+                }}
+              />
+            </m.div>
+          )}
+        </AnimatePresence>
+
+        {collapsed ? (
+          // Plain art while collapsed: the whole panel is the control (below),
+          // and a button inside a button is not valid markup. It is sized to
+          // the glyph, not to a button, so the pill can stay short.
+          <span className="ml-auto grid size-5 shrink-0 place-items-center">
+            <ArrowExpand01Icon className="size-4 text-zinc-400" />
+          </span>
+        ) : (
           <Button
             isIconOnly
             size="sm"
             variant="light"
-            aria-label={
-              collapsed ? "Expand first steps" : "Collapse first steps"
-            }
-            onPress={() => setCollapsed((value) => !value)}
+            className="ml-auto cursor-pointer"
+            aria-expanded
+            aria-label="Collapse first steps"
+            onPress={toggleCollapsed}
           >
-            <CollapseIcon className="size-4 text-zinc-400" />
+            <ArrowShrink02Icon className="size-4 text-zinc-400" />
           </Button>
-          <Button
-            isIconOnly
-            size="sm"
-            variant="light"
-            aria-label="Dismiss first steps"
-            isLoading={isDismissing}
-            onPress={dismiss}
-          >
-            <Cancel01Icon className="size-4 text-zinc-400" />
-          </Button>
-        </div>
+        )}
       </div>
-      {!collapsed && (
-        <div className="mt-2 flex flex-col gap-1">
-          {steps.map((step) => (
-            <FirstStepRow key={step.key} step={step} onActivate={runStep} />
-          ))}
-        </div>
+
+      {/* Height is the one non-transform property animated here: there is no
+          way to collapse to nothing without it. Reduced motion drops the
+          translate but keeps the fade, so the change is still legible. */}
+      <AnimatePresence initial={false}>
+        {!collapsed && (
+          <m.div
+            key="steps"
+            className="overflow-hidden"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={FIRST_STEPS_TRANSITION}
+          >
+            <div className="flex flex-col pt-2">
+              {steps.map((step, index) => (
+                <m.div
+                  key={step.key}
+                  className="min-w-0"
+                  initial={{ opacity: 0, y: reduceMotion ? 0 : -4 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{
+                    ...FIRST_STEPS_TRANSITION,
+                    delay: reduceMotion
+                      ? 0
+                      : index * FIRST_STEPS_ROW_STAGGER_SECONDS,
+                  }}
+                >
+                  <FirstStepRow step={step} onActivate={runStep} />
+                </m.div>
+              ))}
+            </div>
+          </m.div>
+        )}
+      </AnimatePresence>
+
+      {/* Last child, so it paints over the panel and takes every click without
+          any pointer-events juggling. Only mounted while collapsed, where
+          nothing underneath it is interactive. */}
+      {collapsed && (
+        <button
+          type="button"
+          aria-label="Expand first steps"
+          aria-expanded={false}
+          onClick={toggleCollapsed}
+          className="absolute inset-0 cursor-pointer rounded-full transition-colors duration-200 hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none"
+        />
       )}
     </aside>
   );

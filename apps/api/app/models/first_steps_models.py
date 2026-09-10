@@ -11,7 +11,6 @@ class FirstStepKey(StrEnum):
     CONNECT_INTEGRATION = "connect_integration"
     LINK_PLATFORM = "link_platform"
     CREATE_WORKFLOW = "create_workflow"
-    PUBLISH_WORKFLOW = "publish_workflow"
 
 
 class FirstStep(BaseModel):
@@ -21,11 +20,18 @@ class FirstStep(BaseModel):
 
 class FirstStepsResponse(BaseModel):
     steps: list[FirstStep] = Field(description="Every step, in checklist order")
-    dismissed: bool = Field(description="Whether the user hid the checklist")
+    collapsed: bool = Field(description="Whether the user collapsed the checklist to its header")
+
+
+class FirstStepsCollapseRequest(BaseModel):
+    """The chevron's new state. Both directions persist, so a checklist expanded
+    on one device stays expanded on the next."""
+
+    collapsed: bool
 
 
 class FirstStepsState(BaseModel):
-    """The ``users.first_steps`` subdocument — only the dismissal is persisted."""
+    """The ``users.first_steps`` subdocument — only the collapse is persisted."""
 
-    dismissed: bool = False
-    dismissed_at: datetime | None = None
+    collapsed: bool = False
+    collapsed_at: datetime | None = None

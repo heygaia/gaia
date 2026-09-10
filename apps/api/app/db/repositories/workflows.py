@@ -147,10 +147,6 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
             )
         )
 
-    async def count_public_for_user(self, user_id: str) -> int:
-        """How many of the user's workflows are published to the community marketplace."""
-        return await self._count({"user_id": user_id, "is_public": True})
-
     async def find_by_ids(self, workflow_ids: list[str]) -> list[WorkflowDocument]:
         """Workflows whose ids are in ``workflow_ids`` (no user scoping)."""
         if not workflow_ids:

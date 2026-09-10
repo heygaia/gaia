@@ -376,7 +376,7 @@ class AuthenticatedUser(TypedDict, total=False):
     highest_activity_tier_at: datetime | None
     # Nurture email sequence state (workers) — completed_steps + send history.
     nurture: dict[str, Any] | None
-    # Activation checklist dismissal (first_steps_service).
+    # Activation checklist collapse (first_steps_service).
     first_steps: FirstStepsState | None
 
 
@@ -533,7 +533,7 @@ class UserDocument(MongoDocument):
     highest_activity_tier_at: datetime | None = None
     # Nurture email sequence state (workers): completed_steps + send history.
     nurture: dict[str, Any] | None = None
-    # Activation checklist dismissal (first_steps_service).
+    # Activation checklist collapse (first_steps_service).
     first_steps: FirstStepsState | None = None
 
 

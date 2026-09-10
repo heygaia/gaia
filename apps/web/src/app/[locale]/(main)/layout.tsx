@@ -35,7 +35,7 @@ const CommandMenu = nextDynamic(
 
 const FirstStepsWidget = nextDynamic(
   () =>
-    import("@/features/first-steps/components/FirstStepsWidget").then((m) => ({
+    import("@/features/first-steps").then((m) => ({
       default: m.FirstStepsWidget,
     })),
   { ssr: false },

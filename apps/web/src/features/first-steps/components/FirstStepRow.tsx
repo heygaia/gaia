@@ -1,62 +1,66 @@
 "use client";
 
-import { Checkbox } from "@heroui/checkbox";
-import type { KeyboardEvent } from "react";
+import { CheckmarkCircle02Icon } from "@icons";
 import { FIRST_STEP_DEFINITIONS } from "@/features/first-steps/constants";
+import { cn } from "@/lib/utils";
 import type { FirstStepStatus } from "@/types/features/firstStepsTypes";
 
 interface FirstStepRowProps {
   step: FirstStepStatus;
   onActivate: (step: FirstStepStatus) => void;
-  /** Hide the one-line description (the banner has no room for it). */
-  compact?: boolean;
+  /** Row surface. The dashboard card needs the chip the other cards use; the
+   * floating panel is already a raised surface and stays flat. */
+  className?: string;
 }
 
 /**
- * The checkbox mirrors server state and is read-only; clicking the row runs
- * the step's action instead of toggling anything.
+ * One activation step. A button, not a checkbox: `done` is derived server-side
+ * and the click runs the step's action, so anything toggleable would be lying
+ * about what the control does — and would need its own toggle suppressed.
+ *
+ * A done step keeps its action rather than going inert, because re-running it
+ * (connect a second integration, write another workflow) is the point.
  */
 export function FirstStepRow({
   step,
   onActivate,
-  compact = false,
+  className,
 }: FirstStepRowProps) {
-  const { label, description, icon: Icon } = FIRST_STEP_DEFINITIONS[step.key];
-
-  const activate = () => onActivate(step);
-  // Without preventDefault the label click still toggles the native input, so
-  // a done step would visibly un-tick until the next refetch. HeroUI intersects
-  // React's and react-aria's handler types, so the event is typed by what we use.
-  const handleClick = (event: { preventDefault: () => void }) => {
-    event.preventDefault();
-    activate();
-  };
-  const handleKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === "Enter") activate();
-  };
+  const {
+    label,
+    description,
+    icon: StepIcon,
+  } = FIRST_STEP_DEFINITIONS[step.key];
+  // The step's own icon while it is open, a tick once it is done: two glyphs on
+  // one line read as noise, and the tick is the only news on a finished row.
+  const Icon = step.done ? CheckmarkCircle02Icon : StepIcon;
 
   return (
-    <Checkbox
-      isSelected={step.done}
-      isReadOnly
-      color="success"
-      radius="full"
-      size="sm"
-      onClick={handleClick}
-      onKeyDown={handleKeyDown}
-      aria-label={label}
-      classNames={{
-        base: "m-0 max-w-none cursor-pointer rounded-xl px-2 py-1.5 transition-colors hover:bg-white/5",
-        label: "flex items-center gap-2",
-      }}
+    <button
+      type="button"
+      onClick={() => onActivate(step)}
+      className={cn(
+        "flex w-full min-w-0 cursor-pointer items-start gap-2.5 rounded-2xl px-2 py-1.5 text-left transition-colors duration-200 hover:bg-white/5 focus-visible:bg-white/5 focus-visible:outline-none active:scale-[0.99]",
+        className,
+      )}
     >
-      <Icon className="size-4 shrink-0 text-zinc-400" />
-      <span className="flex min-w-0 flex-col">
-        <span className="text-sm font-medium text-zinc-200">{label}</span>
-        {!compact && (
-          <span className="text-xs text-zinc-500">{description}</span>
+      <Icon
+        className={cn(
+          "mt-0.5 size-4 shrink-0",
+          step.done ? "text-success" : "text-zinc-400",
         )}
+      />
+      <span className="flex min-w-0 flex-col">
+        <span
+          className={cn(
+            "truncate text-sm font-medium",
+            step.done ? "text-zinc-400" : "text-zinc-200",
+          )}
+        >
+          {label}
+        </span>
+        <span className="truncate text-xs text-zinc-500">{description}</span>
       </span>
-    </Checkbox>
+    </button>
   );
 }

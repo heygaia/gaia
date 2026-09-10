@@ -1,5 +1,5 @@
 """The activation checklist derives every ``done`` from a real signal at read
-time; only the dismissal is persisted. Repositories are the seams."""
+time; only the collapse is persisted. Repositories are the seams."""
 
 from unittest.mock import AsyncMock, patch
 
@@ -8,7 +8,7 @@ import pytest
 from app.models.first_steps_models import FirstStepKey, FirstStepsResponse, FirstStepsState
 from app.models.user_models import UserDocument
 from app.services.analytics_service import AnalyticsEvents
-from app.services.first_steps_service import dismiss_first_steps, get_first_steps
+from app.services.first_steps_service import get_first_steps, set_first_steps_collapsed
 from app.utils.errors import AppError
 
 MODULE = "app.services.first_steps_service"
@@ -21,7 +21,7 @@ def _user(**overrides: object) -> UserDocument:
 
 @pytest.fixture
 def repos():
-    """Every signal false, user present, nothing dismissed — tests flip one at a time."""
+    """Every signal false, user present, not collapsed — tests flip one at a time."""
     with (
         patch(f"{MODULE}.user_repository") as users,
         patch(f"{MODULE}.conversation_repository") as conversations,
@@ -30,11 +30,10 @@ def repos():
         patch(f"{MODULE}.capture_context_event") as capture,
     ):
         users.get = AsyncMock(return_value=_user())
-        users.dismiss_first_steps = AsyncMock(return_value=True)
+        users.set_first_steps_collapsed = AsyncMock(return_value=True)
         conversations.has_sent_message = AsyncMock(return_value=False)
         integrations.return_value = {"gmail": False, "notion": False}
         workflows.count_for_user = AsyncMock(return_value=0)
-        workflows.count_public_for_user = AsyncMock(return_value=0)
         yield {
             "users": users,
             "conversations": conversations,
@@ -56,18 +55,17 @@ class TestFirstStepKey:
             "connect_integration",
             "link_platform",
             "create_workflow",
-            "publish_workflow",
         ]
 
 
 @pytest.mark.unit
 class TestGetFirstSteps:
-    async def test_fresh_user_has_every_step_open_and_not_dismissed(self, repos) -> None:
+    async def test_fresh_user_has_every_step_open_and_is_expanded(self, repos) -> None:
         result = await get_first_steps(USER_ID)
 
         assert [step.key for step in result.steps] == list(FirstStepKey)
         assert _done(result) == dict.fromkeys(FirstStepKey, False)
-        assert result.dismissed is False
+        assert result.collapsed is False
 
     async def test_say_hi_is_the_sent_message_signal(self, repos) -> None:
         repos["conversations"].has_sent_message.return_value = True
@@ -112,18 +110,10 @@ class TestGetFirstSteps:
             USER_ID, exclude_todo_workflows=True, exclude_system_workflows=True
         )
 
-    async def test_publish_workflow_is_a_public_workflow_of_the_user(self, repos) -> None:
-        repos["workflows"].count_public_for_user.return_value = 1
+    async def test_collapsed_is_read_from_the_user_document(self, repos) -> None:
+        repos["users"].get.return_value = _user(first_steps=FirstStepsState(collapsed=True))
 
-        result = await get_first_steps(USER_ID)
-
-        assert _done(result)[FirstStepKey.PUBLISH_WORKFLOW] is True
-        repos["workflows"].count_public_for_user.assert_awaited_once_with(USER_ID)
-
-    async def test_dismissed_is_read_from_the_user_document(self, repos) -> None:
-        repos["users"].get.return_value = _user(first_steps=FirstStepsState(dismissed=True))
-
-        assert (await get_first_steps(USER_ID)).dismissed is True
+        assert (await get_first_steps(USER_ID)).collapsed is True
 
     async def test_missing_user_is_a_404(self, repos) -> None:
         repos["users"].get.return_value = None
@@ -134,35 +124,38 @@ class TestGetFirstSteps:
 
 
 @pytest.mark.unit
-class TestDismissFirstSteps:
-    async def test_persists_the_dismissal_and_returns_the_checklist(self, repos) -> None:
-        repos["users"].get.return_value = _user(first_steps=FirstStepsState(dismissed=True))
+class TestSetFirstStepsCollapsed:
+    @pytest.mark.parametrize("collapsed", [True, False])
+    async def test_persists_either_direction_and_returns_the_checklist(
+        self, repos, collapsed: bool
+    ) -> None:
+        repos["users"].get.return_value = _user(first_steps=FirstStepsState(collapsed=collapsed))
         repos["conversations"].has_sent_message.return_value = True
 
-        result = await dismiss_first_steps(USER_ID)
+        result = await set_first_steps_collapsed(USER_ID, collapsed)
 
-        repos["users"].dismiss_first_steps.assert_awaited_once_with(USER_ID)
-        assert result.dismissed is True
+        repos["users"].set_first_steps_collapsed.assert_awaited_once_with(USER_ID, collapsed)
+        assert result.collapsed is collapsed
         assert _done(result)[FirstStepKey.SAY_HI] is True
 
-    async def test_emits_the_dismiss_event_with_counts_only(self, repos) -> None:
+    async def test_emits_the_collapse_event_with_counts_only(self, repos) -> None:
         repos["users"].get.return_value = _user(
-            first_steps=FirstStepsState(dismissed=True),
+            first_steps=FirstStepsState(collapsed=True),
             platform_links={"telegram": {"id": "42"}},
         )
         repos["conversations"].has_sent_message.return_value = True
 
-        await dismiss_first_steps(USER_ID)
+        await set_first_steps_collapsed(USER_ID, True)
 
         repos["capture"].assert_called_once_with(
-            AnalyticsEvents.FIRST_STEPS_DISMISSED,
-            {"steps_done": 2, "steps_total": len(FirstStepKey)},
+            AnalyticsEvents.FIRST_STEPS_COLLAPSED,
+            {"collapsed": True, "steps_done": 2, "steps_total": len(FirstStepKey)},
         )
 
     async def test_missing_user_is_a_404_and_emits_nothing(self, repos) -> None:
-        repos["users"].dismiss_first_steps.return_value = False
+        repos["users"].set_first_steps_collapsed.return_value = False
 
         with pytest.raises(AppError) as excinfo:
-            await dismiss_first_steps(USER_ID)
+            await set_first_steps_collapsed(USER_ID, True)
         assert excinfo.value.status_code == 404
         repos["capture"].assert_not_called()

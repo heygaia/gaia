@@ -2,7 +2,7 @@
 
 Every ``done`` is derived from a real signal at read time — there is no way to
 mark a step done, so nothing a browser sends can fake progress. Only the
-dismissal is persisted, on the user document.
+collapse is persisted, on the user document.
 """
 
 import asyncio
@@ -26,14 +26,15 @@ async def get_first_steps(user_id: str) -> FirstStepsResponse:
     return await _build_checklist(user)
 
 
-async def dismiss_first_steps(user_id: str) -> FirstStepsResponse:
-    """Hide the checklist; idempotent. Returns the checklist as it stands."""
-    if not await user_repository.dismiss_first_steps(user_id):
+async def set_first_steps_collapsed(user_id: str, collapsed: bool) -> FirstStepsResponse:
+    """Collapse or expand the checklist; idempotent. Returns it as it stands."""
+    if not await user_repository.set_first_steps_collapsed(user_id, collapsed):
         raise _user_not_found(user_id)
     checklist = await get_first_steps(user_id)
     capture_context_event(
-        AnalyticsEvents.FIRST_STEPS_DISMISSED,
+        AnalyticsEvents.FIRST_STEPS_COLLAPSED,
         {
+            "collapsed": collapsed,
             "steps_done": sum(step.done for step in checklist.steps),
             "steps_total": len(FirstStepKey),
         },
@@ -42,7 +43,7 @@ async def dismiss_first_steps(user_id: str) -> FirstStepsResponse:
 
 
 async def _build_checklist(user: UserDocument) -> FirstStepsResponse:
-    sent_message, integration_status, created, published = await asyncio.gather(
+    sent_message, integration_status, created = await asyncio.gather(
         conversation_repository.has_sent_message(user.id),
         # The canonical connected-set reader: it covers the self-managed
         # Google integrations (Gmail) and Composio accounts that predate a
@@ -53,7 +54,6 @@ async def _build_checklist(user: UserDocument) -> FirstStepsResponse:
         workflow_repository.count_for_user(
             user.id, exclude_todo_workflows=True, exclude_system_workflows=True
         ),
-        workflow_repository.count_public_for_user(user.id),
     )
     return FirstStepsResponse(
         steps=[
@@ -61,9 +61,8 @@ async def _build_checklist(user: UserDocument) -> FirstStepsResponse:
             FirstStep(key=FirstStepKey.CONNECT_INTEGRATION, done=any(integration_status.values())),
             FirstStep(key=FirstStepKey.LINK_PLATFORM, done=bool(linked_platforms_of(user))),
             FirstStep(key=FirstStepKey.CREATE_WORKFLOW, done=created > 0),
-            FirstStep(key=FirstStepKey.PUBLISH_WORKFLOW, done=published > 0),
         ],
-        dismissed=user.first_steps is not None and user.first_steps.dismissed,
+        collapsed=user.first_steps is not None and user.first_steps.collapsed,
     )
 
 

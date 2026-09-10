@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 /**
- * The banner's one contract: every checkbox mirrors server state and is
- * read-only, and clicking a row runs that step's action instead of toggling.
+ * The checklist's contract: rows mirror server state and are actions, not
+ * toggles; the chevron persists the collapse in both directions.
  */
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
@@ -9,16 +9,16 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const fetchFirstSteps = vi.fn();
-const dismissFirstSteps = vi.fn();
+const setCollapsed = vi.fn();
 const push = vi.fn();
 const appendToInput = vi.fn();
 const trackEvent = vi.fn();
-let pathname = "/c";
+let pathname = "/dashboard";
 
 vi.mock("@/features/first-steps/api/firstStepsApi", () => ({
   firstStepsApi: {
     fetch: () => fetchFirstSteps(),
-    dismiss: () => dismissFirstSteps(),
+    setCollapsed: (collapsed: boolean) => setCollapsed(collapsed),
   },
 }));
 
@@ -40,28 +40,28 @@ vi.mock("@/lib/toast", () => ({
   toast: { error: vi.fn(), success: vi.fn() },
 }));
 
-import { FirstStepsBanner } from "@/features/first-steps/components/FirstStepsBanner";
+import { FirstStepsCard } from "@/features/first-steps/components/FirstStepsCard";
 import { SAY_HI_PROMPT } from "@/features/first-steps/constants";
 import type { FirstStepsResponse } from "@/types/features/firstStepsTypes";
 
 const TWO_DONE: FirstStepsResponse = {
-  dismissed: false,
+  collapsed: false,
   steps: [
     { key: "say_hi", done: true },
     { key: "connect_integration", done: true },
     { key: "link_platform", done: false },
     { key: "create_workflow", done: false },
-    { key: "publish_workflow", done: false },
   ],
 };
 
-describe("FirstStepsBanner", () => {
+describe("FirstStepsCard", () => {
   let queryClient: QueryClient;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    pathname = "/c";
+    pathname = "/dashboard";
     fetchFirstSteps.mockResolvedValue(TWO_DONE);
+    setCollapsed.mockResolvedValue({ ...TWO_DONE, collapsed: true });
     queryClient = new QueryClient({
       defaultOptions: {
         queries: { retry: false },
@@ -70,50 +70,48 @@ describe("FirstStepsBanner", () => {
     });
   });
 
-  const renderBanner = () =>
+  const renderCard = () =>
     render(
       <QueryClientProvider client={queryClient}>
-        <FirstStepsBanner />
+        <FirstStepsCard />
       </QueryClientProvider>,
     );
 
-  const checkbox = (label: string): HTMLInputElement =>
-    screen.getByRole("checkbox", { name: label });
+  // The row's accessible name is its label *and* its description: a screen
+  // reader should hear what the step is for, not just its title.
+  const step = (label: string) =>
+    screen.getByRole("button", { name: new RegExp(`^${label}`) });
 
-  it("mirrors server state and shows progress", async () => {
-    renderBanner();
-    await waitFor(() => expect(screen.getByText("2/5")).toBeDefined());
+  it("renders every step as an action, not a toggle", async () => {
+    renderCard();
+    await waitFor(() => expect(step("Say hi")).toBeDefined());
 
-    expect(checkbox("Say hi").checked).toBe(true);
-    expect(checkbox("Connect an integration").checked).toBe(true);
-    expect(checkbox("Link a messaging app").checked).toBe(false);
+    // A checkbox role would promise a toggle the server never honours.
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    // The card is in the page flow, so it carries no collapse control — only
+    // the four step rows.
+    expect(screen.getAllByRole("button")).toHaveLength(TWO_DONE.steps.length);
   });
 
-  it("runs the action on click without toggling the checkbox", async () => {
-    renderBanner();
-    await waitFor(() => expect(screen.getByText("2/5")).toBeDefined());
+  it("runs the step's action on a click anywhere in the row", async () => {
+    renderCard();
+    await waitFor(() => expect(step("Connect an integration")).toBeDefined());
 
-    fireEvent.click(screen.getByText("Connect an integration"));
+    // The description, not the label: the whole row is one hit target.
+    fireEvent.click(screen.getByText("Add Gmail, Calendar or Notion"));
 
     expect(push).toHaveBeenCalledTimes(1);
     expect(push).toHaveBeenCalledWith("/integrations");
-    expect(trackEvent).toHaveBeenCalledTimes(1);
     expect(trackEvent).toHaveBeenCalledWith("first_steps:step_clicked", {
       step: "connect_integration",
       done: true,
-      surface: "banner",
+      surface: "dashboard",
     });
-    // A done step stays done: the checkbox reflects the server, never the click.
-    expect(checkbox("Connect an integration").checked).toBe(true);
-
-    fireEvent.click(screen.getByText("Link a messaging app"));
-    expect(push).toHaveBeenLastCalledWith("/settings/linked-accounts");
-    expect(checkbox("Link a messaging app").checked).toBe(false);
   });
 
   it("pre-fills the composer for the say-hi step", async () => {
-    renderBanner();
-    await waitFor(() => expect(screen.getByText("2/5")).toBeDefined());
+    renderCard();
+    await waitFor(() => expect(step("Say hi")).toBeDefined());
 
     fireEvent.click(screen.getByText("Say hi"));
 
@@ -124,7 +122,7 @@ describe("FirstStepsBanner", () => {
   });
 
   it("refetches when the user navigates to another route", async () => {
-    const { rerender } = renderBanner();
+    const { rerender } = renderCard();
     await waitFor(() => expect(fetchFirstSteps).toHaveBeenCalledTimes(1));
 
     // A step is completed by visiting another page, so arriving there is the
@@ -132,30 +130,19 @@ describe("FirstStepsBanner", () => {
     pathname = "/integrations";
     rerender(
       <QueryClientProvider client={queryClient}>
-        <FirstStepsBanner />
+        <FirstStepsCard />
       </QueryClientProvider>,
     );
 
     await waitFor(() => expect(fetchFirstSteps).toHaveBeenCalledTimes(2));
   });
 
-  it("dismisses through the server and disappears", async () => {
-    dismissFirstSteps.mockResolvedValue({ ...TWO_DONE, dismissed: true });
-    renderBanner();
-    await waitFor(() => expect(screen.getByText("2/5")).toBeDefined());
-
-    fireEvent.click(screen.getByLabelText("Dismiss first steps"));
-
-    await waitFor(() => expect(dismissFirstSteps).toHaveBeenCalledTimes(1));
-    await waitFor(() => expect(screen.queryByText("2/5")).toBeNull());
-  });
-
   it("stays hidden once every step is done", async () => {
     fetchFirstSteps.mockResolvedValue({
-      dismissed: false,
-      steps: TWO_DONE.steps.map((step) => ({ ...step, done: true })),
+      collapsed: false,
+      steps: TWO_DONE.steps.map((s) => ({ ...s, done: true })),
     });
-    renderBanner();
+    renderCard();
 
     await waitFor(() => expect(fetchFirstSteps).toHaveBeenCalled());
     expect(screen.queryByText("First steps")).toBeNull();

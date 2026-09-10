@@ -16,25 +16,27 @@ interface UseFirstSteps {
   steps: FirstStepStatus[];
   doneCount: number;
   totalCount: number;
-  /** False until loaded, once dismissed, and once every step is done. */
+  /** False until loaded, and once every step is done. A collapsed checklist is
+   * still visible — it is the header alone. */
   isVisible: boolean;
-  isDismissing: boolean;
-  dismiss: () => void;
+  collapsed: boolean;
+  toggleCollapsed: () => void;
 }
 
-/** Whether the checklist still has something to show the user. */
-const isChecklistOpen = (data: FirstStepsResponse): boolean =>
-  !data.dismissed && data.steps.some((step) => !step.done);
+/** Whether the checklist still has something to ask of the user. */
+const hasOpenStep = (data: FirstStepsResponse): boolean =>
+  data.steps.some((step) => !step.done);
 
 /**
- * The activation checklist, shared by the banner and the widget through one
- * react-query cache so both surfaces retire together.
+ * The activation checklist, shared by the card and the widget through one
+ * react-query cache so both surfaces show the same progress and collapse
+ * together.
  *
  * Every `done` is server-derived, so the cache only goes stale when the user
  * completes a step somewhere else in the app. Window-focus refetching is off
  * globally and the widget stays mounted across routes, so freshness comes from
  * three places instead: arriving at a new route, mounting a surface, and — only
- * while the checklist is still open — a slow poll.
+ * while a step is still open — a slow poll.
  */
 export function useFirstSteps(): UseFirstSteps {
   const qc = useQueryClient();
@@ -45,7 +47,7 @@ export function useFirstSteps(): UseFirstSteps {
     queryFn: firstStepsApi.fetch,
     refetchOnMount: "always",
     refetchInterval: ({ state }) =>
-      state.data && isChecklistOpen(state.data)
+      state.data && hasOpenStep(state.data)
         ? FIRST_STEPS_POLL_INTERVAL_MS
         : false,
   });
@@ -54,26 +56,44 @@ export function useFirstSteps(): UseFirstSteps {
     qc.invalidateQueries({ queryKey: FIRST_STEPS_QUERY_KEY });
   }, [pathname, qc]);
 
-  const dismissMutation = useMutation({
-    mutationFn: firstStepsApi.dismiss,
-    // The cached checklist is the source of truth for what to show; dismissing
-    // only flips that one flag, so nothing here depends on the response body.
-    onSuccess: () =>
+  const collapseMutation = useMutation({
+    mutationFn: firstStepsApi.setCollapsed,
+    // The chevron has to move on the click, not on the round trip: the request
+    // only persists a preference the user has already expressed. The in-flight
+    // GET is cancelled first, or it can land afterwards and undo the write.
+    onMutate: async (collapsed) => {
+      await qc.cancelQueries({ queryKey: FIRST_STEPS_QUERY_KEY });
+      const previous = qc.getQueryData<FirstStepsResponse>(
+        FIRST_STEPS_QUERY_KEY,
+      );
       qc.setQueryData<FirstStepsResponse>(
         FIRST_STEPS_QUERY_KEY,
-        (previous) => previous && { ...previous, dismissed: true },
-      ),
-    onError: () => toast.error("Couldn't hide the checklist."),
+        (current) => current && { ...current, collapsed },
+      );
+      return { previous };
+    },
+    // The response is the whole checklist, so there is nothing to refetch.
+    onSuccess: (checklist) => qc.setQueryData(FIRST_STEPS_QUERY_KEY, checklist),
+    onError: (_error, _collapsed, context) => {
+      if (context?.previous) {
+        qc.setQueryData<FirstStepsResponse>(
+          FIRST_STEPS_QUERY_KEY,
+          context.previous,
+        );
+      }
+      toast.error("Couldn't save that.");
+    },
   });
 
   const steps = data?.steps ?? [];
+  const collapsed = data?.collapsed ?? false;
 
   return {
     steps,
     doneCount: steps.filter((step) => step.done).length,
     totalCount: steps.length,
-    isVisible: data !== undefined && isChecklistOpen(data),
-    isDismissing: dismissMutation.isPending,
-    dismiss: () => dismissMutation.mutate(),
+    isVisible: data !== undefined && hasOpenStep(data),
+    collapsed,
+    toggleCollapsed: () => collapseMutation.mutate(!collapsed),
   };
 }

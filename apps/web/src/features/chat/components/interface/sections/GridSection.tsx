@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import UpcomingEventsView from "@/features/calendar/components/UpcomingEventsView";
 import RecentConversationsView from "@/features/chat/components/RecentConversationsView";
-import { FirstStepsBanner } from "@/features/first-steps/components/FirstStepsBanner";
+import { FirstStepsCard } from "@/features/first-steps";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import UnreadEmailsView from "@/features/mail/components/UnreadEmailsView";
 import InboxTodosView from "@/features/todo/components/InboxTodosView";
@@ -69,7 +69,7 @@ export const GridSection = ({
   return (
     <div className="relative flex h-fit w-full snap-start flex-col items-center justify-center">
       <div className="mb-20 grid min-h-screen w-full grid-cols-1 grid-rows-1  sm:grid-cols-2 sm:space-y-0">
-        <FirstStepsBanner className="sm:col-span-2" />
+        <FirstStepsCard />
         <UnreadEmailsView
           emails={unreadEmails}
           status={{
