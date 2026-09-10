@@ -9,7 +9,8 @@
 with exact-value assertions on return values and log calls.
 """
 
-from unittest.mock import AsyncMock, patch
+from collections.abc import Generator
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -31,19 +32,21 @@ def _schedule_trigger() -> TriggerConfig:
 
 
 @pytest.fixture(autouse=True)
-def _patch_log():
+def _patch_log() -> Generator[MagicMock, None, None]:
     with patch(f"{MODULE}.log") as mock_log:
         yield mock_log
 
 
 class TestReregisterTriggersForReset:
-    async def test_non_integration_trigger_needs_no_registration(self, _patch_log) -> None:
+    async def test_non_integration_trigger_needs_no_registration(
+        self, _patch_log: MagicMock
+    ) -> None:
         result = await _reregister_triggers_for_reset(_schedule_trigger(), "wf-1", "user-1")
         assert result == []
         _patch_log.error.assert_not_called()
 
     async def test_integration_trigger_with_no_trigger_name_needs_no_registration(
-        self, _patch_log
+        self, _patch_log: MagicMock
     ) -> None:
         result = await _reregister_triggers_for_reset(
             _integration_trigger(trigger_name=None), "wf-1", "user-1"
@@ -51,7 +54,7 @@ class TestReregisterTriggersForReset:
         assert result == []
         _patch_log.error.assert_not_called()
 
-    async def test_successful_registration_returns_the_new_ids(self, _patch_log) -> None:
+    async def test_successful_registration_returns_the_new_ids(self, _patch_log: MagicMock) -> None:
         trigger_config = _integration_trigger("gmail_new_email")
         register = AsyncMock(return_value=["trig-1", "trig-2"])
         with patch(f"{MODULE}.TriggerService.register_triggers", register):
@@ -67,7 +70,9 @@ class TestReregisterTriggersForReset:
         )
         _patch_log.error.assert_not_called()
 
-    async def test_registration_exception_aborts_with_none_and_logs(self, _patch_log) -> None:
+    async def test_registration_exception_aborts_with_none_and_logs(
+        self, _patch_log: MagicMock
+    ) -> None:
         trigger_config = _integration_trigger("gmail_new_email")
         register = AsyncMock(side_effect=RuntimeError("composio unreachable"))
         with patch(f"{MODULE}.TriggerService.register_triggers", register):
@@ -82,7 +87,9 @@ class TestReregisterTriggersForReset:
             user_id="user-1",
         )
 
-    async def test_empty_registration_result_aborts_with_none_and_logs(self, _patch_log) -> None:
+    async def test_empty_registration_result_aborts_with_none_and_logs(
+        self, _patch_log: MagicMock
+    ) -> None:
         trigger_config = _integration_trigger("gmail_new_email")
         register = AsyncMock(return_value=[])
         with patch(f"{MODULE}.TriggerService.register_triggers", register):
@@ -98,7 +105,7 @@ class TestReregisterTriggersForReset:
 
 
 class TestUnregisterOldTriggersForReset:
-    async def test_no_old_trigger_ids_is_a_no_op(self, _patch_log) -> None:
+    async def test_no_old_trigger_ids_is_a_no_op(self, _patch_log: MagicMock) -> None:
         unregister = AsyncMock()
         with patch(f"{MODULE}.TriggerService.unregister_triggers", unregister):
             await _unregister_old_triggers_for_reset([], "gmail_new_email", "wf-1", "user-1")
@@ -106,7 +113,7 @@ class TestUnregisterOldTriggersForReset:
         unregister.assert_not_awaited()
         _patch_log.warning.assert_not_called()
 
-    async def test_no_trigger_name_is_a_no_op(self, _patch_log) -> None:
+    async def test_no_trigger_name_is_a_no_op(self, _patch_log: MagicMock) -> None:
         unregister = AsyncMock()
         with patch(f"{MODULE}.TriggerService.unregister_triggers", unregister):
             await _unregister_old_triggers_for_reset(["old-1"], None, "wf-1", "user-1")
@@ -114,7 +121,7 @@ class TestUnregisterOldTriggersForReset:
         unregister.assert_not_awaited()
         _patch_log.warning.assert_not_called()
 
-    async def test_unregisters_the_exact_old_trigger_ids(self, _patch_log) -> None:
+    async def test_unregisters_the_exact_old_trigger_ids(self, _patch_log: MagicMock) -> None:
         unregister = AsyncMock()
         with patch(f"{MODULE}.TriggerService.unregister_triggers", unregister):
             await _unregister_old_triggers_for_reset(
@@ -129,7 +136,9 @@ class TestUnregisterOldTriggersForReset:
         )
         _patch_log.warning.assert_not_called()
 
-    async def test_a_failure_is_swallowed_and_logged_as_non_fatal(self, _patch_log) -> None:
+    async def test_a_failure_is_swallowed_and_logged_as_non_fatal(
+        self, _patch_log: MagicMock
+    ) -> None:
         unregister = AsyncMock(side_effect=RuntimeError("composio timeout"))
         with patch(f"{MODULE}.TriggerService.unregister_triggers", unregister):
             await _unregister_old_triggers_for_reset(

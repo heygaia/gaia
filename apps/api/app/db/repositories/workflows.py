@@ -652,9 +652,17 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
         """Re-apply a system workflow's original definition, preserving liveness,
         stats and ``created_at``. ``next_run`` stays a native datetime (python-mode
         dump), consistent with create/re-arm.
+
+        The top-level ``scheduled_at``/``repeat`` are rewritten alongside
+        ``trigger_config`` because they are what the scheduler actually reads:
+        ``_rearm_if_scheduled`` gates on ``repeat`` and ``handle_recurring_task``
+        derives every next occurrence from it. The model validator only fills
+        them when they are absent, so a stored document keeps its pre-reset
+        values unless the write replaces them.
         """
         trigger_doc = definition.trigger_config.model_dump()
         trigger_doc["composio_trigger_ids"] = definition.composio_trigger_ids
+        is_scheduled = definition.trigger_config.type == TriggerType.SCHEDULE
         return await self._apply_raw_update(
             {"_id": workflow_id},
             {
@@ -664,6 +672,8 @@ class WorkflowsRepository(MongoRepository[WorkflowDocument, WorkflowUpdate]):
                     "prompt": definition.prompt,
                     "steps": [s.model_dump() for s in definition.steps],
                     "trigger_config": trigger_doc,
+                    "scheduled_at": definition.trigger_config.next_run if is_scheduled else None,
+                    "repeat": definition.trigger_config.cron_expression if is_scheduled else None,
                 }
             },
             scope=REPO_GLOBAL_SCOPE,
