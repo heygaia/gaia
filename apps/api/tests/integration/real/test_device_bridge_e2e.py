@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Iterable
+import contextlib
 from functools import cache
 import hashlib
 import json
@@ -148,6 +149,11 @@ class BridgeDaemon:
         self.home = home
         self.login_process: asyncio.subprocess.Process | None = None
         self.up_process: asyncio.subprocess.Process | None = None
+        # The detached `up --serve` tunnel daemon that `gaia bridge up` spawns.
+        # It is NOT a child of this process (up double-forks and exits), so it is
+        # tracked by the pid it writes to <HOME>/.gaia/bridge/daemon.pid and
+        # reaped by pid, not by awaiting a Process handle.
+        self.daemon_pid: int | None = None
         self.login_output: list[str] = []
         self.up_output: list[str] = []
         # One merged, timestamped view of daemon stdout/stderr plus the test's
@@ -216,10 +222,10 @@ class BridgeDaemon:
             if match:
                 return match.group(1)
             assert self.login_process is not None
-            # The same liveness guard wait_connected already has. Without it a
-            # daemon that crashed and a daemon that is merely slow both report
-            # the collected output after the full timeout, which is how a CI
-            # failure with an empty transcript stayed ambiguous for two days.
+            # Liveness guard: without it a child that crashed and one that is
+            # merely slow both report the collected output only after the full
+            # timeout, which is how a CI failure with an empty transcript stayed
+            # ambiguous for two days.
             returncode = self.login_process.returncode
             if returncode is not None:
                 await self._drain()
@@ -249,32 +255,85 @@ class BridgeDaemon:
         config_dir.mkdir(parents=True, exist_ok=True)
         (config_dir / "config.json").write_text(json.dumps({"servers": list(servers)}))
 
-    async def start_up(self) -> None:
+    def _daemon_dir(self) -> Path:
+        return self.home / ".gaia" / "bridge"
+
+    def _read_daemon_pid(self) -> int | None:
+        pidfile = self._daemon_dir() / "daemon.pid"
+        if not pidfile.exists():
+            return None
+        text = pidfile.read_text().strip()
+        return int(text) if text else None
+
+    @staticmethod
+    def _pid_alive(pid: int) -> bool:
+        try:
+            os.kill(pid, 0)  # signal 0 probes liveness without killing
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True  # exists but not ours — still alive
+        return True
+
+    def daemon_log(self) -> str:
+        """The detached tunnel daemon's own log. `gaia bridge up` runs the tunnel
+        in a background `--serve` child whose stdout/stderr are redirected here,
+        so the daemon's `connected — exposing` / `revoked` lines land in this file
+        rather than in the parent `up` process's (already-exited) stdout."""
+        log_file = self._daemon_dir() / "daemon.log"
+        return log_file.read_text(errors="replace") if log_file.exists() else ""
+
+    async def start_up(self, timeout: float = 30.0) -> None:
+        """Run `gaia bridge up`: it registers the configured servers, spawns the
+        detached tunnel daemon, prints the background notice, and EXITS 0. The
+        tunnel itself now runs in the background — the parent exiting is success,
+        not failure. Captures the daemon's pid so teardown can reap it."""
         self.up_process = await self._spawn("up")
         self._pump(self.up_process.stdout, self.up_output, "up/out")
         self._pump(self.up_process.stderr, self.up_output, "up/err")
+        await asyncio.wait_for(self.up_process.wait(), timeout=timeout)
+        await self._drain()
+        output = "".join(self.up_output)
+        assert self.up_process.returncode == 0, f"`gaia bridge up` failed: {output}"
+        assert "started in the background" in output, output
+        self.daemon_pid = self._read_daemon_pid()
+        assert self.daemon_pid is not None, f"`gaia bridge up` wrote no daemon pid: {output}"
 
-    async def wait_connected(self, timeout: float = 30.0) -> None:
+    async def wait_daemon_exits(self, timeout: float = 10.0) -> None:
+        """After a revoke, the real background daemon must drop the tunnel and
+        exit on its own — proof revocation propagates over the wire, not just as
+        a Postgres flag. The daemon is detached, so wait on its pid, not a handle."""
+        assert self.daemon_pid is not None
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
-        while True:
-            output = "".join(self.up_output)
-            if "connected — exposing" in output:
-                return
-            assert self.up_process is not None
-            if self.up_process.returncode is not None:
-                raise AssertionError(f"`gaia bridge up` exited early: {output}")
+        while self._pid_alive(self.daemon_pid):
             if loop.time() >= deadline:
-                raise AssertionError(f"tunnel never reported connected: {output}")
+                raise AssertionError(
+                    f"background tunnel daemon (pid {self.daemon_pid}) did not exit "
+                    f"within {timeout:.0f}s of revoke; daemon.log:\n{self.daemon_log()}"
+                )
             await asyncio.sleep(0.1)
 
-    async def wait_exits_on_its_own(self, timeout: float = 10.0) -> None:
-        """After a revoke, the real daemon must drop the tunnel itself — proof
-        revocation propagates over the wire, not just as a Postgres flag."""
-        assert self.up_process is not None
-        await asyncio.wait_for(self.up_process.wait(), timeout=timeout)
-
     async def stop_all(self) -> None:
+        # Reap the detached background tunnel daemon FIRST. `gaia bridge up`
+        # spawns it detached and exits, so it is nobody's child — without this,
+        # a `--serve` node process leaks between tests (a prior run did exactly
+        # that). Read the pidfile fresh: a successful revoke leaves the pid dead
+        # but the pidfile present (only `gaia bridge down` unlinks it), and the
+        # other lifecycle tests never bring a tunnel up, so there is no pidfile.
+        pid = self._read_daemon_pid()
+        if pid is not None and self._pid_alive(pid):
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(pid, signal.SIGTERM)
+            deadline = time.monotonic() + 5.0
+            while True:
+                if not self._pid_alive(pid):
+                    break
+                if time.monotonic() >= deadline:
+                    with contextlib.suppress(ProcessLookupError):
+                        os.kill(pid, signal.SIGKILL)  # last resort if SIGTERM was ignored
+                    break
+                await asyncio.sleep(0.1)
         for process in (self.login_process, self.up_process):
             if process is not None and process.returncode is None:
                 process.send_signal(signal.SIGTERM)
@@ -389,6 +448,32 @@ def _client(base_url: str, user_id: str | None = None) -> httpx.AsyncClient:
     return httpx.AsyncClient(base_url=base_url, headers=headers, timeout=35.0)
 
 
+async def wait_device_online(
+    client: httpx.AsyncClient, device_id: str, *, timeout: float = 30.0
+) -> None:
+    """Poll the real /device/list until the cloud reports the device online.
+
+    Presence flips on when the daemon's tunnel WebSocket connects and sends its
+    HELLO, so this is the backend-visible proof the backgrounded daemon came up —
+    the exact signal Settings > Devices shows a user. It replaces scanning the
+    old foreground `up` process's stdout for "connected — exposing" (which now
+    goes to the detached daemon.log, never the parent's stdout)."""
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while True:
+        listing = await client.get("/api/v1/device/list")
+        assert listing.status_code == 200, listing.text
+        device = next((d for d in listing.json()["devices"] if d["id"] == device_id), None)
+        if device is not None and device["online"] is True:
+            return
+        if loop.time() >= deadline:
+            raise AssertionError(
+                f"device {device_id} never came online within {timeout:.0f}s; "
+                f"last listing: {listing.json()!r}"
+            )
+        await asyncio.sleep(0.25)
+
+
 class TestFullDeviceLifecycle:
     async def _warm_and_assert_tools_indexed(self, owner, device_id, daemon) -> None:
         """Warm-connect is what registration enqueues to make the server's tools
@@ -431,16 +516,24 @@ class TestFullDeviceLifecycle:
             #    `gaia bridge add` path, not the built-in `filesystem` case)
             #    and bring the tunnel up for real.
             daemon.write_config([everything_server(everything_server_cached)])
+            # `up` registers servers, spawns the detached tunnel daemon, and
+            # exits 0 — the parent exiting is success, not failure.
             await daemon.start_up()
-            await daemon.wait_connected()
-            daemon.mark("tunnel connected (token exchanged, ws up)")
+            daemon.mark(f"up exited 0; tunnel daemon detached (pid {daemon.daemon_pid})")
+            # The daemon connects in the background; wait for the backend to see
+            # it online (presence set on the tunnel's WS connect).
+            await wait_device_online(owner, device_id)
+            daemon.mark("device online (tunnel connected in the background)")
             # Regression guard: tunnel.ts's connectOnce() once resolved its
             # connection promise on the socket's `open` event instead of
             # `close`, so run() immediately looped and opened a new socket on
             # every tick — a real reconnect storm a live daemon process (and
-            # only a live daemon process) can actually surface.
+            # only a live daemon process) can actually surface. The daemon's
+            # tunnel logs now land in daemon.log, not the parent's stdout.
             await asyncio.sleep(0.5)
-            assert "reconnecting in" not in "".join(daemon.up_output)
+            daemon_log = daemon.daemon_log()
+            assert "reconnecting in" not in daemon_log, daemon_log
+            assert "connected — exposing" in daemon_log, daemon_log
 
             # 5. The user's browser lists devices — real HTTP, real Postgres read.
             listing = await owner.get("/api/v1/device/list")
@@ -475,19 +568,21 @@ class TestFullDeviceLifecycle:
             listing_after = await owner.get("/api/v1/device/list")
             assert listing_after.json()["devices"] == []
 
-            # 8. The real daemon must receive the revoke frame over its real
-            #    socket and exit on its own.
-            await daemon.wait_exits_on_its_own()
-            daemon.mark("daemon exited on revoke")
-            assert "revoked" in "".join(daemon.up_output).lower()
+            # 8. The real background daemon must receive the revoke frame over
+            #    its real socket and exit on its own.
+            await daemon.wait_daemon_exits()
+            daemon.mark("background daemon exited on revoke")
+            assert "revoked" in daemon.daemon_log().lower(), daemon.daemon_log()
         finally:
             await owner.aclose()
             await daemon.stop_all()
             # Always, not only on failure: pytest shows this under "Captured
             # stdout teardown" for a failing test, and the daemon's own output
             # is otherwise discarded — which is why the last CI timeout could
-            # not be attributed to a phase at all.
+            # not be attributed to a phase at all. The detached daemon logs to a
+            # file, not the parent's stdout, so surface both.
             print(f"\n--- bridge daemon timeline ---\n{daemon.dump()}")
+            print(f"\n--- detached tunnel daemon.log ---\n{daemon.daemon_log()}")
 
 
 class TestCrossUserIsolation:
@@ -526,11 +621,10 @@ class TestDaemonStartupDiagnostics:
         """A `gaia bridge login` that exits must fail the wait immediately, naming
         its exit code — not time out looking like a slow one.
 
-        This is the gap that cost two days of CI triage: `wait_connected` below
-        already checks `returncode is not None` and says "exited early", but
-        `wait_for_user_code` only ever reported the collected output, so a child
-        that died at 0.8s and a child still transpiling at 10s produced the same
-        message. Pointing the CLI at a port nothing is listening on makes
+        This is the gap that cost two days of CI triage: before the liveness
+        guard, `wait_for_user_code` only ever reported the collected output, so a
+        child that died at 0.8s and a child still transpiling at 10s produced the
+        same message. Pointing the CLI at a port nothing is listening on makes
         `startPairing`'s fetch reject, which is a real, unmocked death of the
         real child process.
         """
