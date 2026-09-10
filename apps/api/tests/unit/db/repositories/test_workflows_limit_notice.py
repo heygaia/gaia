@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.constants.cache import WORKFLOW_LIMIT_NOTICE_PREFIX, WORKFLOW_LIMIT_NOTICE_TTL
 from app.db.repositories.workflows import workflow_repository
 
 pytestmark = pytest.mark.unit
@@ -29,6 +30,41 @@ async def test_the_first_notice_in_the_window_is_claimed() -> None:
     with patch(f"{MODULE}.redis_cache") as cache:
         cache.redis = client
         assert await workflow_repository.claim_limit_notice("u1", "wf1") is True
+
+
+async def test_the_claim_is_a_per_workflow_key_set_once_for_one_window() -> None:
+    """The dedup IS this call's arguments, so they are what must be asserted.
+
+    Every other test here reads the return value, which the fake decides — so
+    the key, the NX and the TTL were all free to be anything. Drop ``nx`` and
+    every occurrence claims successfully and the six-notice incident is back;
+    drop ``ex`` and the key never expires, so the wall is announced once and
+    then never again; widen the key and two workflows share one claim.
+    """
+    client = _redis(set_result=True)
+    with patch(f"{MODULE}.redis_cache") as cache:
+        cache.redis = client
+        await workflow_repository.claim_limit_notice("u1", "wf1")
+
+    client.set.assert_awaited_once_with(
+        f"{WORKFLOW_LIMIT_NOTICE_PREFIX}u1:wf1",
+        "1",
+        nx=True,
+        ex=WORKFLOW_LIMIT_NOTICE_TTL,
+    )
+
+
+async def test_two_workflows_do_not_share_one_claim() -> None:
+    """One user hitting the wall on two workflows is two notices, not one."""
+    client = _redis(set_result=True)
+    with patch(f"{MODULE}.redis_cache") as cache:
+        cache.redis = client
+        await workflow_repository.claim_limit_notice("u1", "wf1")
+        await workflow_repository.claim_limit_notice("u1", "wf2")
+
+    keys = [call.args[0] for call in client.set.await_args_list]
+    assert keys[0] != keys[1]
+    assert "wf1" in keys[0] and "wf2" in keys[1]
 
 
 async def test_a_second_notice_in_the_same_window_is_refused() -> None:

@@ -13,7 +13,11 @@ from datetime import UTC, datetime
 from app.constants.log_tags import LogTag
 from app.db.repositories.subscriptions import subscription_repository
 from app.db.repositories.users import user_repository
-from app.models.payment_models import SubscriptionDocument
+from app.models.payment_models import (
+    SubscriptionDocument,
+    SubscriptionStatus,
+    SubscriptionUpdate,
+)
 from app.models.webhook_models import DodoSubscriptionData
 from app.services.analytics_service import (
     AnalyticsEvents,
@@ -107,7 +111,20 @@ async def activate_subscription(sub_data: DodoSubscriptionData) -> SubscriptionA
         log.info(
             f"{LogTag.PAYMENT} Subscription already exists",
             subscription_id=sub_data.subscription_id,
+            subscription_status=existing.status,
         )
+        # A row existing is not the same as a row being active. on_hold, failed
+        # and expired are each written by their own handler, and Dodo's recovery
+        # then sends subscription.active for that same row. Without this write
+        # the status stays lapsed, get_active_for_user filters it out, and the
+        # customer keeps reading FREE — under the paid-only gate that is a 402 on
+        # every authenticated request for someone who has paid, and the workflows
+        # restored just below are switched off again on the next lapse sweep.
+        if existing.status != SubscriptionStatus.ACTIVE:
+            await subscription_repository.apply_update_by_dodo_id(
+                sub_data.subscription_id,
+                SubscriptionUpdate(status=SubscriptionStatus.ACTIVE),
+            )
         await reactivate_workflows_safely(existing.user_id)
         # A row can exist while the gate still caches the pre-payment tier (a
         # recovery path created it moments ago); drop the key on this branch too.

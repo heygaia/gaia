@@ -51,7 +51,7 @@ vi.mock("@/features/chat/utils/newChatNavigation", () => ({
   prepareNewChat: vi.fn(),
 }));
 
-vi.mock("../api/searchApi", () => ({
+vi.mock("@/features/search/api/searchApi", () => ({
   searchApi: {
     search: vi.fn().mockResolvedValue({
       conversations: [],
