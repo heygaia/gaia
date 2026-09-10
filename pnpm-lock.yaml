@@ -372,6 +372,9 @@ importers:
       '@electron-toolkit/utils':
         specifier: ^3.0.0
         version: 3.0.0(electron@39.8.10)
+      '@electron/notarize':
+        specifier: ^3.0.1
+        version: 3.1.1
       '@gaia/shared':
         specifier: workspace:*
         version: link:../../libs/shared/ts
@@ -2808,6 +2811,10 @@ packages:
   '@electron/notarize@2.5.0':
     resolution: {integrity: sha512-jNT8nwH1f9X5GEITXaQ8IF/KdskvIkOFfB2CvwumsveVidzpSc+mvhhTMdAGSYF3O+Nq49lJ7y+ssODRXu06+A==}
     engines: {node: '>= 10.0.0'}
+
+  '@electron/notarize@3.1.1':
+    resolution: {integrity: sha512-uQQSlOiJnqRkTL1wlEBAxe90nVN/Fc/hEmk0bqpKk8nKjV1if/tXLHKUPePtv9Xsx90PtZU8aidx5lAiOpjkQQ==}
+    engines: {node: '>= 22.12.0'}
 
   '@electron/osx-sign@1.3.1':
     resolution: {integrity: sha512-BAfviURMHpmb1Yb50YbCxnOY0wfwaLXH5KJ4+80zS0gUkzDX3ec23naTlEqKsN+PwYn+a1cCzM7BJ4Wcd3sGzw==}
@@ -22216,6 +22223,13 @@ snapshots:
     dependencies:
       debug: 4.4.3(supports-color@7.2.0)
       fs-extra: 9.1.0
+      promise-retry: 2.0.1
+    transitivePeerDependencies:
+      - supports-color
+
+  '@electron/notarize@3.1.1':
+    dependencies:
+      debug: 4.4.3(supports-color@7.2.0)
       promise-retry: 2.0.1
     transitivePeerDependencies:
       - supports-color

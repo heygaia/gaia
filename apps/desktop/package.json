@@ -30,6 +30,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.5.7",
     "@electron-toolkit/preload": "^3.0.2",
+    "@electron/notarize": "^3.0.1",
     "@electron-toolkit/utils": "^3.0.0",
     "@gaia/shared": "workspace:*",
     "@types/node": "^24.13.3",
