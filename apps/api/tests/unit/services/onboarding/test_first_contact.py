@@ -141,6 +141,23 @@ class TestComposeFirstContact:
             "One tap: [Connect Gmail](https://gaia.test/connect/aaa)."
         )
 
+    def test_an_integration_with_no_hand_written_phrase_is_named_from_the_config(
+        self,
+    ) -> None:
+        """Only Gmail and Calendar have hand-written connect copy. Anything else
+        falls back to the OAuth config's display name — which is not the raw id:
+        "Connect github" reads like a bug report, "Connect GitHub" reads like a
+        product. The unlock clause is that same name."""
+        first_move = compose_first_contact(
+            "telegram", "Dev", _prefs([OnboardingNeed.INBOX]), [("github", "https://g.test/c")]
+        )[-1]
+        assert first_move == (
+            "That starts with GitHub, which I can't see yet. "
+            "One tap: [Connect GitHub](https://g.test/c)."
+        )
+        assert "github," not in first_move  # never the raw id
+        assert "Connect None" not in first_move
+
     def test_a_link_wins_over_a_question_for_mixed_picks(self) -> None:
         """A tap does more than a typed answer, so the connect ask leads."""
         first_move = compose_first_contact(
@@ -168,6 +185,13 @@ class TestComposeFirstContact:
     def test_their_own_words_are_quoted_back_with_trailing_punctuation_trimmed(self) -> None:
         _, promise, _ = compose_first_contact("telegram", None, _prefs([], "Book my travel!!"), [])
         assert promise == 'You also said "Book my travel". That\'s mine too.'
+
+    def test_trimming_their_words_never_eats_a_real_last_letter(self) -> None:
+        """Only sentence punctuation comes off the end. ``rstrip`` takes a SET of
+        characters, so widening it by one letter silently truncates every answer
+        that ends in that letter — "plan X" would be quoted back as "plan"."""
+        _, promise, _ = compose_first_contact("telegram", None, _prefs([], "plan X"), [])
+        assert promise == 'You also said "plan X". That\'s mine too.'
 
     def test_only_typed_words_ask_for_a_bit_more(self) -> None:
         first_move = compose_first_contact("telegram", None, _prefs([], "book my travel"), [])[-1]
@@ -229,6 +253,32 @@ class TestBuildFirstContact:
             "That starts with your calendar, which I can't see yet. "
             "One tap: [Connect Google Calendar](https://gaia.test/connect/googlecalendar)."
         )
+
+    async def test_the_connected_check_is_asked_about_this_user_and_the_name_is_carried(
+        self,
+    ) -> None:
+        """Two things the bundle-shape assertions above cannot see. The
+        already-connected lookup must name the user who just linked — asked about
+        anyone else it reads someone else's accounts and either re-offers a link
+        they already have or hides one they need. And the name resolved here has
+        to reach the greeting, or every first contact opens with a bare "Hey,"."""
+        repo = AsyncMock()
+        # User-sensitive on purpose: only u1 has Gmail, so a lookup for anybody
+        # else comes back "not connected" and re-offers it.
+        repo.is_connected = AsyncMock(side_effect=lambda u, i: u == "u1" and i == "gmail")
+        mint = AsyncMock(side_effect=lambda _u, i: f"https://gaia.test/connect/{i}")
+        with (
+            patch(f"{MODULE}.user_integration_repository", repo),
+            patch(f"{MODULE}.build_connect_link_url", mint),
+        ):
+            bubbles = await build_first_contact(
+                "u1", "telegram", "Aryan Randeriya", _prefs([OnboardingNeed.INBOX])
+            )
+
+        repo.is_connected.assert_awaited_once_with("u1", "gmail")
+        # Gmail is already on for u1, so there is no connect link and no ask for it.
+        assert bubbles[0] == "Hey Aryan, I'm with you on Telegram now."
+        assert "Connect Gmail" not in " ".join(bubbles)
 
     async def test_a_link_that_could_not_be_minted_is_dropped_not_shipped_dead(self) -> None:
         repo = AsyncMock()
