@@ -84,6 +84,12 @@ export interface DesktopSettings {
   popupShortcut: string;
   /** Selected app-icon id from the desktop icon registry. */
   appIcon: string;
+  /** Bring the device-bridge tunnel up automatically on launch when this Mac
+   * is paired, so it comes back online without a manual toggle. */
+  bridgeAutoStart: boolean;
+  /** Register the app as a macOS login item so it starts hidden (tray-only) at
+   * login and keeps the paired device online unattended. */
+  launchAtLogin: boolean;
 }
 
 export interface DesktopAppIconOption {
