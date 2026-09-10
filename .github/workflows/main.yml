@@ -505,7 +505,11 @@ jobs:
     needs: [select-runner, detect]
     if: needs.detect.outputs.has_typescript == 'true'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    timeout-minutes: 12
+    # 15, not 12, because the step below queues on the CPU governor: the acquire
+    # fails open only after GAIA_CPU_SLOTS_TIMEOUT (600s), so a job cap has to
+    # cover that wait PLUS the work, or a lane that was merely patient dies on
+    # the clock. Same shape as `build` above, which is 15 for the same reason.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
