@@ -15,6 +15,7 @@
 
 import { electronAPI } from "@electron-toolkit/preload";
 import type {
+  AddOptions,
   BridgeInvokeResult,
   BridgeStatus,
   ServerConfig,
@@ -236,11 +237,13 @@ const api = {
     listServers: (): Promise<BridgeInvokeResult<ServerConfig[]>> =>
       ipcRenderer.invoke(IPC.bridgeListServers),
 
-    /** Add or update a server; returns the updated server list. */
+    /** Add or update a server from CLI-equivalent flags; the main process
+     * builds the ServerConfig via the shared buildConfigFromFlags. Returns the
+     * updated server list. */
     addServer: (
-      config: ServerConfig,
+      opts: AddOptions,
     ): Promise<BridgeInvokeResult<ServerConfig[]>> =>
-      ipcRenderer.invoke(IPC.bridgeAddServer, config),
+      ipcRenderer.invoke(IPC.bridgeAddServer, opts),
 
     /** Remove a server by key; returns the updated server list. */
     removeServer: (key: string): Promise<BridgeInvokeResult<ServerConfig[]>> =>

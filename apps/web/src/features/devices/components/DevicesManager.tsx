@@ -11,6 +11,8 @@ import {
   Folder01Icon,
   Link04Icon,
 } from "@icons";
+import { usePlatform } from "@/hooks/ui/usePlatform";
+import { getElectronAPI } from "@/lib/electron/api";
 import {
   BRIDGE_ADD_COMMAND,
   BRIDGE_CLI_NAME,
@@ -19,6 +21,7 @@ import {
 } from "../constants";
 import { useDevices } from "../hooks/useDevices";
 import type { Device } from "../types";
+import { ThisMacCard } from "./ThisMacCard";
 
 function DeviceRow({
   device,
@@ -104,7 +107,9 @@ function DeviceRow({
   );
 }
 
-export function DevicesManager() {
+/** The paired CLI/other-machine devices (everything except "This Mac", which
+ * the desktop app owns directly over IPC). */
+function PairedDevices({ showThisMac }: { showThisMac: boolean }) {
   const { devices, isLoading, error, refetch, revokeDevice, revokingId } =
     useDevices();
 
@@ -128,6 +133,9 @@ export function DevicesManager() {
   }
 
   if (devices.length === 0) {
+    // The "This Mac" card is a working device on its own, so an empty CLI list
+    // beneath it needs no "install the CLI" nudge — only the pure-web view does.
+    if (showThisMac) return null;
     return (
       <div className="rounded-2xl bg-zinc-800 p-6 text-center text-sm text-zinc-400">
         No devices paired yet. Install the{" "}
@@ -139,7 +147,7 @@ export function DevicesManager() {
   }
 
   return (
-    <div className="flex flex-col gap-3">
+    <>
       {devices.map((device) => (
         <DeviceRow
           key={device.id}
@@ -148,6 +156,20 @@ export function DevicesManager() {
           isRevoking={revokingId === device.id}
         />
       ))}
+    </>
+  );
+}
+
+export function DevicesManager() {
+  const { isMac } = usePlatform();
+  // First cut is macOS-only (the host resolves a login-shell PATH the darwin
+  // way); the card stays hidden in the browser and on Windows/Linux desktop.
+  const showThisMac = getElectronAPI() !== null && isMac;
+
+  return (
+    <div className="flex flex-col gap-3">
+      {showThisMac && <ThisMacCard />}
+      <PairedDevices showThisMac={showThisMac} />
     </div>
   );
 }

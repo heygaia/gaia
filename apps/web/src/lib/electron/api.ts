@@ -5,6 +5,7 @@
  */
 
 import type { ServerConfig } from "@shared/bridge-core/config.types";
+import type { AddOptions } from "@shared/bridge-core/config-builders";
 import type {
   BridgeInvokeResult,
   BridgeStatus,
@@ -57,7 +58,7 @@ export interface ElectronAPI {
     stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
     listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
     addServer: (
-      config: ServerConfig,
+      opts: AddOptions,
     ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
     removeServer: (key: string) => Promise<BridgeInvokeResult<ServerConfig[]>>;
     onStatusChanged: (callback: (status: BridgeStatus) => void) => () => void;

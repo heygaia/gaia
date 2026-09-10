@@ -1,5 +1,6 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
 import type {
+  AddOptions,
   BridgeInvokeResult,
   BridgeStatus,
   ServerConfig,
@@ -44,7 +45,7 @@ declare global {
         stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
         listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
         addServer: (
-          config: ServerConfig,
+          opts: AddOptions,
         ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
         removeServer: (
           key: string,

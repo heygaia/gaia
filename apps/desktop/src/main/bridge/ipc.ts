@@ -8,11 +8,13 @@
 // status/error data crosses this boundary, never the device refresh token).
 
 import type {
+  AddOptions,
   BridgeError,
   BridgeInvokeResult,
   BridgeStatus,
   ServerConfig,
 } from "@gaia/shared/bridge-core";
+import { buildConfigFromFlags } from "@gaia/shared/bridge-core";
 import { ipcMain } from "electron";
 import { IPC } from "../../ipc-channels";
 import { getMainWindow } from "../windows/main";
@@ -52,32 +54,33 @@ async function run<T>(
   }
 }
 
-/** Structural guard for an add-server payload arriving from the renderer. The
- * frame is untrusted over IPC, so validate the discriminant and its required
- * fields before handing it to the host rather than trusting the type. */
-function isServerConfig(value: unknown): value is ServerConfig {
+function isStringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
+/** Structural guard for the add-server flags arriving from the renderer. The
+ * frame is untrusted over IPC, so validate field *types* here; the required-vs-
+ * optional-per-type rules (and slug/tokenize/loopback checks) belong to
+ * buildConfigFromFlags, the single source shared with the CLI's `bridge add`. */
+function isAddOptions(value: unknown): value is AddOptions {
   if (typeof value !== "object" || value === null) return false;
-  const cfg = value as Record<string, unknown>;
-  if (typeof cfg["key"] !== "string" || cfg["key"].length === 0) return false;
-  if (typeof cfg["name"] !== "string" || cfg["name"].length === 0) return false;
-  switch (cfg["type"]) {
-    case "filesystem":
-      return (
-        Array.isArray(cfg["allow"]) && typeof cfg["allowWrite"] === "boolean"
-      );
-    case "url":
-      return typeof cfg["url"] === "string" && cfg["url"].length > 0;
-    case "stdio":
-      return (
-        typeof cfg["command"] === "string" &&
-        cfg["command"].length > 0 &&
-        Array.isArray(cfg["args"]) &&
-        typeof cfg["env"] === "object" &&
-        cfg["env"] !== null
-      );
-    default:
-      return false;
-  }
+  const o = value as Record<string, unknown>;
+  const optionalString = (key: string): boolean =>
+    o[key] === undefined || typeof o[key] === "string";
+  const optionalStringArray = (key: string): boolean =>
+    o[key] === undefined || isStringArray(o[key]);
+  return (
+    optionalString("type") &&
+    optionalString("name") &&
+    optionalString("command") &&
+    optionalString("url") &&
+    (o["write"] === undefined || typeof o["write"] === "boolean") &&
+    optionalStringArray("path") &&
+    optionalStringArray("env") &&
+    optionalStringArray("header")
+  );
 }
 
 function bridgePair(): Promise<BridgeInvokeResult<BridgeStatus>> {
@@ -113,12 +116,12 @@ function bridgeListServers(): Promise<BridgeInvokeResult<ServerConfig[]>> {
 }
 
 function bridgeAddServer(
-  config: unknown,
+  opts: unknown,
 ): Promise<BridgeInvokeResult<ServerConfig[]>> {
   return run(async () => {
-    if (!isServerConfig(config)) throw new Error("invalid server config");
+    if (!isAddOptions(opts)) throw new Error("invalid server options");
     const host = getBridgeHost();
-    await host.addServer(config);
+    await host.addServer(buildConfigFromFlags(opts));
     return host.listServers();
   });
 }
@@ -160,8 +163,8 @@ export function registerBridgeIpcHandlers(): void {
   ipcMain.handle(IPC.bridgeStart, () => bridgeStart());
   ipcMain.handle(IPC.bridgeStop, () => bridgeStop());
   ipcMain.handle(IPC.bridgeListServers, () => bridgeListServers());
-  ipcMain.handle(IPC.bridgeAddServer, (_event, config: unknown) =>
-    bridgeAddServer(config),
+  ipcMain.handle(IPC.bridgeAddServer, (_event, opts: unknown) =>
+    bridgeAddServer(opts),
   );
   ipcMain.handle(IPC.bridgeRemoveServer, (_event, key: unknown) =>
     bridgeRemoveServer(key),
