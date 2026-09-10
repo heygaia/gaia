@@ -68,6 +68,22 @@ class TestLegacyProfessionDoesNotBreakTheRead:
         assert document.onboarding.preferences is not None
         assert document.onboarding.preferences.profession == "Software Engineer"
 
+    @pytest.mark.parametrize("stored", ["", 12345, 3.14, [], {}])
+    def test_a_profession_that_is_not_usable_text_reads_as_unset(self, stored: object) -> None:
+        """Empty and non-string stored values both read as unset.
+
+        Neither reaches ``clean_profession``: a number has no ``.strip()``, and
+        "" is read as unset by the field validator regardless of this guard, so
+        the guard hands both straight through. This pins that they end up unset
+        rather than raising — the mutation gate found the branch untested when it
+        was written as a special case, which is what showed the case was dead.
+        """
+        document = UserDocument.model_validate(_user_row(stored))
+
+        assert document.onboarding is not None
+        assert document.onboarding.preferences is not None
+        assert document.onboarding.preferences.profession is None
+
     def test_the_rest_of_preferences_survives_the_drop(self) -> None:
         """Dropping the profession must not drop its siblings with it."""
         document = UserDocument.model_validate(_user_row("12345"))

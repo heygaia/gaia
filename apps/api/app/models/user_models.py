@@ -488,15 +488,22 @@ class OnboardingSubdocument(BaseModel):
         if not isinstance(value, Mapping):
             return value
         stored = value.get("profession")
-        if not isinstance(stored, str) or stored == "":
+        if stored is None:
             return value
-        try:
-            clean_profession(stored)
-        except ValueError:
-            # Narrow by construction: ValueError is clean_profession's only
-            # failure signal, and a refused stored value is the case handled here.
-            return {**value, "profession": None}
-        return value
+        if isinstance(stored, str):
+            try:
+                clean_profession(stored)
+            except ValueError:
+                # ValueError is clean_profession's only failure signal, and a
+                # refused stored value is exactly the case handled here.
+                pass
+            else:
+                return value
+        # Anything that is not readable text drops out: a non-str never reaches
+        # clean_profession at all, because ``profession: str | None`` rejects it
+        # at the type level first and fails the same read this guard exists to
+        # keep alive.
+        return {**value, "profession": None}
 
 
 class UserDocument(MongoDocument):
