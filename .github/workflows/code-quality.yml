@@ -1,6 +1,6 @@
 name: Code Quality
 
-# Tech-debt prevention gates that run on every PR to master.
+# Tech-debt prevention gates that run on every PR, whatever it targets.
 # Each lane is independent so failures are isolated and parallelised. The
 # `quality-gate` job at the bottom is the single required check.
 #
@@ -14,9 +14,13 @@ name: Code Quality
 # correctness (build, type-check, tests). This workflow enforces code
 # hygiene to prevent low-quality / LLM-generated code from accumulating.
 on:
+  # No `branches:` filter. That key matches the PR's BASE, so restricting it to
+  # master left every stacked PR ungated — #1175 sat for three days showing a
+  # green tick with neither the test lanes nor the mutation gate having ever
+  # run on it, which reads as "passing" in the PR list. A stacked PR is the one
+  # that most needs the gate: its diff is what lands, and its base is a branch
+  # that has not merged yet.
   pull_request:
-    branches:
-      - master
   push:
     branches:
       - master
