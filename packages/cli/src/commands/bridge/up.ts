@@ -16,13 +16,13 @@ import {
 } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
-import { ApiError, exchangeToken, registerServer } from "./api.js";
+import { registerConfiguredServers } from "@gaia/shared/bridge-core/register";
+import { ApiError } from "./api.js";
 import {
   clearCredentials,
   getFilesystemServer,
   loadConfig,
   loadCredentials,
-  saveCredentials,
 } from "./config.js";
 import { runLogin } from "./login.js";
 import { Tunnel } from "./tunnel.js";
@@ -30,35 +30,6 @@ import { Tunnel } from "./tunnel.js";
 const DAEMON_DIR = join(homedir(), ".gaia", "bridge");
 const PID_FILE = join(DAEMON_DIR, "daemon.pid");
 const LOG_FILE = join(DAEMON_DIR, "daemon.log");
-
-/** Register every configured server with the cloud (creating its integration and
- * enqueuing warm-connect). Split from serving so `gaia bridge add` can register a
- * new server without starting a second tunnel. */
-export async function registerConfiguredServers(): Promise<void> {
-  const creds = loadCredentials();
-  if (!creds?.refreshToken)
-    throw new Error("not paired — run: gaia bridge login");
-  const servers = loadConfig().servers;
-  if (servers.length === 0) {
-    throw new Error("no servers configured — run: gaia bridge add");
-  }
-  const token = await exchangeToken(creds.apiUrl, creds.refreshToken);
-  // Persist the rotated token before anything else can use the old one.
-  saveCredentials({ ...creds, refreshToken: token.refresh_token });
-  // Independent registrations that all share the one already-exchanged access
-  // token — register them concurrently rather than one round trip at a time.
-  await Promise.all(
-    servers.map((server) =>
-      registerServer(
-        creds.apiUrl,
-        token.access_token,
-        server.key,
-        server.name,
-        server.type,
-      ),
-    ),
-  );
-}
 
 /** The pid of a live background tunnel, or null. Clears a stale pidfile whose
  * process is gone so a fresh `up` can start. */
@@ -156,9 +127,11 @@ export async function runUp(): Promise<void> {
     detached: true,
     stdio: ["ignore", log, log],
   };
+  // Forward execArgv so a tsx-dev run (`node --import tsx …`) re-execs the child
+  // with the same loader; production (`node dist/index.js`) has empty execArgv.
   const child: ChildProcess = spawn(
     process.execPath,
-    [entry, "bridge", "up", "--serve"],
+    [...process.execArgv, entry, "bridge", "up", "--serve"],
     spawnOpts,
   );
   child.unref();

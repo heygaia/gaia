@@ -1166,6 +1166,9 @@ importers:
       '@infisical/sdk':
         specifier: ^4.0.6
         version: 4.0.6(@aws-sdk/client-sso-oidc@3.600.0)
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.3.6)
       amqplib:
         specifier: ^0.10.9
         version: 0.10.9
@@ -1187,6 +1190,9 @@ importers:
       string-similarity:
         specifier: ^4.0.4
         version: 4.0.4
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
       zod:
         specifier: 4.3.6
         version: 4.3.6
@@ -1200,6 +1206,9 @@ importers:
       '@types/string-similarity':
         specifier: ^4.0.2
         version: 4.0.2
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       typescript:
         specifier: ^7.0.2
         version: 7.0.2
@@ -1303,6 +1312,9 @@ importers:
       '@biomejs/biome':
         specifier: ^2.5.7
         version: 2.5.7
+      '@gaia/shared':
+        specifier: workspace:*
+        version: link:../../libs/shared/ts
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
