@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.constants.cache import PLATFORM_LINK_TOKEN_PREFIX
+from app.constants.platform_links import PLATFORM_LINK_CODE_FEATURE_KEY
 from app.db.redis import redis_cache
 from app.decorators import enforce_rate_limit
 from app.models.platform_models import (
@@ -34,8 +35,6 @@ from app.services.platform_link_service import (
 )
 from app.utils.errors import create_error
 from shared.py.wide_events import log
-
-PLATFORM_LINK_CODE_FEATURE_KEY = "platform_link_code"
 
 router = APIRouter()
 

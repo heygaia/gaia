@@ -30,6 +30,7 @@ import {
   handleStreamingChat,
   hashLogIdentifier,
   type IncomingMedia,
+  type LinkState,
   MEDIA_READ_TIMEOUT_MS,
   type OutboundAttachment,
   type PlatformName,
@@ -449,25 +450,24 @@ export class WhatsAppAdapter extends BaseBotAdapter {
     // Base gate (shared with Discord): only greets unlinked users, at most once per process.
     if (!(await this.shouldSendWelcome(waId))) return;
 
-    let isLinked = this.linkedUsers.has(waId);
-    if (!isLinked) {
-      isLinked = await this.isWaUserLinked(waId, authCheckTimeoutMs);
-    }
-    if (!isLinked) {
+    if (this.linkedUsers.has(waId)) return;
+    // A failed check greets rather than staying silent: an unlinked user who
+    // never sees the welcome has no way to discover /auth.
+    if ((await this.waUserLinkState(waId, authCheckTimeoutMs)) !== "linked") {
       await this.sendWelcome(waId);
       refreshTyping();
     }
   }
 
   /**
-   * Resolves whether a WhatsApp user is linked to a GAIA account, caching a
-   * positive result. Failures (including the optional timeout) resolve to
-   * `false` so the welcome path degrades gracefully.
+   * Resolves whether a WhatsApp user is linked, caching a positive result. A
+   * failure (including the optional timeout) is `unknown`, not `unlinked` —
+   * callers pick their own safe default from that.
    */
-  private async isWaUserLinked(
+  private async waUserLinkState(
     waId: string,
     timeoutMs?: number,
-  ): Promise<boolean> {
+  ): Promise<LinkState> {
     try {
       const statusPromise = this.gaia.checkAuthStatus("whatsapp", waId);
       const status =
@@ -483,13 +483,13 @@ export class WhatsAppAdapter extends BaseBotAdapter {
               ),
             ]);
       if (status.authenticated) this.linkedUsers.add(waId);
-      return status.authenticated;
+      return status.authenticated ? "linked" : "unlinked";
     } catch (err) {
       this.adapterLogger.warn("welcome_auth_check_failed", {
         user_hash: hashLogIdentifier(waId),
         ...sanitizeErrorForLog(err),
       });
-      return false;
+      return "unknown";
     }
   }
 
@@ -566,7 +566,7 @@ export class WhatsAppAdapter extends BaseBotAdapter {
         platformUserId: waId,
         text,
         target,
-        isLinked: () => this.isWaUserLinked(waId),
+        linkState: () => this.waUserLinkState(waId),
       });
       // null: the message was only a code, or a redemption already delivered
       // GAIA's whole first contact and there is no turn left to run.

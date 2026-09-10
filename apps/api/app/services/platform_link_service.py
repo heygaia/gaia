@@ -72,6 +72,23 @@ PREMIUM_PLATFORMS: frozenset[str] = frozenset({Platform.IMESSAGE.value})
 IMESSAGE_REGISTRATION_FEATURE_KEY = "imessage_registration"
 
 
+class PlatformAccountTakenError(ValueError):
+    """This platform account already belongs to a different GAIA user.
+
+    Distinct from ``AccountHasDifferentPlatformError``: the conflict is on the
+    platform side, and the person linking has to free the platform account.
+    """
+
+
+class AccountHasDifferentPlatformError(ValueError):
+    """This GAIA account already has a different account on this platform.
+
+    Distinct from ``PlatformAccountTakenError``: nobody else is involved, and
+    the fix is on the GAIA side. Telling this person to "disconnect it from the
+    other GAIA account" sends them looking for an account that does not exist.
+    """
+
+
 async def _release_imessage_number(user_id: str, phone_number: str) -> bool:
     """Release the number to Photon's pool; False when Photon could not be reached.
 
@@ -196,6 +213,12 @@ async def platform_requires_upgrade(user_id: str, platform: str) -> bool:
 async def require_platform_plan(user_id: str, platform: str) -> None:
     """Raise the standard 429 upsell when a free user tries to link a paid-only platform."""
     if await platform_requires_upgrade(user_id, platform):
+        log.info(
+            "platform linking refused — paid-only platform",
+            user={"id": user_id},
+            provider=platform,
+            payment={"operation": "platform_plan_gate"},
+        )
         raise RateLimitExceededException(
             feature=f"{platform}_linking",
             plan_required=PlanType.PRO.value,
@@ -443,7 +466,9 @@ class PlatformLinkService:
         # Reject if this platform ID is already linked to a different user
         existing = await user_repository.get_by_platform_id(platform, platform_user_id)
         if existing and existing.id != user_id:
-            raise ValueError(f"This {platform} account is already linked to another GAIA user")
+            raise PlatformAccountTakenError(
+                f"This {platform} account is already linked to another GAIA user"
+            )
 
         # Reject if the user already has a different platform ID stored
         user = await user_repository.get(user_id)
@@ -452,7 +477,7 @@ class PlatformLinkService:
             if isinstance(current_link, dict):
                 current_id = current_link.get("id", "")
                 if current_id and current_id != platform_user_id:
-                    raise ValueError(
+                    raise AccountHasDifferentPlatformError(
                         f"Your account already has a different {platform} account linked"
                     )
 

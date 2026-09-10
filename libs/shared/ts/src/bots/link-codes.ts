@@ -27,6 +27,12 @@ import { wideLog, withWideEvent } from "./utils/wide-events";
 export const LINK_CODE_LENGTH = 22;
 
 /**
+ * Mirrors `LINK_CONFLICT_ACCOUNT_HAS_OTHER` in
+ * `apps/api/app/constants/platform_links.py`, which must change with this.
+ */
+const LINK_CONFLICT_ACCOUNT_HAS_OTHER = "account_has_other_platform_account";
+
+/**
  * A trailing `#<code>` and nothing after it. Anchored and length-exact so a
  * real hashtag never matches: `#launch` is 6 characters, and the alphabet is
  * the urlsafe-base64 one the API mints from.
@@ -56,9 +62,12 @@ export interface InboundLinkCodeArgs {
   text: string;
   target: MessageTarget;
   /** Whether this handle is already linked to a GAIA account. */
-  isLinked: () => Promise<boolean>;
+  linkState: () => Promise<LinkState>;
   profile?: { username?: string; displayName?: string };
 }
+
+/** `unknown` when the check itself failed — which is not "not linked". */
+export type LinkState = "linked" | "unlinked" | "unknown";
 
 /**
  * The WhatsApp/iMessage half of one-tap linking: the user's own first message
@@ -76,9 +85,11 @@ export async function consumeInboundLinkCode(
   const parsed = parseTrailingLinkCode(args.text);
   if (!parsed) return args.text;
 
-  // An already-linked sender re-sending the prewritten message is not an error
-  // worth a reply: drop the code and let the rest through.
-  if (!(await args.isLinked())) {
+  // Only redeem for a sender we know is unlinked. An already-linked one is
+  // re-sending the prewritten message, and an `unknown` is a failed check —
+  // redeeming there spends a stale code and answers a real message with "that
+  // link has expired". Both drop the code and let the rest through.
+  if ((await args.linkState()) === "unlinked") {
     // Either outcome ends the turn. A success has already delivered the whole
     // first contact, so running the stripped text on top of it would answer the
     // user's own prewritten opener a second time; a failure has already told
@@ -97,9 +108,16 @@ export async function consumeInboundLinkCode(
   return parsed.text || null;
 }
 
+/** Why a redemption was refused, as far as the person tapping is concerned. */
+export type LinkCodeFailure =
+  | "expired"
+  | "conflict"
+  | "account-has-other"
+  | "plan";
+
 /** Sent when the code is stale, already used, or the handle belongs elsewhere. */
 export function buildLinkCodeFailureMessage(
-  reason: "expired" | "conflict" | "plan",
+  reason: LinkCodeFailure,
   frontendUrl: string,
 ): string {
   if (reason === "plan") {
@@ -107,6 +125,13 @@ export function buildLinkCodeFailureMessage(
       "**This platform is part of GAIA Pro**\n\n" +
       "Subscribe and tap the link again.\n" +
       `${frontendUrl}/pricing`
+    );
+  }
+  if (reason === "account-has-other") {
+    return (
+      "**Your account already has a different account connected here**\n\n" +
+      "Disconnect the one you have in settings, then tap the link again.\n" +
+      `${frontendUrl}/settings?section=linked-accounts`
     );
   }
   if (reason === "conflict") {
@@ -121,6 +146,23 @@ export function buildLinkCodeFailureMessage(
     "Head back to GAIA and pick your platform again — it only takes a tap.\n" +
     `${frontendUrl}/onboarding`
   );
+}
+
+/**
+ * Reads the API's stated reason. A 409 covers two opposite conflicts, and a 429
+ * means "needs Pro" only when it says so — a real rate limit there would
+ * otherwise tell people to subscribe over a limit they just have to wait out.
+ */
+function classifyLinkFailure(error: GaiaApiError): LinkCodeFailure {
+  if (error.status === 429) {
+    return error.reason.plan_required ? "plan" : "expired";
+  }
+  if (error.status === 409) {
+    return error.reason.code === LINK_CONFLICT_ACCOUNT_HAS_OTHER
+      ? "account-has-other"
+      : "conflict";
+  }
+  return "expired";
 }
 
 /**
@@ -161,11 +203,11 @@ export async function redeemLinkCode(
         wideLog.set({ link_result: "linked" });
         return true;
       } catch (error: unknown) {
-        const status = error instanceof GaiaApiError ? error.status : undefined;
+        if (!(error instanceof GaiaApiError)) throw error;
+        const status = error.status;
         if (status !== 400 && status !== 409 && status !== 429) throw error;
 
-        const reason =
-          status === 409 ? "conflict" : status === 429 ? "plan" : "expired";
+        const reason = classifyLinkFailure(error);
         wideLog.set({ link_result: "rejected", reason });
         wideLog.audit("platform_link_code_rejected", {
           user_hash: hashLogIdentifier(platformUserId),

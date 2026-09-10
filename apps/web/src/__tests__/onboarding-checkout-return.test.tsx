@@ -68,6 +68,32 @@ describe("useCheckoutReturn", () => {
     spy.mockRestore();
   });
 
+  it("keeps the locale prefix it was returned to", () => {
+    // Dodo returns a French user to /fr/onboarding. Rewriting that to
+    // /onboarding drops them into English on the next reload or bookmark,
+    // mid-payment.
+    search = "checkout=returned&status=failed";
+    window.history.replaceState(null, "", `/fr/onboarding?${search}`);
+    const spy = vi.spyOn(window.history, "replaceState");
+
+    renderHook(() => useCheckoutReturn());
+
+    expect(spy).toHaveBeenCalledWith(null, "", "/fr/onboarding");
+    spy.mockRestore();
+  });
+
+  it("strips only Dodo's params, leaving the rest of the query alone", () => {
+    search =
+      "ref=newsletter&checkout=returned&subscription_id=sub_1&status=succeeded";
+    window.history.replaceState(null, "", `/onboarding?${search}`);
+    const spy = vi.spyOn(window.history, "replaceState");
+
+    renderHook(() => useCheckoutReturn());
+
+    expect(spy).toHaveBeenCalledWith(null, "", "/onboarding?ref=newsletter");
+    spy.mockRestore();
+  });
+
   it("retry settles the store and leaves the confirming state without touching the URL again", () => {
     search = "checkout=returned&status=failed";
     const { result } = renderHook(() => useCheckoutReturn());

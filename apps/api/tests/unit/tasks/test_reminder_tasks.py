@@ -21,6 +21,7 @@ from app.tasks.reminder_tasks import (
     _reminder_result_text,
     execute_reminder_by_agent,
 )
+from shared.py.wide_events import log
 
 MODULE = "app.tasks.reminder_tasks"
 
@@ -111,6 +112,37 @@ async def test_reminder_failure_does_not_capture() -> None:
             await execute_reminder_by_agent(reminder)
 
     mock_capture.assert_not_called()
+
+
+async def test_a_failed_reminder_names_the_user_it_failed_for() -> None:
+    """A reminder failure nobody can attribute to a user is close to useless.
+
+    Every other line in this handler carries ``user_id``; the error path is the
+    one that gets read during an incident, and "some reminder failed" does not
+    let you tell whether one account is broken or the provider is.
+    """
+    log.reset()
+    with (
+        patch(
+            "app.tasks.reminder_tasks.notification_service.create_notification",
+            new_callable=AsyncMock,
+            side_effect=RuntimeError("notify down"),
+        ),
+        patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
+        patch(f"{MODULE}.capture_event"),
+    ):
+        with pytest.raises(RuntimeError, match="notify down"):
+            await execute_reminder_by_agent(_reminder())
+
+    assert log.get()["errors"] == [
+        {
+            "msg": "Failed to execute reminder",
+            "reminder_id": "rem-1",
+            "user_id": "user-1",
+            "error_type": "RuntimeError",
+            "error": "notify down",
+        }
+    ]
 
 
 class TestReminderReachesChatPlatforms:

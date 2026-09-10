@@ -74,35 +74,38 @@ async def _run_signup_side_effects(user_id: str, email: str, signup_name: str) -
             name=signup_name,
             signup_method=LOGIN_METHOD_WORKOS,
         )
-        log.info(f"{LogTag.OAUTH} Signup tracked in PostHog for new user", email=email)
+        log.info(f"{LogTag.OAUTH} Signup tracked in PostHog for new user", user={"id": user_id})
     except Exception as e:
         log.error(
             f"{LogTag.OAUTH} Failed to track signup in PostHog for",
-            email=email,
+            user={"id": user_id},
             error=str(e),
             error_type=type(e).__name__,
         )
 
     # Send welcome email to new user
     try:
-        await send_welcome_email(email, signup_name)
-        log.info(f"{LogTag.OAUTH} Welcome email sent to new user", email=email)
+        await send_welcome_email(email, user_id, signup_name)
+        log.info(f"{LogTag.OAUTH} Welcome email sent to new user", user={"id": user_id})
     except Exception as e:
         log.error(
             f"{LogTag.OAUTH} Failed to send welcome email to",
-            email=email,
+            user={"id": user_id},
             error=str(e),
             error_type=type(e).__name__,
         )
 
     # Add contact to marketing audience
     try:
-        await add_marketing_contact(email, signup_name)
-        log.info(f"{LogTag.OAUTH} Contact added to marketing audience for new user", email=email)
+        await add_marketing_contact(email, user_id, signup_name)
+        log.info(
+            f"{LogTag.OAUTH} Contact added to marketing audience for new user",
+            user={"id": user_id},
+        )
     except Exception as e:
         log.error(
             f"{LogTag.OAUTH} Failed to add marketing contact for",
-            email=email,
+            user={"id": user_id},
             error=str(e),
             error_type=type(e).__name__,
         )
@@ -170,7 +173,7 @@ async def store_user_info(
             except Exception as e:
                 log.error(
                     f"{LogTag.OAUTH} Failed to track login in PostHog for",
-                    email=email,
+                    user={"id": existing_user.id},
                     error=str(e),
                     error_type=type(e).__name__,
                 )

@@ -446,6 +446,12 @@ class TestChatStreamPaywall:
         mock_spawn,
         gated_test_client,
     ):
+        """The 402 carries a null ``checkout_url`` and cost Dodo nothing.
+
+        Asserted through the real middleware stack rather than the gate alone:
+        this is the request an unpaid user's app shell actually makes, and it
+        is the shape the web interceptor and the mobile SSE client parse.
+        """
         mock_subscription.return_value = _make_subscription_mock(PlanType.FREE)
         checkout = MagicMock()
         checkout.checkout.payment_link = "https://checkout.dodo.test/xyz"
@@ -457,9 +463,10 @@ class TestChatStreamPaywall:
         assert response.json()["detail"] == {
             "code": "subscription_required",
             "message": "GAIA is paid only. Subscribe to GAIA Pro to keep chatting.",
-            "checkout_url": "https://checkout.dodo.test/xyz",
+            "checkout_url": None,
             "discount_code": None,
         }
+        mock_checkout.assert_not_awaited()
 
     @patch(
         "app.api.v1.endpoints.chat.spawn_background_task",

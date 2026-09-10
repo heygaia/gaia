@@ -28,6 +28,7 @@ from app.constants.llm import (
     PRO_DAILY_COST_BUDGET_USD,
     PRO_PER_REQUEST_TOKEN_CEILING,
 )
+from app.constants.platform_links import PLATFORM_LINK_CODE_FEATURE_KEY
 from app.models.payment_models import PlanType
 
 
@@ -375,7 +376,7 @@ FEATURE_LIMITS: dict[str, TieredRateLimits] = {
             description="Register a phone number on the GAIA iMessage pool",
         ),
     ),
-    "platform_link_code": TieredRateLimits(
+    PLATFORM_LINK_CODE_FEATURE_KEY: TieredRateLimits(
         # Minted once per visit to the onboarding platform-pick step, so real use
         # is a handful. Wide enough for a re-run of onboarding, tight enough that
         # a stolen session cannot flood Redis with live link credentials.

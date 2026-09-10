@@ -10,11 +10,13 @@ from fastapi.responses import StreamingResponse
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.config.settings import settings
 from app.constants.auth import AUDIT_ACTOR_BOT_API
+from app.constants.cache import BOT_UPGRADE_LINK_PREFIX, BOT_UPGRADE_LINK_TTL
 from app.constants.hil import APPROVAL_REQUEST_TOOL_NAME
 from app.constants.log_tags import LogTag
 from app.core.stream_manager import stream_manager, with_heartbeat
 from app.db.redis import redis_cache
 from app.decorators import (
+    SubscriptionRequiredException,
     is_subscription_active,
     require_active_subscription,
     tiered_rate_limit,
@@ -165,15 +167,55 @@ async def require_bot_api_key(request: Request) -> None:
         raise HTTPException(status_code=401, detail="Invalid or missing bot API key")
 
 
+async def _may_mint_bot_upgrade_link(user_id: str) -> bool:
+    """Whether this turn may mint a fresh Dodo session for ``user_id``.
+
+    A ``SET NX EX`` window, the same gate shape as
+    ``workflow_repository.claim_limit_notice`` — one mint per user per
+    ``BOT_UPGRADE_LINK_TTL``, so a burst of blocked turns costs one session
+    instead of one per message.
+
+    Fails CLOSED, unlike that sibling, because what is at stake differs. There,
+    losing the gate costs the user a duplicate notification; here it costs a
+    trail of orphan Dodo sessions, and the newest of those buries the session
+    the user actually paid on when ``get_latest_for_user`` looks for it. A
+    degraded link is a marketing regression; a buried payment is a paying
+    customer told they have no subscription.
+    """
+    try:
+        claimed = await redis_cache.client.set(
+            f"{BOT_UPGRADE_LINK_PREFIX}{user_id}", "1", nx=True, ex=BOT_UPGRADE_LINK_TTL
+        )
+    except Exception as e:
+        log.warning(
+            f"{LogTag.PAYMENT} Bot upgrade-link window unavailable, falling back to pricing page",
+            user={"id": user_id},
+            payment={"operation": "bot_upgrade_link_window"},
+            failure_reason="window_unavailable",
+            error_type=type(e).__name__,
+        )
+        return False
+    return bool(claimed)
+
+
 async def _bot_upgrade_url(user_id: str) -> str:
-    """A one-tap Dodo checkout URL for this user, or the pricing page if Dodo fails.
+    """A one-tap Dodo checkout URL for this user, or the pricing page.
 
     Bots are where the pricing page is worst: a WhatsApp user has to go find the
     web app and sign in before they can pay, and most never do. A personalised
     checkout link removes both steps and attributes the subscription correctly.
-    The session is cached for an hour, so a user who hits limits repeatedly gets
-    the same link rather than a trail of abandoned ones.
+
+    Bounded by ``_may_mint_bot_upgrade_link``: this is the ONE place a bot turn
+    reaches Dodo, and both walls that call it — the paid-only gate and the
+    rate-limit notice — repeat for every message until the user acts, so an
+    ungated mint here is one throwaway session per inbound message. Outside the
+    window the caller still gets a working URL, just the pricing page rather
+    than a personalised one. The session itself is never cached and never
+    reused: Dodo sessions are single-use, and handing back a spent one shows
+    "link expired" (see ``create_pro_checkout``).
     """
+    if not await _may_mint_bot_upgrade_link(user_id):
+        return f"{settings.FRONTEND_URL}/pricing"
     try:
         pro = await payment_service.create_pro_checkout(user_id)
     except Exception as e:
@@ -200,6 +242,11 @@ def _bot_upgrade_url_once(user_id: str) -> Callable[[], Awaitable[str]]:
     purpose: resolving eagerly before the stream opens would mint a checkout
     session on every bot turn, including the paying users who never see a
     paywall.
+
+    Only the within-turn bound. Across turns the cap lives in
+    ``_bot_upgrade_url`` itself, so a caller that reaches it directly (the
+    paid-only gate does, having no stream to hang a resolver off) is bounded
+    too.
     """
     cached: list[str] = []
 
@@ -813,7 +860,21 @@ async def transcribe_bot_audio(
     # against the caller's quota by this point. Harmless for a blocked user
     # (they cannot spend it) and not worth moving the key check to a
     # dependency for, which would fork this route from `bot_chat_stream`.
-    await require_active_subscription(str(user["user_id"]), feature="bot_transcribe")
+    #
+    # `require_active_subscription` already logs the block and fires
+    # PAYWALL_BLOCKED with this feature name; what it cannot do is stamp THIS
+    # route's wide event. Without the outcome, "are voice notes failing on the
+    # paywall or on the provider?" — the question an incident actually asks —
+    # has no answer, because a refused transcribe and a served one leave
+    # identical events. The value matches `_bot_stream_entitlement_gate` so one
+    # query covers both bot surfaces. No CHAT_MESSAGE_REFUSED here: a
+    # transcribe is not a chat turn, and counting it as one would inflate the
+    # bot's refused-turn rate with events that have no turn behind them.
+    try:
+        await require_active_subscription(str(user["user_id"]), feature="bot_transcribe")
+    except SubscriptionRequiredException:
+        log.set(outcome="subscription_required")  # pragma: no mutate
+        raise
 
     if content_length is not None and content_length > MAX_AUDIO_BYTES:
         raise HTTPException(
@@ -859,4 +920,5 @@ async def transcribe_bot_audio(
         AnalyticsEvents.BOT_AUDIO_TRANSCRIBED,
         {"audio_bytes": len(audio_bytes), "transcript_length": len(text)},
     )
+    log.set(outcome="transcribed")  # pragma: no mutate
     return TranscribeAudioResponse(text=text)

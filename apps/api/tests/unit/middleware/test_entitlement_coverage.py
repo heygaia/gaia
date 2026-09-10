@@ -17,7 +17,10 @@ from httpx import ASGITransport, AsyncClient
 import pytest
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.api.v1.middleware.entitlement import EntitlementMiddleware
+from app.api.v1.middleware.entitlement import (
+    ENTITLEMENT_UNAVAILABLE_MESSAGE,
+    EntitlementMiddleware,
+)
 from app.api.v1.middleware.entitlement_allowlist import (
     FREE_EXACT_PATHS,
     FREE_PATH_PREFIXES,
@@ -78,19 +81,18 @@ async def gated_client(gated_app: FastAPI) -> AsyncGenerator[AsyncClient, None]:
 
 @pytest.fixture
 def free_caller() -> Iterator[None]:
+    """A FREE caller, with nothing else stubbed.
+
+    Refusing costs exactly one cached plan read. Nothing is patched out for
+    Dodo because the gate no longer reaches for it — see
+    ``test_entitlement_checkout_minting``.
+    """
     with patch(
         "app.decorators.entitlements.payment_service.get_cached_plan_type",
         new_callable=AsyncMock,
         return_value=PlanType.FREE,
     ):
-        # A paywall response tries to mint a personal checkout link; keep that
-        # off the network so the sweep stays fast and hermetic.
-        with patch(
-            "app.decorators.entitlements.get_checkout_url",
-            new_callable=AsyncMock,
-            return_value="https://checkout.example/pro",
-        ):
-            yield
+        yield
 
 
 def _routes(app: FastAPI) -> list[tuple[str, str]]:
@@ -138,7 +140,9 @@ async def test_block_body_matches_the_documented_wire_contract(
     assert response.status_code == 402
     detail = response.json()["detail"]
     assert detail["code"] == "subscription_required"
-    assert detail["checkout_url"] == "https://checkout.example/pro"
+    # Present and null: the key is still part of the shape three clients parse,
+    # but the gate never mints a session to fill it.
+    assert detail["checkout_url"] is None
     assert set(detail) == {"code", "message", "checkout_url", "discount_code"}
     assert detail["message"]
 
@@ -330,7 +334,13 @@ async def test_options_preflight_is_not_blocked() -> None:
 
 
 async def test_plan_lookup_failure_fails_closed() -> None:
-    """A Redis/Mongo blip must not hand everyone a free tier."""
+    """A Redis/Mongo blip must not hand everyone a free tier.
+
+    Still closed — the handler's ``{"ok": "yes"}`` never reaches the caller —
+    but not as a paywall: the body must not claim a billing verdict that was
+    never read. Pinned here at the real seam, the plan read itself, rather than
+    at a stubbed gate.
+    """
     with patch(
         "app.decorators.entitlements.payment_service.get_cached_plan_type",
         new_callable=AsyncMock,
@@ -338,9 +348,8 @@ async def test_plan_lookup_failure_fails_closed() -> None:
     ):
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
-    assert response.status_code == 402
-    assert response.json()["detail"]["code"] == "subscription_required"
-    assert response.json()["detail"]["checkout_url"] is None
+    assert response.status_code == 503
+    assert response.json() == {"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE}
 
 
 async def test_the_gate_asks_about_this_caller_and_names_the_path_it_blocked() -> None:
@@ -350,7 +359,7 @@ async def test_the_gate_asks_about_this_caller_and_names_the_path_it_blocked() -
     alike, and ``feature`` is what makes a PAYWALL_BLOCKED event attributable
     to a surface instead of anonymous — so the call is asserted exactly.
     """
-    gate = AsyncMock(side_effect=SubscriptionRequiredException(checkout_url=None))
+    gate = AsyncMock(side_effect=SubscriptionRequiredException())
     with patch("app.api.v1.middleware.entitlement.require_active_subscription", gate):
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
@@ -359,9 +368,9 @@ async def test_the_gate_asks_about_this_caller_and_names_the_path_it_blocked() -
 
 
 async def test_a_gate_error_is_logged_with_the_caller_the_surface_and_the_cause() -> None:
-    """Fail-closed is silent by design — every Pro user 402s and nobody reports it.
+    """The refusal is silent by design — nobody reports "GAIA asked me to retry".
 
-    The wide event is the only signal that a 402 came from an outage rather
+    The wide event is the only signal that a denial came from an outage rather
     than a lapsed subscription, and ``log.error`` stores message AND kwargs in
     the event's ``errors[]`` (libs/shared/py/wide_events.py), so all four
     fields are a queried surface. Asserted exactly: a missing ``error_type``
@@ -377,7 +386,7 @@ async def test_a_gate_error_is_logged_with_the_caller_the_surface_and_the_cause(
     ):
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
-    assert response.status_code == 402
+    assert response.status_code == 503
     mock_log.error.assert_called_once_with(
         "Entitlement check failed — denying request (fail-closed)",
         user={"id": FAKE_USER["user_id"]},
@@ -385,6 +394,40 @@ async def test_a_gate_error_is_logged_with_the_caller_the_surface_and_the_cause(
         error_type="ConnectionError",
         error="redis down",
     )
+
+
+async def test_an_unreadable_plan_is_a_503_not_a_paywall() -> None:
+    """A Redis restart must not tell every Pro user they are unsubscribed.
+
+    The request still fails closed — it never reaches the handler — but the
+    body must not claim a billing verdict we never read, and it must not carry
+    the ``subscription_required`` code the clients open their paywall modal on.
+    ``Retry-After`` is what lets the client recover on its own; the gate runs
+    before ``call_next``, so retrying is safe on any method.
+    """
+    with patch(
+        "app.api.v1.middleware.entitlement.require_active_subscription",
+        new_callable=AsyncMock,
+        side_effect=ConnectionError("redis down"),
+    ):
+        response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
+
+    assert response.status_code == 503
+    assert response.json() == {"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE}
+    assert response.headers["Retry-After"] == "5"
+
+
+async def test_a_genuine_free_verdict_is_still_a_402() -> None:
+    """The 503 branch must not swallow the real block it sits next to."""
+    with patch(
+        "app.api.v1.middleware.entitlement.require_active_subscription",
+        new_callable=AsyncMock,
+        side_effect=SubscriptionRequiredException(),
+    ):
+        response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
+
+    assert response.status_code == 402
+    assert response.json()["detail"]["code"] == "subscription_required"
 
 
 async def test_a_request_no_auth_middleware_touched_passes_through() -> None:

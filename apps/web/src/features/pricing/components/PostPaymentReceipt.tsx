@@ -28,20 +28,29 @@ type PostPaymentReceiptProps = {
   quantity?: number;
 };
 
+/** Intl throws only for a code that is not three ASCII letters; a well-formed
+ *  but unknown code renders as the code itself. */
+const WELL_FORMED_CURRENCY = /^[A-Za-z]{3}$/;
+
 /** Formats minor-unit money with the currency it was actually charged in. */
 function formatMoney(amount: number, currency?: string): string {
-  // The currency arrives from webhook data; a malformed code makes Intl throw
-  // (RangeError), which must never take down the payment screen — degrade to
-  // "amount CURRENCY" instead.
-  try {
-    return new Intl.NumberFormat("en-US", {
-      style: "currency",
-      currency: currency || "USD",
-      currencyDisplay: "narrowSymbol",
-    }).format(amount / CENTS_PER_DOLLAR);
-  } catch {
-    return `${amount / CENTS_PER_DOLLAR} ${currency || "USD"}`;
+  const code = currency || "USD";
+  // The currency arrives from webhook data, so a malformed code is possible
+  // and would take the payment screen down with a RangeError. It is checked
+  // rather than caught: catching the throw turned a receipt printing the
+  // wrong money into a receipt printing the wrong money in complete silence,
+  // which is the one thing a receipt must not do.
+  if (!WELL_FORMED_CURRENCY.test(code)) {
+    console.error(
+      `Receipt: subscription currency "${code}" is not a currency code; printing the bare amount`,
+    );
+    return `${amount / CENTS_PER_DOLLAR} ${code}`;
   }
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: code,
+    currencyDisplay: "narrowSymbol",
+  }).format(amount / CENTS_PER_DOLLAR);
 }
 
 function formatDate(dateString?: string | null): string | null {

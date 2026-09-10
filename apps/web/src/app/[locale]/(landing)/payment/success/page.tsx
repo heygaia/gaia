@@ -22,8 +22,19 @@ import { useReceiptPrinterStage } from "@/features/pricing/hooks/useReceiptPrint
 import { buildReceiptDetails } from "@/features/pricing/utils/receiptDetails";
 import { verifyPaymentWithRetry } from "@/features/pricing/utils/verifyPaymentWithRetry";
 import UseCreateConfetti from "@/hooks/ui/useCreateConfetti";
+import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 type PaymentStatus = "verifying" | "success" | "error";
+
+/** Why a verified-looking return ended without a subscription. */
+type VerificationFailureReason = "confirmation_timeout" | "verification_error";
+
+const trackFailure = (reason: VerificationFailureReason): void => {
+  trackEvent(ANALYTICS_EVENTS.SUBSCRIPTION_FAILED, {
+    source: "payment_success_page",
+    reason,
+  });
+};
 
 export default function PaymentSuccessPage() {
   const router = useRouter();
@@ -74,6 +85,11 @@ export default function PaymentSuccessPage() {
           setStatus("success");
           return;
         }
+        // Client-only by necessity, like `useCheckoutReturn`'s: a webhook
+        // that never lands produces no server-side event to count, so
+        // without this capture the moment a paying customer finds out their
+        // money did nothing is invisible in the funnel.
+        trackFailure("confirmation_timeout");
         setStatus("error");
         setErrorMessage(
           "We haven't received your payment confirmation yet. You can try checking out again.",
@@ -81,6 +97,9 @@ export default function PaymentSuccessPage() {
       })
       .catch((error: unknown) => {
         console.error("Payment verification failed:", error);
+        // Every attempt failed — a network the server never heard from, or a
+        // verify that kept erroring. Same reason it belongs here.
+        trackFailure("verification_error");
         setStatus("error");
         setErrorMessage(
           "We couldn't verify your payment. Please try checking out again.",

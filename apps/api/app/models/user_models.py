@@ -41,6 +41,23 @@ def clean_profession(value: str) -> str:
     return cleaned
 
 
+def _known_enum_value_or_unset(value: object, enum: type[Enum]) -> object:
+    """A stored value that is a member of ``enum`` today, else ``None``.
+
+    A historical row with a value outside today's enum is an unset field, not a
+    failed auth read; only our own code writes these, but the read must never
+    depend on that. Enum members are ``str``, so they pass as themselves, and a
+    dict or an int in the slot reads as unset rather than raising.
+
+    Each field is checked against its OWN enum. One merged set of every known
+    value looks equivalent and is not: ``OnboardingPhase`` and ``BioStatus``
+    both carry ``"completed"``, so a value belonging to the other enum passes
+    the guard and then fails Pydantic's coercion for the field's real type —
+    producing exactly the failed read the guard exists to prevent.
+    """
+    return value if isinstance(value, str) and value in {m.value for m in enum} else None
+
+
 def clean_other_need(value: str | None) -> str | None:
     """Whitespace-only is "nothing typed", not a need."""
     if value is None:
@@ -444,17 +461,17 @@ class OnboardingSubdocument(BaseModel):
     overlay_color: str = "rgba(0,0,0,0)"
     overlay_opacity: int = 40
 
-    @field_validator("phase", "bio_status", mode="before")
+    @field_validator("phase", mode="before")
     @classmethod
-    def unknown_enum_values_read_as_unset(cls, value: object) -> object:
-        """A historical row with a value outside today's enum is an unset field,
-        not a failed auth read; only our own code writes these, but the read
-        must never depend on that. Enum members are str, so they pass as
-        themselves."""
-        known = {member.value for member in OnboardingPhase} | {
-            member.value for member in BioStatus
-        }
-        return value if isinstance(value, str) and value in known else None
+    def an_unknown_phase_reads_as_unset(cls, value: object) -> object:
+        """A stored ``phase`` outside today's enum is an unset field, not a failed read."""
+        return _known_enum_value_or_unset(value, OnboardingPhase)
+
+    @field_validator("bio_status", mode="before")
+    @classmethod
+    def an_unknown_bio_status_reads_as_unset(cls, value: object) -> object:
+        """The same guard for ``bio_status``, against its own enum."""
+        return _known_enum_value_or_unset(value, BioStatus)
 
     @field_validator("preferences", mode="before")
     @classmethod

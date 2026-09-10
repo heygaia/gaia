@@ -119,7 +119,10 @@ export function useFounderLetter(hidden: boolean) {
       discount_code: DISCOUNT_CODE,
       discount_percent: DISCOUNT_PERCENT,
     });
-    openUpgradeModal(LETTER_OFFER, { dismissible: true });
+    openUpgradeModal(LETTER_OFFER, {
+      dismissible: true,
+      source: "founder_letter",
+    });
     closeLetter();
   }, [openUpgradeModal, closeLetter]);
 

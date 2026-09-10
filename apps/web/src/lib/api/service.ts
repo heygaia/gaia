@@ -109,10 +109,6 @@ async function request<T = unknown>(
     // on public pages (which don't mount the interceptor). The app shell surfaces
     // it via the login modal; never toast it as a generic error.
     const isAuthError = err.response?.status === 401;
-    // 402 is the paywall's, never a toast: the interceptor and the chat client
-    // open the upgrade modal, and the onboarding wizard owns payment on its
-    // own stage. A stray "subscribe" toast there is noise, not information.
-    const isPaywall = err.response?.status === 402;
 
     // Track failed requests in PostHog (client-only; analytics.ts is "use client")
     if (globalThis.window !== undefined) {
@@ -126,12 +122,11 @@ async function request<T = unknown>(
       });
     }
 
-    if (
-      !options.silent &&
-      !handledByInterceptor &&
-      !isAuthError &&
-      !isPaywall
-    ) {
+    // A 402 the interceptor recognised is already `handled` — it opened the
+    // paywall, and a "subscribe" toast on top of it would be noise. One it
+    // deliberately left unhandled (a body that is not the subscription_required
+    // shape) belongs here, or the user's click does nothing at all.
+    if (!options.silent && !handledByInterceptor && !isAuthError) {
       // Try to extract error message from various response formats, falling
       // back to a method-specific default.
       const errorMessage =

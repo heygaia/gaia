@@ -120,13 +120,29 @@ class RabbitMQPublisher:
         try:
             await asyncio.wait_for(_attempt(), timeout=RABBITMQ_PUBLISH_TIMEOUT_SECONDS)
         except Exception as e:
-            log.error(
-                f"{LogTag.STARTUP} Failed to publish to RabbitMQ: . Attempting recovery...",
+            log.warning(
+                f"{LogTag.STARTUP} Failed to publish to RabbitMQ, attempting recovery",
+                queue_name=queue_name,
                 error=str(e),
                 error_type=type(e).__name__,
             )
-            await asyncio.wait_for(_attempt(), timeout=RABBITMQ_PUBLISH_TIMEOUT_SECONDS)
-            log.info(f"{LogTag.STARTUP} Successfully published after reconnection")
+            try:
+                await asyncio.wait_for(_attempt(), timeout=RABBITMQ_PUBLISH_TIMEOUT_SECONDS)
+            except Exception as retry_error:
+                # Where a bot reply is actually lost. One attempt failing is
+                # routine and recovers; both failing is the incident, and the
+                # propagating exception does not say which queue it was.
+                log.error(
+                    f"{LogTag.STARTUP} Publish to RabbitMQ failed after retry — message dropped",
+                    queue_name=queue_name,
+                    error=str(retry_error),
+                    error_type=type(retry_error).__name__,
+                )
+                raise
+            log.info(
+                f"{LogTag.STARTUP} Successfully published after reconnection",
+                queue_name=queue_name,
+            )
 
     async def publish(self, queue_name: str, body: bytes) -> None:
         """Publish to ``queue_name`` (declared on demand) with one retry."""

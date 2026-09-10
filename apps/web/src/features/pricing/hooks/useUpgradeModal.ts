@@ -8,6 +8,7 @@ import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
 import { paywallCopyFor } from "../constants";
 import { isProPlan } from "../utils/planPredicates";
+import { useClearPaywallWhenPaid } from "./useClearPaywallWhenPaid";
 import { useDodoPayments } from "./useDodoPayments";
 import { useIsPaid } from "./useIsPaid";
 import { usePricing } from "./usePricing";
@@ -18,38 +19,35 @@ export function useUpgradeModal() {
   const { plans } = usePricing();
   const { logout } = useLogout();
   const { openCheckoutOverlay, checkoutPhase } = useDodoPayments();
-  const {
-    isPaid,
-    isUnknown: isSubscriptionStatusUnknown,
-    hasEverSubscribed,
-  } = useIsPaid();
+  const { hasEverSubscribed } = useIsPaid();
   const copy = paywallCopyFor(hasEverSubscribed);
   const isConfirming =
     checkoutPhase === "confirming" || checkoutPhase === "timeout";
+  // The wizard owns payment on its own stage; a 402 from a background request
+  // there must not stack this modal on top of it.
+  const isOnboardingRoute = pathname === "/onboarding";
 
-  // A cold-cache render can open this modal while the subscription-status is
-  // still unknown (see useComposerSubmit / useWorkflowModalActions — they let
-  // the action proceed while unknown rather than trap the user). Once it
-  // resolves paid, close the modal immediately: the enforcement mode refuses
-  // ordinary closes, so a Pro user who hit this race would otherwise be stuck
-  // behind a non-dismissible modal forever.
-  useEffect(() => {
-    if (open && !isSubscriptionStatusUnknown && isPaid) {
-      closeModal({ force: true });
-    }
-  }, [open, isSubscriptionStatusUnknown, isPaid, closeModal]);
+  useClearPaywallWhenPaid();
 
-  // The impression, fired once per open rather than on every render. The
-  // server already captures the 402 that opened it; what it cannot see is
-  // whether the wall reached the screen, so this is the one client-only half.
+  // The impression: one per wall that actually reached the screen. The server
+  // already captures the 402 behind it; whether it was rendered is the one
+  // thing only the browser knows — so it must not fire for the route that
+  // renders nothing, and must not re-fire when another 402 arrives (the store
+  // leaves an open wall alone, and the offer is read here rather than
+  // tracked, so neither can inflate it).
   useEffect(() => {
-    if (!open) return;
+    if (!open || isOnboardingRoute) return;
+    const {
+      dismissible: shownAsDismissible,
+      offer: shownOffer,
+      source,
+    } = useUpgradeModalStore.getState();
     trackEvent(ANALYTICS_EVENTS.PAYWALL_MODAL_VIEWED, {
-      dismissible,
-      has_checkout_url: Boolean(offer?.checkoutUrl),
-      has_discount_code: Boolean(offer?.discountCode),
+      dismissible: shownAsDismissible,
+      has_discount_code: Boolean(shownOffer?.discountCode),
+      source,
     });
-  }, [open, dismissible, offer?.checkoutUrl, offer?.discountCode]);
+  }, [open, isOnboardingRoute]);
 
   // Monthly Pro is the default enforcement offer — same tier PricingCards
   // leads with, just without the billing-period tabs (that mode has one job).
@@ -75,8 +73,6 @@ export function useUpgradeModal() {
     checkoutPhase,
     handleSubscribe,
     logout,
-    // The wizard owns payment on its own stage; a 402 from a background request
-    // there must not stack this modal on top of it.
-    isOnboardingRoute: pathname === "/onboarding",
+    isOnboardingRoute,
   };
 }

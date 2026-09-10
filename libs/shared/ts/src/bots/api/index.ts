@@ -15,7 +15,7 @@ import type {
   ChatRequest,
   SettingsResponse,
 } from "../types";
-import { getHttpStatus } from "../utils/logger";
+import { getErrorReason, getHttpStatus } from "../utils/logger";
 import { wideLog } from "../utils/wide-events";
 import {
   type ApprovalUpdateHandler,
@@ -31,11 +31,18 @@ import {
 
 export class GaiaApiError extends Error {
   status?: number;
+  /** The API's error body — a status says what failed, not why. */
+  reason: Record<string, unknown>;
 
-  constructor(message: string, status?: number) {
+  constructor(
+    message: string,
+    status?: number,
+    reason: Record<string, unknown> = {},
+  ) {
     super(message);
     this.name = "GaiaApiError";
     this.status = status;
+    this.reason = reason;
   }
 }
 
@@ -129,7 +136,11 @@ export class GaiaClient {
       if (error instanceof GaiaApiError) throw error;
       const message = error instanceof Error ? error.message : "Unknown error";
       const status = getHttpStatus(error);
-      throw new GaiaApiError(`API error: ${status || message}`, status);
+      throw new GaiaApiError(
+        `API error: ${status || message}`,
+        status,
+        getErrorReason(error),
+      );
     }
   }
 
@@ -150,7 +161,11 @@ export class GaiaClient {
 
       if (error instanceof GaiaApiError) throw error;
       const message = error instanceof Error ? error.message : "Unknown error";
-      throw new GaiaApiError(`API error: ${status || message}`, status);
+      throw new GaiaApiError(
+        `API error: ${status || message}`,
+        status,
+        getErrorReason(error),
+      );
     }
   }
 

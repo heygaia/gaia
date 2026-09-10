@@ -105,16 +105,20 @@ describe("UpgradeModal", () => {
       open: false,
       offer: null,
       dismissible: false,
+      source: null,
     });
     isPaid = false;
     isSubscriptionStatusUnknown = false;
     checkoutPhase = "idle";
     hasEverSubscribed = false;
+    pathname = "/c";
     vi.clearAllMocks();
   });
 
   it("renders non-dismissible with a checkout CTA when open", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     const dialog = await screen.findByRole("dialog");
@@ -131,7 +135,9 @@ describe("UpgradeModal", () => {
   });
 
   it("renders dismissible with a close button and no logout link when opened dismissible (voluntary upgrade entry points)", async () => {
-    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { dismissible: true, source: "sidebar" });
     render(<UpgradeModal />);
 
     const dialog = await screen.findByRole("dialog");
@@ -144,7 +150,9 @@ describe("UpgradeModal", () => {
   });
 
   it("clears store state when dismissed via the close button (voluntary upgrade entry points)", async () => {
-    useUpgradeModalStore.getState().openModal(undefined, { dismissible: true });
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { dismissible: true, source: "sidebar" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -157,10 +165,9 @@ describe("UpgradeModal", () => {
   });
 
   it("shows the discount banner only when a discount code is present", async () => {
-    useUpgradeModalStore.getState().openModal({
-      checkoutUrl: null,
-      discountCode: "LAUNCH20",
-    });
+    useUpgradeModalStore
+      .getState()
+      .openModal({ discountCode: "LAUNCH20" }, { source: "api_402" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -168,7 +175,9 @@ describe("UpgradeModal", () => {
   });
 
   it("does not render a discount banner when no offer is set", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -176,10 +185,9 @@ describe("UpgradeModal", () => {
   });
 
   it("opens the embedded overlay for Pro monthly instead of redirecting away", async () => {
-    useUpgradeModalStore.getState().openModal({
-      checkoutUrl: null,
-      discountCode: "LAUNCH20",
-    });
+    useUpgradeModalStore
+      .getState()
+      .openModal({ discountCode: "LAUNCH20" }, { source: "api_402" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -197,7 +205,9 @@ describe("UpgradeModal", () => {
 
   it("shows the migration copy to a user who has never subscribed", async () => {
     hasEverSubscribed = false;
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -207,7 +217,9 @@ describe("UpgradeModal", () => {
 
   it("shows the lapsed copy to a user who has subscribed before", async () => {
     hasEverSubscribed = true;
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -220,7 +232,9 @@ describe("UpgradeModal", () => {
 
   it("keeps the migration copy while the status is still unknown", async () => {
     hasEverSubscribed = undefined;
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -228,7 +242,9 @@ describe("UpgradeModal", () => {
   });
 
   it("carries no refund or tax footnote under the CTA", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -237,7 +253,9 @@ describe("UpgradeModal", () => {
   });
 
   it("does not label the feature list with the plan name", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -247,7 +265,9 @@ describe("UpgradeModal", () => {
   it("renders nothing on the onboarding route, where the wizard owns payment", () => {
     pathname = "/onboarding";
     try {
-      useUpgradeModalStore.getState().openModal();
+      useUpgradeModalStore
+        .getState()
+        .openModal(undefined, { source: "composer_submit" });
       render(<UpgradeModal />);
       expect(screen.queryByRole("dialog")).toBeNull();
     } finally {
@@ -257,7 +277,9 @@ describe("UpgradeModal", () => {
 
   it("replaces the CTA with a confirming state once the overlay closes", async () => {
     checkoutPhase = "confirming";
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -270,7 +292,9 @@ describe("UpgradeModal", () => {
 
   it("admits the delay once confirmation passes its visible budget", async () => {
     checkoutPhase = "timeout";
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -281,10 +305,9 @@ describe("UpgradeModal", () => {
     // The API owns payment:checkout_started now — it fires after the session
     // actually exists and carries the same `source` this click passes down.
     // Any client capture here would be a rival event for one user action.
-    useUpgradeModalStore.getState().openModal({
-      checkoutUrl: null,
-      discountCode: null,
-    });
+    useUpgradeModalStore
+      .getState()
+      .openModal({ discountCode: null }, { source: "api_402" });
     render(<UpgradeModal />);
 
     fireEvent.click(
@@ -302,10 +325,9 @@ describe("UpgradeModal", () => {
   });
 
   it("captures one paywall impression per open, with the offer's shape", () => {
-    useUpgradeModalStore.getState().openModal({
-      checkoutUrl: "https://checkout.dodo.test/abc",
-      discountCode: "LAUNCH20",
-    });
+    useUpgradeModalStore
+      .getState()
+      .openModal({ discountCode: "LAUNCH20" }, { source: "api_402" });
     const { rerender } = render(<UpgradeModal />);
     rerender(<UpgradeModal />);
 
@@ -316,9 +338,23 @@ describe("UpgradeModal", () => {
     expect(impressions).toHaveLength(1);
     expect(impressions[0][1]).toEqual({
       dismissible: false,
-      has_checkout_url: true,
       has_discount_code: true,
+      source: "api_402",
     });
+  });
+
+  it("says which surface produced the wall", () => {
+    // Without this the metric can only say a wall was shown, never where the
+    // paid-only gate actually bites.
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "workflow_activation" });
+    render(<UpgradeModal />);
+
+    expect(trackEvent).toHaveBeenCalledWith(
+      "paywall:modal_viewed",
+      expect.objectContaining({ source: "workflow_activation" }),
+    );
   });
 
   it("captures no impression while the paywall is closed", () => {
@@ -330,8 +366,28 @@ describe("UpgradeModal", () => {
     );
   });
 
+  it("captures no impression on the route where it renders nothing", () => {
+    // The wizard owns payment on its own stage, so this modal returns null
+    // there. An impression for a wall that never reached the screen is the
+    // one thing this event exists not to do.
+    pathname = "/onboarding";
+    useUpgradeModalStore
+      .getState()
+      .openModal({ discountCode: "LAUNCH20" }, { source: "api_402" });
+
+    const { container } = render(<UpgradeModal />);
+
+    expect(container.firstChild).toBeNull();
+    expect(trackEvent).not.toHaveBeenCalledWith(
+      "paywall:modal_viewed",
+      expect.anything(),
+    );
+  });
+
   it("logs out via the quiet text link, not by closing the modal", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     render(<UpgradeModal />);
 
     await screen.findByRole("dialog");
@@ -341,7 +397,9 @@ describe("UpgradeModal", () => {
   });
 
   it("auto-closes when the subscription status resolves to paid while open (cold-cache race guard)", async () => {
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     const { rerender } = render(<UpgradeModal />);
     await screen.findByRole("dialog");
 
@@ -358,7 +416,9 @@ describe("UpgradeModal", () => {
 
   it("does not auto-close while the subscription status is still unknown", async () => {
     isSubscriptionStatusUnknown = true;
-    useUpgradeModalStore.getState().openModal();
+    useUpgradeModalStore
+      .getState()
+      .openModal(undefined, { source: "composer_submit" });
     const { rerender } = render(<UpgradeModal />);
     await screen.findByRole("dialog");
 

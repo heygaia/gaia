@@ -12,6 +12,7 @@ import {
   handleStreamingChat,
   hashLogIdentifier,
   type IncomingMedia,
+  type LinkState,
   MEDIA_READ_TIMEOUT_MS,
   MediaReadTimeoutError,
   mediaKindFromMime,
@@ -320,8 +321,8 @@ export class ImessageAdapter extends BaseBotAdapter {
         platformUserId: handle,
         text,
         target,
-        isLinked: () =>
-          this.isUserLinked(handle, WELCOME_AUTH_CHECK_TIMEOUT_MS),
+        linkState: () =>
+          this.userLinkState(handle, WELCOME_AUTH_CHECK_TIMEOUT_MS),
       });
       // null: the message was only a code, or a redemption already delivered
       // GAIA's whole first contact and there is no turn left to run.
@@ -447,19 +448,26 @@ export class ImessageAdapter extends BaseBotAdapter {
   private async ensureWelcomed(handle: string, space: Space): Promise<void> {
     if (!(await this.shouldSendWelcome(handle))) return;
 
-    let isLinked = this.linkedUsers.has(handle);
-    if (!isLinked) {
-      isLinked = await this.isUserLinked(handle, WELCOME_AUTH_CHECK_TIMEOUT_MS);
-    }
-    if (!isLinked) {
+    if (this.linkedUsers.has(handle)) return;
+    // A failed check greets rather than staying silent: an unlinked user who
+    // never sees the welcome has no way to discover /auth.
+    const state = await this.userLinkState(
+      handle,
+      WELCOME_AUTH_CHECK_TIMEOUT_MS,
+    );
+    if (state !== "linked") {
       await this.sendWelcome(space, handle);
     }
   }
 
-  private async isUserLinked(
+  /**
+   * A failure (including the timeout) is `unknown`, not `unlinked` — callers
+   * pick their own safe default from that.
+   */
+  private async userLinkState(
     handle: string,
     timeoutMs: number,
-  ): Promise<boolean> {
+  ): Promise<LinkState> {
     try {
       const status = await Promise.race([
         this.gaia.checkAuthStatus("imessage", handle),
@@ -468,13 +476,13 @@ export class ImessageAdapter extends BaseBotAdapter {
         ),
       ]);
       if (status.authenticated) this.linkedUsers.add(handle);
-      return status.authenticated;
+      return status.authenticated ? "linked" : "unlinked";
     } catch (err) {
       this.adapterLogger.warn("welcome_auth_check_failed", {
         user_hash: hashLogIdentifier(handle),
         ...sanitizeErrorForLog(err),
       });
-      return false;
+      return "unknown";
     }
   }
 

@@ -8,6 +8,7 @@ from datetime import UTC, datetime
 from typing import Any, Literal
 
 from dodopayments import DodoPayments, NotFoundError
+from dodopayments.types import Subscription
 from fastapi import HTTPException
 
 from app.config.settings import settings
@@ -19,6 +20,7 @@ from app.constants.cache import (
 )
 from app.constants.log_tags import LogTag
 from app.constants.payments import (
+    CHECKOUT_SESSION_SCAN_LIMIT,
     DODO_TEST_MODE_BILLING_ADDRESS,
     DODO_TEST_MODE_PHONE_NUMBER,
     PAYMENT_HISTORY_LIMIT,
@@ -46,12 +48,6 @@ from app.models.payment_models import (
     UserSubscriptionStatus,
 )
 from app.models.webhook_models import DodoSubscriptionData
-from app.services.analytics_service import (
-    AnalyticsEvents,
-    SubscriptionPlan,
-    track_subscription_event,
-)
-from app.services.email import send_pro_subscription_email
 from app.services.payments.plan_cache import invalidate_plan_cache
 from app.services.payments.subscription_activation import (
     activate_subscription,
@@ -350,6 +346,19 @@ class DodoPaymentService:
             )
             return None
 
+        return await self._activate_verified_subscription(user_id, remote)
+
+    async def _activate_verified_subscription(
+        self, user_id: str, remote: Subscription
+    ) -> SubscriptionDocument | None:
+        """Record a Dodo subscription for ``user_id`` through the shared write path.
+
+        Both recovery routes end here, so neither can drift from the webhook:
+        the subscription is acted on only once Dodo reports it active and it is
+        demonstrably this user's, and the row is then written by the same
+        ``activate_subscription`` the webhook uses — which is also what drops
+        the cached plan tier and restores the workflows that lapsed.
+        """
         sub_data = DodoSubscriptionData.model_validate(remote.model_dump(mode="json"))
         if sub_data.status != SubscriptionStatus.ACTIVE.value:
             log.warning(
@@ -373,22 +382,17 @@ class DodoPaymentService:
         await activate_subscription(sub_data)
         return await subscription_repository.get_latest_active_for_user(user_id)
 
-    async def _materialize_subscription_from_dodo(
-        self, user_id: str
-    ) -> SubscriptionDocument | None:
-        """Resolve the user's latest checkout session against Dodo and record
-        the subscription locally when Dodo reports it active.
+    async def _subscription_behind_checkout(
+        self, user_id: str, checkout: CheckoutSessionDocument
+    ) -> Subscription | None:
+        """The Dodo subscription this checkout session was paid for, if it was.
 
-        Covers the webhook-vs-redirect race (and a genuinely lost webhook):
-        the checkout session recorded at creation time is the stable reference
-        Dodo can answer for before a subscription row exists. Best-effort by
-        design — any Dodo API failure returns ``None`` and leaves the webhook
-        as the authoritative path (Dodo retries delivery on its side).
+        ``None`` is the ordinary answer for a session nobody paid, or for a
+        settled one-off payment with no subscription behind it. A Dodo API
+        failure is logged against the session and also answers ``None``:
+        best-effort by design, because the webhook remains the authoritative
+        path and Dodo retries delivery on its side.
         """
-        checkout = await checkout_session_repository.get_latest_for_user(user_id)
-        if not checkout:
-            return None
-
         try:
             checkout_status = await asyncio.to_thread(
                 self.client.checkout_sessions.retrieve, checkout.session_id
@@ -403,9 +407,7 @@ class DodoPaymentService:
                 # Payment settled but has no subscription behind it.
                 return None
 
-            subscription = await asyncio.to_thread(
-                self.client.subscriptions.retrieve, subscription_id
-            )
+            return await asyncio.to_thread(self.client.subscriptions.retrieve, subscription_id)
         except Exception as e:
             log.warning(
                 f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
@@ -416,67 +418,36 @@ class DodoPaymentService:
             )
             return None
 
-        if subscription.status != "active":
-            return None
+    async def _materialize_subscription_from_dodo(
+        self, user_id: str
+    ) -> SubscriptionDocument | None:
+        """Resolve this user's recent checkout sessions against Dodo and record
+        the subscription behind whichever one was actually paid.
 
-        # The session was created with this user's id in its metadata; a
-        # mismatch means the subscription belongs to someone else.
-        metadata_user_id = (subscription.metadata or {}).get("user_id")
-        if metadata_user_id and metadata_user_id != user_id:
-            log.warning(
-                f"{LogTag.PAYMENT} Checkout subscription belongs to a different user; skipping",
-                session_id=checkout.session_id,
-                user_id=user_id,
-                metadata_user_id=metadata_user_id,
-            )
-            return None
+        Covers the webhook-vs-redirect race (and a genuinely lost webhook): the
+        sessions recorded at checkout-creation time are the stable references
+        Dodo can answer for before a subscription row exists.
 
-        existing = await subscription_repository.get_by_dodo_id(subscription.subscription_id)
-        if existing:
-            # The webhook landed while we were asking — its row wins.
-            return existing
+        It scans, rather than trusting the newest session, because minting is
+        not rare — every paywall block hands the user a fresh checkout link, so
+        by the time they come back from paying, the session they paid is
+        routinely no longer the latest one. Reading only the latest asked Dodo
+        about a link nobody opened and told a paying user they had not paid,
+        and each further block buried the real session deeper. One failed
+        session does not end the scan for the same reason.
 
-        # Built via model_validate like the webhook handler — the Dodo billing
-        # fields ride on extra="allow" and are invisible to type checkers.
-        now = datetime.now(UTC)
-        created = await subscription_repository.create(
-            SubscriptionDocument.model_validate(
-                {
-                    "dodo_subscription_id": subscription.subscription_id,
-                    "user_id": user_id,
-                    "product_id": subscription.product_id,
-                    "status": subscription.status,
-                    "quantity": subscription.quantity,
-                    "currency": str(subscription.currency),
-                    "recurring_pre_tax_amount": subscription.recurring_pre_tax_amount,
-                    "payment_frequency_count": subscription.payment_frequency_count,
-                    "payment_frequency_interval": str(subscription.payment_frequency_interval),
-                    "subscription_period_count": subscription.subscription_period_count,
-                    "subscription_period_interval": str(subscription.subscription_period_interval),
-                    "next_billing_date": subscription.next_billing_date.isoformat(),
-                    "previous_billing_date": subscription.previous_billing_date.isoformat(),
-                    "created_at": now,
-                    "updated_at": now,
-                    "metadata": dict(subscription.metadata or {}),
-                }
-            )
+        The sessions name the purchase; they do not authorise it. Ownership and
+        the write itself are settled by ``_activate_verified_subscription``,
+        the same way the ``subscription_id`` hint route settles them.
+        """
+        sessions = await checkout_session_repository.list_recent_for_user(
+            user_id, limit=CHECKOUT_SESSION_SCAN_LIMIT
         )
-
-        # Mirror the webhook handler's activation tracking — exactly one path
-        # creates the row, so exactly one activation event fires.
-        track_subscription_event(
-            user_id=user_id,
-            event_type=AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
-            subscription_id=subscription.subscription_id,
-            plan=SubscriptionPlan(
-                name="Pro",
-                amount=subscription.recurring_pre_tax_amount / 100
-                if subscription.recurring_pre_tax_amount
-                else None,
-                currency=str(subscription.currency),
-            ),
-        )
-        return created
+        for checkout in sessions:
+            subscription = await self._subscription_behind_checkout(user_id, checkout)
+            if subscription:
+                return await self._activate_verified_subscription(user_id, subscription)
+        return None
 
     async def verify_payment_completion(
         self, user_id: str, subscription_id: str | None = None
@@ -506,20 +477,12 @@ class DodoPaymentService:
                 message="No active subscription found",
             )
 
-        # Send welcome email (don't fail if email fails)
-        try:
-            user = await user_repository.get(user_id)
-            if user and user.email:
-                await send_pro_subscription_email(
-                    user_name=user.first_name or "User",
-                    user_email=user.email,
-                )
-        except Exception as e:
-            log.debug(
-                f"{LogTag.PAYMENT} Failed to send welcome email",
-                error=str(e),
-                error_type=type(e).__name__,
-            )
+        # The row can exist while the gate still caches the pre-payment tier: a
+        # request 402'd from the paywall page re-populates the key for five
+        # minutes, and it can land after the activation dropped it. Telling the
+        # browser the payment completed while that key stands is how a paid
+        # user gets locked out of what they just bought.
+        await invalidate_plan_cache(user_id)
 
         return PaymentVerificationResponse(
             payment_completed=True,
@@ -710,16 +673,25 @@ class DodoPaymentService:
         )
 
     async def get_cached_plan_type(self, user_id: str) -> PlanType:
-        """Plan tier, Redis-cached for hot paths; eventually consistent within the TTL."""
+        """Plan tier, Redis-cached for hot paths; eventually consistent within the TTL.
+
+        Both branches record the tier and where it came from. The gate's entire
+        decision is this one value, and a stale cached FREE is indistinguishable
+        downstream from a user who really is free — so without ``plan_source``
+        the first question of every paywall incident has no answer.
+        """
         cache_key = f"{SUBSCRIPTION_PLAN_CACHE_PREFIX}{user_id}"
         cached = await redis_cache.get(cache_key)
         if isinstance(cached, dict) and cached.get("plan_type"):
-            return PlanType(cached["plan_type"])
+            cached_plan = PlanType(cached["plan_type"])
+            log.set_ns("payment", plan_type=cached_plan.value, plan_source="cache")
+            return cached_plan
 
         plan_raw = (await self.get_user_subscription_status(user_id)).plan_type or PlanType.FREE
         # Pydantic v2 coerces str, Enum fields to plain strings; normalize before calling .value
         plan = plan_raw if isinstance(plan_raw, PlanType) else PlanType(plan_raw)
         await redis_cache.set(cache_key, {"plan_type": plan.value}, ttl=SUBSCRIPTION_PLAN_CACHE_TTL)
+        log.set_ns("payment", plan_type=plan.value, plan_source="subscription")
         return plan
 
     async def invalidate_plan_cache_by_dodo_id(self, dodo_subscription_id: str) -> None:
@@ -727,8 +699,18 @@ class DodoPaymentService:
         if not dodo_subscription_id:
             return
         user_id = await subscription_repository.get_user_id_by_dodo_id(dodo_subscription_id)
-        if user_id:
-            await invalidate_plan_cache(user_id)
+        if not user_id:
+            # The billing change landed but nothing was dropped, so whoever owns
+            # this subscription keeps their pre-change tier until the TTL runs
+            # out — which reads downstream as the gate simply disagreeing with
+            # Dodo, with nothing to explain it.
+            log.warning(
+                f"{LogTag.PAYMENT} No local subscription for the Dodo id; cached tier not dropped",
+                failure_reason="subscription_not_found",
+                subscription_id=dodo_subscription_id,
+            )
+            return
+        await invalidate_plan_cache(user_id)
 
 
 payment_service = DodoPaymentService()

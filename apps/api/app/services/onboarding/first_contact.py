@@ -30,6 +30,7 @@ from app.config.oauth_config import get_integration_by_id
 from app.db.repositories.user_integrations import user_integration_repository
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.connect_link_service import build_connect_link_url
+from shared.py.wide_events import log
 
 #: The hello a bot sends the moment a link code is redeemed. It opens the
 #: promise sentence, so it ends on a comma and never stands alone as a bubble.
@@ -330,7 +331,17 @@ async def build_first_contact(
         if await user_integration_repository.is_connected(user_id, integration_id):
             continue
         url = await build_connect_link_url(user_id, integration_id)
-        if url:
-            connect_links.append((integration_id, url))
+        if not url:
+            # Dropped rather than sent broken (see above), but a first contact
+            # missing the tap it exists to offer is the feature failing quietly:
+            # nothing retries it and the user simply never connects.
+            log.error(
+                "connect link could not be minted for first contact",
+                user={"id": user_id},
+                integration_id=integration_id,
+                platform=platform,
+            )
+            continue
+        connect_links.append((integration_id, url))
 
     return compose_first_contact(platform, name, preferences, connect_links)
