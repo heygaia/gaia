@@ -258,8 +258,13 @@ async def _persist_first_contact(
             user=actor,
         )
     except Exception as e:
-        log.warning(
+        # Swallowed deliberately (see above), but logged at error: nothing
+        # retries this, so the thread is permanently missing the introduction
+        # GAIA already sent. At warning it never reached an error dashboard.
+        log.error(
             "could not persist the first-contact exchange",
+            user={"id": user_id},
+            provider=body.platform,
             error=str(e),
             error_type=type(e).__name__,
         )

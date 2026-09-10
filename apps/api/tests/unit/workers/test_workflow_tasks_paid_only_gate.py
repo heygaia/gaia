@@ -15,7 +15,8 @@ import pytest
 
 from app.constants.log_tags import LogTag
 from app.models.user_models import UserDocument
-from app.workers.tasks.workflow_tasks import execute_workflow_by_id
+from app.services.analytics_service import AnalyticsEvents
+from app.workers.tasks.workflow_tasks import PAYWALL_FEATURE_WORKFLOW, execute_workflow_by_id
 
 MODULE = "app.workers.tasks.workflow_tasks"
 
@@ -142,6 +143,58 @@ class TestPaidOnlyGateBlocksFreeUsers:
             await execute_workflow_by_id({}, workflow.id, {"trigger_type": "manual"})
 
         mock_is_active.assert_awaited_once_with("the-real-owner")
+
+
+class TestTheBlockReachesTheFunnel:
+    """A skipped run is a paywall block like any other, and must be countable.
+
+    This gate cannot go through ``require_active_subscription`` — that raises,
+    and a worker must skip and re-arm — so the event it would have fired has to
+    be fired here. Without it, "how many users lost a workflow run to the wall"
+    is unanswerable while every HTTP and bot surface answers it.
+    """
+
+    async def test_a_skipped_run_is_captured_against_the_owners_own_profile(self) -> None:
+        """A worker has no request context: an implicit distinct_id would strand
+        the block on an anonymous profile that never joins the user's funnel."""
+        workflow = _make_workflow(user_id="user-free-7")
+        scheduler, p_scheduler = _patch_scheduler(workflow)
+
+        with (
+            p_scheduler,
+            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.capture_event") as capture,
+        ):
+            await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
+
+        capture.assert_called_once_with(
+            "user-free-7",
+            AnalyticsEvents.PAYWALL_BLOCKED,
+            {"feature": PAYWALL_FEATURE_WORKFLOW},
+        )
+
+    async def test_a_run_that_clears_the_gate_is_never_captured_as_blocked(self) -> None:
+        """A stale cached FREE that the fresh read overturns is not a block."""
+        workflow = _make_workflow(user_id="user-paid-stale-2")
+        scheduler, p_scheduler = _patch_scheduler(workflow)
+
+        with (
+            p_scheduler,
+            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=True)),
+            patch(f"{MODULE}._admit_fire", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
+            patch(
+                f"{MODULE}._drain_trigger_events",
+                AsyncMock(return_value=({"trigger_type": "schedule"}, "drained-for-test")),
+            ),
+            patch(f"{MODULE}.capture_event") as capture,
+        ):
+            await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
+
+        captured = [call.args[1] for call in capture.call_args_list]
+        assert AnalyticsEvents.PAYWALL_BLOCKED not in captured
 
 
 class TestPaidOnlyGateLetsProUsersThrough:

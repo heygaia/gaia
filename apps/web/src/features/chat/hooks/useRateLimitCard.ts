@@ -55,7 +55,11 @@ export function useRateLimitCard(data: RateLimitData) {
   // link is noise — drop the whole footer for them.
   const showFooter = isUpgradeRequired || !isPro;
 
-  const openPlans = () => openUpgradeModal(undefined, { dismissible: true });
+  const openPlans = () =>
+    openUpgradeModal(undefined, {
+      dismissible: true,
+      source: "rate_limit_card",
+    });
 
   return {
     message,

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect } from "react";
+import type { PaywallSource } from "@/lib/analytics";
 import type { IMessage } from "@/lib/db/chatDb";
 import { type OptimisticMessage, useChatStore } from "@/stores/chatStore";
 import {
@@ -41,6 +42,8 @@ interface PopupChatState {
    */
   paywallOpen: boolean;
   paywallOffer: UpgradeOffer | null;
+  /** Mirrored, never invented here: this window renders someone else's wall. */
+  paywallSource: PaywallSource | null;
 }
 
 /** Consumer → publisher request for the current snapshot. */
@@ -62,6 +65,7 @@ function snapshot(): PopupChatState {
   return {
     paywallOpen: paywall.open,
     paywallOffer: paywall.offer,
+    paywallSource: paywall.source,
     type: "state",
     activeConversationId: id,
     messages: id ? (chat.messagesByConversation[id] ?? []) : [],
@@ -131,7 +135,10 @@ export function usePopupChatConsumer(): void {
       // Only on change — the snapshots arrive ~20x/sec and openModal would
       // otherwise rewrite the store (and spam devtools) on every one.
       if (data.paywallOpen !== paywall.open) {
-        if (data.paywallOpen) paywall.openModal(data.paywallOffer ?? undefined);
+        if (data.paywallOpen)
+          paywall.openModal(data.paywallOffer ?? undefined, {
+            source: data.paywallSource ?? "desktop_popup_mirror",
+          });
         else paywall.closeModal({ force: true });
       }
       chat.setActiveConversationId(data.activeConversationId);

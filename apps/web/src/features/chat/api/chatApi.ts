@@ -396,7 +396,9 @@ export const chatApi = {
             if (detail) {
               useUpgradeModalStore
                 .getState()
-                .openModal(subscriptionRequiredOfferFromDetail(detail));
+                .openModal(subscriptionRequiredOfferFromDetail(detail), {
+                  source: "chat_stream_402",
+                });
             }
             throw new SubscriptionRequiredError(detail?.message);
           }

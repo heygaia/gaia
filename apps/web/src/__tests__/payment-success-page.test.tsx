@@ -72,7 +72,13 @@ vi.mock("@/features/pricing/components/PostPaymentReceipt", () => ({
   PostPaymentReceipt: () => <div>Receipt printed</div>,
 }));
 
+vi.mock("@/lib/analytics", () => ({
+  ANALYTICS_EVENTS: { SUBSCRIPTION_FAILED: "subscription:failed" },
+  trackEvent: vi.fn(),
+}));
+
 import PaymentSuccessPage from "@/app/[locale]/(landing)/payment/success/page";
+import { trackEvent } from "@/lib/analytics";
 
 describe("PaymentSuccessPage", () => {
   beforeEach(() => {
@@ -130,6 +136,53 @@ describe("PaymentSuccessPage", () => {
     );
 
     expect(await screen.findByText("Payment not completed")).toBeDefined();
+  });
+
+  it("counts a payment that never confirmed", async () => {
+    // This is the moment a paying customer finds out whether their money did
+    // anything, and until now the only trace of it going wrong was a console
+    // line. Nothing server-side sees it either: a webhook that never lands
+    // produces no event at all.
+    verifyPayment.mockResolvedValue({ payment_completed: false });
+    render(
+      <StrictMode>
+        <PaymentSuccessPage />
+      </StrictMode>,
+    );
+
+    await screen.findByText("Payment not completed");
+
+    const failures = vi
+      .mocked(trackEvent)
+      .mock.calls.filter(([event]) => event === "subscription:failed");
+    expect(failures).toHaveLength(1);
+    expect(failures[0][1]).toEqual({
+      source: "payment_success_page",
+      reason: "confirmation_timeout",
+    });
+  });
+
+  it("counts a verification that could not complete at all", async () => {
+    verifyPayment.mockRejectedValue(new Error("Network Error"));
+    render(<PaymentSuccessPage />);
+
+    await screen.findByText("Payment not completed");
+
+    expect(trackEvent).toHaveBeenCalledWith("subscription:failed", {
+      source: "payment_success_page",
+      reason: "verification_error",
+    });
+  });
+
+  it("counts nothing when the payment confirmed", async () => {
+    render(<PaymentSuccessPage />);
+
+    await screen.findByText("Receipt printed");
+
+    expect(trackEvent).not.toHaveBeenCalledWith(
+      "subscription:failed",
+      expect.anything(),
+    );
   });
 
   it("sends a user with unfinished onboarding back into the flow", async () => {

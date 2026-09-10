@@ -517,7 +517,8 @@ export function useWorkflowModalActions({
       toast.info("Workflows require GAIA Pro", {
         action: {
           label: "Upgrade",
-          onClick: () => openUpgradeModal(),
+          onClick: () =>
+            openUpgradeModal(undefined, { source: "workflow_activation" }),
         },
       });
       return;

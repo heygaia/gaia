@@ -155,6 +155,47 @@ async def create_todo(
 - Decorator serializer options still apply, e.g. `response_model_exclude_none=True` when the payload must omit unset optional fields instead of sending nulls.
 - A handler that genuinely cannot return a model — streaming, file download, redirect, a deliberately non-JSON body — returns the `Response` subclass and declares **no** `response_model`; a wrong schema is worse than no schema. To return a different body under a non-200 status, annotate the union and set the status on an injected `Response` (see `endpoints/health.py`) rather than reaching for `JSONResponse`.
 
+## Entitlements — Every New Route Is Paywalled Until You Say Otherwise
+
+GAIA is paid-only, and the gate is a middleware, not a decorator:
+`app/api/v1/middleware/entitlement.py` 402s **every authenticated HTTP request**
+whose caller is not on PRO. A route is free only if its path is named in
+`app/api/v1/middleware/entitlement_allowlist.py`.
+
+This is deny-by-default on purpose — the opt-in `@require_subscription()`
+decorator it replaced meant every new endpoint shipped free until somebody
+noticed. The cost is that the rule is invisible from the route file, the router
+and the OpenAPI schema:
+
+- **Adding an endpoint that must stay free** (a provider callback, a probe, a
+  surface a lapsed user still needs) means adding its prefix to
+  `FREE_PATH_PREFIXES` **with the reason, in that file and nowhere else**. A
+  prefix is a plain `startswith`, so it frees the whole subtree — keep it as
+  specific as the surface actually needs.
+- **An inexplicable 402 in local dev** on a route you just wrote is this, not
+  your auth. `tests/unit/middleware/test_entitlement_coverage.py` sweeps the
+  whole route table and will tell you which paths escaped or over-freed.
+- **The 402 body is a fixed wire contract** — `{code, message, checkout_url,
+  discount_code}`, narrowed in `libs/shared/ts/src/types/subscription.ts` and
+  parsed by the web interceptor and the mobile SSE client. `checkout_url` is
+  always `null`: the gate never mints a Dodo session, because it runs on every
+  request and an unpaid shell load would mint a pile of single-use links nobody
+  asked for. Clients mint on user intent, from
+  `POST /api/v1/payments/checkout-session`. The bots do not read this body at
+  all — the bot chat turn renders its own paywall notice with its own link
+  (`endpoints/bot.py::_bot_upgrade_url`).
+- **A plan read that fails is a 503, not a 402.** "We could not read your plan"
+  is not "you are not subscribed", and answering 402 there showed every paying
+  user a paywall during a Redis blip.
+- **Routes outside the middleware's reach gate themselves**, imperatively via
+  `require_active_subscription(user_id, feature=...)`: the bot router (excluded
+  from `WorkOSAuthMiddleware`, so there is no `request.state.user`) and the
+  allowlisted-but-spending `/api/v1/onboarding` LLM routes. Workers have no
+  request at all — the reminder and workflow executors gate at their own choke
+  points with `is_subscription_active` plus one `confirm_subscription_active`
+  fresh read, and they **skip**; deactivating anything belongs to the billing
+  webhook.
+
 ## Analytics (PostHog)
 
 Conventions, naming and the no-PII rule are in the root `CLAUDE.md`. The one API-specific decision:

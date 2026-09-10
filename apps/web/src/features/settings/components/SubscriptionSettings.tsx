@@ -139,7 +139,12 @@ export function SubscriptionSettings() {
           <Button
             color="primary"
             variant="flat"
-            onPress={() => openUpgradeModal(undefined, { dismissible: true })}
+            onPress={() =>
+              openUpgradeModal(undefined, {
+                dismissible: true,
+                source: "settings_subscription",
+              })
+            }
             size="sm"
             className="w-full"
           >

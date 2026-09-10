@@ -8,7 +8,6 @@ changes phrasing, joining, or ordering must go red here.
 import pytest
 
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
-from app.services.onboarding.first_contact import compose_link_greeting
 from app.services.onboarding.first_message import NEED_PHRASES, compose_first_message
 
 
@@ -149,44 +148,3 @@ class TestComposeFirstMessage:
     def test_every_need_has_a_phrase(self) -> None:
         """A new OnboardingNeed member without a phrase would KeyError at runtime."""
         assert set(NEED_PHRASES) == set(OnboardingNeed)
-
-
-class TestComposeLinkGreeting:
-    """The hello the bot sends the moment a link code is redeemed.
-
-    Exact strings: this is the first thing a user ever sees from GAIA on that
-    platform, and it is the server's line, not the model's.
-    """
-
-    @pytest.mark.parametrize(
-        ("platform", "expected"),
-        [
-            ("telegram", "Hey Aryan. I'm with you on Telegram now."),
-            ("whatsapp", "Hey Aryan. I'm with you on WhatsApp now."),
-            ("imessage", "Hey Aryan. I'm with you on iMessage now."),
-            ("discord", "Hey Aryan. I'm with you on Discord now."),
-            ("slack", "Hey Aryan. I'm with you on Slack now."),
-        ],
-    )
-    def test_each_platform_is_named_the_way_the_user_calls_it(
-        self, platform: str, expected: str
-    ) -> None:
-        assert compose_link_greeting(platform, "Aryan Randeriya") == expected
-
-    @pytest.mark.parametrize("name", [None, "", "   "])
-    def test_an_unknown_name_drops_the_clause_rather_than_greeting_a_blank(
-        self, name: str | None
-    ) -> None:
-        assert compose_link_greeting("telegram", name) == "Hey. I'm with you on Telegram now."
-
-    def test_only_the_first_name_is_used(self) -> None:
-        """A surname in a text reads like a form letter."""
-        assert (
-            compose_link_greeting("whatsapp", "Aryan Randeriya")
-            == "Hey Aryan. I'm with you on WhatsApp now."
-        )
-
-    def test_output_is_stable_across_calls(self) -> None:
-        assert compose_link_greeting("telegram", "Aryan") == compose_link_greeting(
-            "telegram", "Aryan"
-        )

@@ -25,6 +25,7 @@ from app.db.redis import delete_cache, get_cache, set_cache
 from app.models.user_models import OnboardingPreferences
 from app.services.platform_link_service import Platform
 from app.utils.errors import create_error
+from shared.py.wide_events import log
 
 
 class PlatformLinkCodePayload(BaseModel):
@@ -86,6 +87,11 @@ async def mint_platform_link_code(user_id: str, preferences: OnboardingPreferenc
     if not stored:
         # Handing out a code nothing can resolve would strand the user on a bot
         # that says "expired" the moment they arrive.
+        log.error(
+            "could not store the one-tap link code",
+            user={"id": user_id},
+            operation="mint_platform_link_code",
+        )
         raise create_error(
             message="Could not start platform linking. Please retry.",
             why="the link code could not be stored (Redis unavailable)",

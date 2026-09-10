@@ -117,10 +117,11 @@ class TestRunSignupSideEffects:
     ):
         """A hung ESP used to hold user creation open for as long as the HTTP
         client allowed; the helper must hand the calls off, not await them."""
+        user_id = str(ObjectId())
         never_finishes = asyncio.Event()
         call_started = asyncio.Event()
 
-        async def _hang(*_args: str) -> None:
+        async def _hang(*_args: str, **_kwargs: str) -> None:
             call_started.set()
             await never_finishes.wait()
 
@@ -129,10 +130,10 @@ class TestRunSignupSideEffects:
         # The helper returns while the ESP call is still in flight; awaiting it
         # inline instead would never reach this line before the timeout.
         async with asyncio.timeout(1):
-            await _run_signup_side_effects(str(ObjectId()), "bob@test.com", "Bob")
+            await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
             await call_started.wait()
 
-        mock_send_welcome_email.assert_called_once_with("bob@test.com", "Bob")
+        mock_send_welcome_email.assert_called_once_with("bob@test.com", "Bob", user_id=user_id)
         never_finishes.set()
         await _drain_background_tasks()
 
@@ -154,13 +155,13 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to track signup in PostHog for",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "PostHog unavailable",
                 "error_type": "RuntimeError",
             }
         ]
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob")
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
     async def test_a_welcome_email_failure_is_recorded_and_the_rest_still_runs(
@@ -181,12 +182,12 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to send welcome email to",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "SMTP error",
                 "error_type": "RuntimeError",
             }
         ]
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
     async def test_a_marketing_contact_failure_is_recorded_and_provisioning_still_runs(
@@ -207,7 +208,7 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to add marketing contact for",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "Resend API error",
                 "error_type": "RuntimeError",
             }

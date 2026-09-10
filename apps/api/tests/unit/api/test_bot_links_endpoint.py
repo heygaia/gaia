@@ -823,11 +823,16 @@ class TestPersistFirstContact:
                 "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, PREFS, BUBBLES
             )
         update.assert_not_awaited()
-        mock_log.warning.assert_called_once_with(
+        # error, not warning: nothing retries this, so the thread is permanently
+        # missing the introduction GAIA already sent.
+        mock_log.error.assert_called_once_with(
             "could not persist the first-contact exchange",
+            user={"id": "user1"},
+            provider=REDEEM_BODY["platform"],
             error="mongo down",
             error_type="RuntimeError",
         )
+        mock_log.warning.assert_not_called()
 
 
 class TestGetLinkTokenInfo:

@@ -128,3 +128,24 @@ export const CHECKOUT_CONFIRM_VISIBLE_BUDGET_MS = 60_000;
 
 /** Total time spent waiting for the webhook before giving up entirely. */
 export const CHECKOUT_CONFIRM_TOTAL_BUDGET_MS = 5 * 60_000;
+
+/**
+ * How often a window sitting behind the paid-only wall re-reads the plan.
+ *
+ * The wall can be lifted from somewhere this window cannot see — most
+ * plainly, the desktop popup hands the checkout to the user's browser — and
+ * the subscription-status query neither expires on its own nor refetches on
+ * focus. Only runs while a wall is actually up.
+ */
+export const PAYWALL_STATUS_POLL_MS = 15_000;
+
+/**
+ * How long a *dismissed* overlay is given before the plans come back.
+ *
+ * Closing the sheet is not paying: a completed checkout sends the browser to
+ * Dodo's return URL, so an overlay that closed on us is a checkout the user
+ * walked away from. The grace exists only for the rare charge that went
+ * through without the redirect — long enough for a webhook already on its
+ * way, short enough that changing your mind is not a five-minute sentence.
+ */
+export const CHECKOUT_DISMISS_CONFIRM_BUDGET_MS = 15_000;

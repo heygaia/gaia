@@ -7,6 +7,43 @@ import posthog from "posthog-js";
  * Provides type-safe event tracking with consistent naming conventions.
  */
 
+/**
+ * Which surface put the paid-only wall on screen — the `source` property of
+ * `paywall:modal_viewed`, and the only record of where the gate actually
+ * bites. A closed union rather than a free string: every member is a call
+ * site this repo owns, and a typo has to be a compile error or it silently
+ * becomes a bucket of its own.
+ *
+ * Every `openModal` call names one, which is why `UpgradeModalOptions.source`
+ * is required. Add a member here when a new surface starts raising the wall.
+ */
+export type PaywallSource =
+  // Blocked actions — the gate refusing something the user tried to do.
+  | "composer_submit"
+  | "voice_mode"
+  | "workflow_autosend"
+  | "workflow_activation"
+  // A 402 from the server, on any gated request.
+  | "api_402"
+  | "chat_stream_402"
+  // Standing invitations — the user chose to look at plans.
+  | "composer_notice"
+  | "rate_limit_card"
+  | "rate_limit_toast"
+  | "founder_letter"
+  | "sidebar"
+  | "settings_menu"
+  | "settings_subscription"
+  | "settings_upsell"
+  | "settings_linked_accounts"
+  | "settings_usage"
+  // Not a surface: the desktop popup's feed window mirrors the composer
+  // window's wall, so it carries whatever source that window recorded. This
+  // value only appears if a snapshot ever arrives without one, which is a bug
+  // in the mirror rather than a place the gate bit — named explicitly so it
+  // cannot hide inside a real bucket.
+  | "desktop_popup_mirror";
+
 // Event name constants for consistent tracking
 export const ANALYTICS_EVENTS = {
   // Desktop-only and deliberately its own name: Electron IPC (app icon, popup
@@ -41,13 +78,18 @@ export const ANALYTICS_EVENTS = {
   //   - completing one -> `subscription:activated`, captured on the Dodo
   //     webhook (`_handle_subscription_active`), the only place a subscription
   //     actually becomes real.
-  // SUBSCRIPTION_FAILED stays client-side: a checkout that fails before the
-  // request lands is something the server never sees.
+  // SUBSCRIPTION_FAILED stays client-side, with exactly one emitter left
+  // (`useCheckoutReturn`): a charge Dodo declined, and a webhook that never
+  // lands, both produce no server-side event at all. A checkout the API
+  // itself refused is the API's to capture — emitting it here as well would
+  // count one refusal twice.
   SUBSCRIPTION_FAILED: "subscription:failed",
 
   // The paid-only wall appeared on screen. Client-only by necessity: the
   // server captures the 402 that caused it (`paywall:blocked`), but only the
-  // browser knows whether the modal actually rendered for the user.
+  // browser knows whether the modal actually rendered for the user. Carries
+  // `source` (see `PaywallSource`) — a count of walls shown is not actionable
+  // without knowing which surface produced them.
   PAYWALL_MODAL_VIEWED: "paywall:modal_viewed",
 
   // Chat events
@@ -69,6 +111,11 @@ export const ANALYTICS_EVENTS = {
 
   // Feature discovery events
   FEATURE_DISCOVERED: "feature:discovered",
+
+  // A row of the activation checklist was clicked. Client-only: completion
+  // and dismissal are derived/owned by the server, but the click that sent
+  // the user off to do the step never reaches it.
+  FIRST_STEPS_STEP_CLICKED: "first_steps:step_clicked",
 
   // Workflow events
   WORKFLOWS_CREATED: "workflows:created",

@@ -2,7 +2,7 @@
 Clean webhook models for Dodo Payments based on actual webhook format.
 """
 
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
@@ -166,11 +166,27 @@ class DodoWebhookEvent(BaseModel):
         return None
 
 
+class WebhookProcessingStatus(StrEnum):
+    """What GAIA did with a delivery, and what the sender is owed as a result.
+
+    ``PROCESSED`` and ``IGNORED`` are both final — the delivery is recorded
+    under its webhook id and acknowledged with a 200. ``FAILED`` is not: the
+    state change the event carried never landed, so the claim is handed back
+    and the sender is asked to retry. Acknowledging a failure would end the
+    event's life, because a 200 stops Dodo resending and the claim would turn
+    a manual redelivery away as a replay.
+    """
+
+    PROCESSED = "processed"
+    IGNORED = "ignored"
+    FAILED = "failed"
+
+
 class DodoWebhookProcessingResult(BaseModel):
     """Result of webhook processing."""
 
     event_type: str
-    status: str  # "processed", "ignored", "failed"
+    status: WebhookProcessingStatus
     message: str
     payment_id: str | None = None
     subscription_id: str | None = None

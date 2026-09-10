@@ -26,9 +26,20 @@ from app.decorators.entitlements import (
 )
 from shared.py.wide_events import log
 
+#: Body of the 503 an unanswerable plan read returns. Deliberately says nothing
+#: about the caller's billing state — that is the fact we failed to read.
+ENTITLEMENT_UNAVAILABLE_MESSAGE = "Could not verify your subscription. Please try again."
+#: Long enough to outlast a Redis restart or a Mongo failover, short enough that
+#: a user who retries by hand beats it.
+ENTITLEMENT_RETRY_AFTER_SECONDS = 5
+
 
 class EntitlementMiddleware(BaseHTTPMiddleware):
-    """402 every authenticated non-PRO request that is not explicitly free."""
+    """402 every authenticated non-PRO request that is not explicitly free.
+
+    A plan read that cannot be answered at all is a 503, not a 402 — see the
+    ``except`` branch in ``dispatch``.
+    """
 
     async def dispatch(
         self, request: Request, call_next: Callable[[Request], Awaitable[Response]]
@@ -53,10 +64,19 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
         except SubscriptionRequiredException as exc:
             return self._payment_required(exc)
         except Exception as e:
-            # Fail CLOSED. The decorator's fail-open branch is precisely how a
-            # paid surface went free without anyone noticing: a Redis blip or a
-            # Mongo timeout turned the paywall off. A 402 for a Pro user during
-            # an outage is recoverable; a free tier for everyone is not.
+            # Still fails CLOSED — the request never reaches its handler, so no
+            # paid surface goes free — but it does NOT claim the caller is
+            # unsubscribed. "We could not read your plan" and "you are not on
+            # PRO" are different facts, and only the second one is a 402.
+            #
+            # The distinction is worth a status code because the blast radius
+            # changed with this middleware: the plan read touches Redis, and on
+            # a miss Mongo, on EVERY authenticated request. Answering 402 there
+            # showed every paying user in the product a "GAIA is paid only"
+            # modal during an infrastructure blip — indistinguishable, from
+            # their side, from having been wrongly unsubscribed. 503 says the
+            # true thing, and clients already retry it instead of routing the
+            # user to a checkout they do not need.
             log.error(
                 "Entitlement check failed — denying request (fail-closed)",
                 user={"id": str(user_id)},
@@ -64,7 +84,7 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
                 error_type=type(e).__name__,
                 error=str(e),
             )
-            return self._payment_required(SubscriptionRequiredException(checkout_url=None))
+            return self._entitlement_unavailable()
 
         return await call_next(request)
 
@@ -78,3 +98,17 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
         a 402 comes from here or from an imperative in-handler gate.
         """
         return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
+    @staticmethod
+    def _entitlement_unavailable() -> JSONResponse:
+        """503 for a plan read that could not be answered at all.
+
+        ``Retry-After`` is what makes this recoverable without a reload: the
+        gate runs before ``call_next``, so nothing was executed and a retry is
+        safe on every method, not just the idempotent ones.
+        """
+        return JSONResponse(
+            status_code=503,
+            content={"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE},
+            headers={"Retry-After": str(ENTITLEMENT_RETRY_AFTER_SECONDS)},
+        )

@@ -167,7 +167,6 @@ const handleForbiddenError = (
 export const subscriptionRequiredOfferFromDetail = (
   detail: SubscriptionRequiredDetail,
 ): UpgradeOffer => ({
-  checkoutUrl: detail.checkout_url,
   discountCode: detail.discount_code,
   message: detail.message,
 });
@@ -185,7 +184,9 @@ const handleSubscriptionRequiredError = (errorData: unknown): boolean => {
 
   useUpgradeModalStore
     .getState()
-    .openModal(subscriptionRequiredOfferFromDetail(detail));
+    .openModal(subscriptionRequiredOfferFromDetail(detail), {
+      source: "api_402",
+    });
   return true;
 };
 

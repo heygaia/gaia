@@ -28,7 +28,12 @@ export default function UsageSettings() {
       summary={summary}
       history={history ?? []}
       activity={activity}
-      onUpgrade={() => openUpgradeModal(undefined, { dismissible: true })}
+      onUpgrade={() =>
+        openUpgradeModal(undefined, {
+          dismissible: true,
+          source: "settings_usage",
+        })
+      }
     />
   );
 }

@@ -1,6 +1,8 @@
 import { create } from "zustand";
 import { devtools } from "zustand/middleware";
 
+import type { PaywallSource } from "@/lib/analytics";
+
 import type {
   UpgradeModalCloseOptions,
   UpgradeModalOptions,
@@ -11,7 +13,12 @@ interface UpgradeModalStore {
   open: boolean;
   offer: UpgradeOffer | null;
   dismissible: boolean;
-  openModal: (offer?: UpgradeOffer, options?: UpgradeModalOptions) => void;
+  /** The surface that raised the wall now standing, for the impression. */
+  source: PaywallSource | null;
+  openModal: (
+    offer: UpgradeOffer | undefined,
+    options: UpgradeModalOptions,
+  ) => void;
   closeModal: (options?: UpgradeModalCloseOptions) => void;
 }
 
@@ -37,6 +44,13 @@ interface UpgradeModalStore {
  * makes the wall a wall, wherever the close is requested from. Programmatic
  * resets that must win regardless (checkout succeeded and `useIsPaid` flipped
  * true, the desktop popup mirroring the composer window) pass `{ force: true }`.
+ *
+ * `openModal` raises the wall once and then leaves it standing. A single
+ * blocked screen produces a 402 per gated request, and acting on every one of
+ * them would rewrite the offer underneath a modal the user is already reading
+ * — and silently strip the close control off one they opened voluntarily,
+ * turning a plan browse into a trap. The first open owns the modal until it
+ * closes.
  */
 export const useUpgradeModalStore = create<UpgradeModalStore>()(
   devtools(
@@ -44,13 +58,18 @@ export const useUpgradeModalStore = create<UpgradeModalStore>()(
       open: false,
       offer: null,
       dismissible: false,
+      source: null,
       openModal: (offer, options) =>
         set(
-          {
-            open: true,
-            offer: offer ?? null,
-            dismissible: options?.dismissible ?? false,
-          },
+          (state) =>
+            state.open
+              ? state
+              : {
+                  open: true,
+                  offer: offer ?? null,
+                  dismissible: options.dismissible ?? false,
+                  source: options.source,
+                },
           false,
           "openModal",
         ),
@@ -58,7 +77,7 @@ export const useUpgradeModalStore = create<UpgradeModalStore>()(
         set(
           (state) =>
             state.dismissible || options?.force
-              ? { open: false, offer: null, dismissible: false }
+              ? { open: false, offer: null, dismissible: false, source: null }
               : state,
           false,
           "closeModal",

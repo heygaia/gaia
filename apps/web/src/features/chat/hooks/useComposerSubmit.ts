@@ -83,7 +83,7 @@ export function useComposerSubmit({
     // than trapping a paying user behind the paywall on a not-yet-resolved
     // "false".
     if (!isSubscriptionStatusUnknown && !isPaid) {
-      openUpgradeModal();
+      openUpgradeModal(undefined, { source: "composer_submit" });
       return;
     }
     // Note: Loading state is now set in useSendMessage AFTER user message is persisted

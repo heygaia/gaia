@@ -158,7 +158,7 @@ describe("redeemLinkCode", () => {
 
   it("points a free user at pricing instead of throwing on a paid platform", async () => {
     const redeem = vi.fn(async () => {
-      throw new GaiaApiError("API error: 429", 429);
+      throw new GaiaApiError("API error: 429", 429, { plan_required: "pro" });
     });
     const target = fakeTarget();
 
@@ -175,6 +175,47 @@ describe("redeemLinkCode", () => {
       buildLinkCodeFailureMessage("plan", FRONTEND_URL),
     ]);
     expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
+  });
+
+  it("does not pitch Pro at a plain rate limit", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 429", 429);
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent[0]).not.toContain(`${FRONTEND_URL}/pricing`);
+  });
+
+  it("tells a user holding a different handle to fix their own account", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 409", 409, {
+        code: "account_has_other_platform_account",
+      });
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("account-has-other", FRONTEND_URL),
+    ]);
+    expect(target.sent[0]).not.toContain("someone else");
   });
 
   it("lets an unexpected failure propagate rather than faking a link", async () => {
@@ -200,19 +241,19 @@ describe("consumeInboundLinkCode", () => {
 
   it("passes a codeless message straight through and never calls the API", async () => {
     const redeem = vi.fn();
-    const isLinked = vi.fn(async () => false);
+    const linkState = vi.fn(async () => "unlinked" as const);
 
     const result = await consumeInboundLinkCode(
       base({
         gaia: fakeGaia(redeem),
         text: "what's on my calendar?",
-        isLinked,
+        linkState,
       }),
     );
 
     expect(result).toBe("what's on my calendar?");
     expect(redeem).not.toHaveBeenCalled();
-    expect(isLinked).not.toHaveBeenCalled();
+    expect(linkState).not.toHaveBeenCalled();
   });
 
   it("redeems for an unlinked sender and leaves no turn to run", async () => {
@@ -226,7 +267,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `${FIRST_MESSAGE} #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
         target,
       }),
     );
@@ -246,7 +287,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `${FIRST_MESSAGE} #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
         target,
       }),
     );
@@ -263,12 +304,32 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(okRedeem()),
         text: `hi #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
         target,
       }),
     );
 
     expect(result).toBeNull();
+    expect(target.sent).toEqual([]);
+  });
+
+  it("answers the message instead of redeeming when the link check failed", async () => {
+    const redeem = vi.fn();
+    const target = fakeTarget();
+
+    const result = await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `remind me tomorrow #${CODE}`,
+        linkState: async () => "unknown" as const,
+        target,
+      }),
+    );
+
+    // A failed check used to read as "unlinked", which spent a stale code and
+    // answered a real message with "that link has expired".
+    expect(result).toBe("remind me tomorrow");
+    expect(redeem).not.toHaveBeenCalled();
     expect(target.sent).toEqual([]);
   });
 
@@ -280,7 +341,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `remind me tomorrow #${CODE}`,
-        isLinked: async () => true,
+        linkState: async () => "linked" as const,
         target,
       }),
     );
@@ -299,7 +360,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `${FIRST_MESSAGE} #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
       }),
     );
 
@@ -314,7 +375,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `#${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
         target,
       }),
     );

@@ -1188,18 +1188,20 @@ jobs:
     needs: [select-runner, changes, test-mutation-plan]
     if: needs.changes.outputs.has_python == 'true' && needs.test-mutation-plan.outputs.count != '0'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    # Per MODULE, not per lane. The slowest shard measured end to end (setup
-    # included) is ~3 minutes; the margin covers a genuinely large module.
-    timeout-minutes: 25
+    # Job cap, kept above the step timeout below so a slow shard is failed by
+    # the step (which keeps its log artifact) rather than cancelled by the job
+    # (which retains nothing).
+    timeout-minutes: 35
     strategy:
       # Every module reports. Stopping at the first failure would hide the
       # rest, and this gate's whole value is the complete list.
       fail-fast: false
       # Each shard runs its modules in parallel with children of its own; nine
       # concurrent shards (measured 2026-08-28) filled every runner slot so the
-      # main pipeline's detect job queued behind lint. Four shards keep the
-      # lint pool's other lanes moving. Excess modules pack into the four
-      # shards round-robin (scripts/ci/mutation.sh plan MAX_SHARDS must match).
+      # main pipeline's detect job queued behind lint. Four at a time keeps the
+      # lint pool's other lanes moving. This is the wave size, NOT the shard
+      # count: scripts/ci/mutation.sh plan packs modules into MAX_SHARDS (6)
+      # round-robin, so a large diff runs as 4 + 2 rather than overfilling four.
       max-parallel: 4
       matrix:
         include: ${{ fromJson(needs.test-mutation-plan.outputs.matrix) }}
@@ -1216,7 +1218,10 @@ jobs:
         # STEP-level timeout so a stuck shard fails as a step (job continues,
         # the shard-log artifact uploads, logs survive) instead of the job
         # being cancelled at its cap — a cancelled job retains nothing.
-        timeout-minutes: 20
+        # 30, raised from 20 alongside MAX_SHARDS 4 -> 6: the smaller shards are
+        # the fix for a large diff, and this is the headroom so the next one
+        # larger still fails on a survivor rather than on the clock.
+        timeout-minutes: 30
         # Through env, not inline expansion: the value is generated, but an
         # inline ${{ }} in a run block is a shell-injection seam regardless.
         env:

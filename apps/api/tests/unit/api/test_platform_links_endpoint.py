@@ -20,7 +20,10 @@ from app.models.user_models import (
 )
 from app.services.analytics_service import AnalyticsEvents
 from app.services.photon.photon_client import PhotonUser
-from app.services.platform_link_service import IMESSAGE_REGISTRATION_FEATURE_KEY
+from app.services.platform_link_service import (
+    IMESSAGE_REGISTRATION_FEATURE_KEY,
+    PlatformAccountTakenError,
+)
 from app.utils.errors import AppError
 from tests.conftest import FAKE_USER
 
@@ -411,8 +414,37 @@ class TestLinkPlatform:
         mock_log.set.assert_any_call(outcome="success")
 
     @pytest.mark.asyncio
+    async def test_an_internal_failure_is_not_reported_as_an_ownership_conflict(
+        self, client: AsyncClient
+    ) -> None:
+        """A plain ValueError is an internal fault, not something the user owns.
+
+        link_account raises bare ValueError for an empty id or a missing user.
+        Collapsed into the shared 409 these told the person linking that a
+        stranger held their account, sending them to fix something that was
+        never theirs to fix.
+        """
+        mock_redis = AsyncMock()
+        mock_redis.hgetall = AsyncMock(
+            return_value={"platform": "discord", "platform_user_id": "DISC_X"}
+        )
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("app.api.v1.endpoints.platform_links.redis_cache") as mock_cache,
+            patch(
+                "app.api.v1.endpoints.platform_links.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                side_effect=ValueError("User not found"),
+            ),
+        ):
+            mock_cache.client = mock_redis
+            resp = await client.post(f"{BASE}/discord", json={"token": "tok"})
+
+        assert resp.status_code != 409
+
     async def test_link_conflict(self, client: AsyncClient) -> None:
-        """ValueError from link_account returns 409."""
+        """A real ownership conflict returns 409."""
         mock_redis = AsyncMock()
         mock_redis.hgetall = AsyncMock(
             return_value={
@@ -427,7 +459,7 @@ class TestLinkPlatform:
             patch(
                 "app.api.v1.endpoints.platform_links.PlatformLinkService.link_account",
                 new_callable=AsyncMock,
-                side_effect=ValueError("already linked"),
+                side_effect=PlatformAccountTakenError("already linked"),
             ),
             patch("app.services.platform_link_completion.log") as mock_log,
         ):
@@ -441,6 +473,9 @@ class TestLinkPlatform:
             "message": "already linked",
             "why": "the platform account is already linked to a different GAIA account",
             "fix": "disconnect it from the other account, or link a different one",
+            # The bots read this rather than inferring the reason from the 409,
+            # which covers two conflicts with opposite fixes.
+            "code": "platform_account_taken",
         }
         # A rejected link is an audit event: who tried, which platform account,
         # which provider, and why it was refused.
@@ -449,7 +484,9 @@ class TestLinkPlatform:
             actor=FAKE_USER_ID,
             resource="DISC_DUP",
             provider="discord",
-            error_type="ValueError",
+            # The specific conflict, not a bare ValueError — an audit line that
+            # cannot tell the two 409s apart cannot answer which one fired.
+            error_type="PlatformAccountTakenError",
             error="already linked",
         )
 

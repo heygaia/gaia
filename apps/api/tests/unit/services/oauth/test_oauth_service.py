@@ -315,10 +315,10 @@ class TestStoreUserInfo:
         assert mock_user_repo.create.call_args.args[0].name == "Aryan Randeriya"
         assert mock_track_signup.call_args.kwargs["name"] == "Aryan Randeriya"
         mock_send_welcome_email.assert_awaited_once_with(
-            "aryan.randeriya@test.com", "Aryan Randeriya"
+            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
         )
         mock_add_marketing_contact.assert_awaited_once_with(
-            "aryan.randeriya@test.com", "Aryan Randeriya"
+            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
         )
 
     async def test_new_user_keeps_the_workos_name_when_there_is_one(
@@ -362,8 +362,9 @@ class TestStoreUserInfo:
         mock_send_welcome_email,
         mock_add_marketing_contact,
     ):
+        uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
-        mock_user_repo.create.return_value = UserDocument(id=str(ObjectId()))
+        mock_user_repo.create.return_value = UserDocument(id=uid)
 
         await store_user_info("Bob", "bob@test.com", None)
 
@@ -371,7 +372,7 @@ class TestStoreUserInfo:
         # signup; drain it before asserting.
         await _drain_background_tasks()
 
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
 
     async def test_new_user_adds_contact_to_resend(
         self,
@@ -380,8 +381,9 @@ class TestStoreUserInfo:
         mock_send_welcome_email,
         mock_add_marketing_contact,
     ):
+        uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
-        mock_user_repo.create.return_value = UserDocument(id=str(ObjectId()))
+        mock_user_repo.create.return_value = UserDocument(id=uid)
 
         await store_user_info("Bob", "bob@test.com", None)
 
@@ -389,7 +391,7 @@ class TestStoreUserInfo:
         # signup background task; drain it before asserting.
         await _drain_background_tasks()
 
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
 
     async def test_new_user_esp_calls_run_concurrently(
         self,
@@ -408,11 +410,11 @@ class TestStoreUserInfo:
         barrier = asyncio.Barrier(2)
         rendezvous: set[str] = set()
 
-        async def _welcome(*_args: str) -> None:
+        async def _welcome(*_args: str, **_kwargs: str) -> None:
             await asyncio.wait_for(barrier.wait(), timeout=1)
             rendezvous.add("welcome_email")
 
-        async def _contact(*_args: str) -> None:
+        async def _contact(*_args: str, **_kwargs: str) -> None:
             await asyncio.wait_for(barrier.wait(), timeout=1)
             rendezvous.add("marketing_contact")
 

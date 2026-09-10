@@ -6,6 +6,14 @@ Payment and billing constants.
 # billing portal; the agent only ever needs "what have I been charged lately".
 PAYMENT_HISTORY_LIMIT = 10
 
+# How many of a user's recent checkout sessions payment verification asks Dodo
+# about before giving up. It scans instead of reading only the newest because
+# every paywall block mints a fresh session, so the one that was actually paid
+# is routinely buried under later ones; the cap bounds the Dodo round trips a
+# single verify can make (the scan stops at the first session Dodo calls paid,
+# so a user who just paid normally costs one).
+CHECKOUT_SESSION_SCAN_LIMIT = 10
+
 NO_USER_MESSAGE = "Could not identify the user, so their billing state is unavailable."
 
 #: Everything a checkout opened outside production prefills, so a developer

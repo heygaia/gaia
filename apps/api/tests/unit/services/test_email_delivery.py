@@ -265,7 +265,9 @@ class TestSendProSubscriptionEmail:
         ):
             from app.services.email.senders import send_pro_subscription_email
 
-            await send_pro_subscription_email("Alice", "alice@example.com")
+            await send_pro_subscription_email(
+                "Alice", "alice@example.com", user_id="507f1f77bcf86cd799439011"
+            )
 
         message: EmailMessage = m_send.await_args.args[0]
         assert message.to == ["alice@example.com"]
@@ -285,4 +287,6 @@ class TestSendProSubscriptionEmail:
             from app.services.email.senders import send_pro_subscription_email
 
             with pytest.raises(RuntimeError, match="down"):
-                await send_pro_subscription_email("Alice", "alice@example.com")
+                await send_pro_subscription_email(
+                    "Alice", "alice@example.com", user_id="507f1f77bcf86cd799439011"
+                )

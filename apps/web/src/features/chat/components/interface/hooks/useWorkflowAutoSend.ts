@@ -51,7 +51,7 @@ export const useWorkflowAutoSend = (): void => {
       // send proceed — the backend's 402 is the backstop — rather than trap
       // a paying user on a not-yet-resolved "false".
       if (!isSubscriptionStatusUnknown && !isPaid) {
-        openUpgradeModal();
+        openUpgradeModal(undefined, { source: "workflow_autosend" });
         return;
       }
 

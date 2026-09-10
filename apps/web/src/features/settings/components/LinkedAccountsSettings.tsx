@@ -139,7 +139,10 @@ export default function LinkedAccountsSettings() {
     // premium gate server-side, so a brief permissive window here is safe,
     // but blocking a paying customer's connect attempt is not.
     if (platform.premium && !isUnknown && !isPaid) {
-      openUpgradeModal(undefined, { dismissible: true });
+      openUpgradeModal(undefined, {
+        dismissible: true,
+        source: "settings_linked_accounts",
+      });
       return;
     }
     if (platform.requiresPhone) {

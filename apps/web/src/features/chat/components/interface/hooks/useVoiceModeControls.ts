@@ -55,7 +55,7 @@ export const useVoiceModeControls = (
         conversation_id: convoIdParam,
         blocked_reason: "upgrade_required",
       });
-      openUpgradeModal(undefined, { dismissible: true });
+      openUpgradeModal(undefined, { dismissible: true, source: "voice_mode" });
       return;
     }
     trackEvent(ANALYTICS_EVENTS.CHAT_VOICE_MODE_TOGGLED, {
