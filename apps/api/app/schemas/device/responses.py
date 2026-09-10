@@ -82,6 +82,18 @@ class DevicePairApproveResponse(BaseModel):
     name: str
 
 
+class SelfPairResponse(BaseModel):
+    """Result of a one-call self-pair: the device plus its refresh credential.
+
+    Mirrors the approve response but also returns ``refresh_token`` inline, since
+    the caller that pairs is the same host that stores the credential.
+    """
+
+    device_id: str
+    refresh_token: str
+    name: str
+
+
 class DeviceRevokeResponse(BaseModel):
     """Result of revoking a device's access."""
 

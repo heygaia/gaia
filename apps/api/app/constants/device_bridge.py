@@ -29,6 +29,12 @@ USER_CODE_ALPHABET: Final[str] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 PAIRING_TTL_SECONDS: Final[int] = 15 * 60  # user has 15 min to approve
 PAIRING_POLL_INTERVAL_SECONDS: Final[int] = 5  # RFC 8628 poll cadence hint
 
+# Upper bound on ACTIVE devices one user may hold at once. Bounds credential
+# sprawl (each device holds a long-lived refresh token) and abuse of the
+# one-call self-pair path. Enforced in the shared device-creation path, so both
+# the browser-approval and desktop self-pair flows reject creation past it.
+MAX_ACTIVE_DEVICES_PER_USER: Final[int] = 20
+
 # --- Device refresh credential (long-lived, rotates on every token exchange) ---
 REFRESH_TOKEN_BYTES: Final[int] = 32  # 256-bit opaque refresh token
 # Lost-response grace: after a rotation, the just-consumed credential can be

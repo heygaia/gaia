@@ -14,7 +14,7 @@ import secrets
 from urllib.parse import quote
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.device_bridge import (
@@ -24,6 +24,7 @@ from app.constants.device_bridge import (
     DEVICE_REFRESH_RETRY_PREFIX,
     DEVICE_TRANSPORT,
     DEVICE_USER_CODE_PREFIX,
+    MAX_ACTIVE_DEVICES_PER_USER,
     PAIRING_POLL_INTERVAL_SECONDS,
     PAIRING_TTL_SECONDS,
     REFRESH_TOKEN_RETRY_GRACE_SECONDS,
@@ -55,6 +56,7 @@ from app.services.integrations.user_integrations import (
     invalidate_user_integration_caches,
     remove_user_integration,
 )
+from app.utils.errors import create_error
 from app.utils.redis_utils import RedisPoolManager
 from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log
@@ -145,6 +147,52 @@ async def lookup_pending_by_user_code(user_code: str) -> dict | None:
     return {"device_code": device_code, **record}
 
 
+async def _create_device(
+    user_id: str,
+    name: str,
+    platform: str | None,
+    daemon_version: str | None,
+    client: str | None,
+) -> tuple[str, str]:
+    """Create an ACTIVE device for ``user_id`` and mint its refresh credential.
+
+    The one place a device row is inserted, shared by the browser-approval and
+    desktop self-pair flows, so the per-user active-device cap is enforced once
+    for both. Returns ``(device_id, refresh_token)``; the caller captures these
+    before the session closes rather than reading them off the expired row.
+    """
+    device_id = str(uuid.uuid4())
+    refresh_token = generate_refresh_token()
+    device = Device(
+        id=device_id,
+        user_id=user_id,
+        name=name,
+        platform=platform,
+        daemon_version=daemon_version,
+        client=client,
+        status=DeviceStatus.ACTIVE,
+        refresh_token_hash=hash_refresh_token(refresh_token),
+    )
+    async with get_db_session() as session:
+        active_count = (
+            await session.execute(
+                select(func.count())
+                .select_from(Device)
+                .where(Device.user_id == user_id, Device.status == DeviceStatus.ACTIVE)
+            )
+        ).scalar_one()
+        if active_count >= MAX_ACTIVE_DEVICES_PER_USER:
+            raise create_error(
+                message="Device limit reached",
+                why=f"You already have {MAX_ACTIVE_DEVICES_PER_USER} active devices.",
+                fix="Revoke a device you no longer use, then pair this one again.",
+                status_code=409,
+            )
+        session.add(device)
+        await session.commit()
+    return device_id, refresh_token
+
+
 async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
     """Approve a pending pairing for ``user_id``; create the device + refresh token.
 
@@ -161,22 +209,12 @@ async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
         raise PairingError("Pairing code is invalid or expired")
 
     device_code = pending["device_code"]
-    device_id = str(uuid.uuid4())
     name = pending.get("name") or "Device"
-    refresh_token = generate_refresh_token()
-
-    device = Device(
-        id=device_id,
-        user_id=user_id,
-        name=name,
-        platform=pending.get("platform"),
-        daemon_version=pending.get("daemon_version"),
-        status=DeviceStatus.ACTIVE,
-        refresh_token_hash=hash_refresh_token(refresh_token),
+    # CLI-paired devices keep client NULL for now (client-aware tooling is a
+    # later task); only the desktop self-pair path stamps a client.
+    device_id, refresh_token = await _create_device(
+        user_id, name, pending.get("platform"), pending.get("daemon_version"), client=None
     )
-    async with get_db_session() as session:
-        session.add(device)
-        await session.commit()
 
     record = {**pending}
     record.pop("device_code", None)
@@ -189,6 +227,27 @@ async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
 
     log.set(device={"operation": "approve_pairing", "device_id": device_id}, user={"id": user_id})
     return device_id, name
+
+
+async def self_pair_device(
+    user_id: str,
+    name: str,
+    platform: str,
+    client: str,
+    daemon_version: str | None,
+) -> tuple[str, str]:
+    """Pair a device for an already-authenticated user in one call.
+
+    A UX collapse of the browser start→approve→poll flow for a host that already
+    holds the user's session (the desktop app): no ``user_code`` round-trip. The
+    refresh token is returned inline, since the same caller both pairs and stores
+    it. Returns ``(device_id, refresh_token)``.
+    """
+    device_id, refresh_token = await _create_device(
+        user_id, name, platform, daemon_version, client=client
+    )
+    log.set(device={"operation": "self_pair", "device_id": device_id}, user={"id": user_id})
+    return device_id, refresh_token
 
 
 async def poll_pairing(device_code: str) -> PollPairingResponse:

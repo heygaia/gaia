@@ -114,6 +114,9 @@ class AnalyticsEvents(StrEnum):
     # Search
     SEARCH_PERFORMED = "search:performed"
 
+    # Device bridge
+    DEVICE_SELF_PAIRED = "device:self_paired"
+
     NOTIFICATION_PREFERENCE_UPDATED = "settings:notifications_toggled"
 
     # Onboarding

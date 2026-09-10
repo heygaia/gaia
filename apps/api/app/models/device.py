@@ -48,6 +48,9 @@ class Device(Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     platform: Mapped[str | None] = mapped_column(String(60), nullable=True)
     daemon_version: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Which host paired the device: "desktop" (in-app self-pair) or "cli" (the
+    # gaia bridge daemon). NULL for devices paired before the column existed.
+    client: Mapped[str | None] = mapped_column(String(20), nullable=True)
     status: Mapped[DeviceStatus] = mapped_column(
         SQLEnum(DeviceStatus, values_callable=lambda x: [e.value for e in x]),
         nullable=False,
