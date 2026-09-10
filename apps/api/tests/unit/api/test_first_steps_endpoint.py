@@ -6,9 +6,16 @@ from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
 import pytest
 
-from app.models.first_steps_models import FirstStep, FirstStepKey, FirstStepsResponse
+from app.api.v1.endpoints.first_steps import collapse as collapse_handler, read_first_steps
+from app.models.first_steps_models import (
+    FirstStep,
+    FirstStepKey,
+    FirstStepsCollapseRequest,
+    FirstStepsResponse,
+)
 from app.utils.errors import AppError
 from tests.conftest import FAKE_USER
+from tests.helpers import captured_wide_event
 
 URL = "/api/v1/user/first-steps"
 USER_ID = FAKE_USER["user_id"]
@@ -58,6 +65,20 @@ class TestGetFirstSteps:
         resp = await unauthed_client.get(URL)
         assert resp.status_code == 401
 
+    async def test_the_read_is_recorded_on_the_wide_event(self) -> None:
+        # The checklist is the activation funnel's only server-side reading, so
+        # the event is where "how far along is this user" is answered.
+        with patch(
+            f"{MODULE}.get_first_steps",
+            new_callable=AsyncMock,
+            return_value=_checklist(collapsed=False),
+        ):
+            async with captured_wide_event() as event:
+                await read_first_steps(user=FAKE_USER)
+
+        assert event["user"] == {"id": USER_ID}
+        assert event["first_steps"] == {"operation": "read", "done": 1, "collapsed": False}
+
 
 @pytest.mark.unit
 class TestCollapseFirstSteps:
@@ -84,6 +105,20 @@ class TestCollapseFirstSteps:
     async def test_requires_auth(self, unauthed_client: AsyncClient) -> None:
         resp = await unauthed_client.post(f"{URL}/collapse", json={"collapsed": True})
         assert resp.status_code == 401
+
+    async def test_the_collapse_is_recorded_on_the_wide_event(self) -> None:
+        with patch(
+            f"{MODULE}.set_first_steps_collapsed",
+            new_callable=AsyncMock,
+            return_value=_checklist(collapsed=True),
+        ):
+            async with captured_wide_event() as event:
+                await collapse_handler(
+                    user=FAKE_USER, body=FirstStepsCollapseRequest(collapsed=True)
+                )
+
+        assert event["user"] == {"id": USER_ID}
+        assert event["first_steps"] == {"operation": "collapse", "done": 1, "collapsed": True}
 
     async def test_there_is_no_route_that_marks_a_step_done(self, client: AsyncClient) -> None:
         resp = await client.patch(URL, json={"key": "say_hi", "done": True})

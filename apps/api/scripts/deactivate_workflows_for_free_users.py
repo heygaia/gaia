@@ -86,14 +86,24 @@ async def find_free_user_candidates() -> list[FreeUserWorkflows]:
 
 async def run_migration(*, dry_run: bool) -> MigrationResult:
     candidates = await find_free_user_candidates()
-    deactivated = 0
 
-    if not dry_run:
-        for candidate in candidates:
-            deactivated += await deactivate_workflows_for_lapsed_subscription(candidate.user_id)
+    if dry_run:
+        return MigrationResult(dry_run=True, free_users=candidates)
+
+    # The scan above is a snapshot taken before the first write. Re-check each
+    # user on their turn: someone who subscribes mid-run would stay deactivated
+    # forever, because the handler that resumes SUBSCRIPTION_LAPSED workflows
+    # fires on the subscription event and has already run by then.
+    deactivated_users: list[FreeUserWorkflows] = []
+    deactivated = 0
+    for candidate in candidates:
+        if await subscription_repository.get_active_for_user(candidate.user_id):
+            continue
+        deactivated_users.append(candidate)
+        deactivated += await deactivate_workflows_for_lapsed_subscription(candidate.user_id)
 
     return MigrationResult(
-        dry_run=dry_run, free_users=candidates, workflows_deactivated=deactivated
+        dry_run=False, free_users=deactivated_users, workflows_deactivated=deactivated
     )
 
 

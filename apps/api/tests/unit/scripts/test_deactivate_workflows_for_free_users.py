@@ -181,6 +181,38 @@ class TestRunMigration:
         assert result.workflows_deactivated == 2
         deactivate.assert_awaited_once_with(FREE_USER)
 
+    async def test_a_user_who_subscribes_mid_run_is_not_deactivated(self) -> None:
+        """The candidate scan is a snapshot taken before any write.
+
+        A user who subscribes between the scan and their turn in the execute
+        loop must be re-checked, because the reactivation handler that would
+        have undone this has already run — nothing re-enables them afterwards.
+        """
+        workflow_repo = MagicMock()
+        subscribed_after_scan = {FREE_USER: [None, MagicMock()]}
+
+        async def _active_for(user_id: str) -> MagicMock | None:
+            return subscribed_after_scan[user_id].pop(0)
+
+        with (
+            patch(f"{MODULE}.workflow_repository", workflow_repo),
+            patch(f"{PAUSE}.workflow_repository", workflow_repo),
+            patch(f"{MODULE}.subscription_repository") as subscription_repo,
+            patch(f"{MODULE}.deactivate_workflows_for_lapsed_subscription") as deactivate,
+        ):
+            workflow_repo.distinct_users_with_activated_workflows = AsyncMock(
+                return_value=[FREE_USER]
+            )
+            subscription_repo.get_active_for_user = AsyncMock(side_effect=_active_for)
+            workflow_repo.find_activated_for_user = AsyncMock(return_value=[_workflow("wf-1")])
+            deactivate.return_value = 1
+
+            result = await run_migration(dry_run=False)
+
+        deactivate.assert_not_awaited()
+        assert result.workflows_deactivated == 0
+        assert result.free_users == []
+
     async def test_no_free_users_deactivates_nothing(self) -> None:
         workflow_repo = MagicMock()
         with (

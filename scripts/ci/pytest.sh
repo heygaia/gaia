@@ -144,6 +144,18 @@ cmd_flake_gate() {
     exit 0
   fi
 
+  # pytest exit 5 is "nothing collected", not "something failed" — the same
+  # meaning `regression-proof` already relies on below. A slice legitimately
+  # collects nothing when the PR's diff touches none of its directories, which
+  # is normal for a small stacked PR: #1175's three-file diff left unit-a empty
+  # and the rerun then reported "genuine failure, exit code 4" for a lane that
+  # had no work. Announced rather than silent, because the other way to collect
+  # nothing is a selector that is broken, and that must not read as a pass.
+  if [ "$first" -eq 5 ]; then
+    printf '::notice::%s\n' "No tests collected for this slice — the diff touches none of its paths. Passing; if you expected tests here, the selection is what to check." >&2
+    exit 0
+  fi
+
   # pytest-cov exits 1 on a coverage-threshold miss even when every test
   # passed. Rerunning with --lf against an empty/stale lastfailed cache would
   # then replay the WHOLE suite (which passes) and get misreported as

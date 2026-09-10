@@ -47,6 +47,14 @@ def _done(response: FirstStepsResponse) -> dict[FirstStepKey, bool]:
     return {step.key: step.done for step in response.steps}
 
 
+def _assert_user_not_found(error: AppError) -> None:
+    """The 404 every entry point raises, including the id an operator needs."""
+    assert error.status_code == 404
+    assert error.message == "User not found"
+    assert error.why == "no user document matches the authenticated session's id"
+    assert error.meta == {"user_id": USER_ID}
+
+
 @pytest.mark.unit
 class TestFirstStepKey:
     def test_members_in_checklist_order(self) -> None:
@@ -66,6 +74,7 @@ class TestGetFirstSteps:
         assert [step.key for step in result.steps] == list(FirstStepKey)
         assert _done(result) == dict.fromkeys(FirstStepKey, False)
         assert result.collapsed is False
+        repos["users"].get.assert_awaited_once_with(USER_ID)
 
     async def test_say_hi_is_the_sent_message_signal(self, repos) -> None:
         repos["conversations"].has_sent_message.return_value = True
@@ -100,6 +109,11 @@ class TestGetFirstSteps:
 
         assert _done(await get_first_steps(USER_ID))[FirstStepKey.LINK_PLATFORM] is False
 
+    async def test_create_workflow_is_done_at_the_very_first_workflow(self, repos) -> None:
+        repos["workflows"].count_for_user.return_value = 1
+
+        assert _done(await get_first_steps(USER_ID))[FirstStepKey.CREATE_WORKFLOW] is True
+
     async def test_create_workflow_excludes_todo_and_system_workflows(self, repos) -> None:
         repos["workflows"].count_for_user.return_value = 2
 
@@ -120,7 +134,7 @@ class TestGetFirstSteps:
 
         with pytest.raises(AppError) as excinfo:
             await get_first_steps(USER_ID)
-        assert excinfo.value.status_code == 404
+        _assert_user_not_found(excinfo.value)
 
 
 @pytest.mark.unit
@@ -135,6 +149,7 @@ class TestSetFirstStepsCollapsed:
         result = await set_first_steps_collapsed(USER_ID, collapsed)
 
         repos["users"].set_first_steps_collapsed.assert_awaited_once_with(USER_ID, collapsed)
+        repos["users"].get.assert_awaited_once_with(USER_ID)
         assert result.collapsed is collapsed
         assert _done(result)[FirstStepKey.SAY_HI] is True
 
@@ -157,5 +172,5 @@ class TestSetFirstStepsCollapsed:
 
         with pytest.raises(AppError) as excinfo:
             await set_first_steps_collapsed(USER_ID, True)
-        assert excinfo.value.status_code == 404
+        _assert_user_not_found(excinfo.value)
         repos["capture"].assert_not_called()
