@@ -49,7 +49,9 @@ export async function runDeviceExec(
 
   const shell = process.env.SHELL || "/bin/sh";
   const child = spawn(shell, ["-c", command], {
-    cwd: cwd || undefined,
+    // Default to the user's home, not the (arbitrary) directory the daemon was
+    // launched from — a predictable base for `~`-relative and bare paths.
+    cwd: cwd || homedir(),
     env: process.env,
     // stdin is /dev/null: the agent cannot type, so an interactive command
     // (a wizard, a REPL, `read`) must get EOF and move on rather than block
