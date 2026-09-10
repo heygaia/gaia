@@ -198,32 +198,47 @@ def cmd_regression_proof_verdict(args: list[str]) -> int:
     errored_only = sorted(n for n in failed if errored[n] and not failed[n])
     proven = sorted(n for n in failed if failed[n])
 
-    if passed_on_base:
-        print(f"ERROR: regression-proof — {len(passed_on_base)} test(s) PASS on base:")
-        for name in passed_on_base:
+    # A table rather than three near-identical if-blocks: they differed only in
+    # their label and their advice, and each new outcome added another branch to
+    # a function the complexity ratchet already watches. Ordered by what a reader
+    # most needs to hear first.
+    for label, names, advice in (
+        (
+            "PASS",
+            passed_on_base,
+            (
+                "A regression test must go red without its fix. Either the fix is",
+                "not needed, or the test does not exercise the bug it names.",
+            ),
+        ),
+        (
+            "SKIPPED",
+            skipped_only,
+            (
+                "A skip is not proof — the test never ran, so it says nothing about",
+                "whether the bug exists on base. Give the run whatever the test skips",
+                "for (the contract tier needs USE_REAL_SERVICES=1 plus live Mongo and",
+                "Redis), or move the proof to a tier that runs here.",
+            ),
+        ),
+        (
+            "ERRORED",
+            errored_only,
+            (
+                "An error is not proof: the test never reached its assertions, so it",
+                "shows the harness broke, not that the bug is caught. Make it runnable",
+                "against the base revision — assert on behavior rather than importing",
+                "symbols the fix introduces.",
+            ),
+        ),
+    ):
+        if not names:
+            continue
+        print(f"ERROR: regression-proof — {len(names)} test(s) {label} on base:")
+        for name in names:
             print(f"  {name}")
-        print("       A regression test must go red without its fix. Either the fix is")
-        print("       not needed, or the test does not exercise the bug it names.")
-        return 1
-
-    if skipped_only:
-        print(f"ERROR: regression-proof — {len(skipped_only)} test(s) SKIPPED on base:")
-        for name in skipped_only:
-            print(f"  {name}")
-        print("       A skip is not proof — the test never ran, so it says nothing about")
-        print("       whether the bug exists on base. Give the run whatever the test")
-        print("       skips for (the contract tier needs USE_REAL_SERVICES=1 plus live")
-        print("       Mongo and Redis), or move the proof to a tier that runs here.")
-        return 1
-
-    if errored_only:
-        print(f"ERROR: regression-proof — {len(errored_only)} test(s) ERRORED on base:")
-        for name in errored_only:
-            print(f"  {name}")
-        print("       An error is not proof: the test never reached its assertions, so")
-        print("       it shows the harness broke, not that the bug is caught. Make it")
-        print("       runnable against the base revision — assert on behavior rather")
-        print("       than importing symbols the fix introduces.")
+        for line in advice:
+            print(f"       {line}")
         return 1
 
     print(f"regression-proof: {len(proven)} regression test(s) fail on base as required")
