@@ -15,6 +15,11 @@
 
 import { electronAPI } from "@electron-toolkit/preload";
 import type {
+  BridgeInvokeResult,
+  BridgeStatus,
+  ServerConfig,
+} from "@gaia/shared/bridge-core";
+import type {
   DesktopPermissionPane,
   DesktopPermissionStatus,
   DesktopSettingsSnapshot,
@@ -201,6 +206,64 @@ const api = {
   /** Switch the dock icon (Arc-style) and persist the choice. */
   setAppIcon: (id: string): Promise<boolean> =>
     ipcRenderer.invoke(IPC.desktopSettingsSetIcon, id),
+
+  /**
+   * Device bridge control surface — pair this Mac, run/stop its MCP tunnel,
+   * and manage the servers it exposes. Every call resolves to a
+   * {@link BridgeInvokeResult} envelope: `{ ok: true, value }` on success or
+   * `{ ok: false, error: { code, message } }` on failure, so the renderer never
+   * sees a raw stack. The device refresh token never crosses this boundary —
+   * it is minted and stored in the main process only.
+   */
+  bridge: {
+    /** Pair this device off the signed-in session; returns the new status. */
+    pair: (): Promise<BridgeInvokeResult<BridgeStatus>> =>
+      ipcRenderer.invoke(IPC.bridgePair),
+
+    /** Whether this device is paired and whether its tunnel is running. */
+    status: (): Promise<BridgeInvokeResult<BridgeStatus>> =>
+      ipcRenderer.invoke(IPC.bridgeStatus),
+
+    /** Start the supervised tunnel; returns the new status. */
+    start: (): Promise<BridgeInvokeResult<BridgeStatus>> =>
+      ipcRenderer.invoke(IPC.bridgeStart),
+
+    /** Stop the tunnel; returns the new status. */
+    stop: (): Promise<BridgeInvokeResult<BridgeStatus>> =>
+      ipcRenderer.invoke(IPC.bridgeStop),
+
+    /** The MCP servers this device exposes. */
+    listServers: (): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+      ipcRenderer.invoke(IPC.bridgeListServers),
+
+    /** Add or update a server; returns the updated server list. */
+    addServer: (
+      config: ServerConfig,
+    ): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+      ipcRenderer.invoke(IPC.bridgeAddServer, config),
+
+    /** Remove a server by key; returns the updated server list. */
+    removeServer: (key: string): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+      ipcRenderer.invoke(IPC.bridgeRemoveServer, key),
+
+    /**
+     * Subscribe to bridge status changes pushed from the main process
+     * (pair, start, stop, revoke/logout teardown).
+     *
+     * @param callback - Handler invoked with the new status.
+     * @returns A cleanup function that removes the listener.
+     */
+    onStatusChanged: (
+      callback: (status: BridgeStatus) => void,
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        status: BridgeStatus,
+      ) => callback(status);
+      ipcRenderer.on(IPC.bridgeStatusChanged, handler);
+      return () => ipcRenderer.removeListener(IPC.bridgeStatusChanged, handler);
+    },
+  },
 };
 
 /*

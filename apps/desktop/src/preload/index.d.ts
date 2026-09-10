@@ -1,5 +1,10 @@
 import { ElectronAPI } from "@electron-toolkit/preload";
 import type {
+  BridgeInvokeResult,
+  BridgeStatus,
+  ServerConfig,
+} from "@gaia/shared/bridge-core";
+import type {
   DesktopPermissionPane,
   DesktopPermissionStatus,
   DesktopSettingsSnapshot,
@@ -32,6 +37,22 @@ declare global {
         accelerator: string,
       ) => Promise<DesktopShortcutUpdateResult>;
       setAppIcon: (id: string) => Promise<boolean>;
+      bridge: {
+        pair: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+        status: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+        start: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+        stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+        listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        addServer: (
+          config: ServerConfig,
+        ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        removeServer: (
+          key: string,
+        ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        onStatusChanged: (
+          callback: (status: BridgeStatus) => void,
+        ) => () => void;
+      };
     };
   }
 }

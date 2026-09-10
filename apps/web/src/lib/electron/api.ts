@@ -4,6 +4,11 @@
  * hooks and non-React modules (axios client, stream handlers) can use it.
  */
 
+import type { ServerConfig } from "@shared/bridge-core/config.types";
+import type {
+  BridgeInvokeResult,
+  BridgeStatus,
+} from "@shared/bridge-core/ipc.types";
 import type {
   DesktopPermissionPane,
   DesktopPermissionStatus,
@@ -42,6 +47,21 @@ export interface ElectronAPI {
     accelerator: string,
   ) => Promise<DesktopShortcutUpdateResult>;
   setAppIcon: (id: string) => Promise<boolean>;
+  /** Device bridge control surface (pair, tunnel run/stop, MCP servers). Every
+   * call resolves to a {@link BridgeInvokeResult} envelope; the device refresh
+   * token never crosses this boundary. */
+  bridge: {
+    pair: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+    status: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+    start: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+    stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
+    listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
+    addServer: (
+      config: ServerConfig,
+    ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+    removeServer: (key: string) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+    onStatusChanged: (callback: (status: BridgeStatus) => void) => () => void;
+  };
 }
 
 /** Type guard: `win.api` exists and is the Electron preload API. */

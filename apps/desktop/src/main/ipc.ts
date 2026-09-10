@@ -16,6 +16,7 @@ import type {
 import { app, ipcMain, shell } from "electron";
 import { IPC } from "../ipc-channels";
 import { listAppIcons, setAppIcon } from "./app-icon";
+import { registerBridgeIpcHandlers } from "./bridge/ipc";
 import { updatePopupShortcut } from "./popup-shortcut";
 import { getDesktopSettings } from "./settings";
 import { dispatchDesktopTool } from "./tools";
@@ -126,4 +127,9 @@ export function registerIpcHandlers(onWindowReady: () => void): void {
   ipcMain.handle(IPC.desktopSettingsSetIcon, (_event, id: string) =>
     setAppIcon(String(id)),
   );
+
+  // Device bridge: pair/status/start/stop + server management, and the
+  // main→renderer status push. Configures the host state dir up front so the
+  // reads work immediately (no tunnel auto-start — Phase 4 owns launch policy).
+  registerBridgeIpcHandlers();
 }

@@ -13,6 +13,7 @@ import { hostname } from "node:os";
 import { join } from "node:path";
 import {
   type BridgeLogger,
+  type BridgeStatus,
   clearCredentials,
   configureBridge,
   isPaired,
@@ -40,13 +41,6 @@ interface SelfPairResponse {
   device_id: string;
   refresh_token: string;
   name: string;
-}
-
-/** Snapshot for the renderer/tray: whether this device is paired (has stored
- * credentials) and whether its tunnel is currently held open. */
-export interface BridgeStatus {
-  paired: boolean;
-  running: boolean;
 }
 
 /** Thrown by start() when the device is not yet paired — pairing is task 2.2, so
@@ -97,8 +91,10 @@ export class BridgeHost {
   /** Point bridge-core's state (credentials.json, config.json) at userData/bridge
    * and wire the logger. Cheap and idempotent — no shell spawn — so credential-only
    * operations (pair, reconcile, teardown) can read/write state without paying for
-   * the login-shell PATH resolution that only the tunnel actually needs. */
-  private configureStateDir(): void {
+   * the login-shell PATH resolution that only the tunnel actually needs. Called at
+   * startup by the IPC layer so status()/pair() resolve state without spawning a
+   * shell. */
+  configureStateDir(): void {
     if (this.stateDirConfigured) return;
     configureBridge({
       stateDir: join(app.getPath("userData"), "bridge"),

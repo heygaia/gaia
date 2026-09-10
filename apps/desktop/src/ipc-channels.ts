@@ -28,4 +28,12 @@ export const IPC = {
   desktopSettingsGet: "desktop-settings:get",
   desktopSettingsSetShortcut: "desktop-settings:set-shortcut",
   desktopSettingsSetIcon: "desktop-settings:set-icon",
+  bridgePair: "bridge:pair",
+  bridgeStatus: "bridge:status",
+  bridgeStart: "bridge:start",
+  bridgeStop: "bridge:stop",
+  bridgeListServers: "bridge:list-servers",
+  bridgeAddServer: "bridge:add-server",
+  bridgeRemoveServer: "bridge:remove-server",
+  bridgeStatusChanged: "bridge:status-changed",
 } as const;

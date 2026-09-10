@@ -55,6 +55,12 @@ export { bridgeEnv, bridgeLogger, configureBridge } from "./env.js";
 export type { ExecFrames } from "./exec.js";
 export { runDeviceExec } from "./exec.js";
 export { buildFilesystemServer } from "./filesystem-server.js";
+export type {
+  BridgeError,
+  BridgeErrorCode,
+  BridgeInvokeResult,
+  BridgeStatus,
+} from "./ipc.types.js";
 export type { LoginListener } from "./login.js";
 export { isPaired, runLogin } from "./login.js";
 export { registerConfiguredServers } from "./register.js";
