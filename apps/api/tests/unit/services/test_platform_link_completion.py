@@ -11,6 +11,8 @@ from app.models.chat_models import ConversationSource
 from app.models.platform_models import PlatformLinkResult
 from app.services.outbound_delivery import OutboundResult
 from app.services.platform_link_completion import complete_platform_link
+from app.services.platform_link_service import AccountHasDifferentPlatformError
+from app.utils.errors import AppError
 
 MODULE = "app.services.platform_link_completion"
 BUBBLES = ["Hey Aryan, I'm with you on WhatsApp now.", "Tell me one thing off your plate."]
@@ -89,4 +91,51 @@ class TestPostLinkMessage:
             platform="whatsapp",
             user_id="u1",
             outcome="failed",
+        )
+
+
+class TestLinkConflicts:
+    """The two 409s are not interchangeable.
+
+    ``PlatformAccountTakenError`` is proved end to end through the route in
+    ``tests/unit/api/test_platform_links_endpoint.py::test_link_conflict``; this
+    is its sibling, where the conflict is on the GAIA side and the fix is the
+    opposite one. The bots pick the message they show from ``code`` alone
+    (``libs/shared/ts/src/bots/link-codes.ts::classifyLinkFailure``), so the
+    exact body is a cross-language contract, not a message anyone may reword.
+    """
+
+    async def test_a_second_account_on_the_same_platform_names_the_conflict_the_user_owns(
+        self, side_effects
+    ) -> None:
+        _, _, link = side_effects
+        conflict = AccountHasDifferentPlatformError(
+            "Your account already has a different whatsapp account linked"
+        )
+        link.side_effect = conflict
+
+        with patch(f"{MODULE}.log") as mock_log, pytest.raises(AppError) as excinfo:
+            await complete_platform_link("u1", "whatsapp", "wa-2")
+
+        error = excinfo.value
+        assert error.status_code == 409
+        assert error.to_dict() == {
+            "message": "Your account already has a different whatsapp account linked",
+            "why": "this GAIA account already has a different account on this platform",
+            "fix": "disconnect the one you already have in settings, then link this one",
+            # Not "platform_account_taken": telling this person to free the
+            # account on the other GAIA account sends them after one that does
+            # not exist.
+            "code": "account_has_other_platform_account",
+        }
+        assert error.__cause__ is conflict
+        # The audit line has to say WHICH conflict fired; both 409s share this
+        # call site, and a bare ValueError name cannot tell them apart.
+        mock_log.audit.assert_called_once_with(
+            "platform account link rejected",
+            actor="u1",
+            resource="wa-2",
+            provider="whatsapp",
+            error_type="AccountHasDifferentPlatformError",
+            error="Your account already has a different whatsapp account linked",
         )

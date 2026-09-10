@@ -136,7 +136,10 @@ class TestMintPeekDiscard:
 
     async def test_unstorable_code_fails_loud(self) -> None:
         """A code Redis never accepted would 'expire' the instant the user arrives."""
-        with patch.object(svc, "set_cache", AsyncMock(return_value=False)):
+        with (
+            patch.object(svc, "set_cache", AsyncMock(return_value=False)),
+            patch.object(svc, "log") as mock_log,
+        ):
             with pytest.raises(AppError) as excinfo:
                 await mint_platform_link_code("user1", PREFS)
         assert excinfo.value.status_code == 503
@@ -147,6 +150,14 @@ class TestMintPeekDiscard:
             "why": "the link code could not be stored (Redis unavailable)",
             "fix": "retry in a moment, or connect the platform from settings with /auth",
         }
+        # Loud on the operator side too: the 503 tells the user to retry, and
+        # only this line says whose mint died and where. error, not info, so
+        # the fields reach the wide event's errors[] rather than a loguru line.
+        mock_log.error.assert_called_once_with(
+            "could not store the one-tap link code",
+            user={"id": "user1"},
+            operation="mint_platform_link_code",
+        )
 
 
 class TestHandoffLinks:

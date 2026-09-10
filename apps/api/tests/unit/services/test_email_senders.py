@@ -12,6 +12,7 @@ import pytest
 from app.config.rate_limits import derive_pro_benefits, get_feature_info
 from app.config.settings import settings
 from app.constants.email import CONTACT_EMAIL, FOUNDER_SENDER
+from app.constants.log_tags import LogTag
 from app.services.email import (
     add_marketing_contact,
     send_inactive_user_email,
@@ -22,6 +23,7 @@ from app.services.email.senders import (
     send_limit_reached_email,
     send_workflows_paused_email,
 )
+from tests.helpers import captured_wide_event
 
 SENDER_USER_ID = "507f1f77bcf86cd799439011"
 
@@ -47,11 +49,23 @@ class TestSendWelcomeEmail:
         assert message.subject == "From the founder of GAIA, personally"
         assert message.html == "<h1>Welcome</h1>"
 
-    @patch(f"{SENDERS}.send_email", side_effect=Exception("API error"))
+    @patch(f"{SENDERS}.send_email", side_effect=RuntimeError("API error"))
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>ok</h1>")
     async def test_propagates_send_exception(self, mock_render, mock_send):
-        with pytest.raises(Exception, match="API error"):
-            await send_welcome_email("user@example.com", user_id=SENDER_USER_ID)
+        """The failure is recorded against the user ID — the field every
+        dashboard groups by — and carries no email address."""
+        async with captured_wide_event() as event:
+            with pytest.raises(RuntimeError, match="API error"):
+                await send_welcome_email("user@example.com", user_id=SENDER_USER_ID)
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.MAIL} Failed to send welcome email to",
+                "user": {"id": SENDER_USER_ID},
+                "error": "API error",
+                "error_type": "RuntimeError",
+            }
+        ]
 
     @patch(f"{SENDERS}.send_email")
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>Hi</h1>")
@@ -115,13 +129,27 @@ class TestAddMarketingContact:
     @patch(f"{RESEND_PROVIDER}.settings")
     @patch(
         f"{RESEND_PROVIDER}.resend.Contacts.create",
-        side_effect=Exception("network error"),
+        side_effect=RuntimeError("network error"),
     )
     async def test_exception_swallowed(self, mock_create, mock_settings):
-        """add_marketing_contact swallows exceptions so user creation still succeeds."""
+        """add_marketing_contact swallows exceptions so user creation still succeeds.
+
+        Swallowing is only defensible while the failure stays queryable, so the
+        wide event has to carry it — keyed on the user ID, never the email.
+        """
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        # Should NOT raise
-        await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
+        async with captured_wide_event() as event:
+            # Should NOT raise
+            await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.MAIL} Failed to add marketing contact for",
+                "user": {"id": SENDER_USER_ID},
+                "error": "network error",
+                "error_type": "RuntimeError",
+            }
+        ]
 
     @patch(f"{RESEND_PROVIDER}.settings")
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
@@ -171,13 +199,25 @@ class TestSendInactiveUserEmail:
 
     @patch(f"{SENDERS}.build_unsubscribe_headers", return_value={})
     @patch(f"{SENDERS}.build_unsubscribe_url", return_value="https://unsub")
-    @patch(f"{SENDERS}.send_email", side_effect=Exception("send failed"))
+    @patch(f"{SENDERS}.send_email", side_effect=RuntimeError("send failed"))
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>ok</h1>")
     async def test_propagates_exception(
         self, mock_render, mock_send, mock_unsub_url, mock_unsub_headers
     ):
-        with pytest.raises(Exception, match="send failed"):
-            await send_inactive_user_email("user@example.com", "user-123")
+        """The failure is recorded against the user ID — the field every
+        dashboard groups by — and carries no email address."""
+        async with captured_wide_event() as event:
+            with pytest.raises(RuntimeError, match="send failed"):
+                await send_inactive_user_email("user@example.com", SENDER_USER_ID)
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.MAIL} Failed to send inactive user email to",
+                "user": {"id": SENDER_USER_ID},
+                "error": "send failed",
+                "error_type": "RuntimeError",
+            }
+        ]
 
 
 # ===========================================================================
