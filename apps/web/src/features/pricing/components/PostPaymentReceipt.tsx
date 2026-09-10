@@ -32,6 +32,22 @@ type PostPaymentReceiptProps = {
  *  but unknown code renders as the code itself. */
 const WELL_FORMED_CURRENCY = /^[A-Za-z]{3}$/;
 
+/** One formatter per currency, built once. Constructing an `Intl.NumberFormat`
+ *  is the expensive part, and a receipt re-renders. */
+const MONEY_FORMATTERS = new Map<string, Intl.NumberFormat>();
+
+function moneyFormatter(code: string): Intl.NumberFormat {
+  const cached = MONEY_FORMATTERS.get(code);
+  if (cached) return cached;
+  const formatter = new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: code,
+    currencyDisplay: "narrowSymbol",
+  });
+  MONEY_FORMATTERS.set(code, formatter);
+  return formatter;
+}
+
 /** Formats minor-unit money with the currency it was actually charged in. */
 function formatMoney(amount: number, currency?: string): string {
   const code = currency || "USD";
@@ -46,11 +62,7 @@ function formatMoney(amount: number, currency?: string): string {
     );
     return `${amount / CENTS_PER_DOLLAR} ${code}`;
   }
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: code,
-    currencyDisplay: "narrowSymbol",
-  }).format(amount / CENTS_PER_DOLLAR);
+  return moneyFormatter(code).format(amount / CENTS_PER_DOLLAR);
 }
 
 function formatDate(dateString?: string | null): string | null {

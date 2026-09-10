@@ -497,7 +497,9 @@ class TestSendWelcomeEmailSafely:
             await send_welcome_email_safely(USER_ID)
 
         users.get.assert_awaited_once_with(USER_ID)
-        send_email.assert_awaited_once_with(user_name="Alice", user_email="alice@example.com")
+        send_email.assert_awaited_once_with(
+            user_name="Alice", user_email="alice@example.com", user_id=USER_ID
+        )
         # The address is mailed, never logged: log fields are ids, counts and
         # enums, so the line names who was mailed rather than where.
         mock_log.info.assert_called_once_with("[PAYMENT] Welcome email sent", user_id=USER_ID)
@@ -1710,6 +1712,7 @@ class TestSendWelcomeEmail:
         mock_webhook_send_email.assert_awaited_once_with(
             user_name="Alice",
             user_email=FAKE_EMAIL,
+            user_id=FAKE_USER_ID,
         )
 
     async def test_no_email_when_user_not_found(
@@ -1990,9 +1993,8 @@ class TestAFailedHandlerReleasesItsClaim:
         webhook_service,
         mock_processed_webhook_repository,
         mock_webhook_subscription_repository,
-        mock_track_subscription,
         mock_deactivate_workflows,
-        mock_payment_service_invalidation,
+        webhook_side_effects_stubbed,
     ):
         """No row matched means Dodo's state was never mirrored. The row may
         still be on its way — ``subscription.active`` is a separate delivery

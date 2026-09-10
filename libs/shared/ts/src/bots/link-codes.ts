@@ -14,6 +14,11 @@
 
 import type { GaiaClient } from "./api";
 import { GaiaApiError } from "./api";
+import type {
+  InboundLinkCodeArgs,
+  LinkCodeFailure,
+  ParsedLinkCode,
+} from "./link-codes.types";
 import type { MessageTarget, PlatformName } from "./types";
 import { hashLogIdentifier } from "./utils/logger";
 import { wideLog, withWideEvent } from "./utils/wide-events";
@@ -41,33 +46,12 @@ const TRAILING_LINK_CODE = new RegExp(
   `\\s*#([A-Za-z0-9_-]{${LINK_CODE_LENGTH}})\\s*$`,
 );
 
-export interface ParsedLinkCode {
-  code: string;
-  /** The message with the code (and its separator) removed. */
-  text: string;
-}
-
 /** Splits a trailing ` #<code>` off a message, or null when there isn't one. */
 export function parseTrailingLinkCode(message: string): ParsedLinkCode | null {
   const match = TRAILING_LINK_CODE.exec(message);
   if (!match) return null;
   return { code: match[1], text: message.slice(0, match.index).trim() };
 }
-
-export interface InboundLinkCodeArgs {
-  gaia: GaiaClient;
-  platform: PlatformName;
-  platformUserId: string;
-  /** The raw inbound message, possibly ending in ` #<code>`. */
-  text: string;
-  target: MessageTarget;
-  /** Whether this handle is already linked to a GAIA account. */
-  linkState: () => Promise<LinkState>;
-  profile?: { username?: string; displayName?: string };
-}
-
-/** `unknown` when the check itself failed — which is not "not linked". */
-export type LinkState = "linked" | "unlinked" | "unknown";
 
 /**
  * The WhatsApp/iMessage half of one-tap linking: the user's own first message
@@ -107,13 +91,6 @@ export async function consumeInboundLinkCode(
 
   return parsed.text || null;
 }
-
-/** Why a redemption was refused, as far as the person tapping is concerned. */
-export type LinkCodeFailure =
-  | "expired"
-  | "conflict"
-  | "account-has-other"
-  | "plan";
 
 /** Sent when the code is stale, already used, or the handle belongs elsewhere. */
 export function buildLinkCodeFailureMessage(

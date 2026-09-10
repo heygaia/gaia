@@ -258,6 +258,18 @@ def webhook_service():
 
 
 @pytest.fixture
+def webhook_side_effects_stubbed(mock_track_subscription, mock_payment_service_invalidation):
+    """The side effects a webhook fires that most tests only need kept in memory.
+
+    Analytics and the plan-cache bust are requested by name where a test asserts
+    on them; this bundles the pair for the tests that merely must not let them
+    reach PostHog or Mongo, so a signature lists what it checks rather than what
+    it is avoiding.
+    """
+    return mock_track_subscription, mock_payment_service_invalidation
+
+
+@pytest.fixture
 def mock_payment_service_invalidation():
     """Prevent payment_service.invalidate_plan_cache_by_dodo_id from hitting the DB.
 
