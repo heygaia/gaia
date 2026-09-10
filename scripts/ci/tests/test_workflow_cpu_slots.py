@@ -69,3 +69,28 @@ def test_the_tokens_it_takes_match_the_parallelism_it_asks_nx_for(
     assert held.group(1) == requested.group(1), (
         f"{job_name}: takes {held.group(1)} tokens but runs nx at {requested.group(1)}"
     )
+
+
+# lib/cpu-slots.sh: GAIA_CPU_SLOTS_TIMEOUT default, in minutes. A lane that
+# waits this long still runs afterwards (fail-open), so the wait is time the
+# job cap has to be able to absorb on top of the work itself.
+FAIL_OPEN_WAIT_MINUTES = 10
+
+
+@pytest.mark.parametrize("job_name", GOVERNED_JOBS)
+def test_the_job_cap_can_absorb_a_full_governor_wait(
+    workflow: dict[str, Any], job_name: str
+) -> None:
+    """A governed lane's `timeout-minutes` must leave room for the queue.
+
+    Enrolling a lane trades wall clock for not thrashing the box, which is the
+    trade we want — but the job cap is what decides whether patience reads as a
+    failure. test-typescript was enrolled at `timeout-minutes: 12` against a
+    600s fail-open wait plus ~4 min of checkout, install and suite: a busy box
+    would have failed it for queueing exactly as designed.
+    """
+    cap = workflow["jobs"][job_name]["timeout-minutes"]
+    assert cap > FAIL_OPEN_WAIT_MINUTES, (
+        f"{job_name}: timeout-minutes={cap} does not even cover the governor's "
+        f"{FAIL_OPEN_WAIT_MINUTES}-minute fail-open wait, let alone the work after it"
+    )
