@@ -302,10 +302,10 @@ class TestStoreUserInfo:
         assert mock_user_repo.create.call_args.args[0].name == "Aryan Randeriya"
         assert mock_track_signup.call_args.kwargs["name"] == "Aryan Randeriya"
         mock_send_welcome_email.assert_awaited_once_with(
-            "aryan.randeriya@test.com", uid, "Aryan Randeriya"
+            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
         )
         mock_add_marketing_contact.assert_awaited_once_with(
-            "aryan.randeriya@test.com", uid, "Aryan Randeriya"
+            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
         )
 
     async def test_new_user_keeps_the_workos_name_when_there_is_one(
@@ -355,7 +355,7 @@ class TestStoreUserInfo:
 
         await store_user_info("Bob", "bob@test.com", None)
 
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", uid, "Bob")
+        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
 
     async def test_new_user_adds_contact_to_resend(
         self,
@@ -370,7 +370,7 @@ class TestStoreUserInfo:
 
         await store_user_info("Bob", "bob@test.com", None)
 
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", uid, "Bob")
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
 
     async def test_new_user_signup_tracking_failure_does_not_raise(
         self,

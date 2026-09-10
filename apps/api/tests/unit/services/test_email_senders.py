@@ -23,6 +23,8 @@ from app.services.email.senders import (
     send_workflows_paused_email,
 )
 
+SENDER_USER_ID = "507f1f77bcf86cd799439011"
+
 SENDERS = "app.services.email.senders"
 RESEND_PROVIDER = "app.services.email.providers.resend_provider"
 
@@ -35,7 +37,7 @@ class TestSendWelcomeEmail:
     @patch(f"{SENDERS}.send_email")
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>Welcome</h1>")
     async def test_success(self, mock_render, mock_send):
-        await send_welcome_email("user@example.com", "Alice")
+        await send_welcome_email("user@example.com", "Alice", user_id=SENDER_USER_ID)
 
         assert mock_render.call_args[0][0] == "welcome.html"
         assert mock_render.call_args[1]["user_name"] == "Alice"
@@ -49,12 +51,12 @@ class TestSendWelcomeEmail:
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>ok</h1>")
     async def test_propagates_send_exception(self, mock_render, mock_send):
         with pytest.raises(Exception, match="API error"):
-            await send_welcome_email("user@example.com")
+            await send_welcome_email("user@example.com", user_id=SENDER_USER_ID)
 
     @patch(f"{SENDERS}.send_email")
     @patch(f"{SENDERS}.render_email_template", return_value="<h1>Hi</h1>")
     async def test_no_name_passed_through(self, mock_render, mock_send):
-        await send_welcome_email("user@example.com")
+        await send_welcome_email("user@example.com", user_id=SENDER_USER_ID)
         assert mock_render.call_args[1]["user_name"] is None
 
 
@@ -71,7 +73,7 @@ class TestAddMarketingContact:
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
     async def test_with_full_name(self, mock_create, mock_settings):
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("alice@example.com", "Alice Smith")
+        await add_marketing_contact("alice@example.com", "Alice Smith", user_id=SENDER_USER_ID)
 
         mock_create.assert_called_once()
         params = mock_create.call_args[0][0]
@@ -84,7 +86,7 @@ class TestAddMarketingContact:
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
     async def test_without_name(self, mock_create, mock_settings):
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("bob@example.com")
+        await add_marketing_contact("bob@example.com", user_id=SENDER_USER_ID)
 
         params = mock_create.call_args[0][0]
         assert params["first_name"] == ""
@@ -94,7 +96,7 @@ class TestAddMarketingContact:
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
     async def test_single_word_name(self, mock_create, mock_settings):
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("user@example.com", "Alice")
+        await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
 
         params = mock_create.call_args[0][0]
         assert params["first_name"] == "Alice"
@@ -104,7 +106,7 @@ class TestAddMarketingContact:
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
     async def test_three_word_name(self, mock_create, mock_settings):
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("user@example.com", "Alice Marie Smith")
+        await add_marketing_contact("user@example.com", "Alice Marie Smith", user_id=SENDER_USER_ID)
 
         params = mock_create.call_args[0][0]
         assert params["first_name"] == "Alice"
@@ -119,13 +121,13 @@ class TestAddMarketingContact:
         """add_marketing_contact swallows exceptions so user creation still succeeds."""
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
         # Should NOT raise
-        await add_marketing_contact("user@example.com", "Alice")
+        await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
 
     @patch(f"{RESEND_PROVIDER}.settings")
     @patch(f"{RESEND_PROVIDER}.resend.Contacts.create")
     async def test_whitespace_name_trimmed(self, mock_create, mock_settings):
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("user@example.com", "  Alice  ")
+        await add_marketing_contact("user@example.com", "  Alice  ", user_id=SENDER_USER_ID)
 
         params = mock_create.call_args[0][0]
         assert params["first_name"] == "Alice"
@@ -136,7 +138,7 @@ class TestAddMarketingContact:
     async def test_empty_string_name(self, mock_create, mock_settings):
         """An empty string name is falsy, so first/last should be empty."""
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
-        await add_marketing_contact("user@example.com", "")
+        await add_marketing_contact("user@example.com", "", user_id=SENDER_USER_ID)
 
         params = mock_create.call_args[0][0]
         assert params["first_name"] == ""

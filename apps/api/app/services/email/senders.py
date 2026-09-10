@@ -118,7 +118,7 @@ async def send_support_to_user_email(
         raise
 
 
-async def send_pro_subscription_email(user_name: str, user_email: str, user_id: str) -> None:
+async def send_pro_subscription_email(user_name: str, user_email: str, *, user_id: str) -> None:
     """Send welcome email to user who upgraded to Pro subscription."""
     try:
         html_content = render_email_template(
@@ -149,7 +149,9 @@ async def send_pro_subscription_email(user_name: str, user_email: str, user_id: 
         raise
 
 
-async def send_welcome_email(user_email: str, user_id: str, user_name: str | None = None) -> None:
+async def send_welcome_email(
+    user_email: str, user_name: str | None = None, *, user_id: str
+) -> None:
     """Send welcome email to a new user."""
     try:
         html_content = render_email_template(
@@ -185,7 +187,7 @@ async def send_welcome_email(user_email: str, user_id: str, user_name: str | Non
 
 
 async def add_marketing_contact(
-    user_email: str, user_id: str, user_name: str | None = None
+    user_email: str, user_name: str | None = None, *, user_id: str
 ) -> None:
     """Add a new user to the marketing audience, if the provider supports one.
 

@@ -85,7 +85,7 @@ async def _run_signup_side_effects(user_id: str, email: str, signup_name: str) -
 
     # Send welcome email to new user
     try:
-        await send_welcome_email(email, user_id, signup_name)
+        await send_welcome_email(email, signup_name, user_id=user_id)
         log.info(f"{LogTag.OAUTH} Welcome email sent to new user", user={"id": user_id})
     except Exception as e:
         log.error(
@@ -97,7 +97,7 @@ async def _run_signup_side_effects(user_id: str, email: str, signup_name: str) -
 
     # Add contact to marketing audience
     try:
-        await add_marketing_contact(email, user_id, signup_name)
+        await add_marketing_contact(email, signup_name, user_id=user_id)
         log.info(
             f"{LogTag.OAUTH} Contact added to marketing audience for new user",
             user={"id": user_id},
