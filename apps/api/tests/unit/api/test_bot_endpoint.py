@@ -8,7 +8,7 @@ import asyncio
 from collections.abc import AsyncGenerator
 from datetime import UTC, datetime
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from fastapi import HTTPException
 from httpx import AsyncClient
@@ -21,6 +21,7 @@ from app.api.v1.endpoints.bot import (
     _bot_upgrade_url_once,
     bot_chat_stream,
 )
+from app.constants.cache import BOT_UPGRADE_LINK_TTL
 from app.core.stream_manager import with_heartbeat
 from app.db.redis import redis_cache
 from app.models.bot_models import BotChatRequest
@@ -2013,8 +2014,17 @@ class TestBotUpgradeLinkWindow:
             await _bot_upgrade_url("user_1")
             await _bot_upgrade_url("user_2")
 
-        keys = [call.args[0] for call in cache.client.set.await_args_list]
-        assert keys == ["bot:upgrade-link:user_1", "bot:upgrade-link:user_2"]
+        # The whole claim, not just the key. `SET key value NX EX ttl` is only a
+        # once-per-window gate while all three of the last parts hold: without
+        # NX every turn re-claims and mints again, and without EX the very first
+        # turn locks the user out of a personalised link forever. Both survived
+        # as mutants under a key-only assertion — the same shape as the
+        # limit-notice gate whose lost NX shipped six notifications for one
+        # event.
+        assert cache.client.set.await_args_list == [
+            call("bot:upgrade-link:user_1", "1", nx=True, ex=BOT_UPGRADE_LINK_TTL),
+            call("bot:upgrade-link:user_2", "1", nx=True, ex=BOT_UPGRADE_LINK_TTL),
+        ]
 
     async def test_an_unavailable_window_skips_the_mint_and_says_so(self) -> None:
         """Fails CLOSED, unlike the workflow limit-notice gate it copies.

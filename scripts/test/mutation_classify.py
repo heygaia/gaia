@@ -547,6 +547,72 @@ def _unobservable_header_case(
     return False
 
 
+def _unobservable_response_header_case(
+    path: str, line_no: int, col: int, orig_line: str, mut_line: str
+) -> bool:
+    """True when the mutation only re-cased a header name a Response is SENDING.
+
+    The sibling rule above covers header LOOKUPS and is deliberately narrow
+    about outgoing dicts, because a dict built for an outgoing REQUEST does
+    preserve case. A Response is the one outgoing case where it does not:
+    Starlette's ``Response.init_headers`` lowercases every key on the way to
+    ``raw_headers`` (verified on the installed starlette 1.3.1 —
+    ``JSONResponse(headers={"Retry-After": "30"})``,
+    ``{"retry-after": ...}`` and ``{"RETRY-AFTER": ...}`` all emit the identical
+    ``(b"retry-after", b"30")``). No client can tell them apart because no
+    client is ever sent anything different, so no test can either.
+
+    Narrow on the same two axes as the lookup rule:
+
+    - The dict must be the ``headers=`` keyword of a call whose name ends in
+      ``Response``. A bare ``headers={...}`` handed to an HTTP client is an
+      outgoing request, where case IS preserved on the wire.
+    - The change must be case-ONLY. mutmut also rewrites the key to
+      ``"XXRetry-AfterXX"``, which sends a different header entirely and is as
+      observable as any other wrong key.
+    """
+    try:
+        tree = ast.parse(Path(path).read_text())
+    except SyntaxError:
+        return False
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(getattr(node.func, "id", None) or getattr(node.func, "attr", ""), str)
+            and (getattr(node.func, "id", None) or getattr(node.func, "attr", "")).endswith(
+                "Response"
+            )
+        ):
+            continue
+        for keyword in node.keywords:
+            if keyword.arg != "headers" or not isinstance(keyword.value, ast.Dict):
+                continue
+            for key in keyword.value.keys:
+                if not (isinstance(key, ast.Constant) and isinstance(key.value, str)):
+                    continue
+                span = (
+                    key.lineno,
+                    key.col_offset,
+                    key.end_lineno or key.lineno,
+                    key.end_col_offset,
+                )
+                if not _within(span, line_no, col):
+                    continue
+                replacement = _mutated_token(span, line_no, orig_line, mut_line)
+                if replacement is None:
+                    return False
+                try:
+                    mutated = ast.literal_eval(replacement.strip())
+                except (ValueError, SyntaxError):
+                    return False
+                return (
+                    isinstance(mutated, str)
+                    and mutated != key.value
+                    and mutated.lower() == key.value.lower()
+                )
+    return False
+
+
 def _unobservable_ensure_ascii(
     path: str, line_no: int, col: int, orig_line: str, mut_line: str
 ) -> bool:
@@ -670,6 +736,7 @@ for i, (a, b) in enumerate(zip(orig_lines, mut_lines)):
             _unobservable_get_default(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_ensure_ascii(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unobservable_header_case(real_path, line_no, col, orig_raw[i], mut_raw[i])
+            or _unobservable_response_header_case(real_path, line_no, col, orig_raw[i], mut_raw[i])
             or _unreachable_match_arm(real_path, line_no)
         ):
             print("EQUIV")

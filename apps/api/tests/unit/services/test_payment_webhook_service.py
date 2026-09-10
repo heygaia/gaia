@@ -1059,10 +1059,20 @@ class TestHandlePaymentSucceeded:
         event_data = _make_webhook_event("payment.succeeded", PAYMENT_DATA_PAYLOAD)
         await webhook_service.process_webhook(event_data, "wh_pay_002")
 
-        mock_track_payment.assert_called_once()
-        call_kwargs = mock_track_payment.call_args[1]
-        assert call_kwargs["user_id"] == FAKE_USER_ID
-        assert call_kwargs["payment_id"] == "pay_001"
+        # Every argument, not just the ids. Dodo bills in minor units, so the
+        # money that reaches PostHog is a division this is the only test of:
+        # turning it into a multiplication reports $999.00 for a $9.99 charge
+        # and every revenue number downstream is wrong by 10,000x, with nothing
+        # failing. The currency has to be asserted for the same reason — dropped
+        # or blanked, the amount is a bare number and the dashboards silently
+        # add dollars to rupees.
+        mock_track_payment.assert_called_once_with(
+            user_id=FAKE_USER_ID,
+            event_type=AnalyticsEvents.PAYMENT_SUCCEEDED,
+            payment_id="pay_001",
+            amount=PAYMENT_DATA_PAYLOAD["total_amount"] / 100,
+            currency=PAYMENT_DATA_PAYLOAD["currency"],
+        )
 
     async def test_analytics_uses_metadata_user_id_without_db_lookup(
         self,
@@ -1976,22 +1986,39 @@ class TestASilentSkipIsOnTheRecord:
             }
         ]
 
+    @pytest.mark.parametrize(
+        "event_type",
+        [
+            "subscription.renewed",
+            "subscription.cancelled",
+            "subscription.expired",
+            "subscription.failed",
+            "subscription.on_hold",
+        ],
+    )
     async def test_a_mirrored_subscription_with_no_owner_is_on_the_record(
         self,
+        event_type: str,
         webhook_service,
         mock_webhook_subscription_repository,
         mock_deactivate_workflows,
+        webhook_side_effects_stubbed,
     ):
         """The row matched moments earlier, so a missing owner is a subscription
         nobody can be billed for — and the workflows it should have switched off
-        keep running."""
+        keep running.
+
+        Every handler that resolves an owner, not just expiry: the branch is one
+        shared helper, but which delivery hit it is the only thing that tells
+        you whether a renewal or a cancellation went unrecorded, and it reaches
+        the entry as ``event.type.value`` off the event each handler passes in.
+        """
         mock_webhook_subscription_repository.get_user_id_by_dodo_id = AsyncMock(return_value=None)
-        event = DodoWebhookEvent(
-            **_make_webhook_event("subscription.expired", SUBSCRIPTION_DATA_PAYLOAD)
-        )
+        event = DodoWebhookEvent(**_make_webhook_event(event_type, SUBSCRIPTION_DATA_PAYLOAD))
+        handler = webhook_service.handlers[DodoWebhookEventType(event_type)]
 
         async with captured_wide_event() as wide:
-            result = await webhook_service._handle_subscription_expired(event)
+            result = await handler(event)
 
         assert result.status == "processed"
         mock_deactivate_workflows.assert_not_awaited()
@@ -2000,7 +2027,7 @@ class TestASilentSkipIsOnTheRecord:
                 "msg": f"{LogTag.PAYMENT} Mirrored subscription has no owner; "
                 "analytics and workflow changes skipped",
                 "failure_reason": "subscription_owner_missing",
-                "event_type": "subscription.expired",
+                "event_type": event_type,
                 "subscription_id": SUBSCRIPTION_DATA_PAYLOAD["subscription_id"],
             }
         ]
@@ -2045,6 +2072,7 @@ class TestAFailedHandlerReleasesItsClaim:
             "subscription.expired",
             "subscription.failed",
             "subscription.on_hold",
+            "subscription.plan_changed",
         ],
     )
     async def test_a_state_change_with_no_local_row_hands_the_claim_back(
@@ -2059,16 +2087,42 @@ class TestAFailedHandlerReleasesItsClaim:
         """No row matched means Dodo's state was never mirrored. The row may
         still be on its way — ``subscription.active`` is a separate delivery
         with its own retries — so acknowledging drops the change for good and
-        leaves the user on a tier they no longer have."""
+        leaves the user on a tier they no longer have.
+
+        Asserted down to the two error entries and every field of the result,
+        not just ``status == "failed"``. Whoever picks this up in Grafana has
+        only the wide event: which delivery, which subscription, and why it was
+        handed back. Nineteen mutants lived in exactly those fields — blanking
+        the reason to ``None``, dropping ``subscription_id`` from the log, or
+        rewriting the message — because a status-only assertion cannot see any
+        of it. Both entries land on one event: the handler reports the miss,
+        then ``process_webhook`` records that it is releasing the claim.
+        """
+        webhook_id = f"wh_{event_type}_unmatched"
         mock_webhook_subscription_repository.apply_update_by_dodo_id = AsyncMock(return_value=False)
         event_data = _make_webhook_event(event_type, SUBSCRIPTION_DATA_PAYLOAD)
 
-        result = await webhook_service.process_webhook(event_data, f"wh_{event_type}_unmatched")
+        async with captured_wide_event() as wide:
+            result = await webhook_service.process_webhook(event_data, webhook_id)
 
         assert result.status == "failed"
-        mock_processed_webhook_repository.release.assert_awaited_once_with(
-            f"wh_{event_type}_unmatched"
-        )
+        assert result.event_type == event_type
+        assert result.message == "Subscription not found"
+        assert result.subscription_id == SUBSCRIPTION_DATA_PAYLOAD["subscription_id"]
+        assert wide["errors"] == [
+            {
+                "msg": f"{LogTag.PAYMENT} No local subscription matched the Dodo id",
+                "event_type": event_type,
+                "subscription_id": SUBSCRIPTION_DATA_PAYLOAD["subscription_id"],
+            },
+            {
+                "msg": f"{LogTag.PAYMENT} Webhook handler did not complete; releasing the claim",
+                "webhook_id": webhook_id,
+                "event_type": event_type,
+                "failure_reason": "Subscription not found",
+            },
+        ]
+        mock_processed_webhook_repository.release.assert_awaited_once_with(webhook_id)
         mock_processed_webhook_repository.record_outcome.assert_not_awaited()
         mock_deactivate_workflows.assert_not_awaited()
 

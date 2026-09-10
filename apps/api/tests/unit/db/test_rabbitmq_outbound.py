@@ -12,9 +12,11 @@ import aio_pika
 from aio_pika.exceptions import ChannelPreconditionFailed
 import pytest
 
+from app.constants.log_tags import LogTag
 from app.constants.outbound import OUTBOUND_DLX, OUTBOUND_QUEUES, dlq_name, work_queue_arguments
 from app.db import rabbitmq
 from app.db.rabbitmq import RabbitMQPublisher
+from tests.helpers import captured_wide_event
 
 
 @pytest.fixture
@@ -96,18 +98,49 @@ class TestPublishWithRetry:
     async def test_publish_outbound_retries_once_then_succeeds(self, connected_publisher) -> None:
         pub, channel = connected_publisher
         channel.default_exchange.publish.side_effect = [RuntimeError("boom"), None]
-        await pub.publish_outbound("outbound.whatsapp", b"{}")
+
+        async with captured_wide_event() as wide:
+            await pub.publish_outbound("outbound.whatsapp", b"{}")
+
         # First attempt failed, reconnect path retried and succeeded.
         assert channel.default_exchange.publish.await_count == 2
+        # A recovered publish is invisible except for this line, and the queue
+        # is the only part of it that says WHICH traffic is flapping. Asserted
+        # whole: blanking any field left a warning that reads fine and names
+        # nothing.
+        assert wide["warnings"] == [
+            {
+                "msg": f"{LogTag.STARTUP} Failed to publish to RabbitMQ, attempting recovery",
+                "queue_name": "outbound.whatsapp",
+                "error": "boom",
+                "error_type": "RuntimeError",
+            }
+        ]
 
     async def test_publish_outbound_raises_when_both_attempts_fail(
         self, connected_publisher
     ) -> None:
         pub, channel = connected_publisher
         channel.default_exchange.publish.side_effect = RuntimeError("down")
-        with pytest.raises(RuntimeError):
-            await pub.publish_outbound("outbound.whatsapp", b"{}")
+
+        async with captured_wide_event() as wide:
+            with pytest.raises(RuntimeError):
+                await pub.publish_outbound("outbound.whatsapp", b"{}")
+
         assert channel.default_exchange.publish.await_count == 2
+        # This is where a bot reply is actually lost. The exception that
+        # propagates does not carry the queue, so this entry is the only record
+        # of which conversation went silent — every field of it earns its place.
+        assert wide["errors"] == [
+            {
+                "msg": (
+                    f"{LogTag.STARTUP} Publish to RabbitMQ failed after retry — message dropped"
+                ),
+                "queue_name": "outbound.whatsapp",
+                "error": "down",
+                "error_type": "RuntimeError",
+            }
+        ]
 
     async def test_publish_declares_the_queue_on_demand(self, connected_publisher) -> None:
         pub, channel = connected_publisher

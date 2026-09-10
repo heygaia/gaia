@@ -247,6 +247,10 @@ class TestVerifyPaymentReconcilesWithDodo:
             result = await service.verify_payment_completion(USER_ID)
 
         assert result.payment_completed is False
+        # The reason, not just the boolean: this string is what the caller shows
+        # a user who has just paid and is being told they have not. Left
+        # unasserted, it could say anything at all.
+        assert result.message == "No active subscription found"
         service.client.subscriptions.retrieve.assert_not_called()
 
 
