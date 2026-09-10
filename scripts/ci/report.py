@@ -15,7 +15,8 @@ Subcommands:
         test the PR ADDS. Driven by `pytest.sh regression-proof`.
     regression-proof-verdict <junit.xml>
         Decide whether the base-revision run actually proved anything: every
-        regression test must have FAILED, not passed and not merely errored.
+        regression test must have FAILED — not passed, not skipped, and not
+        merely errored.
     annotations
         Read mypy/tsc/ruff/biome output on stdin and re-emit it as
         `::error file=,line=` GitHub annotations.
@@ -173,17 +174,27 @@ def cmd_regression_proof_verdict(args: list[str]) -> int:
     # them together and ask what happened across all of them.
     failed: dict[str, bool] = defaultdict(bool)
     errored: dict[str, bool] = defaultdict(bool)
+    skipped: dict[str, bool] = defaultdict(bool)
     for case in root.iter("testcase"):
         name = f"{case.get('classname', '')}::{case.get('name', '')}".lstrip(":")
         failed[name] |= case.find("failure") is not None
         errored[name] |= case.find("error") is not None
+        skipped[name] |= case.find("skipped") is not None
 
     if not failed:
         print("ERROR: regression-proof — the JUnit report lists no tests at all.")
         print("       The run did not execute; that is a failure, not a pass.")
         return 1
 
-    passed_on_base = sorted(n for n in failed if not failed[n] and not errored[n])
+    # A skip is neither a failure nor an error in JUnit, so folding it into
+    # "passed" is how a test that never ran got reported as "PASS on base" —
+    # with the advice to delete the fix. The contract tier is guarded by
+    # `USE_REAL_SERVICES`, so any regression test in it skips wherever the lane
+    # forgets to export it, which is every local run of this script.
+    skipped_only = sorted(n for n in failed if skipped[n] and not failed[n] and not errored[n])
+    passed_on_base = sorted(
+        n for n in failed if not failed[n] and not errored[n] and not skipped[n]
+    )
     errored_only = sorted(n for n in failed if errored[n] and not failed[n])
     proven = sorted(n for n in failed if failed[n])
 
@@ -193,6 +204,16 @@ def cmd_regression_proof_verdict(args: list[str]) -> int:
             print(f"  {name}")
         print("       A regression test must go red without its fix. Either the fix is")
         print("       not needed, or the test does not exercise the bug it names.")
+        return 1
+
+    if skipped_only:
+        print(f"ERROR: regression-proof — {len(skipped_only)} test(s) SKIPPED on base:")
+        for name in skipped_only:
+            print(f"  {name}")
+        print("       A skip is not proof — the test never ran, so it says nothing about")
+        print("       whether the bug exists on base. Give the run whatever the test")
+        print("       skips for (the contract tier needs USE_REAL_SERVICES=1 plus live")
+        print("       Mongo and Redis), or move the proof to a tier that runs here.")
         return 1
 
     if errored_only:
