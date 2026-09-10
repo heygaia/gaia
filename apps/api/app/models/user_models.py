@@ -468,6 +468,36 @@ class OnboardingSubdocument(BaseModel):
             return value
         return None
 
+    @field_validator("preferences", mode="before")
+    @classmethod
+    def a_stored_profession_todays_rules_reject_reads_as_unset(cls, value: object) -> object:
+        """A profession the input rules would refuse today is an unset field, not
+        a failed auth read.
+
+        ``OnboardingPreferences`` is both this stored subdocument's type and the
+        request body of ``PATCH /preferences``, so every tightening of
+        ``clean_profession`` applies retroactively: it re-judges rows the older,
+        laxer validator already accepted. When it refuses one, ``_to_model``
+        raises on the single-document read (``base.py``'s lenient guard covers
+        only the list read), ``authenticate_workos_session`` catches it and
+        returns an empty ``user_info``, and the caller is 401'd — WorkOS says they
+        are signed in, we say they are not, and signing in again lands in the same
+        loop with no self-service fix. Dropping the value keeps the account
+        readable; the write path stays strict, so nobody can type one of these in.
+        """
+        if not isinstance(value, Mapping):
+            return value
+        stored = value.get("profession")
+        if not isinstance(stored, str) or stored == "":
+            return value
+        try:
+            clean_profession(stored)
+        except ValueError:
+            # Narrow by construction: ValueError is clean_profession's only
+            # failure signal, and a refused stored value is the case handled here.
+            return {**value, "profession": None}
+        return value
+
 
 class UserDocument(MongoDocument):
     """A user as stored in MongoDB.
