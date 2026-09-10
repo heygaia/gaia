@@ -535,12 +535,22 @@ jobs:
         # writes output incrementally as tasks produce it, so nothing large is ever
         # pending at exit. It also drops the ::group:: wrapping, which matches
         # .github/CLAUDE.md: test steps leave failure output un-grouped.
+        #
+        # with-slots, like the `build` step: this lane sizes its own parallelism
+        # from nproc and then lands on the same physical cores as four mutation
+        # shards and four test-python slices, which is what cpu-slots.sh exists
+        # for. Unenrolled, it was the lane that paid — a jsdom render that takes
+        # 137 ms on an idle machine blew vitest's 5 s timeout on the box and
+        # failed the whole lane, then passed unchanged on the next run. A test
+        # timeout is a real failure signal; it must mean the code is slow, not
+        # that the neighbours were loud.
         shell: bash
         env:
           AFFECTED_TS_PROJECTS: ${{ needs.detect.outputs.typescript_projects }}
+          NX_PARALLEL: ${{ steps.par.outputs.nx }}
         run: |
-          /usr/bin/time -v pnpm exec nx run-many -t test -p "$AFFECTED_TS_PROJECTS" --parallel=${{ steps.par.outputs.nx }} --output-style=stream 2>&1 | tee "$RUNNER_TEMP/tstest.time"
-          echo "TS tests: OK (parallel=${{ steps.par.outputs.nx }})"
+          bash scripts/ci/runner.sh with-slots "$NX_PARALLEL" -- /usr/bin/time -v bash -c 'pnpm exec nx run-many -t test -p "$AFFECTED_TS_PROJECTS" --parallel="$NX_PARALLEL" --output-style=stream' 2>&1 | tee "$RUNNER_TEMP/tstest.time"
+          echo "TS tests: OK (parallel=$NX_PARALLEL)"
 
   # ── Docker image build — proves the api image still builds, and times it ──
   # On the home box this uses the persistent shared `gaia-ci` builder created
