@@ -109,40 +109,47 @@ export function FirstStepsWidget() {
         )}
       </div>
 
-      {/* Height is the one non-transform property animated here: there is no
-          way to collapse to nothing without it. Reduced motion drops the
-          translate but keeps the fade, so the change is still legible. */}
-      <AnimatePresence initial={false}>
-        {!collapsed && (
-          <m.div
-            key="steps"
-            className="overflow-hidden"
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: "auto", opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            transition={FIRST_STEPS_TRANSITION}
-          >
-            <div className="flex flex-col pt-2">
-              {steps.map((step, index) => (
-                <m.div
-                  key={step.key}
-                  className="min-w-0"
-                  initial={{ opacity: 0, y: reduceMotion ? 0 : -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{
-                    ...FIRST_STEPS_TRANSITION,
-                    delay: reduceMotion
+      {/* The collapse rides on `grid-template-rows: 0fr -> 1fr`, not on height:
+          animating height forces the browser to re-lay-out every frame, and
+          `react-doctor/no-layout-property-animation` rejects it. The rows stay
+          mounted and are made inert instead of unmounted, so the grid has a
+          measured row to interpolate against. */}
+      <div
+        className={cn(
+          "grid transition-[grid-template-rows] duration-200 ease-out motion-reduce:transition-none",
+          collapsed ? "grid-rows-[0fr]" : "grid-rows-[1fr]",
+        )}
+      >
+        {/* `inert` blocks focus and pointer, `aria-hidden` takes the rows out
+            of the accessibility tree. Paired deliberately: alone, `aria-hidden`
+            would leave focusable buttons announced as nothing, which is the
+            ARIA violation it is usually blamed for. */}
+        <div
+          className="overflow-hidden"
+          inert={collapsed || undefined}
+          aria-hidden={collapsed || undefined}
+        >
+          <div className="flex flex-col pt-2">
+            {steps.map((step, index) => (
+              <m.div
+                key={step.key}
+                className="min-w-0"
+                animate={{ opacity: collapsed ? 0 : 1 }}
+                initial={false}
+                transition={{
+                  ...FIRST_STEPS_TRANSITION,
+                  delay:
+                    collapsed || reduceMotion
                       ? 0
                       : index * FIRST_STEPS_ROW_STAGGER_SECONDS,
-                  }}
-                >
-                  <FirstStepRow step={step} onActivate={runStep} />
-                </m.div>
-              ))}
-            </div>
-          </m.div>
-        )}
-      </AnimatePresence>
+                }}
+              >
+                <FirstStepRow step={step} onActivate={runStep} />
+              </m.div>
+            ))}
+          </div>
+        </div>
+      </div>
 
       {/* Last child, so it paints over the panel and takes every click without
           any pointer-events juggling. Only mounted while collapsed, where

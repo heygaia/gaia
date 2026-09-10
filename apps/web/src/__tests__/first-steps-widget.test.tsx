@@ -80,11 +80,16 @@ describe("FirstStepsWidget", () => {
 
   const progressBar = () => screen.getByRole("progressbar");
 
+  // The collapse clips the rows with `grid-template-rows` and marks them
+  // inert rather than unmounting them, so "hidden" means unreachable, not
+  // absent from the DOM. Roles are the honest check: an inert subtree is out
+  // of the accessibility tree, which is exactly what a user loses.
+  const reachableSteps = () =>
+    screen.queryAllByRole("button", { name: /^(Say hi|Connect|Link|Create)/ });
+
   it("shows no progress bar while expanded — the rows are the progress", async () => {
     renderWidget();
-    await waitFor(() =>
-      expect(screen.getByText("See what GAIA can do for you")).toBeDefined(),
-    );
+    await waitFor(() => expect(reachableSteps()).toHaveLength(4));
 
     expect(screen.queryByRole("progressbar")).toBeNull();
   });
@@ -99,7 +104,7 @@ describe("FirstStepsWidget", () => {
     expect(progressBar().getAttribute("aria-valuenow")).toBe("2");
     expect(progressBar().getAttribute("aria-valuemax")).toBe("4");
     expect(screen.getByText("First steps")).toBeDefined();
-    expect(screen.queryByText("See what GAIA can do for you")).toBeNull();
+    expect(reachableSteps()).toHaveLength(0);
   });
 
   it("reopens from a click anywhere on the collapsed panel", async () => {
@@ -113,9 +118,7 @@ describe("FirstStepsWidget", () => {
     fireEvent.click(panel);
 
     await waitFor(() => expect(setCollapsed).toHaveBeenCalledWith(false));
-    await waitFor(() =>
-      expect(screen.getByText("See what GAIA can do for you")).toBeDefined(),
-    );
+    await waitFor(() => expect(reachableSteps()).toHaveLength(4));
   });
 
   it("collapses through the server and restores on failure", async () => {
@@ -139,7 +142,7 @@ describe("FirstStepsWidget", () => {
     await waitFor(() =>
       expect(screen.getByLabelText("Collapse first steps")).toBeDefined(),
     );
-    expect(screen.getByText("See what GAIA can do for you")).toBeDefined();
+    expect(reachableSteps()).toHaveLength(4);
   });
 
   it("stays out of the way on the routes that own the checklist themselves", async () => {
