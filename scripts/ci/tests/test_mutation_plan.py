@@ -26,12 +26,25 @@ PLAN_SCRIPT = REPO_ROOT / "scripts" / "ci" / "mutation.sh"
 LOG_LIB = REPO_ROOT / "scripts" / "ci" / "lib" / "log.sh"
 CPU_SLOTS_LIB = REPO_ROOT / "scripts" / "ci" / "lib" / "cpu-slots.sh"
 
-# Mirrors MAX_SHARDS in the script under test, which tracks the matrix's
-# max-parallel: a wider matrix cannot finish sooner, it only adds a check row
-# and a full setup per job. The packing below is also what keeps a huge diff
-# producing a matrix at all, rather than blowing GitHub's 256-job hard limit
-# and yielding none — and a lane with no matrix is a lane that counts as a pass.
-MAX_SHARDS = 4
+
+# Read out of the script under test rather than mirrored here. A hand-copied
+# constant drifts the moment the real one is retuned, and the failure lands on
+# whoever changed the script rather than on this file — so parse it instead.
+# The packing it drives is what keeps a huge diff producing a matrix at all,
+# rather than blowing GitHub's 256-job hard limit and yielding none — and a lane
+# with no matrix is a lane that counts as a pass.
+def _max_shards() -> int:
+    source = (REPO_ROOT / "scripts" / "ci" / "mutation.sh").read_text()
+    match = re.search(r"^MAX_SHARDS = (\d+)$", source, re.MULTILINE)
+    assert match, "MAX_SHARDS not found in mutation.sh — did the plan script change shape?"
+    return int(match.group(1))
+
+
+MAX_SHARDS = _max_shards()
+
+# Round-robin packing gives the first shard the ceiling of the even split.
+HUGE_DIFF_MODULES = 430
+FIRST_SHARD_SIZE = -(-HUGE_DIFF_MODULES // MAX_SHARDS)
 
 
 def _install(scripts: Path) -> None:
@@ -169,7 +182,7 @@ class TestPackingAHugeDiff:
         return [_entry(f"app/m{i}.py", [f"tests/unit/test_m{i}.py"], [i]) for i in range(count)]
 
     def test_the_matrix_never_exceeds_the_job_limit(self, harness) -> None:
-        process, outputs = harness(self._many(430))
+        process, outputs = harness(self._many(HUGE_DIFF_MODULES))
 
         assert process.returncode == 0, process.stderr
         assert int(outputs["count"]) == MAX_SHARDS
@@ -177,19 +190,19 @@ class TestPackingAHugeDiff:
     def test_every_module_still_runs_exactly_once(self, harness) -> None:
         # Packing must not drop a module: a silently unmutated module is a
         # false green, which is worse than a lane that fails.
-        _, outputs = harness(self._many(430))
+        _, outputs = harness(self._many(HUGE_DIFF_MODULES))
 
         packed = [entry["module"] for group in _groups(outputs) for entry in group]
-        assert sorted(packed) == sorted(f"app/m{i}.py" for i in range(430))
+        assert sorted(packed) == sorted(f"app/m{i}.py" for i in range(HUGE_DIFF_MODULES))
         assert len(packed) == len(set(packed))
 
     def test_a_packed_shard_says_how_many_it_carries(self, harness) -> None:
-        _, outputs = harness(self._many(430))
+        _, outputs = harness(self._many(HUGE_DIFF_MODULES))
 
         labels = [item["label"] for item in json.loads(outputs["matrix"])]
         # Every shard says which slice it is and how much it carries, so a red
         # check is locatable without opening it.
-        assert labels[0] == f"shard 1/{MAX_SHARDS} (108 modules)"
+        assert labels[0] == f"shard 1/{MAX_SHARDS} ({FIRST_SHARD_SIZE} modules)"
         assert all(
             re.fullmatch(rf"shard \d+/{MAX_SHARDS} \(\d+ modules\)", label) for label in labels
         )

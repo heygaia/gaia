@@ -6,7 +6,7 @@ reconnect-retry, declare-or-not, and dead-letter topology code.
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import aio_pika
 from aio_pika.exceptions import ChannelPreconditionFailed
@@ -41,6 +41,27 @@ class TestPublishWithRetry:
         await pub.publish_outbound("outbound.whatsapp", b"{}")
         channel.default_exchange.publish.assert_awaited_once()
         channel.declare_queue.assert_not_awaited()  # topology is pre-declared
+
+    async def test_publish_outbound_asks_for_no_declare_explicitly(
+        self, connected_publisher
+    ) -> None:
+        """``declare`` must be False, not merely falsy.
+
+        Watching ``declare_queue`` cannot tell False from None: ``_publish_with_retry``
+        branches on ``if declare:`` and both values skip the declare, so the test
+        above passes either way. The hole is real rather than pedantic — ``declare``
+        is a required keyword-only ``bool``, so a None arriving there means a caller
+        dropped the flag while the behaviour stays accidentally right, and it stops
+        being right the moment that branch is tightened to an identity check: the
+        outbound path would redeclare a pre-declared queue and take
+        PRECONDITION_FAILED against the consumer's own declaration. Asserting the
+        argument pins the contract the docstring already states.
+        """
+        pub, _ = connected_publisher
+        with patch.object(pub, "_publish_with_retry", new=AsyncMock()) as publish_with_retry:
+            await pub.publish_outbound("outbound.whatsapp", b"{}")
+
+        assert publish_with_retry.await_args.kwargs["declare"] is False
 
     async def test_publish_outbound_routes_to_the_queue_it_was_given(
         self, connected_publisher
