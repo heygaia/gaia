@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 from bson import ObjectId
 import pytest
 from tests.factories import make_integration_config
-from tests.helpers import captured_wide_event
+from tests.helpers import WideEventRecorder, captured_wide_event
 
 from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
@@ -136,6 +136,128 @@ class TestRunSignupSideEffects:
         mock_send_welcome_email.assert_called_once_with("bob@test.com", "Bob", user_id=user_id)
         never_finishes.set()
         await _drain_background_tasks()
+
+    async def test_a_hung_welcome_email_is_abandoned_after_the_timeout(
+        self,
+        mock_track_signup,
+        mock_send_welcome_email,
+        mock_add_marketing_contact,
+        mock_schedule_user_provision,
+        signup_email_tasks,
+    ):
+        """An ESP that accepts the call and never answers is the failure the
+        bound exists for. Unbounded, the delivery waits on it for as long as the
+        HTTP client allows and the lost email is recorded nowhere at all."""
+        user_id = str(ObjectId())
+        never_answers = asyncio.Event()
+
+        async def _hang(*_args: str, **_kwargs: str) -> None:
+            await never_answers.wait()
+
+        mock_send_welcome_email.side_effect = _hang
+
+        with patch("app.services.oauth.oauth_service.SIGNUP_EMAIL_TIMEOUT_SECONDS", 0.01):
+            async with captured_wide_event() as event:
+                await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+                # Two orders of magnitude above the bound: the delivery reaches
+                # this line only because the timeout abandoned the call, so an
+                # unbounded wait fails here instead of hanging the suite.
+                async with asyncio.timeout(2):
+                    await asyncio.gather(*signup_email_tasks)
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.OAUTH} Failed to send welcome email to",
+                "user": {"id": user_id},
+                "error": "",
+                "error_type": "TimeoutError",
+            }
+        ]
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
+
+    async def test_a_hung_marketing_contact_is_abandoned_after_the_timeout(
+        self,
+        mock_track_signup,
+        mock_send_welcome_email,
+        mock_add_marketing_contact,
+        mock_schedule_user_provision,
+        signup_email_tasks,
+    ):
+        """The audience call carries its own bound — sharing the welcome email's
+        would leave one of the two round-trips able to hang forever."""
+        user_id = str(ObjectId())
+        never_answers = asyncio.Event()
+
+        async def _hang(*_args: str, **_kwargs: str) -> None:
+            await never_answers.wait()
+
+        mock_add_marketing_contact.side_effect = _hang
+
+        with patch("app.services.oauth.oauth_service.SIGNUP_EMAIL_TIMEOUT_SECONDS", 0.01):
+            async with captured_wide_event() as event:
+                await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+                async with asyncio.timeout(2):
+                    await asyncio.gather(*signup_email_tasks)
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.OAUTH} Failed to add marketing contact for",
+                "user": {"id": user_id},
+                "error": "",
+                "error_type": "TimeoutError",
+            }
+        ]
+        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
+
+    async def test_the_delivery_is_filed_under_its_own_task_name(
+        self,
+        mock_track_signup,
+        mock_send_welcome_email,
+        mock_add_marketing_contact,
+        mock_schedule_user_provision,
+    ):
+        """Handing the deliveries off moves them out of the signup's event and
+        into one of their own. That event is where a lost signup email is
+        diagnosed, so the name it is filed under is the whole handle on it."""
+        recorder = WideEventRecorder()
+
+        with patch("shared.py.wide_events._loguru", recorder):
+            await _run_signup_side_effects(str(ObjectId()), "bob@test.com", "Bob")
+            await _drain_background_tasks()
+
+        assert recorder.event("deliver_signup_emails")["outcome"] == "success"
+
+    async def test_a_cancelled_delivery_does_not_strand_the_other_one(
+        self,
+        mock_track_signup,
+        mock_send_welcome_email,
+        mock_add_marketing_contact,
+        mock_schedule_user_provision,
+    ):
+        """Cancellation is the one failure a delivery's own ``except Exception``
+        cannot catch, so it reaches the gather. Propagated, it ends the hand-off
+        on the spot and the second round-trip is dropped mid-flight; collected,
+        both still finish and the hand-off is not recorded as a casualty."""
+        delivered: list[str] = []
+
+        async def _cancelled(*_args: str, **_kwargs: str) -> None:
+            raise asyncio.CancelledError
+
+        async def _slow_contact(*_args: str, **_kwargs: str) -> None:
+            await asyncio.sleep(0)
+            await asyncio.sleep(0)
+            delivered.append("marketing_contact")
+
+        mock_send_welcome_email.side_effect = _cancelled
+        mock_add_marketing_contact.side_effect = _slow_contact
+        recorder = WideEventRecorder()
+
+        with patch("shared.py.wide_events._loguru", recorder):
+            await _run_signup_side_effects(str(ObjectId()), "bob@test.com", "Bob")
+            await _drain_background_tasks()
+
+        assert delivered == ["marketing_contact"]
+        assert recorder.event("deliver_signup_emails")["outcome"] == "success"
 
     async def test_a_posthog_failure_is_recorded_and_the_rest_still_runs(
         self,
