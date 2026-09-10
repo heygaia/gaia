@@ -341,6 +341,9 @@ importers:
 
   apps/desktop:
     dependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.29.0
+        version: 1.29.0(zod@4.3.6)
       electron-liquid-glass:
         specifier: ^1.1.1
         version: 1.1.1
@@ -353,6 +356,12 @@ importers:
       wait-on:
         specifier: ^8.0.5
         version: 8.0.5
+      ws:
+        specifier: ^8.21.0
+        version: 8.21.0
+      zod:
+        specifier: 4.3.6
+        version: 4.3.6
     devDependencies:
       '@biomejs/biome':
         specifier: ^2.5.7
@@ -369,6 +378,9 @@ importers:
       '@types/node':
         specifier: ^24.13.3
         version: 24.13.3
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
       electron:
         specifier: ^39.8.10
         version: 39.8.10

@@ -72,8 +72,8 @@ export async function openServerSession(
       args: config.args,
       env: {
         ...getDefaultEnvironment(),
-        ...(injected.PATH !== undefined ? { PATH: injected.PATH } : {}),
-        ...(injected.HOME !== undefined ? { HOME: injected.HOME } : {}),
+        ...(injected["PATH"] !== undefined ? { PATH: injected["PATH"] } : {}),
+        ...(injected["HOME"] !== undefined ? { HOME: injected["HOME"] } : {}),
         ...config.env,
       },
     });

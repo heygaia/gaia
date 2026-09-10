@@ -58,6 +58,6 @@ export function bridgeEnv(): BridgeEnv {
   return {
     stateDir: overrides.stateDir ?? join(homedir(), ".gaia", "bridge"),
     env: overrides.env ?? process.env,
-    shell: overrides.shell ?? process.env.SHELL ?? "/bin/sh",
+    shell: overrides.shell ?? process.env["SHELL"] ?? "/bin/sh",
   };
 }
