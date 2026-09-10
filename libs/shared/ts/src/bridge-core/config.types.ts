@@ -4,6 +4,11 @@ export interface Credentials {
   apiUrl: string;
   deviceId: string;
   refreshToken: string;
+  // The GAIA user this device is bound to, stored atomically with the token so
+  // the two can never drift. The CLI leaves it undefined (it pairs interactively
+  // and has no session-user concept); the desktop host sets it at self-pair time
+  // to enforce the account-switch/logout teardown (R5).
+  userId?: string;
 }
 
 export interface FilesystemServer {

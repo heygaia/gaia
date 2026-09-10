@@ -28,6 +28,7 @@ import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { app, globalShortcut } from "electron";
 import { applyPersistedAppIcon } from "./app-icon";
 import { checkForUpdatesAfterDelay, setupAutoUpdater } from "./auto-updater";
+import { registerBridgeLogoutHook } from "./bridge/logout-hook";
 import { handleDeepLink } from "./deep-link";
 import { registerIpcHandlers } from "./ipc";
 import { registerPopupShortcut } from "./popup-shortcut";
@@ -165,6 +166,10 @@ if (!gotTheLock) {
     });
 
     fixSessionCookies();
+
+    // Watch the session cookie so signing out tears down the bridge device (R5),
+    // and reconcile the stored binding against the current session on launch.
+    registerBridgeLogoutHook();
 
     // STEP 3 — Server + window creation in PARALLEL
     if (isProduction) {

@@ -9,6 +9,7 @@
 // host and its lifecycle only, exposed via the getBridgeHost() singleton getter.
 
 import { EventEmitter } from "node:events";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import {
   type BridgeLogger,
@@ -20,11 +21,26 @@ import {
   registerConfiguredServers,
   removeServer as removeServerFromConfig,
   type ServerConfig,
+  saveCredentials,
   Tunnel,
   upsertServer,
 } from "@gaia/shared/bridge-core";
-import { app } from "electron";
+import { app, session } from "electron";
+import { getApiOrigin } from "../api-origin";
 import { resolveLoginShellPath } from "./env";
+
+/** Backend REST prefix — the device endpoints live under `<origin>/api/v1`. */
+const API_PREFIX = "/api/v1";
+
+/** Shape of `POST /device/self-pair` — mirrors the backend `SelfPairResponse`.
+ * The refresh token is a bearer credential for this device; it is minted here
+ * in the main process and written straight to disk, never returned to the
+ * renderer (R4). */
+interface SelfPairResponse {
+  device_id: string;
+  refresh_token: string;
+  name: string;
+}
 
 /** Snapshot for the renderer/tray: whether this device is paired (has stored
  * credentials) and whether its tunnel is currently held open. */
@@ -40,6 +56,17 @@ export class BridgeNotPairedError extends Error {
   constructor() {
     super("bridge is not paired — pair this device before starting the tunnel");
     this.name = "BridgeNotPairedError";
+  }
+}
+
+/** Thrown by pair() when the app has no authenticated session — self-pair mints
+ * the device off the signed-in user's `wos_session` cookie, so there is nobody
+ * to pair as. Typed so the IPC layer (task 2.3) can surface "sign in first"
+ * rather than a generic failure. */
+export class BridgeNotAuthenticatedError extends Error {
+  constructor() {
+    super("sign in to the app first — pairing needs an authenticated session");
+    this.name = "BridgeNotAuthenticatedError";
   }
 }
 
@@ -60,23 +87,37 @@ export class BridgeHost {
   };
 
   private tunnel: Tunnel | null = null;
+  private stateDirConfigured = false;
   private initialized = false;
   private running = false;
   /** Set before we call tunnel.stop() so the supervise loop can tell a stop WE
    * asked for from an auth exit the tunnel decided on. */
   private intentionalStop = false;
 
-  /** Configure bridge-core for this host: state under userData/bridge and a
-   * login-shell PATH so spawned npx/uvx/node resolve from a Finder launch.
-   * Idempotent — safe to call from every entry point. */
-  async init(): Promise<void> {
-    if (this.initialized) return;
-    const loginPath = await resolveLoginShellPath();
+  /** Point bridge-core's state (credentials.json, config.json) at userData/bridge
+   * and wire the logger. Cheap and idempotent — no shell spawn — so credential-only
+   * operations (pair, reconcile, teardown) can read/write state without paying for
+   * the login-shell PATH resolution that only the tunnel actually needs. */
+  private configureStateDir(): void {
+    if (this.stateDirConfigured) return;
     configureBridge({
       stateDir: join(app.getPath("userData"), "bridge"),
+      logger: this.logger,
+    });
+    this.stateDirConfigured = true;
+  }
+
+  /** Full configuration for running the tunnel: state dir plus the login-shell
+   * PATH/SHELL so spawned npx/uvx/node resolve from a Finder launch. The shell
+   * resolution runs a real `$SHELL -ilc`, so it is deferred behind start() rather
+   * than paid on every launch. Idempotent — safe to call from every entry point. */
+  async init(): Promise<void> {
+    if (this.initialized) return;
+    this.configureStateDir();
+    const loginPath = await resolveLoginShellPath();
+    configureBridge({
       env: { ...process.env, PATH: loginPath },
       shell: process.env["SHELL"] || "/bin/zsh",
-      logger: this.logger,
     });
     this.initialized = true;
   }
@@ -95,9 +136,15 @@ export class BridgeHost {
 
   /** Start the supervised tunnel. Throws BridgeNotPairedError if unpaired. The
    * tunnel is held in the background; this returns once it is running, not when
-   * it stops. */
+   * it stops.
+   *
+   * Enforces the R5 user binding first: if this device is bound to a different
+   * GAIA user than the current session (account switch) or the session is gone
+   * (logged out), the stored credential is torn down before anything starts, so
+   * the tunnel can never come up under the wrong identity. */
   async start(): Promise<void> {
     await this.init();
+    await this.enforceUserBinding();
     if (!isPaired()) throw new BridgeNotPairedError();
     if (this.running) return;
     this.intentionalStop = false;
@@ -131,6 +178,137 @@ export class BridgeHost {
 
   async removeServer(key: string): Promise<boolean> {
     return removeServerFromConfig(key);
+  }
+
+  /** Pair this Mac as its own device off the app's authenticated session.
+   *
+   * Resolves the signed-in GAIA user, then POSTs `/device/self-pair` with the
+   * `wos_session` cookie (main-process fetch on `session.defaultSession` — the
+   * refresh token is minted and stored here, never handed to the renderer, R4).
+   * The returned token is written to userData/bridge/credentials.json (0600)
+   * bound to that user id (R5). Idempotent: already paired for the current user
+   * is a no-op; paired for a *different* user tears down first (account switch).
+   *
+   * @throws BridgeNotAuthenticatedError when there is no signed-in session.
+   */
+  async pair(): Promise<void> {
+    this.configureStateDir();
+    const apiUrl = getApiOrigin();
+    const sessionUserId = await this.resolveSessionUserId(apiUrl);
+
+    const existing = loadCredentials();
+    if (existing?.refreshToken) {
+      if (existing.userId === sessionUserId) return;
+      await this.unbindAndReset("account-switch");
+    }
+
+    const res = await session.defaultSession.fetch(
+      `${apiUrl}${API_PREFIX}/device/self-pair`,
+      {
+        method: "POST",
+        credentials: "include",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          name: hostname(),
+          platform: process.platform,
+          client: "desktop",
+          daemon_version: app.getVersion(),
+        }),
+      },
+    );
+
+    if (res.status === 401) throw new BridgeNotAuthenticatedError();
+    if (!res.ok) throw new Error(await errorDetail(res));
+
+    const data = (await res.json()) as SelfPairResponse;
+    saveCredentials({
+      apiUrl,
+      deviceId: data.device_id,
+      refreshToken: data.refresh_token,
+      userId: sessionUserId,
+    });
+    this.emitStatus();
+  }
+
+  /** Tear this device down: stop the tunnel, best-effort revoke it server-side
+   * (`DELETE /device/{id}` with the session cookie), then clear the stored
+   * credential + user binding and go unpaired. Shared by the logout hook and the
+   * account-switch guard; `reason` is for diagnostics only. */
+  async unbindAndReset(reason: string): Promise<void> {
+    this.configureStateDir();
+    const creds = loadCredentials();
+    await this.stop();
+
+    if (creds?.deviceId && creds.apiUrl) {
+      try {
+        await session.defaultSession.fetch(
+          `${creds.apiUrl}${API_PREFIX}/device/${creds.deviceId}`,
+          { method: "DELETE", credentials: "include" },
+        );
+      } catch (error) {
+        // Best-effort: the session may already be gone (logout) or belong to a
+        // different user (switch), so the server-side revoke can fail. The local
+        // credential is cleared regardless — a stale server row is harmless.
+        this.logger.error(
+          `[bridge] server-side device revoke failed during ${reason}: ${errorMessage(error)}`,
+        );
+      }
+    }
+
+    clearCredentials();
+    this.logger.info(`[bridge] unbound and reset (${reason})`);
+    this.emitStatus();
+  }
+
+  /** Reconcile the stored binding against the current session — the launch-time
+   * counterpart to start()'s guard, so a logout or account switch that happened
+   * while the app was closed is cleaned up on next launch (no cookie "changed"
+   * event fires for a cookie removed while the process was dead). No-op when
+   * unpaired. Best-effort by contract: callers wrap it so a transient failure to
+   * reach the API never blocks startup and never wrongly discards the token. */
+  async reconcileUserBinding(): Promise<void> {
+    this.configureStateDir();
+    await this.enforceUserBinding();
+  }
+
+  /** Resolve the signed-in GAIA user id from the app's session cookie.
+   * @throws BridgeNotAuthenticatedError on 401 (no valid session). */
+  private async resolveSessionUserId(apiUrl: string): Promise<string> {
+    const res = await session.defaultSession.fetch(
+      `${apiUrl}${API_PREFIX}/user/me`,
+      { credentials: "include" },
+    );
+    if (res.status === 401) throw new BridgeNotAuthenticatedError();
+    if (!res.ok) {
+      throw new Error(
+        `bridge: failed to resolve current user (${await errorDetail(res)})`,
+      );
+    }
+    const data = (await res.json()) as { user_id: string };
+    return data.user_id;
+  }
+
+  /** If a device is bound but the session no longer matches it, tear it down.
+   * A definite 401 means logged out; a user-id mismatch means account switch.
+   * A network/transient error is rethrown, NOT treated as logout — otherwise a
+   * momentarily unreachable API would wrongly delete a valid credential. */
+  private async enforceUserBinding(): Promise<void> {
+    const creds = loadCredentials();
+    if (!creds?.refreshToken) return;
+
+    let sessionUserId: string;
+    try {
+      sessionUserId = await this.resolveSessionUserId(getApiOrigin());
+    } catch (error) {
+      if (error instanceof BridgeNotAuthenticatedError) {
+        await this.unbindAndReset("logged-out");
+        return;
+      }
+      throw error;
+    }
+
+    if (creds.userId !== sessionUserId)
+      await this.unbindAndReset("account-switch");
   }
 
   /** Run the tunnel until it stops, reconnecting only on an UNEXPECTED throw.
@@ -209,6 +387,23 @@ export class BridgeHost {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function errorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Extract the best human-readable detail from a failed API response: the
+ * backend's `detail` field (its HTTPException message, e.g. the 409 device-cap)
+ * when the body is JSON, otherwise the status line. */
+async function errorDetail(res: Response): Promise<string> {
+  try {
+    const data = (await res.json()) as { detail?: string };
+    if (data.detail) return data.detail;
+  } catch {
+    // non-JSON body — fall through to the status line
+  }
+  return `HTTP ${res.status} ${res.statusText}`;
 }
 
 let instance: BridgeHost | null = null;
