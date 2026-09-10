@@ -6,7 +6,6 @@ from .caching import Cacheable, CacheInvalidator
 from .documentation import with_doc
 from .entitlements import (
     SubscriptionRequiredException,
-    get_checkout_url,
     is_subscription_active,
     require_active_subscription,
 )
@@ -40,7 +39,6 @@ __all__ = [
     "CacheInvalidator",
     # Entitlements
     "SubscriptionRequiredException",
-    "get_checkout_url",
     "is_subscription_active",
     "require_active_subscription",
 ]

@@ -1,3 +1,4 @@
+import type { OnboardingData } from "@/features/auth/api/authApi";
 /**
  * Linear stage cursor. The flow is a fixed queue — Q1/Q2, then payment,
  * then the receipt, the platform pick and finally the
@@ -40,6 +41,18 @@ export function canSubmitNeeds(s: OnboardingState): boolean {
   return (
     s.selectedNeeds.length >= NEEDS_MIN_SELECTION || s.otherNeed.trim() !== ""
   );
+}
+
+/**
+ * Whether the account has the answers the wizard's "preferences persisted"
+ * flag claims. `GET /user/me` reports an unset onboarding as
+ * `preferences: {}`, never as a missing field, so presence of the object
+ * says nothing; a recorded profession is the first thing the wizard saves.
+ */
+export function serverHasRecordedPreferences(
+  onboarding: OnboardingData | undefined,
+): boolean {
+  return Boolean(onboarding?.preferences?.profession);
 }
 
 export function getStage(s: OnboardingState, isPaid: boolean): Stage {

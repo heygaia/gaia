@@ -17,6 +17,7 @@ import pytest
 from app.api.v1.endpoints import bot as bot_module
 from app.api.v1.endpoints.bot import (
     _bot_rate_limit_notice,
+    _bot_upgrade_url,
     _bot_upgrade_url_once,
     bot_chat_stream,
 )
@@ -1087,19 +1088,24 @@ class TestBotChatStreamBody:
             )
             yield "data: [DONE]\n\n"
 
-        mint = AsyncMock(return_value="upgrade-link-notice")
-        with patch("app.api.v1.endpoints.bot._bot_rate_limit_notice", mint):
+        mint = AsyncMock(return_value="https://pay.example/checkout")
+        with patch("app.api.v1.endpoints.bot._bot_upgrade_url", mint):
             body = await self._collect(client, walled())
 
-        card, upgrade_url = mint.await_args.args
-        assert card == {
-            "tool_data": {
-                "tool_name": "rate_limit_data",
-                "data": {"feature": "chat_messages", "current_plan": "free"},
+        # The checkout is minted for the user the request resolved to — a wrong
+        # id here bills (or credits) somebody else's account.
+        mint.assert_awaited_once_with("uid1")
+        frames = [
+            json.loads(line[len("data: ") :])
+            for line in body.splitlines()
+            if line.startswith("data: ")
+        ]
+        assert {
+            "notice": {
+                "text": "\u23f3 You've reached your chat messages limit. Please try again "
+                "later. [Upgrade to Pro](https://pay.example/checkout) for higher limits."
             }
-        }
-        assert callable(upgrade_url)
-        assert 'data: {"notice": {"text": "upgrade-link-notice"}}' in body
+        } in frames
         assert 'data: {"text"' not in body
 
     async def test_a_non_rate_limit_card_yields_no_notice_frame(self, client: AsyncClient):
@@ -1320,6 +1326,70 @@ class TestBotTranscribe:
     # success path is reachable here: `get_current_user` is a Depends the
     # authenticated `client` fixture already overrides, and
     # `require_bot_api_key` is patchable.
+
+    @patch("app.api.v1.endpoints.bot.capture_event")
+    @patch("app.api.v1.endpoints.bot.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_paywalled_voice_note_stamps_the_outcome_on_its_own_event(
+        self,
+        mock_auth: AsyncMock,
+        mock_capture: MagicMock,
+        client: AsyncClient,
+    ):
+        """A refused transcribe and a served one must not leave identical events.
+
+        The block itself is already logged and attributed by
+        ``require_active_subscription``, but that stamps the gate's event, not
+        this route's. Without an outcome here, "are voice notes failing on the
+        paywall or on the provider?" — the question an incident asks — has no
+        answer. The value matches ``_bot_stream_entitlement_gate`` so one query
+        covers both bot surfaces.
+        """
+        with (
+            patch(
+                "app.decorators.entitlements.payment_service.get_cached_plan_type",
+                new_callable=AsyncMock,
+                return_value=PlanType.FREE,
+            ),
+            patch("app.api.v1.endpoints.bot.log") as mock_log,
+        ):
+            response = await client.post(
+                f"{BOT_BASE}/transcribe",
+                files={"file": ("voice.ogg", b"fake-audio-bytes", "audio/ogg")},
+            )
+
+        assert response.status_code == 402
+        assert mock_log.set.call_args_list[-1].kwargs == {"outcome": "subscription_required"}
+
+    @patch("app.api.v1.endpoints.bot.capture_event")
+    @patch(
+        "app.api.v1.endpoints.bot.transcribe_audio",
+        new_callable=AsyncMock,
+        return_value="hello there",
+    )
+    @patch("app.api.v1.endpoints.bot.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_served_voice_note_stamps_the_opposite_outcome(
+        self,
+        mock_auth: AsyncMock,
+        mock_transcribe: AsyncMock,
+        mock_capture: MagicMock,
+        client: AsyncClient,
+    ):
+        """Both sides of the decision, or the ratio is uncomputable."""
+        with (
+            patch(
+                "app.decorators.entitlements.payment_service.get_cached_plan_type",
+                new_callable=AsyncMock,
+                return_value=PlanType.PRO,
+            ),
+            patch("app.api.v1.endpoints.bot.log") as mock_log,
+        ):
+            response = await client.post(
+                f"{BOT_BASE}/transcribe",
+                files={"file": ("voice.ogg", b"fake-audio-bytes", "audio/ogg")},
+            )
+
+        assert response.status_code == 200
+        assert mock_log.set.call_args_list[-1].kwargs == {"outcome": "transcribed"}
 
     @patch("app.api.v1.endpoints.bot.capture_event")
     @patch(
@@ -1598,6 +1668,26 @@ class TestBotChatStreamMetering:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture
+def upgrade_link_window_open():
+    """Open the once-per-window mint gate, so link tests are about the link.
+
+    ``_bot_upgrade_url`` mints at most once per user per window, gated by a
+    Redis ``SET NX EX``. Without this the second test in a run to use the same
+    user id takes the pricing-page branch and passes for the wrong reason —
+    which is exactly what ``test_dodo_failure_degrades_to_the_pricing_page``
+    did the moment the window landed. The window's own behaviour is proven in
+    ``TestBotUpgradeLinkWindow``.
+    """
+    with patch(
+        "app.api.v1.endpoints.bot._may_mint_bot_upgrade_link",
+        new_callable=AsyncMock,
+        return_value=True,
+    ):
+        yield
+
+
+@pytest.mark.usefixtures("upgrade_link_window_open")
 class TestBotChatStreamSubscriptionGate:
     """GAIA is paid-only: a linked FREE user is refused before any LangGraph run.
 
@@ -1730,6 +1820,7 @@ class TestBotChatStreamSubscriptionGate:
         assert refusal.args[2] == {"platform": "telegram", "reason": "subscription_required"}
 
 
+@pytest.mark.usefixtures("upgrade_link_window_open")
 class TestBotRateLimitNotice:
     """Rate limits reach bots as text, so the upgrade path has to be a link.
 
@@ -1813,6 +1904,148 @@ class TestBotRateLimitNotice:
     async def test_other_tool_cards_are_left_alone(self) -> None:
         chunk = {"tool_data": {"tool_name": "memory_data", "data": {}}}
         assert await _bot_rate_limit_notice(chunk, _bot_upgrade_url_once("user_1")) is None
+
+
+class TestBotUpgradeLinkWindow:
+    """A bot turn mints at most one Dodo session per user per window.
+
+    Both bot walls — the paid-only gate and the rate-limit notice — repeat for
+    every message until the user acts on them, and each mint is a ``get_plans``
+    call, a Dodo round-trip and a ``checkout_sessions`` insert. Unbounded, a
+    lapsed user who keeps typing leaves a trail of throwaway sessions, and the
+    newest of them is what ``checkout_session_repository.get_latest_for_user``
+    finds when the webhook-race recovery goes looking for the session they
+    actually paid on.
+
+    What is gated is the MINT, never the message: a bot has no modal and no
+    banner, so going quiet on a blocked turn would read as a broken bot.
+    """
+
+    @staticmethod
+    def _redis(*set_results: object) -> MagicMock:
+        cache = MagicMock()
+        cache.client.set = AsyncMock(side_effect=list(set_results))
+        return cache
+
+    @staticmethod
+    def _checkout(payment_link: str) -> AsyncMock:
+        return AsyncMock(
+            return_value=ProCheckout(
+                plan=PlanResponse(
+                    id="plan_pro",
+                    dodo_product_id="prod_pro",
+                    name="Pro",
+                    amount=3000,
+                    currency="USD",
+                    duration=PlanDuration.MONTHLY,
+                    is_active=True,
+                    created_at=datetime(2026, 1, 1, tzinfo=UTC),
+                    updated_at=datetime(2026, 1, 1, tzinfo=UTC),
+                ),
+                checkout=CreateSubscriptionResponse(
+                    subscription_id="cs_1",
+                    payment_link=payment_link,
+                    status="payment_link_created",
+                ),
+            )
+        )
+
+    async def test_a_burst_of_blocked_turns_mints_exactly_one_session(self) -> None:
+        """SET NX returns None once the key is there — that is the whole gate."""
+        checkout = self._checkout("https://checkout.dodopayments.com/s/cs_1")
+        # First turn claims the window; the next two find it held.
+        with (
+            patch("app.api.v1.endpoints.bot.redis_cache", self._redis(True, None, None)),
+            patch("app.api.v1.endpoints.bot.payment_service.create_pro_checkout", checkout),
+        ):
+            urls = [await _bot_upgrade_url("user_1") for _ in range(3)]
+
+        assert checkout.await_count == 1, (
+            f"three blocked turns minted {checkout.await_count} Dodo session(s); one is the cap"
+        )
+        assert urls[0] == "https://checkout.dodopayments.com/s/cs_1"
+
+    async def test_a_turn_outside_the_window_still_gets_a_working_url(self) -> None:
+        """The user is never left without a way to pay — only without one tap."""
+        checkout = self._checkout("https://checkout.dodopayments.com/s/cs_1")
+        with (
+            patch("app.api.v1.endpoints.bot.redis_cache", self._redis(None)),
+            patch("app.api.v1.endpoints.bot.payment_service.create_pro_checkout", checkout),
+        ):
+            url = await _bot_upgrade_url("user_1")
+
+        assert url.endswith("/pricing")
+        checkout.assert_not_awaited()
+
+    async def test_a_blocked_turn_outside_the_window_still_answers_the_user(self) -> None:
+        """A bot has no modal to fall back on: silence would read as broken.
+
+        Only the mint is gated, so the notice still goes out — with the pricing
+        page in place of the personalised link.
+        """
+        checkout = self._checkout("https://checkout.dodopayments.com/s/cs_1")
+        with (
+            patch("app.api.v1.endpoints.bot.redis_cache", self._redis(None)),
+            patch("app.api.v1.endpoints.bot.payment_service.create_pro_checkout", checkout),
+        ):
+            notice = await _bot_rate_limit_notice(
+                {
+                    "tool_data": {
+                        "tool_name": "rate_limit_data",
+                        "data": {"feature": "chat_messages", "current_plan": PlanType.FREE.value},
+                    }
+                },
+                _bot_upgrade_url_once("user_1"),
+            )
+
+        assert notice is not None
+        assert "chat messages limit" in notice
+        assert "/pricing)" in notice
+
+    async def test_the_window_is_per_user(self) -> None:
+        """A shared key would let one lapsed user mute everyone else's link."""
+        checkout = self._checkout("https://checkout.dodopayments.com/s/cs_1")
+        cache = self._redis(True, True)
+        with (
+            patch("app.api.v1.endpoints.bot.redis_cache", cache),
+            patch("app.api.v1.endpoints.bot.payment_service.create_pro_checkout", checkout),
+        ):
+            await _bot_upgrade_url("user_1")
+            await _bot_upgrade_url("user_2")
+
+        keys = [call.args[0] for call in cache.client.set.await_args_list]
+        assert keys == ["bot:upgrade-link:user_1", "bot:upgrade-link:user_2"]
+
+    async def test_an_unavailable_window_skips_the_mint_and_says_so(self) -> None:
+        """Fails CLOSED, unlike the workflow limit-notice gate it copies.
+
+        Losing that gate costs a duplicate notification; losing this one costs
+        a trail of orphan sessions that bury a real payment. A degraded link is
+        the cheaper failure, and it must not be a silent one.
+        """
+        log.reset()
+        cache = MagicMock()
+        cache.client.set = AsyncMock(side_effect=ConnectionError("redis down"))
+        checkout = self._checkout("https://checkout.dodopayments.com/s/cs_1")
+        with (
+            patch("app.api.v1.endpoints.bot.redis_cache", cache),
+            patch("app.api.v1.endpoints.bot.payment_service.create_pro_checkout", checkout),
+        ):
+            url = await _bot_upgrade_url("user_1")
+
+        assert url.endswith("/pricing")
+        checkout.assert_not_awaited()
+        assert log.get()["warnings"] == [
+            {
+                "msg": (
+                    "[PAYMENT] Bot upgrade-link window unavailable, falling back to pricing page"
+                ),
+                "user": {"id": "user_1"},
+                "payment": {"operation": "bot_upgrade_link_window"},
+                "failure_reason": "window_unavailable",
+                "error_type": "ConnectionError",
+            }
+        ]
 
 
 class TestForwarderWiring:

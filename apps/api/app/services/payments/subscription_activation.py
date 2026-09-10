@@ -66,8 +66,11 @@ async def send_welcome_email_safely(user_id: str) -> None:
             await send_pro_subscription_email(
                 user_name=user.first_name or "User",
                 user_email=user.email,
+                user_id=user_id,
             )
-            log.info(f"{LogTag.PAYMENT} Welcome email sent to", email=user.email)
+            # The address is what was mailed, not what is logged: a log line
+            # carries ids, counts and enums, never the PII itself.
+            log.info(f"{LogTag.PAYMENT} Welcome email sent", user_id=user_id)
     except Exception as e:
         log.error(
             f"{LogTag.PAYMENT} Failed to send welcome email",

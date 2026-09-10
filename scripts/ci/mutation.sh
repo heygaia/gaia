@@ -104,15 +104,19 @@ cmd_plan() {
 import json
 import os
 
-# Match the matrix's max-parallel in code-quality.yml: more shards than can run
-# at once add check rows and setup cost without shortening the lane. (It also
-# stays clear of GitHub's hard 256-job matrix limit, which a one-shard-per-
-# module plan blew through on the mypy-strict diff — no matrix, a skipped lane,
-# and a skipped lane counts as a pass.)
-# 4 tracks code-quality.yml's max-parallel and the 12-runner gaia-home-lint
-# pool (2026-08-29): with two shards the pair was the Code Quality long pole
-# at 156-179 s each (run 33202311460); four halve it and start together.
-MAX_SHARDS = 4
+# Bounded so the matrix stays clear of GitHub's hard 256-job limit, which a
+# one-shard-per-module plan blew through on the mypy-strict diff — no matrix, a
+# skipped lane, and a skipped lane counts as a pass.
+#
+# 6 rather than code-quality.yml's max-parallel of 4, deliberately. Sizing to
+# max-parallel (4, from 2026-08-29 against the 12-runner gaia-home-lint pool)
+# only holds while one wave can carry the whole diff: a 110-module diff packs 28
+# modules per shard, and on run 34476365942 shards 1 and 3 drew enough slow ones
+# to still be running at the step's cutoff — 25 of 28 finished, every one clean,
+# so the lane went red on budget rather than on a survivor. Past that point it is
+# the shard, not the wave, that has to fit. Six run as 4 + 2 and cost one extra
+# wave of setup, which is worth strictly more than a red lane that proved nothing.
+MAX_SHARDS = 6
 
 modules = json.loads(os.environ["MATRIX_JSON"])
 shards: list[list[dict[str, str]]] = [[] for _ in range(min(len(modules), MAX_SHARDS))]

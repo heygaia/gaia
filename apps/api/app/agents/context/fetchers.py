@@ -264,7 +264,12 @@ async def build_new_user_guidance_block(ctx: SectionContext) -> str:
             other_need=other_need,
         ),
     )
-    return build_new_user_guidance(str(profession) if profession else "", needs, other_need, chips)
+    return build_new_user_guidance(
+        str(profession) if profession else "",
+        needs,
+        other_need,
+        chips,
+    )
 
 
 async def build_background_banner(ctx: SectionContext) -> str:

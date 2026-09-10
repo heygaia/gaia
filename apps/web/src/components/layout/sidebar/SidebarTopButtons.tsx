@@ -121,7 +121,12 @@ export default function SidebarTopButtons() {
         <SidebarPromo
           price={price}
           copy={paywallCopyFor(hasEverSubscribed)}
-          onUpgrade={() => openUpgradeModal(undefined, { dismissible: true })}
+          onUpgrade={() =>
+            openUpgradeModal(undefined, {
+              dismissible: true,
+              source: "sidebar",
+            })
+          }
         />
       )}
 

@@ -164,6 +164,51 @@ class TestOnboardingSubdocumentToleratesOldRows:
         assert doc.onboarding.phase is None
         assert doc.onboarding.bio_status is None
 
+    def test_a_value_from_the_other_enum_reads_as_unset_instead_of_failing(self) -> None:
+        """Each field is guarded against its OWN enum, not the union of both.
+
+        ``"pending"`` is a real ``BioStatus`` and no ``OnboardingPhase`` at all
+        (and ``"initial"`` the reverse). Checked against one merged set of every
+        known value they both pass the guard untouched and then fail Pydantic's
+        coercion for the field's real type — a failed user read, which is a
+        silent permanent logout, from a row this guard promises to tolerate.
+        """
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "old@example.com",
+                "onboarding": {"phase": "pending", "bio_status": "initial"},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is None
+        assert doc.onboarding.bio_status is None
+
+    def test_the_value_the_two_enums_share_still_coerces_on_both_fields(self) -> None:
+        """``"completed"`` is a genuine member of each — splitting must not drop it."""
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "old@example.com",
+                "onboarding": {"phase": "completed", "bio_status": "completed"},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is OnboardingPhase.COMPLETED
+        assert doc.onboarding.bio_status is BioStatus.COMPLETED
+
+    def test_a_non_string_phase_reads_as_unset_instead_of_failing(self) -> None:
+        doc = UserDocument.model_validate(
+            {
+                "id": "507f1f77bcf86cd799439011",
+                "email": "old@example.com",
+                "onboarding": {"phase": {"step": 3}, "bio_status": 7},
+            }
+        )
+        assert doc.onboarding is not None
+        assert doc.onboarding.phase is None
+        assert doc.onboarding.bio_status is None
+
     def test_a_known_phase_still_coerces_to_the_enum(self) -> None:
         doc = UserDocument.model_validate(
             {

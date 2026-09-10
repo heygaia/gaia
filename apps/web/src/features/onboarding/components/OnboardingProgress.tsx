@@ -15,6 +15,7 @@ import {
 import { RedoIcon } from "@icons";
 import * as m from "motion/react-m";
 import { memo, useState } from "react";
+import { useIsMobile } from "@/hooks/ui/useMobile";
 
 interface OnboardingProgressProps {
   currentStep: number;
@@ -31,6 +32,7 @@ function OnboardingProgressImpl({
   onRestart,
   isRestarting = false,
 }: OnboardingProgressProps) {
+  const isMobile = useIsMobile();
   const [confirmOpen, setConfirmOpen] = useState(false);
   return (
     <nav
@@ -82,11 +84,20 @@ function OnboardingProgressImpl({
           onPress={() => setConfirmOpen(true)}
           isLoading={isRestarting}
           isDisabled={isRestarting}
-          startContent={!isRestarting && <RedoIcon size={14} />}
-          className="fixed right-3 bottom-3"
+          isIconOnly={isMobile}
+          startContent={!isRestarting && !isMobile && <RedoIcon size={14} />}
+          // A phone has no spare bottom edge (the composer lives there), so
+          // the restart is a small icon in the top-right corner instead.
+          className={
+            isMobile ? "fixed top-3 right-3 z-20" : "fixed right-3 bottom-3"
+          }
           aria-label="Restart onboarding"
         >
-          {isRestarting ? "Restarting…" : "Restart Onboarding"}
+          {isMobile
+            ? !isRestarting && <RedoIcon size={16} />
+            : isRestarting
+              ? "Restarting…"
+              : "Restart Onboarding"}
         </Button>
       )}
 

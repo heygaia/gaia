@@ -18,6 +18,7 @@ import {
   patchCurrentUser,
   setCurrentUser,
   useCurrentUser,
+  useCurrentUserIsFresh,
 } from "@/features/auth/hooks/useCurrentUser";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
@@ -28,7 +29,7 @@ import { useOnboardingAnalytics } from "../effects/useOnboardingAnalytics";
 import { useOnboardingPersistence } from "../effects/useOnboardingPersistence";
 import { useOnboardingPreferences } from "../effects/useOnboardingPreferences";
 import { useOnboardingSubmission } from "../effects/useOnboardingSubmission";
-import { getStage } from "../state/derive";
+import { getStage, serverHasRecordedPreferences } from "../state/derive";
 import { initialState } from "../state/initial";
 import { usePaceStore } from "../state/paceStore";
 import {
@@ -51,12 +52,20 @@ interface UseOnboardingReturn {
 
 export function useOnboarding(): UseOnboardingReturn {
   const queryClient = useQueryClient();
-  const { userId } = useCurrentUser();
+  const { userId, onboarding } = useCurrentUser();
+  // The persisted user cache paints first and may predate a server-side
+  // reset; the draft is only reconciled against an answer from this session.
+  const userIsFresh = useCurrentUserIsFresh();
   const [state, dispatch] = useReducer(reducer, initialState);
   const { isPaid } = useIsPaid();
   const stage = getStage(state, isPaid);
 
-  const hydrated = useOnboardingPersistence(userId, state, dispatch);
+  const hydrated = useOnboardingPersistence(
+    userIsFresh ? userId : "",
+    serverHasRecordedPreferences(onboarding),
+    state,
+    dispatch,
+  );
   useOnboardingPreferences(state, dispatch);
 
   const handleSubmissionSuccess = useCallback(

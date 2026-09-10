@@ -23,6 +23,7 @@ const CODE = "Ab3-_xY9zQ1234567890wE";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 const FRONTEND_URL = "https://gaia.test";
+const okRedeem = () => vi.fn(async () => ({ linked: true }));
 
 function fakeTarget(): MessageTarget & { sent: string[] } {
   const sent: string[] = [];
@@ -93,11 +94,8 @@ describe("parseTrailingLinkCode", () => {
 });
 
 describe("redeemLinkCode", () => {
-  it("returns the composed first message on success", async () => {
-    const redeem = vi.fn(async () => ({
-      linked: true,
-      firstMessage: FIRST_MESSAGE,
-    }));
+  it("reports success and sends nothing itself: the API delivers the first contact", async () => {
+    const redeem = okRedeem();
     const target = fakeTarget();
 
     const result = await redeemLinkCode(
@@ -109,7 +107,7 @@ describe("redeemLinkCode", () => {
       { username: "tg_user" },
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toBe(true);
     expect(redeem).toHaveBeenCalledWith("telegram", "TG42", CODE, {
       username: "tg_user",
     });
@@ -130,7 +128,7 @@ describe("redeemLinkCode", () => {
       target,
     );
 
-    expect(result).toBeNull();
+    expect(result).toBe(false);
     expect(target.sent).toEqual([
       buildLinkCodeFailureMessage("expired", FRONTEND_URL),
     ]);
@@ -151,7 +149,7 @@ describe("redeemLinkCode", () => {
       target,
     );
 
-    expect(result).toBeNull();
+    expect(result).toBe(false);
     expect(target.sent).toEqual([
       buildLinkCodeFailureMessage("conflict", FRONTEND_URL),
     ]);
@@ -159,6 +157,27 @@ describe("redeemLinkCode", () => {
   });
 
   it("points a free user at pricing instead of throwing on a paid platform", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 429", 429, { plan_required: "pro" });
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("plan", FRONTEND_URL),
+    ]);
+    expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
+  });
+
+  it("does not pitch Pro at a plain rate limit", async () => {
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 429", 429);
     });
@@ -172,11 +191,31 @@ describe("redeemLinkCode", () => {
       target,
     );
 
-    expect(result).toBeNull();
+    expect(result).toBe(false);
+    expect(target.sent[0]).not.toContain(`${FRONTEND_URL}/pricing`);
+  });
+
+  it("tells a user holding a different handle to fix their own account", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 409", 409, {
+        code: "account_has_other_platform_account",
+      });
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
     expect(target.sent).toEqual([
-      buildLinkCodeFailureMessage("plan", FRONTEND_URL),
+      buildLinkCodeFailureMessage("account-has-other", FRONTEND_URL),
     ]);
-    expect(target.sent[0]).toContain(`${FRONTEND_URL}/pricing`);
+    expect(target.sent[0]).not.toContain("someone else");
   });
 
   it("lets an unexpected failure propagate rather than faking a link", async () => {
@@ -202,54 +241,96 @@ describe("consumeInboundLinkCode", () => {
 
   it("passes a codeless message straight through and never calls the API", async () => {
     const redeem = vi.fn();
-    const isLinked = vi.fn(async () => false);
+    const linkState = vi.fn(async () => "unlinked" as const);
 
     const result = await consumeInboundLinkCode(
       base({
         gaia: fakeGaia(redeem),
         text: "what's on my calendar?",
-        isLinked,
+        linkState,
       }),
     );
 
     expect(result).toBe("what's on my calendar?");
     expect(redeem).not.toHaveBeenCalled();
-    expect(isLinked).not.toHaveBeenCalled();
+    expect(linkState).not.toHaveBeenCalled();
   });
 
-  it("redeems for an unlinked sender and returns the stripped text", async () => {
-    const redeem = vi.fn(async () => ({
-      linked: true,
-      firstMessage: FIRST_MESSAGE,
-    }));
+  it("redeems for an unlinked sender and leaves no turn to run", async () => {
+    // The bundle IS the reply. Returning the stripped text here would answer the
+    // user's own prewritten opener a second time, underneath a reply that
+    // already covers everything they picked.
+    const redeem = okRedeem();
+    const target = fakeTarget();
 
     const result = await consumeInboundLinkCode(
       base({
         gaia: fakeGaia(redeem),
         text: `${FIRST_MESSAGE} #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
+        target,
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
+    expect(target.sent).toEqual([]);
   });
 
-  it("runs the server-composed opener even when the user edited the text", async () => {
-    const redeem = vi.fn(async () => ({
-      linked: true,
-      firstMessage: FIRST_MESSAGE,
-    }));
+  it("does not greet when the inbound redemption fails", async () => {
+    const redeem = vi.fn(async () => {
+      throw new GaiaApiError("API error: 409", 409);
+    });
+    const target = fakeTarget();
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `${FIRST_MESSAGE} #${CODE}`,
+        linkState: async () => "unlinked" as const,
+        target,
+      }),
+    );
+
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("conflict", FRONTEND_URL),
+    ]);
+  });
+
+  it("redeems even when the user edited the prewritten text, and sends nothing itself", async () => {
+    const target = fakeTarget();
+
+    const result = await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(okRedeem()),
+        text: `hi #${CODE}`,
+        linkState: async () => "unlinked" as const,
+        target,
+      }),
+    );
+
+    expect(result).toBeNull();
+    expect(target.sent).toEqual([]);
+  });
+
+  it("answers the message instead of redeeming when the link check failed", async () => {
+    const redeem = vi.fn();
+    const target = fakeTarget();
 
     const result = await consumeInboundLinkCode(
       base({
         gaia: fakeGaia(redeem),
-        text: `hi #${CODE}`,
-        isLinked: async () => false,
+        text: `remind me tomorrow #${CODE}`,
+        linkState: async () => "unknown" as const,
+        target,
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    // A failed check used to read as "unlinked", which spent a stale code and
+    // answered a real message with "that link has expired".
+    expect(result).toBe("remind me tomorrow");
+    expect(redeem).not.toHaveBeenCalled();
+    expect(target.sent).toEqual([]);
   });
 
   it("strips a stray code from a linked sender without redeeming or replying", async () => {
@@ -260,7 +341,7 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `remind me tomorrow #${CODE}`,
-        isLinked: async () => true,
+        linkState: async () => "linked" as const,
         target,
       }),
     );
@@ -279,28 +360,28 @@ describe("consumeInboundLinkCode", () => {
       base({
         gaia: fakeGaia(redeem),
         text: `${FIRST_MESSAGE} #${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
       }),
     );
 
     expect(result).toBeNull();
   });
 
-  it("runs the server-composed opener when the message was nothing but a code", async () => {
-    const redeem = vi.fn(async () => ({
-      linked: true,
-      firstMessage: FIRST_MESSAGE,
-    }));
+  it("redeems a message that was nothing but a code, and sends nothing itself", async () => {
+    const redeem = okRedeem();
+    const target = fakeTarget();
 
     const result = await consumeInboundLinkCode(
       base({
         gaia: fakeGaia(redeem),
         text: `#${CODE}`,
-        isLinked: async () => false,
+        linkState: async () => "unlinked" as const,
+        target,
       }),
     );
 
-    expect(result).toBe(FIRST_MESSAGE);
+    expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
+    expect(target.sent).toEqual([]);
   });
 });

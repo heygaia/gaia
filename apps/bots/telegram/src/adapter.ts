@@ -255,23 +255,12 @@ export class TelegramAdapter extends BaseBotAdapter {
         return;
       }
 
-      const firstMessage = await redeemLinkCode(
-        this.gaia,
-        this.platform,
-        userId,
-        code,
-        target,
-        {
-          username: ctx.from?.username,
-          displayName: ctx.from?.first_name,
-        },
-      );
-      // null means the user already has a friendly explanation of why not.
-      if (firstMessage === null) return;
-
-      // Run the composed opener through the exact path an inbound text takes,
-      // so GAIA answers it as the user's own first turn.
-      await this.handleTelegramStreaming(ctx, userId, firstMessage);
+      // The redeem delivers GAIA's whole first contact itself: nothing to run
+      // afterwards, and a failure has already told the user why.
+      await redeemLinkCode(this.gaia, this.platform, userId, code, target, {
+        username: ctx.from?.username,
+        displayName: ctx.from?.first_name,
+      });
     });
 
     for (const cmd of commands) {

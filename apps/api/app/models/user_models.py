@@ -42,6 +42,23 @@ def clean_profession(value: str) -> str:
     return cleaned
 
 
+def _known_enum_value_or_unset(value: object, enum: type[Enum]) -> object:
+    """A stored value that is a member of ``enum`` today, else ``None``.
+
+    A historical row with a value outside today's enum is an unset field, not a
+    failed auth read; only our own code writes these, but the read must never
+    depend on that. Enum members are ``str``, so they pass as themselves, and a
+    dict or an int in the slot reads as unset rather than raising.
+
+    Each field is checked against its OWN enum. One merged set of every known
+    value looks equivalent and is not: ``OnboardingPhase`` and ``BioStatus``
+    both carry ``"completed"``, so a value belonging to the other enum passes
+    the guard and then fails Pydantic's coercion for the field's real type —
+    producing exactly the failed read the guard exists to prevent.
+    """
+    return value if isinstance(value, str) and value in {m.value for m in enum} else None
+
+
 def clean_other_need(value: str | None) -> str | None:
     """Whitespace-only is "nothing typed", not a need."""
     if value is None:
@@ -447,18 +464,17 @@ class OnboardingSubdocument(BaseModel):
     overlay_color: str = "rgba(0,0,0,0)"
     overlay_opacity: int = 40
 
-    @field_validator("phase", "bio_status", mode="before")
+    @field_validator("phase", mode="before")
     @classmethod
-    def unknown_enum_values_read_as_unset(cls, value: object) -> object:
-        """A historical row with a value outside today's enum is an unset field,
-        not a failed auth read; only our own code writes these, but the read
-        must never depend on that."""
-        if value is None or isinstance(value, (OnboardingPhase, BioStatus)):
-            return value
-        known = {member.value for member in OnboardingPhase} | {
-            member.value for member in BioStatus
-        }
-        return value if value in known else None
+    def an_unknown_phase_reads_as_unset(cls, value: object) -> object:
+        """A stored ``phase`` outside today's enum is an unset field, not a failed read."""
+        return _known_enum_value_or_unset(value, OnboardingPhase)
+
+    @field_validator("bio_status", mode="before")
+    @classmethod
+    def an_unknown_bio_status_reads_as_unset(cls, value: object) -> object:
+        """The same guard for ``bio_status``, against its own enum."""
+        return _known_enum_value_or_unset(value, BioStatus)
 
     @field_validator("preferences", mode="before")
     @classmethod
@@ -471,6 +487,43 @@ class OnboardingSubdocument(BaseModel):
         if value is None or isinstance(value, (OnboardingPreferences, Mapping)):
             return value
         return None
+
+    @field_validator("preferences", mode="before")
+    @classmethod
+    def a_stored_profession_todays_rules_reject_reads_as_unset(cls, value: object) -> object:
+        """A profession the input rules would refuse today is an unset field, not
+        a failed auth read.
+
+        ``OnboardingPreferences`` is both this stored subdocument's type and the
+        request body of ``PATCH /preferences``, so every tightening of
+        ``clean_profession`` applies retroactively: it re-judges rows the older,
+        laxer validator already accepted. When it refuses one, ``_to_model``
+        raises on the single-document read (``base.py``'s lenient guard covers
+        only the list read), ``authenticate_workos_session`` catches it and
+        returns an empty ``user_info``, and the caller is 401'd — WorkOS says they
+        are signed in, we say they are not, and signing in again lands in the same
+        loop with no self-service fix. Dropping the value keeps the account
+        readable; the write path stays strict, so nobody can type one of these in.
+        """
+        if not isinstance(value, Mapping):
+            return value
+        stored = value.get("profession")
+        if stored is None:
+            return value
+        if isinstance(stored, str):
+            try:
+                clean_profession(stored)
+            except ValueError:
+                # ValueError is clean_profession's only failure signal, and a
+                # refused stored value is exactly the case handled here.
+                pass
+            else:
+                return value
+        # Anything that is not readable text drops out: a non-str never reaches
+        # clean_profession at all, because ``profession: str | None`` rejects it
+        # at the type level first and fails the same read this guard exists to
+        # keep alive.
+        return {**value, "profession": None}
 
 
 class UserDocument(MongoDocument):

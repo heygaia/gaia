@@ -56,7 +56,7 @@ describe("useOnboardingPersistence follows the signed-in user", () => {
     const { result, rerender } = renderHook(
       ({ userId }: { userId: string }) => {
         const [state, dispatch] = useReducer(reducer, initialState);
-        useOnboardingPersistence(userId, state, dispatch);
+        useOnboardingPersistence(userId, true, state, dispatch);
         return state;
       },
       { initialProps: { userId: ALICE } },

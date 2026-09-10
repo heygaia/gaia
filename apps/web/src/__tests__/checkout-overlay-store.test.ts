@@ -20,7 +20,10 @@ vi.mock("@/features/pricing/lib/dodoOverlay", () => ({
   closeDodoOverlay: () => closeDodoOverlay(),
 }));
 
-import { useCheckoutOverlayStore } from "@/features/pricing/stores/checkoutOverlayStore";
+import {
+  isCheckoutSettled,
+  useCheckoutOverlayStore,
+} from "@/features/pricing/stores/checkoutOverlayStore";
 
 const SESSION = {
   subscription_id: "sess_1",
@@ -79,6 +82,9 @@ describe("checkout overlay state machine", () => {
       .startCheckout("monthly", "paywall_modal");
     useCheckoutOverlayStore
       .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
+    useCheckoutOverlayStore
+      .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
 
     // A closed overlay proves nothing on its own — the phase must not jump
@@ -104,38 +110,71 @@ describe("checkout overlay state machine", () => {
   });
 
   it("admits the delay past the visible budget but keeps polling", async () => {
-    await useCheckoutOverlayStore
-      .getState()
-      .startCheckout("monthly", "paywall_modal");
-    useCheckoutOverlayStore
-      .getState()
-      .handleCheckoutEvent({ event_type: "checkout.closed" });
+    // The long wait belongs to the redirect path: Dodo already took the
+    // browser away and back, so the charge exists and only the webhook is
+    // outstanding. The overlay's own dismissal gets the short grace below.
+    useCheckoutOverlayStore.getState().confirmReturnedCheckout("sub_1");
 
     await vi.advanceTimersByTimeAsync(61_000);
     expect(useCheckoutOverlayStore.getState().phase).toBe("timeout");
 
-    const pollsSoFar = getSubscriptionStatus.mock.calls.length;
-    getSubscriptionStatus.mockResolvedValue(PRO);
+    const pollsSoFar = verifyPayment.mock.calls.length;
+    verifyPayment.mockResolvedValue({ payment_completed: true });
     await advancePolls(2);
 
-    expect(getSubscriptionStatus.mock.calls.length).toBeGreaterThan(pollsSoFar);
+    expect(verifyPayment.mock.calls.length).toBeGreaterThan(pollsSoFar);
     expect(useCheckoutOverlayStore.getState().phase).toBe("confirmed");
   });
 
   it("stops after the total budget and says the payment is unconfirmed", async () => {
+    useCheckoutOverlayStore.getState().confirmReturnedCheckout("sub_1");
+
+    await vi.advanceTimersByTimeAsync(5 * 60_000 + 10_000);
+    expect(useCheckoutOverlayStore.getState().phase).toBe("unconfirmed");
+
+    const pollsSoFar = verifyPayment.mock.calls.length;
+    await advancePolls(3);
+    expect(verifyPayment.mock.calls.length).toBe(pollsSoFar);
+  });
+
+  it("hands the plans back seconds after the user closes the sheet, not minutes", async () => {
+    // Pressing pay is not evidence of paying: a completed checkout navigates
+    // the page to Dodo's return URL, so a closed overlay is the user backing
+    // out of a sheet that never went through. Waiting five minutes on that
+    // leaves them staring at "Confirming your payment…" with no way out.
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
     useCheckoutOverlayStore
       .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
+    useCheckoutOverlayStore
+      .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
 
-    await vi.advanceTimersByTimeAsync(5 * 60_000 + 10_000);
-    expect(useCheckoutOverlayStore.getState().phase).toBe("unconfirmed");
+    await vi.advanceTimersByTimeAsync(20_000);
 
-    const pollsSoFar = getSubscriptionStatus.mock.calls.length;
-    await advancePolls(3);
-    expect(getSubscriptionStatus.mock.calls.length).toBe(pollsSoFar);
+    expect(useCheckoutOverlayStore.getState().phase).toBe("unconfirmed");
+    expect(isCheckoutSettled(useCheckoutOverlayStore.getState().phase)).toBe(
+      true,
+    );
+  });
+
+  it("still confirms a charge that lands inside the dismissal grace", async () => {
+    await useCheckoutOverlayStore
+      .getState()
+      .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.closed" });
+
+    getSubscriptionStatus.mockResolvedValue(PRO);
+    await advancePolls(1);
+
+    expect(useCheckoutOverlayStore.getState().phase).toBe("confirmed");
   });
 
   it("settles a returned checkout through verify, with the subscription off the URL", async () => {
@@ -154,6 +193,9 @@ describe("checkout overlay state machine", () => {
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
     useCheckoutOverlayStore
       .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });
@@ -195,6 +237,9 @@ describe("checkout overlay state machine", () => {
     await useCheckoutOverlayStore
       .getState()
       .startCheckout("monthly", "paywall_modal");
+    useCheckoutOverlayStore
+      .getState()
+      .handleCheckoutEvent({ event_type: "checkout.pay_button_clicked" });
     useCheckoutOverlayStore
       .getState()
       .handleCheckoutEvent({ event_type: "checkout.closed" });

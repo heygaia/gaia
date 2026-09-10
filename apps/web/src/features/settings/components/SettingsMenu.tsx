@@ -306,7 +306,10 @@ export default function SettingsMenu({
                 key: "upgrade_to_pro",
                 label: "Subscribe to GAIA Pro",
                 action: () =>
-                  openUpgradeModal(undefined, { dismissible: true }),
+                  openUpgradeModal(undefined, {
+                    dismissible: true,
+                    source: "settings_menu",
+                  }),
                 icon: CircleArrowUp02Icon,
                 iconColor: "#00bbff",
                 customClassNames: { title: "text-primary font-medium" },

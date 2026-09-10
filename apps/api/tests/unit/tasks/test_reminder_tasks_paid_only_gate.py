@@ -4,32 +4,50 @@ The HTTP paywall is a middleware; the scheduler never makes an HTTP request, so
 a reminder created while subscribed would keep firing (and keep spending) after
 the subscription lapsed. ``execute_reminder_by_agent`` is the single choke point
 every fire passes through, so the gate lives there.
+
+The gate only SKIPS. It used to write ``PAUSED`` as well, which was invisible:
+``BaseSchedulerService.process_task_execution`` writes the reminder's status
+again the moment the fire returns — ``SCHEDULED`` for a recurring reminder,
+``COMPLETED`` for a one-off — so the pause was overwritten every time and no
+subscription-restore path had anything to resume from. Skipping instead lets
+the scheduler's own re-arm bring a recurring reminder back by itself, which is
+what the workflow gate does for the same reason.
 """
 
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
 import pytest
 
 from app.models.reminder_models import ReminderModel, ReminderStatus, StaticReminderPayload
-from app.tasks.reminder_tasks import execute_reminder_by_agent
+from app.services.analytics_service import AnalyticsEvents
+from app.services.reminder_service import reminder_scheduler
+from app.tasks.reminder_tasks import PAYWALL_FEATURE_REMINDER, execute_reminder_by_agent
 
 pytestmark = pytest.mark.unit
 
 MODULE = "app.tasks.reminder_tasks"
+SCHEDULER = "app.services.reminder_service"
 
 
-def _reminder() -> ReminderModel:
+def _reminder(repeat: str | None = None) -> ReminderModel:
     return ReminderModel(
         id="rem-1",
         user_id="user-1",
         agent="static",
+        repeat=repeat,
+        scheduled_at=datetime.now(UTC),
         payload=StaticReminderPayload(title="Water the plants", body="Now"),
     )
 
 
 @pytest.fixture
 def lapsed_user():
-    with patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)):
+    """FREE in the cache AND on a fresh read — a genuinely lapsed subscription."""
+    with (
+        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
+        patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+    ):
         yield
 
 
@@ -40,32 +58,57 @@ async def test_free_user_reminder_does_not_fire() -> None:
             f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock
         ) as notify,
         patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock) as deliver,
-        patch(f"{MODULE}.reminder_repository.set_status", new_callable=AsyncMock),
         patch(f"{MODULE}.capture_event") as capture,
     ):
         await execute_reminder_by_agent(_reminder())
 
     notify.assert_not_awaited()
     deliver.assert_not_awaited()
-    capture.assert_not_called()
+    captured = [call.args[1] for call in capture.call_args_list]
+    assert AnalyticsEvents.REMINDER_COMPLETED not in captured
 
 
 @pytest.mark.usefixtures("lapsed_user")
-async def test_free_user_reminder_is_paused_not_cancelled() -> None:
-    """Paused, so the scheduler stops re-arming it but resubscribing restores it."""
+async def test_the_block_reaches_the_funnel_under_the_blocked_users_own_id() -> None:
+    """Every other paywall block in the app is attributable; this one must be too.
+
+    This gate cannot go through ``require_active_subscription`` — that raises,
+    and a worker must skip — so the event it would have fired has to be fired
+    here. Without it "how many users lost a reminder to the wall" is
+    unanswerable while every other surface answers it, and a worker has no
+    request context, so the id must be explicit or the block lands on an
+    anonymous profile.
+    """
     with (
         patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
         patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
-        patch(f"{MODULE}.reminder_repository.set_status", new_callable=AsyncMock) as set_status,
+        patch(f"{MODULE}.capture_event") as capture,
     ):
         await execute_reminder_by_agent(_reminder())
 
-    set_status.assert_awaited_once_with("rem-1", ReminderStatus.PAUSED)
+    capture.assert_called_once_with(
+        "user-1",
+        AnalyticsEvents.PAYWALL_BLOCKED,
+        {"feature": PAYWALL_FEATURE_REMINDER},
+    )
+
+
+async def test_a_paying_users_reminder_is_never_captured_as_blocked() -> None:
+    with (
+        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=True)),
+        patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
+        patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
+        patch(f"{MODULE}.capture_event") as capture,
+    ):
+        await execute_reminder_by_agent(_reminder())
+
+    captured = [call.args[1] for call in capture.call_args_list]
+    assert AnalyticsEvents.PAYWALL_BLOCKED not in captured
 
 
 @pytest.mark.usefixtures("lapsed_user")
-async def test_the_pause_is_recorded_on_the_wide_event_with_both_ids() -> None:
-    """A paused reminder is a silent stop: the wide event is the only trace.
+async def test_the_skip_is_recorded_on_the_wide_event_with_both_ids() -> None:
+    """A skipped reminder is silent: the wide event is the only trace.
 
     ``log.warning`` writes message AND kwargs into the event's ``warnings[]``
     (see libs/shared/py/wide_events.py), so both ids are a queried surface —
@@ -74,16 +117,54 @@ async def test_the_pause_is_recorded_on_the_wide_event_with_both_ids() -> None:
     with (
         patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
         patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
-        patch(f"{MODULE}.reminder_repository.set_status", new_callable=AsyncMock),
         patch(f"{MODULE}.log") as mock_log,
     ):
         await execute_reminder_by_agent(_reminder())
 
     mock_log.warning.assert_called_once_with(
-        "Reminder skipped — subscription required, pausing",
+        "Reminder skipped — subscription required",
         reminder_id="rem-1",
         user_id="user-1",
     )
+
+
+async def test_a_cached_free_gets_one_fresh_read_before_the_reminder_is_refused() -> None:
+    """The cached tier lags a payment by up to its TTL.
+
+    A user who paid two minutes ago still reads FREE from Redis. Refusing an
+    HTTP request on that is recoverable — the next one is fine — but a reminder
+    occurrence refused on it is gone, so the gate asks the database once before
+    it skips, exactly as the workflow gate does.
+    """
+    confirm = AsyncMock(return_value=True)
+    with (
+        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
+        patch(f"{MODULE}.confirm_subscription_active", confirm),
+        patch(
+            f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock
+        ) as notify,
+        patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
+        patch(f"{MODULE}.capture_event"),
+    ):
+        await execute_reminder_by_agent(_reminder())
+
+    confirm.assert_awaited_once_with("user-1")
+    notify.assert_awaited_once()
+
+
+async def test_a_paying_user_is_never_charged_a_fresh_read() -> None:
+    """The fresh read is the exception path, not the hot path."""
+    confirm = AsyncMock(return_value=True)
+    with (
+        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=True)),
+        patch(f"{MODULE}.confirm_subscription_active", confirm),
+        patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
+        patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
+        patch(f"{MODULE}.capture_event"),
+    ):
+        await execute_reminder_by_agent(_reminder())
+
+    confirm.assert_not_awaited()
 
 
 async def test_the_gate_asks_about_the_reminders_own_owner() -> None:
@@ -98,3 +179,36 @@ async def test_the_gate_asks_about_the_reminders_own_owner() -> None:
         await execute_reminder_by_agent(_reminder())
 
     is_active.assert_awaited_once_with("user-1")
+
+
+@pytest.mark.usefixtures("lapsed_user")
+async def test_a_recurring_reminder_the_gate_skipped_is_left_armed_for_its_next_occurrence() -> (
+    None
+):
+    """Driven through the scheduler, because the scheduler is what overwrote the pause.
+
+    ``process_task_execution`` is the path the ARQ job takes: claim, execute,
+    then write the status again. Testing the gate alone cannot see that second
+    write, which is why the pause it used to take looked correct in isolation
+    and was gone in production. Only the reminder repository and the ARQ pool
+    are faked; the status the reminder ends up in is whatever the real
+    scheduler settles on.
+    """
+    set_status = AsyncMock(return_value=True)
+    with (
+        patch(
+            f"{SCHEDULER}.reminder_repository.get", AsyncMock(return_value=_reminder("0 9 * * *"))
+        ),
+        patch(f"{SCHEDULER}.reminder_repository.claim_for_execution", AsyncMock(return_value=True)),
+        patch(f"{SCHEDULER}.reminder_repository.set_status", set_status),
+    ):
+        await reminder_scheduler.process_task_execution("rem-1")
+
+    written = [call.args[1] for call in set_status.await_args_list]
+    assert ReminderStatus.PAUSED not in written, (
+        f"the gate wrote PAUSED, which the scheduler then overwrote: {written}"
+    )
+    assert written[-1] is ReminderStatus.SCHEDULED, (
+        "a skipped recurring reminder must stay armed so it resumes on its own "
+        f"once the user pays again, got {written}"
+    )

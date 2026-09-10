@@ -17,7 +17,7 @@ export function Chat() {
   return (
     <m.div className="mt-4 flex flex-col gap-3" {...MOTION_FADE_UP}>
       <OnboardingBotBubble text={FINISHING_MESSAGE} />
-      <Spinner size="sm" className="ml-10.75" aria-label="Finishing setup" />
+      <Spinner size="sm" className="sm:ml-10.75" aria-label="Finishing setup" />
     </m.div>
   );
 }

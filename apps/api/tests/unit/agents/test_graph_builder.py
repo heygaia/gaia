@@ -318,12 +318,17 @@ class TestBuildCommsGraph:
             assert kwargs["agent_config"].agent_name == "comms_agent"
             assert kwargs["tools_config"].disable_retrieve_tools is True
             from app.agents.tools import memory_tools
+            from app.agents.tools.webpage_tool import fetch_webpages, web_search_tool
 
+            # Comms binds these statically: retrieval is off, so a tool absent
+            # from initial_tool_ids is unreachable no matter what it's registered as.
             assert kwargs["tools_config"].initial_tool_ids == [
                 "call_executor",
                 "cancel_executor",
                 "find_integration",
                 "search_public_workflows",
+                web_search_tool.name,
+                fetch_webpages.name,
                 *[memory_tool.name for memory_tool in memory_tools.tools],
             ]
 
@@ -353,6 +358,9 @@ class TestBuildCommsGraph:
             assert "call_executor" in tool_registry
             assert "add_memory" in tool_registry
             assert "search_memory" in tool_registry
+            # Comms runs open-web lookups itself instead of delegating to the executor.
+            assert "web_search_tool" in tool_registry
+            assert "fetch_webpages" in tool_registry
 
     async def test_comms_pre_model_hooks_structure(self):
         with ExitStack() as stack:

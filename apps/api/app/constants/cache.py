@@ -34,8 +34,6 @@ PLANS_CACHE_KEYS = (ACTIVE_PLANS_CACHE_KEY, ALL_PLANS_CACHE_KEY)
 # A minted Dodo checkout session, per user and billing cycle. Reused rather than
 # re-minted so a user who asks to upgrade twice — or hits a limit repeatedly —
 # doesn't leave a trail of abandoned sessions in Dodo.
-UPGRADE_LINK_CACHE_PREFIX = "upgrade_link:"
-UPGRADE_LINK_CACHE_TTL = ONE_HOUR_TTL
 # The tracked-todo summary injected into comms context. Deliberately short: the
 # list changes as the agent works, and a stale pin is worse than the lookup it
 # saves. Keyed by user alone, so only the unpinned summary may use it.
@@ -178,6 +176,16 @@ HIL_DECLINED_PREFIX = "hil:declined:"
 # not one per fire (a production thread ran to six in a row).
 WORKFLOW_LIMIT_NOTICE_PREFIX = "workflow:limit-notice:"
 WORKFLOW_LIMIT_NOTICE_TTL = ONE_DAY_TTL
+
+# One bot user's personalised Dodo upgrade link. Same shape as the workflow
+# notice above and a different subject: what is gated here is the MINT, not the
+# message. A lapsed user keeps typing, and every blocked turn used to cost a
+# get_plans call, a Dodo round-trip and a checkout_sessions insert for a link
+# nobody tapped. An hour, not a day: the window has to be short enough that a
+# user coming back later still gets a one-tap link, because a Dodo session is
+# single-use and re-handing out an old one is worse than not having it.
+BOT_UPGRADE_LINK_PREFIX = "bot:upgrade-link:"
+BOT_UPGRADE_LINK_TTL = ONE_HOUR_TTL
 
 EXECUTOR_BUSY_PREFIX = "executor:busy:"
 EXECUTOR_BUSY_TTL = THIRTY_MINUTES_TTL

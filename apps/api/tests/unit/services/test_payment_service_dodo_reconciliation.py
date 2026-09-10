@@ -20,9 +20,10 @@ from dodopayments import NotFoundError
 import pytest
 
 from app.constants.log_tags import LogTag
-from app.models.payment_models import SubscriptionDocument
+from app.models.payment_models import CheckoutSessionDocument, SubscriptionDocument
 from app.services.payments.payment_service import DodoPaymentService
 from tests.helpers import captured_wide_event
+from tests.unit.services.conftest import SAMPLE_USER_DOC, _set_user
 
 SERVICE_MODULE = "app.services.payments.payment_service"
 ACTIVATION_MODULE = "app.services.payments.subscription_activation"
@@ -101,7 +102,7 @@ def _no_recorded_checkout_session():
     (the checkout session recorded at mint time) finds nothing, so the hint
     is the only route to Dodo and the assertions stay about that route."""
     with patch(f"{SERVICE_MODULE}.checkout_session_repository") as repo:
-        repo.get_latest_for_user = AsyncMock(return_value=None)
+        repo.list_recent_for_user = AsyncMock(return_value=[])
         yield
 
 
@@ -113,8 +114,7 @@ class TestVerifyPaymentReconcilesWithDodo:
 
         with (
             patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
-            patch(f"{SERVICE_MODULE}.user_repository") as service_users,
-            patch(f"{SERVICE_MODULE}.send_pro_subscription_email", new_callable=AsyncMock),
+            patch(f"{SERVICE_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
             patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
             patch(f"{ACTIVATION_MODULE}.send_welcome_email_safely", new_callable=AsyncMock),
             patch(f"{ACTIVATION_MODULE}.reactivate_workflows_safely", new_callable=AsyncMock),
@@ -124,7 +124,6 @@ class TestVerifyPaymentReconcilesWithDodo:
             service_repo.get_latest_active_for_user = AsyncMock(
                 side_effect=[None, _activated_row()]
             )
-            service_users.get = AsyncMock(return_value=None)
             activation_repo.get_by_dodo_id = AsyncMock(return_value=None)
             activation_repo.create = AsyncMock()
 
@@ -249,3 +248,268 @@ class TestVerifyPaymentReconcilesWithDodo:
 
         assert result.payment_completed is False
         service.client.subscriptions.retrieve.assert_not_called()
+
+
+def _paid_checkout_service() -> DodoPaymentService:
+    """A service whose Dodo client reports the recorded checkout session paid,
+    with the payment carrying the subscription behind it."""
+    service = DodoPaymentService()
+    service.client = MagicMock()
+    service.client.checkout_sessions.retrieve.return_value = MagicMock(
+        payment_id="pay_1", payment_status="succeeded"
+    )
+    service.client.payments.retrieve.return_value = MagicMock(subscription_id=DODO_SUBSCRIPTION_ID)
+    service.client.subscriptions.retrieve.return_value = _remote_subscription()
+    return service
+
+
+def _recorded_checkout(session_id: str = "cks_1") -> CheckoutSessionDocument:
+    return CheckoutSessionDocument(
+        session_id=session_id,
+        user_id=USER_ID,
+        product_id="prod_pro",
+        created_at=datetime.now(UTC),
+    )
+
+
+def _buried_paid_session_service() -> DodoPaymentService:
+    """A Dodo client for the user whose paid session is no longer the newest.
+
+    Only ``cks_paid`` was ever paid; the sessions minted after it by the paywall
+    are still sitting at the details step, which is what Dodo answers for a link
+    nobody opened.
+    """
+    service = _paid_checkout_service()
+    paid = MagicMock(payment_id="pay_1", payment_status="succeeded")
+    unpaid = MagicMock(payment_id=None, payment_status=None)
+    service.client.checkout_sessions.retrieve.side_effect = (
+        lambda session_id: paid if session_id == "cks_paid" else unpaid
+    )
+    return service
+
+
+@pytest.mark.unit
+class TestVerifyPaymentMaterializesFromTheCheckoutSession:
+    """The recovery route taken when Dodo's return URL carries no subscription id.
+
+    It used to build the subscription row itself instead of delegating to
+    ``activate_subscription``, so a user whose ``subscription.active`` webhook
+    was slow kept the pre-payment tier cached (402 for up to five more minutes)
+    and the workflows paused when their subscription lapsed never came back.
+    These tests pin the delegation, not the row's contents — the shared path's
+    own tests cover those.
+
+    Each test re-patches ``checkout_session_repository`` over the module's
+    autouse fixture, which exists to keep this route out of the sibling class.
+    """
+
+    @pytest.mark.asyncio
+    async def test_materialization_drops_the_plan_cache_and_restores_workflows(self) -> None:
+        service = _paid_checkout_service()
+
+        with (
+            patch(f"{SERVICE_MODULE}.checkout_session_repository") as checkout_repo,
+            patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
+            patch(f"{SERVICE_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{SERVICE_MODULE}.user_repository") as service_users,
+            patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
+            patch(
+                f"{ACTIVATION_MODULE}.invalidate_plan_cache", new_callable=AsyncMock
+            ) as drop_cache,
+            patch(
+                f"{ACTIVATION_MODULE}.reactivate_workflows_safely", new_callable=AsyncMock
+            ) as reactivate,
+            patch(f"{ACTIVATION_MODULE}.send_welcome_email_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.track_subscription_event"),
+        ):
+            checkout_repo.list_recent_for_user = AsyncMock(return_value=[_recorded_checkout()])
+            service_repo.get_latest_active_for_user = AsyncMock(
+                side_effect=[None, _activated_row()]
+            )
+            service_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            service_repo.create = AsyncMock(return_value=_activated_row())
+            service_users.get = AsyncMock(return_value=None)
+            activation_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            activation_repo.create = AsyncMock()
+
+            result = await service.verify_payment_completion(USER_ID)
+
+        assert result.payment_completed is True
+        # The paywall reads a five-minute cache; a user who just paid stays
+        # locked out for that long unless the recovery drops the key too.
+        drop_cache.assert_awaited_once_with(USER_ID)
+        # Workflows switched off when the subscription lapsed only come back
+        # through this call — nothing else ever re-enables them.
+        reactivate.assert_awaited_once_with(USER_ID)
+        # The row is written by the shared activation, not by a second
+        # implementation living in the verification path.
+        created = activation_repo.create.await_args.args[0]
+        assert created.dodo_subscription_id == DODO_SUBSCRIPTION_ID
+        assert created.user_id == USER_ID
+        service_repo.create.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_a_paid_session_buried_under_later_paywall_mints_is_still_found(self) -> None:
+        """Every 402 mints a checkout session, so a user who pays and is then
+        blocked once has a newer, unpaid session on top of the paid one.
+        Resolving only "the latest" asked Dodo about a session nobody ever paid,
+        and answered "No active subscription found" to a user who had paid —
+        with the fallback that exists for a lost webhook permanently disabled,
+        because every further block buries the paid session deeper."""
+        service = _buried_paid_session_service()
+
+        with (
+            patch(f"{SERVICE_MODULE}.checkout_session_repository") as checkout_repo,
+            patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
+            patch(f"{SERVICE_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
+            patch(f"{ACTIVATION_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.reactivate_workflows_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.send_welcome_email_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.track_subscription_event"),
+        ):
+            # Newest first, exactly as the repository returns them.
+            buried = [
+                _recorded_checkout("cks_block_2"),
+                _recorded_checkout("cks_block_1"),
+                _recorded_checkout("cks_paid"),
+            ]
+            checkout_repo.list_recent_for_user = AsyncMock(return_value=buried)
+            service_repo.get_latest_active_for_user = AsyncMock(
+                side_effect=[None, _activated_row()]
+            )
+            service_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            service_repo.create = AsyncMock(return_value=_activated_row())
+            activation_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            activation_repo.create = AsyncMock()
+
+            result = await service.verify_payment_completion(USER_ID)
+
+        assert result.payment_completed is True
+        assert result.subscription_id == DODO_SUBSCRIPTION_ID
+        # Every session between the paid one and now was asked about, in
+        # newest-first order — the scan stops at the first one Dodo calls paid.
+        assert [
+            call.args[0] for call in service.client.checkout_sessions.retrieve.call_args_list
+        ] == ["cks_block_2", "cks_block_1", "cks_paid"]
+        # The payment behind the paid session is the one that gets resolved.
+        service.client.payments.retrieve.assert_called_once_with("pay_1")
+        activation_repo.create.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_one_session_dodo_cannot_answer_for_does_not_end_the_scan(self) -> None:
+        """The scan runs precisely when something has already gone wrong, so a
+        session Dodo will not answer for must not hide the paid one behind it."""
+        service = _buried_paid_session_service()
+        paid = MagicMock(payment_id="pay_1", payment_status="succeeded")
+        service.client.checkout_sessions.retrieve.side_effect = (
+            lambda session_id: paid
+            if session_id == "cks_paid"
+            else (_ for _ in ()).throw(RuntimeError("Dodo API down"))
+        )
+
+        with (
+            patch(f"{SERVICE_MODULE}.checkout_session_repository") as checkout_repo,
+            patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
+            patch(f"{SERVICE_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
+            patch(f"{ACTIVATION_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.reactivate_workflows_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.send_welcome_email_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.track_subscription_event"),
+        ):
+            checkout_repo.list_recent_for_user = AsyncMock(
+                return_value=[_recorded_checkout("cks_block_1"), _recorded_checkout("cks_paid")]
+            )
+            service_repo.get_latest_active_for_user = AsyncMock(
+                side_effect=[None, _activated_row()]
+            )
+            activation_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            activation_repo.create = AsyncMock()
+
+            async with captured_wide_event() as event:
+                result = await service.verify_payment_completion(USER_ID)
+
+        assert result.payment_completed is True
+        # The failure is still on the record, named by the session it happened
+        # on — the scan continuing is not the same as the error being hidden.
+        assert event["warnings"] == [
+            {
+                "msg": f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
+                "error": "Dodo API down",
+                "error_type": "RuntimeError",
+                "user_id": USER_ID,
+                "session_id": "cks_block_1",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_refuses_a_checkout_subscription_owned_by_someone_else(self) -> None:
+        service = _paid_checkout_service()
+        service.client.subscriptions.retrieve.return_value = _remote_subscription(
+            metadata={"user_id": OTHER_USER_ID}
+        )
+
+        with (
+            patch(f"{SERVICE_MODULE}.checkout_session_repository") as checkout_repo,
+            patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
+            patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
+        ):
+            checkout_repo.list_recent_for_user = AsyncMock(return_value=[_recorded_checkout()])
+            service_repo.get_latest_active_for_user = AsyncMock(return_value=None)
+            service_repo.create = AsyncMock()
+            activation_repo.create = AsyncMock()
+
+            async with captured_wide_event() as event:
+                result = await service.verify_payment_completion(USER_ID)
+
+        assert result.payment_completed is False
+        activation_repo.create.assert_not_awaited()
+        service_repo.create.assert_not_awaited()
+        # Both recovery routes refuse a stranger's subscription the same way,
+        # and both leave the same audit trail naming who asked.
+        assert event["audit"] == [
+            {
+                "msg": "payment verification refused",
+                "actor": USER_ID,
+                "provider": "dodo",
+                "reason": "subscription_owner_mismatch",
+            }
+        ]
+
+    @pytest.mark.asyncio
+    async def test_the_welcome_email_is_sent_once_by_the_activation(self) -> None:
+        service = _paid_checkout_service()
+
+        with (
+            patch(f"{SERVICE_MODULE}.checkout_session_repository") as checkout_repo,
+            patch(f"{SERVICE_MODULE}.subscription_repository") as service_repo,
+            patch(f"{SERVICE_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{SERVICE_MODULE}.user_repository") as service_users,
+            patch(f"{ACTIVATION_MODULE}.subscription_repository") as activation_repo,
+            patch(f"{ACTIVATION_MODULE}.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.reactivate_workflows_safely", new_callable=AsyncMock),
+            patch(f"{ACTIVATION_MODULE}.user_repository") as activation_users,
+            patch(
+                f"{ACTIVATION_MODULE}.send_pro_subscription_email", new_callable=AsyncMock
+            ) as send_email,
+            patch(f"{ACTIVATION_MODULE}.track_subscription_event"),
+        ):
+            checkout_repo.list_recent_for_user = AsyncMock(return_value=[_recorded_checkout()])
+            service_repo.get_latest_active_for_user = AsyncMock(
+                side_effect=[None, _activated_row()]
+            )
+            service_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            service_repo.create = AsyncMock(return_value=_activated_row())
+            _set_user(service_users, SAMPLE_USER_DOC)
+            _set_user(activation_users, SAMPLE_USER_DOC)
+            activation_repo.get_by_dodo_id = AsyncMock(return_value=None)
+            activation_repo.create = AsyncMock()
+
+            result = await service.verify_payment_completion(USER_ID)
+
+        assert result.payment_completed is True
+        # Verification used to mail the user itself on top of the activation's
+        # own welcome, so a recovered payment sent two — and every refresh of
+        # the success page sent another.
+        send_email.assert_awaited_once()

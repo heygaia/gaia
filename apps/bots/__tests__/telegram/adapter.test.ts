@@ -151,8 +151,6 @@ import {
 
 /** A real-shaped one-tap link code: 22 urlsafe-base64 characters. */
 const LINK_CODE = "Ab3-_xY9zQ1234567890wE";
-const FIRST_MESSAGE =
-  "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -859,7 +857,7 @@ describe("TelegramAdapter - registerCommands command routing", () => {
     expect(helpExecute).toHaveBeenCalled();
   });
 
-  it("redeems a /start deep-link payload and chats the returned first message", async () => {
+  it("redeems a /start deep-link payload and sends the whole first contact", async () => {
     const helpExecute = vi.fn().mockResolvedValue(undefined);
     const helpCommand = {
       name: "help",
@@ -871,9 +869,7 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       "help",
       helpCommand,
     );
-    const redeemLinkCode = vi
-      .fn()
-      .mockResolvedValue({ linked: true, firstMessage: FIRST_MESSAGE });
+    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
     (adapter as unknown as { gaia: unknown }).gaia = {
       redeemLinkCode,
       getFrontendUrl: () => "https://gaia.test",
@@ -891,7 +887,8 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       ctx: ReturnType<typeof makeCtx>,
     ) => Promise<void>;
 
-    await startHandler(makeCtx({ match: LINK_CODE }));
+    const sendMessageFn = vi.fn().mockResolvedValue({ message_id: 55 });
+    await startHandler(makeCtx({ match: LINK_CODE, sendMessageFn }));
 
     expect(redeemLinkCode).toHaveBeenCalledWith(
       "telegram",
@@ -899,13 +896,13 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       LINK_CODE,
       expect.objectContaining({ username: "aliceuser", displayName: "Alice" }),
     );
-    // The opener runs through the normal chat path, as the user's own turn.
-    expect(handleStreamingChat).toHaveBeenCalledOnce();
-    expect(vi.mocked(handleStreamingChat).mock.calls[0][1]).toMatchObject({
-      message: FIRST_MESSAGE,
-      platform: "telegram",
-      platformUserId: "999",
-    });
+    // The API composes the first contact and delivers it on the outbound queue
+    // when the link completes, so /start sends nothing of its own — a bubble
+    // from here would arrive alongside the server's and duplicate it.
+    expect(sendMessageFn).not.toHaveBeenCalled();
+    // No model turn runs behind it either: the opener turn skipped the per-pick
+    // promises and lost the connect links.
+    expect(handleStreamingChat).not.toHaveBeenCalled();
     expect(helpExecute).not.toHaveBeenCalled();
   });
 
@@ -930,9 +927,15 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       ctx: ReturnType<typeof makeCtx>,
     ) => Promise<void>;
 
-    await startHandler(makeCtx({ match: LINK_CODE }));
+    const sendMessageFn = vi.fn().mockResolvedValue({ message_id: 55 });
+    await startHandler(makeCtx({ match: LINK_CODE, sendMessageFn }));
 
     expect(handleStreamingChat).not.toHaveBeenCalled();
+    // The only thing a refused code may produce is the explanation of why.
+    expect(sendMessageFn).toHaveBeenCalledTimes(1);
+    expect(String(sendMessageFn.mock.calls[0][1])).toContain(
+      "That link has expired",
+    );
   });
 
   it("skips the 'gaia' command from the loop (routes to registerGaiaCommand)", async () => {

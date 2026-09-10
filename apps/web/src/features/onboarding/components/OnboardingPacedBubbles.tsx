@@ -39,7 +39,7 @@ export function OnboardingPacedBubbles({
           // first line lands exactly where the dots were, not underneath them.
           <div
             key="typing"
-            className="chatbubblebot_parent absolute inset-x-0 top-0 pl-10.75"
+            className="chatbubblebot_parent absolute inset-x-0 top-0 pl-0 sm:pl-10.75"
           >
             <m.output
               aria-label="GAIA is typing"

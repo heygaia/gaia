@@ -1,10 +1,9 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { useElectron } from "@/hooks/useElectron";
 import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 
-const PRICING_PATH = "/pricing";
+import { usePopupCheckout } from "../hooks/usePopupCheckout";
 
 /**
  * The paid-only wall, as it appears in the desktop popup.
@@ -16,23 +15,16 @@ const PRICING_PATH = "/pricing";
  * the main process grows to fit whatever this reports.
  *
  * State arrives over the popup's BroadcastChannel (`sync.ts`): the 402 lands
- * in the composer window, which owns sending, and is mirrored here.
+ * in the composer window, which owns sending, and is mirrored here. That is
+ * also the window that takes this block down again — see
+ * `useClearPaywallWhenPaid`, mounted in `AssistantPopup`.
  */
 export default function PopupPaywallNotice() {
   const open = useUpgradeModalStore((s) => s.open);
   const offer = useUpgradeModalStore((s) => s.offer);
-  const { openExternal } = useElectron();
+  const { openCheckout, isOpeningCheckout } = usePopupCheckout();
 
   if (!open) return null;
-
-  // The backend mints a personal checkout link into the 402 body. When Dodo is
-  // unreachable it deliberately sends none — the block still stands, so fall
-  // back to the pricing page rather than leaving the user with no way out.
-  // Resolved on press, not in render: the popup is server-rendered first.
-  const openCheckout = () =>
-    openExternal(
-      offer?.checkoutUrl ?? `${window.location.origin}${PRICING_PATH}`,
-    );
 
   return (
     <div className="flex flex-col gap-3 rounded-2xl bg-zinc-800 p-4">
@@ -56,7 +48,8 @@ export default function PopupPaywallNotice() {
         color="primary"
         radius="full"
         className="font-medium text-black"
-        onPress={openCheckout}
+        isLoading={isOpeningCheckout}
+        onPress={() => void openCheckout()}
       >
         Subscribe in your browser
       </Button>

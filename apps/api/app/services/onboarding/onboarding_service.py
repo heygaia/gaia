@@ -271,9 +271,15 @@ async def update_onboarding_preferences(
         raise HTTPException(status_code=500, detail="Failed to update preferences") from e
 
 
-async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
+async def reset_onboarding(
+    user_id: str, *, keep_connections: bool = False
+) -> OnboardingResetCounts:
     """Fully reset a user's onboarding so they can run the flow from scratch.
-    Returns counts of what was deleted."""
+    Returns counts of what was deleted.
+
+    ``keep_connections`` leaves connected integrations and memories in place and
+    only tears down onboarding state — the local dev reset, not the product's
+    Restart button."""
     log.set(auth={"user_id": user_id}, onboarding={"operation": "reset"})
 
     user = await user_repository.get(user_id)
@@ -361,8 +367,10 @@ async def reset_onboarding(user_id: str) -> OnboardingResetCounts:
             user_id=user_id,
         )
 
-    integrations_disconnected = await _disconnect_user_integrations(user_id)
-    memories_cleared = await _clear_user_memories(user_id)
+    integrations_disconnected = (
+        0 if keep_connections else await _disconnect_user_integrations(user_id)
+    )
+    memories_cleared = 0 if keep_connections else await _clear_user_memories(user_id)
 
     await user_repository.reset_onboarding(user_id)
 

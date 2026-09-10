@@ -22,15 +22,23 @@ from app.config.settings import settings
 from app.constants.auth import PLATFORM_LINK_CODE_BYTES
 from app.constants.cache import PLATFORM_LINK_CODE_PREFIX, PLATFORM_LINK_CODE_TTL
 from app.db.redis import delete_cache, get_cache, set_cache
+from app.models.user_models import OnboardingPreferences
 from app.services.platform_link_service import Platform
 from app.utils.errors import create_error
+from shared.py.wide_events import log
 
 
 class PlatformLinkCodePayload(BaseModel):
-    """What a live link code resolves to."""
+    """What a live link code resolves to.
+
+    The onboarding answers travel with the code rather than a pre-rendered
+    string: the bot's first contact is composed at REDEEM time, when the user's
+    connected integrations are known, and rendering it at mint time would have
+    frozen a set of connect links minutes before they were sent.
+    """
 
     user_id: str
-    first_message: str
+    preferences: OnboardingPreferences
 
 
 def _code_key(code: str) -> str:
@@ -68,17 +76,22 @@ def build_handoff_links(code: str, first_message: str) -> dict[str, str]:
     return links
 
 
-async def mint_platform_link_code(user_id: str, first_message: str) -> str:
-    """Bind a fresh single-use code to ``user_id`` and their composed first message."""
+async def mint_platform_link_code(user_id: str, preferences: OnboardingPreferences) -> str:
+    """Bind a fresh single-use code to ``user_id`` and their onboarding answers."""
     code = secrets.token_urlsafe(PLATFORM_LINK_CODE_BYTES)
     stored = await set_cache(
         _code_key(code),
-        PlatformLinkCodePayload(user_id=user_id, first_message=first_message).model_dump(),
+        PlatformLinkCodePayload(user_id=user_id, preferences=preferences).model_dump(mode="json"),
         ttl=PLATFORM_LINK_CODE_TTL,
     )
     if not stored:
         # Handing out a code nothing can resolve would strand the user on a bot
         # that says "expired" the moment they arrive.
+        log.error(
+            "could not store the one-tap link code",
+            user={"id": user_id},
+            operation="mint_platform_link_code",
+        )
         raise create_error(
             message="Could not start platform linking. Please retry.",
             why="the link code could not be stored (Redis unavailable)",

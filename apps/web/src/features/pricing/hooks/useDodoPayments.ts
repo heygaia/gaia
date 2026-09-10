@@ -1,7 +1,6 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 
 import { type CheckoutSource, pricingApi } from "../api/pricingApi";
@@ -32,10 +31,14 @@ export const useDodoPayments = () => {
   );
   const { refetch: refetchSubscription } = useUserSubscriptionStatus();
 
-  // The store polls the raw endpoint; this is what pushes the confirmed answer
-  // into the shared `["subscription-status"]` cache every paid-only gate reads.
+  // The store polls the raw endpoint; this is what pushes its answer into the
+  // shared `["subscription-status"]` cache every paid-only gate reads. Both
+  // endings matter: a checkout we gave up on hands the plans back, and a
+  // charge that landed just after we stopped asking must not be met with a
+  // Subscribe button by someone who has already paid.
   useEffect(() => {
-    if (checkoutPhase === "confirmed") void refetchSubscription();
+    if (checkoutPhase === "confirmed" || checkoutPhase === "unconfirmed")
+      void refetchSubscription();
   }, [checkoutPhase, refetchSubscription]);
 
   const createSubscriptionAndRedirect = useCallback(
@@ -62,17 +65,13 @@ export const useDodoPayments = () => {
           throw new Error("Payment link not received");
         }
       } catch (err) {
+        // No capture here: this failure came back from the API, which already
+        // saw it and owns the event for it. A second one from the browser
+        // would double-count the same refusal.
         const errorMessage =
           err instanceof Error ? err.message : "Failed to create subscription";
         setError(errorMessage);
         toast.error(errorMessage);
-
-        // Track checkout failure
-        trackEvent(ANALYTICS_EVENTS.SUBSCRIPTION_FAILED, {
-          planId: productId,
-          source,
-          reason: errorMessage,
-        });
       } finally {
         setIsLoading(false);
       }
@@ -88,14 +87,11 @@ export const useDodoPayments = () => {
       try {
         await startOverlayCheckout(billingCycle, source);
       } catch (err) {
-        const reason =
-          err instanceof Error ? err.message : "Failed to start checkout";
-        toast.error(reason);
-        trackEvent(ANALYTICS_EVENTS.SUBSCRIPTION_FAILED, {
-          billingCycle,
-          source,
-          reason,
-        });
+        // Same as above: the session the server refused to mint is the
+        // server's event to emit, not ours.
+        toast.error(
+          err instanceof Error ? err.message : "Failed to start checkout",
+        );
       }
     },
     [startOverlayCheckout],

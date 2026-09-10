@@ -10,9 +10,10 @@ class TestJoin:
     def test_one_phrase_is_itself(self) -> None:
         assert _join(["a"]) == "a"
 
-    def test_two_phrases_take_a_bare_and(self) -> None:
-        assert _join(["a", "b"]) == "a and b"
+    def test_two_phrases_are_comma_separated(self) -> None:
+        assert _join(["a", "b"]) == "a, b"
 
-    def test_three_or_more_take_commas_and_an_oxford_and(self) -> None:
-        assert _join(["a", "b", "c"]) == "a, b, and c"
-        assert _join(["a", "b", "c", "d"]) == "a, b, c, and d"
+    def test_three_or_more_stay_a_flat_comma_list(self) -> None:
+        """The opener is one short line; an Oxford "and" made it read as prose."""
+        assert _join(["a", "b", "c"]) == "a, b, c"
+        assert _join(["a", "b", "c", "d"]) == "a, b, c, d"

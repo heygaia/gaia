@@ -95,13 +95,13 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to track signup in PostHog for",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "PostHog unavailable",
                 "error_type": "RuntimeError",
             }
         ]
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob")
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
     async def test_a_welcome_email_failure_is_recorded_and_the_rest_still_runs(
@@ -120,12 +120,12 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to send welcome email to",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "SMTP error",
                 "error_type": "RuntimeError",
             }
         ]
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob")
+        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
     async def test_a_marketing_contact_failure_is_recorded_and_provisioning_still_runs(
@@ -144,7 +144,7 @@ class TestRunSignupSideEffects:
         assert event["errors"] == [
             {
                 "msg": f"{LogTag.OAUTH} Failed to add marketing contact for",
-                "email": "bob@test.com",
+                "user": {"id": user_id},
                 "error": "Resend API error",
                 "error_type": "RuntimeError",
             }

@@ -123,9 +123,6 @@ class RedeemLinkCodeResponse(BaseModel):
     """Response model for a redeemed one-tap link code."""
 
     linked: bool = Field(..., description="Whether the platform account is now linked")
-    first_message: str = Field(
-        ..., description="Opening message to run through the normal chat flow as the user's turn"
-    )
 
 
 class ResetSessionRequest(BaseModel):

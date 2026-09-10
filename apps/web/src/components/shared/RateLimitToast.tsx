@@ -104,9 +104,10 @@ export const showRateLimitToast = ({
     toastConfig.action = {
       label: isUpgradeRequired ? `Upgrade to ${planName}` : "Upgrade Now",
       onClick: () =>
-        useUpgradeModalStore
-          .getState()
-          .openModal(undefined, { dismissible: true }),
+        useUpgradeModalStore.getState().openModal(undefined, {
+          dismissible: true,
+          source: "rate_limit_toast",
+        }),
     };
   }
 

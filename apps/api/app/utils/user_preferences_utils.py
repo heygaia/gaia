@@ -26,7 +26,11 @@ def onboarding_preferences(
     if not onboarding:
         return None, None
     if isinstance(onboarding, OnboardingSubdocument):
-        preferences = onboarding.preferences.model_dump() if onboarding.preferences else None
+        # Only what was stored: the typed model would otherwise add every
+        # unset field as None, and the prompt formatters key off presence.
+        preferences = (
+            onboarding.preferences.model_dump(exclude_none=True) if onboarding.preferences else None
+        )
         return preferences, onboarding.writing_style
     return onboarding.get("preferences"), onboarding.get("writing_style")
 

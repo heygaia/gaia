@@ -53,7 +53,27 @@ function readReturnParams(params: URLSearchParams): ReturnParams {
   };
 }
 
-const CLEAN_PATH = "/onboarding";
+/** The three Dodo appends to the return URL, and the only ones to remove. */
+const DODO_RETURN_PARAMS = [
+  CHECKOUT_RETURNED_PARAM,
+  STATUS_PARAM,
+  SUBSCRIPTION_ID_PARAM,
+];
+
+/**
+ * The address without Dodo's checkout params — the current URL otherwise
+ * untouched. Built off `window.location` rather than a literal path: this
+ * page is reachable under every locale prefix (/fr/onboarding, /ja/onboarding),
+ * and rewriting the address to a hardcoded /onboarding drops a non-English
+ * user into English on the next reload, mid-payment.
+ */
+function addressWithoutCheckoutParams(): string | null {
+  const params = new URLSearchParams(window.location.search);
+  if (!DODO_RETURN_PARAMS.some((param) => params.has(param))) return null;
+  for (const param of DODO_RETURN_PARAMS) params.delete(param);
+  const query = params.toString();
+  return `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+}
 
 export function useCheckoutReturn(): CheckoutReturn {
   const searchParams = useSearchParams();
@@ -64,8 +84,8 @@ export function useCheckoutReturn(): CheckoutReturn {
     readReturnParams(new URLSearchParams(searchParams.toString())),
   );
   useEffect(() => {
-    if (window.location.search)
-      window.history.replaceState(null, "", CLEAN_PATH);
+    const address = addressWithoutCheckoutParams();
+    if (address) window.history.replaceState(null, "", address);
   }, []);
   const { checkoutPhase, confirmReturnedCheckout, clearError } =
     useDodoPayments();

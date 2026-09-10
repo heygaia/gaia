@@ -76,8 +76,9 @@ describe("402 subscription_required handling", () => {
 
     const state = useUpgradeModalStore.getState();
     expect(state.open).toBe(true);
+    // No checkout link rides on the offer: the wall mints its own session
+    // when the user actually asks to subscribe.
     expect(state.offer).toEqual({
-      checkoutUrl: "https://checkout.example/session",
       discountCode: "LAUNCH20",
       message: "Subscribe to keep chatting",
     });
@@ -222,7 +223,6 @@ describe("chatApi chat-stream 402 handling (onopen)", () => {
     const state = freshPaywallStore.getState();
     expect(state.open).toBe(true);
     expect(state.offer).toEqual({
-      checkoutUrl: "https://checkout.example/session",
       discountCode: "LAUNCH20",
       message: "Subscribe to keep chatting",
     });

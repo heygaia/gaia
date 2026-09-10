@@ -62,6 +62,7 @@ def ctx(
     active_todo_id: str | None = None,
     execution_mode: ExecutionMode = "interactive",
     user_preferences: dict[str, Any] | None = None,
+    source: str | None = None,
 ) -> SectionContext:
     """A comms context carrying everything these sections read, minus overrides."""
     return SectionContext(
@@ -71,6 +72,7 @@ def ctx(
         active_todo_id=active_todo_id,
         execution_mode=execution_mode,
         user_preferences=user_preferences,
+        source=source,
     )
 
 

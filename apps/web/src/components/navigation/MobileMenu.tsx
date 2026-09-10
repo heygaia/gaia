@@ -138,6 +138,11 @@ export default function MobileMenu() {
             <VisuallyHidden.Root>Menu</VisuallyHidden.Root>
           </SheetTitle>
           <SheetDescription className="flex flex-col gap-1 pb-20! pt-8 px-6">
+            {/* The primary action first: on a phone the menu is where a
+                visitor decides, so sign up / open the app must not sit below
+                the fold under every section. */}
+            <div className="flex flex-col gap-2">{authLinks}</div>
+
             {sections.map((section) => (
               <div key={section.title} className="mt-6 flex flex-col gap-0.5">
                 <p className="mb-2 text-xs tracking-wide text-zinc-500 uppercase">
@@ -152,9 +157,6 @@ export default function MobileMenu() {
                 ))}
               </div>
             ))}
-
-            {/* Authentication links */}
-            <div className="mt-8 flex flex-col gap-2">{authLinks}</div>
           </SheetDescription>
         </SheetHeader>
       </SheetContent>

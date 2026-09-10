@@ -25,14 +25,13 @@ class TestComposeFirstMessage:
             compose_first_message(
                 _prefs("founder", [OnboardingNeed.INBOX, OnboardingNeed.REMINDERS])
             )
-            == "Hey. I'm a founder. My inbox is out of control and I keep forgetting things. "
-            "Where do we start?"
+            == "I'm a founder. Inbox out of control, forgetting things. Where do we start?"
         )
 
     def test_single_need_has_no_conjunction(self) -> None:
         assert (
             compose_first_message(_prefs("engineering", [OnboardingNeed.CALENDAR]))
-            == "Hey. I'm an engineer. I walk into meetings cold. Where do we start?"
+            == "I'm an engineer. Meetings cold. Where do we start?"
         )
 
     def test_every_need_reads_as_a_handover(self) -> None:
@@ -41,34 +40,29 @@ class TestComposeFirstMessage:
             message = compose_first_message(_prefs("founder", [need]))
             assert (
                 message
-                == f"Hey. I'm a founder. {NEED_PHRASES[need][0].upper()}{NEED_PHRASES[need][1:]}. Where do we start?"
+                == f"I'm a founder. {NEED_PHRASES[need][0].upper()}{NEED_PHRASES[need][1:]}. Where do we start?"
             )
 
     def test_selection_order_is_preserved(self) -> None:
         """The user's tap order is the sentence order — not the enum's."""
         assert compose_first_message(
             _prefs("founder", [OnboardingNeed.REMINDERS, OnboardingNeed.INBOX])
-        ) == (
-            "Hey. I'm a founder. I keep forgetting things and my inbox is out of control. Where do we start?"
-        )
+        ) == ("I'm a founder. Forgetting things, inbox out of control. Where do we start?")
 
     def test_other_profession_is_omitted_rather_than_invented(self) -> None:
         assert (
             compose_first_message(_prefs("other", [OnboardingNeed.INBOX]))
-            == "Hey. My inbox is out of control. Where do we start?"
+            == "Inbox out of control. Where do we start?"
         )
 
     def test_missing_profession_is_omitted(self) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX]))
-            == "Hey. My inbox is out of control. Where do we start?"
+            == "Inbox out of control. Where do we start?"
         )
 
     def test_no_needs_leaves_only_the_greeting(self) -> None:
-        assert (
-            compose_first_message(_prefs("founder", None))
-            == "Hey. I'm a founder. Where do we start?"
-        )
+        assert compose_first_message(_prefs("founder", None)) == "I'm a founder. Where do we start?"
 
     def test_empty_preferences(self) -> None:
         assert compose_first_message(_prefs(None, None)) == "Hey. Where do we start?"
@@ -77,41 +71,39 @@ class TestComposeFirstMessage:
         """Their words are never bent into the list's grammar."""
         assert compose_first_message(
             _prefs("founder", [OnboardingNeed.INBOX], other_need="chasing invoices")
-        ) == (
-            "Hey. I'm a founder. My inbox is out of control. Also, chasing invoices. Where do we start?"
-        )
+        ) == ("I'm a founder. Inbox out of control. Also, chasing invoices. Where do we start?")
 
     def test_typed_need_alone_stands_as_the_sentence(self) -> None:
         assert (
             compose_first_message(_prefs("founder", [], other_need="chasing invoices"))
-            == "Hey. I'm a founder. Chasing invoices. Where do we start?"
+            == "I'm a founder. Chasing invoices. Where do we start?"
         )
 
     @pytest.mark.parametrize("typed", ["chasing invoices.", "chasing invoices!"])
     def test_typed_need_is_not_double_punctuated(self, typed: str) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX], other_need=typed))
-            == "Hey. My inbox is out of control. Also, chasing invoices. Where do we start?"
+            == "Inbox out of control. Also, chasing invoices. Where do we start?"
         )
 
     def test_typed_need_keeps_its_last_letter(self) -> None:
         assert (
             compose_first_message(_prefs(None, [OnboardingNeed.INBOX], other_need="plan X"))
-            == "Hey. My inbox is out of control. Also, plan X. Where do we start?"
+            == "Inbox out of control. Also, plan X. Where do we start?"
         )
 
     def test_blank_typed_need_is_dropped_by_the_model(self) -> None:
         assert (
             compose_first_message(_prefs("founder", [OnboardingNeed.INBOX], other_need="   "))
-            == "Hey. I'm a founder. My inbox is out of control. Where do we start?"
+            == "I'm a founder. Inbox out of control. Where do we start?"
         )
 
     @pytest.mark.parametrize(
         ("profession", "expected"),
         [
-            ("architect", "Hey. I'm an architect. Where do we start?"),
-            ("chef", "Hey. I'm a chef. Where do we start?"),
-            ("Founder", "Hey. I'm a founder. Where do we start?"),
+            ("architect", "I'm an architect. Where do we start?"),
+            ("chef", "I'm a chef. Where do we start?"),
+            ("Founder", "I'm a founder. Where do we start?"),
         ],
     )
     def test_free_form_profession_gets_the_right_article(
@@ -127,21 +119,21 @@ class TestComposeFirstMessage:
             # forcing "I'm a" in front of one produced "I'm an I'm a founder...".
             (
                 "I'm a founder and designer building a startup",
-                "Hey. I'm a founder and designer building a startup. Where do we start?",
+                "I'm a founder and designer building a startup. Where do we start?",
             ),
-            ("I am a nurse.", "Hey. I am a nurse. Where do we start?"),
-            ("I run a bakery", "Hey. I run a bakery. Where do we start?"),
-            ("We make climbing shoes", "Hey. We make climbing shoes. Where do we start?"),
+            ("I am a nurse.", "I am a nurse. Where do we start?"),
+            ("I run a bakery", "I run a bakery. Where do we start?"),
+            ("We make climbing shoes", "We make climbing shoes. Where do we start?"),
             # Curly apostrophes come from phone keyboards.
-            ("I’m a nurse", "Hey. I’m a nurse. Where do we start?"),
-            ("We're a two-person studio", "Hey. We're a two-person studio. Where do we start?"),
-            ("We’re a two-person studio", "Hey. We’re a two-person studio. Where do we start?"),
-            ("I'm a nurse!", "Hey. I'm a nurse. Where do we start?"),
+            ("I’m a nurse", "I’m a nurse. Where do we start?"),
+            ("We're a two-person studio", "We're a two-person studio. Where do we start?"),
+            ("We’re a two-person studio", "We’re a two-person studio. Where do we start?"),
+            ("I'm a nurse!", "I'm a nurse. Where do we start?"),
             # Only sentence punctuation is trimmed, never the last letter.
-            ("I'm on team X", "Hey. I'm on team X. Where do we start?"),
-            ("a freelance designer", "Hey. I'm a freelance designer. Where do we start?"),
-            ("an ops lead", "Hey. I'm an ops lead. Where do we start?"),
-            ("the CFO", "Hey. I'm the CFO. Where do we start?"),
+            ("I'm on team X", "I'm on team X. Where do we start?"),
+            ("a freelance designer", "I'm a freelance designer. Where do we start?"),
+            ("an ops lead", "I'm an ops lead. Where do we start?"),
+            ("the CFO", "I'm the CFO. Where do we start?"),
         ],
     )
     def test_typed_profession_written_as_a_sentence_is_kept_whole(

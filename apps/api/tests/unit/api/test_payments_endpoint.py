@@ -8,6 +8,7 @@ Tests cover:
 - POST /api/v1/payments/webhooks/dodo
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
@@ -21,6 +22,7 @@ from app.models.payment_models import (
     ProCheckout,
 )
 from app.services.analytics_service import AnalyticsEvents
+from tests.unit.services.conftest import SUBSCRIPTION_DATA_PAYLOAD, _make_webhook_event
 
 PLANS_URL = "/api/v1/payments/plans"
 SUBSCRIPTIONS_URL = "/api/v1/payments/subscriptions"
@@ -655,6 +657,126 @@ class TestDodoWebhook:
         data = response.json()
         assert data["status"] == "success"
         assert data["event_type"] == "subscription.created"
+
+    async def test_a_failed_result_asks_dodo_to_retry_instead_of_acknowledging(
+        self, client: AsyncClient
+    ):
+        """A handler that could not complete leaves the state change owed. A 200
+        tells Dodo the delivery landed, so it never resends and the event is
+        lost for good — the user who paid is never activated."""
+        mock_result = MagicMock(
+            event_type="subscription.active",
+            status="failed",
+            message="User not found",
+        )
+        with (
+            patch(
+                "app.services.payments.payment_webhook_service.payment_webhook_service.verify_webhook_signature",
+                return_value=True,
+            ),
+            patch(
+                "app.services.payments.payment_webhook_service.payment_webhook_service.process_webhook",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+        ):
+            response = await client.post(
+                WEBHOOK_URL,
+                content='{"type": "subscription.active", "data": {}}',
+                headers={
+                    "content-type": "application/json",
+                    "webhook-id": "wh_123",
+                    "webhook-timestamp": "1234567890",
+                    "webhook-signature": "v1,sig_abc",
+                },
+            )
+
+        assert response.status_code == 503
+        assert "User not found" in response.json()["detail"]
+
+    async def test_a_refused_delivery_is_not_narrated_as_processed(self, client: AsyncClient):
+        """It used to log "Webhook processed" at info on the way to refusing the
+        delivery, so a failure read as a success on every dashboard counting
+        them."""
+        mock_result = MagicMock(
+            event_type="subscription.active",
+            status="failed",
+            message="User not found",
+        )
+        with (
+            patch(
+                "app.services.payments.payment_webhook_service.payment_webhook_service.verify_webhook_signature",
+                return_value=True,
+            ),
+            patch(
+                "app.services.payments.payment_webhook_service.payment_webhook_service.process_webhook",
+                new_callable=AsyncMock,
+                return_value=mock_result,
+            ),
+            patch("app.api.v1.endpoints.payments.log") as mock_log,
+        ):
+            await client.post(
+                WEBHOOK_URL,
+                content='{"type": "subscription.active", "data": {}}',
+                headers={
+                    "content-type": "application/json",
+                    "webhook-id": "wh_123",
+                    "webhook-timestamp": "1234567890",
+                    "webhook-signature": "v1,sig_abc",
+                },
+            )
+
+        mock_log.error.assert_called_once()
+        assert "asking Dodo to redeliver" in mock_log.error.call_args.args[0]
+        assert not any(
+            "Webhook processed" in str(call.args[0]) for call in mock_log.info.call_args_list
+        )
+
+    async def test_an_ownerless_activation_is_retried_and_its_claim_released(
+        self, client: AsyncClient
+    ):
+        """The whole path, not the two halves: a real ``subscription.active``
+        whose owner GAIA cannot resolve must leave the delivery re-drivable —
+        claim released, 503 back to Dodo — because the alternative is a user
+        who paid and can never be activated."""
+        # No user id in the metadata, so ownership falls to the customer email.
+        ownerless = {**SUBSCRIPTION_DATA_PAYLOAD, "metadata": {}}
+        payload = json.dumps(_make_webhook_event("subscription.active", ownerless))
+
+        with (
+            patch(
+                "app.services.payments.payment_webhook_service.payment_webhook_service.verify_webhook_signature",
+                return_value=True,
+            ),
+            patch(
+                "app.services.payments.payment_webhook_service.processed_webhook_repository"
+            ) as claims,
+            patch("app.services.payments.subscription_activation.subscription_repository") as subs,
+            patch("app.services.payments.subscription_activation.user_repository") as users,
+        ):
+            claims.claim = AsyncMock(return_value=True)
+            claims.record_outcome = AsyncMock()
+            claims.release = AsyncMock()
+            subs.get_by_dodo_id = AsyncMock(return_value=None)
+            subs.create = AsyncMock()
+            # ...and that email belongs to no GAIA account.
+            users.get_by_email = AsyncMock(return_value=None)
+
+            response = await client.post(
+                WEBHOOK_URL,
+                content=payload,
+                headers={
+                    "content-type": "application/json",
+                    "webhook-id": "wh_ownerless",
+                    "webhook-timestamp": "1234567890",
+                    "webhook-signature": "v1,sig_abc",
+                },
+            )
+
+        assert response.status_code == 503
+        claims.release.assert_awaited_once_with("wh_ownerless")
+        claims.record_outcome.assert_not_awaited()
+        subs.create.assert_not_awaited()
 
     async def test_webhook_invalid_signature_returns_401(self, client: AsyncClient):
         with patch(

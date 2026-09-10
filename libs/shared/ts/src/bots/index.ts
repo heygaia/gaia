@@ -58,7 +58,6 @@ export {
   outboundAttachmentSchema,
   outboundMessageEnvelopeSchema,
 } from "./consumer/envelope";
-export type { InboundLinkCodeArgs, ParsedLinkCode } from "./link-codes";
 export {
   buildLinkCodeFailureMessage,
   consumeInboundLinkCode,
@@ -66,6 +65,12 @@ export {
   parseTrailingLinkCode,
   redeemLinkCode,
 } from "./link-codes";
+export type {
+  InboundLinkCodeArgs,
+  LinkCodeFailure,
+  LinkState,
+  ParsedLinkCode,
+} from "./link-codes.types";
 export type {
   AuthenticatedSettingsResponse,
   AuthStatus,

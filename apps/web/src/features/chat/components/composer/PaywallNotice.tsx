@@ -40,7 +40,9 @@ export function PaywallNotice({ className }: PaywallNoticeProps = {}) {
           size="sm"
           color="primary"
           className="shrink-0 font-medium text-black"
-          onPress={() => openUpgradeModal()}
+          onPress={() =>
+            openUpgradeModal(undefined, { source: "composer_notice" })
+          }
         >
           {copy.cta}
         </Button>

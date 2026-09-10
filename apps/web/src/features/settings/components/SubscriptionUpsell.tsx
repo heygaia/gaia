@@ -47,7 +47,12 @@ export function SubscriptionUpsell({
             color="primary"
             className="w-full font-semibold text-black"
             size="sm"
-            onPress={() => openUpgradeModal(undefined, { dismissible: true })}
+            onPress={() =>
+              openUpgradeModal(undefined, {
+                dismissible: true,
+                source: "settings_upsell",
+              })
+            }
           >
             View plans
           </Button>

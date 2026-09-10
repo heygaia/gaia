@@ -13,6 +13,7 @@ import { useState } from "react";
 import { PhoneLinkModal } from "@/components/shared/PhoneLinkModal";
 import { BOT_PLATFORM_LABELS } from "@/config/botPlatforms";
 import { useCurrentUser } from "@/features/auth/hooks/useCurrentUser";
+import { firstNameOf } from "@/features/auth/utils/firstName";
 import { FIELD_NAMES } from "../../constants";
 import { PLATFORM_INTRO_LINES } from "../../constants/messages";
 import { MOTION_FADE_UP } from "../../constants/motion";
@@ -20,9 +21,7 @@ import type { PlatformPreviewPlatform } from "../../constants/platformPreviewMes
 import { useConnectPlatform } from "../../hooks/useConnectPlatform";
 import { usePaceDone } from "../../hooks/useTypedLines";
 import type { Action, OnboardingState } from "../../state/types";
-import { ComposerCTA } from "../ComposerCTA";
 import { OnboardingBotBubbles } from "../OnboardingBotBubbles";
-import { OnboardingCTAButton } from "../OnboardingCTAButton";
 import { OnboardingPlatformConnect } from "../OnboardingPlatformConnect";
 import { OnboardingPlatformPreview } from "../OnboardingPlatformPreview";
 
@@ -39,7 +38,8 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
     useState<PlatformPreviewPlatform | null>(null);
 
   const profession = state.responses[FIELD_NAMES.PROFESSION];
-  const { name: userName, profilePicture: userAvatar } = useCurrentUser();
+  const { name, email } = useCurrentUser();
+  const userFirstName = firstNameOf(name, email);
 
   const {
     connect,
@@ -58,8 +58,7 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
           <OnboardingPlatformPreview
             profession={profession}
             hoveredPlatform={hoveredPlatform}
-            userName={userName}
-            userAvatar={userAvatar}
+            userFirstName={userFirstName}
           />
         </m.div>
       )}
@@ -73,7 +72,6 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
             onConnect={connect}
             onSkip={skip}
             onHoverPlatform={setHoveredPlatform}
-            hideSkip
           />
         </m.div>
       )}
@@ -86,16 +84,5 @@ export function Platforms({ state, dispatch }: PlatformsProps) {
         onClose={closePhoneModal}
       />
     </m.div>
-  );
-}
-
-export function PlatformsComposer({ state, dispatch }: PlatformsProps) {
-  const { skip } = useConnectPlatform(dispatch, state.preferencesPersisted);
-  if (state.connectedPlatform) return null;
-
-  return (
-    <ComposerCTA>
-      <OnboardingCTAButton onClick={skip}>I'll do it later</OnboardingCTAButton>
-    </ComposerCTA>
   );
 }

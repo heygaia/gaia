@@ -3,6 +3,10 @@
 Deterministic and LLM-free: the same answers always produce the same text, so
 the web (skip path) and every bot adapter hand GAIA an identical first turn.
 The text is written as the USER would write it — it is sent as their turn.
+
+ONE short line. On WhatsApp and iMessage the user watches this go out under
+their own name, so anything longer than a glance reads as words put in their
+mouth: job, the pains in a few words each, "Where do we start?".
 """
 
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
@@ -23,43 +27,45 @@ PROFESSION_PHRASES: dict[str, str] = {
 }
 
 # Q2 chips are pains in the user's words (needOptions / roleNeedOptions in
-# apps/web onboarding constants), so each phrase is that pain in the first
-# person. Together they read as one sentence: "My inbox is out of control and
-# I keep forgetting things."
+# apps/web onboarding constants), each cut to the few words that name it. They
+# are listed, not sentenced: "Inbox out of control, meetings cold." reads like
+# something a person actually types, where three first-person clauses joined by
+# "and" reads like a paragraph they never wrote.
 NEED_PHRASES: dict[OnboardingNeed, str] = {
-    OnboardingNeed.INBOX: "my inbox is out of control",
-    OnboardingNeed.CALENDAR: "I walk into meetings cold",
-    OnboardingNeed.MORNINGS: "my mornings start behind",
-    OnboardingNeed.REMINDERS: "I keep forgetting things",
-    OnboardingNeed.GRUNT_WORK: "grunt work eats my week",
-    OnboardingNeed.TOOLS: "I juggle too many tools",
-    OnboardingNeed.FOUNDER_TEAM_UPDATES: "I chase my team for updates",
-    OnboardingNeed.FOUNDER_COMPETITORS: "I never track competitors",
-    OnboardingNeed.EXECUTIVE_REPORTS: "I never get to the reports",
-    OnboardingNeed.EXECUTIVE_DECISIONS: "decisions pile up on me",
-    OnboardingNeed.SALES_LEADS: "leads go cold on me",
-    OnboardingNeed.SALES_CALL_RESEARCH: "I research before every call",
-    OnboardingNeed.PRODUCT_FEEDBACK: "feedback is scattered everywhere",
-    OnboardingNeed.PRODUCT_SPECS: "specs take me forever",
-    OnboardingNeed.MARKETING_CONTENT: "content is always behind",
-    OnboardingNeed.MARKETING_REPORTS: "I build reports by hand",
-    OnboardingNeed.ENGINEERING_PRS: "PRs pile up waiting on me",
-    OnboardingNeed.ENGINEERING_NOTIFICATIONS: "I drown in notifications",
-    OnboardingNeed.FINANCE_NUMBERS: "I chase people for numbers",
-    OnboardingNeed.FINANCE_REPORTS: "I build the same report every week",
-    OnboardingNeed.CREATIVE_REVISIONS: "client revisions pile up",
-    OnboardingNeed.CREATIVE_DEADLINES: "deadlines sneak up on me",
-    OnboardingNeed.STUDENT_ASSIGNMENTS: "assignments pile up",
-    OnboardingNeed.STUDENT_EXAMS: "I'm never ready for exams",
+    OnboardingNeed.INBOX: "inbox out of control",
+    OnboardingNeed.CALENDAR: "meetings cold",
+    OnboardingNeed.MORNINGS: "mornings behind",
+    OnboardingNeed.REMINDERS: "forgetting things",
+    OnboardingNeed.GRUNT_WORK: "grunt work every week",
+    OnboardingNeed.TOOLS: "too many tools",
+    OnboardingNeed.FOUNDER_TEAM_UPDATES: "chasing team updates",
+    OnboardingNeed.FOUNDER_COMPETITORS: "no eye on competitors",
+    OnboardingNeed.EXECUTIVE_REPORTS: "reports unread",
+    OnboardingNeed.EXECUTIVE_DECISIONS: "decisions piling up",
+    OnboardingNeed.SALES_LEADS: "leads going cold",
+    OnboardingNeed.SALES_CALL_RESEARCH: "research before every call",
+    OnboardingNeed.PRODUCT_FEEDBACK: "feedback scattered",
+    OnboardingNeed.PRODUCT_SPECS: "specs take forever",
+    OnboardingNeed.MARKETING_CONTENT: "content always behind",
+    OnboardingNeed.MARKETING_REPORTS: "reports by hand",
+    OnboardingNeed.ENGINEERING_PRS: "PRs piling up",
+    OnboardingNeed.ENGINEERING_NOTIFICATIONS: "drowning in notifications",
+    OnboardingNeed.FINANCE_NUMBERS: "chasing people for numbers",
+    OnboardingNeed.FINANCE_REPORTS: "same report every week",
+    OnboardingNeed.CREATIVE_REVISIONS: "revisions piling up",
+    OnboardingNeed.CREATIVE_DEADLINES: "deadlines sneaking up",
+    OnboardingNeed.STUDENT_ASSIGNMENTS: "assignments piling up",
+    OnboardingNeed.STUDENT_EXAMS: "never ready for exams",
 }
 
 
 def _join(phrases: list[str]) -> str:
-    if len(phrases) == 1:
-        return phrases[0]
-    if len(phrases) == 2:
-        return f"{phrases[0]} and {phrases[1]}"
-    return f"{', '.join(phrases[:-1])}, and {phrases[-1]}"
+    """The picked pains as one comma list, in tap order.
+
+    Commas, not "and": the list is a handover of what is wrong, and "and" turns
+    it into a sentence the user would have had to compose.
+    """
+    return ", ".join(phrases)
 
 
 def _sentence(text: str) -> str:
@@ -96,15 +102,15 @@ def _profession_sentence(profession: str | None) -> str | None:
 
 def compose_first_message(preferences: OnboardingPreferences) -> str:
     """The opening line the user sends GAIA, built from Q1 (profession) and Q2 (needs)."""
-    parts = ["Hey."]
+    parts: list[str] = []
 
     profession = _profession_sentence(preferences.profession)
     if profession:
         parts.append(profession)
 
     needs = [NEED_PHRASES[need] for need in preferences.needs or []]
-    # "Something else" is their own words, so it stays its own sentence rather
-    # than being bent into the list's grammar.
+    # "Something else" is their own words, so it stays its own short clause
+    # rather than being bent into the list's grammar.
     other = preferences.other_need
     if needs:
         parts.append(_sentence(_join(needs)))
@@ -112,6 +118,11 @@ def compose_first_message(preferences: OnboardingPreferences) -> str:
             parts.append(f"Also, {other.rstrip('.!')}.")
     elif other:
         parts.append(_sentence(other))
+
+    # Nothing was picked, so there is no line to open with: greet instead of
+    # firing a bare question at someone who has said nothing yet.
+    if not parts:
+        parts.append("Hey.")
 
     # Not "who are you": that asks for a self-description, and the reply it gets
     # back is a persona blurb. Asking where to start gets a first real move.

@@ -20,7 +20,7 @@ from app.models.payment_models import (
     UserSubscriptionStatus,
     VerifyPaymentRequest,
 )
-from app.models.webhook_models import DodoWebhookAckResponse
+from app.models.webhook_models import DodoWebhookAckResponse, WebhookProcessingStatus
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.payments.payment_service import payment_service
 from app.services.payments.payment_webhook_service import payment_webhook_service
@@ -256,9 +256,9 @@ async def handle_dodo_webhook(
             log.warning(f"{LogTag.PAYMENT} Invalid webhook signature", webhook_id=webhook_id)
             raise HTTPException(status_code=401, detail="Invalid webhook signature")
 
-        # Raw provider payload: process_webhook validates it into DodoWebhookEvent and
-        # deliberately answers 200/"failed" for shapes it can't parse, so Dodo's retry
-        # policy stays driven by the processing result rather than a request rejection.
+        # Raw provider payload: process_webhook validates it into DodoWebhookEvent
+        # and answers with a processing result rather than raising, so the reply
+        # below is driven by what GAIA managed to do with the event.
         webhook_data: dict[str, Any] = json.loads(payload)
 
         log.set_ns("payment", event_type=webhook_data.get("type", "unknown"))
@@ -272,11 +272,28 @@ async def handle_dodo_webhook(
             event_type=result.event_type,
             processing_status=result.status,
         )
+        if result.status == WebhookProcessingStatus.FAILED:
+            # The state change this event carried never landed, and the claim
+            # has been handed back. Acknowledging would tell Dodo the delivery
+            # is done and it would never resend — for subscription.active that
+            # is a user who paid and is never activated. Ask for the retry, and
+            # say so at the level the outcome deserves: a "webhook processed"
+            # line at info for a delivery that was refused is how a failure
+            # reads as a success on every dashboard that counts them.
+            log.error(
+                f"{LogTag.PAYMENT} Webhook not acknowledged; asking Dodo to redeliver",
+                event_type=result.event_type,
+                processing_status=result.status,
+                failure_reason=result.message,
+            )
+            raise HTTPException(status_code=503, detail=result.message)
+
         log.info(
             f"{LogTag.PAYMENT} Webhook processed",
             event_type=result.event_type,
             processing_status=result.status,
         )
+
         return DodoWebhookAckResponse(
             event_type=result.event_type,
             processing_status=result.status,

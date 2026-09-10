@@ -131,6 +131,10 @@ from shared.py.wide_events import WorkflowContext, log
 _DRIFT_WARN_SECONDS = 300
 #: How much of an exception's text a warning carries into the wide event.
 _ERROR_EXCERPT_CHARS = 500
+#: The surface name a paywalled workflow run is attributed to in the funnel.
+#: Snake_case, matching the bot and reminder gates; the HTTP middleware passes
+#: the request path instead, which is its surface.
+PAYWALL_FEATURE_WORKFLOW = "workflow"
 
 
 async def process_workflow_generation_task(
@@ -1492,6 +1496,17 @@ async def execute_workflow_by_id(
                 f"{LogTag.WORKER} Workflow skipped — subscription required",
                 workflow_id=workflow_id,
                 user_id=workflow.user_id,
+            )
+            # The same event every HTTP and bot paywall block fires. This gate
+            # does not go through `require_active_subscription` (it must skip,
+            # not raise), so without this the block is real and the funnel
+            # cannot see it. Explicit id, not `capture_context_event`: a worker
+            # has no request context, so an implicit distinct_id would strand
+            # the block on an anonymous profile.
+            capture_event(
+                workflow.user_id,
+                AnalyticsEvents.PAYWALL_BLOCKED,
+                {"feature": PAYWALL_FEATURE_WORKFLOW},
             )
             await _rearm_quietly(scheduler, workflow, context, workflow_id)
             return f"Workflow {workflow_id} skipped — subscription required"
