@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 from httpx import AsyncClient
 
+from app.constants.log_tags import LogTag
 from app.models.payment_models import (
     CheckoutSource,
     CreateSubscriptionResponse,
@@ -726,8 +727,17 @@ class TestDodoWebhook:
                 },
             )
 
-        mock_log.error.assert_called_once()
-        assert "asking Dodo to redeliver" in mock_log.error.call_args.args[0]
+        # Every field, not just the message. This entry is the only record that
+        # a delivery was refused, and it is what a human reads when Dodo stops
+        # retrying: which event, what the handler decided, and why. Blanking any
+        # one of them left the line looking fine and said nothing — four mutants
+        # lived exactly there, under an assertion that only read args[0].
+        mock_log.error.assert_called_once_with(
+            f"{LogTag.PAYMENT} Webhook not acknowledged; asking Dodo to redeliver",
+            event_type="subscription.active",
+            processing_status="failed",
+            failure_reason="User not found",
+        )
         assert not any(
             "Webhook processed" in str(call.args[0]) for call in mock_log.info.call_args_list
         )
