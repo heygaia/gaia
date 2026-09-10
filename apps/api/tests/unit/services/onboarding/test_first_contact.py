@@ -291,3 +291,51 @@ class TestBuildFirstContact:
                 "u1", "telegram", None, _prefs([OnboardingNeed.INBOX])
             )
         assert bubbles[-1] == NEED_ASKS[OnboardingNeed.INBOX]
+
+    async def test_a_dead_mint_is_recorded_as_an_error_naming_the_user_pick_and_platform(
+        self,
+    ) -> None:
+        """Dropping the link is silent in the product: nothing retries the mint
+        and the user simply never connects, so this line is the only trace that
+        a first contact shipped without the tap it exists to offer. ``log.error``
+        appends message AND kwargs to the wide event's ``errors[]``, which makes
+        every field a queryable surface — without them a Gmail mint failing on
+        Telegram is indistinguishable from a calendar one failing on WhatsApp,
+        and without the user nobody can be told to connect by hand."""
+        repo = AsyncMock()
+        repo.is_connected = AsyncMock(return_value=False)
+        with (
+            patch(f"{MODULE}.user_integration_repository", repo),
+            patch(f"{MODULE}.build_connect_link_url", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.log") as mock_log,
+        ):
+            await build_first_contact("u1", "telegram", None, _prefs([OnboardingNeed.INBOX]))
+
+        mock_log.error.assert_called_once_with(
+            "connect link could not be minted for first contact",
+            user={"id": "u1"},
+            integration_id="gmail",
+            platform="telegram",
+        )
+
+    async def test_one_dead_mint_does_not_cost_them_the_links_after_it(self) -> None:
+        """Each pick's link is minted on its own, so Redis dropping the Gmail one
+        must not swallow the calendar link the next pick needs. Abandoning the
+        loop at the first failure ships a first contact with no tap at all."""
+        repo = AsyncMock()
+        repo.is_connected = AsyncMock(return_value=False)
+        mint = AsyncMock(
+            side_effect=lambda _u, i: None if i == "gmail" else f"https://gaia.test/connect/{i}"
+        )
+        with (
+            patch(f"{MODULE}.user_integration_repository", repo),
+            patch(f"{MODULE}.build_connect_link_url", mint),
+        ):
+            bubbles = await build_first_contact(
+                "u1", "telegram", None, _prefs([OnboardingNeed.INBOX, OnboardingNeed.CALENDAR])
+            )
+
+        assert bubbles[-1] == (
+            "That starts with your calendar, which I can't see yet. "
+            "One tap: [Connect Google Calendar](https://gaia.test/connect/googlecalendar)."
+        )

@@ -6,7 +6,9 @@ from bson import ObjectId
 from fastapi import HTTPException
 import pytest
 from tests.factories import make_integration_config
+from tests.helpers import captured_wide_event
 
+from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
 from app.services.oauth.oauth_service import (
     check_integration_status,
@@ -178,6 +180,34 @@ class TestStoreUserInfo:
         assert doc_id == uid
         fields = update.model_dump(exclude_unset=True)
         assert fields["picture"] == "https://new-pic.example.com/new.jpg"
+
+    async def test_a_login_tracking_failure_is_recorded_and_the_login_still_succeeds(
+        self, mock_user_repo, mock_track_login
+    ):
+        """Analytics must never block a login, so the failure is swallowed — which
+        is only defensible while it stays queryable. It is keyed on the user ID,
+        the field every dashboard groups by, and carries no email address."""
+        uid = str(ObjectId())
+        mock_user_repo.get_by_email.return_value = UserDocument(
+            id=uid,
+            email="alice@test.com",
+            name="Alice",
+            picture="https://existing.example.com/pic.jpg",
+        )
+        mock_track_login.side_effect = RuntimeError("PostHog unavailable")
+
+        async with captured_wide_event() as event:
+            result = await store_user_info("Alice", "alice@test.com", None)
+
+        assert result == (uid, False)
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.OAUTH} Failed to track login in PostHog for",
+                "user": {"id": uid},
+                "error": "PostHog unavailable",
+                "error_type": "RuntimeError",
+            }
+        ]
 
     @pytest.mark.regression
     async def test_login_never_overwrites_a_stored_name(self, mock_user_repo, mock_track_login):

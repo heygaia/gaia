@@ -10,8 +10,10 @@ name: Quality Checks
 # (build.yml). `workflow_dispatch` additionally exposes the runner probe.
 
 on:
+  # No `branches:` filter — same reason as code-quality.yml, where the full note
+  # lives: the key matches the PR's BASE, so master-only left every stacked PR
+  # ungated while still showing a green tick.
   pull_request:
-    branches: [master]
   push:
     branches: [master]
   workflow_dispatch:
