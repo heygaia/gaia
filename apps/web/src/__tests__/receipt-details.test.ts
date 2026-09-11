@@ -62,8 +62,6 @@ describe("buildReceiptDetails", () => {
     expect(details).toEqual({
       planName: "GAIA",
       amount: 3000,
-      description: null,
-      max_users: null,
       currency: "USD",
       billingPeriod: "monthly",
       nextBillingDate: null,
@@ -101,8 +99,6 @@ describe("buildReceiptDetails", () => {
     expect(details).toEqual({
       planName: "GAIA",
       amount: 297948,
-      description: null,
-      max_users: null,
       currency: "INR",
       billingPeriod: "monthly",
       nextBillingDate: "2026-09-27T18:51:00.016538+00:00",
