@@ -39,7 +39,13 @@ ci_die() {
   exit 1
 }
 
-ci_verdict() { python3 "$(dirname "${BASH_SOURCE[0]}")/../verdict.py" emit "$@"; }
+# Resolved when SOURCED, not when called: lanes `cd` into worktrees and
+# scratch dirs after sourcing (regression-proof, mutation.sh), and a path
+# built from ${BASH_SOURCE[0]} at call time is relative to wherever the
+# caller is standing by then — "can't open …/../../scripts/ci/lib/../verdict.py"
+# killed regression-proof on #1202 exactly so.
+_CI_VERDICT_PY="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/verdict.py"
+ci_verdict() { python3 "$_CI_VERDICT_PY" emit "$@"; }
 
 ci_verdict_die() {
   ci_verdict "$@"
