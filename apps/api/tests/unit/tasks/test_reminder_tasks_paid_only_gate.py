@@ -15,10 +15,12 @@ what the workflow gate does for the same reason.
 """
 
 from datetime import UTC, datetime
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.decorators import entitlements
+from app.models.payment_models import PlanType
 from app.models.reminder_models import ReminderModel, ReminderStatus, StaticReminderPayload
 from app.services.analytics_service import AnalyticsEvents
 from app.services.reminder_service import reminder_scheduler
@@ -45,8 +47,7 @@ def _reminder(repeat: str | None = None) -> ReminderModel:
 def lapsed_user():
     """FREE in the cache AND on a fresh read — a genuinely lapsed subscription."""
     with (
-        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-        patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+        patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
     ):
         yield
 
@@ -95,7 +96,7 @@ async def test_the_block_reaches_the_funnel_under_the_blocked_users_own_id() -> 
 
 async def test_a_paying_users_reminder_is_never_captured_as_blocked() -> None:
     with (
-        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=True)),
+        patch(f"{MODULE}.is_paid", AsyncMock(return_value=True)),
         patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
         patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
         patch(f"{MODULE}.capture_event") as capture,
@@ -128,18 +129,25 @@ async def test_the_skip_is_recorded_on_the_wide_event_with_both_ids() -> None:
     )
 
 
-async def test_a_cached_free_gets_one_fresh_read_before_the_reminder_is_refused() -> None:
+async def test_a_user_who_just_paid_fires_off_the_row_not_the_stale_cache() -> None:
     """The cached tier lags a payment by up to its TTL.
 
     A user who paid two minutes ago still reads FREE from Redis. Refusing an
     HTTP request on that is recoverable — the next one is fine — but a reminder
-    occurrence refused on it is gone, so the gate asks the database once before
-    it skips, exactly as the workflow gate does.
+    occurrence refused on it is gone. The real gate, not a stub of it: cache
+    FREE, row PRO, and the reminder fires.
     """
-    confirm = AsyncMock(return_value=True)
     with (
-        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-        patch(f"{MODULE}.confirm_subscription_active", confirm),
+        patch(f"{MODULE}.is_paid", entitlements.is_paid),
+        patch(
+            "app.decorators.entitlements.payment_service.get_cached_plan_type",
+            AsyncMock(return_value=PlanType.FREE),
+        ),
+        patch(
+            "app.decorators.entitlements.payment_service.get_user_subscription_status",
+            AsyncMock(return_value=MagicMock(plan_type=PlanType.PRO)),
+        ),
+        patch("app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock),
         patch(
             f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock
         ) as notify,
@@ -148,30 +156,14 @@ async def test_a_cached_free_gets_one_fresh_read_before_the_reminder_is_refused(
     ):
         await execute_reminder_by_agent(_reminder())
 
-    confirm.assert_awaited_once_with("user-1")
     notify.assert_awaited_once()
-
-
-async def test_a_paying_user_is_never_charged_a_fresh_read() -> None:
-    """The fresh read is the exception path, not the hot path."""
-    confirm = AsyncMock(return_value=True)
-    with (
-        patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=True)),
-        patch(f"{MODULE}.confirm_subscription_active", confirm),
-        patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
-        patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
-        patch(f"{MODULE}.capture_event"),
-    ):
-        await execute_reminder_by_agent(_reminder())
-
-    confirm.assert_not_awaited()
 
 
 async def test_the_gate_asks_about_the_reminders_own_owner() -> None:
     """A gate that checked the wrong user id would pass for everyone."""
     is_active = AsyncMock(return_value=True)
     with (
-        patch(f"{MODULE}.is_subscription_active", is_active),
+        patch(f"{MODULE}.is_paid", is_active),
         patch(f"{MODULE}.notification_service.create_notification", new_callable=AsyncMock),
         patch(f"{MODULE}._deliver_reminder_to_platforms", new_callable=AsyncMock),
         patch(f"{MODULE}.capture_event"),

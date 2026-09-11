@@ -38,7 +38,7 @@ def _subscription_active_by_default():
     """These tests are about the stale-fire gate, not the paid-only gate —
     default the owner to an active subscription so it stays out of the way."""
     with patch(
-        "app.workers.tasks.workflow_tasks.is_subscription_active",
+        "app.workers.tasks.workflow_tasks.is_paid",
         AsyncMock(return_value=True),
     ):
         yield

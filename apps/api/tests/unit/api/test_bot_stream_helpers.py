@@ -10,7 +10,7 @@ exact-value assertions on every branch.
 import asyncio
 import contextlib
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -26,6 +26,7 @@ from app.api.v1.endpoints.bot import (
 )
 from app.models.bot_models import BotChatRequest
 from app.models.message_models import FileData
+from app.models.payment_models import PlanType
 from app.services.bot.stream_frames import sse_frame
 from app.services.bot_service import build_bot_message_request
 
@@ -378,9 +379,7 @@ class TestBotStreamEntitlementGate:
                 new_callable=AsyncMock,
                 return_value=True,
             ) as mock_requires_upgrade,
-            patch(
-                "app.api.v1.endpoints.bot.is_subscription_active", new_callable=AsyncMock
-            ) as mock_sub_active,
+            patch("app.api.v1.endpoints.bot.is_paid", new_callable=AsyncMock) as mock_sub_active,
             patch("app.api.v1.endpoints.bot._capture_bot_turn_refused") as mock_capture,
         ):
             result = await _bot_stream_entitlement_gate("user-1", "imessage")
@@ -401,7 +400,7 @@ class TestBotStreamEntitlementGate:
                 return_value=False,
             ),
             patch(
-                "app.api.v1.endpoints.bot.is_subscription_active",
+                "app.api.v1.endpoints.bot.is_paid",
                 new_callable=AsyncMock,
                 return_value=False,
             ) as mock_sub_active,
@@ -426,6 +425,33 @@ class TestBotStreamEntitlementGate:
         mock_upgrade_url.assert_awaited_once_with("user-1")
         mock_capture.assert_called_once_with("user-1", "discord", "subscription_required")
 
+    async def test_a_user_who_just_paid_passes_off_the_row_not_the_stale_cache(self):
+        """A bot turn sent minutes after paying reads FREE from the cache;
+        the gate must ask the database before showing the paywall notice."""
+        with (
+            patch(
+                "app.api.v1.endpoints.bot.platform_requires_upgrade",
+                new_callable=AsyncMock,
+                return_value=False,
+            ),
+            patch(
+                "app.decorators.entitlements.payment_service.get_cached_plan_type",
+                new_callable=AsyncMock,
+                return_value=PlanType.FREE,
+            ),
+            patch(
+                "app.decorators.entitlements.payment_service.get_user_subscription_status",
+                new_callable=AsyncMock,
+                return_value=MagicMock(plan_type=PlanType.PRO),
+            ),
+            patch("app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock),
+            patch("app.api.v1.endpoints.bot._capture_bot_turn_refused") as mock_capture,
+        ):
+            result = await _bot_stream_entitlement_gate("user-1", "discord")
+
+        assert result is None
+        mock_capture.assert_not_called()
+
     async def test_entitled_user_passes_through_with_no_refusal(self):
         with (
             patch(
@@ -434,7 +460,7 @@ class TestBotStreamEntitlementGate:
                 return_value=False,
             ),
             patch(
-                "app.api.v1.endpoints.bot.is_subscription_active",
+                "app.api.v1.endpoints.bot.is_paid",
                 new_callable=AsyncMock,
                 return_value=True,
             ),

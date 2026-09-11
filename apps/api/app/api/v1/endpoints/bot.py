@@ -17,7 +17,7 @@ from app.core.stream_manager import stream_manager, with_heartbeat
 from app.db.redis import redis_cache
 from app.decorators import (
     SubscriptionRequiredException,
-    is_subscription_active,
+    is_paid,
     require_active_subscription,
     tiered_rate_limit,
 )
@@ -410,7 +410,7 @@ async def _bot_stream_entitlement_gate(user_id: str, platform: str) -> Streaming
         _capture_bot_turn_refused(user_id, platform, "plan_required")
         return _refusal_stream(BOT_STREAM_ERROR_PLAN_REQUIRED)
 
-    if not await is_subscription_active(user_id):
+    if not await is_paid(user_id):
         log.set(outcome="subscription_required")  # pragma: no mutate
         _capture_bot_turn_refused(user_id, platform, "subscription_required")
         return _notice_only_stream(_paywall_notice(await _bot_upgrade_url(user_id)))
