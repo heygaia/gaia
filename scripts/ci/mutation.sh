@@ -35,8 +35,9 @@
 #           SHARD_LOG (shard.log), GITHUB_STEP_SUMMARY. Produces TWO things:
 #           <shard>.verdict.json beside the log — this lane's own uncapped
 #           record, what `replay` reads back — and one shared-schema verdict per
-#           module, written by `verdict.py emit` into verify-logs/verdicts/,
-#           which is what the quality gate consolidates.
+#           module, written by `verdict.py emit` into the directory
+#           `verdict.py dir` reports (GAIA_VERDICT_DIR > $RUNNER_TEMP/verdicts >
+#           verify-logs/verdicts), which is what the quality gate consolidates.
 #   module  MUTMUT_WORKDIR_BASE, MUTMUT_MAX_CHILDREN, MUTMUT_KEEP_WORKDIR,
 #           MUTATION_VERDICT_DIR (where the module RECORD lands; the shard sets
 #           it to a scratch dir beside the log).
@@ -72,6 +73,28 @@ _venv_python() {
   done
   echo "ERROR: mutation.sh — venv python not found (run nx run api:sync first)." >&2
   return 1
+}
+
+# Where the shared lane verdicts go — ASKED, never derived.
+#
+# The answer is `verdict.py`'s to give (GAIA_VERDICT_DIR > $RUNNER_TEMP/verdicts
+# > verify-logs/verdicts), and a shell copy of that order is wrong the moment it
+# moves: the last copy defaulted to the checkout, where no runner reads, so
+# every mutation verdict would have landed somewhere the gate calls NO VERDICT.
+# One call, one answer, and a loud failure if it comes back empty — a blank
+# directory here would send `rm -rf "$VERDICT_ROOT/mutation"` at "/mutation".
+_verdict_root() {
+  local python_bin resolved
+  python_bin="$(_venv_python)" || return 1
+  resolved="$("$python_bin" "$SCRIPT_DIR/verdict.py" dir)" || {
+    echo "ERROR: mutation.sh — 'verdict.py dir' failed; cannot place the lane verdicts." >&2
+    return 1
+  }
+  if [ -z "$resolved" ]; then
+    echo "ERROR: mutation.sh — 'verdict.py dir' printed nothing." >&2
+    return 1
+  fi
+  printf '%s\n' "$resolved"
 }
 
 # `app/services/x.py` -> `app_services_x`, the record file's name. Mirrors
@@ -427,9 +450,10 @@ for name, fallback in (("MONGO_DB", 27017), ("REDIS_URL", 6379)):
   # detail. Reported HERE rather than inside `module` because `emit` prints the
   # ::error annotations, and a module's own output is redirected into
   # $SHARD_LOG, where an annotation is just text GitHub never sees.
+  VERDICT_ROOT="$(_verdict_root)" || exit 1
   python3 "$SCRIPT_DIR/lib/mutation_report.py" collect \
     --log "$SHARD_LOG" --dir "$RECORD_DIR" --rcs "$SHARD_RCS" \
-    --out "$SHARD_VERDICT" --repo-root "$REPO_ROOT"
+    --out "$SHARD_VERDICT" --repo-root "$REPO_ROOT" --verdict-out "$VERDICT_ROOT"
   # The records were inputs to a merge that succeeded; keeping both copies only
   # invites reading the stale one. A FAILED merge leaves them as the evidence.
   rm -rf "$RECORD_DIR"
@@ -458,12 +482,13 @@ cmd_local() {
   rm -rf "$LOG_DIR"
   mkdir -p "$LOG_DIR"
 
-  # The shared-schema verdicts live in a SIBLING directory
-  # (verify-logs/verdicts/), which the wipe above must never reach: every other
-  # lane writes its verdict there too, and deleting the tree would take theirs
-  # with it. Only this lane's own subdirectory is cleared, and only here — the
-  # per-module shards below run concurrently and must not wipe each other's.
-  rm -rf "verify-logs/verdicts/mutation"
+  # The lane verdicts live outside $LOG_DIR, in the tree `verdict.py` owns, so
+  # the wipe above cannot reach them and a stale module from an earlier local
+  # run would consolidate as a lane of this one. Cleared here, once, and only
+  # this lane's own subdirectory — every other lane writes into the same tree.
+  # The path is asked for, never derived (see `_verdict_root`).
+  VERDICT_ROOT="$(_verdict_root)" || exit 1
+  rm -rf "${VERDICT_ROOT:?}/mutation"
 
   if [ "$#" -gt 0 ]; then
     MATRIX="$(printf '%s\n' "$@" | sed 's|^apps/api/||; s|^|apps/api/|' |

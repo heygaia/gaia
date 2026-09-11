@@ -1,77 +1,60 @@
 #!/usr/bin/env python3
-"""Which of a module's PR-changed lines could a test have reached?
+"""Which of a module's PR-changed lines could a mutant have lived on?
 
 The mutation lane reports SKIP when mutmut found no mutant with a covering
 test. That single message covered two facts that need opposite responses:
 
-* the changed lines hold nothing a test could pin — imports, constants,
-  docstrings, decorators, or lines inside a decorated function (mutmut 3.7
-  never mutates those, verified in its file_mutation.py) — so silence is the
-  right answer; or
-* the changed lines are executable code inside a function and NO test reaches
-  them — a real gap that used to pass the gate.
+* mutmut could not generate a mutant on the changed lines at all — imports,
+  constants, docstrings, or the interior lines of a multi-line statement
+  (mutmut scopes by a node's START line, so `url=X,` on line 199 of a call that
+  opens on line 180 can never host one) — and silence is right; or
+* mutmut generated mutants there and NO mapped test executes them — a real gap
+  that used to pass the gate.
 
-This prints the second kind, one line number per line, so mutation.sh can
-fail on them and stay quiet on the first. Sharing the AST walk with the
-matrix would couple two files edited for different reasons; the walk is small.
+This prints the second kind, one line number per line. It asks mutmut the same
+question the lane asks, through the same `create_mutations(covered_lines=…)`
+scoping and with the same decorator patch loaded, rather than re-deriving
+"mutable" from the AST: a second definition of the rule is how line 199 was
+reported as unreachable by a test that executes it.
 
 Usage: mutation_gap.py <module.py> '<[[start,end],...]>'
 """
 
 from __future__ import annotations
 
-import ast
 import json
 from pathlib import Path
 import sys
 
+# scripts/test holds the lane's own mutmut patches; loaded the way mutation.sh
+# loads them so this answers exactly what the lane would generate.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "test"))
 
-def _is_docstring(stmt: ast.stmt) -> bool:
-    return (
-        isinstance(stmt, ast.Expr)
-        and isinstance(stmt.value, ast.Constant)
-        and isinstance(stmt.value.value, str)
-    )
-
-
-def _statement_lines(node: ast.AST) -> set[int]:
-    """Every source line occupied by an executable statement under ``node``.
-
-    Generic over the tree rather than special-casing ``orelse``/``handlers``:
-    any ``ast.stmt`` reachable without crossing a nested ``def`` or ``class``
-    counts, and a docstring does not. Nested defs are skipped here because the
-    walk in ``_function_lines`` visits each undecorated one on its own — and a
-    decorated one contributes nothing, for the same reason top-level ones do
-    not. The ``def`` line itself is not a statement a mutant can live on.
-    """
-    lines: set[int] = set()
-    for child in ast.iter_child_nodes(node):
-        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
-            continue
-        if isinstance(child, ast.stmt) and not _is_docstring(child):
-            lines.update(range(child.lineno, (child.end_lineno or child.lineno) + 1))
-        lines |= _statement_lines(child)
-    return lines
+from mutmut.mutation.file_mutation import create_mutations
+import mutmut_decorated_patch  # noqa: F401  # side-effect import: patches mutmut's visitor to mutate decorated defs, as the lane does
 
 
-def _function_lines(tree: ast.Module) -> set[int]:
-    """Executable lines that sit inside some undecorated function or method."""
-    lines: set[int] = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and not node.decorator_list:
-            lines |= _statement_lines(node)
-    return lines
-
-
-def executable_changed_lines(source: str, ranges: list[list[int]]) -> list[int]:
-    """Changed lines a mutant could have lived on and a test could have caught."""
+def _mutants_on(path: str, source: str, lines: set[int]) -> int:
     try:
-        tree = ast.parse(source)
-    except SyntaxError:
+        _, mutations, _, _ = create_mutations(path, source, covered_lines=lines)
+    except Exception:  # libcst raises its own parse errors; any of them means "nothing to mutate here", not a lane failure
+        return 0
+    # Only mutants inside a function count. mutmut records a kill through the
+    # trampoline it installs on the enclosing function; a module-level mutant
+    # (a constant, a class field) has no trampoline, so no test can ever be
+    # credited with killing it — which is why every changed constants file
+    # read as "no covering test" and was, correctly, a skip.
+    return sum(1 for m in mutations if m.contained_by_top_level_function)
+
+
+def mutable_changed_lines(path: str, source: str, ranges: list[list[int]]) -> list[int]:
+    """Changed lines on which mutmut generates at least one mutant."""
+    changed = sorted({n for start, end in ranges for n in range(start, end + 1)})
+    # One pass over the whole scope first: the common benign case (imports,
+    # constants, deletions) returns here without a per-line parse.
+    if not changed or _mutants_on(path, source, set(changed)) == 0:
         return []
-    reachable = _function_lines(tree)
-    changed = {n for start, end in ranges for n in range(start, end + 1)}
-    return sorted(reachable & changed)
+    return [line for line in changed if _mutants_on(path, source, {line})]
 
 
 def main(argv: list[str]) -> int:
@@ -84,7 +67,8 @@ def main(argv: list[str]) -> int:
     except json.JSONDecodeError as exc:
         print(f"mutation_gap: bad ranges JSON: {exc}", file=sys.stderr)
         return 2
-    for line in executable_changed_lines(Path(path).read_text(encoding="utf-8"), ranges):
+    source = Path(path).read_text(encoding="utf-8")
+    for line in mutable_changed_lines(path, source, ranges):
         print(line)
     return 0
 

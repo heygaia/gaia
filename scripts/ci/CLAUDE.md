@@ -20,7 +20,7 @@ lane without grepping the workflow first.
 | What this PR changed | `changes.sh` | `files`, `py-source`, `docker-inputs` |
 | Standing dependency + pin gates | `audit.sh` | `pnpm`, `playwright-pin`, `alert-rule-tools`, `evlog` |
 | Static hygiene over the TS/JS surface | `checks.mjs` | `file-sizes`, `components-per-file`, `types-location`, `duplication`, `evlog-map-bots` |
-| Turning a run's output into a verdict | `verdict.py` | `emit`, `consolidate`, `pytest-verdict`, `regression-proof-select`, `regression-proof-verdict`, `collect`, `step-outcomes` |
+| Turning a run's output into a verdict | `verdict.py` | `emit`, `consolidate`, `dir`, `check-ownership`, `pytest-verdict`, `regression-proof-select`, `regression-proof-verdict`, `collect`, `step-outcomes` |
 | Publishing what a green master produced | `release.sh` | `resolve-image-tags`, `promote-latest`, `dispatch-cli-publish`, `disable-cf-builds` |
 | The release-metadata guards | `release.mjs` | `validate-manifest`, `verify-cli` |
 | Shipping to production | `deploy.sh` | `plan`, `stack`, `verify`, `retag`, `notify` |
@@ -163,9 +163,30 @@ three quarters of a verdict:
  "advice": ["<actionable sentence>"]}
 ```
 
-Files land in `verify-logs/verdicts/<lane>.json` (gitignored). A lane id may
-name a sub-unit — `test-python/unit-a`, `mutation/<module>` — and the slash is
-a real directory, so one matrix's shards write side by side.
+Files land in `<dir>/<lane>.json`, where `<dir>` is `$GAIA_VERDICT_DIR` if set,
+else `$RUNNER_TEMP/verdicts` on a runner, else `verify-logs/verdicts` in a
+checkout (gitignored). **Never the checkout on CI**, and that is not a
+preference: a self-hosted workspace persists between jobs (`clean:` is false
+there), so verdicts left in the tree are uploaded by the NEXT job to land on
+that runner — stale lanes from another PR reaching a gate. A job also uploads a
+DIRECTORY, so anything else running in it that writes a verdict rides along:
+run 34586506166's gate table carried `mutation/app/does_not_exist.py`, a
+fixture path from an end-to-end test that `test-harness-tools` had just run.
+`RUNNER_TEMP` is per-job and GitHub wipes it, which fixes the first by
+construction; `verdict.py check-ownership`, which the composite runs BEFORE the
+upload, fixes the second by failing the step with `::error file=` at the stray
+file. A verdict belongs to a job when its lane is the job's `family` (default:
+its `lane`) or sits under `<family>/` — the mutation shards pass
+`family: mutation`, since mutation.sh writes per MODULE rather than per shard.
+
+**A script that needs that path reads `verdict.py dir`; it never re-derives it.**
+A bash `${GAIA_VERDICT_DIR:-$REPO_ROOT/verify-logs/verdicts}` looks equivalent
+and is not — it has no `RUNNER_TEMP` rung, so on a runner it names the checkout
+while the composite uploads from the runner's temp dir, and every verdict
+written through it misses the gate without a single error.
+
+A lane id may name a sub-unit — `test-python/unit-a`, `mutation/<module>` — and
+the slash is a real directory, so one matrix's shards write side by side.
 
 Every job in a `quality-gate` `needs:` list ends with the
 `./.github/actions/upload-verdict` composite under `if: always()`. It uploads

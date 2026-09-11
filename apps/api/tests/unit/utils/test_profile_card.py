@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, patch
 from bson import ObjectId
 import pytest
 
+from app.agents.prompts.onboarding_prompts import HOLO_CARD_PROMPT
 from app.constants.profession_bios import PROFESSION_BIOS
 from app.models.onboarding_models import HoloCardLLMOutput
 from app.models.user_models import (
@@ -357,3 +358,19 @@ class TestGenerateHoloCardContentProfession:
         assert phrase == "Pixel Wrangler"
         assert bio == "Ada designs things."
         assert status == BioStatus.COMPLETED
+
+    @pytest.mark.asyncio
+    async def test_a_missing_profession_reaches_the_llm_prompt_empty(self) -> None:
+        """No profession must render as nothing in the prompt — any placeholder the
+        fallback invented would be read by the LLM as the user's actual job."""
+        user = UserDocument(name="Ada", onboarding=None)
+        llm_output = AsyncMock(
+            return_value=HoloCardLLMOutput(personality_phrase="Quiet Builder", user_bio="Ada.")
+        )
+
+        with patch("app.utils.profile_card.ainvoke_structured", llm_output):
+            await generate_holo_card_content("uid", "inbox summary", user=user)
+
+        assert llm_output.await_args.args[1] == HOLO_CARD_PROMPT.format(
+            name="Ada", profession="", context_summary="inbox summary"
+        )

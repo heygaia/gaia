@@ -296,10 +296,10 @@ async def get_onboarding_system_prompt_if_applicable(
 
         name = user_doc.name or "there"
         profession = (onboarding.preferences.profession if onboarding.preferences else None) or ""
-        # Persisted as the triage model's dump; only its summary line belongs in a prompt.
-        triage_summary = (
-            onboarding.triage_summary.get("summary", "") if onboarding.triage_summary else ""
-        )
+        # Persisted as the triage model's dump; only its summary line belongs in a
+        # prompt. No default: the only consumer is the truthiness check below, so
+        # `""` and None were indistinguishable — two mutants no test could kill.
+        triage_summary = (onboarding.triage_summary or {}).get("summary")
 
         onboarding_context = (
             f"Profession: {profession}" if profession else "Profession: not specified"

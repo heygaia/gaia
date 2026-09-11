@@ -771,6 +771,23 @@ class TestGetOnboardingSystemPromptIfApplicable:
         )
         repository.get.assert_awaited_once_with("u1")
 
+    async def test_a_triage_dump_without_a_summary_line_renders_no_inbox_line(self) -> None:
+        """Older personalization runs stored a dump with no ``summary`` key; the
+        prompt must then carry the profession alone, not a placeholder line."""
+        onboarding = OnboardingSubdocument(
+            preferences=OnboardingPreferences(profession="doctor"),
+            triage_summary={"categories": ["billing"], "email_count": 12},
+        )
+        repository = self._patched_repository(self._user(onboarding))
+        with patch("app.helpers.message_helpers.user_repository", repository):
+            prompt = await get_onboarding_system_prompt_if_applicable(
+                "u1", "conv1", "Execute this todo for me: reply to the clinic"
+            )
+
+        assert prompt == ONBOARDING_FIRST_CONVERSATION_SYSTEM_PROMPT.format(
+            name="Ada", onboarding_context="Profession: doctor"
+        )
+
     async def test_the_demo_prefix_is_matched_past_leading_whitespace(self) -> None:
         repository = self._patched_repository(self._user(OnboardingSubdocument()))
         with patch("app.helpers.message_helpers.user_repository", repository):

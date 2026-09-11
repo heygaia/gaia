@@ -46,10 +46,27 @@ inputs:
       in its setup step uploaded `"status": "pass"` (run 34584038269, shard
       5/6). A false pass is the one outcome this contract exists to prevent.
     required: true
-  path:
-    description: Directory the lane's verdicts were written to.
+  family:
+    description: >
+      The lane namespace this job OWNS. Defaults to the lane. A verdict in the
+      directory whose lane is neither this nor under it fails the step, naming
+      the file — because a job uploads a directory, so anything else in the job
+      that writes a verdict reaches the gate as a lane nobody can find. The
+      mutation shards pass `mutation`: mutation.sh writes one verdict per
+      module under that namespace, not under the shard's own lane.
     required: false
-    default: verify-logs/verdicts
+    default: ""
+  path:
+    description: >
+      Directory the lane's verdicts were written to. Defaults to the runner's
+      per-job temp dir, which GitHub wipes — NOT the checkout. A self-hosted
+      workspace persists between jobs, so verdicts left in the tree would be
+      uploaded by the next job to land on that runner: stale lanes from another
+      run reaching a gate. Scripts agree without being told, because
+      verdict.py resolves the same location from RUNNER_TEMP (or an explicit
+      GAIA_VERDICT_DIR).
+    required: false
+    default: ""
 runs:
   using: composite
   steps:
@@ -60,16 +77,28 @@ runs:
     - name: Record a verdict for a lane that wrote none
       if: always()
       shell: bash
+      env:
+        VERDICT_DIR: ${{ inputs.path || format('{0}/verdicts', runner.temp) }}
       run: >
         python3 "$GITHUB_WORKSPACE/scripts/ci/verdict.py" emit --only-if-missing
-        --lane "${{ inputs.lane || inputs.name }}" --out "${{ inputs.path }}"
+        --lane "${{ inputs.lane || inputs.name }}" --out "$VERDICT_DIR"
         --job-status "${{ inputs.status }}"
+    # Before the upload, never after: a stray file has to be a red line that
+    # names itself, not a phantom lane in the gate's table.
+    - name: Reject verdicts this job does not own
+      if: always()
+      shell: bash
+      env:
+        VERDICT_DIR: ${{ inputs.path || format('{0}/verdicts', runner.temp) }}
+      run: >
+        python3 "$GITHUB_WORKSPACE/scripts/ci/verdict.py" check-ownership
+        --family "${{ inputs.family || inputs.lane || inputs.name }}" --out "$VERDICT_DIR"
     - name: Upload the verdict
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
       with:
         name: verdict-${{ inputs.name }}
-        path: ${{ inputs.path }}/**
+        path: ${{ inputs.path || format('{0}/verdicts', runner.temp) }}/**
         # Not `error`: a lane that wrote nothing must reach the gate as NO
         # VERDICT there, with the whole table for context — not as a red X on
         # an upload step nobody scrolls to.
