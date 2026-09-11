@@ -99,6 +99,25 @@ class TestRequireActiveSubscription:
         # The plan read is for THIS user; a lost id would read some default tier.
         plan.assert_awaited_once_with("u1")
 
+    async def test_a_cached_free_is_confirmed_from_the_row_before_blocking(self) -> None:
+        """The gate runs the same ``is_paid`` rule as every other surface."""
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type",
+                new=AsyncMock(return_value=PlanType.FREE),
+            ),
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=MagicMock(plan_type=PlanType.PRO)),
+            ),
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+            patch(f"{ENT}.capture_event") as mock_capture,
+        ):
+            await require_active_subscription("u1", feature="chat")  # must not raise
+
+        invalidate.assert_awaited_once_with("u1")
+        mock_capture.assert_not_called()
+
     async def test_free_user_gets_the_exact_402_wire_contract(self) -> None:
         with (
             patch(

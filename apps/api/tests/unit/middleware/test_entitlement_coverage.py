@@ -10,7 +10,7 @@ the snapshot test below turns into a reviewed diff.
 
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI, Request, Response
 from httpx import ASGITransport, AsyncClient
@@ -439,6 +439,33 @@ async def test_an_unreadable_plan_is_a_503_not_a_paywall() -> None:
     assert response.status_code == 503
     assert response.json() == {"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE}
     assert response.headers["Retry-After"] == "5"
+
+
+async def test_a_user_who_just_paid_passes_the_gate_off_the_row_and_refreshes_the_cache() -> None:
+    """The cached tier lags a payment by up to its TTL. The gate read it alone,
+    so a user who had just paid was 402'd on every gated request until the key
+    expired. One rule everywhere: a cached FREE is confirmed from the row and
+    the stale key dropped."""
+    with (
+        patch(
+            "app.decorators.entitlements.payment_service.get_cached_plan_type",
+            new_callable=AsyncMock,
+            return_value=PlanType.FREE,
+        ),
+        patch(
+            "app.decorators.entitlements.payment_service.get_user_subscription_status",
+            new_callable=AsyncMock,
+            return_value=MagicMock(plan_type=PlanType.PRO),
+        ),
+        patch(
+            "app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock
+        ) as invalidate,
+    ):
+        response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": "yes"}
+    invalidate.assert_awaited_once_with(FAKE_USER["user_id"])
 
 
 async def test_a_genuine_free_verdict_is_still_a_402() -> None:
