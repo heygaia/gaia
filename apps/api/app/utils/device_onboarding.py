@@ -45,8 +45,8 @@ def request_device_onboarding() -> str:
                     "pair_command": DEVICE_PAIR_COMMAND,
                     "up_command": DEVICE_UP_COMMAND,
                     "message": (
-                        "Install the GAIA CLI, run the pairing command, and paste the "
-                        "code it prints here."
+                        "Connect a computer so I can run commands and reach local "
+                        "servers on it. Follow the steps below."
                     ),
                 }
             }
