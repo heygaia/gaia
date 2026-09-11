@@ -58,24 +58,20 @@ class SubscriptionRequiredException(HTTPException):
         super().__init__(status_code=402, detail=detail)
 
 
-async def _cached_tier_is_pro(user_id: str) -> bool:
-    """The gate's hot-path read: the tier as Redis last saw it."""
-    plan = await payment_service.get_cached_plan_type(user_id)
-    return plan == PlanType.PRO
-
-
 async def is_paid(user_id: str) -> bool:
-    """Whether ``user_id`` is on Pro — the one answer every decision surface reads.
+    """Whether ``user_id`` is on Pro — the one entitlement rule in the codebase.
 
     A cached PRO is trusted. A cached FREE is confirmed against the database
     once before anything is refused: the cached tier lags a payment by up to
-    its TTL, and every surface that read it alone — the system-workflow
-    provisioner, the device tunnel, the bot turn — turned a user who had just
-    paid away for those minutes, in the provisioner's case for good, since
-    nothing ever re-asked. A live subscription found here also drops the
-    stale key, so the next read is right.
+    its TTL, and every surface that read it alone — the HTTP gate, the
+    system-workflow provisioner, the device tunnel, the bot turn — turned a
+    user who had just paid away for those minutes, in the provisioner's case
+    for good, since nothing ever re-asked. A live subscription found here also
+    drops the stale key, so the next read is right. The extra read happens
+    only where the cache says FREE on a gated surface, which is bounded by the
+    refusal it would otherwise produce.
     """
-    if await _cached_tier_is_pro(user_id):
+    if await payment_service.get_cached_plan_type(user_id) == PlanType.PRO:
         return True
     status = await payment_service.get_user_subscription_status(user_id)
     if status.plan_type != PlanType.PRO:
@@ -101,11 +97,7 @@ async def require_active_subscription(user_id: str, feature: str) -> None:
     the link on the one response that needed it. Clients mint on user intent
     instead, from the allowlisted ``POST /api/v1/payments/checkout-session``.
     """
-    # The cached read alone, by design: this runs on every authenticated
-    # request, and refusing one request on a stale FREE is recoverable — the
-    # activation drops the key, and the next request is fine. ``is_paid`` is
-    # for the decisions that are not recoverable.
-    if await _cached_tier_is_pro(user_id):
+    if await is_paid(user_id):
         return
     log.warning(
         "Subscription required, blocking request",
