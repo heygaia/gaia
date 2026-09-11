@@ -11,7 +11,7 @@ files share fixtures and fake data via ``conftest.py`` in this directory.
 from datetime import UTC, datetime
 from types import SimpleNamespace
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 from bson import ObjectId
 from dodopayments.types import Subscription
@@ -827,25 +827,32 @@ class TestCancelSubscription:
             return_value=SAMPLE_SUBSCRIPTION
         )
         mock_dodo_client.subscriptions = MagicMock()
+        # Dodo echoing the pre-update flag: the event still records the
+        # scheduled cancel that was asked for, not what the echo says.
         mock_dodo_client.subscriptions.update = MagicMock(
-            return_value=self._dodo_subscription(status="cancelled")
+            return_value=self._dodo_subscription(status="cancelled", scheduled=False)
         )
         applied = SubscriptionEventResult(SubscriptionEventOutcome.APPLIED, FAKE_USER_ID)
 
         with patch(
             f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=applied)
         ) as apply_event:
+            before = datetime.now(UTC)
             result = await payment_service.cancel_subscription(FAKE_USER_ID)
+            after = datetime.now(UTC)
 
-        mock_dodo_client.subscriptions.update.assert_called_once_with(
-            "sub_xyz789",
-            cancel_at_next_billing_date=True,
+        assert mock_dodo_client.subscriptions.update.call_args == call(
+            "sub_xyz789", cancel_at_next_billing_date=True
         )
         event = apply_event.await_args.args[0]
         assert event.kind is SubscriptionEventKind.CANCELLED
         assert event.data.subscription_id == "sub_xyz789"
         assert event.data.cancel_at_next_billing_date is True
         assert event.data.cancelled_at == "2025-06-15T00:00:00Z"
+        # Ordered against Dodo's own event clock, so it must be a real UTC
+        # instant of now — not None, not naive.
+        assert event.occurred_at.tzinfo is UTC
+        assert before <= event.occurred_at <= after
         assert isinstance(result, UserSubscriptionStatus)
 
     async def test_a_cancel_with_no_local_row_fails_loud(
@@ -874,7 +881,7 @@ class TestCancelSubscription:
         assert exc_info.value.status_code == 502
 
     @staticmethod
-    def _dodo_subscription(status: str) -> Subscription:
+    def _dodo_subscription(status: str, scheduled: bool = True) -> Subscription:
         return Subscription.model_validate(
             {
                 "subscription_id": "sub_xyz789",
@@ -896,7 +903,7 @@ class TestCancelSubscription:
                 "billing": {"country": "US"},
                 "addons": [],
                 "meters": [],
-                "cancel_at_next_billing_date": True,
+                "cancel_at_next_billing_date": scheduled,
                 "on_demand": False,
                 "tax_inclusive": False,
                 "trial_period_days": 0,
@@ -1296,6 +1303,40 @@ class TestVerifyPaymentCompletion:
         mock_redis_cache.delete = AsyncMock(side_effect=_delete)
         return store
 
+    async def test_a_reconciled_subscription_reaches_the_reducer_as_an_activation_stamped_now(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_dodo_client,
+        mock_plan_cache_invalidation,
+    ):
+        """A recovery has no Dodo event timestamp; the reducer orders it by the
+        moment Dodo answered, which must be a real UTC instant — a None or a
+        naive one would compare wrong against the webhook's."""
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(
+            side_effect=[None, SAMPLE_SUBSCRIPTION]
+        )
+        mock_dodo_client.subscriptions = SimpleNamespace(
+            retrieve=self._exact_retrieve("sub_from_checkout", self._dodo_subscription())
+        )
+        applied = SubscriptionEventResult(SubscriptionEventOutcome.CREATED, FAKE_USER_ID)
+
+        with patch(
+            f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=applied)
+        ) as apply_event:
+            before = datetime.now(UTC)
+            result = await payment_service.verify_payment_completion(
+                FAKE_USER_ID, subscription_id="sub_from_checkout"
+            )
+            after = datetime.now(UTC)
+
+        assert result.payment_completed is True
+        event = apply_event.await_args.args[0]
+        assert event.kind is SubscriptionEventKind.ACTIVATED
+        assert event.data.subscription_id == "sub_from_checkout"
+        assert event.occurred_at.tzinfo is UTC
+        assert before <= event.occurred_at <= after
+
     async def test_an_unpaid_scan_runs_once_across_the_web_clients_retries(
         self,
         payment_service,
@@ -1323,9 +1364,16 @@ class TestVerifyPaymentCompletion:
             retrieve=MagicMock(return_value=unpaid)
         )
 
-        for _ in range(8):
-            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+        assert result.payment_completed is False
+        for _ in range(7):
+            async with captured_wide_event() as event:
+                result = await payment_service.verify_payment_completion(FAKE_USER_ID)
             assert result.payment_completed is False
+            # The skipped scan is on the record, under the payment namespace
+            # every other billing field lives in — a verify that never asked
+            # Dodo is otherwise indistinguishable from one that did.
+            assert event["payment"] == {"checkout_scan": "cached_miss"}
 
         assert mock_dodo_client.checkout_sessions.retrieve.call_count == len(sessions)
         mock_redis_cache.set.assert_awaited_once_with(
