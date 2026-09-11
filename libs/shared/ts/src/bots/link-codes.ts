@@ -92,11 +92,19 @@ export async function consumeInboundLinkCode(
   return parsed.text || null;
 }
 
-/** Sent when the code is stale, already used, or the handle belongs elsewhere. */
+/** Sent when the code is stale, already used, the handle belongs elsewhere, or
+ * the redemption broke on our side. */
 export function buildLinkCodeFailureMessage(
   reason: LinkCodeFailure,
   frontendUrl: string,
 ): string {
+  if (reason === "failed") {
+    return (
+      "**Something went wrong on our end**\n\n" +
+      "Nothing to fix on your side. Tap the link again in a moment.\n" +
+      `${frontendUrl}/onboarding`
+    );
+  }
   if (reason === "plan") {
     return (
       "**This platform is part of GAIA Pro**\n\n" +
@@ -129,8 +137,13 @@ export function buildLinkCodeFailureMessage(
  * Reads the API's stated reason. A 409 covers two opposite conflicts, and a 429
  * means "needs Pro" only when it says so — a real rate limit there would
  * otherwise tell people to subscribe over a limit they just have to wait out.
+ *
+ * Anything else — a 500, a timeout, a socket that hung up — is ours, and is
+ * told as such rather than dressed up as an expired code the user would go and
+ * re-mint for nothing.
  */
-function classifyLinkFailure(error: GaiaApiError): LinkCodeFailure {
+function classifyLinkFailure(error: unknown): LinkCodeFailure {
+  if (!(error instanceof GaiaApiError)) return "failed";
   if (error.status === 429) {
     return error.reason.plan_required ? "plan" : "expired";
   }
@@ -139,7 +152,8 @@ function classifyLinkFailure(error: GaiaApiError): LinkCodeFailure {
       ? "account-has-other"
       : "conflict";
   }
-  return "expired";
+  if (error.status === 400) return "expired";
+  return "failed";
 }
 
 /**
@@ -152,10 +166,11 @@ function classifyLinkFailure(error: GaiaApiError): LinkCodeFailure {
  * read does not get to be unreliable. When that delivery failed the API hands
  * the bubbles back and they are sent from here — nothing else will.
  *
- * Returns true once the link is in. On a failure the user can act on
- * (expired/used code, handle already linked elsewhere) it messages them and
- * returns false — never a stack trace. Any other failure propagates so it
- * surfaces as a real error.
+ * Returns true once the link is in. Every failure is answered and returns
+ * false — never a stack trace, and never silence: a user the code can act on
+ * (expired/used code, handle already linked elsewhere) is told what to do, and
+ * a failure of ours is named as ours. Nothing is rethrown, because this is the
+ * user's first-ever message and the adapters above only log.
  */
 export async function redeemLinkCode(
   gaia: GaiaClient,
@@ -197,16 +212,28 @@ export async function redeemLinkCode(
         });
         return true;
       } catch (error: unknown) {
-        if (!(error instanceof GaiaApiError)) throw error;
-        const status = error.status;
-        if (status !== 400 && status !== 409 && status !== 429) throw error;
-
         const reason = classifyLinkFailure(error);
-        wideLog.set({ link_result: "rejected", reason });
-        wideLog.audit("platform_link_code_rejected", {
-          user_hash: hashLogIdentifier(platformUserId),
+        // "rejected" is a refusal the user caused; ours is its own result, so a
+        // dashboard cannot read our outage as people presenting bad codes.
+        wideLog.set({
+          link_result: reason === "failed" ? "failed" : "rejected",
           reason,
         });
+        if (reason === "failed") {
+          // Nothing is rethrown: the adapters' last-resort handlers only log,
+          // so a propagated error answered the user's first-ever message with
+          // silence. The failure is recorded here instead.
+          wideLog.error(
+            "platform_link_code_failed",
+            { user_hash: hashLogIdentifier(platformUserId) },
+            error,
+          );
+        } else {
+          wideLog.audit("platform_link_code_rejected", {
+            user_hash: hashLogIdentifier(platformUserId),
+            reason,
+          });
+        }
         await target.send(
           buildLinkCodeFailureMessage(reason, gaia.getFrontendUrl()),
         );

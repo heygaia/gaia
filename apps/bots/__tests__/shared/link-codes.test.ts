@@ -248,16 +248,47 @@ describe("redeemLinkCode", () => {
     expect(target.sent[0]).not.toContain("someone else");
   });
 
-  it("lets an unexpected failure propagate rather than faking a link", async () => {
+  it("answers an API blip instead of leaving the user in silence", async () => {
+    // This is the user's first-ever message to GAIA. The adapters only log a
+    // thrown error, so propagating one answered a 500 with nothing at all.
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 500", 500);
     });
     const target = fakeTarget();
 
-    await expect(
-      redeemLinkCode(fakeGaia(redeem), "whatsapp", "WA1", CODE, target),
-    ).rejects.toThrow(GaiaApiError);
-    expect(target.sent).toEqual([]);
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("failed", FRONTEND_URL),
+    ]);
+    expect(target.sent[0]).not.toContain("expired");
+  });
+
+  it("answers a failure that is not an API error at all", async () => {
+    const redeem = vi.fn(async () => {
+      throw new Error("socket hang up");
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("failed", FRONTEND_URL),
+    ]);
   });
 });
 
