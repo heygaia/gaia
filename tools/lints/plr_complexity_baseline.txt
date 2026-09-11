@@ -74,7 +74,6 @@ apps/api/app/utils/chat_utils.py	PLR0913
 apps/api/app/utils/composio_hooks/reddit_hooks.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0913
-apps/api/app/utils/linkedin_utils.py	PLR0913
 apps/api/app/utils/notification/storage.py	PLR0913
 apps/api/app/utils/notion_md.py	PLR0911
 apps/api/app/utils/notion_md.py	PLR0912
@@ -105,8 +104,6 @@ apps/api/scripts/sync_composio_tools.py	PLR0913
 apps/api/scripts/sync_composio_tools.py	PLR0915
 apps/api/scripts/test_tracked_todos.py	PLR0912
 apps/api/scripts/verify_sandbox_mounts.py	PLR0915
-apps/api/tests/integration/mcp/test_mcp_oauth_flow.py	PLR0913
-apps/api/tests/integration/mcp/test_mcp_oauth_flow.py	PLR0915
 apps/api/tests/integration/real/memory/llm.py	PLR0913
 apps/api/tests/unit/agents/test_mail_templates.py	PLR0913
 apps/api/tests/unit/agents/test_messages.py	PLR0913
