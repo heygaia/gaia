@@ -60,6 +60,8 @@ export type {
   BridgeErrorCode,
   BridgeInvokeResult,
   BridgeStatus,
+  DeviceServerState,
+  DeviceServerView,
 } from "./ipc.types.js";
 export type { LoginListener } from "./login.js";
 export { isPaired, runLogin } from "./login.js";

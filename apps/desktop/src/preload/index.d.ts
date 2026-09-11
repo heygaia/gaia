@@ -3,7 +3,7 @@ import type {
   AddOptions,
   BridgeInvokeResult,
   BridgeStatus,
-  ServerConfig,
+  DeviceServerView,
 } from "@gaia/shared/bridge-core";
 import type {
   DesktopPermissionPane,
@@ -48,15 +48,21 @@ declare global {
         status: () => Promise<BridgeInvokeResult<BridgeStatus>>;
         start: () => Promise<BridgeInvokeResult<BridgeStatus>>;
         stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
-        listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        listServers: () => Promise<BridgeInvokeResult<DeviceServerView[]>>;
         addServer: (
           opts: AddOptions,
-        ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
+        retryServer: (
+          key: string,
+        ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
         removeServer: (
           key: string,
-        ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+        ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
         onStatusChanged: (
           callback: (status: BridgeStatus) => void,
+        ) => () => void;
+        onServersChanged: (
+          callback: (servers: DeviceServerView[]) => void,
         ) => () => void;
       };
     };

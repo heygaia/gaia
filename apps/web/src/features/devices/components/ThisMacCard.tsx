@@ -4,8 +4,15 @@ import { Button } from "@heroui/button";
 import { Chip } from "@heroui/chip";
 import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
-import { ComputerIcon, Delete02Icon, Folder01Icon, Link04Icon } from "@icons";
-import type { ServerConfig } from "@shared/bridge-core/config.types";
+import { Tooltip } from "@heroui/tooltip";
+import {
+  ComputerIcon,
+  Delete02Icon,
+  Folder01Icon,
+  Link04Icon,
+  RedoIcon,
+} from "@icons";
+import type { DeviceServerView } from "@shared/bridge-core/ipc.types";
 import type { UseBridge } from "../hooks/useBridge";
 import { thisDeviceLabel } from "../hooks/useDesktopPlatform";
 import { AddServerModal } from "./AddServerModal";
@@ -31,13 +38,55 @@ function StatusChip({
   );
 }
 
+/** Per-server connect state: a spinner while the background test+register runs,
+ * a Retry button (with the error in a tooltip) on failure, a success dot when
+ * connected. */
+function ServerStateIndicator({
+  state,
+  error,
+  onRetry,
+  disabled,
+}: {
+  state: DeviceServerView["state"];
+  error?: string;
+  onRetry: () => void;
+  disabled: boolean;
+}) {
+  if (state === "connecting")
+    return <Spinner size="sm" aria-label="Connecting" />;
+  if (state === "error")
+    return (
+      <Tooltip content={error ?? "Failed to connect"} color="danger">
+        <Button
+          size="sm"
+          variant="flat"
+          color="warning"
+          isDisabled={disabled}
+          startContent={<RedoIcon width={14} height={14} />}
+          onPress={onRetry}
+        >
+          Retry
+        </Button>
+      </Tooltip>
+    );
+  return (
+    <span
+      role="img"
+      aria-label="Connected"
+      className="size-2 rounded-full bg-success"
+    />
+  );
+}
+
 function ServerRow({
   server,
   onRemove,
+  onRetry,
   disabled,
 }: {
-  server: ServerConfig;
+  server: DeviceServerView;
   onRemove: (key: string) => void;
+  onRetry: (key: string) => void;
   disabled: boolean;
 }) {
   return (
@@ -48,6 +97,12 @@ function ServerRow({
         <Link04Icon className="size-4 text-zinc-400" />
       )}
       <span className="min-w-0 flex-1 truncate">{server.name}</span>
+      <ServerStateIndicator
+        state={server.state}
+        error={server.error}
+        onRetry={() => onRetry(server.key)}
+        disabled={disabled}
+      />
       <Button
         isIconOnly
         size="sm"
@@ -78,8 +133,16 @@ export function ThisMacCard({
   bridge: UseBridge;
   platform: NodeJS.Platform | null;
 }) {
-  const { status, servers, busy, pair, setRunning, addServer, removeServer } =
-    bridge;
+  const {
+    status,
+    servers,
+    busy,
+    pair,
+    setRunning,
+    addServer,
+    retryServer,
+    removeServer,
+  } = bridge;
   const label = thisDeviceLabel(platform);
   const noun = platform === "darwin" ? "this Mac" : "this computer";
 
@@ -130,6 +193,7 @@ export function ThisMacCard({
               key={server.key}
               server={server}
               onRemove={(key) => void removeServer(key)}
+              onRetry={(key) => void retryServer(key)}
               disabled={busy === "server"}
             />
           ))}

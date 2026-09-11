@@ -1,10 +1,10 @@
 "use client";
 
-import type { ServerConfig } from "@shared/bridge-core/config.types";
 import type { AddOptions } from "@shared/bridge-core/config-builders";
 import type {
   BridgeInvokeResult,
   BridgeStatus,
+  DeviceServerView,
 } from "@shared/bridge-core/ipc.types";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { getElectronAPI } from "@/lib/electron/api";
@@ -38,7 +38,7 @@ export type BridgeAction = "pair" | "toggle" | "server";
 export function useBridge() {
   const api = useMemo(() => getElectronAPI()?.bridge ?? null, []);
   const [status, setStatus] = useState<BridgeStatus>(OFFLINE_STATUS);
-  const [servers, setServers] = useState<ServerConfig[]>([]);
+  const [servers, setServers] = useState<DeviceServerView[]>([]);
   const [busy, setBusy] = useState<BridgeAction | null>(null);
 
   const loadServers = useCallback(async () => {
@@ -57,10 +57,14 @@ export function useBridge() {
     void api.status().then((result) => {
       if (!cancelled && result.ok) setStatus(result.value);
     });
-    const unsubscribe = api.onStatusChanged((next) => setStatus(next));
+    const unsubscribeStatus = api.onStatusChanged((next) => setStatus(next));
+    // Follow live server-state pushes: a backgrounded add resolving to
+    // connected/error, or a remove, arrives here without a manual refetch.
+    const unsubscribeServers = api.onServersChanged((next) => setServers(next));
     return () => {
       cancelled = true;
-      unsubscribe();
+      unsubscribeStatus();
+      unsubscribeServers();
     };
   }, [api]);
 
@@ -121,6 +125,15 @@ export function useBridge() {
     [api, runAction],
   );
 
+  const retryServer = useCallback(
+    (key: string) =>
+      runAction("server", async () => {
+        if (!api) return;
+        setServers(unwrap(await api.retryServer(key)));
+      }),
+    [api, runAction],
+  );
+
   const removeServer = useCallback(
     (key: string) =>
       runAction("server", async () => {
@@ -138,6 +151,7 @@ export function useBridge() {
     pair,
     setRunning,
     addServer,
+    retryServer,
     removeServer,
   };
 }

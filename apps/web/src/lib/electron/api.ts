@@ -4,11 +4,11 @@
  * hooks and non-React modules (axios client, stream handlers) can use it.
  */
 
-import type { ServerConfig } from "@shared/bridge-core/config.types";
 import type { AddOptions } from "@shared/bridge-core/config-builders";
 import type {
   BridgeInvokeResult,
   BridgeStatus,
+  DeviceServerView,
 } from "@shared/bridge-core/ipc.types";
 import type {
   DesktopPermissionPane,
@@ -59,12 +59,20 @@ export interface ElectronAPI {
     status: () => Promise<BridgeInvokeResult<BridgeStatus>>;
     start: () => Promise<BridgeInvokeResult<BridgeStatus>>;
     stop: () => Promise<BridgeInvokeResult<BridgeStatus>>;
-    listServers: () => Promise<BridgeInvokeResult<ServerConfig[]>>;
+    listServers: () => Promise<BridgeInvokeResult<DeviceServerView[]>>;
     addServer: (
       opts: AddOptions,
-    ) => Promise<BridgeInvokeResult<ServerConfig[]>>;
-    removeServer: (key: string) => Promise<BridgeInvokeResult<ServerConfig[]>>;
+    ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
+    retryServer: (
+      key: string,
+    ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
+    removeServer: (
+      key: string,
+    ) => Promise<BridgeInvokeResult<DeviceServerView[]>>;
     onStatusChanged: (callback: (status: BridgeStatus) => void) => () => void;
+    onServersChanged: (
+      callback: (servers: DeviceServerView[]) => void,
+    ) => () => void;
   };
 }
 

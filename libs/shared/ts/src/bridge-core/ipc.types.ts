@@ -18,6 +18,22 @@ export interface BridgeStatus {
   deviceId: string | null;
 }
 
+/** Transient connect state of a device MCP server, tracked by the host so the
+ * card can show progress: a freshly added server is `connecting` (its
+ * test+register runs in the background) until it settles to `connected` or
+ * `error`. Servers loaded from config at startup are reported `connected`. */
+export type DeviceServerState = "connecting" | "connected" | "error";
+
+/** One MCP server on this device for the This Mac card: the config fields the
+ * UI shows plus its live connect state (and error message when it failed). */
+export interface DeviceServerView {
+  key: string;
+  name: string;
+  type: "stdio" | "url" | "filesystem";
+  state: DeviceServerState;
+  error?: string;
+}
+
 /** Machine-readable outcome for a failed bridge invoke. `not_authenticated` and
  * `not_paired` map to the host's typed errors; everything else (including the
  * server's 409 device-cap message) is `unknown`, with the human-readable detail

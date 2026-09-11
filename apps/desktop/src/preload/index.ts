@@ -18,7 +18,7 @@ import type {
   AddOptions,
   BridgeInvokeResult,
   BridgeStatus,
-  ServerConfig,
+  DeviceServerView,
 } from "@gaia/shared/bridge-core";
 import type {
   DesktopPermissionPane,
@@ -243,21 +243,49 @@ const api = {
     stop: (): Promise<BridgeInvokeResult<BridgeStatus>> =>
       ipcRenderer.invoke(IPC.bridgeStop),
 
-    /** The MCP servers this device exposes. */
-    listServers: (): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+    /** The MCP servers this device exposes, each with its live connect state. */
+    listServers: (): Promise<BridgeInvokeResult<DeviceServerView[]>> =>
       ipcRenderer.invoke(IPC.bridgeListServers),
 
-    /** Add or update a server from CLI-equivalent flags; the main process
-     * builds the ServerConfig via the shared buildConfigFromFlags. Returns the
-     * updated server list. */
+    /** Add or update a server from CLI-equivalent flags; the main process builds
+     * the ServerConfig via the shared buildConfigFromFlags. Returns immediately
+     * with the new server as "connecting" — its final state arrives via
+     * onServersChanged once the background connect settles. */
     addServer: (
       opts: AddOptions,
-    ): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+    ): Promise<BridgeInvokeResult<DeviceServerView[]>> =>
       ipcRenderer.invoke(IPC.bridgeAddServer, opts),
 
+    /** Retry the background connect for a server that failed. */
+    retryServer: (
+      key: string,
+    ): Promise<BridgeInvokeResult<DeviceServerView[]>> =>
+      ipcRenderer.invoke(IPC.bridgeRetryServer, key),
+
     /** Remove a server by key; returns the updated server list. */
-    removeServer: (key: string): Promise<BridgeInvokeResult<ServerConfig[]>> =>
+    removeServer: (
+      key: string,
+    ): Promise<BridgeInvokeResult<DeviceServerView[]>> =>
       ipcRenderer.invoke(IPC.bridgeRemoveServer, key),
+
+    /**
+     * Subscribe to server-list changes pushed from the main process (add,
+     * background connect resolving to connected/error, remove).
+     *
+     * @param callback - Handler invoked with the new server list.
+     * @returns A cleanup function that removes the listener.
+     */
+    onServersChanged: (
+      callback: (servers: DeviceServerView[]) => void,
+    ): (() => void) => {
+      const handler = (
+        _event: Electron.IpcRendererEvent,
+        servers: DeviceServerView[],
+      ) => callback(servers);
+      ipcRenderer.on(IPC.bridgeServersChanged, handler);
+      return () =>
+        ipcRenderer.removeListener(IPC.bridgeServersChanged, handler);
+    },
 
     /**
      * Subscribe to bridge status changes pushed from the main process

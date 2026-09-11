@@ -12,7 +12,7 @@ import type {
   BridgeError,
   BridgeInvokeResult,
   BridgeStatus,
-  ServerConfig,
+  DeviceServerView,
 } from "@gaia/shared/bridge-core";
 import { buildConfigFromFlags } from "@gaia/shared/bridge-core";
 import { ipcMain } from "electron";
@@ -111,24 +111,38 @@ function bridgeStop(): Promise<BridgeInvokeResult<BridgeStatus>> {
   });
 }
 
-function bridgeListServers(): Promise<BridgeInvokeResult<ServerConfig[]>> {
+function bridgeListServers(): Promise<BridgeInvokeResult<DeviceServerView[]>> {
   return run(() => getBridgeHost().listServers());
 }
 
 function bridgeAddServer(
   opts: unknown,
-): Promise<BridgeInvokeResult<ServerConfig[]>> {
+): Promise<BridgeInvokeResult<DeviceServerView[]>> {
   return run(async () => {
     if (!isAddOptions(opts)) throw new Error("invalid server options");
     const host = getBridgeHost();
+    // Returns immediately with the new server as "connecting"; its real state
+    // arrives via the servers-changed push once the background connect settles.
     await host.addServer(buildConfigFromFlags(opts));
+    return host.listServers();
+  });
+}
+
+function bridgeRetryServer(
+  key: unknown,
+): Promise<BridgeInvokeResult<DeviceServerView[]>> {
+  return run(async () => {
+    if (typeof key !== "string" || key.length === 0)
+      throw new Error("invalid server key");
+    const host = getBridgeHost();
+    await host.retryServer(key);
     return host.listServers();
   });
 }
 
 function bridgeRemoveServer(
   key: unknown,
-): Promise<BridgeInvokeResult<ServerConfig[]>> {
+): Promise<BridgeInvokeResult<DeviceServerView[]>> {
   return run(async () => {
     if (typeof key !== "string" || key.length === 0)
       throw new Error("invalid server key");
@@ -145,6 +159,15 @@ function pushStatus(status: BridgeStatus): void {
   const win = getMainWindow();
   if (win && !win.isDestroyed()) {
     win.webContents.send(IPC.bridgeStatusChanged, status);
+  }
+}
+
+/** Forward a server-list change (add/connect/error/remove) to the renderer so
+ * the This Mac card reflects each server's live connect state. */
+function pushServers(servers: DeviceServerView[]): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    win.webContents.send(IPC.bridgeServersChanged, servers);
   }
 }
 
@@ -169,6 +192,10 @@ export function registerBridgeIpcHandlers(): void {
   ipcMain.handle(IPC.bridgeRemoveServer, (_event, key: unknown) =>
     bridgeRemoveServer(key),
   );
+  ipcMain.handle(IPC.bridgeRetryServer, (_event, key: unknown) =>
+    bridgeRetryServer(key),
+  );
 
   getBridgeHost().onStatusChange(pushStatus);
+  getBridgeHost().onServersChange(pushServers);
 }

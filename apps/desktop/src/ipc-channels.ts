@@ -36,5 +36,7 @@ export const IPC = {
   bridgeListServers: "bridge:list-servers",
   bridgeAddServer: "bridge:add-server",
   bridgeRemoveServer: "bridge:remove-server",
+  bridgeRetryServer: "bridge:retry-server",
   bridgeStatusChanged: "bridge:status-changed",
+  bridgeServersChanged: "bridge:servers-changed",
 } as const;

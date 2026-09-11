@@ -16,6 +16,8 @@ import {
   type BridgeStatus,
   clearCredentials,
   configureBridge,
+  type DeviceServerState,
+  type DeviceServerView,
   deregisterConfiguredServer,
   isPaired,
   loadConfig,
@@ -73,6 +75,7 @@ const MAX_RESTART_ATTEMPTS = 3;
 const RESTART_DELAY_MS = 2_000;
 
 const STATUS_EVENT = "status";
+const SERVERS_EVENT = "servers";
 
 export class BridgeHost {
   private readonly events = new EventEmitter();
@@ -88,6 +91,15 @@ export class BridgeHost {
   /** Set before we call tunnel.stop() so the supervise loop can tell a stop WE
    * asked for from an auth exit the tunnel decided on. */
   private intentionalStop = false;
+
+  /** Transient per-server connect state (keyed by server key). A freshly added
+   * server is "connecting" while its test+register runs in the background, then
+   * settles to "connected" or "error". Servers with no entry (loaded from config
+   * at startup) are reported "connected". */
+  private readonly serverStates = new Map<
+    string,
+    { state: DeviceServerState; error?: string }
+  >();
 
   /** Point bridge-core's state (credentials.json, config.json) at userData/bridge
    * and wire the logger. Cheap and idempotent — no shell spawn — so credential-only
@@ -135,6 +147,14 @@ export class BridgeHost {
     this.events.off(STATUS_EVENT, listener);
   }
 
+  onServersChange(listener: (servers: DeviceServerView[]) => void): void {
+    this.events.on(SERVERS_EVENT, listener);
+  }
+
+  offServersChange(listener: (servers: DeviceServerView[]) => void): void {
+    this.events.off(SERVERS_EVENT, listener);
+  }
+
   /** Start the supervised tunnel. Throws BridgeNotPairedError if unpaired. The
    * tunnel is held in the background; this returns once it is running, not when
    * it stops.
@@ -177,19 +197,56 @@ export class BridgeHost {
     }
   }
 
-  listServers(): ServerConfig[] {
-    return loadConfig().servers;
+  listServers(): DeviceServerView[] {
+    return loadConfig().servers.map((server) => {
+      const runtime = this.serverStates.get(server.key);
+      const view: DeviceServerView = {
+        key: server.key,
+        name: server.name,
+        type: server.type,
+        state: runtime?.state ?? "connected",
+      };
+      if (runtime?.error) view.error = runtime.error;
+      return view;
+    });
   }
 
   async addServer(config: ServerConfig): Promise<void> {
-    // Verify the server actually starts and speaks MCP before saving — a typo
-    // like `npm` for `npx` otherwise becomes a dead server with no feedback.
-    // init() first so the login-shell PATH is set and npx/uvx resolve; testServer
-    // throws a descriptive error that the IPC envelope surfaces to the card.
+    // Save immediately and report the server as "connecting"; the test +
+    // cloud-register runs in the background (connectServer) so the card returns
+    // at once and shows live state instead of blocking on a spinner. A bad
+    // command (e.g. `npm` for `npx`) surfaces as an "error" state with retry,
+    // not a modal that hangs until the spawn times out.
     await this.init();
-    await testServer(config);
     upsertServer(config);
-    await registerConfiguredServers();
+    this.setServerState(config.key, "connecting");
+    void this.connectServer(config);
+  }
+
+  /** Background: prove the server starts and speaks MCP, then register it with
+   * the cloud. Records the outcome as the server's state. */
+  private async connectServer(config: ServerConfig): Promise<void> {
+    try {
+      await testServer(config);
+      await registerConfiguredServers();
+      this.setServerState(config.key, "connected");
+    } catch (err) {
+      this.setServerState(
+        config.key,
+        "error",
+        err instanceof Error ? err.message : String(err),
+      );
+    }
+  }
+
+  /** Retry the background connect for a server that failed, reusing its saved
+   * config. */
+  async retryServer(key: string): Promise<void> {
+    await this.init();
+    const config = loadConfig().servers.find((server) => server.key === key);
+    if (!config) return;
+    this.setServerState(key, "connecting");
+    void this.connectServer(config);
   }
 
   async removeServer(key: string): Promise<boolean> {
@@ -197,7 +254,22 @@ export class BridgeHost {
     // deregisterConfiguredServer drops it locally and best-effort notifies the
     // cloud (HELLO reconcile is the backstop if that call fails).
     await this.init();
-    return deregisterConfiguredServer(key);
+    const removed = await deregisterConfiguredServer(key);
+    this.serverStates.delete(key);
+    this.emitServers();
+    return removed;
+  }
+
+  private setServerState(
+    key: string,
+    state: DeviceServerState,
+    error?: string,
+  ): void {
+    this.serverStates.set(
+      key,
+      error === undefined ? { state } : { state, error },
+    );
+    this.emitServers();
   }
 
   /** Pair this Mac as its own device off the app's authenticated session.
@@ -402,6 +474,10 @@ export class BridgeHost {
 
   private emitStatus(): void {
     this.events.emit(STATUS_EVENT, this.status());
+  }
+
+  private emitServers(): void {
+    this.events.emit(SERVERS_EVENT, this.listServers());
   }
 }
 
