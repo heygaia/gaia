@@ -9,8 +9,9 @@ platform / background-job named methods.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from datetime import datetime
+from collections.abc import Callable, Iterator
+from datetime import UTC, datetime, timedelta
+import time
 
 import pytest
 
@@ -37,6 +38,23 @@ def make_user() -> Callable[..., UserDocument]:
         return UserDocument.model_validate({"email": "a@b.com", "name": "A", **overrides})
 
     return _make
+
+
+@pytest.fixture
+def local_time_offset_from_utc(monkeypatch: pytest.MonkeyPatch) -> Iterator[None]:
+    """Move the process's local timezone off UTC for the test.
+
+    The suite pins TZ=UTC, which makes a naive ``datetime.now()`` numerically
+    identical to an aware UTC one — so a timestamp that forgot its timezone
+    would look correct here and be hours wrong in production.
+    """
+    monkeypatch.setenv("TZ", "Asia/Kolkata")  # UTC+5:30
+    time.tzset()
+    try:
+        yield
+    finally:
+        monkeypatch.undo()
+        time.tzset()
 
 
 class TestUserReads:
@@ -149,6 +167,40 @@ class TestOnboardingWrites:
         )
         assert second is None
         assert (await repo.get(created.id)).onboarding.phase == OnboardingPhase.COMPLETED
+
+    async def test_complete_onboarding_writes_timezone_at_the_document_root(
+        self, repo, make_user, raw_collection
+    ):
+        """``user.timezone`` is the single source of truth — the wizard's answer
+        must land at the root under that exact key, not on the subdocument."""
+        created = await repo.create(make_user(email="tz@y.com"))
+        completed = await repo.complete_onboarding(
+            created.id,
+            phase=OnboardingPhase.COMPLETED,
+            bio_status=BioStatus.COMPLETED,
+            preferences=OnboardingPreferences(profession="eng"),
+            timezone="Europe/Berlin",
+        )
+        assert completed is not None
+        assert completed.timezone == "Europe/Berlin"
+        stored = await raw_collection.find_one({"email": "tz@y.com"})
+        assert stored["timezone"] == "Europe/Berlin"
+
+    async def test_complete_onboarding_without_timezone_keeps_the_stored_one(
+        self, repo, make_user, raw_collection
+    ):
+        """Omitting the argument must not clear a timezone detected earlier."""
+        created = await repo.create(make_user(email="tzkeep@y.com", timezone="Asia/Kolkata"))
+        completed = await repo.complete_onboarding(
+            created.id,
+            phase=OnboardingPhase.COMPLETED,
+            bio_status=BioStatus.COMPLETED,
+            preferences=OnboardingPreferences(profession="eng"),
+        )
+        assert completed is not None
+        assert completed.timezone == "Asia/Kolkata"
+        stored = await raw_collection.find_one({"email": "tzkeep@y.com"})
+        assert stored["timezone"] == "Asia/Kolkata"
 
     async def test_update_preferences_patches_only_given_keys(self, repo, make_user):
         created = await repo.create(make_user())
@@ -285,7 +337,7 @@ class TestSettingsWrites:
         assert stored.email_memory_processed_at is not None
 
     async def test_set_gmail_scan_timestamp(self, repo, make_user):
-        from datetime import UTC, datetime
+        from datetime import datetime
 
         created = await repo.create(make_user())
         ts = datetime(2025, 1, 1, tzinfo=UTC)
@@ -330,7 +382,7 @@ class TestUserCounts:
         assert set(await repo.list_all_ids()) == {a.id, b.id}
 
     async def test_count_created_before(self, repo, make_user):
-        from datetime import UTC, datetime
+        from datetime import datetime
 
         cutoff = datetime(2025, 6, 1, tzinfo=UTC)
         await repo.create(make_user(created_at=datetime(2025, 1, 1, tzinfo=UTC)))
@@ -341,7 +393,7 @@ class TestUserCounts:
 
 class TestWorkerScans:
     async def test_find_stuck_personalization(self, repo, make_user, raw_collection):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta
 
         from bson import ObjectId
 
@@ -359,7 +411,7 @@ class TestWorkerScans:
         assert [u.id for u in found] == [stuck.id]
 
     async def test_find_inactive_email_candidates(self, repo, make_user):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta
 
         before = datetime.now(UTC)
         long_ago = datetime.now(UTC) - timedelta(days=30)
@@ -379,7 +431,7 @@ class TestWorkerScans:
         assert stored.last_inactive_email_sent is not None
 
     async def test_backfill_candidates_by_creation_and_marker(self, repo, make_user):
-        from datetime import UTC, datetime, timedelta
+        from datetime import datetime, timedelta
 
         active_since = datetime.now(UTC) - timedelta(days=1)
         eligible_before = datetime.now(UTC)
@@ -395,10 +447,18 @@ class TestWorkerScans:
         ids = await repo.find_backfill_candidate_ids(active_since, future, limit=10)
         assert ids == [eligible.id]
 
-    async def test_mark_memory_backfilled(self, repo, make_user):
+    async def test_mark_memory_backfilled_stamps_an_utc_instant(
+        self, repo, make_user, local_time_offset_from_utc
+    ):
+        """The marker is compared against a UTC cutoff by the daily cron, so a
+        naive local ``now()`` would land hours off and re-select (or hide) the
+        user."""
         created = await repo.create(make_user())
+        before = datetime.now(UTC) - timedelta(milliseconds=1)  # BSON stores milliseconds
         await repo.mark_memory_backfilled(created.id)
-        assert (await repo.get(created.id)).memory_backfilled is not None
+        stamped = (await repo.get(created.id)).memory_backfilled
+        assert stamped is not None
+        assert before <= stamped <= datetime.now(UTC)
 
 
 class TestPlatformLinking:

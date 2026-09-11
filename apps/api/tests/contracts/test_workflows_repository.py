@@ -365,6 +365,30 @@ class TestWorkflowsScheduler:
     async def test_set_status_missing_returns_false(self, repo):
         assert await repo.set_status(_uid("missing"), ScheduledTaskStatus.COMPLETED) is False
 
+    async def test_set_status_rearm_writes_scheduled_at_and_repeat_by_name(
+        self, repo, raw_collection
+    ):
+        """A re-arm lands on the exact top-level fields the scheduler reads back."""
+        run_at = (datetime.now(UTC) + timedelta(hours=1)).replace(microsecond=0)
+        wf = await repo.create(_workflow(status=ScheduledTaskStatus.EXECUTING))
+
+        assert (
+            await repo.set_status(
+                wf.id,
+                ScheduledTaskStatus.SCHEDULED,
+                rearm=WorkflowRearm(scheduled_at=run_at, repeat="0 9 * * *"),
+            )
+            is True
+        )
+        raw = await raw_collection.find_one({"_id": wf.id})
+        assert raw["scheduled_at"] == run_at
+        assert raw["repeat"] == "0 9 * * *"
+
+        # ``repeat=None`` means "leave it alone", not "clear it" — a status-only
+        # re-arm must never strip a recurring workflow's cron.
+        assert await repo.set_status(wf.id, ScheduledTaskStatus.EXECUTING) is True
+        assert (await raw_collection.find_one({"_id": wf.id}))["repeat"] == "0 9 * * *"
+
 
 class TestWorkflowsTriggersAndSystem:
     async def test_count_trigger_references(self, repo):
@@ -503,6 +527,37 @@ class TestWorkflowsTriggersAndSystem:
         assert [s.title for s in updated.steps] == ["s2"]
         assert updated.trigger_config.type == TriggerType.SCHEDULE
         assert updated.trigger_config.composio_trigger_ids == ["t1"]
+
+    async def test_reset_system_workflow_rewrites_the_top_level_schedule(
+        self, repo, raw_collection
+    ):
+        """Reset replaces the stored ``scheduled_at``/``repeat``, not just the trigger."""
+        stale = (datetime.now(UTC) - timedelta(days=1)).replace(microsecond=0)
+        next_run = (datetime.now(UTC) + timedelta(hours=2)).replace(microsecond=0)
+        wf = await repo.create(
+            _workflow(is_system_workflow=True, scheduled_at=stale, repeat="0 0 * * *")
+        )
+
+        updated = await repo.reset_system_workflow(
+            wf.id,
+            SystemWorkflowDefinition(
+                title="Fresh",
+                description="fresh desc",
+                prompt="fresh prompt",
+                steps=[WorkflowStep(title="s2", category="notion", description="d2")],
+                trigger_config=TriggerConfig(
+                    type=TriggerType.SCHEDULE,
+                    enabled=True,
+                    cron_expression="0 9 * * *",
+                    next_run=next_run,
+                ),
+                composio_trigger_ids=[],
+            ),
+        )
+        assert updated is not None
+        raw = await raw_collection.find_one({"_id": wf.id})
+        assert raw["scheduled_at"] == next_run
+        assert raw["repeat"] == "0 9 * * *"
 
 
 class TestPlaybookDeclineTally:
@@ -896,3 +951,35 @@ class TestWorkflowsPublicMarketplaceReads:
 
         # the pattern is escaped: "g.ail" is literal, not a regex matching "gmail".
         assert await repo.count_public_by_step_category("g.ail") == 0
+
+    async def test_find_public_matching_ranks_explore_then_runs_then_recency(
+        self, repo, raw_collection
+    ):
+        """Each sort key carries its own weight: featured outranks a busier
+        community row, run count outranks recency, recency breaks the tie."""
+        token = uuid.uuid4().hex[:10]
+        now = datetime.now(UTC).replace(microsecond=0)
+
+        async def seed(*, explore: bool, runs: int, updated_at: datetime) -> str:
+            wf = await repo.create(_workflow(is_public=not explore, title=f"{token} row"))
+            await raw_collection.update_one(
+                {"_id": wf.id},
+                {
+                    "$set": {
+                        "is_explore": explore,
+                        "total_executions": runs,
+                        "updated_at": updated_at,
+                    }
+                },
+            )
+            return wf.id
+
+        # Seeded stalest-first on purpose: a sort that stops reading ``updated_at``
+        # falls back to insertion order, which is the reverse of what we assert.
+        community_hot = await seed(explore=False, runs=100, updated_at=now)
+        explore_stale = await seed(explore=True, runs=50, updated_at=now - timedelta(days=2))
+        explore_fresh = await seed(explore=True, runs=50, updated_at=now - timedelta(days=1))
+        explore_cold = await seed(explore=True, runs=5, updated_at=now)
+
+        rows = await repo.find_public_matching([token], limit=10)
+        assert [r.id for r in rows] == [explore_fresh, explore_stale, explore_cold, community_hot]
