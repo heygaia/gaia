@@ -7,14 +7,15 @@ icon: "plug"
 ## Overview
 
 The device bridge connects your own machine to GAIA. Once a machine is
-connected, GAIA can run commands on it and reach the local MCP servers and
-folders you expose — the same way it uses any other integration.
+connected, GAIA can run commands on it and reach the local MCP servers you
+add — the same way it uses any other integration.
 
-- **Run commands** — the agent can run a shell command on a connected device
-  with the `run_on_device` tool.
+- **Run commands and read/write files** — the agent runs shell commands on a
+  connected device with the `run_on_device` tool, which lets it read and write
+  files anywhere the device's user account can. File access comes automatically
+  with being connected; there is nothing to configure.
 - **Local MCP servers** — anything you can start with a command (`npx`, `uvx`,
   `docker`, `python`) or that already runs at a local URL.
-- **Files and folders** — a built-in filesystem server, no MCP setup required.
 - **One outbound tunnel** — the bridge dials out to GAIA; it opens **no inbound
   ports** on your machine. Your device is reachable only while the tunnel runs,
   and you can revoke it anytime from **Settings → Devices**.
@@ -28,12 +29,11 @@ folders you expose — the same way it uses any other integration.
 
 There are two ways to connect a machine — pick whichever fits:
 
-- **[GAIA desktop app](#connect-with-the-desktop-app-macos)** — connect the Mac
-  you're on with one click, no CLI and no pairing code. **Recommended on
-  macOS.**
+- **[GAIA desktop app](#connect-with-the-desktop-app-macos-and-linux)** —
+  connect the computer you're on with one click, no CLI and no pairing code.
+  Works on macOS and Linux.
 - **[`gaia` CLI](#connect-with-the-cli)** — pair any machine from the terminal.
-  Best for headless servers, non-macOS machines, and scripted or advanced
-  setups.
+  Best for headless servers, Windows (WSL2), and scripted or advanced setups.
 
 <Note>
   The desktop app and the CLI are **independent devices**. Connecting one never
@@ -41,27 +41,29 @@ There are two ways to connect a machine — pick whichever fits:
   under **Settings → Devices**, and revoking one leaves the other online.
 </Note>
 
-## Connect with the desktop app (macOS)
+## Connect with the desktop app (macOS and Linux)
 
-The GAIA desktop app can connect the Mac it runs on directly — no CLI, no
-pairing code. This is the recommended path on macOS.
+The GAIA desktop app can connect the computer it runs on directly — no CLI, no
+pairing code. It works on macOS and Linux (Windows isn't supported yet).
 
 <Steps>
   <Step title="Open the Devices settings">
-    In the GAIA desktop app, go to **Settings → Devices**. The **This Mac** card
-    appears at the top (it shows only in the desktop app on macOS).
+    In the GAIA desktop app, go to **Settings → Devices**. The **This computer**
+    card appears at the top (it shows only in the desktop app).
   </Step>
 
-  <Step title="Enable on this Mac">
-    Click **Enable on this Mac**. The app pairs this machine as its own device
-    from your signed-in session and starts the tunnel — no code to copy. The
-    card's status chip switches to **Online**.
+  <Step title="Enable on this computer">
+    Click **Enable on this computer**. The app pairs this machine as its own
+    device from your signed-in session and starts the tunnel — no code to copy.
+    The card's status chip switches to **Online**. Once connected, GAIA can run
+    commands and read or write files on this computer via `run_on_device` — no
+    file setup required.
   </Step>
 
-  <Step title="Expose MCP servers and folders">
-    Use **Add server** on the same card to connect a local MCP server or expose
-    folders, and remove any entry from its row. The toggle on the card keeps the
-    tunnel running or pauses it live.
+  <Step title="Add MCP servers">
+    Use **Add server** on the same card to connect a local MCP server, and
+    remove any entry from its row. The toggle on the card keeps the tunnel
+    running or pauses it live.
   </Step>
 </Steps>
 
@@ -70,19 +72,21 @@ pairing code. This is the recommended path on macOS.
 A system-tray (menu-bar) item mirrors the device status — **online**,
 **paused**, or **not connected** — and lets you **Connect** or **Pause** the
 tunnel, open the app, or **Quit** (which drops the device offline cleanly).
-Turn on **Launch at login** from the tray to keep this Mac online across
+Turn on **Launch at login** from the tray to keep this computer online across
 restarts.
 
-### Grant Full Disk Access
+### Grant Full Disk Access (macOS only)
 
-So GAIA can read your files, grant **Full Disk Access** to **GAIA.app** in
+On macOS, the OS-protected folders (Downloads, Desktop, Documents, and so on)
+stay off limits until you grant **Full Disk Access** to **GAIA.app** in
 **System Settings → Privacy & Security → Full Disk Access** — the app's shells
-inherit the grant.
+inherit the grant, so `run_on_device` can reach those folders. Everything else
+works as soon as the device is connected.
 
-<Warning>
-  Grant Full Disk Access to **GAIA.app**, not your terminal. On macOS the CLI
-  daemon's file access is instead limited by the terminal's Full Disk Access.
-</Warning>
+<Note>
+  macOS only. On Linux there is nothing to grant — file access is immediate once
+  the device is connected, bounded only by normal Unix file permissions.
+</Note>
 
 ## Connect with the CLI
 
@@ -148,7 +152,7 @@ machine.
 gaia bridge login --name my-laptop
 ```
 
-### Expose something to GAIA
+### Connect a local MCP server
 
 Run the guided wizard and pick what to connect:
 
@@ -156,8 +160,8 @@ Run the guided wizard and pick what to connect:
 gaia bridge add
 ```
 
-The wizard connects any of three kinds of thing. If the machine isn't paired
-yet, it walks you through pairing first.
+The wizard connects either of two kinds of MCP server. If the machine isn't
+paired yet, it walks you through pairing first.
 
 <AccordionGroup>
   <Accordion title="A command that starts an MCP server (stdio)">
@@ -178,43 +182,20 @@ yet, it walks you through pairing first.
     (`localhost`, `127.0.0.1`, or `::1`). You can add optional request headers
     such as `Authorization`.
   </Accordion>
-
-  <Accordion title="Local files & folders (no MCP needed)">
-    Exposes GAIA's built-in filesystem server so it can list, read, and search
-    files. You choose:
-
-    - **Scope** — specific folders, or your **entire filesystem** (everything
-      this user account can read).
-    - **Access** — **read-only** (default), or **read/write** so GAIA can modify
-      files too.
-
-    <Warning>
-      Exposing your entire filesystem includes sensitive paths like `~/.ssh`.
-      Prefer specific folders unless you really need everything.
-    </Warning>
-  </Accordion>
 </AccordionGroup>
 
 Secrets you enter (env vars, headers) are stored locally and never leave your
 machine. After saving, the wizard registers the server with GAIA and offers to
 start the tunnel right away.
 
-#### Shortcut: expose folders in one command
-
-To share folders without the wizard, use `gaia bridge fs`:
-
-```bash
-gaia bridge fs ~/Documents ~/code    # read-only access to these folders
-gaia bridge fs --write ~/notes       # also allow GAIA to modify files here
-```
-
-`~` expands to your home directory; quote paths that contain spaces. This is the
-same built-in filesystem server the wizard configures — re-running it replaces
-the folder list.
-
 <Note>
-  Exposing your **entire filesystem** is only available through the
-  `gaia bridge add` wizard, not `gaia bridge fs`.
+  You don't add files or folders here. Once the device is connected, GAIA can
+  run commands and read or write files on it via `run_on_device` automatically —
+  bounded only by the device user account's permissions. On macOS, the
+  OS-protected folders (Downloads, Desktop, Documents, and so on) additionally
+  require granting **Full Disk Access** to the terminal that runs
+  `gaia bridge up` (**System Settings → Privacy & Security → Full Disk
+  Access**); on Linux there is no such prompt.
 </Note>
 
 ### Keep the device online
@@ -246,7 +227,7 @@ gaia bridge logout      # forget this machine's local credentials
 Use the `<key>` shown by `gaia bridge ls` when removing a server:
 
 ```bash
-gaia bridge rm filesystem
+gaia bridge rm everything
 ```
 
 <Note>
@@ -260,8 +241,7 @@ gaia bridge rm filesystem
 | Command                         | Description                                                              |
 | ------------------------------- | ------------------------------------------------------------------------ |
 | `gaia bridge login`             | Pair this machine with your GAIA account                                 |
-| `gaia bridge add`               | Guided wizard to connect an MCP server or expose files                   |
-| `gaia bridge fs <dirs...>`      | Expose folders via the built-in filesystem server (read-only by default) |
+| `gaia bridge add`               | Guided wizard to connect a local MCP server                              |
 | `gaia bridge up`                | Start the outbound tunnel as a background daemon (brings the device online) |
 | `gaia bridge down`              | Stop the background tunnel (takes the device offline)                    |
 | `gaia bridge ls`                | Show pairing status and configured servers                               |
@@ -272,8 +252,10 @@ gaia bridge rm filesystem
 
 - **Outbound-only.** The bridge dials out to GAIA. It opens no inbound ports and
   requires no port forwarding.
-- **Contained access.** Filesystem access is limited to the folders you approve;
-  paths are resolved and checked so the agent can't escape them.
+- **File access follows the device.** When a device is connected, GAIA can run
+  commands and read or write files on it via `run_on_device`, bounded by the
+  device user account's permissions (and, on macOS, by Full Disk Access). It has
+  no access at all while the tunnel is down.
 - **Secrets stay local.** Environment variables and request headers you enter
   are stored on your machine and are not uploaded.
 - **Revoke anytime.** Remove a device from **Settings → Devices** to cut off
