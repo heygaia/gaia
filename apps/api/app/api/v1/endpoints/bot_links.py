@@ -26,11 +26,10 @@ from app.models.bot_models import (
     RedeemLinkCodeResponse,
 )
 from app.models.chat_models import MessageModel, UpdateMessagesRequest
-from app.models.user_models import AuthenticatedUser, OnboardingPreferences
+from app.models.user_models import AuthenticatedUser
 from app.services.bot_service import BotService
 from app.services.conversation_service import update_messages
 from app.services.onboarding.first_contact import build_first_contact
-from app.services.onboarding.first_message import compose_first_message
 from app.services.platform_link_code_service import (
     discard_platform_link_code,
     peek_platform_link_code,
@@ -237,7 +236,7 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
     )
     delivered = completion.first_contact_delivered
     log.set(outcome="success", is_new_link=completion.link.is_new_link, delivered=delivered)
-    await _persist_first_contact(payload.user_id, body, user, payload.preferences, bubbles)
+    await _persist_first_contact(payload.user_id, body, user, bubbles)
     # A publish the queue refused is never retried, so the bubbles go back to
     # the bot that asked for the link rather than being lost.
     return RedeemLinkCodeResponse(
@@ -249,10 +248,9 @@ async def _persist_first_contact(
     user_id: str,
     body: RedeemLinkCodeRequest,
     user: dict | None,
-    preferences: OnboardingPreferences,
     bubbles: list[str],
 ) -> None:
-    """Write the exchange into the platform's bot conversation.
+    """Write the first contact into the platform's bot conversation.
 
     Nothing else does it: no chat turn ran, so without this the user's next
     message arrives into an empty thread and GAIA has no idea it just introduced
@@ -269,25 +267,29 @@ async def _persist_first_contact(
             body.platform, body.platform_user_id, None, actor, is_dm=True
         )
         now = datetime.now(UTC)
+        messages: list[MessageModel] = []
+        # Only a turn the user really sent. The WhatsApp/iMessage prefill is
+        # editable, so what arrives is their own words and is stored verbatim;
+        # a Telegram deep link carries no text at all, and writing the canned
+        # opener as their turn stored a message they never sent — which is also
+        # what any "have they said anything yet" signal then counts.
+        if body.first_message:
+            messages.append(
+                MessageModel(
+                    type="user",
+                    response=body.first_message,
+                    date=(now - timedelta(milliseconds=100)).isoformat(),
+                )
+            )
+        messages.append(
+            MessageModel(
+                type="bot",
+                response=NEW_MESSAGE_BREAKER.join(bubbles),
+                date=now.isoformat(),
+            )
+        )
         await update_messages(
-            UpdateMessagesRequest(
-                conversation_id=conversation_id,
-                messages=[
-                    # The user's own opener: on WhatsApp and iMessage they
-                    # literally sent this text, and on Telegram it is what the
-                    # deep link stood in for. Either way it is their turn.
-                    MessageModel(
-                        type="user",
-                        response=compose_first_message(preferences),
-                        date=(now - timedelta(milliseconds=100)).isoformat(),
-                    ),
-                    MessageModel(
-                        type="bot",
-                        response=NEW_MESSAGE_BREAKER.join(bubbles),
-                        date=now.isoformat(),
-                    ),
-                ],
-            ),
+            UpdateMessagesRequest(conversation_id=conversation_id, messages=messages),
             user=actor,
         )
     except Exception as e:

@@ -415,6 +415,8 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       "15551234567",
       LINK_CODE,
       undefined,
+      // The prefill is editable, so what they sent is their own opening turn.
+      LINK_FIRST_MESSAGE,
     );
     // The API composes the first contact and delivers it on the outbound queue
     // when the link completes, so the bot must not send anything of its own:

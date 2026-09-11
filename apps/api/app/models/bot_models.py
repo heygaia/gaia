@@ -109,6 +109,14 @@ class RedeemLinkCodeRequest(BaseModel):
     code: str = Field(..., description="Single-use code minted by the web at onboarding")
     username: str | None = Field(None, description=_USERNAME_DESC)
     display_name: str | None = Field(None, description=_DISPLAY_NAME_DESC)
+    first_message: str | None = Field(
+        None,
+        description=(
+            "What the user actually sent alongside the code, with the code "
+            "stripped. Absent on Telegram, where the deep link carries no text: "
+            "a tap is not a message and none is stored."
+        ),
+    )
 
     @field_validator("platform")
     @classmethod

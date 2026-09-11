@@ -116,9 +116,13 @@ describe("redeemLinkCode", () => {
     );
 
     expect(result).toBe(true);
-    expect(redeem).toHaveBeenCalledWith("telegram", "TG42", CODE, {
-      username: "tg_user",
-    });
+    expect(redeem).toHaveBeenCalledWith(
+      "telegram",
+      "TG42",
+      CODE,
+      { username: "tg_user" },
+      undefined,
+    );
     expect(target.sent).toEqual([]);
   });
 
@@ -336,6 +340,44 @@ describe("consumeInboundLinkCode", () => {
     expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
     expect(target.sent).toEqual([]);
+  });
+
+  it("carries the text the user actually typed into the redemption", async () => {
+    // The wa.me prefill is editable, so this is their real first question. It
+    // is stored as their opening turn; without it the canned line was stored
+    // as theirs and the question was dropped.
+    const redeem = okRedeem();
+    const edited = "actually, can you sort my inbox before monday?";
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `${edited} #${CODE}`,
+        linkState: async () => "unlinked" as const,
+      }),
+    );
+
+    expect(redeem).toHaveBeenCalledWith(
+      "whatsapp",
+      "WA1",
+      CODE,
+      undefined,
+      edited,
+    );
+  });
+
+  it("sends no first message when the code arrived on its own", async () => {
+    const redeem = okRedeem();
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `#${CODE}`,
+        linkState: async () => "unlinked" as const,
+      }),
+    );
+
+    expect(redeem).toHaveBeenCalledWith("whatsapp", "WA1", CODE, undefined, "");
   });
 
   it("does not greet when the inbound redemption fails", async () => {

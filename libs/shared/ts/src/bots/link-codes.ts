@@ -85,6 +85,7 @@ export async function consumeInboundLinkCode(
       parsed.code,
       args.target,
       args.profile,
+      parsed.text,
     );
     return null;
   }
@@ -166,6 +167,10 @@ function classifyLinkFailure(error: unknown): LinkCodeFailure {
  * read does not get to be unreliable. When that delivery failed the API hands
  * the bubbles back and they are sent from here — nothing else will.
  *
+ * ``firstMessage`` is what the user typed over the WhatsApp/iMessage prefill,
+ * with the code stripped: their real opening turn, which the API stores as
+ * theirs. A Telegram deep link carries none, and none is invented.
+ *
  * Returns true once the link is in. Every failure is answered and returns
  * false — never a stack trace, and never silence: a user the code can act on
  * (expired/used code, handle already linked elsewhere) is told what to do, and
@@ -179,6 +184,7 @@ export async function redeemLinkCode(
   code: string,
   target: MessageTarget,
   profile?: { username?: string; displayName?: string },
+  firstMessage?: string,
 ): Promise<boolean> {
   return withWideEvent(
     "link_code_redemption",
@@ -194,6 +200,7 @@ export async function redeemLinkCode(
           platformUserId,
           code,
           profile,
+          firstMessage,
         );
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),

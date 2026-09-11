@@ -650,6 +650,7 @@ export class GaiaClient {
     platformUserId: string,
     code: string,
     profile?: { username?: string; displayName?: string },
+    firstMessage?: string,
   ): Promise<RedeemedLinkCode> {
     return this.request(async () => {
       const { data } = await this.client.post(
@@ -660,6 +661,9 @@ export class GaiaClient {
           code,
           ...(profile?.username && { username: profile.username }),
           ...(profile?.displayName && { display_name: profile.displayName }),
+          // Absent, not empty: an empty string is "they sent only the code",
+          // and a blank turn in the thread is worse than no turn.
+          ...(firstMessage && { first_message: firstMessage }),
         },
         {
           headers: {
