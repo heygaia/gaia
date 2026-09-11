@@ -11,9 +11,12 @@ import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
 import { useIsMobile } from "@/hooks/ui/useMobile";
+import { usePlatform } from "@/hooks/ui/usePlatform";
 import { useBackgroundSync } from "@/hooks/useBackgroundSync";
+import { useElectron } from "@/hooks/useElectron";
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 import SidebarLayout, { CustomSidebarTrigger } from "@/layouts/SidebarLayout";
+import { cn } from "@/lib/utils";
 import { useChatStoreSync } from "@/stores/chatStore";
 import { useHoloCardModalStore } from "@/stores/holoCardModalStore";
 import { useRightSidebar } from "@/stores/rightSidebarStore";
@@ -61,6 +64,8 @@ export default function MainLayout({ children }: { children: ReactNode }) {
     variant: rightSidebarVariant,
   } = useRightSidebar();
   const isMobile = useIsMobile();
+  const { isElectron } = useElectron();
+  const { isMac } = usePlatform();
   const [defaultOpen, setDefaultOpen] = useState(true);
   const dragRef = useRef<HTMLDivElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
@@ -93,6 +98,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
 
   // Get the current open state based on mobile/desktop
   const currentOpen = isMobile ? isMobileOpen : isOpen;
+
+  // When the sidebar collapses (offcanvas), its own traffic-light offset
+  // slides away with it and the content header takes over the top-left
+  // corner. On macOS desktop that corner belongs to the hiddenInset window
+  // controls, so the re-open trigger must clear them horizontally.
+  const clearTrafficLights = isElectron && isMac && !currentOpen;
 
   // @warning: Removing the `target` option from useDrag will cause the HeroUI Buttons to not work properly.
   // For more details, see: https://github.com/hey-gaia/gaia/issues/44
@@ -138,7 +149,12 @@ export default function MainLayout({ children }: { children: ReactNode }) {
               {/* Tapping anywhere outside the mobile sidebar dismisses it via
                   the Sheet's own modal overlay (see ui/sidebar), so the shell
                   needs no click handler of its own here. */}
-              <header className="flex shrink-0 items-center justify-between p-2">
+              <header
+                className={cn(
+                  "flex shrink-0 items-center justify-between p-2",
+                  clearTrafficLights && "pl-20",
+                )}
+              >
                 <HeaderSidebarTrigger />
                 <HeaderManager />
               </header>
