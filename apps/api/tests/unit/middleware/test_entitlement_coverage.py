@@ -156,8 +156,6 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
     free = sorted({path for _, path in _routes(gated_app) if is_free_path(path)})
 
     assert free == [
-        "/",
-        "/api/v1/",
         "/api/v1/blogs",
         "/api/v1/blogs/count",
         "/api/v1/blogs/slug",
@@ -205,7 +203,6 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
         "/api/v1/payments/subscriptions/cancel",
         "/api/v1/payments/verify-payment",
         "/api/v1/payments/webhooks/dodo",
-        "/api/v1/ping",
         "/api/v1/platform-auth/discord/callback",
         "/api/v1/platform-auth/slack/callback",
         "/api/v1/support/rate-limit-status",
@@ -221,7 +218,6 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
         "/api/v1/webhook/composio",
         "/api/v1/workflows/explore",
         "/health",
-        "/ping",
     ]
 
 

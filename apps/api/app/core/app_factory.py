@@ -24,6 +24,7 @@ from app.constants.log_tags import LogTag
 from app.core.lazy_loader import providers
 from app.core.lifespan import lifespan
 from app.core.middleware import configure_middleware
+from app.core.openapi import api_operation_id
 from app.schemas.errors import (
     ERROR_RESPONSES,
     ErrorEnvelope,
@@ -64,6 +65,7 @@ def create_app() -> FastAPI:
         docs_url=None if is_prod else "/docs",
         redoc_url=None if is_prod else "/redoc",
         default_response_class=UJSONResponse,
+        generate_unique_id_function=api_operation_id,
     )
 
     configure_middleware(app)
