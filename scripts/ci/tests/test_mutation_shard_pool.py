@@ -50,6 +50,12 @@ def _shard(tmp_path: Path, testfile: str, **env: str) -> subprocess.CompletedPro
             "HOME": str(tmp_path),
             "GROUP": _group(testfile),
             "SHARD_LOG": str(tmp_path / "shard.log"),
+            # Without this the shard reports its deliberately bogus module into
+            # the CHECKOUT's verdict tree, where the lane's upload composite
+            # ships it and the quality gate reads it as a real failing lane:
+            # `mutation/app/does_not_exist.py` reached the gate of run
+            # 34586506166 from a fixture just like this one.
+            "GAIA_VERDICT_DIR": str(tmp_path / "verdicts"),
             **env,
         },
         capture_output=True,

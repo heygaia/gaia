@@ -7,6 +7,8 @@ trees so the logic is proven without running mutmut.
 """
 
 import importlib.util
+import io
+import json
 from pathlib import Path
 import subprocess
 
@@ -381,7 +383,7 @@ def stacked_repo(tmp_path: Path) -> Path:
     return root
 
 
-def _matrix_stderr(repo: Path, base_ref: str) -> str:
+def _matrix_stderr(repo: Path, base_ref: str, **env: str) -> str:
     process = subprocess.run(
         ["python3", str(MATRIX_SCRIPT)],
         cwd=repo,
@@ -389,7 +391,7 @@ def _matrix_stderr(repo: Path, base_ref: str) -> str:
         capture_output=True,
         text=True,
         check=False,
-        env={**GIT_ENV, "GITHUB_BASE_REF": base_ref},
+        env={**GIT_ENV, "GITHUB_BASE_REF": base_ref, **env},
     )
     assert process.returncode == 0, process.stderr
     return process.stderr
@@ -411,3 +413,160 @@ def test_the_matrix_prints_the_merge_base_it_actually_used(stacked_repo: Path) -
 
     assert stacked[:12] in stderr
     assert against_master[:12] not in stderr
+
+
+def test_the_matrix_scopes_to_the_resolved_base_not_the_payload(
+    stacked_repo: Path,
+) -> None:
+    """GAIA_PR_BASE wins over GITHUB_BASE_REF, and it has to.
+
+    For a PR in a native GitHub stack the event payload names the stack's TRUNK
+    in base.ref rather than the PR's parent (measured 2026-09-11 on #1175: the
+    API said feat/first-steps-activation, every job's GITHUB_BASE_REF said
+    master, and the plan took 119 modules for a one-module diff). `changes.sh
+    base` resolves the parent from the API and the run exports it here.
+    """
+    # The payload says trunk, the resolver says parent.
+    stderr = _matrix_stderr(stacked_repo, "master", GAIA_PR_BASE="feat/base")
+
+    assert "feat/base" in stderr
+    assert _rev(stacked_repo, "merge-base", "feat/base", "HEAD")[:12] in stderr
+    assert _rev(stacked_repo, "merge-base", "master", "HEAD")[:12] not in stderr
+
+
+# ---------------------------------------------------------------------------
+# _changed_line_ranges — what the PR actually added, and nothing else.
+#
+# The ranges are the gate's whole scope: lib/mutation_gap.py demands a test for
+# every line in them, and mutmut mutates only those lines. A range the PR did
+# not touch is therefore a demand for a test of somebody else's code, reported
+# against this PR. A pure deletion (`@@ -447 +446,0 @@`) used to produce one:
+# the added-line count is explicitly 0, `max(count, 1)` read it as 1, and the
+# range landed on whatever line followed the deletion. #1175 failed on exactly
+# that — "conversation_service.py: 1 changed line no test reaches (line 446)"
+# for a line no PR in the stack had changed.
+# ---------------------------------------------------------------------------
+
+
+def _ranges_for(
+    repo: Path, monkeypatch: pytest.MonkeyPatch, before: str, after: str
+) -> list[list[int]]:
+    """Commit `before`, commit `after`, return the ranges of that real diff.
+
+    A real repo and a real `git diff`, because the thing under test is how git's
+    hunk header is read — a hand-written header would only test the fixture.
+    """
+    base_sha = _init_repo_with_commit(repo, before)
+    (repo / "mod.py").write_text(after)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-qm", "change"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+    )
+    monkeypatch.chdir(repo)
+    return mm._changed_line_ranges("mod.py", base_sha)
+
+
+def test_a_pure_deletion_contributes_no_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Nothing was added, so there is nothing to mutate and nothing to demand a
+    # test for. The line that moves up into the gap is not a changed line.
+    ranges = _ranges_for(
+        tmp_path,
+        monkeypatch,
+        "a = 1\nb = 2\nc = 3\nd = 4\n",
+        "a = 1\nb = 2\nd = 4\n",
+    )
+
+    assert ranges == []
+
+
+def test_a_one_line_change_is_its_own_range(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # git writes `+N` with no count for a single line; that shorthand still
+    # means one line, and dropping it would scope a real change to nothing.
+    ranges = _ranges_for(
+        tmp_path,
+        monkeypatch,
+        "a = 1\nb = 2\nc = 3\n",
+        "a = 1\nb = 99\nc = 3\n",
+    )
+
+    assert ranges == [[2, 2]]
+
+
+def test_a_multi_line_hunk_spans_exactly_its_added_lines(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    ranges = _ranges_for(
+        tmp_path,
+        monkeypatch,
+        "a = 1\nz = 9\n",
+        "a = 1\nb = 2\nc = 3\nd = 4\nz = 9\n",
+    )
+
+    assert ranges == [[2, 4]]
+
+
+def test_a_deletion_beside_a_real_change_keeps_only_the_change(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The mixed case is the one that shipped: a PR that deletes in one place and
+    # edits in another must be scoped to the edit alone.
+    ranges = _ranges_for(
+        tmp_path,
+        monkeypatch,
+        "a = 1\nb = 2\nc = 3\nd = 4\ne = 5\nf = 6\ng = 7\n",
+        "a = 1\nc = 3\nd = 4\ne = 5\nf = 66\ng = 7\n",
+    )
+
+    assert ranges == [[5, 5]]
+
+
+def test_a_deletion_only_module_is_dropped_from_the_matrix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """It has nothing to mutate, and passing it on would FAIL the shard.
+
+    `mutation.sh module` refuses an empty line scope with exit 2 — deliberately,
+    because an empty scope buckets every survivor as out-of-scope and exits 0.
+    So the module has to be dropped by the planner rather than handed down, the
+    same way a comment-only diff is.
+    """
+    app = tmp_path / "apps/api/app/services"
+    app.mkdir(parents=True)
+    (app / "thing.py").write_text("a = 1\nb = 2\nc = 3\n")
+    tests = tmp_path / "apps/api/tests/unit/services"
+    tests.mkdir(parents=True)
+    (tests / "test_thing.py").write_text("import app.services.thing\n")
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-qm", "base"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    (app / "thing.py").write_text("a = 1\nc = 3\n")
+    subprocess.run(
+        ["git", "-c", "user.email=t@e.x", "-c", "user.name=t", "commit", "-aqm", "delete b"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    base_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD~1"], cwd=tmp_path, text=True
+    ).strip()
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(mm, "_merge_base", lambda: base_sha)
+    monkeypatch.setattr("sys.stdin", io.StringIO("apps/api/app/services/thing.py\n"))
+    captured = io.StringIO()
+    monkeypatch.setattr("sys.stdout", captured)
+
+    assert mm.main() == 0
+    assert json.loads(captured.getvalue()) == []

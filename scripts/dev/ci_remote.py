@@ -81,6 +81,10 @@ PYTEST_PASS_RE = re.compile(r"\s(?:PASSED|SKIPPED|XFAIL|XPASS)\s+\[\s*\d+%\]$")
 RUN_ID_RE = re.compile(r"/actions/runs/(\d+)")
 JOB_ID_RE = re.compile(r"/job/(\d+)")
 SLUG_RE = re.compile(r"[^a-z0-9]+")
+# "Mutation shard 3/6 (21 modules)" — a matrix job renders its 1-based position.
+MATRIX_POSITION_RE = re.compile(r"\b(\d+)\s*/\s*(\d+)\b")
+# "verdict-test-mutation-2" — the uploader folds the 0-based matrix value in.
+ARTIFACT_INDEX_RE = re.compile(r"-(\d+)$")
 
 
 class Finding(TypedDict, total=False):
@@ -299,6 +303,39 @@ def fetch_artifact(repo: Repo, artifact_id: int) -> bytes:
     return blob
 
 
+def matrix_index(check_name: str) -> int | None:
+    """0-based matrix position from a check's display name: "3/6" -> 2."""
+    match = MATRIX_POSITION_RE.search(check_name)
+    if not match:
+        return None
+    position, total = int(match.group(1)), int(match.group(2))
+    return position - 1 if 1 <= position <= total else None
+
+
+def artifact_index(artifact: str) -> tuple[str, int] | None:
+    """Split `verdict-test-mutation-2` into ("test-mutation", 2)."""
+    stem = artifact[len(VERDICT_PREFIX) :]
+    match = ARTIFACT_INDEX_RE.search(stem)
+    return (stem[: match.start()], int(match.group(1))) if match else None
+
+
+def matches_by_matrix_index(verdict: Verdict, check_name: str) -> bool:
+    """A shard's artifact carries no name a shard's check name slugs to.
+
+    `Mutation shard 3/6 (21 modules)` is matrix value 2, and its verdicts ride
+    in `verdict-test-mutation-2` — so the per-module findings were stranded as
+    "no matching check run" while the check itself fell back to a composite-step
+    log tail. The index is the association. A shared word between the artifact
+    stem and the check name keeps `verdict-anything-else-2` from claiming it.
+    """
+    index = matrix_index(check_name)
+    parsed = artifact_index(verdict.get("artifact", ""))
+    if index is None or parsed is None or parsed[1] != index:
+        return False
+    stem, _ = parsed
+    return bool(set(slug(stem).split("-")) & set(slug(check_name).split("-")))
+
+
 def verdict_matches(verdict: Verdict, check_name: str) -> bool:
     """A verdict belongs to a check when its lane or artifact name slugs to it.
 
@@ -312,7 +349,9 @@ def verdict_matches(verdict: Verdict, check_name: str) -> bool:
         slug(verdict.get("lane", "")),
         slug(verdict.get("artifact", "")[len(VERDICT_PREFIX) :]),
     )
-    return any(c and (target == c or target.startswith(f"{c}-")) for c in candidates)
+    if any(c and (target == c or target.startswith(f"{c}-")) for c in candidates):
+        return True
+    return matches_by_matrix_index(verdict, check_name)
 
 
 def explaining_verdicts(check: Check, verdicts: list[Verdict]) -> list[Verdict]:
@@ -324,9 +363,32 @@ def explaining_verdicts(check: Check, verdicts: list[Verdict]) -> list[Verdict]:
     `Mutation shard N/6 (19 modules)`. Printing it put `FAIL … [pass]` in the
     failure section and suppressed the log tail that held the real reason.
     """
+    return drop_content_free_rollups(matching_failing_verdicts(check, verdicts))
+
+
+def matching_failing_verdicts(check: Check, verdicts: list[Verdict]) -> list[Verdict]:
+    """Every failing verdict this check owns, rollups included.
+
+    `explaining_verdicts` is what to PRINT; this is what the check accounts
+    for. The difference matters to the orphan section: a rollup dropped as
+    redundant has still been spoken for, and re-printing it as "no matching
+    check run" puts the pointer-to-nothing back on screen.
+    """
     return [
         v for v in verdicts if v.get("status") in VERDICT_BAD and verdict_matches(v, check["name"])
     ]
+
+
+def drop_content_free_rollups(matched: list[Verdict]) -> list[Verdict]:
+    """Within one artifact, a verdict with findings supersedes one without.
+
+    A shard uploads both its per-module verdicts and a `mutation/shard-N`
+    rollup whose whole summary is "its reason is only in this job's log" —
+    which is false once a sibling verdict carries the file:line, and printing
+    both buries the answer under a pointer to nothing.
+    """
+    informative = {v.get("artifact") for v in matched if v.get("findings")}
+    return [v for v in matched if v.get("findings") or v.get("artifact") not in informative]
 
 
 # ----------------------------------------------------------------------------- job logs
@@ -411,8 +473,10 @@ def diagnose(
     sources: dict[str, str] = {}
     needs_log: list[Check] = []
     for check in failing:
-        if explaining_verdicts(check, verdicts):
-            sources[check["name"]] = "verdict artifact"
+        explaining = explaining_verdicts(check, verdicts)
+        if explaining:
+            artifacts = sorted({v.get("artifact", "?") for v in explaining})
+            sources[check["name"]] = f"verdict artifact {', '.join(artifacts)}"
         elif check["job_id"] is None:
             sources[check["name"]] = (
                 f"external check ({check['app'] or 'unknown app'}) — open the URL"
@@ -549,22 +613,22 @@ def header(report: dict) -> None:
     )
 
 
-def render_verdict(verdict: Verdict, verbose: bool) -> None:
-    print(f"FAIL  {verdict.get('lane', '?')}  [{verdict.get('status', '?')}]")
+def render_verdict(verdict: Verdict, verbose: bool, pad: str = "  ") -> None:
+    """A verdict's body: its summary, then every finding at file:line."""
     if verdict.get("summary"):
-        print(f"  {verdict['summary']}")
+        print(f"{pad}{verdict['summary']}")
     for finding in verdict.get("findings", []):
         where = finding.get("file", "?")
         if finding.get("line") is not None:
             where = f"{where}:{finding['line']}"
-        print(f"  {where} — {finding.get('message', '')}")
+        print(f"{pad}{where} — {finding.get('message', '')}")
         detail = (finding.get("detail") or "").splitlines()
         if not detail:
             continue
         for detail_line in detail if verbose else detail[:DETAIL_PREVIEW_LINES]:
-            print(f"      {detail_line}")
+            print(f"{pad}    {detail_line}")
         if not verbose and len(detail) > DETAIL_PREVIEW_LINES:
-            print(f"      … {len(detail) - DETAIL_PREVIEW_LINES} more lines (--verbose)")
+            print(f"{pad}    … {len(detail) - DETAIL_PREVIEW_LINES} more lines (--verbose)")
 
 
 def render_log_tail(report: dict, check: Check, source: str, verbose: bool) -> None:
@@ -583,14 +647,21 @@ def render_failing_check(report: dict, check: Check, verbose: bool) -> set[str]:
     """Render one red check. Returns the lane slugs it accounted for."""
     source = report["sources"].get(check["name"], "")
     matched = explaining_verdicts(check, report["verdicts"])
-    for verdict in matched:
-        render_verdict(verdict, verbose)
     if not matched:
         render_log_tail(report, check, source, verbose)
+    else:
+        print(f"FAIL  {check['name']}  [{check['status']}]  ({source})")
+        for verdict in matched:
+            lane = verdict.get("lane", "?")
+            if slug(lane) == slug(check["name"]):
+                render_verdict(verdict, verbose, pad="  ")
+            else:
+                print(f"  {lane}  [{verdict.get('status', '?')}]")
+                render_verdict(verdict, verbose, pad="    ")
     if verbose and check["url"]:
-        print(f"  source: {source or 'verdict artifact'} | {check['url']}")
+        print(f"  source: {source} | {check['url']}")
     print()
-    return {slug(v.get("lane", "")) for v in matched}
+    return {slug(v.get("lane", "")) for v in matching_failing_verdicts(check, report["verdicts"])}
 
 
 def render_failures(report: dict, verbose: bool) -> None:
@@ -602,6 +673,7 @@ def render_failures(report: dict, verbose: bool) -> None:
     for verdict in report["verdicts"]:
         if verdict.get("status") in VERDICT_BAD and slug(verdict.get("lane", "")) not in printed:
             print("(verdict with no matching check run — a lane failed inside a passing job)")
+            print(f"FAIL  {verdict.get('lane', '?')}  [{verdict.get('status', '?')}]")
             render_verdict(verdict, verbose)
             print()
 
@@ -640,7 +712,8 @@ def render_stack(rows: list[StackRow], current_pr: int) -> None:
 
 def collect_advice(report: dict, branch: str) -> list[str]:
     advice: list[str] = []
-    for verdict in report["verdicts"]:
+    failing = [v for v in report["verdicts"] if v.get("status") in VERDICT_BAD]
+    for verdict in drop_content_free_rollups(failing):
         advice.extend(verdict.get("advice", []))
     pr = report["pr"]
     counts = report["counts"]

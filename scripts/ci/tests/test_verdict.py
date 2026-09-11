@@ -514,3 +514,109 @@ def test_emit_refuses_both_a_status_and_a_job_status(tmp_path: Path) -> None:
         )
     with pytest.raises(SystemExit):
         _emit(tmp_path, "--lane", "l", "--summary", "s")
+
+
+# ---------------------------------------------------------------------------
+# Where verdicts live, and who owns them.
+# ---------------------------------------------------------------------------
+
+
+def test_the_env_var_decides_the_verdict_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(verdict.VERDICT_DIR_ENV, str(tmp_path / "elsewhere"))
+
+    verdict.cmd_emit(["--lane", "biome", "--job-status", "success"])
+
+    assert (tmp_path / "elsewhere" / "biome.json").exists()
+
+
+def test_a_runner_writes_to_its_own_per_job_temp_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Not the checkout. A self-hosted workspace persists between jobs, so a
+    # verdict left in the tree is uploaded by the NEXT job on that runner —
+    # stale lanes from another run reaching a gate. RUNNER_TEMP is wiped.
+    monkeypatch.delenv(verdict.VERDICT_DIR_ENV, raising=False)
+    monkeypatch.setenv("RUNNER_TEMP", str(tmp_path / "runner-temp"))
+
+    assert verdict.default_out_dir() == tmp_path / "runner-temp" / "verdicts"
+
+
+def test_a_dev_machine_still_writes_into_the_checkout(monkeypatch: pytest.MonkeyPatch) -> None:
+    # The control: local runs are unchanged, so `verify-logs/verdicts` stays
+    # the place to look after `mise ci:local`.
+    monkeypatch.delenv(verdict.VERDICT_DIR_ENV, raising=False)
+    monkeypatch.delenv("RUNNER_TEMP", raising=False)
+
+    assert verdict.default_out_dir() == verdict.CHECKOUT_VERDICT_DIR
+
+
+def test_a_verdict_this_job_does_not_own_is_rejected_by_name(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    # The real one: run 34586506166's gate table carried
+    # `mutation/app/does_not_exist.py`, a fixture path written by an end-to-end
+    # TEST that `test-harness-tools` ran, uploaded as that lane's verdict.
+    _emit(tmp_path, "--lane", "test-harness-tools", "--job-status", "success")
+    _emit(
+        tmp_path, "--lane", "mutation/app/does_not_exist.py", "--status", "error", "--summary", "x"
+    )
+
+    code = verdict.cmd_check_ownership(
+        ["--family", "test-harness-tools", "--out", str(tmp_path / "v")]
+    )
+
+    assert code == 1
+    out = capsys.readouterr().out
+    assert "does_not_exist.py" in out
+    assert "::error file=" in out, "a stray file must point at itself, not at a phantom lane"
+
+
+def test_a_family_owns_every_lane_beneath_it(tmp_path: Path) -> None:
+    # The mutation shards pass `family: mutation` because mutation.sh writes one
+    # verdict per module there rather than under the shard's own lane.
+    _emit(tmp_path, "--lane", "mutation/shard-4", "--job-status", "success")
+    _emit(tmp_path, "--lane", "mutation/app-services-budget", "--status", "fail", "--summary", "x")
+
+    assert verdict.cmd_check_ownership(["--family", "mutation", "--out", str(tmp_path / "v")]) == 0
+
+
+def test_ownership_is_not_a_substring_match(tmp_path: Path) -> None:
+    # `mutation-fixtures` is not under `mutation`; a prefix test without the
+    # separator would quietly adopt it.
+    _emit(tmp_path, "--lane", "mutation-fixtures", "--status", "error", "--summary", "x")
+
+    assert verdict.cmd_check_ownership(["--family", "mutation", "--out", str(tmp_path / "v")]) == 1
+
+
+@pytest.mark.parametrize(
+    ("environment", "expected"),
+    [
+        ({"GAIA_VERDICT_DIR": "/explicit/dir", "RUNNER_TEMP": "/runner/tmp"}, "/explicit/dir"),
+        ({"RUNNER_TEMP": "/runner/tmp"}, "/runner/tmp/verdicts"),
+        ({}, None),
+    ],
+    ids=["env-var-wins", "runner-temp", "checkout-fallback"],
+)
+def test_dir_prints_the_directory_emit_would_write_to(
+    environment: dict[str, str],
+    expected: str | None,
+    capsys: pytest.CaptureFixture[str],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # `mutation.sh` reads this instead of re-deriving it. The bash version had
+    # no RUNNER_TEMP rung, so on a runner it named the CHECKOUT while the
+    # composite uploaded from the runner's temp dir — every verdict written
+    # through it would have missed the gate silently.
+    for key in (verdict.VERDICT_DIR_ENV, "RUNNER_TEMP"):
+        monkeypatch.delenv(key, raising=False)
+    for key, value in environment.items():
+        monkeypatch.setenv(key, value)
+
+    assert verdict.cmd_dir([]) == 0
+
+    printed = capsys.readouterr().out
+    assert printed == f"{expected or verdict.CHECKOUT_VERDICT_DIR}\n", (
+        "one line, no trailing noise — a script reads this into a variable"
+    )

@@ -196,3 +196,60 @@ def test_every_upload_passes_the_calling_jobs_status(workflow: dict[str, Any]) -
                 "`${{ job.status }}` — the composite cannot see the job's status itself, "
                 "and without it every lane reports `pass`."
             )
+
+
+# The checkout is never the verdict directory: a self-hosted workspace persists
+# between jobs, so verdicts left in the tree get uploaded by the NEXT job to
+# land on that runner, and anything else in the job that writes there rides
+# along. `runner.temp` is per-job and GitHub wipes it.
+CHECKOUT_DIR = "verify-logs/verdicts"
+
+
+def test_the_gate_reads_verdicts_from_the_runners_own_temp_dir(workflow: dict[str, Any]) -> None:
+    steps = _gate(workflow)["steps"]
+    download = [s for s in steps if "download-artifact" in str(s.get("uses", ""))]
+    assert download, "the gate downloads no verdict artifacts"
+    for step in download:
+        assert "runner.temp" in str(step["with"]["path"]), (
+            f"the gate downloads verdicts to {step['with']['path']!r}; that must be "
+            "runner.temp, the same per-job dir every lane uploaded from"
+        )
+    consolidate = [s for s in steps if "verdict.py consolidate" in str(s.get("run", ""))]
+    (step,) = consolidate
+    assert CHECKOUT_DIR not in str(step["run"]), (
+        "the gate consolidates the CHECKOUT's verdict tree — it would read whatever "
+        "a previous job on this runner left behind"
+    )
+
+
+def test_no_workflow_env_block_reads_a_context_it_cannot_see(workflow: dict[str, Any]) -> None:
+    # `runner` is NOT available in a workflow-level or job-level `env:` — only
+    # in a step's. Putting `${{ runner.temp }}` there fails the whole run at
+    # parse time, the same way `matrix` in a composite did. This is the trap
+    # that decided the shape of the fix: the location is resolved in the step
+    # (and in verdict.py from RUNNER_TEMP), never in a shared env block.
+    blocks = [("workflow", workflow.get("env", {}))]
+    blocks += [(name, job.get("env", {})) for name, job in workflow["jobs"].items()]
+    for where, block in blocks:
+        for key, value in block.items():
+            assert "runner." not in str(value), (
+                f"{where} env `{key}` reads the runner context, which is not available "
+                f"there: {value!r}. Resolve it in a step, or from $RUNNER_TEMP."
+            )
+
+
+def test_the_mutation_shard_declares_the_namespace_it_owns(workflow: dict[str, Any]) -> None:
+    # mutation.sh writes one verdict per MODULE under `mutation/`, not under the
+    # shard's own lane, so without this the ownership check would reject every
+    # one of them.
+    for name, job in workflow["jobs"].items():
+        for step in job.get("steps", []):
+            if step.get("uses") != UPLOAD_VERDICT:
+                continue
+            lane = str(step["with"].get("lane", ""))
+            if not lane.startswith("mutation/"):
+                continue
+            assert step["with"].get("family") == "mutation", (
+                f"job '{name}' uploads lane {lane!r} but does not declare "
+                "`family: mutation`, so its per-module verdicts read as foreign"
+            )
