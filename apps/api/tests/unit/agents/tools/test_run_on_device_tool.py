@@ -17,8 +17,8 @@ _MODULE = "app.agents.tools.integration_tool"
 _CONFIG = {"configurable": {"user_id": "u1"}}
 
 
-def _device(device_id: str) -> SimpleNamespace:
-    return SimpleNamespace(id=device_id)
+def _device(device_id: str, client: str | None = None) -> SimpleNamespace:
+    return SimpleNamespace(id=device_id, client=client)
 
 
 def _result(exit_code=0, stdout="", stderr="", truncated=False) -> SimpleNamespace:
@@ -87,9 +87,12 @@ async def test_offline_device_error_is_reported_not_raised():
     assert "offline" in result
 
 
-async def test_macos_permission_denied_surfaces_full_disk_access_hint():
+async def test_macos_permission_denied_cli_device_points_at_the_daemon():
     with (
-        patch(f"{_MODULE}.list_devices_service", AsyncMock(return_value=[_device("dev-1")])),
+        patch(
+            f"{_MODULE}.list_devices_service",
+            AsyncMock(return_value=[_device("dev-1", client=None)]),
+        ),
         patch(
             f"{_MODULE}.run_device_command",
             AsyncMock(
@@ -101,10 +104,34 @@ async def test_macos_permission_denied_surfaces_full_disk_access_hint():
     ):
         result = await _run(command="ls ~/Downloads")
 
-    # A raw errno is useless to the user; the tool must explain the macOS TCC
-    # grant so the model can relay an actionable fix.
+    # A raw errno is useless; a CLI device inherits its terminal's grant, so the
+    # fix is grant-terminal + restart the daemon.
     assert "Full Disk Access" in result
     assert "gaia bridge down" in result
+
+
+async def test_macos_permission_denied_desktop_device_points_at_the_app():
+    with (
+        patch(
+            f"{_MODULE}.list_devices_service",
+            AsyncMock(return_value=[_device("dev-1", client="desktop")]),
+        ),
+        patch(
+            f"{_MODULE}.run_device_command",
+            AsyncMock(
+                return_value=_result(
+                    exit_code=1, stderr="ls: /Users/x/Downloads: Operation not permitted"
+                )
+            ),
+        ),
+    ):
+        result = await _run(command="ls ~/Downloads")
+
+    # The desktop app IS the TCC grantee — no terminal, no daemon restart. The
+    # hint must point at reopening the app, not the CLI's `gaia bridge` restart.
+    assert "Full Disk Access" in result
+    assert "reopen the app" in result
+    assert "gaia bridge down" not in result
 
 
 async def test_missing_user_id_fails_loud():

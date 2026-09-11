@@ -585,7 +585,8 @@ async def run_on_device(device_id: str, command: str, config: RunnableConfig) ->
     # Authz: the device must belong to this user. Never trust a device_id the
     # model produced — a wrong or spoofed id must not reach another user's machine.
     devices = await list_devices_service(str(user_id))
-    if not any(d.id == device_id for d in devices):
+    device = next((d for d in devices if d.id == device_id), None)
+    if device is None:
         return (
             f"No device '{device_id}' is linked to your account. "
             "Call list_devices to see your paired machines and their ids."
@@ -610,14 +611,25 @@ async def run_on_device(device_id: str, command: str, config: RunnableConfig) ->
         parts.append("(output truncated: command produced more than the cap)")
     # macOS privacy (TCC) denies protected folders (Downloads/Desktop/Documents)
     # to a process without Full Disk Access, and there is no way to grant it from
-    # here. Surface the actionable fix so the reply is useful, not a raw errno.
+    # here. The fix differs by device: the desktop app IS the grantee (reopen it),
+    # while the CLI daemon inherits its terminal's grant (restart it).
     if "operation not permitted" in (result.stderr or "").lower():
+        if device.client == "desktop":
+            fix = (
+                "This device is the GAIA desktop app. Tell the user to grant it Full Disk "
+                "Access in System Settings > Privacy & Security > Full Disk Access (enable "
+                "GAIA), then reopen the app — the grant carries into the commands it runs."
+            )
+        else:
+            fix = (
+                "This device is the gaia CLI. Tell the user to grant their terminal Full Disk "
+                "Access in System Settings > Privacy & Security > Full Disk Access, then "
+                "restart the bridge with `gaia bridge down && gaia bridge up`."
+            )
         parts.append(
-            "\nmacOS blocked this path with its privacy protection (TCC). You cannot grant "
-            "this yourself: tell the user to give their terminal Full Disk Access in System "
-            "Settings > Privacy & Security > Full Disk Access (they can open that pane with "
-            '`open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`), '
-            "then restart the bridge with `gaia bridge down && gaia bridge up` and try again."
+            "\nmacOS blocked this path with its privacy protection (TCC); you cannot grant "
+            f"this yourself. {fix} They can open that pane with "
+            '`open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles"`.'
         )
     return "\n".join(parts)
 
