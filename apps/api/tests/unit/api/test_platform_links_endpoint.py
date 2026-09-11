@@ -10,6 +10,7 @@ import pytest
 from app.api.v1.endpoints.platform_links import mint_link_code
 from app.api.v1.middleware.tiered_rate_limiter import RateLimitExceededException
 from app.config.settings import settings
+from app.constants.cache import PLATFORM_LINK_TOKEN_PREFIX
 from app.models.payment_models import PlanType
 from app.models.platform_models import DisconnectPlatformResponse, PlatformLinkResult
 from app.models.user_models import (
@@ -489,6 +490,63 @@ class TestLinkPlatform:
             error_type="PlatformAccountTakenError",
             error="already linked",
         )
+
+    @pytest.mark.asyncio
+    async def test_conflict_leaves_the_token_redeemable(self, client: AsyncClient) -> None:
+        """A refused link must not spend the token its own message asks them to retry with.
+
+        The 409 says "disconnect the other account, then link this one" — and the
+        retry it asks for arrives with the same token, so consuming it on the way
+        in answers the second attempt with "Invalid or expired link token".
+        """
+        mock_redis = AsyncMock()
+        mock_redis.hgetall = AsyncMock(
+            return_value={"platform": "discord", "platform_user_id": "DISC_DUP"}
+        )
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("app.api.v1.endpoints.platform_links.redis_cache") as mock_cache,
+            patch(
+                "app.api.v1.endpoints.platform_links.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                side_effect=PlatformAccountTakenError("already linked"),
+            ),
+        ):
+            mock_cache.client = mock_redis
+            resp = await client.post(f"{BASE}/discord", json={"token": "dup_tok"})
+
+        assert resp.status_code == 409
+        mock_redis.delete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_successful_link_consumes_the_token(self, client: AsyncClient) -> None:
+        """Single-use is still single-use: the token is spent once the link is written."""
+        mock_redis = AsyncMock()
+        mock_redis.hgetall = AsyncMock(
+            return_value={"platform": "discord", "platform_user_id": "DISC123"}
+        )
+        mock_redis.delete = AsyncMock()
+
+        with (
+            patch("app.api.v1.endpoints.platform_links.redis_cache") as mock_cache,
+            patch(
+                "app.api.v1.endpoints.platform_links.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                return_value=PlatformLinkResult(
+                    status="linked",
+                    platform="discord",
+                    platform_user_id="DISC123",
+                    connected_at="2024-01-01T00:00:00Z",
+                    is_new_link=False,
+                ),
+            ),
+        ):
+            mock_cache.client = mock_redis
+            resp = await client.post(f"{BASE}/discord", json={"token": "tok"})
+
+        assert resp.status_code == 200
+        mock_redis.delete.assert_awaited_once_with(f"{PLATFORM_LINK_TOKEN_PREFIX}:tok")
 
     @pytest.mark.asyncio
     async def test_unauthenticated(self, unauthed_client: AsyncClient) -> None:
