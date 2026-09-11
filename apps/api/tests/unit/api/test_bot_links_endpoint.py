@@ -23,9 +23,9 @@ from app.models.bot_models import (
     RedeemLinkCodeRequest,
 )
 from app.models.payment_models import PlanType
-from app.models.platform_models import PlatformLinkResult
+from app.models.platform_models import PlatformLinkCompletion, PlatformLinkResult
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
-from app.services.onboarding.first_message import compose_first_message
+from app.services.outbound_delivery import OutboundResult
 from app.services.platform_link_code_service import PlatformLinkCodePayload
 from app.utils.errors import AppError
 from shared.py.wide_events import log, log_context
@@ -286,6 +286,8 @@ class TestCreateLinkToken:
 # ---------------------------------------------------------------------------
 
 REDEEM_BODY = {"platform": "telegram", "platform_user_id": "TG42", "code": "CODE123"}
+#: What a WhatsApp user typed over the prefill before sending it.
+OWN_MESSAGE = "actually, can you sort my inbox before monday?"
 PREFS = OnboardingPreferences(profession="founder", needs=[OnboardingNeed.INBOX])
 BUBBLES = [
     "Hey. I'm with you on Telegram now.",
@@ -306,6 +308,11 @@ LINKED_LOOKUP_PATCH = (
 )
 
 
+#: Link completion's own module, patched whole when a test needs the real
+#: completion to run (the delivery outcome it reports is what is under test).
+COMPLETION_MODULE = "app.services.platform_link_completion"
+
+
 def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
     return PlatformLinkResult(
         status="linked",
@@ -314,6 +321,11 @@ def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
         connected_at="2026-09-01T00:00:00Z",
         is_new_link=is_new_link,
     )
+
+
+def _completion(is_new_link: bool = True, delivered: bool = True) -> PlatformLinkCompletion:
+    """What the endpoint gets back from link completion."""
+    return PlatformLinkCompletion(link=_link_result(is_new_link), first_contact_delivered=delivered)
 
 
 class TestRedeemLinkCode:
@@ -369,7 +381,7 @@ class TestRedeemLinkCode:
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
-                COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()
+                COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()
             ) as mock_complete,
         ):
             response = await client.post(
@@ -378,7 +390,8 @@ class TestRedeemLinkCode:
             )
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True}
+        # Delivered on the outbound queue, so the bot is handed nothing to send.
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
         # The composed first contact travels with the link: completion delivers
@@ -410,7 +423,7 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -436,15 +449,107 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
             patch(PERSIST_PATCH, new_callable=AsyncMock) as mock_persist,
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
         mock_persist.assert_awaited_once_with(
-            "user1", RedeemLinkCodeRequest(**REDEEM_BODY), linked_user, PREFS, BUBBLES
+            "user1", RedeemLinkCodeRequest(**REDEEM_BODY), linked_user, BUBBLES
         )
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_first_contact_the_queue_refused_comes_back_for_the_bot_to_send(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """The link held, the one message a new user is guaranteed to read did not go out.
+
+        Nothing retries the outbound publish, so a silent failure left the user
+        on a linked platform that never said anything. The bubbles come back
+        with ``delivered=False`` and the bot sends them itself.
+        """
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(
+                f"{COMPLETION_MODULE}.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                return_value=_link_result(),
+            ),
+            patch(
+                f"{COMPLETION_MODULE}.publish_outbound_message",
+                new_callable=AsyncMock,
+                return_value=OutboundResult.FAILED,
+            ),
+            patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
+            patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "linked": True,
+            "delivered": False,
+            "first_contact": BUBBLES,
+        }
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_delivered_first_contact_is_not_handed_back_as_well(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """Otherwise the bot sends what the outbound queue already sent."""
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(
+                f"{COMPLETION_MODULE}.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                return_value=_link_result(),
+            ),
+            patch(
+                f"{COMPLETION_MODULE}.publish_outbound_message",
+                new_callable=AsyncMock,
+                return_value=OutboundResult.PUBLISHED,
+            ),
+            patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
+            patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_the_message_the_user_sent_is_the_one_persisted(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """The WhatsApp prefill is editable, so the text that arrives is theirs."""
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
+            patch(PERSIST_PATCH, new_callable=AsyncMock) as mock_persist,
+        ):
+            response = await client.post(
+                f"{BOT_BASE}/redeem-link-code",
+                json={**REDEEM_BODY, "first_message": OWN_MESSAGE},
+            )
+
+        assert response.status_code == 200
+        assert mock_persist.await_args.args[1].first_message == OWN_MESSAGE
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_expired_or_unknown_code_is_rejected_without_linking(
@@ -470,7 +575,7 @@ class TestRedeemLinkCode:
         with (
             patch(PEEK_PATCH, new_callable=AsyncMock, side_effect=[payload, None]),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             first = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
             second = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
@@ -501,7 +606,9 @@ class TestRedeemLinkCode:
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True}
+        # The first tap's first contact was delivered and is still on screen;
+        # the second owes nothing, so the bot is handed nothing to send.
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
         _already_linked.assert_awaited_once_with("telegram", "TG42")
         # Every side effect of a first link hangs off completion -- the outbound
         # first-contact publish and the integration_connected capture both. Not
@@ -707,7 +814,7 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -729,7 +836,7 @@ class TestRedeemLinkCode:
             patch(
                 "app.api.v1.endpoints.bot_links.require_platform_plan", new_callable=AsyncMock
             ) as mock_plan,
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -783,7 +890,7 @@ class TestRedeemLinkCode:
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
             patch("app.api.v1.endpoints.bot_links.require_platform_plan", new=AsyncMock()),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             async with log_context("redeem_link_code_test"):
                 result = await redeem_link_code(request, body)
@@ -878,13 +985,19 @@ class TestPersistFirstContact:
     turns, through the same write path the chat stream uses."""
 
     async def test_writes_the_opener_and_the_bundle_as_the_threads_first_turns(self):
-        body = RedeemLinkCodeRequest(**REDEEM_BODY)
+        """The opener is what the user actually sent, word for word.
+
+        On WhatsApp and iMessage the prefilled text is editable, so the message
+        that arrives is theirs; storing the canned line instead dropped their
+        real first question and put words in their mouth.
+        """
+        body = RedeemLinkCodeRequest(**REDEEM_BODY, first_message=OWN_MESSAGE)
         user = {"_id": "user1", "name": "Aryan Randeriya"}
         with (
             patch(SESSION_PATCH, new_callable=AsyncMock, return_value="conv-1") as session,
             patch(UPDATE_PATCH, new_callable=AsyncMock) as update,
         ):
-            await _persist_first_contact("user1", body, user, PREFS, BUBBLES)
+            await _persist_first_contact("user1", body, user, BUBBLES)
 
         actor = {"_id": "user1", "name": "Aryan Randeriya", "user_id": "user1"}
         session.assert_awaited_once_with("telegram", "TG42", None, actor, is_dm=True)
@@ -893,7 +1006,7 @@ class TestPersistFirstContact:
         assert update.await_args.kwargs == {"user": actor}
         assert request.conversation_id == "conv-1"
         opener, reply = request.messages
-        assert (opener.type, opener.response) == ("user", compose_first_message(PREFS))
+        assert (opener.type, opener.response) == ("user", OWN_MESSAGE)
         assert (reply.type, reply.response) == ("bot", NEW_MESSAGE_BREAKER.join(BUBBLES))
         # Stored the way the chat stream stores turns: UTC with an offset, the
         # opener a beat before the reply so the thread orders the same on reload.
@@ -904,13 +1017,31 @@ class TestPersistFirstContact:
         assert reply_at.utcoffset() == timedelta(0)
         assert reply_at - opener_at == timedelta(milliseconds=100)
 
+    async def test_a_link_that_carried_no_message_writes_no_user_turn(self):
+        """A Telegram deep link is a tap, not a sentence.
+
+        The canned opener used to be stored as the user's own turn, which is a
+        message they never sent — and it is what an activation checklist counts
+        when it asks whether they have said anything yet.
+        """
+        with (
+            patch(SESSION_PATCH, new_callable=AsyncMock, return_value="conv-1"),
+            patch(UPDATE_PATCH, new_callable=AsyncMock) as update,
+        ):
+            await _persist_first_contact(
+                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, BUBBLES
+            )
+
+        (reply,) = update.await_args.args[0].messages
+        assert (reply.type, reply.response) == ("bot", NEW_MESSAGE_BREAKER.join(BUBBLES))
+
     async def test_a_user_without_a_profile_still_gets_the_thread(self):
         with (
             patch(SESSION_PATCH, new_callable=AsyncMock, return_value="conv-1") as session,
             patch(UPDATE_PATCH, new_callable=AsyncMock),
         ):
             await _persist_first_contact(
-                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, PREFS, BUBBLES
+                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, BUBBLES
             )
         assert session.await_args.args[3] == {"user_id": "user1"}
 
@@ -923,7 +1054,7 @@ class TestPersistFirstContact:
             patch(LOG_PATCH) as mock_log,
         ):
             await _persist_first_contact(
-                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, PREFS, BUBBLES
+                "user1", RedeemLinkCodeRequest(**REDEEM_BODY), None, BUBBLES
             )
         update.assert_not_awaited()
         # error, not warning: nothing retries this, so the thread is permanently
