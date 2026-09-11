@@ -648,20 +648,22 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
 
     async def stamp_signup_deliveries(
         self, user_id: str, deliveries: Iterable[SignupDelivery]
-    ) -> None:
-        """Record signup deliveries as settled, so nothing repeats them.
+    ) -> bool:
+        """Record signup deliveries as settled; ``False`` when no such user exists.
 
-        Written on each delivery's own success, and for all of them at once when
-        a dev-minted user is created — that account is owed none of them and
-        would otherwise look undelivered to the recovery sweep forever.
+        Written on each delivery's own success, once the ESP has accepted it.
+        Unfetched because nothing here needs the document back, and a stamp is
+        the job's hot path — two per signup. A ``False`` is a delivery that
+        landed for a user who has since been deleted.
         """
         now = datetime.now(UTC)
-        await self._apply_raw_update(
+        matched = await self._apply_raw_update_unfetched(
             {"_id": self._id_value(user_id)},
             {"$set": {delivery.value: now for delivery in deliveries}},
             scope=REPO_GLOBAL_SCOPE,
-            return_document=False,
+            doc_id=user_id,
         )
+        return matched > 0
 
     async def mark_memory_backfilled(self, user_id: str) -> None:
         """Stamp the memory-backfill marker so the daily cron won't re-select the user."""
