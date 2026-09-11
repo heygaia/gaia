@@ -110,11 +110,6 @@ jobs:
       - name: Summary
         run: |
           echo "Selected: ${{ steps.pick.outputs.runner }} (is_self_hosted=${{ steps.pick.outputs.is_self_hosted }}, reason=${{ steps.pick.outputs.reason }})"
-      - name: Upload the verdict
-        if: always()
-        uses: ./.github/actions/upload-verdict
-        with:
-          name: select-runner
 
   # ── Watchdog: a run parked on a box that died after selection ────────────
   # select-runner decides once. If the box goes away before pickup, GitHub
@@ -931,8 +926,15 @@ jobs:
           # compute lane skips, and skipped counts as passing, so the gate
           # would go green by accident. Results go through env rather than
           # inline expansion, like every other gate here.
+          #
+          # `@result-only` marks the two lanes that CANNOT upload a verdict:
+          # the composite is a path in the checked-out tree, `probe` never
+          # checks out, and `select-runner` checks out the DEFAULT BRANCH on
+          # purpose (it handles a PAT and must not run PR-authored code, so a
+          # composite this branch adds is not in its tree). Both are still
+          # enforced on their job result — declared, not dropped.
           EXPECT: >-
-            select-runner=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
+            select-runner@result-only=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
         run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"
 
   # --- Docker phase, split so the long part runs parallel to the gate -------
