@@ -11,6 +11,7 @@ from tests.helpers import captured_wide_event
 
 from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
+from app.services.email.signup_delivery import signup_email_job_id
 from app.services.oauth.oauth_service import (
     _handle_gmail_connection,
     _refresh_bio_status_for_reconnect,
@@ -75,16 +76,65 @@ class TestReturningUserProfile:
 
 
 class TestRunSignupSideEffects:
-    """Every outbound effect is swallowed so it cannot fail the signup, which
-    makes the wide event the only place the failure is visible. A blank or
+    """Signup's outbound effects are all swallowed so none can fail the signup,
+    which makes the wide event the only place a failure is visible. A blank or
     misattributed entry there is a signup silently missing its email."""
+
+    async def test_the_esp_deliveries_are_queued_rather_than_run_in_process(
+        self,
+        mock_track_signup,
+        mock_schedule_user_provision,
+        mock_redis_pool_manager,
+    ):
+        """Signup hands the ESP round-trips to the worker queue and touches no
+        provider itself. An in-process task would be fast too, but nothing
+        drains those on shutdown: a restart mid-send dropped both deliveries
+        without even reaching their own failure loggers. The queued job outlives
+        the process, so the record of the work survives the restart."""
+        user_id = str(ObjectId())
+
+        await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            user_id,
+        )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(user_id)
+
+    async def test_a_failed_enqueue_is_recorded_and_provisioning_still_runs(
+        self,
+        mock_track_signup,
+        mock_schedule_user_provision,
+        mock_redis_pool_manager,
+    ):
+        """Redis being unreachable costs the signup emails, not the signup. The
+        loss is only ever visible in the wide event, so a blank entry here is a
+        delivery nobody can find out was never queued."""
+        user_id = str(ObjectId())
+        mock_redis_pool_manager.enqueue_job.side_effect = RuntimeError("Redis down")
+
+        async with captured_wide_event() as event:
+            await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
+
+        assert event["errors"] == [
+            {
+                "msg": f"{LogTag.OAUTH} Failed to queue signup email delivery",
+                "user": {"id": user_id},
+                "error": "Redis down",
+                "error_type": "RuntimeError",
+            }
+        ]
+        mock_schedule_user_provision.assert_called_once_with(user_id)
 
     async def test_a_posthog_failure_is_recorded_and_the_rest_still_runs(
         self,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
         mock_schedule_user_provision,
+        mock_redis_pool_manager,
     ):
         user_id = str(ObjectId())
         mock_track_signup.side_effect = RuntimeError("PostHog unavailable")
@@ -100,55 +150,15 @@ class TestRunSignupSideEffects:
                 "error_type": "RuntimeError",
             }
         ]
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
-        mock_schedule_user_provision.assert_called_once_with(user_id)
-
-    async def test_a_welcome_email_failure_is_recorded_and_the_rest_still_runs(
-        self,
-        mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
-        mock_schedule_user_provision,
-    ):
-        user_id = str(ObjectId())
-        mock_send_welcome_email.side_effect = RuntimeError("SMTP error")
-
-        async with captured_wide_event() as event:
-            await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
-
-        assert event["errors"] == [
-            {
-                "msg": f"{LogTag.OAUTH} Failed to send welcome email to",
-                "user": {"id": user_id},
-                "error": "SMTP error",
-                "error_type": "RuntimeError",
-            }
-        ]
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=user_id)
-        mock_schedule_user_provision.assert_called_once_with(user_id)
-
-    async def test_a_marketing_contact_failure_is_recorded_and_provisioning_still_runs(
-        self,
-        mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
-        mock_schedule_user_provision,
-    ):
-        user_id = str(ObjectId())
-        mock_add_marketing_contact.side_effect = RuntimeError("Resend API error")
-
-        async with captured_wide_event() as event:
-            await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
-
-        assert event["errors"] == [
-            {
-                "msg": f"{LogTag.OAUTH} Failed to add marketing contact for",
-                "user": {"id": user_id},
-                "error": "Resend API error",
-                "error_type": "RuntimeError",
-            }
-        ]
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            user_id,
+        )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
 

@@ -191,7 +191,10 @@ async def add_marketing_contact(
 ) -> None:
     """Add a new user to the marketing audience, if the provider supports one.
 
-    Best-effort: never raises, so signup succeeds even when the provider call fails.
+    Records the failure and re-raises, like every other sender here. Swallowing
+    it made the caller's own except branch unreachable, so the worker job logged
+    a contact as added and stamped it settled while the provider had rejected
+    it — the user never entered the nurture sequence and nothing said so.
     """
     try:
         provider = get_email_provider()
@@ -210,6 +213,7 @@ async def add_marketing_contact(
             error=str(e),
             error_type=type(e).__name__,
         )
+        raise
 
 
 async def send_inactive_user_email(
