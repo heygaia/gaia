@@ -1,5 +1,6 @@
 """Unit tests for OAuth service operations."""
 
+from datetime import UTC
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bson import ObjectId
@@ -409,8 +410,11 @@ class TestStoreUserInfo:
         await store_user_info("Bob", "bob@test.com", None, external_side_effects=False)
 
         created = mock_user_repo.create.call_args.args[0]
+        # Mongo stores a BSON date as UTC and reads a naive one back as though
+        # it already were; a local-clock stamp would land silently shifted.
         assert created.welcome_email_sent_at is not None
-        assert created.marketing_contact_added_at is not None
+        assert created.welcome_email_sent_at.tzinfo is UTC
+        assert created.marketing_contact_added_at == created.welcome_email_sent_at
         mock_user_repo.stamp_signup_deliveries.assert_not_awaited()
         mock_redis_pool_manager.enqueue_job.assert_not_awaited()
         mock_track_signup.assert_not_called()
