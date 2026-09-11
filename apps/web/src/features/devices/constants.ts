@@ -21,14 +21,6 @@ export const DEVICE_BRIDGE_DOCS_URL =
 export const DEVICE_APPROVED_REDIRECT_MS = 4000;
 
 /**
- * Path that grants access to the entire filesystem. Mirrors ENTIRE_FS_ROOT (the
- * OS root, "/") in `@shared/bridge-core/constants` — not imported from there
- * because that module pulls `node:path`. The "This Mac" card is darwin-only,
- * where the root is always "/".
- */
-export const ENTIRE_FS_PATH = "/";
-
-/**
  * The daemon prints its pairing code as two groups of four, e.g. "ABCD-2345".
  * Mirrors USER_CODE_LENGTH in `apps/api/app/constants/device_bridge.py`.
  */

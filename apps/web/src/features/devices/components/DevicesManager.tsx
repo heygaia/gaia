@@ -11,8 +11,6 @@ import {
   Folder01Icon,
   Link04Icon,
 } from "@icons";
-import { usePlatform } from "@/hooks/ui/usePlatform";
-import { getElectronAPI } from "@/lib/electron/api";
 import {
   BRIDGE_ADD_COMMAND,
   BRIDGE_CLI_NAME,
@@ -20,6 +18,10 @@ import {
   DEVICE_BRIDGE_DOCS_URL,
 } from "../constants";
 import { useBridge } from "../hooks/useBridge";
+import {
+  isThisDeviceSupported,
+  useDesktopPlatform,
+} from "../hooks/useDesktopPlatform";
 import { useDevices } from "../hooks/useDevices";
 import type { Device } from "../types";
 import { ThisMacCard } from "./ThisMacCard";
@@ -170,17 +172,17 @@ function PairedDevices({
 }
 
 export function DevicesManager() {
-  const { isMac } = usePlatform();
-  // First cut is macOS-only (the host resolves a login-shell PATH the darwin
-  // way); the card stays hidden in the browser and on Windows/Linux desktop.
-  const showThisMac = getElectronAPI() !== null && isMac;
+  // macOS + Linux desktop for now (Windows needs a drive-aware file root); the
+  // card stays hidden in the browser.
+  const platform = useDesktopPlatform();
+  const showThisMac = isThisDeviceSupported(platform);
   // One bridge instance owns the status; the card consumes it and the list uses
-  // its deviceId to drop "This Mac" from the paired rows.
+  // its deviceId to drop "this computer" from the paired rows.
   const bridge = useBridge();
 
   return (
     <div className="flex flex-col gap-3">
-      {showThisMac && <ThisMacCard bridge={bridge} />}
+      {showThisMac && <ThisMacCard bridge={bridge} platform={platform} />}
       <PairedDevices
         showThisMac={showThisMac}
         excludeDeviceId={showThisMac ? bridge.status.deviceId : null}

@@ -15,12 +15,16 @@ import CollapsibleListWrapper from "@/components/shared/CollapsibleListWrapper";
 import { devicesApi } from "@/features/devices/api/devicesApi";
 import { PAIRING_CODE_LENGTH } from "@/features/devices/constants";
 import { useBridge } from "@/features/devices/hooks/useBridge";
+import {
+  isThisDeviceSupported,
+  thisDeviceLabel,
+  useDesktopPlatform,
+} from "@/features/devices/hooks/useDesktopPlatform";
 import type { DeviceOnboardingRequiredData } from "@/features/devices/types";
 import {
   normalizePairingCode,
   toApiPairingCode,
 } from "@/features/devices/utils";
-import { usePlatform } from "@/hooks/ui/usePlatform";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 
 const PACKAGE_MANAGERS = ["npm", "pnpm", "bun"] as const;
@@ -67,8 +71,10 @@ function CommandSnippet({ command }: { command: string }) {
 }
 
 /** One-click connect for the machine the desktop app runs on — no CLI, no code. */
-function DesktopEnableCard() {
+function DesktopEnableCard({ platform }: { platform: NodeJS.Platform | null }) {
   const { status, busy, pair } = useBridge();
+  const label = thisDeviceLabel(platform);
+  const noun = platform === "darwin" ? "this Mac" : "this computer";
 
   if (status.paired && status.running) {
     return (
@@ -79,7 +85,7 @@ function DesktopEnableCard() {
           className="mt-0.5 shrink-0 text-success"
         />
         <p className="text-sm text-zinc-300">
-          This Mac is connected. Ask me to run something on it, or add local
+          {label} is connected. Ask me to run something on it, or add local
           servers in Settings &rarr; Devices.
         </p>
       </div>
@@ -90,7 +96,7 @@ function DesktopEnableCard() {
     <div className="flex flex-col gap-2 rounded-2xl bg-zinc-900 p-3">
       <div className="flex items-center gap-2">
         <ComputerIcon width={18} height={18} className="text-primary" />
-        <p className="text-sm font-medium text-zinc-100">Connect this Mac</p>
+        <p className="text-sm font-medium text-zinc-100">Connect {noun}</p>
       </div>
       <p className="text-xs font-light text-zinc-400">
         Connect the machine you&apos;re on right now — one click, runs inside
@@ -103,7 +109,7 @@ function DesktopEnableCard() {
         isLoading={busy === "pair"}
         onPress={() => void pair()}
       >
-        Enable on this Mac
+        Enable on {noun}
       </Button>
     </div>
   );
@@ -226,12 +232,12 @@ function CliOnboardingSteps({
 export function DeviceOnboardingPrompt({
   device_onboarding_required,
 }: DeviceOnboardingPromptProps) {
-  const { isMac } = usePlatform();
+  const platform = useDesktopPlatform();
   const bridge = useBridge();
   // Inside the macOS desktop app, lead with one-click connect for THIS Mac and
   // offer the CLI as the way to connect a different machine. In the browser the
   // CLI is the only path, so it stays first.
-  const showDesktopFirst = bridge.available && isMac;
+  const showDesktopFirst = bridge.available && isThisDeviceSupported(platform);
 
   return (
     <CollapsibleListWrapper
@@ -260,7 +266,7 @@ export function DeviceOnboardingPrompt({
 
           {showDesktopFirst ? (
             <>
-              <DesktopEnableCard />
+              <DesktopEnableCard platform={platform} />
               <p className="pt-1 text-xs font-medium text-zinc-500">
                 Or connect a different machine
               </p>

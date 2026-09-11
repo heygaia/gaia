@@ -6,8 +6,8 @@ import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
 import { ComputerIcon, Delete02Icon, Folder01Icon, Link04Icon } from "@icons";
 import type { ServerConfig } from "@shared/bridge-core/config.types";
-import { ENTIRE_FS_PATH } from "../constants";
 import type { UseBridge } from "../hooks/useBridge";
+import { thisDeviceLabel } from "../hooks/useDesktopPlatform";
 import { AddServerModal } from "./AddServerModal";
 
 function StatusChip({
@@ -41,7 +41,11 @@ function ServerRow({
 }) {
   return (
     <div className="flex items-center gap-2 rounded-2xl bg-zinc-900 p-3 text-sm">
-      <Link04Icon className="size-4 text-zinc-400" />
+      {server.type === "filesystem" ? (
+        <Folder01Icon className="size-4 text-zinc-400" />
+      ) : (
+        <Link04Icon className="size-4 text-zinc-400" />
+      )}
       <span className="min-w-0 flex-1 truncate">{server.name}</span>
       <Button
         isIconOnly
@@ -58,68 +62,24 @@ function ServerRow({
   );
 }
 
-/** One switch for whole-machine file access — GAIA gets the entire filesystem
- * (read + write), like a local coding agent, instead of the user curating
- * folders. macOS still gates protected folders behind Full Disk Access. */
-function FileAccessRow({
-  enabled,
-  disabled,
-  onToggle,
-}: {
-  enabled: boolean;
-  disabled: boolean;
-  onToggle: (on: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-3 rounded-2xl bg-zinc-900 p-3">
-      <div className="flex items-start gap-2">
-        <Folder01Icon className="mt-0.5 size-4 text-zinc-400" />
-        <div>
-          <p className="text-sm text-zinc-100">Full file access</p>
-          <p className="text-xs text-zinc-500">
-            Let GAIA read and edit files anywhere on this Mac. Protected folders
-            (Downloads, Desktop, Documents) also need Full Disk Access granted
-            to GAIA in System Settings.
-          </p>
-        </div>
-      </div>
-      <Switch
-        size="sm"
-        isSelected={enabled}
-        isDisabled={disabled}
-        onValueChange={onToggle}
-        aria-label="Full file access"
-      />
-    </div>
-  );
-}
-
 /**
- * "This Mac" — the desktop app's own device, controlled in-app over the bridge
- * IPC surface (no CLI, no pairing code). Renders only inside the desktop app
- * (gated by the caller); pairing is one click, the tunnel toggles live, file
- * access is a single switch, and MCP servers are added/removed here.
+ * "This computer" — the desktop app's own device, controlled in-app over the
+ * bridge IPC surface (no CLI, no pairing code). Renders only inside the desktop
+ * app (gated by the caller). Pairing is one click and the tunnel toggles live;
+ * while connected GAIA can run commands and read/write files on the machine
+ * (via run_on_device), so there is nothing to configure for file access.
  */
-export function ThisMacCard({ bridge }: { bridge: UseBridge }) {
+export function ThisMacCard({
+  bridge,
+  platform,
+}: {
+  bridge: UseBridge;
+  platform: NodeJS.Platform | null;
+}) {
   const { status, servers, busy, pair, setRunning, addServer, removeServer } =
     bridge;
-
-  // Whole-machine file access is the built-in filesystem server; the rest of the
-  // list is the user's own stdio/url MCP servers.
-  const fileServer = servers.find((server) => server.type === "filesystem");
-  const mcpServers = servers.filter((server) => server.type !== "filesystem");
-
-  const toggleFileAccess = (on: boolean) => {
-    if (on) {
-      void addServer({
-        type: "filesystem",
-        path: [ENTIRE_FS_PATH],
-        write: true,
-      });
-    } else if (fileServer) {
-      void removeServer(fileServer.key);
-    }
-  };
+  const label = thisDeviceLabel(platform);
+  const noun = platform === "darwin" ? "this Mac" : "this computer";
 
   return (
     <div className="rounded-2xl bg-zinc-800 p-4">
@@ -128,7 +88,7 @@ export function ThisMacCard({ bridge }: { bridge: UseBridge }) {
           <ComputerIcon className="mt-0.5 size-5 text-zinc-400" />
           <div>
             <div className="flex items-center gap-2">
-              <span className="font-medium">This Mac</span>
+              <span className="font-medium">{label}</span>
               <StatusChip paired={status.paired} running={status.running} />
             </div>
             <p className="text-sm text-zinc-500">
@@ -144,7 +104,7 @@ export function ThisMacCard({ bridge }: { bridge: UseBridge }) {
               isSelected={status.running}
               isDisabled={busy === "toggle"}
               onValueChange={(next) => void setRunning(next)}
-              aria-label="Keep this Mac connected"
+              aria-label={`Keep ${noun} connected`}
             />
           </div>
         ) : (
@@ -155,19 +115,14 @@ export function ThisMacCard({ bridge }: { bridge: UseBridge }) {
             isLoading={busy === "pair"}
             onPress={() => void pair()}
           >
-            Enable on this Mac
+            Enable on {noun}
           </Button>
         )}
       </div>
 
       {status.paired && (
         <div className="mt-3 flex flex-col gap-2">
-          <FileAccessRow
-            enabled={fileServer !== undefined}
-            disabled={busy === "server"}
-            onToggle={toggleFileAccess}
-          />
-          {mcpServers.map((server) => (
+          {servers.map((server) => (
             <ServerRow
               key={server.key}
               server={server}

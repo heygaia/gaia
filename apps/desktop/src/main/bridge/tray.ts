@@ -28,9 +28,12 @@ function trayImage(): Electron.NativeImage {
   return nativeImage.createFromPath(path);
 }
 
+const DEVICE_LABEL =
+  process.platform === "darwin" ? "This Mac" : "This computer";
+
 function statusLabel(status: BridgeStatus): string {
-  if (!status.paired) return "This Mac: not connected";
-  return status.running ? "This Mac: online" : "This Mac: paused";
+  if (!status.paired) return `${DEVICE_LABEL}: not connected`;
+  return status.running ? `${DEVICE_LABEL}: online` : `${DEVICE_LABEL}: paused`;
 }
 
 function buildMenu(status: BridgeStatus, onOpen: () => void): Menu {

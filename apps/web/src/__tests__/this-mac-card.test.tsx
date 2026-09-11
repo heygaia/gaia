@@ -52,7 +52,7 @@ const status = (
 // The card takes the bridge hook result as a prop; drive the real hook against
 // the mocked window.api.bridge so the test exercises the actual wiring.
 function Harness() {
-  return <ThisMacCard bridge={useBridge()} />;
+  return <ThisMacCard bridge={useBridge()} platform="darwin" />;
 }
 
 beforeEach(() => {
@@ -110,56 +110,6 @@ describe("ThisMacCard", () => {
 
     await waitFor(() =>
       expect(bridge.removeServer).toHaveBeenCalledWith("everything"),
-    );
-  });
-
-  it("full file access toggle grants the entire filesystem, read+write", async () => {
-    bridge.status.mockResolvedValue(ok(status(true, true)));
-    bridge.listServers.mockResolvedValue(ok<ServerConfig[]>([]));
-    bridge.addServer.mockResolvedValue(ok<ServerConfig[]>([]));
-
-    render(<Harness />);
-
-    const fileAccess = (await screen.findByRole("switch", {
-      name: /full file access/i,
-    })) as HTMLInputElement;
-    expect(fileAccess.checked).toBe(false);
-    fireEvent.click(fileAccess);
-
-    await waitFor(() =>
-      expect(bridge.addServer).toHaveBeenCalledWith({
-        type: "filesystem",
-        path: ["/"],
-        write: true,
-      }),
-    );
-  });
-
-  it("turning file access off removes the filesystem server", async () => {
-    bridge.status.mockResolvedValue(ok(status(true, true)));
-    bridge.listServers.mockResolvedValue(
-      ok<ServerConfig[]>([
-        {
-          type: "filesystem",
-          key: "filesystem",
-          name: "Local Files",
-          allow: ["/"],
-          allowWrite: true,
-        },
-      ]),
-    );
-    bridge.removeServer.mockResolvedValue(ok<ServerConfig[]>([]));
-
-    render(<Harness />);
-
-    const fileAccess = (await screen.findByRole("switch", {
-      name: /full file access/i,
-    })) as HTMLInputElement;
-    await waitFor(() => expect(fileAccess.checked).toBe(true));
-    fireEvent.click(fileAccess);
-
-    await waitFor(() =>
-      expect(bridge.removeServer).toHaveBeenCalledWith("filesystem"),
     );
   });
 });
