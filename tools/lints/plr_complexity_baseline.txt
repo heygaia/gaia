@@ -124,9 +124,6 @@ libs/wake-word/training/src/synthesize.py	PLR0913
 libs/wake-word/training/src/train.py	PLR0913
 libs/wake-word/training/src/validate.py	PLR0913
 scripts/ci/wide-event-conformance/run.py	PLR0912
-scripts/dev/ci_remote.py	PLR0912
-scripts/dev/ci_remote.py	PLR0913
-scripts/dev/ci_remote.py	PLR0915
 scripts/dev/gaia_verify.py	PLR0912
 scripts/dev/gaia_verify.py	PLR0915
 scripts/dev/pr_comments.py	PLR0912

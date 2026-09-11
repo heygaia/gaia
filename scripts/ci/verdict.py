@@ -19,12 +19,15 @@ that reported NOTHING is a failure too — silence is how a lane stops running
 without anybody noticing.
 
 Subcommands:
-    emit --lane L --status S --summary "…" [--finding f:l:msg [--detail-file p]]…
-         [--advice "…"]… [--out DIR] [--only-if-missing]
+    emit --lane L (--status S --summary "…" | --job-status <job.status>)
+         [--finding f:l:msg [--detail-file p]]… [--advice "…"]…
+         [--out DIR] [--only-if-missing]
         Write <out>/<lane>.json, annotate, summarise, and print the one-line
         human verdict. Always exits 0: it reports, it does not decide
-        (`ci_verdict_die` in lib/log.sh is the dying call site).
-    consolidate DIR --expect "lane[=job-result],…"
+        (`ci_verdict_die` in lib/log.sh is the dying call site). `--job-status`
+        is what the upload-verdict composite passes for a lane that wrote no
+        verdict of its own — see JOB_STATUS_VERDICT.
+    consolidate DIR --expect "job[@family][=job-result],…"
         The gate's verdict. Print the table every lane's JSON forms and exit 1
         if any lane failed, timed out, errored — or never reported at all.
     pytest-verdict <junit.xml> --lane L [--path-prefix P] [--out DIR]
@@ -97,6 +100,11 @@ ANNOTATION_LEVEL = {
     Status.FAIL: "error",
     Status.ERROR: "error",
 }
+
+
+# One line of the gate's table: which lane, what it did, and the sentence a
+# reader starts from.
+Row = tuple[str, "Status", str]
 
 
 class Finding(TypedDict):
@@ -252,6 +260,36 @@ class EmitUsageError(ValueError):
     """A malformed `--finding` / `--detail-file`, reported as usage, not a crash."""
 
 
+# What a lane's verdict is when the lane itself never wrote one and all we have
+# is the CALLER's `job.status`. This mapping lives here rather than as three
+# `if:`-guarded steps in the composite because a composite's `success()` /
+# `failure()` / `cancelled()` evaluate that COMPOSITE's own prior steps, not the
+# job — so the failure branch never fires and every lane reported `pass`. Run
+# 34584038269 shard 5/6 died in `setup-python-test-env` and uploaded
+# `{"lane": "mutation/shard-4", "status": "pass"}`. A false pass is the single
+# outcome this contract exists to prevent, so the status is now an input the
+# caller fills from `${{ job.status }}` and the branching is right here, where a
+# test can reach it.
+JOB_STATUS_VERDICT: dict[str, tuple[Status, str, list[str]]] = {
+    "success": (Status.PASS, "passed", []),
+    "failure": (
+        Status.FAIL,
+        "the lane failed and has not adopted the verdict contract — "
+        "its reason is only in this job's log",
+        ["Open this job's log. Then give the lane a `ci_verdict_die` so the next reader need not."],
+    ),
+    "cancelled": (
+        Status.TIMED_OUT,
+        "cancelled before it reported — it hit its timeout-minutes cap, or the run was superseded",
+        [
+            "Split the diff or raise this job's timeout-minutes. There is no finding to read: "
+            "the lane never reached the end."
+        ],
+    ),
+    "skipped": (Status.SKIP, "skipped", []),
+}
+
+
 def _take_findings(args: list[str]) -> tuple[list[Finding], list[str]]:
     """Pull the ordered `--finding` / `--detail-file` pairs out of the arg list.
 
@@ -289,8 +327,17 @@ def cmd_emit(args: list[str]) -> int:
     """Write one lane's verdict. Exits 0 even for a failure — it reports, it does
     not decide; `ci_verdict_die` is the call site that dies on one."""
     parser = _verdict_parser("emit", default_lane="")
-    parser.add_argument("--status", required=True, choices=[str(s) for s in Status])
-    parser.add_argument("--summary", required=True)
+    parser.add_argument("--status", choices=[str(s) for s in Status])
+    parser.add_argument("--summary")
+    parser.add_argument(
+        "--job-status",
+        choices=sorted(JOB_STATUS_VERDICT),
+        help=(
+            "the CALLER's ${{ job.status }}. Derives status, summary and advice for a "
+            "lane that wrote no verdict of its own. A composite cannot read this itself: "
+            "its success()/failure()/cancelled() see only its OWN prior steps."
+        ),
+    )
     parser.add_argument("--advice", action="append", default=[])
     # A lane that died at its cap wrote nothing; the trailing step that notices
     # must not overwrite a real verdict when the lane DID report.
@@ -302,15 +349,25 @@ def cmd_emit(args: list[str]) -> int:
     opts = parser.parse_args(rest)
     if not opts.lane:
         parser.error("--lane is required")
+    if bool(opts.status) == bool(opts.job_status):
+        parser.error("give exactly one of --status (with --summary) or --job-status")
+
+    derived_status, derived_summary, derived_advice = JOB_STATUS_VERDICT.get(
+        opts.job_status or "", (Status.ERROR, "", [])
+    )
+    status = Status(opts.status) if opts.status else derived_status
+    summary = opts.summary or derived_summary
+    if not summary:
+        parser.error("--status needs a --summary")
 
     if opts.only_if_missing and lane_already_reported(opts.lane, opts.out):
         return 0
     report(
         opts.lane,
-        Status(opts.status),
-        opts.summary,
+        status,
+        summary,
         findings=findings,
-        advice=opts.advice,
+        advice=opts.advice or derived_advice,
         out_dir=opts.out,
     )
     return 0
@@ -377,6 +434,40 @@ def _matching_lanes(family: str, found: dict[str, VerdictDoc]) -> list[str]:
     return sorted(k for k in found if k == family or k.startswith(f"{family}/"))
 
 
+def _row_for(entry: str, found: dict[str, VerdictDoc]) -> list[Row]:
+    """The table rows one `--expect` entry produces, and nothing else.
+
+    Its own function because "what does this entry resolve to" is a separate
+    question from "what does the gate do about it" — and because the four cases
+    (result-only, family with members, family without, plain lane) had grown
+    into a branch count the PLR ratchet was right to flag.
+    """
+    job, _, result = entry.partition("=")
+    lane, _, family = job.partition("@")
+    if family == RESULT_ONLY_FAMILY:
+        return [(lane, *RESULT_ONLY.get(result, _RESULT_ONLY_UNKNOWN))]
+    matched = _matching_lanes(family or lane, found)
+    if not matched:
+        return [(lane, *RESULT_FALLBACK.get(result, _NO_VERDICT))]
+    return [(key, Status(found[key]["status"]), found[key]["summary"]) for key in matched]
+
+
+def consolidated_rows(expect: str, found: dict[str, VerdictDoc]) -> list[Row]:
+    """One row per expected lane, then every verdict nobody expected."""
+    rows = [_row_for(e.strip(), found) for e in expect.split(",") if e.strip()]
+    claimed = {lane for group in rows for lane, _, _ in group}
+    flat = [row for group in rows for row in group]
+
+    # A verdict nobody expected still gets read. Dropping it would let a lane go
+    # quiet by renaming itself, which is the failure this gate is for — and a
+    # red one still has to red the gate.
+    flat += [
+        (key, Status(found[key]["status"]), found[key]["summary"])
+        for key in sorted(set(found) - claimed)
+    ]
+    return flat
+
+
 def cmd_consolidate(args: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="verdict.py consolidate")
     parser.add_argument("directory", type=Path)
@@ -401,31 +492,7 @@ def cmd_consolidate(args: list[str]) -> int:
     opts = parser.parse_args(args)
 
     found = _load_verdicts(opts.directory) if opts.directory.is_dir() else {}
-    rows: list[tuple[str, Status, str]] = []
-    claimed: set[str] = set()
-    for entry in (e.strip() for e in opts.expect.split(",")):
-        if not entry:
-            continue
-        job, _, result = entry.partition("=")
-        lane, _, family = job.partition("@")
-        if family == RESULT_ONLY_FAMILY:
-            rows.append((lane, *RESULT_ONLY.get(result, _RESULT_ONLY_UNKNOWN)))
-            continue
-        matched = _matching_lanes(family or lane, found)
-        if not matched:
-            rows.append((lane, *RESULT_FALLBACK.get(result, _NO_VERDICT)))
-            continue
-        for key in matched:
-            doc = found[key]
-            rows.append((key, Status(doc["status"]), doc["summary"]))
-            claimed.add(key)
-
-    # A verdict nobody expected still gets read. Dropping it would let a lane
-    # go quiet by renaming itself, which is the failure this gate is for — and
-    # a red one still has to red the gate.
-    for key in sorted(set(found) - claimed):
-        doc = found[key]
-        rows.append((key, Status(doc["status"]), doc["summary"]))
+    rows = consolidated_rows(opts.expect, found)
 
     print("::group::Per-lane verdicts")
     for lane, status, summary in rows:

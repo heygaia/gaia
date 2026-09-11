@@ -31,6 +31,21 @@ inputs:
       for the same reason — `mutation/shard-<n>`, `test-python/<slice>`.
     required: false
     default: ""
+  status:
+    description: >
+      The CALLING JOB's status — always pass the `job.status` context. (Written
+      without expression syntax: a description is template-parsed like any other
+      string, and `job` is not a context this action can read.) It decides the
+      verdict for a lane that wrote none of its own: success->pass,
+      failure->fail, cancelled->timed_out.
+
+      Required, and an input rather than something this action works out for
+      itself, because inside a composite `success()` / `failure()` /
+      `cancelled()` evaluate THIS ACTION's own prior steps, not the job. They
+      therefore always took the success branch, and a mutation shard that died
+      in its setup step uploaded `"status": "pass"` (run 34584038269, shard
+      5/6). A false pass is the one outcome this contract exists to prevent.
+    required: true
   path:
     description: Directory the lane's verdicts were written to.
     required: false
@@ -38,35 +53,17 @@ inputs:
 runs:
   using: composite
   steps:
-    # A job that exceeds its `timeout-minutes` is CANCELLED by GitHub, and an
-    # always()-guarded step still gets to run — which is the one moment we can
-    # say "this lane died at its cap" instead of leaving the gate to print
-    # `failure` for something that never got as far as failing. The two need
-    # opposite reactions: a failure has a finding to read, a timeout has a diff
-    # to split or a cap to raise.
-    - name: Record a timeout verdict
-      if: cancelled()
+    # One step, one mapping, and the mapping lives in verdict.py where a unit
+    # test can reach it — see JOB_STATUS_VERDICT. --only-if-missing so a lane
+    # that wrote its OWN verdict (with findings at file:line) keeps it; this
+    # only fills the silence.
+    - name: Record a verdict for a lane that wrote none
+      if: always()
       shell: bash
       run: >
         python3 "$GITHUB_WORKSPACE/scripts/ci/verdict.py" emit --only-if-missing
-        --lane "${{ inputs.lane || inputs.name }}" --status timed_out --out "${{ inputs.path }}"
-        --summary "cancelled before it reported — it hit its timeout-minutes cap, or the run was superseded"
-        --advice "Split the diff or raise this job's timeout-minutes. There is no finding to read: the lane never reached the end."
-    - name: Record a failure verdict
-      if: failure()
-      shell: bash
-      run: >
-        python3 "$GITHUB_WORKSPACE/scripts/ci/verdict.py" emit --only-if-missing
-        --lane "${{ inputs.lane || inputs.name }}" --status fail --out "${{ inputs.path }}"
-        --summary "the lane failed and has not adopted the verdict contract — its reason is only in this job's log"
-        --advice "Open this job's log. Then give the lane a `ci_verdict_die` so the next reader does not have to."
-    - name: Record a pass verdict
-      if: success()
-      shell: bash
-      run: >
-        python3 "$GITHUB_WORKSPACE/scripts/ci/verdict.py" emit --only-if-missing
-        --lane "${{ inputs.lane || inputs.name }}" --status pass --out "${{ inputs.path }}"
-        --summary "passed"
+        --lane "${{ inputs.lane || inputs.name }}" --out "${{ inputs.path }}"
+        --job-status "${{ inputs.status }}"
     - name: Upload the verdict
       if: always()
       uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

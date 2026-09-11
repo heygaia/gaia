@@ -177,3 +177,22 @@ def test_a_result_only_lane_still_fails_the_gate_on_its_job_result(
         if f"@{RESULT_ONLY}" not in entry:
             continue
         assert "=" in entry, f"result-only entry {entry!r} carries no job result — it is unenforced"
+
+
+def test_every_upload_passes_the_calling_jobs_status(workflow: dict[str, Any]) -> None:
+    # `job.status` can only be read by the CALLER. Inside a composite,
+    # success()/failure()/cancelled() evaluate that action's own prior steps, so
+    # the composite cannot work out whether its job failed — it always looked
+    # successful. Run 34584038269's mutation shard 5/6 failed in
+    # `setup-python-test-env` and uploaded {"status": "pass"} because of it, and
+    # a false pass is the one outcome this whole contract exists to prevent.
+    for name, job in workflow["jobs"].items():
+        for step in job.get("steps", []):
+            if step.get("uses") != UPLOAD_VERDICT:
+                continue
+            given = str(step.get("with", {}).get("status", ""))
+            assert given.replace(" ", "") == "${{job.status}}", (
+                f"job '{name}' calls {UPLOAD_VERDICT} with status={given!r}. It must pass "
+                "`${{ job.status }}` — the composite cannot see the job's status itself, "
+                "and without it every lane reports `pass`."
+            )

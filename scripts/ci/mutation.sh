@@ -52,6 +52,13 @@ source "$(dirname "$0")/lib/cpu-slots.sh"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 
+# The one test tier that cannot run without live Mongo and Redis, and so the
+# one thing that decides which runner pool a shard belongs to. `plan` groups by
+# it and `shard` re-derives its own pool from it — exported rather than repeated
+# inside the planner's heredoc so the two can never disagree about what
+# "needs services" means.
+export SERVICES_TIER="tests/contracts/"
+
 # The interpreter that has mutmut and the API's test dependencies. Both the
 # mutation run and `replay` need it, and "which python" is not a question either
 # of them should answer differently.
@@ -174,30 +181,67 @@ import os
 # wave of setup, which is worth strictly more than a red lane that proved nothing.
 MAX_SHARDS = 6
 
+# The tier that needs live Mongo and Redis (mutation.sh's SERVICES_TIER, passed
+# in rather than repeated). A module mapped to one of these files cannot run in
+# the lint pool: those runner instances are numbered above test-services.sh's
+# MAX_LANE (13-20 vs 0-12), so `prepare` refuses the lane outright — six shards
+# died on that before the split existed. A shard is therefore homogeneous by
+# construction, and its pool travels with it.
+SERVICES_TIER = os.environ["SERVICES_TIER"]
+POOLS = ("lint", "services")
+
 modules = json.loads(os.environ["MATRIX_JSON"])
-shards: list[list[dict[str, str]]] = [[] for _ in range(min(len(modules), MAX_SHARDS))]
-for index, entry in enumerate(modules):
-    shards[index % len(shards)].append(
-        {
-            "module": entry["module"],
-            "testfiles": json.dumps(entry["testfiles"], separators=(",", ":")),
-            "ranges": json.dumps(entry["changed_lines"], separators=(",", ":")),
-        }
-    )
+members = {
+    "services": [m for m in modules if any(f.startswith(SERVICES_TIER) for f in m["testfiles"])],
+    "lint": [m for m in modules if not any(f.startswith(SERVICES_TIER) for f in m["testfiles"])],
+}
+live = {pool: members[pool] for pool in POOLS if members[pool]}
+
+# MAX_SHARDS is the budget for the WHOLE plan, not per pool: the cap exists to
+# stay clear of GitHub's 256-job limit and to keep the wave size honest, and two
+# pools that each helped themselves to six would defeat both. Every live pool
+# starts with one shard and the rest go to whichever pool is carrying the most
+# modules per shard it already has, so the split follows the diff (a typical PR
+# touches one or two repositories and ten other modules, and lands 1 + 5).
+counts = {pool: 1 for pool in live}
+while sum(counts.values()) < MAX_SHARDS:
+    hungry = [pool for pool in live if counts[pool] < len(live[pool])]
+    if not hungry:
+        break
+    counts[max(hungry, key=lambda pool: len(live[pool]) / counts[pool])] += 1
+
+shards: list[tuple[str, list[dict[str, str]]]] = []
+for pool in POOLS:
+    if pool not in live:
+        continue
+    packed: list[list[dict[str, str]]] = [[] for _ in range(counts[pool])]
+    for index, entry in enumerate(live[pool]):
+        packed[index % len(packed)].append(
+            {
+                "module": entry["module"],
+                "testfiles": json.dumps(entry["testfiles"], separators=(",", ":")),
+                "ranges": json.dumps(entry["changed_lines"], separators=(",", ":")),
+            }
+        )
+    shards.extend((pool, group) for group in packed)
 
 include = [
     {
         # The check's displayed name. A lone module names itself — the common
         # case, and the most useful thing a reviewer can read at a glance. A
         # packed shard says how many it carries, so nothing looks dropped.
+        # Either way a services shard says so: it runs on the other pool, so
+        # "which shard needed Mongo" is the first question a red one raises.
         "label": (
-            shard[0]["module"]
-            if len(shard) == 1
-            else f"shard {number}/{len(shards)} ({len(shard)} modules)"
+            (shard[0]["module"] if len(shard) == 1 else f"shard {number}/{len(shards)} ({len(shard)} modules)")
+            + (" (services)" if pool == "services" else "")
         ),
         "group": json.dumps(shard, separators=(",", ":")),
+        # Read by the job's `runs-on` to pick the runner pool, and by
+        # `mutation.sh shard` to decide whether live services are mandatory.
+        "pool": pool,
     }
-    for number, shard in enumerate(shards, start=1)
+    for number, (pool, shard) in enumerate(shards, start=1)
 ]
 
 github_output = os.environ.get("GITHUB_OUTPUT")
@@ -211,7 +255,7 @@ if len(shards) < len(modules):
 else:
     print(f"{len(modules)} module(s) to mutate, one shard each")
 for entry in include:
-    print(f"  {entry['label']}")
+    print(f"  [{entry['pool']:8}] {entry['label']}")
 EOF
 }
 
@@ -243,6 +287,49 @@ for entry in entries:
 ' > "$SHARD_TSV"; then
     echo "::error::mutation shard could not read its GROUP — the plan job emitted something unusable"
     exit 1
+  fi
+
+  # Which pool this shard belongs to, read off the work itself rather than
+  # trusted from the environment: `plan` groups contract-mapped modules into
+  # their own shards, so the mapped test files ARE the classification, and a
+  # shard cannot disagree with the runner it was sent to without saying so.
+  if grep -q "$SERVICES_TIER" "$SHARD_TSV"; then
+    # A contract test with no services does not fail — it SKIPS (its autouse
+    # fixture calls pytest.skip), and a mutant no test exercised is reported as
+    # "no covering test", which is informational and fails nothing. That is the
+    # exact false green this shard split exists to remove, so it is an error
+    # here rather than a degraded run.
+    if [ "${USE_REAL_SERVICES:-}" != "1" ]; then
+      echo "::error::this shard maps ${SERVICES_TIER} tests but USE_REAL_SERVICES is not 1 — every contract test would skip and its mutants would be reported as uncovered rather than surviving. On CI the job must run with pool=services (setup-python-test-env); locally, start the services and export USE_REAL_SERVICES=1."
+      exit 1
+    fi
+    if ! python3 -c '
+import os
+import socket
+import sys
+from urllib.parse import urlparse
+
+for name, fallback in (("MONGO_DB", 27017), ("REDIS_URL", 6379)):
+    url = os.environ.get(name, "")
+    if not url:
+        sys.exit(f"{name} is unset — nothing published this lane service endpoints")
+    parsed = urlparse(url)
+    endpoint = (parsed.hostname or "localhost", parsed.port or fallback)
+    try:
+        socket.create_connection(endpoint, timeout=5).close()
+    except OSError as exc:
+        sys.exit(f"{name} at {endpoint[0]}:{endpoint[1]} is unreachable: {exc}")
+'; then
+      echo "::error::this shard maps ${SERVICES_TIER} tests and USE_REAL_SERVICES=1, but the services are not reachable — the contract tests would ERROR on connect, and an erroring test kills every mutant it touches (a green shard that proved nothing)."
+      exit 1
+    fi
+  elif [ "${USE_REAL_SERVICES:-}" = "1" ]; then
+    # The mirror image, and the reason it matters even though no contract test
+    # is mapped here: tests/conftest.py swaps the GLOBAL mongodb mock for a real
+    # client when the variable is 1, so a unit-only shard that inherited it from
+    # a developer's shell would have every mutant killed by a connection error.
+    echo "mutation shard: no ${SERVICES_TIER} tests in this shard — unsetting USE_REAL_SERVICES so the unit tiers keep their mocked services"
+    unset USE_REAL_SERVICES
   fi
 
   # CI reads the artifact from the fixed name; the local runner overrides it so
