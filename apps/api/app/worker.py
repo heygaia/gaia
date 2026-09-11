@@ -4,6 +4,7 @@ from arq import cron
 from arq.typing import WorkerCoroutine
 from arq.worker import func
 
+from app.constants.email import SIGNUP_EMAIL_TASK
 from app.constants.onboarding import INTELLIGENCE_TASK
 
 # The worker runs the executor agent + Composio custom tools, so it needs the
@@ -35,6 +36,7 @@ from app.workers.tasks import (
     sweep_abandoned_imessage_registrations,
     sweep_expired_memories,
     sweep_idle_sandboxes,
+    sweep_undelivered_signup_emails,
 )
 from app.workers.tasks.hil_sweep_tasks import sweep_hil_approvals
 from app.workers.tasks.maintenance_sweep_tasks import maintenance_sweep_tracked_todos
@@ -83,7 +85,17 @@ _promote_usage_badges = arq_task(promote_usage_badges)
 _sweep_dormant_user_workflows = arq_task(sweep_dormant_user_workflows)
 _sweep_abandoned_imessage_registrations = arq_task(sweep_abandoned_imessage_registrations)
 _sweep_expired_memories = arq_task(sweep_expired_memories)
-_deliver_signup_emails = arq_task(deliver_signup_emails)
+# keep_result=0 on purpose. The job id is per user, so a kept result would make
+# ARQ refuse every re-enqueue for an hour after the job finished — including the
+# hourly recovery sweep's, which is the one thing that retries a delivery the
+# ESP rejected. Dedup then covers exactly the window it should (queued or in
+# flight); a re-run is made harmless by the delivery stamps, not by the result.
+_deliver_signup_emails = func(
+    arq_task(deliver_signup_emails),
+    name=SIGNUP_EMAIL_TASK,
+    keep_result=0,
+)
+_sweep_undelivered_signup_emails = arq_task(sweep_undelivered_signup_emails)
 
 WorkerSettings.functions = [
     _sweep_hil_approvals,
@@ -110,6 +122,7 @@ WorkerSettings.functions = [
     _sweep_abandoned_imessage_registrations,
     _sweep_expired_memories,
     _deliver_signup_emails,
+    _sweep_undelivered_signup_emails,
 ]
 
 WorkerSettings.cron_jobs = [
@@ -200,6 +213,14 @@ WorkerSettings.cron_jobs = [
         cast(WorkerCoroutine, _sweep_dormant_user_workflows),
         hour=6,  # Daily at 06:00 UTC
         minute=0,
+        second=0,
+    ),
+    # Finish the signup deliveries of anyone whose enqueue was lost (a Redis
+    # hiccup during signup) or whose job failed. Hourly, off the other sweeps'
+    # minutes; idempotent via the per-user job id and the delivery stamps.
+    cron(
+        cast(WorkerCoroutine, _sweep_undelivered_signup_emails),
+        minute=40,
         second=0,
     ),
     # Retire memories whose forget_after has passed. Without this, expiry is

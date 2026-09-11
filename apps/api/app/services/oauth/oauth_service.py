@@ -1,6 +1,7 @@
 from fastapi import BackgroundTasks, HTTPException
 
 from app.constants.auth import LOGIN_METHOD_WORKOS
+from app.constants.email import SignupDelivery
 from app.constants.integrations import (
     GMAIL_INTEGRATION_ID,
     GOOGLE_CALENDAR_INTEGRATION_ID,
@@ -13,6 +14,7 @@ from app.models.oauth_models import OAuthIntegration
 from app.models.user_models import BioStatus, UserDocument, UserUpdate
 from app.services.analytics_service import track_login, track_signup
 from app.services.composio.composio_service import get_composio_service
+from app.services.email.signup_delivery import enqueue_signup_emails
 
 # Re-exported on purpose: the reader lives below this module now, and its
 # callers here keep importing it from the OAuth surface they already know.
@@ -87,10 +89,12 @@ async def _run_signup_side_effects(user_id: str, email: str, signup_name: str) -
     # long as the HTTP client allowed (observed: 90s+ with no timeout anywhere in
     # the path). They go on the worker queue rather than an in-process task
     # because nothing drains those on shutdown — a restart mid-send dropped both
-    # deliveries without a trace. Queued, the job outlives this process.
+    # deliveries without a trace. Queued, the job outlives this process — and
+    # losing even this enqueue is survivable, because the user's row carries no
+    # delivery stamps and the hourly recovery sweep finishes it later.
     try:
         pool = await RedisPoolManager.get_pool()
-        await enqueue_worker_job(pool, "deliver_signup_emails", user_id, email, signup_name)
+        await enqueue_signup_emails(pool, user_id)
         log.info(f"{LogTag.OAUTH} Queued signup email delivery", user={"id": user_id})
     except Exception as e:
         log.error(
@@ -179,6 +183,10 @@ async def store_user_info(
     )
 
     if not external_side_effects:
+        # A dev-minted user is owed neither delivery, so record both settled
+        # now. The recovery sweep selects on a *missing* stamp, and would
+        # otherwise mail and enrol every seeded account an hour after minting.
+        await user_repository.stamp_signup_deliveries(created.id, list(SignupDelivery))
         return created.id, True
 
     await _run_signup_side_effects(created.id, email, signup_name)

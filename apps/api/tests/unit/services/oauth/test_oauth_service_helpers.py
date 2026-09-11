@@ -11,6 +11,7 @@ from tests.helpers import captured_wide_event
 
 from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
+from app.services.email.signup_delivery import signup_email_job_id
 from app.services.oauth.oauth_service import (
     _handle_gmail_connection,
     _refresh_bio_status_for_reconnect,
@@ -94,9 +95,15 @@ class TestRunSignupSideEffects:
 
         await _run_signup_side_effects(user_id, "bob@test.com", "Bob")
 
-        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
-            "deliver_signup_emails", user_id, "bob@test.com", "Bob"
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            user_id,
         )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(user_id)
 
     async def test_a_failed_enqueue_is_recorded_and_provisioning_still_runs(
         self,
@@ -143,9 +150,15 @@ class TestRunSignupSideEffects:
                 "error_type": "RuntimeError",
             }
         ]
-        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
-            "deliver_signup_emails", user_id, "bob@test.com", "Bob"
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            user_id,
         )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(user_id)
         mock_schedule_user_provision.assert_called_once_with(user_id)
 
 
