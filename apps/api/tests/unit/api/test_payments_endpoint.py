@@ -21,6 +21,7 @@ from app.models.payment_models import (
     PlanDuration,
     PlanResponse,
     ProCheckout,
+    SubscriptionDocument,
 )
 from app.services.analytics_service import AnalyticsEvents
 from tests.unit.services.conftest import SUBSCRIPTION_DATA_PAYLOAD, _make_webhook_event
@@ -262,7 +263,7 @@ class TestCreateSubscription:
             response = await client.post(SUBSCRIPTIONS_URL, json={"product_id": "prod_abc"})
 
         assert response.status_code == 409
-        assert response.json()["detail"] == "Active subscription exists"
+        assert response.json()["message"] == "Active subscription exists"
 
 
 # ---------------------------------------------------------------------------
@@ -455,11 +456,12 @@ class TestCancelSubscription:
             **{
                 **_make_subscription_status(),
                 "is_subscribed": True,
-                "subscription": {
-                    "dodo_subscription_id": "sub_xyz789",
-                    "status": "active",
-                    "cancel_at_next_billing_date": True,
-                },
+                "subscription": SubscriptionDocument(
+                    dodo_subscription_id="sub_xyz789",
+                    user_id="507f1f77bcf86cd799439011",
+                    status="active",
+                    cancel_at_next_billing_date=True,
+                ),
             }
         )
         with patch(

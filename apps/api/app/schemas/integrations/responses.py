@@ -3,13 +3,13 @@
 from datetime import datetime
 from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from pydantic.alias_generators import to_camel
 
 from app.models.integration_instructions_models import InstructionsEditor
 from app.models.integration_models import UserIntegrationStatus
 from app.models.oauth_models import IntegrationContent
-from app.schemas.common import SuccessResponse
+from app.schemas.common import ResponseModel, SuccessResponse
 
 
 # Base model that auto-converts snake_case to camelCase for JSON serialization
@@ -155,16 +155,16 @@ class MyIntegrationItem(CamelModel, CloneCountMixin):
     creator: Optional["CommunityIntegrationCreator"] = None
 
 
-class MyIntegrationsResponse(BaseModel):
+class MyIntegrationsResponse(ResponseModel):
     """The full integration catalog personalized for one user (platform + their
     own custom integrations), each carrying connection status. Replaces the
     client-side merge of /config + /status + /users/me/integrations."""
 
-    integrations: list[MyIntegrationItem] = []
+    integrations: list[MyIntegrationItem] = Field(default_factory=list)
     total: int = 0
 
 
-class IntegrationToolsResponse(CamelModel):
+class IntegrationToolsResponse(CamelModel, ResponseModel):
     """Full tool list for a single integration (catalog data, on demand)."""
 
     integration_id: str

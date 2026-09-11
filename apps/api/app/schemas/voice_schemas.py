@@ -2,8 +2,10 @@
 
 from pydantic import BaseModel, Field
 
+from app.schemas.common import ResponseModel
 
-class VoiceOption(BaseModel):
+
+class VoiceOption(ResponseModel):
     """One selectable ElevenLabs voice from the curated catalog."""
 
     voice_id: str = Field(description="ElevenLabs voice id")
@@ -45,7 +47,7 @@ class VoiceTokenResponse(BaseModel):
     )
 
 
-class VoiceListResponse(BaseModel):
+class VoiceListResponse(ResponseModel):
     """Catalog of selectable voices plus the user's current selection."""
 
     voices: list[VoiceOption]

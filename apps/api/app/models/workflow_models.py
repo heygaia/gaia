@@ -2,7 +2,6 @@
 Clean and lean workflow models for GAIA workflow system.
 """
 
-from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from enum import Enum
@@ -13,7 +12,6 @@ from pydantic import (
     BaseModel,
     ConfigDict,
     Field,
-    SerializeAsAny,
     field_serializer,
     field_validator,
     model_validator,
@@ -22,6 +20,7 @@ from pydantic import (
 from app.db.repositories.base import MongoDocument
 from app.models.scheduler_models import BaseScheduledTask, ScheduledTaskStatus
 from app.models.trigger_configs import TriggerConfigData
+from app.schemas.common import ResponseModel
 from app.utils.cron_utils import get_next_run_time, validate_cron_expression
 from app.utils.timezone import Timezone
 from shared.py.wide_events import log
@@ -72,7 +71,7 @@ class IntegrationRef(BaseModel):
     name: str
 
 
-class WorkflowStep(BaseModel):
+class WorkflowStep(ResponseModel):
     """A single step in a workflow."""
 
     id: str = Field(default="", description="Unique identifier for the step")
@@ -191,11 +190,11 @@ class WorkflowCreator(TypedDict):
     avatar: str | None
 
 
-class Workflow(BaseScheduledTask):
+class Workflow(BaseScheduledTask, ResponseModel):
     """Main workflow model extending BaseScheduledTask for scheduling capabilities."""
 
     # Override ID generation for workflows - always generate ID
-    id: str | None = Field(
+    id: str = Field(
         default_factory=lambda: f"wf_{uuid.uuid4().hex[:12]}",
         description="Unique identifier",
     )
@@ -522,22 +521,25 @@ class UpdateWorkflowRequest(BaseModel):
         return stripped or None
 
 
-class WorkflowResponse(BaseModel):
+def as_read_view(workflow: Workflow) -> WorkflowWithIntegrations:
+    """The wire shape of a workflow: a write path's plain ``Workflow`` widened
+    to the read view (its computed integration fields empty)."""
+    if isinstance(workflow, WorkflowWithIntegrations):
+        return workflow
+    return WorkflowWithIntegrations.model_validate(workflow.model_dump())
+
+
+class WorkflowResponse(ResponseModel):
     """Response model for workflow operations."""
 
-    # SerializeAsAny so a WorkflowWithIntegrations (from read paths) serializes
-    # its extra integration fields; plain Workflow instances still validate.
-    workflow: SerializeAsAny[Workflow]
+    workflow: WorkflowWithIntegrations
     message: str = Field(description="Success or status message")
 
 
-class WorkflowListResponse(BaseModel):
+class WorkflowListResponse(ResponseModel):
     """Response model for listing workflows."""
 
-    # Sequence (not list) because list is invariant: the read path hands us
-    # list[WorkflowWithIntegrations]. SerializeAsAny keeps the subclass's extra
-    # integration fields in the payload while still accepting a plain Workflow.
-    workflows: Sequence[SerializeAsAny[Workflow]]
+    workflows: list[WorkflowWithIntegrations]
 
 
 class WorkflowExecutionRequest(BaseModel):

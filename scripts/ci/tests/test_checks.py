@@ -143,7 +143,6 @@ def test_an_unknown_subcommand_exits_two(tmp_path: Path, sub: str) -> None:
 
 OPENAPI_JSON = "apps/api/openapi.json"
 GENERATED_TYPES = "libs/shared/ts/src/api/generated/schema.d.ts"
-API_SCHEMA_BASELINE = "config/api-schema-baseline.json"
 
 # The two generators, faked: each writes what the test hands it through the
 # environment, so a case decides whether regeneration reproduces the commit.
@@ -243,11 +242,9 @@ def test_api_schema_write_regenerates_without_judging(tmp_path: Path) -> None:
     assert (repo / OPENAPI_JSON).read_text() == '{"paths": {"/changed": {}}}'
 
 
-def _schema_repo(tmp_path: Path, *, baseline: str | None = None) -> Path:
+def _schema_repo(tmp_path: Path) -> Path:
     repo = _repo(tmp_path)
     _commit(repo, OPENAPI_JSON, '{"components": {"schemas": {"TodoResponse": {}, "Todo": {}}}}')
-    if baseline is not None:
-        _commit(repo, API_SCHEMA_BASELINE, baseline)
     return repo
 
 
@@ -279,6 +276,37 @@ def test_a_type_that_is_not_a_schema_name_is_fine(tmp_path: Path) -> None:
     assert process.returncode == 0, process.stdout
 
 
+def test_an_alias_onto_the_generated_type_is_not_a_twin(tmp_path: Path) -> None:
+    # `type X = Schema<"X">` names the generated type for a feature's consumers;
+    # it has no fields of its own, so it cannot drift.
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/features/todo/types.ts",
+        'import type { Schema } from "@shared/api/generated";\n'
+        'export type TodoResponse = Schema<"TodoResponse">;\n',
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 0, process.stdout
+
+
+def test_an_import_list_entry_is_not_a_declaration(tmp_path: Path) -> None:
+    # `  type TodoResponse,` inside a multi-line `import type {...}` is a use,
+    # not a declaration — the first version of the regex flagged it.
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/features/todo/Row.tsx",
+        'import {\n  type TodoResponse,\n  todoApi,\n} from "./api";\n\nexport const x = todoApi;\n',
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 0, process.stdout
+
+
 def test_the_generated_dir_is_exempt(tmp_path: Path) -> None:
     repo = _schema_repo(tmp_path)
     _add_text(repo, GENERATED_TYPES, "export interface TodoResponse { id: string }\n")
@@ -289,37 +317,6 @@ def test_the_generated_dir_is_exempt(tmp_path: Path) -> None:
     process = _run(repo, "api-schema-types")
 
     assert process.returncode == 0, process.stdout
-
-
-def test_the_baseline_tolerates_only_what_it_lists(tmp_path: Path) -> None:
-    repo = _schema_repo(
-        tmp_path, baseline='{"apps/web/src/features/todo/types.ts": ["TodoResponse"]}'
-    )
-    _add_text(
-        repo,
-        "apps/web/src/features/todo/types.ts",
-        "export interface TodoResponse { id: string }\nexport type Todo = { id: string };\n",
-    )
-
-    process = _run(repo, "api-schema-types")
-
-    assert process.returncode == 1, "a twin outside the baseline slipped through"
-    assert "types.ts: Todo " in process.stdout
-    assert "TodoResponse —" not in process.stdout
-
-
-def test_a_baseline_entry_whose_twin_is_gone_must_be_removed(tmp_path: Path) -> None:
-    # The baseline can only shrink: a stale allowance would let the twin come back.
-    repo = _schema_repo(
-        tmp_path, baseline='{"apps/web/src/features/todo/types.ts": ["TodoResponse"]}'
-    )
-    _add_text(repo, "apps/web/src/features/todo/types.ts", "export interface TodoRowProps {}\n")
-
-    process = _run(repo, "api-schema-types")
-
-    assert process.returncode == 1
-    assert "no longer exist" in process.stdout
-    assert "apps/web/src/features/todo/types.ts: TodoResponse" in process.stdout
 
 
 def _add_text(repo: Path, rel: str, content: str) -> None:

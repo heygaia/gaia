@@ -1733,7 +1733,9 @@
           "description",
           "target",
           "group_label",
-          "icon"
+          "icon",
+          "connected",
+          "body"
         ],
         "title": "BuiltinSkillInfo",
         "type": "object"
@@ -1754,6 +1756,10 @@
             "type": "integer"
           }
         },
+        "required": [
+          "skills",
+          "total"
+        ],
         "title": "BuiltinSkillsResponse",
         "type": "object"
       },
@@ -2342,6 +2348,12 @@
             "type": "boolean"
           }
         },
+        "required": [
+          "telegram",
+          "discord",
+          "whatsapp",
+          "slack"
+        ],
         "title": "ChannelPreferences",
         "type": "object"
       },
@@ -2524,7 +2536,7 @@
           "tools": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/app__schemas__integrations__responses__IntegrationTool"
+              "$ref": "#/components/schemas/IntegrationTool"
             },
             "title": "Tools",
             "type": "array"
@@ -2816,7 +2828,7 @@
             "type": "string"
           },
           "message": {
-            "$ref": "#/components/schemas/MessageModel"
+            "$ref": "#/components/schemas/MessageModel-Output"
           }
         },
         "required": [
@@ -3108,7 +3120,7 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/MessageModel"
+              "$ref": "#/components/schemas/MessageModel-Output"
             },
             "title": "Messages",
             "type": "array"
@@ -3746,7 +3758,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/WorkflowStep"
+                  "$ref": "#/components/schemas/WorkflowStep-Input"
                 },
                 "maxItems": 10,
                 "type": "array"
@@ -4330,7 +4342,9 @@
         },
         "required": [
           "repo",
-          "branch"
+          "branch",
+          "skills",
+          "count"
         ],
         "title": "DiscoverSkillsResponse",
         "type": "object"
@@ -5074,7 +5088,8 @@
         "required": [
           "title",
           "description",
-          "upgrade"
+          "upgrade",
+          "periods"
         ],
         "title": "FeatureUsageSummary",
         "type": "object"
@@ -5786,7 +5801,48 @@
         "title": "GmailThreadResponse",
         "type": "object"
       },
-      "GoogleCalendarEventDateTime": {
+      "GoogleCalendarEventDateTime-Input": {
+        "additionalProperties": true,
+        "description": "The ``start``/``end`` object of a Google Calendar ``events`` resource.\n\nAn event carries either ``date`` (all-day) or ``dateTime`` + ``timeZone``; both\nare declared optional so a single type covers both.",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "dateTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Datetime"
+          },
+          "timeZone": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Timezone"
+          }
+        },
+        "title": "GoogleCalendarEventDateTime",
+        "type": "object"
+      },
+      "GoogleCalendarEventDateTime-Output": {
         "additionalProperties": true,
         "type": "object"
       },
@@ -5977,7 +6033,8 @@
           }
         },
         "required": [
-          "title"
+          "title",
+          "periods"
         ],
         "title": "HistoryFeatureUsage",
         "type": "object"
@@ -6553,7 +6610,7 @@
           },
           "tools": {
             "items": {
-              "$ref": "#/components/schemas/app__models__integration_models__IntegrationTool"
+              "$ref": "#/components/schemas/StoredIntegrationTool"
             },
             "title": "Tools",
             "type": "array"
@@ -6596,6 +6653,35 @@
         "title": "IntegrationSuccessResponse",
         "type": "object"
       },
+      "IntegrationTool": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "destructive": {
+            "default": false,
+            "title": "Destructive",
+            "type": "boolean"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "IntegrationTool",
+        "type": "object"
+      },
       "IntegrationToolsResponse": {
         "description": "Full tool list for a single integration (catalog data, on demand).",
         "properties": {
@@ -6611,14 +6697,16 @@
           "tools": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/app__schemas__integrations__responses__IntegrationTool"
+              "$ref": "#/components/schemas/IntegrationTool"
             },
             "title": "Tools",
             "type": "array"
           }
         },
         "required": [
-          "integrationId"
+          "integrationId",
+          "tools",
+          "count"
         ],
         "title": "IntegrationToolsResponse",
         "type": "object"
@@ -8166,7 +8254,7 @@
         "title": "MessageFeedbackResponse",
         "type": "object"
       },
-      "MessageModel": {
+      "MessageModel-Input": {
         "description": "A single chat message with its content, attachments and tool data.",
         "properties": {
           "date": {
@@ -8352,7 +8440,248 @@
           "selectedWorkflow": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SelectedWorkflowData"
+                "$ref": "#/components/schemas/SelectedWorkflowData-Input"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "subtype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Subtype"
+          },
+          "toolCategory": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Toolcategory"
+          },
+          "tool_data": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ToolDataEntry"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tool Data"
+          },
+          "type": {
+            "title": "Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "type",
+          "response"
+        ],
+        "title": "MessageModel",
+        "type": "object"
+      },
+      "MessageModel-Output": {
+        "description": "A single chat message with its content, attachments and tool data.",
+        "properties": {
+          "date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "disclaimer": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Disclaimer"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          },
+          "file": {
+            "anyOf": [
+              {
+                "contentMediaType": "application/octet-stream",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "File"
+          },
+          "fileData": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FileData"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "title": "Filedata"
+          },
+          "fileIds": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": [],
+            "title": "Fileids"
+          },
+          "filename": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filename"
+          },
+          "filetype": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Filetype"
+          },
+          "follow_up_actions": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Follow Up Actions"
+          },
+          "image_data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ImageData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "message_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message Id"
+          },
+          "metadata": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Metadata"
+          },
+          "pinned": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pinned"
+          },
+          "replyToMessage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ReplyToMessageData"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "response": {
+            "title": "Response",
+            "type": "string"
+          },
+          "selectedTool": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Selectedtool"
+          },
+          "selectedWorkflow": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SelectedWorkflowData-Output"
               },
               {
                 "type": "null"
@@ -8540,7 +8869,7 @@
           "selectedWorkflow": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SelectedWorkflowData"
+                "$ref": "#/components/schemas/SelectedWorkflowData-Input"
               },
               {
                 "type": "null"
@@ -8596,7 +8925,7 @@
             "type": "string"
           },
           "message": {
-            "$ref": "#/components/schemas/MessageModel"
+            "$ref": "#/components/schemas/MessageModel-Output"
           },
           "snippet": {
             "title": "Snippet",
@@ -8947,7 +9276,6 @@
         "description": "The full integration catalog personalized for one user (platform + their\nown custom integrations), each carrying connection status. Replaces the\nclient-side merge of /config + /status + /users/me/integrations.",
         "properties": {
           "integrations": {
-            "default": [],
             "items": {
               "$ref": "#/components/schemas/MyIntegrationItem"
             },
@@ -8960,6 +9288,10 @@
             "type": "integer"
           }
         },
+        "required": [
+          "integrations",
+          "total"
+        ],
         "title": "MyIntegrationsResponse",
         "type": "object"
       },
@@ -10549,7 +10881,7 @@
           },
           "steps": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep"
+              "$ref": "#/components/schemas/WorkflowStep-Output"
             },
             "title": "Steps",
             "type": "array"
@@ -10774,9 +11106,12 @@
           "id",
           "dodo_product_id",
           "name",
+          "description",
           "amount",
           "currency",
           "duration",
+          "max_users",
+          "features",
           "is_active",
           "created_at",
           "updated_at"
@@ -11289,7 +11624,7 @@
           "tools": {
             "default": [],
             "items": {
-              "$ref": "#/components/schemas/app__schemas__integrations__responses__IntegrationTool"
+              "$ref": "#/components/schemas/IntegrationTool"
             },
             "title": "Tools",
             "type": "array"
@@ -11958,6 +12293,10 @@
             "type": "string"
           },
           "role": {
+            "enum": [
+              "user",
+              "assistant"
+            ],
             "title": "Role",
             "type": "string"
           }
@@ -12300,18 +12639,7 @@
             "type": "string"
           },
           "end": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "title": "End",
-            "type": "object"
+            "$ref": "#/components/schemas/GoogleCalendarEventDateTime-Input"
           },
           "id": {
             "title": "Id",
@@ -12330,18 +12658,7 @@
             "title": "Isallday"
           },
           "start": {
-            "additionalProperties": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ]
-            },
-            "title": "Start",
-            "type": "object"
+            "$ref": "#/components/schemas/GoogleCalendarEventDateTime-Input"
           },
           "summary": {
             "title": "Summary",
@@ -12358,7 +12675,7 @@
         "title": "SelectedCalendarEventData",
         "type": "object"
       },
-      "SelectedWorkflowData": {
+      "SelectedWorkflowData-Input": {
         "description": "Workflow the user attached to a message for execution.",
         "properties": {
           "description": {
@@ -12382,8 +12699,50 @@
           },
           "steps": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/WorkflowStep-Input"
+            },
+            "title": "Steps",
+            "type": "array"
+          },
+          "title": {
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "description",
+          "steps"
+        ],
+        "title": "SelectedWorkflowData",
+        "type": "object"
+      },
+      "SelectedWorkflowData-Output": {
+        "description": "Workflow the user attached to a message for execution.",
+        "properties": {
+          "description": {
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "prompt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prompt"
+          },
+          "steps": {
+            "items": {
+              "$ref": "#/components/schemas/WorkflowStep-Output"
             },
             "title": "Steps",
             "type": "array"
@@ -12775,11 +13134,23 @@
           }
         },
         "required": [
+          "id",
           "user_id",
           "name",
           "description",
+          "target",
+          "license",
+          "compatibility",
+          "metadata",
+          "allowed_tools",
+          "body_content",
           "vfs_path",
-          "source"
+          "enabled",
+          "source",
+          "source_url",
+          "installed_at",
+          "updated_at",
+          "files"
         ],
         "title": "Skill",
         "type": "object"
@@ -12835,6 +13206,10 @@
             "type": "integer"
           }
         },
+        "required": [
+          "skills",
+          "total"
+        ],
         "title": "SkillListResponse",
         "type": "object"
       },
@@ -12877,7 +13252,8 @@
         "required": [
           "value",
           "label",
-          "icon"
+          "icon",
+          "connected"
         ],
         "title": "SkillTarget",
         "type": "object"
@@ -12893,6 +13269,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "targets"
+        ],
         "title": "SkillTargetsResponse",
         "type": "object"
       },
@@ -13254,7 +13633,32 @@
         "title": "StaticReminderPayload",
         "type": "object"
       },
-      "SubTask": {
+      "StoredIntegrationTool": {
+        "description": "Tool metadata for frontend display (not used by LLM).",
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "name"
+        ],
+        "title": "StoredIntegrationTool",
+        "type": "object"
+      },
+      "SubTask-Input": {
         "properties": {
           "completed": {
             "default": false,
@@ -13281,6 +13685,40 @@
         },
         "required": [
           "title"
+        ],
+        "title": "SubTask",
+        "type": "object"
+      },
+      "SubTask-Output": {
+        "properties": {
+          "completed": {
+            "default": false,
+            "description": "Whether the subtask is completed",
+            "title": "Completed",
+            "type": "boolean"
+          },
+          "created_at": {
+            "format": "date-time",
+            "title": "Created At",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "description": "Unique identifier for the subtask",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "Title of the subtask",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "completed",
+          "created_at"
         ],
         "title": "SubTask",
         "type": "object"
@@ -13328,6 +13766,171 @@
           "value"
         ],
         "title": "SubscriptionCondition",
+        "type": "object"
+      },
+      "SubscriptionDocument": {
+        "additionalProperties": true,
+        "description": "A subscription as stored in the ``subscriptions`` collection.\n\nGlobal (webhook updates key on ``dodo_subscription_id`` with no user in scope);\n``user_id`` is a plain field. ``id`` is the stringified Mongo ``_id`` \u2014 kept so\nthe status endpoint returns the same id it did before the repository.\n``extra=\"allow\"`` preserves the many Dodo billing fields verbatim in responses.",
+        "properties": {
+          "cancel_at_next_billing_date": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancel At Next Billing Date"
+          },
+          "cancelled_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cancelled At"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "currency": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Currency"
+          },
+          "dodo_subscription_id": {
+            "title": "Dodo Subscription Id",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "last_event_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Event At"
+          },
+          "next_billing_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Next Billing Date"
+          },
+          "payment_frequency_interval": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payment Frequency Interval"
+          },
+          "previous_billing_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Previous Billing Date"
+          },
+          "product_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Product Id"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "recurring_pre_tax_amount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurring Pre Tax Amount"
+          },
+          "status": {
+            "default": "pending",
+            "title": "Status",
+            "type": "string"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "dodo_subscription_id",
+          "user_id"
+        ],
+        "title": "SubscriptionDocument",
         "type": "object"
       },
       "SubscriptionResolution": {
@@ -13859,6 +14462,13 @@
             "type": "integer"
           }
         },
+        "required": [
+          "inbox",
+          "today",
+          "upcoming",
+          "completed",
+          "overdue"
+        ],
         "title": "TodoCounts",
         "type": "object"
       },
@@ -13906,7 +14516,8 @@
         },
         "required": [
           "data",
-          "meta"
+          "meta",
+          "stats"
         ],
         "title": "TodoListResponse",
         "type": "object"
@@ -14044,7 +14655,7 @@
           "subtasks": {
             "description": "List of subtasks",
             "items": {
-              "$ref": "#/components/schemas/SubTask"
+              "$ref": "#/components/schemas/SubTask-Input"
             },
             "maxItems": 50,
             "title": "Subtasks",
@@ -14245,7 +14856,7 @@
           "subtasks": {
             "description": "List of subtasks",
             "items": {
-              "$ref": "#/components/schemas/SubTask"
+              "$ref": "#/components/schemas/SubTask-Output"
             },
             "maxItems": 50,
             "title": "Subtasks",
@@ -14312,10 +14923,28 @@
         },
         "required": [
           "title",
+          "description",
+          "labels",
+          "due_date",
+          "due_date_timezone",
+          "priority",
+          "project_id",
+          "completed",
+          "subtasks",
+          "workflow_id",
+          "vfs_path",
+          "scheduled_at",
+          "recurrence",
+          "gaia_retry_count",
+          "expires_at",
+          "references",
           "id",
           "user_id",
           "created_at",
-          "updated_at"
+          "updated_at",
+          "completed_at",
+          "workflow_categories",
+          "trigger_subscriptions"
         ],
         "title": "TodoResponse",
         "type": "object"
@@ -14502,7 +15131,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/SubTask"
+                  "$ref": "#/components/schemas/SubTask-Input"
                 },
                 "type": "array"
               },
@@ -14665,28 +15294,6 @@
         "description": "Unified structure for tool execution data.\n\nEvery key an emitter can stamp must be declared here. This TypedDict is the\nelement type of ``MessageModel.tool_data``, and Pydantic drops undeclared\nkeys on ``model_dump()`` \u2014 which is how a message reaches Mongo. An emitted\nkey missing from this shape therefore survives the live SSE frame (the\nfrontend parses those against its own loose schema) and silently vanishes\nfrom the stored turn, so the bug only ever appears on reload.\n\n``data`` is deliberately open: every tool owns the shape it puts here (a\ncalendar option list, an email thread, a rendered artifact), so the only\nhonest constraint is \"JSON the frontend's per-tool card knows how to read\".\nEverything around it is closed.\n\nThe frontend mirror is ``ToolDataEntrySchema`` in\n``libs/shared/ts/src/chat/schema.ts``.",
         "properties": {
           "data": {
-            "anyOf": [
-              {
-                "additionalProperties": true,
-                "type": "object"
-              },
-              {
-                "items": {},
-                "type": "array"
-              },
-              {
-                "type": "string"
-              },
-              {
-                "type": "integer"
-              },
-              {
-                "type": "number"
-              },
-              {
-                "type": "boolean"
-              }
-            ],
             "title": "Data"
           },
           "mcp_server_url": {
@@ -14783,7 +15390,10 @@
         "required": [
           "name",
           "category",
-          "display_name"
+          "display_name",
+          "icon_url",
+          "requires_integration",
+          "locked"
         ],
         "title": "ToolInfo",
         "type": "object"
@@ -15801,7 +16411,7 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/MessageModel"
+              "$ref": "#/components/schemas/MessageModel-Input"
             },
             "title": "Messages",
             "type": "array"
@@ -16111,7 +16721,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/WorkflowStep"
+                  "$ref": "#/components/schemas/WorkflowStep-Input"
                 },
                 "type": "array"
               },
@@ -16195,7 +16805,9 @@
           "days",
           "total",
           "total_tokens",
-          "streak"
+          "streak",
+          "percentile",
+          "tier"
         ],
         "title": "UsageActivityResponse",
         "type": "object"
@@ -16222,6 +16834,7 @@
         },
         "required": [
           "daily",
+          "monthly",
           "per_request_token_ceiling"
         ],
         "title": "UsageBudget",
@@ -16312,15 +16925,13 @@
           "current_plan": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/PlanResponse"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Current plan details",
-            "title": "Current Plan"
+            "description": "Current plan details"
           },
           "days_remaining": {
             "anyOf": [
@@ -16383,15 +16994,13 @@
           "subscription": {
             "anyOf": [
               {
-                "additionalProperties": true,
-                "type": "object"
+                "$ref": "#/components/schemas/SubscriptionDocument"
               },
               {
                 "type": "null"
               }
             ],
-            "description": "Current subscription",
-            "title": "Subscription"
+            "description": "Current subscription"
           },
           "user_id": {
             "description": "User ID",
@@ -16400,7 +17009,17 @@
           }
         },
         "required": [
-          "user_id"
+          "user_id",
+          "current_plan",
+          "subscription",
+          "is_subscribed",
+          "days_remaining",
+          "can_upgrade",
+          "can_downgrade",
+          "has_ever_subscribed",
+          "has_subscription",
+          "plan_type",
+          "status"
         ],
         "title": "UserSubscriptionStatus",
         "type": "object"
@@ -16533,7 +17152,8 @@
           }
         },
         "required": [
-          "voices"
+          "voices",
+          "selected_voice_id"
         ],
         "title": "VoiceListResponse",
         "type": "object"
@@ -16616,7 +17236,11 @@
           "accent",
           "country_code",
           "gender",
-          "description"
+          "description",
+          "preview_url",
+          "source",
+          "languages",
+          "starred"
         ],
         "title": "VoiceOption",
         "type": "object"
@@ -16734,345 +17358,6 @@
           "query"
         ],
         "title": "WebSearchResult",
-        "type": "object"
-      },
-      "Workflow": {
-        "description": "Main workflow model extending BaseScheduledTask for scheduling capabilities.",
-        "properties": {
-          "activated": {
-            "default": true,
-            "description": "Whether the workflow is activated and can be executed",
-            "title": "Activated",
-            "type": "boolean"
-          },
-          "created_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Creation timestamp",
-            "title": "Created At"
-          },
-          "created_by": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "User ID of the original creator (for public workflows)",
-            "title": "Created By"
-          },
-          "creator": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/WorkflowCreator"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Creator info hydrated for public workflow lookups."
-          },
-          "current_step_index": {
-            "default": 0,
-            "description": "Index of currently executing step",
-            "title": "Current Step Index",
-            "type": "integer"
-          },
-          "deactivated_reason": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/DeactivationReason"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Why the workflow is not activated. None means the user turned it off themselves \u2014 only system-paused workflows may be resumed automatically."
-          },
-          "description": {
-            "default": "",
-            "description": "Short display description for cards/UI (1-2 sentences)",
-            "title": "Description",
-            "type": "string"
-          },
-          "error_message": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Error message if workflow failed",
-            "title": "Error Message"
-          },
-          "execution_logs": {
-            "description": "Execution logs",
-            "items": {
-              "type": "string"
-            },
-            "title": "Execution Logs",
-            "type": "array"
-          },
-          "icon": {
-            "anyOf": [
-              {
-                "maxLength": 64,
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "User-chosen icon slug (gaia-icons component name) shown when the workflow has no integration icons.",
-            "title": "Icon"
-          },
-          "icon_color": {
-            "anyOf": [
-              {
-                "pattern": "^#[0-9a-fA-F]{6}$",
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Hex color for the user-chosen icon.",
-            "title": "Icon Color"
-          },
-          "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Unique identifier",
-            "title": "Id"
-          },
-          "integration_ids": {
-            "description": "Integration ids this workflow uses \u2014 picked by the user or identified from intent by the workflow assistant. Scopes the tool palette when generating steps. Connection state is never stored here: required/missing integrations are derived from the steps at read time.",
-            "items": {
-              "type": "string"
-            },
-            "title": "Integration Ids",
-            "type": "array"
-          },
-          "is_public": {
-            "default": false,
-            "description": "Whether this workflow is published to the community marketplace",
-            "title": "Is Public",
-            "type": "boolean"
-          },
-          "is_system_workflow": {
-            "default": false,
-            "description": "Auto-provisioned by GAIA when an integration is connected.",
-            "title": "Is System Workflow",
-            "type": "boolean"
-          },
-          "is_todo_workflow": {
-            "default": false,
-            "description": "Whether this workflow was auto-generated for a todo item",
-            "title": "Is Todo Workflow",
-            "type": "boolean"
-          },
-          "last_executed_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Last Executed At"
-          },
-          "max_occurrences": {
-            "anyOf": [
-              {
-                "type": "integer"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Maximum number of executions (optional)",
-            "title": "Max Occurrences"
-          },
-          "notify_on_completion": {
-            "default": true,
-            "description": "Whether GAIA sends the automatic completion notification when a run finishes. When False the run is silent (failures still notify) and the agent only notifies if the workflow's own instructions ask it to.",
-            "title": "Notify On Completion",
-            "type": "boolean"
-          },
-          "occurrence_count": {
-            "default": 0,
-            "description": "Number of times this task has been executed",
-            "title": "Occurrence Count",
-            "type": "integer"
-          },
-          "prompt": {
-            "default": "",
-            "description": "Detailed execution instructions for AI. Falls back to description if not set.",
-            "title": "Prompt",
-            "type": "string"
-          },
-          "repeat": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Cron expression for recurring tasks",
-            "title": "Repeat"
-          },
-          "scheduled_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Next scheduled execution time; None when the task has no schedule (e.g. a manual/integration workflow). A null value never matches the due-scan.",
-            "title": "Scheduled At"
-          },
-          "slug": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Human-readable URL slug derived from title. Unique among public workflows.",
-            "title": "Slug"
-          },
-          "source_integration": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Which integration provisioned this workflow. e.g. 'gmail', 'googlecalendar'.",
-            "title": "Source Integration"
-          },
-          "source_todo_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "ID of the source todo if is_todo_workflow=True",
-            "title": "Source Todo Id"
-          },
-          "status": {
-            "$ref": "#/components/schemas/ScheduledTaskStatus",
-            "default": "scheduled",
-            "description": "Current status"
-          },
-          "steps": {
-            "description": "List of workflow steps to execute",
-            "items": {
-              "$ref": "#/components/schemas/WorkflowStep"
-            },
-            "maxItems": 10,
-            "title": "Steps",
-            "type": "array"
-          },
-          "stop_after": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Stop executing after this date (optional)",
-            "title": "Stop After"
-          },
-          "successful_executions": {
-            "default": 0,
-            "description": "Number of successful executions",
-            "title": "Successful Executions",
-            "type": "integer"
-          },
-          "system_workflow_key": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Stable identifier linking this document back to its definition in code. Used for reset-to-default and idempotency. e.g. 'gmail:email_intelligence'.",
-            "title": "System Workflow Key"
-          },
-          "title": {
-            "description": "Title of the workflow",
-            "minLength": 1,
-            "title": "Title",
-            "type": "string"
-          },
-          "total_executions": {
-            "default": 0,
-            "description": "Total number of executions",
-            "title": "Total Executions",
-            "type": "integer"
-          },
-          "trigger_config": {
-            "$ref": "#/components/schemas/TriggerConfig",
-            "description": "Trigger configuration"
-          },
-          "updated_at": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Last update timestamp",
-            "title": "Updated At"
-          },
-          "user_id": {
-            "description": "User ID who owns this workflow",
-            "title": "User Id",
-            "type": "string"
-          }
-        },
-        "required": [
-          "user_id",
-          "title",
-          "steps",
-          "trigger_config"
-        ],
-        "title": "Workflow",
         "type": "object"
       },
       "WorkflowCreator": {
@@ -17228,7 +17513,15 @@
           "execution_id",
           "workflow_id",
           "user_id",
-          "started_at"
+          "status",
+          "started_at",
+          "completed_at",
+          "duration_seconds",
+          "conversation_id",
+          "summary",
+          "error_message",
+          "trigger_type",
+          "trace"
         ],
         "title": "WorkflowExecution",
         "type": "object"
@@ -17297,6 +17590,11 @@
             "type": "integer"
           }
         },
+        "required": [
+          "executions",
+          "total",
+          "has_more"
+        ],
         "title": "WorkflowExecutionsResponse",
         "type": "object"
       },
@@ -17305,7 +17603,7 @@
         "properties": {
           "workflows": {
             "items": {
-              "$ref": "#/components/schemas/Workflow"
+              "$ref": "#/components/schemas/WorkflowWithIntegrations"
             },
             "title": "Workflows",
             "type": "array"
@@ -17341,7 +17639,7 @@
             "type": "string"
           },
           "workflow": {
-            "$ref": "#/components/schemas/Workflow"
+            "$ref": "#/components/schemas/WorkflowWithIntegrations"
           }
         },
         "required": [
@@ -17409,7 +17707,7 @@
         "title": "WorkflowStatusResponse",
         "type": "object"
       },
-      "WorkflowStep": {
+      "WorkflowStep-Input": {
         "description": "A single step in a workflow.",
         "properties": {
           "category": {
@@ -17437,6 +17735,41 @@
         },
         "required": [
           "title",
+          "description"
+        ],
+        "title": "WorkflowStep",
+        "type": "object"
+      },
+      "WorkflowStep-Output": {
+        "description": "A single step in a workflow.",
+        "properties": {
+          "category": {
+            "default": "general",
+            "description": "Category for routing (e.g., gmail, notion, todos, reminders)",
+            "title": "Category",
+            "type": "string"
+          },
+          "description": {
+            "description": "Detailed description of what this step accomplishes",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "description": "Unique identifier for the step",
+            "title": "Id",
+            "type": "string"
+          },
+          "title": {
+            "description": "Clear, actionable title for the step",
+            "title": "Title",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "category",
           "description"
         ],
         "title": "WorkflowStep",
@@ -17603,16 +17936,9 @@
             "title": "Icon Color"
           },
           "id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
             "description": "Unique identifier",
-            "title": "Id"
+            "title": "Id",
+            "type": "string"
           },
           "integration_ids": {
             "description": "Integration ids this workflow uses \u2014 picked by the user or identified from intent by the workflow assistant. Scopes the tool palette when generating steps. Connection state is never stored here: required/missing integrations are derived from the steps at read time.",
@@ -17779,7 +18105,7 @@
           "steps": {
             "description": "List of workflow steps to execute",
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep"
+              "$ref": "#/components/schemas/WorkflowStep-Output"
             },
             "maxItems": 10,
             "title": "Steps",
@@ -17850,10 +18176,44 @@
           }
         },
         "required": [
+          "id",
           "user_id",
+          "repeat",
+          "scheduled_at",
+          "status",
+          "occurrence_count",
+          "max_occurrences",
+          "stop_after",
+          "created_at",
+          "updated_at",
           "title",
+          "description",
+          "prompt",
+          "icon",
+          "icon_color",
           "steps",
-          "trigger_config"
+          "trigger_config",
+          "activated",
+          "deactivated_reason",
+          "notify_on_completion",
+          "last_executed_at",
+          "is_public",
+          "slug",
+          "created_by",
+          "current_step_index",
+          "execution_logs",
+          "error_message",
+          "total_executions",
+          "successful_executions",
+          "is_todo_workflow",
+          "source_todo_id",
+          "is_system_workflow",
+          "source_integration",
+          "system_workflow_key",
+          "integration_ids",
+          "creator",
+          "required_integrations",
+          "missing_integrations"
         ],
         "title": "WorkflowWithIntegrations",
         "type": "object"
@@ -17978,31 +18338,6 @@
         "title": "DeviceTokenResponse",
         "type": "object"
       },
-      "app__models__integration_models__IntegrationTool": {
-        "description": "Tool metadata for frontend display (not used by LLM).",
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "IntegrationTool",
-        "type": "object"
-      },
       "app__models__payment_models__SubscriptionStatus": {
         "description": "Subscription status with clear definitions.",
         "enum": [
@@ -18066,35 +18401,6 @@
           "refresh_token"
         ],
         "title": "DeviceTokenResponse",
-        "type": "object"
-      },
-      "app__schemas__integrations__responses__IntegrationTool": {
-        "properties": {
-          "description": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Description"
-          },
-          "destructive": {
-            "default": false,
-            "title": "Destructive",
-            "type": "boolean"
-          },
-          "name": {
-            "title": "Name",
-            "type": "string"
-          }
-        },
-        "required": [
-          "name"
-        ],
-        "title": "IntegrationTool",
         "type": "object"
       }
     }

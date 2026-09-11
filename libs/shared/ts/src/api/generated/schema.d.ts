@@ -5344,7 +5344,7 @@ export interface components {
              * Message
              * @default Integration added successfully
              */
-            message: string;
+            message?: string;
             /** Name */
             name: string;
             /** Redirecturl */
@@ -5384,7 +5384,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /**
          * AgentType
@@ -5409,13 +5409,13 @@ export interface components {
              * Is Internal
              * @default false
              */
-            is_internal: boolean | null;
+            is_internal?: boolean | null;
             /**
              * Method
              * @default POST
              * @enum {string}
              */
-            method: "GET" | "POST" | "PUT" | "DELETE";
+            method?: "GET" | "POST" | "PUT" | "DELETE";
             /** Payload */
             payload?: {
                 [key: string]: unknown;
@@ -5458,16 +5458,6 @@ export interface components {
             success: boolean;
         };
         /**
-         * IntegrationTool
-         * @description Tool metadata for frontend display (not used by LLM).
-         */
-        app__models__integration_models__IntegrationTool: {
-            /** Description */
-            description?: string | null;
-            /** Name */
-            name: string;
-        };
-        /**
          * SubscriptionStatus
          * @description Subscription status with clear definitions.
          * @enum {string}
@@ -5501,19 +5491,7 @@ export interface components {
              * Token Type
              * @default Bearer
              */
-            token_type: string;
-        };
-        /** IntegrationTool */
-        app__schemas__integrations__responses__IntegrationTool: {
-            /** Description */
-            description?: string | null;
-            /**
-             * Destructive
-             * @default false
-             */
-            destructive: boolean;
-            /** Name */
-            name: string;
+            token_type?: string;
         };
         /**
          * ApplyLabelRequest
@@ -5542,7 +5520,7 @@ export interface components {
              * @default once
              * @enum {string}
              */
-            scope: "once" | "always_tool";
+            scope?: "once" | "always_tool";
         };
         /**
          * ApprovalDecisionResponse
@@ -5579,7 +5557,7 @@ export interface components {
              * Inode
              * @default 0
              */
-            inode: number;
+            inode?: number;
             /** Mtime */
             mtime: number;
             /** Path */
@@ -5597,7 +5575,7 @@ export interface components {
              * @description Asana GID of the project to monitor
              * @default
              */
-            project_gid: string;
+            project_gid?: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -5608,7 +5586,7 @@ export interface components {
              * @description Legacy field; ignored by the current Composio trigger config
              * @default
              */
-            workspace_id: string;
+            workspace_id?: string;
         };
         /**
          * AuthenticatedUserResponse
@@ -5932,7 +5910,7 @@ export interface components {
              * Attachments
              * @default []
              */
-            attachments: string[];
+            attachments?: string[];
             /** Description */
             description: string;
             /** Title */
@@ -6024,7 +6002,7 @@ export interface components {
              * @description Whether this conversation is a direct message. Discord and Slack DM channel ids differ from the user id, so the server cannot tell a DM from a channel without this.
              * @default false
              */
-            is_dm: boolean;
+            is_dm?: boolean;
             /**
              * Message
              * @description User's message text
@@ -6137,7 +6115,7 @@ export interface components {
          */
         BuiltinSkillsResponse: {
             /** Skills */
-            skills?: components["schemas"]["BuiltinSkillInfo"][];
+            skills: components["schemas"]["BuiltinSkillInfo"][];
             /**
              * Total
              * @default 0
@@ -6243,7 +6221,7 @@ export interface components {
              *       "primary"
              *     ]
              */
-            calendar_ids: string[];
+            calendar_ids?: string[];
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -6275,7 +6253,7 @@ export interface components {
              * @description Fetch ALL events in range (true) or limit per calendar (false)
              * @default true
              */
-            fetch_all: boolean;
+            fetch_all?: boolean;
             /**
              * Max Results
              * @description Max events per calendar (only used if fetch_all=false)
@@ -6319,19 +6297,19 @@ export interface components {
              *       "primary"
              *     ]
              */
-            calendar_ids: string[];
+            calendar_ids?: string[];
             /**
              * Include All Day
              * @description Whether to include all-day events
              * @default false
              */
-            include_all_day: boolean;
+            include_all_day?: boolean;
             /**
              * Minutes Before Start
              * @description Minutes before event start to trigger
              * @default 10
              */
-            minutes_before_start: number;
+            minutes_before_start?: number;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -6405,12 +6383,12 @@ export interface components {
              * Enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             /**
              * Priority
              * @default 1
              */
-            priority: number;
+            priority?: number;
             /** Template */
             template?: string | null;
         };
@@ -6429,12 +6407,12 @@ export interface components {
              * Retry Count
              * @default 0
              */
-            retry_count: number;
+            retry_count?: number;
             /**
              * Skipped
              * @default false
              */
-            skipped: boolean;
+            skipped?: boolean;
             status: components["schemas"]["NotificationStatus"];
         };
         /**
@@ -6518,7 +6496,7 @@ export interface components {
              * Clonecount
              * @default 0
              */
-            cloneCount: number;
+            cloneCount?: number;
             creator?: components["schemas"]["CommunityIntegrationCreator"] | null;
             /** Description */
             description: string;
@@ -6536,12 +6514,12 @@ export interface components {
              * Toolcount
              * @default 0
              */
-            toolCount: number;
+            toolCount?: number;
             /**
              * Tools
              * @default []
              */
-            tools: components["schemas"]["app__schemas__integrations__responses__IntegrationTool"][];
+            tools?: components["schemas"]["IntegrationTool"][];
         };
         /**
          * CommunityListResponse
@@ -6552,17 +6530,17 @@ export interface components {
              * Has More
              * @default false
              */
-            has_more: boolean;
+            has_more?: boolean;
             /**
              * Integrations
              * @default []
              */
-            integrations: components["schemas"]["CommunityIntegrationItem"][];
+            integrations?: components["schemas"]["CommunityIntegrationItem"][];
             /**
              * Total
              * @default 0
              */
-            total: number;
+            total?: number;
         };
         /**
          * ComposedEmailOutput
@@ -6592,7 +6570,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /**
          * ConditionMatch
@@ -6623,7 +6601,7 @@ export interface components {
              * @description Frontend path to redirect after OAuth completes
              * @default /integrations
              */
-            redirect_path: string;
+            redirect_path?: string;
         };
         /** ConnectIntegrationResponse */
         ConnectIntegrationResponse: {
@@ -6691,7 +6669,7 @@ export interface components {
         ConversationMessageHit: {
             /** Conversation Id */
             conversation_id: string;
-            message: components["schemas"]["MessageModel"];
+            message: components["schemas"]["MessageModel-Output"];
         };
         /**
          * ConversationModel
@@ -6704,22 +6682,22 @@ export interface components {
              * Description
              * @default New Chat
              */
-            description: string;
+            description?: string;
             /**
              * Is Onboarding Demo
              * @default false
              */
-            is_onboarding_demo: boolean;
+            is_onboarding_demo?: boolean;
             /**
              * Is System Generated
              * @default false
              */
-            is_system_generated: boolean | null;
+            is_system_generated?: boolean | null;
             /**
              * Is Unread
              * @default false
              */
-            is_unread: boolean | null;
+            is_unread?: boolean | null;
             source?: components["schemas"]["ConversationSource"] | null;
             system_purpose?: components["schemas"]["SystemPurpose"] | null;
         };
@@ -6792,7 +6770,7 @@ export interface components {
             /** Is Unread */
             is_unread?: boolean | null;
             /** Messages */
-            messages?: components["schemas"]["MessageModel"][];
+            messages?: components["schemas"]["MessageModel-Output"][];
             /** Starred */
             starred?: boolean | null;
             system_purpose?: components["schemas"]["SystemPurpose"] | null;
@@ -6812,7 +6790,7 @@ export interface components {
              * @description Billing cycle of the Pro plan to check out
              * @default monthly
              */
-            billing_cycle: components["schemas"]["PlanDuration"];
+            billing_cycle?: components["schemas"]["PlanDuration"];
             /** @description Where in the product this checkout was started */
             source: components["schemas"]["CheckoutSource"];
         };
@@ -6843,21 +6821,21 @@ export interface components {
              * Category
              * @default custom
              */
-            category: string;
+            category?: string;
             /** Description */
             description?: string | null;
             /**
              * Is Public
              * @default false
              */
-            is_public: boolean;
+            is_public?: boolean;
             /** Name */
             name: string;
             /**
              * Requires Auth
              * @default false
              */
-            requires_auth: boolean;
+            requires_auth?: boolean;
             /**
              * Server Url
              * @description MCP server URL
@@ -6878,7 +6856,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /**
          * CreateLinkTokenRequest
@@ -7010,7 +6988,7 @@ export interface components {
              * @description Quantity of subscriptions
              * @default 1
              */
-            quantity: number;
+            quantity?: number;
             /** @description Where in the product this checkout was started */
             source?: components["schemas"]["CheckoutSource"] | null;
         };
@@ -7067,7 +7045,7 @@ export interface components {
              * @description Generate steps immediately vs background
              * @default false
              */
-            generate_immediately: boolean;
+            generate_immediately?: boolean;
             /**
              * Icon
              * @description User-chosen icon slug (gaia-icons component name)
@@ -7088,13 +7066,13 @@ export interface components {
              * @description Auto-provisioned by GAIA when an integration is connected.
              * @default false
              */
-            is_system_workflow: boolean;
+            is_system_workflow?: boolean;
             /**
              * Notify On Completion
              * @description Whether GAIA sends the automatic completion notification when a run finishes.
              * @default true
              */
-            notify_on_completion: boolean;
+            notify_on_completion?: boolean;
             /**
              * Prompt
              * @description Detailed execution instructions for the AI
@@ -7109,7 +7087,7 @@ export interface components {
              * Steps
              * @description Optional pre-existing steps (e.g., from explore/community workflows). If provided, step generation will be skipped.
              */
-            steps?: components["schemas"]["WorkflowStep"][] | null;
+            steps?: components["schemas"]["WorkflowStep-Input"][] | null;
             /**
              * System Workflow Key
              * @description Stable key linking to the original definition in code.
@@ -7185,7 +7163,7 @@ export interface components {
              * @default degraded
              * @constant
              */
-            status: "degraded";
+            status?: "degraded";
         };
         /**
          * DeleteAllConversationsResponse
@@ -7437,7 +7415,7 @@ export interface components {
              */
             repo: string;
             /** Skills */
-            skills?: components["schemas"]["DiscoveredSkillInfo"][];
+            skills: components["schemas"]["DiscoveredSkillInfo"][];
         };
         /**
          * DodoWebhookAckResponse
@@ -7455,7 +7433,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /**
          * DraftMutationResponse
@@ -7607,19 +7585,19 @@ export interface components {
              * If True, create a Google Meet video conference link for this event
              * @default false
              */
-            create_meeting_room: boolean;
+            create_meeting_room?: boolean;
             /**
              * Event Description
              * @default
              */
-            description: string;
+            description?: string;
             /** End time in ISO format or date for all-day events */
             end: string;
             /**
              * Is All Day Event
              * @default false
              */
-            is_all_day: boolean;
+            is_all_day?: boolean;
             /** Recurrence rules for creating a recurring event */
             recurrence?: components["schemas"]["RecurrenceData"] | null;
             /** Start time in ISO format or date for all-day events */
@@ -7638,7 +7616,7 @@ export interface components {
              * Calendar ID containing the event
              * @default primary
              */
-            calendar_id: string;
+            calendar_id?: string;
             /** Event ID to delete */
             event_id: string;
             /** Event summary for confirmation */
@@ -7663,7 +7641,7 @@ export interface components {
              * Calendar ID containing the event
              * @default primary
              */
-            calendar_id: string;
+            calendar_id?: string;
             /** Updated event description */
             description?: string | null;
             /** Updated end time in ISO 8601 format */
@@ -7716,7 +7694,7 @@ export interface components {
             /** Description */
             description: string;
             /** Periods */
-            periods?: {
+            periods: {
                 [key: string]: components["schemas"]["FeaturePeriodUsage"];
             };
             /** Title */
@@ -7738,14 +7716,14 @@ export interface components {
              * Message
              * @default File uploaded successfully
              */
-            message: string | null;
+            message?: string | null;
             /** Sandbox Path */
             sandbox_path?: string | null;
             /**
              * Type
              * @default file
              */
-            type: string | null;
+            type?: string | null;
             /** Url */
             url: string;
         };
@@ -7796,7 +7774,7 @@ export interface components {
              * Id
              * @default
              */
-            id: string;
+            id?: string;
             /** Page Wise Summary */
             page_wise_summary?: {
                 [key: string]: unknown;
@@ -7864,7 +7842,7 @@ export interface components {
              * Collapsed
              * @default false
              */
-            collapsed: boolean;
+            collapsed?: boolean;
             /** Collapsed At */
             collapsed_at?: string | null;
         };
@@ -8077,7 +8055,7 @@ export interface components {
              * @description How often Composio polls Gmail, in minutes (up to 30 days).
              * @default 15
              */
-            interval: number;
+            interval?: number;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -8101,7 +8079,24 @@ export interface components {
             /** Thread Id */
             thread_id: string;
         };
-        GoogleCalendarEventDateTime: {
+        /**
+         * GoogleCalendarEventDateTime
+         * @description The ``start``/``end`` object of a Google Calendar ``events`` resource.
+         *
+         *     An event carries either ``date`` (all-day) or ``dateTime`` + ``timeZone``; both
+         *     are declared optional so a single type covers both.
+         */
+        "GoogleCalendarEventDateTime-Input": {
+            /** Date */
+            date?: string | null;
+            /** Datetime */
+            dateTime?: string | null;
+            /** Timezone */
+            timeZone?: string | null;
+        } & {
+            [key: string]: unknown;
+        };
+        "GoogleCalendarEventDateTime-Output": {
             [key: string]: unknown;
         };
         GoogleCalendarEventResource: {
@@ -8206,7 +8201,7 @@ export interface components {
              * @default online
              * @constant
              */
-            status: "online";
+            status?: "online";
             /** Version */
             version: string;
         };
@@ -8220,7 +8215,7 @@ export interface components {
              * @default always_allow
              * @enum {string}
              */
-            mode: "always_allow" | "always_ask" | "auto";
+            mode?: "always_allow" | "always_ask" | "auto";
             /** Tool Overrides */
             tool_overrides?: {
                 [key: string]: boolean;
@@ -8232,7 +8227,7 @@ export interface components {
          */
         HistoryFeatureUsage: {
             /** Periods */
-            periods?: {
+            periods: {
                 [key: string]: components["schemas"]["HistoryUsagePeriod"];
             };
             /** Title */
@@ -8357,7 +8352,7 @@ export interface components {
              * Requiresauth
              * @default false
              */
-            requiresAuth: boolean;
+            requiresAuth?: boolean;
             /** Slug */
             slug: string;
             /**
@@ -8365,7 +8360,7 @@ export interface components {
              * @default platform
              * @constant
              */
-            source: "platform";
+            source?: "platform";
         };
         /**
          * IntegrationContent
@@ -8381,17 +8376,17 @@ export interface components {
              * Faqs
              * @default []
              */
-            faqs: components["schemas"]["IntegrationFAQ"][];
+            faqs?: components["schemas"]["IntegrationFAQ"][];
             /**
              * Howitworks
              * @default []
              */
-            howItWorks: components["schemas"]["IntegrationHowItWorksStep"][];
+            howItWorks?: components["schemas"]["IntegrationHowItWorksStep"][];
             /**
              * Usecases
              * @default []
              */
-            useCases: string[];
+            useCases?: string[];
         };
         /**
          * IntegrationFAQ
@@ -8470,7 +8465,7 @@ export interface components {
              * Clonecount
              * @default 0
              */
-            cloneCount: number;
+            cloneCount?: number;
             /** Createdby */
             createdBy?: string | null;
             /** Creator */
@@ -8502,7 +8497,7 @@ export interface components {
              * Requiresauth
              * @default false
              */
-            requiresAuth: boolean;
+            requiresAuth?: boolean;
             /** Slug */
             slug?: string | null;
             /**
@@ -8511,7 +8506,7 @@ export interface components {
              */
             source: "platform" | "custom";
             /** Tools */
-            tools?: components["schemas"]["app__models__integration_models__IntegrationTool"][];
+            tools?: components["schemas"]["StoredIntegrationTool"][];
         };
         /** IntegrationsConfigResponse */
         IntegrationsConfigResponse: {
@@ -8529,7 +8524,19 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
+        };
+        /** IntegrationTool */
+        IntegrationTool: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Destructive
+             * @default false
+             */
+            destructive?: boolean;
+            /** Name */
+            name: string;
         };
         /**
          * IntegrationToolsResponse
@@ -8547,7 +8554,7 @@ export interface components {
              * Tools
              * @default []
              */
-            tools: components["schemas"]["app__schemas__integrations__responses__IntegrationTool"][];
+            tools: components["schemas"]["IntegrationTool"][];
         };
         /**
          * LabelRequest
@@ -8561,13 +8568,13 @@ export interface components {
              * @description Whether the label appears in the label list: 'labelShow', 'labelHide', 'labelShowIfUnread'
              * @default labelShow
              */
-            label_list_visibility: string | null;
+            label_list_visibility?: string | null;
             /**
              * Message List Visibility
              * @description Whether the label appears in the message list: 'show', 'hide'
              * @default show
              */
-            message_list_visibility: string | null;
+            message_list_visibility?: string | null;
             /** Name */
             name: string;
             /** Text Color */
@@ -8583,7 +8590,7 @@ export interface components {
              * @description Linear team ID to monitor (optional)
              * @default
              */
-            team_id: string;
+            team_id?: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -8600,7 +8607,7 @@ export interface components {
              * @description Linear team ID to monitor (optional)
              * @default
              */
-            team_id: string;
+            team_id?: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -8617,7 +8624,7 @@ export interface components {
              * @description Linear team ID to monitor (optional)
              * @default
              */
-            team_id: string;
+            team_id?: string;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -8728,7 +8735,7 @@ export interface components {
              * Total
              * @default 0
              */
-            total: number;
+            total?: number;
         };
         /**
          * MCPConfigDetail
@@ -8741,7 +8748,7 @@ export interface components {
              * Requiresauth
              * @default false
              */
-            requiresAuth: boolean;
+            requiresAuth?: boolean;
             /** Serverurl */
             serverUrl?: string | null;
         };
@@ -8861,7 +8868,7 @@ export interface components {
              * Arguments
              * @default {}
              */
-            arguments: {
+            arguments?: {
                 [key: string]: unknown;
             };
             /** Server Url */
@@ -8882,7 +8889,7 @@ export interface components {
              * Is Error
              * @default false
              */
-            is_error: boolean;
+            is_error?: boolean;
         };
         /**
          * MemoryDocType
@@ -9389,7 +9396,7 @@ export interface components {
              * Status
              * @default ok
              */
-            status: string;
+            status?: string;
             /** Trace Id */
             trace_id?: string | null;
         };
@@ -9397,7 +9404,7 @@ export interface components {
          * MessageModel
          * @description A single chat message with its content, attachments and tool data.
          */
-        MessageModel: {
+        "MessageModel-Input": {
             /** Date */
             date?: string | null;
             /** Disclaimer */
@@ -9410,12 +9417,12 @@ export interface components {
              * Filedata
              * @default []
              */
-            fileData: components["schemas"]["FileData"][] | null;
+            fileData?: components["schemas"]["FileData"][] | null;
             /**
              * Fileids
              * @default []
              */
-            fileIds: string[] | null;
+            fileIds?: string[] | null;
             /** Filename */
             filename?: string | null;
             /** Filetype */
@@ -9436,7 +9443,60 @@ export interface components {
             response: string;
             /** Selectedtool */
             selectedTool?: string | null;
-            selectedWorkflow?: components["schemas"]["SelectedWorkflowData"] | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Input"] | null;
+            /** Subtype */
+            subtype?: string | null;
+            /** Tool Data */
+            tool_data?: components["schemas"]["ToolDataEntry"][] | null;
+            /** Toolcategory */
+            toolCategory?: string | null;
+            /** Type */
+            type: string;
+        };
+        /**
+         * MessageModel
+         * @description A single chat message with its content, attachments and tool data.
+         */
+        "MessageModel-Output": {
+            /** Date */
+            date?: string | null;
+            /** Disclaimer */
+            disclaimer?: string | null;
+            /** Error */
+            error?: string | null;
+            /** File */
+            file?: string | null;
+            /**
+             * Filedata
+             * @default []
+             */
+            fileData?: components["schemas"]["FileData"][] | null;
+            /**
+             * Fileids
+             * @default []
+             */
+            fileIds?: string[] | null;
+            /** Filename */
+            filename?: string | null;
+            /** Filetype */
+            filetype?: string | null;
+            /** Follow Up Actions */
+            follow_up_actions?: string[] | null;
+            image_data?: components["schemas"]["ImageData"] | null;
+            /** Message Id */
+            message_id?: string | null;
+            /** Metadata */
+            metadata?: {
+                [key: string]: unknown;
+            } | null;
+            /** Pinned */
+            pinned?: boolean | null;
+            replyToMessage?: components["schemas"]["ReplyToMessageData"] | null;
+            /** Response */
+            response: string;
+            /** Selectedtool */
+            selectedTool?: string | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Output"] | null;
             /** Subtype */
             subtype?: string | null;
             /** Tool Data */
@@ -9469,17 +9529,17 @@ export interface components {
              * Filedata
              * @default []
              */
-            fileData: components["schemas"]["FileData"][] | null;
+            fileData?: components["schemas"]["FileData"][] | null;
             /**
              * Fileids
              * @default []
              */
-            fileIds: string[] | null;
+            fileIds?: string[] | null;
             /**
              * Is Onboarding Demo
              * @default false
              */
-            is_onboarding_demo: boolean;
+            is_onboarding_demo?: boolean;
             /** Message */
             message: string;
             /** Messages */
@@ -9488,7 +9548,7 @@ export interface components {
             selectedCalendarEvent?: components["schemas"]["SelectedCalendarEventData"] | null;
             /** Selectedtool */
             selectedTool?: string | null;
-            selectedWorkflow?: components["schemas"]["SelectedWorkflowData"] | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Input"] | null;
             /** Toolcategory */
             toolCategory?: string | null;
             /** Turn Id */
@@ -9497,12 +9557,12 @@ export interface components {
              * Use Default Models
              * @default true
              */
-            use_default_models: boolean;
+            use_default_models?: boolean;
             /**
              * Voice Mode
              * @default false
              */
-            voice_mode: boolean;
+            voice_mode?: boolean;
         };
         /**
          * MessageSearchResult
@@ -9511,7 +9571,7 @@ export interface components {
         MessageSearchResult: {
             /** Conversation Id */
             conversation_id: string;
-            message: components["schemas"]["MessageModel"];
+            message: components["schemas"]["MessageModel-Output"];
             /** Snippet */
             snippet: string;
         };
@@ -9608,14 +9668,14 @@ export interface components {
              * Available
              * @default true
              */
-            available: boolean;
+            available?: boolean;
             /** Category */
             category: string;
             /**
              * Clonecount
              * @default 0
              */
-            cloneCount: number;
+            cloneCount?: number;
             /** Createdby */
             createdBy?: string | null;
             creator?: components["schemas"]["CommunityIntegrationCreator"] | null;
@@ -9625,7 +9685,7 @@ export interface components {
              * Displaypriority
              * @default 0
              */
-            displayPriority: number;
+            displayPriority?: number;
             /** Expiredat */
             expiredAt?: string | null;
             /** Iconurl */
@@ -9636,7 +9696,7 @@ export interface components {
              * Isfeatured
              * @default false
              */
-            isFeatured: boolean;
+            isFeatured?: boolean;
             /** Ispublic */
             isPublic?: boolean | null;
             /**
@@ -9652,7 +9712,7 @@ export interface components {
              * Requiresauth
              * @default false
              */
-            requiresAuth: boolean;
+            requiresAuth?: boolean;
             /** Slug */
             slug?: string | null;
             /**
@@ -9669,7 +9729,7 @@ export interface components {
              * Toolcount
              * @default 0
              */
-            toolCount: number;
+            toolCount?: number;
         };
         /**
          * MyIntegrationsResponse
@@ -9678,10 +9738,7 @@ export interface components {
          *     client-side merge of /config + /status + /users/me/integrations.
          */
         MyIntegrationsResponse: {
-            /**
-             * Integrations
-             * @default []
-             */
+            /** Integrations */
             integrations: components["schemas"]["MyIntegrationItem"][];
             /**
              * Total
@@ -9702,7 +9759,7 @@ export interface components {
              * Auto Created
              * @default false
              */
-            auto_created: boolean;
+            auto_created?: boolean;
             /** Content */
             content: string;
             /** Description */
@@ -9742,12 +9799,12 @@ export interface components {
              * Disabled
              * @default false
              */
-            disabled: boolean;
+            disabled?: boolean;
             /**
              * Executed
              * @default false
              */
-            executed: boolean;
+            executed?: boolean;
             /** Executed At */
             executed_at?: string | null;
             /** Icon */
@@ -9760,9 +9817,9 @@ export interface components {
              * Requires Confirmation
              * @default false
              */
-            requires_confirmation: boolean;
+            requires_confirmation?: boolean;
             /** @default secondary */
-            style: components["schemas"]["ActionStyle"];
+            style?: components["schemas"]["ActionStyle"];
             type: components["schemas"]["ActionType"];
         };
         /**
@@ -9859,7 +9916,7 @@ export interface components {
             /** Read At */
             read_at?: string | null;
             /** @default pending */
-            status: components["schemas"]["NotificationStatus"];
+            status?: components["schemas"]["NotificationStatus"];
             /**
              * Updated At
              * Format: date-time
@@ -9891,12 +9948,12 @@ export interface components {
              * Priority
              * @default 3
              */
-            priority: number;
+            priority?: number;
             /** Scheduled For */
             scheduled_for?: string | null;
             source: components["schemas"]["NotificationSourceEnum"];
             /** @default info */
-            type: components["schemas"]["NotificationType"];
+            type?: components["schemas"]["NotificationType"];
             /** User Id */
             user_id: string;
         };
@@ -10083,7 +10140,7 @@ export interface components {
              * @default none
              * @constant
              */
-            token_endpoint_auth_method: "none";
+            token_endpoint_auth_method?: "none";
         };
         /**
          * OnboardingNeed
@@ -10309,17 +10366,17 @@ export interface components {
              * Summary
              * @default
              */
-            summary: string;
+            summary?: string;
             /**
              * Total Scanned
              * @default 0
              */
-            total_scanned: number;
+            total_scanned?: number;
             /**
              * Total Unread
              * @default 0
              */
-            total_unread: number;
+            total_unread?: number;
         };
         /**
          * PersonalizationResponse
@@ -10383,7 +10440,7 @@ export interface components {
             /** Id */
             id: string;
             /** Steps */
-            steps: components["schemas"]["WorkflowStep"][];
+            steps: components["schemas"]["WorkflowStep-Output"][];
             /** Title */
             title: string;
         };
@@ -10475,7 +10532,7 @@ export interface components {
              * Description
              * @description Plan description
              */
-            description?: string | null;
+            description: string | null;
             /**
              * Dodo Product Id
              * @description Dodo product ID
@@ -10487,7 +10544,7 @@ export interface components {
              * Features
              * @description Features
              */
-            features?: string[];
+            features: string[];
             /**
              * Id
              * @description Plan ID
@@ -10502,7 +10559,7 @@ export interface components {
              * Max Users
              * @description Maximum users
              */
-            max_users?: number | null;
+            max_users: number | null;
             /**
              * Name
              * @description Plan name
@@ -10648,7 +10705,7 @@ export interface components {
              * @description Whether this is the default Inbox project
              * @default false
              */
-            is_default: boolean;
+            is_default?: boolean;
             /**
              * Name
              * @description Name of the project
@@ -10659,7 +10716,7 @@ export interface components {
              * @description Number of todos in this project
              * @default 0
              */
-            todo_count: number;
+            todo_count?: number;
             /**
              * Updated At
              * Format: date-time
@@ -10691,7 +10748,7 @@ export interface components {
              * Type
              * @default manual
              */
-            type: string | null;
+            type?: string | null;
         };
         /**
          * PublicHoloCardResponse
@@ -10726,13 +10783,13 @@ export interface components {
              * @description Holo card overlay color
              * @default rgba(0,0,0,0)
              */
-            overlay_color: string;
+            overlay_color?: string;
             /**
              * Overlay Opacity
              * @description Holo card overlay opacity (0-100)
              * @default 40
              */
-            overlay_opacity: number;
+            overlay_opacity?: number;
             /**
              * Personality Phrase
              * @description Personality phrase generated during onboarding
@@ -10757,7 +10814,7 @@ export interface components {
              * Clonecount
              * @default 0
              */
-            cloneCount: number;
+            cloneCount?: number;
             content?: components["schemas"]["IntegrationContent"] | null;
             creator?: components["schemas"]["CommunityIntegrationCreator"] | null;
             /** Description */
@@ -10779,12 +10836,12 @@ export interface components {
              * Toolcount
              * @default 0
              */
-            toolCount: number;
+            toolCount?: number;
             /**
              * Tools
              * @default []
              */
-            tools: components["schemas"]["app__schemas__integrations__responses__IntegrationTool"][];
+            tools?: components["schemas"]["IntegrationTool"][];
         };
         /**
          * PublicWorkflowsResponse
@@ -10817,7 +10874,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /**
          * PublishWorkflowResponse
@@ -10858,13 +10915,13 @@ export interface components {
              * Replayed
              * @default false
              */
-            replayed: boolean;
+            replayed?: boolean;
             /**
              * Result Digest
              * @description Bounded result summary
              * @default
              */
-            result_digest: string;
+            result_digest?: string;
             /** Subagent */
             subagent?: string | null;
             /** Subagent Id */
@@ -10873,7 +10930,7 @@ export interface components {
              * Tool Category
              * @default
              */
-            tool_category: string;
+            tool_category?: string;
             /** Tool Name */
             tool_name: string;
         };
@@ -10911,7 +10968,7 @@ export interface components {
              * Interval between occurrences
              * @default 1
              */
-            interval: number | null;
+            interval?: number | null;
             /** End date in ISO format (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS±HH:MM) */
             until?: string | null;
         };
@@ -10981,12 +11038,12 @@ export interface components {
              * Close Notification
              * @default false
              */
-            close_notification: boolean;
+            close_notification?: boolean;
             /**
              * Open In New Tab
              * @default true
              */
-            open_in_new_tab: boolean;
+            open_in_new_tab?: boolean;
             /** Url */
             url: string;
         };
@@ -11000,7 +11057,7 @@ export interface components {
              * @description Force the use of different tools
              * @default false
              */
-            force_different_tools: boolean;
+            force_different_tools?: boolean;
             /**
              * Instruction
              * @description Instruction for how to modify the workflow
@@ -11119,8 +11176,11 @@ export interface components {
             content: string;
             /** Id */
             id: string;
-            /** Role */
-            role: string;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "user" | "assistant";
         };
         /**
          * ResetSessionRequest
@@ -11137,7 +11197,7 @@ export interface components {
              * @description Whether this conversation is a direct message. Discord and Slack DM channel ids differ from the user id, so the server cannot tell a DM from a channel without this.
              * @default false
              */
-            is_dm: boolean;
+            is_dm?: boolean;
             /**
              * Platform
              * @description Platform name (discord, slack, etc.)
@@ -11210,7 +11270,7 @@ export interface components {
              * Clonecount
              * @default 0
              */
-            cloneCount: number;
+            cloneCount?: number;
             /** Description */
             description: string;
             /** Iconurl */
@@ -11227,7 +11287,7 @@ export interface components {
              * Toolcount
              * @default 0
              */
-            toolCount: number;
+            toolCount?: number;
         };
         /**
          * SearchIntegrationsResponse
@@ -11238,7 +11298,7 @@ export interface components {
              * Integrations
              * @default []
              */
-            integrations: components["schemas"]["SearchIntegrationItem"][];
+            integrations?: components["schemas"]["SearchIntegrationItem"][];
             /** Query */
             query: string;
         };
@@ -11256,27 +11316,27 @@ export interface components {
              * Content
              * @default
              */
-            content: string;
+            content?: string;
             /**
              * Favicon
              * @default
              */
-            favicon: string;
+            favicon?: string;
             /**
              * Published Date
              * @default
              */
-            published_date: string;
+            published_date?: string;
             /**
              * Score
              * @default 0.5
              */
-            score: number;
+            score?: number;
             /**
              * Title
              * @default
              */
-            title: string;
+            title?: string;
             /** Url */
             url: string;
         };
@@ -11305,21 +11365,15 @@ export interface components {
             calendarTitle?: string | null;
             /** Description */
             description: string;
-            /** End */
-            end: {
-                [key: string]: string | null;
-            };
+            end: components["schemas"]["GoogleCalendarEventDateTime-Input"];
             /** Id */
             id: string;
             /**
              * Isallday
              * @default false
              */
-            isAllDay: boolean | null;
-            /** Start */
-            start: {
-                [key: string]: string | null;
-            };
+            isAllDay?: boolean | null;
+            start: components["schemas"]["GoogleCalendarEventDateTime-Input"];
             /** Summary */
             summary: string;
         };
@@ -11327,7 +11381,7 @@ export interface components {
          * SelectedWorkflowData
          * @description Workflow the user attached to a message for execution.
          */
-        SelectedWorkflowData: {
+        "SelectedWorkflowData-Input": {
             /** Description */
             description: string;
             /** Id */
@@ -11335,9 +11389,23 @@ export interface components {
             /** Prompt */
             prompt?: string | null;
             /** Steps */
-            steps: {
-                [key: string]: unknown;
-            }[];
+            steps: components["schemas"]["WorkflowStep-Input"][];
+            /** Title */
+            title: string;
+        };
+        /**
+         * SelectedWorkflowData
+         * @description Workflow the user attached to a message for execution.
+         */
+        "SelectedWorkflowData-Output": {
+            /** Description */
+            description: string;
+            /** Id */
+            id: string;
+            /** Prompt */
+            prompt?: string | null;
+            /** Steps */
+            steps: components["schemas"]["WorkflowStep-Output"][];
             /** Title */
             title: string;
         };
@@ -11432,17 +11500,17 @@ export interface components {
              * Allowed Tools
              * @description Pre-approved tools (experimental)
              */
-            allowed_tools?: string[];
+            allowed_tools: string[];
             /**
              * Body Content
              * @description Markdown body from SKILL.md (cached for discovery)
              */
-            body_content?: string | null;
+            body_content: string | null;
             /**
              * Compatibility
              * @description Environment requirements
              */
-            compatibility?: string | null;
+            compatibility: string | null;
             /**
              * Description
              * @description What the skill does and when to use it.
@@ -11458,24 +11526,24 @@ export interface components {
              * Files
              * @description List of files in the skill folder (e.g., SKILL.md, scripts/run.py)
              */
-            files?: string[];
+            files: string[];
             /**
              * Id
              * @default
              */
             id: string;
             /** Installed At */
-            installed_at?: string | null;
+            installed_at: string | null;
             /**
              * License
              * @description License name or reference
              */
-            license?: string | null;
+            license: string | null;
             /**
              * Metadata
              * @description Arbitrary key-value metadata from frontmatter
              */
-            metadata?: {
+            metadata: {
                 [key: string]: string;
             };
             /**
@@ -11489,7 +11557,7 @@ export interface components {
              * Source Url
              * @description Original source for updates (GitHub URL, etc.)
              */
-            source_url?: string | null;
+            source_url: string | null;
             /**
              * Target
              * @description Target agent: 'executor', or a subagent agent_name (gmail_agent, github_agent, etc.)
@@ -11497,7 +11565,7 @@ export interface components {
              */
             target: string;
             /** Updated At */
-            updated_at?: string | null;
+            updated_at: string | null;
             /**
              * User Id
              * @description User who installed this skill, or 'system' for system skills
@@ -11534,7 +11602,7 @@ export interface components {
              * @description Target agent: 'executor' or a subagent agent_name (e.g., gmail_agent)
              * @default executor
              */
-            target: string;
+            target?: string;
         };
         /**
          * SkillListResponse
@@ -11542,7 +11610,7 @@ export interface components {
          */
         SkillListResponse: {
             /** Skills */
-            skills?: components["schemas"]["Skill"][];
+            skills: components["schemas"]["Skill"][];
             /**
              * Total
              * @default 0
@@ -11592,7 +11660,7 @@ export interface components {
          */
         SkillTargetsResponse: {
             /** Targets */
-            targets?: components["schemas"]["SkillTarget"][];
+            targets: components["schemas"]["SkillTarget"][];
         };
         /**
          * SkillToggleResponse
@@ -11656,31 +11724,31 @@ export interface components {
              * @description Exclude bot messages from triggering
              * @default false
              */
-            exclude_bot_messages: boolean;
+            exclude_bot_messages?: boolean;
             /**
              * Exclude Direct Messages
              * @description Exclude direct messages from triggering
              * @default false
              */
-            exclude_direct_messages: boolean;
+            exclude_direct_messages?: boolean;
             /**
              * Exclude Group Messages
              * @description Exclude group messages from triggering
              * @default false
              */
-            exclude_group_messages: boolean;
+            exclude_group_messages?: boolean;
             /**
              * Exclude Mpim Messages
              * @description Exclude multi-party direct messages from triggering
              * @default false
              */
-            exclude_mpim_messages: boolean;
+            exclude_mpim_messages?: boolean;
             /**
              * Exclude Thread Replies
              * @description Exclude thread replies from triggering
              * @default false
              */
-            exclude_thread_replies: boolean;
+            exclude_thread_replies?: boolean;
             /**
              * @description discriminator enum property added by openapi-typescript
              * @enum {string}
@@ -11795,6 +11863,16 @@ export interface components {
             title: string;
         };
         /**
+         * StoredIntegrationTool
+         * @description Tool metadata for frontend display (not used by LLM).
+         */
+        StoredIntegrationTool: {
+            /** Description */
+            description?: string | null;
+            /** Name */
+            name: string;
+        };
+        /**
          * SubscriptionAction
          * @description What firing a subscription does to its todo.
          * @enum {string}
@@ -11815,6 +11893,57 @@ export interface components {
             value: string | number;
         };
         /**
+         * SubscriptionDocument
+         * @description A subscription as stored in the ``subscriptions`` collection.
+         *
+         *     Global (webhook updates key on ``dodo_subscription_id`` with no user in scope);
+         *     ``user_id`` is a plain field. ``id`` is the stringified Mongo ``_id`` — kept so
+         *     the status endpoint returns the same id it did before the repository.
+         *     ``extra="allow"`` preserves the many Dodo billing fields verbatim in responses.
+         */
+        SubscriptionDocument: {
+            /** Cancel At Next Billing Date */
+            cancel_at_next_billing_date?: boolean | null;
+            /** Cancelled At */
+            cancelled_at?: string | null;
+            /** Created At */
+            created_at?: string | null;
+            /** Currency */
+            currency?: string | null;
+            /** Dodo Subscription Id */
+            dodo_subscription_id: string;
+            /**
+             * Id
+             * @default
+             */
+            id?: string;
+            /** Last Event At */
+            last_event_at?: string | null;
+            /** Next Billing Date */
+            next_billing_date?: string | null;
+            /** Payment Frequency Interval */
+            payment_frequency_interval?: string | null;
+            /** Previous Billing Date */
+            previous_billing_date?: string | null;
+            /** Product Id */
+            product_id?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Recurring Pre Tax Amount */
+            recurring_pre_tax_amount?: number | null;
+            /**
+             * Status
+             * @default pending
+             */
+            status?: string;
+            /** Updated At */
+            updated_at?: string | null;
+            /** User Id */
+            user_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * SubscriptionResolution
          * @description How dispatch finds this subscription when its trigger fires.
          *
@@ -11824,7 +11953,32 @@ export interface components {
          */
         SubscriptionResolution: "trigger_id" | "account";
         /** SubTask */
-        SubTask: {
+        "SubTask-Input": {
+            /**
+             * Completed
+             * @description Whether the subtask is completed
+             * @default false
+             */
+            completed?: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at?: string;
+            /**
+             * Id
+             * @description Unique identifier for the subtask
+             * @default
+             */
+            id?: string;
+            /**
+             * Title
+             * @description Title of the subtask
+             */
+            title: string;
+        };
+        /** SubTask */
+        "SubTask-Output": {
             /**
              * Completed
              * @description Whether the subtask is completed
@@ -11835,7 +11989,7 @@ export interface components {
              * Created At
              * Format: date-time
              */
-            created_at?: string;
+            created_at: string;
             /**
              * Id
              * @description Unique identifier for the subtask
@@ -12050,7 +12204,7 @@ export interface components {
              * @description Priority level
              * @default medium
              */
-            priority: components["schemas"]["SupportRequestPriority"];
+            priority?: components["schemas"]["SupportRequestPriority"];
             /**
              * Resolved At
              * @description Resolution timestamp
@@ -12060,7 +12214,7 @@ export interface components {
              * @description Current status
              * @default open
              */
-            status: components["schemas"]["SupportRequestStatus"];
+            status?: components["schemas"]["SupportRequestStatus"];
             /**
              * Tags
              * @description Tags for categorization
@@ -12206,7 +12360,7 @@ export interface components {
             /** Data */
             data: components["schemas"]["TodoResponse"][];
             meta: components["schemas"]["PaginationMeta"];
-            stats?: components["schemas"]["TodoStats"] | null;
+            stats: components["schemas"]["TodoStats"] | null;
         };
         /**
          * TodoModel
@@ -12218,7 +12372,7 @@ export interface components {
              * @description Whether the todo is completed
              * @default false
              */
-            completed: boolean;
+            completed?: boolean;
             /**
              * Created At
              * Format: date-time
@@ -12249,7 +12403,7 @@ export interface components {
              * @description Number of failed execution attempts (managed by system)
              * @default 0
              */
-            gaia_retry_count: number;
+            gaia_retry_count?: number;
             /**
              * Labels
              * @description Labels for categorization
@@ -12259,7 +12413,7 @@ export interface components {
              * @description Priority level
              * @default none
              */
-            priority: components["schemas"]["Priority"];
+            priority?: components["schemas"]["Priority"];
             /**
              * Project Id
              * @description Project ID the todo belongs to
@@ -12284,7 +12438,7 @@ export interface components {
              * Subtasks
              * @description List of subtasks
              */
-            subtasks?: components["schemas"]["SubTask"][];
+            subtasks?: components["schemas"]["SubTask-Input"][];
             /**
              * Title
              * @description Title of the todo item
@@ -12321,7 +12475,7 @@ export interface components {
              * Completed At
              * @description Timestamp when todo was marked complete
              */
-            completed_at?: string | null;
+            completed_at: string | null;
             /**
              * Created At
              * Format: date-time
@@ -12332,22 +12486,22 @@ export interface components {
              * Description
              * @description Description of the todo item
              */
-            description?: string | null;
+            description: string | null;
             /**
              * Due Date
              * @description Due date for the todo item
              */
-            due_date?: string | null;
+            due_date: string | null;
             /**
              * Due Date Timezone
              * @description Timezone for the due date (e.g., 'America/New_York')
              */
-            due_date_timezone?: string | null;
+            due_date_timezone: string | null;
             /**
              * Expires At
              * @description When this todo becomes irrelevant regardless of completion (LLM-set relevance window)
              */
-            expires_at?: string | null;
+            expires_at: string | null;
             /**
              * Gaia Retry Count
              * @description Number of failed execution attempts (managed by system)
@@ -12363,7 +12517,7 @@ export interface components {
              * Labels
              * @description Labels for categorization
              */
-            labels?: string[];
+            labels: string[];
             /**
              * @description Priority level
              * @default none
@@ -12373,27 +12527,27 @@ export interface components {
              * Project Id
              * @description Project ID the todo belongs to
              */
-            project_id?: string | null;
+            project_id: string | null;
             /**
              * Recurrence
              * @description Recurrence pattern: 'daily', 'weekly', 'every_4h', or cron expression '0 9 * * 1'. Always evaluated in the user's current timezone (user.timezone).
              */
-            recurrence?: string | null;
+            recurrence: string | null;
             /**
              * References
              * @description IDs of related past tracked todos (institutional memory references)
              */
-            references?: string[];
+            references: string[];
             /**
              * Scheduled At
              * @description When GAIA should execute this tracked todo
              */
-            scheduled_at?: string | null;
+            scheduled_at: string | null;
             /**
              * Subtasks
              * @description List of subtasks
              */
-            subtasks?: components["schemas"]["SubTask"][];
+            subtasks: components["schemas"]["SubTask-Output"][];
             /**
              * Title
              * @description Title of the todo item
@@ -12403,7 +12557,7 @@ export interface components {
              * Trigger Subscriptions
              * @description Read-only; subscriptions are written by trigger registration, not by clients
              */
-            trigger_subscriptions?: components["schemas"]["TriggerSubscription"][];
+            trigger_subscriptions: components["schemas"]["TriggerSubscription"][];
             /**
              * Updated At
              * Format: date-time
@@ -12419,17 +12573,17 @@ export interface components {
              * Vfs Path
              * @description VFS directory for tracked todos (canvas.md + log.md)
              */
-            vfs_path?: string | null;
+            vfs_path: string | null;
             /**
              * Workflow Categories
              * @description Tool categories from linked workflow steps for icon display
              */
-            workflow_categories?: string[];
+            workflow_categories: string[];
             /**
              * Workflow Id
              * @description ID of the associated workflow
              */
-            workflow_id?: string | null;
+            workflow_id: string | null;
         };
         /** TodoStats */
         TodoStats: {
@@ -12445,29 +12599,29 @@ export interface components {
              * Completed
              * @default 0
              */
-            completed: number;
+            completed?: number;
             /**
              * Completion Rate
              * @default 0
              */
-            completion_rate: number;
+            completion_rate?: number;
             /** Labels */
             labels?: components["schemas"]["TodoLabelCount"][] | null;
             /**
              * Overdue
              * @default 0
              */
-            overdue: number;
+            overdue?: number;
             /**
              * Pending
              * @default 0
              */
-            pending: number;
+            pending?: number;
             /**
              * Total
              * @default 0
              */
-            total: number;
+            total?: number;
         };
         /**
          * TodoUpdateRequest
@@ -12494,7 +12648,7 @@ export interface components {
             /** Scheduled At */
             scheduled_at?: string | null;
             /** Subtasks */
-            subtasks?: components["schemas"]["SubTask"][] | null;
+            subtasks?: components["schemas"]["SubTask-Input"][] | null;
             /** Title */
             title?: string | null;
             /** Vfs Path */
@@ -12563,9 +12717,7 @@ export interface components {
          */
         ToolDataEntry: {
             /** Data */
-            data: {
-                [key: string]: unknown;
-            } | unknown[] | string | number | boolean;
+            data: unknown;
             /** Mcp Server Url */
             mcp_server_url?: string | null;
             /** Mcp Ui */
@@ -12591,7 +12743,7 @@ export interface components {
             /** Display Name */
             display_name: string;
             /** Icon Url */
-            icon_url?: string | null;
+            icon_url: string | null;
             /**
              * Locked
              * @default false
@@ -12668,17 +12820,17 @@ export interface components {
              * Sender
              * @default
              */
-            sender: string;
+            sender?: string;
             /**
              * Subject
              * @default
              */
-            subject: string;
+            subject?: string;
             /**
              * Why Important
              * @default
              */
-            why_important: string;
+            why_important?: string;
         };
         /**
          * TriggerConfig
@@ -12703,7 +12855,7 @@ export interface components {
              * @description Whether the trigger is enabled
              * @default true
              */
-            enabled: boolean;
+            enabled?: boolean;
             /**
              * Next Run
              * @description Next scheduled execution time
@@ -12796,7 +12948,7 @@ export interface components {
              * @description Minimum gap between two fires of this subscription
              * @default 900
              */
-            cooldown_seconds: number;
+            cooldown_seconds?: number;
             /**
              * Created At
              * Format: date-time
@@ -12808,10 +12960,10 @@ export interface components {
              * @description Whether all conditions must hold (AND) or any one (OR)
              * @default all
              */
-            match: components["schemas"]["ConditionMatch"];
+            match?: components["schemas"]["ConditionMatch"];
             resolution: components["schemas"]["SubscriptionResolution"];
             /** @default active */
-            status: components["schemas"]["app__models__trigger_subscription_models__SubscriptionStatus"];
+            status?: components["schemas"]["app__models__trigger_subscription_models__SubscriptionStatus"];
             /**
              * Trigger Data
              * @description Registration-time knobs the payload cannot express (a calendar's minutes_before_start). Persisted so a resync rebuilds the trigger with the user's original config instead of resetting to defaults.
@@ -12859,7 +13011,7 @@ export interface components {
              * @default success
              * @constant
              */
-            status: "success";
+            status?: "success";
         };
         /** UnstarEmailsResponse */
         UnstarEmailsResponse: {
@@ -12996,7 +13148,7 @@ export interface components {
              * @description Markdown instructions the agent should honor for this integration
              * @default
              */
-            content: string;
+            content?: string;
         };
         /**
          * UpdateMemoryRequest
@@ -13017,7 +13169,7 @@ export interface components {
             /** Conversation Id */
             conversation_id: string;
             /** Messages */
-            messages: components["schemas"]["MessageModel"][];
+            messages: components["schemas"]["MessageModel-Input"][];
         };
         /**
          * UpdateMessagesResponse
@@ -13127,7 +13279,7 @@ export interface components {
             /** Prompt */
             prompt?: string | null;
             /** Steps */
-            steps?: components["schemas"]["WorkflowStep"][] | null;
+            steps?: components["schemas"]["WorkflowStep-Input"][] | null;
             /** Title */
             title?: string | null;
             trigger_config?: components["schemas"]["TriggerConfig"] | null;
@@ -13160,11 +13312,11 @@ export interface components {
             /** Days */
             days: components["schemas"]["ActivityDay"][];
             /** Percentile */
-            percentile?: number | null;
+            percentile: number | null;
             /** Streak */
             streak: number;
             /** Tier */
-            tier?: string | null;
+            tier: string | null;
             /** Total */
             total: number;
             /** Total Tokens */
@@ -13173,7 +13325,7 @@ export interface components {
         /** UsageBudget */
         UsageBudget: {
             daily: components["schemas"]["BudgetWindow"];
-            monthly?: components["schemas"]["BudgetWindow"] | null;
+            monthly: components["schemas"]["BudgetWindow"] | null;
             /** Per Request Token Ceiling */
             per_request_token_ceiling: number;
         };
@@ -13224,18 +13376,13 @@ export interface components {
              * @default true
              */
             can_upgrade: boolean;
-            /**
-             * Current Plan
-             * @description Current plan details
-             */
-            current_plan?: {
-                [key: string]: unknown;
-            } | null;
+            /** @description Current plan details */
+            current_plan: components["schemas"]["PlanResponse"] | null;
             /**
              * Days Remaining
              * @description Days remaining in current period
              */
-            days_remaining?: number | null;
+            days_remaining: number | null;
             /**
              * Has Ever Subscribed
              * @description Whether the user has ever had a subscription, in any status — separates a lapsed subscriber from one who has never paid
@@ -13246,7 +13393,7 @@ export interface components {
              * Has Subscription
              * @description Legacy field - use is_subscribed
              */
-            has_subscription?: boolean | null;
+            has_subscription: boolean | null;
             /**
              * Is Subscribed
              * @description Whether user has an active subscription
@@ -13254,16 +13401,11 @@ export interface components {
              */
             is_subscribed: boolean;
             /** @description Legacy field - check current_plan */
-            plan_type?: components["schemas"]["PlanType"] | null;
+            plan_type: components["schemas"]["PlanType"] | null;
             /** @description Legacy field - check subscription */
-            status?: components["schemas"]["app__models__payment_models__SubscriptionStatus"] | null;
-            /**
-             * Subscription
-             * @description Current subscription
-             */
-            subscription?: {
-                [key: string]: unknown;
-            } | null;
+            status: components["schemas"]["app__models__payment_models__SubscriptionStatus"] | null;
+            /** @description Current subscription */
+            subscription: components["schemas"]["SubscriptionDocument"] | null;
             /**
              * User Id
              * @description User ID
@@ -13330,7 +13472,7 @@ export interface components {
              * Selected Voice Id
              * @description The user's chosen voice id; null means the default voice
              */
-            selected_voice_id?: string | null;
+            selected_voice_id: string | null;
             /** Voices */
             voices: components["schemas"]["VoiceOption"][];
         };
@@ -13368,7 +13510,7 @@ export interface components {
              * Languages
              * @description All verified languages (display names, primary first)
              */
-            languages?: string[];
+            languages: string[];
             /**
              * Name
              * @description Display name
@@ -13378,7 +13520,7 @@ export interface components {
              * Preview Url
              * @description Public MP3 sample for the play button; null when unavailable
              */
-            preview_url?: string | null;
+            preview_url: string | null;
             /**
              * Source
              * @description 'account' for voices already usable, 'library' for shared-library voices added to the account on selection
@@ -13452,7 +13594,7 @@ export interface components {
              * Answer
              * @default
              */
-            answer: string;
+            answer?: string;
             /** Images */
             images?: string[];
             /** Provider */
@@ -13461,191 +13603,6 @@ export interface components {
             query: string;
             /** Web */
             web?: components["schemas"]["SearchResultItem"][];
-        };
-        /**
-         * Workflow
-         * @description Main workflow model extending BaseScheduledTask for scheduling capabilities.
-         */
-        Workflow: {
-            /**
-             * Activated
-             * @description Whether the workflow is activated and can be executed
-             * @default true
-             */
-            activated: boolean;
-            /**
-             * Created At
-             * @description Creation timestamp
-             */
-            created_at?: string | null;
-            /**
-             * Created By
-             * @description User ID of the original creator (for public workflows)
-             */
-            created_by?: string | null;
-            /** @description Creator info hydrated for public workflow lookups. */
-            creator?: components["schemas"]["WorkflowCreator"] | null;
-            /**
-             * Current Step Index
-             * @description Index of currently executing step
-             * @default 0
-             */
-            current_step_index: number;
-            /** @description Why the workflow is not activated. None means the user turned it off themselves — only system-paused workflows may be resumed automatically. */
-            deactivated_reason?: components["schemas"]["DeactivationReason"] | null;
-            /**
-             * Description
-             * @description Short display description for cards/UI (1-2 sentences)
-             * @default
-             */
-            description: string;
-            /**
-             * Error Message
-             * @description Error message if workflow failed
-             */
-            error_message?: string | null;
-            /**
-             * Execution Logs
-             * @description Execution logs
-             */
-            execution_logs?: string[];
-            /**
-             * Icon
-             * @description User-chosen icon slug (gaia-icons component name) shown when the workflow has no integration icons.
-             */
-            icon?: string | null;
-            /**
-             * Icon Color
-             * @description Hex color for the user-chosen icon.
-             */
-            icon_color?: string | null;
-            /**
-             * Id
-             * @description Unique identifier
-             */
-            id?: string | null;
-            /**
-             * Integration Ids
-             * @description Integration ids this workflow uses — picked by the user or identified from intent by the workflow assistant. Scopes the tool palette when generating steps. Connection state is never stored here: required/missing integrations are derived from the steps at read time.
-             */
-            integration_ids?: string[];
-            /**
-             * Is Public
-             * @description Whether this workflow is published to the community marketplace
-             * @default false
-             */
-            is_public: boolean;
-            /**
-             * Is System Workflow
-             * @description Auto-provisioned by GAIA when an integration is connected.
-             * @default false
-             */
-            is_system_workflow: boolean;
-            /**
-             * Is Todo Workflow
-             * @description Whether this workflow was auto-generated for a todo item
-             * @default false
-             */
-            is_todo_workflow: boolean;
-            /** Last Executed At */
-            last_executed_at?: string | null;
-            /**
-             * Max Occurrences
-             * @description Maximum number of executions (optional)
-             */
-            max_occurrences?: number | null;
-            /**
-             * Notify On Completion
-             * @description Whether GAIA sends the automatic completion notification when a run finishes. When False the run is silent (failures still notify) and the agent only notifies if the workflow's own instructions ask it to.
-             * @default true
-             */
-            notify_on_completion: boolean;
-            /**
-             * Occurrence Count
-             * @description Number of times this task has been executed
-             * @default 0
-             */
-            occurrence_count: number;
-            /**
-             * Prompt
-             * @description Detailed execution instructions for AI. Falls back to description if not set.
-             * @default
-             */
-            prompt: string;
-            /**
-             * Repeat
-             * @description Cron expression for recurring tasks
-             */
-            repeat?: string | null;
-            /**
-             * Scheduled At
-             * @description Next scheduled execution time; None when the task has no schedule (e.g. a manual/integration workflow). A null value never matches the due-scan.
-             */
-            scheduled_at?: string | null;
-            /**
-             * Slug
-             * @description Human-readable URL slug derived from title. Unique among public workflows.
-             */
-            slug?: string | null;
-            /**
-             * Source Integration
-             * @description Which integration provisioned this workflow. e.g. 'gmail', 'googlecalendar'.
-             */
-            source_integration?: string | null;
-            /**
-             * Source Todo Id
-             * @description ID of the source todo if is_todo_workflow=True
-             */
-            source_todo_id?: string | null;
-            /**
-             * @description Current status
-             * @default scheduled
-             */
-            status: components["schemas"]["ScheduledTaskStatus"];
-            /**
-             * Steps
-             * @description List of workflow steps to execute
-             */
-            steps: components["schemas"]["WorkflowStep"][];
-            /**
-             * Stop After
-             * @description Stop executing after this date (optional)
-             */
-            stop_after?: string | null;
-            /**
-             * Successful Executions
-             * @description Number of successful executions
-             * @default 0
-             */
-            successful_executions: number;
-            /**
-             * System Workflow Key
-             * @description Stable identifier linking this document back to its definition in code. Used for reset-to-default and idempotency. e.g. 'gmail:email_intelligence'.
-             */
-            system_workflow_key?: string | null;
-            /**
-             * Title
-             * @description Title of the workflow
-             */
-            title: string;
-            /**
-             * Total Executions
-             * @description Total number of executions
-             * @default 0
-             */
-            total_executions: number;
-            /** @description Trigger configuration */
-            trigger_config: components["schemas"]["TriggerConfig"];
-            /**
-             * Updated At
-             * @description Last update timestamp
-             */
-            updated_at?: string | null;
-            /**
-             * User Id
-             * @description User ID who owns this workflow
-             */
-            user_id: string;
         };
         /**
          * WorkflowCreator
@@ -13672,22 +13629,22 @@ export interface components {
              * Completed At
              * @description When the execution completed
              */
-            completed_at?: string | null;
+            completed_at: string | null;
             /**
              * Conversation Id
              * @description Conversation containing the full execution
              */
-            conversation_id?: string | null;
+            conversation_id: string | null;
             /**
              * Duration Seconds
              * @description Execution duration in seconds
              */
-            duration_seconds?: number | null;
+            duration_seconds: number | null;
             /**
              * Error Message
              * @description Error message if execution failed
              */
-            error_message?: string | null;
+            error_message: string | null;
             /**
              * Execution Id
              * @description Unique execution identifier
@@ -13710,9 +13667,9 @@ export interface components {
              * Summary
              * @description Brief summary of what the execution accomplished
              */
-            summary?: string | null;
+            summary: string | null;
             /** Trace */
-            trace?: components["schemas"]["RecordedCall"][];
+            trace: components["schemas"]["RecordedCall"][];
             /**
              * Trigger Type
              * @description What triggered the execution: manual, schedule, or integration name
@@ -13765,7 +13722,7 @@ export interface components {
              * Executions
              * @description List of workflow executions
              */
-            executions?: components["schemas"]["WorkflowExecution"][];
+            executions: components["schemas"]["WorkflowExecution"][];
             /**
              * Has More
              * @description Whether there are more executions to load
@@ -13785,7 +13742,7 @@ export interface components {
          */
         WorkflowListResponse: {
             /** Workflows */
-            workflows: components["schemas"]["Workflow"][];
+            workflows: components["schemas"]["WorkflowWithIntegrations"][];
         };
         /**
          * WorkflowMessageResponse
@@ -13808,7 +13765,7 @@ export interface components {
              * @description Success or status message
              */
             message: string;
-            workflow: components["schemas"]["Workflow"];
+            workflow: components["schemas"]["WorkflowWithIntegrations"];
         };
         /**
          * WorkflowStatusResponse
@@ -13839,7 +13796,35 @@ export interface components {
          * WorkflowStep
          * @description A single step in a workflow.
          */
-        WorkflowStep: {
+        "WorkflowStep-Input": {
+            /**
+             * Category
+             * @description Category for routing (e.g., gmail, notion, todos, reminders)
+             * @default general
+             */
+            category?: string;
+            /**
+             * Description
+             * @description Detailed description of what this step accomplishes
+             */
+            description: string;
+            /**
+             * Id
+             * @description Unique identifier for the step
+             * @default
+             */
+            id?: string;
+            /**
+             * Title
+             * @description Clear, actionable title for the step
+             */
+            title: string;
+        };
+        /**
+         * WorkflowStep
+         * @description A single step in a workflow.
+         */
+        "WorkflowStep-Output": {
             /**
              * Category
              * @description Category for routing (e.g., gmail, notion, todos, reminders)
@@ -13876,7 +13861,7 @@ export interface components {
              * Config Schema
              * @default {}
              */
-            config_schema: {
+            config_schema?: {
                 [key: string]: components["schemas"]["TriggerConfigFieldSchema"];
             };
             /** Description */
@@ -13907,14 +13892,14 @@ export interface components {
              * Created At
              * @description Creation timestamp
              */
-            created_at?: string | null;
+            created_at: string | null;
             /**
              * Created By
              * @description User ID of the original creator (for public workflows)
              */
-            created_by?: string | null;
+            created_by: string | null;
             /** @description Creator info hydrated for public workflow lookups. */
-            creator?: components["schemas"]["WorkflowCreator"] | null;
+            creator: components["schemas"]["WorkflowCreator"] | null;
             /**
              * Current Step Index
              * @description Index of currently executing step
@@ -13922,7 +13907,7 @@ export interface components {
              */
             current_step_index: number;
             /** @description Why the workflow is not activated. None means the user turned it off themselves — only system-paused workflows may be resumed automatically. */
-            deactivated_reason?: components["schemas"]["DeactivationReason"] | null;
+            deactivated_reason: components["schemas"]["DeactivationReason"] | null;
             /**
              * Description
              * @description Short display description for cards/UI (1-2 sentences)
@@ -13933,32 +13918,32 @@ export interface components {
              * Error Message
              * @description Error message if workflow failed
              */
-            error_message?: string | null;
+            error_message: string | null;
             /**
              * Execution Logs
              * @description Execution logs
              */
-            execution_logs?: string[];
+            execution_logs: string[];
             /**
              * Icon
              * @description User-chosen icon slug (gaia-icons component name) shown when the workflow has no integration icons.
              */
-            icon?: string | null;
+            icon: string | null;
             /**
              * Icon Color
              * @description Hex color for the user-chosen icon.
              */
-            icon_color?: string | null;
+            icon_color: string | null;
             /**
              * Id
              * @description Unique identifier
              */
-            id?: string | null;
+            id: string;
             /**
              * Integration Ids
              * @description Integration ids this workflow uses — picked by the user or identified from intent by the workflow assistant. Scopes the tool palette when generating steps. Connection state is never stored here: required/missing integrations are derived from the steps at read time.
              */
-            integration_ids?: string[];
+            integration_ids: string[];
             /**
              * Is Public
              * @description Whether this workflow is published to the community marketplace
@@ -13978,17 +13963,17 @@ export interface components {
              */
             is_todo_workflow: boolean;
             /** Last Executed At */
-            last_executed_at?: string | null;
+            last_executed_at: string | null;
             /**
              * Max Occurrences
              * @description Maximum number of executions (optional)
              */
-            max_occurrences?: number | null;
+            max_occurrences: number | null;
             /**
              * Missing Integrations
              * @description Required integrations the user has not connected yet.
              */
-            missing_integrations?: components["schemas"]["IntegrationRef"][] | null;
+            missing_integrations: components["schemas"]["IntegrationRef"][] | null;
             /**
              * Notify On Completion
              * @description Whether GAIA sends the automatic completion notification when a run finishes. When False the run is silent (failures still notify) and the agent only notifies if the workflow's own instructions ask it to.
@@ -14011,32 +13996,32 @@ export interface components {
              * Repeat
              * @description Cron expression for recurring tasks
              */
-            repeat?: string | null;
+            repeat: string | null;
             /**
              * Required Integrations
              * @description Integration IDs required by the workflow's steps.
              */
-            required_integrations?: components["schemas"]["IntegrationRef"][] | null;
+            required_integrations: components["schemas"]["IntegrationRef"][] | null;
             /**
              * Scheduled At
              * @description Next scheduled execution time; None when the task has no schedule (e.g. a manual/integration workflow). A null value never matches the due-scan.
              */
-            scheduled_at?: string | null;
+            scheduled_at: string | null;
             /**
              * Slug
              * @description Human-readable URL slug derived from title. Unique among public workflows.
              */
-            slug?: string | null;
+            slug: string | null;
             /**
              * Source Integration
              * @description Which integration provisioned this workflow. e.g. 'gmail', 'googlecalendar'.
              */
-            source_integration?: string | null;
+            source_integration: string | null;
             /**
              * Source Todo Id
              * @description ID of the source todo if is_todo_workflow=True
              */
-            source_todo_id?: string | null;
+            source_todo_id: string | null;
             /**
              * @description Current status
              * @default scheduled
@@ -14046,12 +14031,12 @@ export interface components {
              * Steps
              * @description List of workflow steps to execute
              */
-            steps: components["schemas"]["WorkflowStep"][];
+            steps: components["schemas"]["WorkflowStep-Output"][];
             /**
              * Stop After
              * @description Stop executing after this date (optional)
              */
-            stop_after?: string | null;
+            stop_after: string | null;
             /**
              * Successful Executions
              * @description Number of successful executions
@@ -14062,7 +14047,7 @@ export interface components {
              * System Workflow Key
              * @description Stable identifier linking this document back to its definition in code. Used for reset-to-default and idempotency. e.g. 'gmail:email_intelligence'.
              */
-            system_workflow_key?: string | null;
+            system_workflow_key: string | null;
             /**
              * Title
              * @description Title of the workflow
@@ -14080,7 +14065,7 @@ export interface components {
              * Updated At
              * @description Last update timestamp
              */
-            updated_at?: string | null;
+            updated_at: string | null;
             /**
              * User Id
              * @description User ID who owns this workflow
@@ -14104,19 +14089,19 @@ export interface components {
              * @description Greeting line on its own, e.g. 'Hey Sarah,' or 'Hi!'. Empty string if the observed style has no greeting habit.
              * @default
              */
-            greeting: string;
+            greeting?: string;
             /**
              * Name
              * @description Sender name on its own line. Empty string if none.
              * @default
              */
-            name: string;
+            name?: string;
             /**
              * Signoff
              * @description Sign-off line, e.g. 'Best,' or 'Thanks,'. Empty string if none.
              * @default
              */
-            signoff: string;
+            signoff?: string;
         };
         /** WritingStyleRegenerateRequest */
         WritingStyleRegenerateRequest: {
@@ -14126,7 +14111,7 @@ export interface components {
              * Profession
              * @default
              */
-            profession: string;
+            profession?: string;
         };
     };
     responses: never;
