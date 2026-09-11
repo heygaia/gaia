@@ -118,12 +118,17 @@ async def complete_platform_link(
     elif result.is_new_link:
         await notify_account_linked(platform, user_id)
     schedule_account_sync(user_id)
-    # capture_event, not capture_context_event: the bot route resolves its user
-    # from the link code, not a session, so there is no request identity to
-    # inherit and the event would land on an anonymous profile.
-    capture_event(
-        user_id,
-        AnalyticsEvents.INTEGRATION_CONNECTED,
-        {"integration_id": platform, "is_new_link": result.is_new_link},
-    )
+    if result.is_new_link:
+        # Only a link that did not exist a moment ago is a connection. An
+        # idempotent re-link — a second tap on the same deep link, a re-issued
+        # token — used to capture too, so the connection count tracked taps.
+        #
+        # capture_event, not capture_context_event: the bot route resolves its
+        # user from the link code, not a session, so there is no request
+        # identity to inherit and the event would land on an anonymous profile.
+        capture_event(
+            user_id,
+            AnalyticsEvents.INTEGRATION_CONNECTED,
+            {"integration_id": platform, "is_new_link": result.is_new_link},
+        )
     return result

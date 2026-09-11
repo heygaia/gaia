@@ -9,6 +9,7 @@ import pytest
 from app.constants.outbound import OUTBOUND_TTL_SECONDS_GREETING
 from app.models.chat_models import ConversationSource
 from app.models.platform_models import PlatformLinkResult
+from app.services.analytics_service import AnalyticsEvents
 from app.services.outbound_delivery import OutboundResult
 from app.services.platform_link_completion import complete_platform_link
 from app.services.platform_link_service import AccountHasDifferentPlatformError
@@ -92,6 +93,31 @@ class TestPostLinkMessage:
             user_id="u1",
             outcome="failed",
         )
+
+
+class TestLinkAnalytics:
+    """``integration_connected`` counts connections, not taps."""
+
+    async def test_a_new_link_is_captured_once(self, side_effects) -> None:
+        with patch(f"{MODULE}.capture_event") as capture:
+            await complete_platform_link("u1", "whatsapp", "wa-1")
+        capture.assert_called_once_with(
+            "u1",
+            AnalyticsEvents.INTEGRATION_CONNECTED,
+            {"integration_id": "whatsapp", "is_new_link": True},
+        )
+
+    async def test_a_repeat_link_is_not_captured_again(self, side_effects) -> None:
+        """Re-tapping a link the user already has is not a new connection.
+
+        Every idempotent re-link counted as one more ``integration_connected``,
+        so the connection count rose with the number of taps.
+        """
+        _, _, link = side_effects
+        link.return_value = _linked(is_new_link=False)
+        with patch(f"{MODULE}.capture_event") as capture:
+            await complete_platform_link("u1", "whatsapp", "wa-1")
+        capture.assert_not_called()
 
 
 class TestLinkConflicts:
