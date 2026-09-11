@@ -20,6 +20,7 @@ from app.workers.tasks import (
     check_inactive_users,
     cleanup_expired_reminders,
     cleanup_stuck_personalization,
+    deliver_signup_emails,
     execute_workflow_by_id,
     generate_workflow_steps,
     process_gmail_emails_to_memory,
@@ -82,6 +83,7 @@ _promote_usage_badges = arq_task(promote_usage_badges)
 _sweep_dormant_user_workflows = arq_task(sweep_dormant_user_workflows)
 _sweep_abandoned_imessage_registrations = arq_task(sweep_abandoned_imessage_registrations)
 _sweep_expired_memories = arq_task(sweep_expired_memories)
+_deliver_signup_emails = arq_task(deliver_signup_emails)
 
 WorkerSettings.functions = [
     _sweep_hil_approvals,
@@ -107,6 +109,7 @@ WorkerSettings.functions = [
     _sweep_dormant_user_workflows,
     _sweep_abandoned_imessage_registrations,
     _sweep_expired_memories,
+    _deliver_signup_emails,
 ]
 
 WorkerSettings.cron_jobs = [

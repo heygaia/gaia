@@ -1,6 +1,5 @@
 """Unit tests for OAuth service operations."""
 
-import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from bson import ObjectId
@@ -23,14 +22,6 @@ from app.services.triggers.subscription_service import (
 from app.services.workflow.integration_pause import (
     resume_workflows_for_reconnected_integration,
 )
-from shared.py import wide_events
-
-
-async def _drain_background_tasks() -> None:
-    """Await every spawned fire-and-forget task so its effects are observable."""
-    while pending := set(wide_events._spawned_tasks):
-        await asyncio.gather(*pending, return_exceptions=True)
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -83,24 +74,6 @@ def mock_track_signup():
 def mock_track_login():
     with patch("app.services.oauth.oauth_service.track_login") as mock_tl:
         yield mock_tl
-
-
-@pytest.fixture
-def mock_send_welcome_email():
-    with patch(
-        "app.services.oauth.oauth_service.send_welcome_email",
-        new_callable=AsyncMock,
-    ) as mock_swe:
-        yield mock_swe
-
-
-@pytest.fixture
-def mock_add_marketing_contact():
-    with patch(
-        "app.services.oauth.oauth_service.add_marketing_contact",
-        new_callable=AsyncMock,
-    ) as mock_acr:
-        yield mock_acr
 
 
 @pytest.fixture
@@ -289,8 +262,6 @@ class TestStoreUserInfo:
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
     ):
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
@@ -310,8 +281,6 @@ class TestStoreUserInfo:
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
     ):
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
@@ -327,8 +296,7 @@ class TestStoreUserInfo:
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
+        mock_redis_pool_manager,
     ):
         """WorkOS has no first/last name for email-code signups; storing "" left
         the user (and every greeting, email and prompt) nameless forever."""
@@ -338,25 +306,18 @@ class TestStoreUserInfo:
 
         await store_user_info("", "aryan.randeriya@test.com", None)
 
-        # The ESP calls carrying the derived name go out on the signup
-        # background task; drain it before asserting on them.
-        await _drain_background_tasks()
-
         assert mock_user_repo.create.call_args.args[0].name == "Aryan Randeriya"
         assert mock_track_signup.call_args.kwargs["name"] == "Aryan Randeriya"
-        mock_send_welcome_email.assert_awaited_once_with(
-            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
-        )
-        mock_add_marketing_contact.assert_awaited_once_with(
-            "aryan.randeriya@test.com", "Aryan Randeriya", user_id=uid
+        # The derived name is what the queued delivery must carry: the job is
+        # the only thing that still knows it by the time the email is written.
+        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
+            "deliver_signup_emails", uid, "aryan.randeriya@test.com", "Aryan Randeriya"
         )
 
     async def test_new_user_keeps_the_workos_name_when_there_is_one(
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
     ):
         mock_user_repo.get_by_email.return_value = None
         mock_user_repo.create.return_value = UserDocument(id=str(ObjectId()))
@@ -369,8 +330,6 @@ class TestStoreUserInfo:
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
     ):
         mock_user_repo.get_by_email.return_value = None
         created = UserDocument(id=str(ObjectId()))
@@ -385,83 +344,31 @@ class TestStoreUserInfo:
             signup_method="workos",
         )
 
-    async def test_new_user_sends_welcome_email(
+    async def test_new_user_queues_the_signup_email_delivery(
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
+        mock_redis_pool_manager,
     ):
+        """Creating the user queues the ESP round-trips on the worker instead of
+        running them here. In-process they were fast but unowned: nothing drains
+        those tasks on shutdown, so a restart mid-send lost the welcome email and
+        the marketing contact with no record. What the job then does is
+        ``tests/unit/workers/tasks/test_signup_email_tasks.py``'s subject."""
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
         mock_user_repo.create.return_value = UserDocument(id=uid)
 
         await store_user_info("Bob", "bob@test.com", None)
 
-        # Welcome email goes out on a background task so a slow ESP can't block
-        # signup; drain it before asserting.
-        await _drain_background_tasks()
-
-        mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
-
-    async def test_new_user_adds_contact_to_resend(
-        self,
-        mock_user_repo,
-        mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
-    ):
-        uid = str(ObjectId())
-        mock_user_repo.get_by_email.return_value = None
-        mock_user_repo.create.return_value = UserDocument(id=uid)
-
-        await store_user_info("Bob", "bob@test.com", None)
-
-        # Marketing contact is added concurrently with the welcome email on the
-        # signup background task; drain it before asserting.
-        await _drain_background_tasks()
-
-        mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=uid)
-
-    async def test_new_user_esp_calls_run_concurrently(
-        self,
-        mock_user_repo,
-        mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
-    ):
-        """Both ESP round-trips are in flight at once — neither waits on the other."""
-        mock_user_repo.get_by_email.return_value = None
-        mock_user_repo.create.return_value = UserDocument(id=str(ObjectId()))
-
-        # A two-party barrier only opens if both calls are running at the same
-        # time; if they are awaited one after the other the first party waits
-        # for a partner that has not started and the rendezvous times out.
-        barrier = asyncio.Barrier(2)
-        rendezvous: set[str] = set()
-
-        async def _welcome(*_args: str, **_kwargs: str) -> None:
-            await asyncio.wait_for(barrier.wait(), timeout=1)
-            rendezvous.add("welcome_email")
-
-        async def _contact(*_args: str, **_kwargs: str) -> None:
-            await asyncio.wait_for(barrier.wait(), timeout=1)
-            rendezvous.add("marketing_contact")
-
-        mock_send_welcome_email.side_effect = _welcome
-        mock_add_marketing_contact.side_effect = _contact
-
-        await store_user_info("Bob", "bob@test.com", None)
-        await _drain_background_tasks()
-
-        assert rendezvous == {"welcome_email", "marketing_contact"}
+        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
+            "deliver_signup_emails", uid, "bob@test.com", "Bob"
+        )
 
     async def test_new_user_signup_tracking_failure_does_not_raise(
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
     ):
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
@@ -472,35 +379,21 @@ class TestStoreUserInfo:
         result = await store_user_info("Bob", "bob@test.com", None)
         assert result == (uid, True)
 
-    async def test_new_user_welcome_email_failure_does_not_raise(
+    async def test_new_user_signup_survives_a_failed_email_enqueue(
         self,
         mock_user_repo,
         mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
+        mock_redis_pool_manager,
     ):
+        """Redis being unreachable must cost the signup emails, not the signup:
+        the account is already written by this point, so raising here would fail
+        a registration that actually succeeded."""
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
         mock_user_repo.create.return_value = UserDocument(id=uid)
-        mock_send_welcome_email.side_effect = Exception("SMTP error")
+        mock_redis_pool_manager.enqueue_job.side_effect = Exception("Redis down")
 
-        result = await store_user_info("Bob", "bob@test.com", None)
-        assert result == (uid, True)
-
-    async def test_new_user_resend_failure_does_not_raise(
-        self,
-        mock_user_repo,
-        mock_track_signup,
-        mock_send_welcome_email,
-        mock_add_marketing_contact,
-    ):
-        uid = str(ObjectId())
-        mock_user_repo.get_by_email.return_value = None
-        mock_user_repo.create.return_value = UserDocument(id=uid)
-        mock_add_marketing_contact.side_effect = Exception("Resend API error")
-
-        result = await store_user_info("Bob", "bob@test.com", None)
-        assert result == (uid, True)
+        assert await store_user_info("Bob", "bob@test.com", None) == (uid, True)
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,3 @@
-import asyncio
-
 from fastapi import BackgroundTasks, HTTPException
 
 from app.constants.auth import LOGIN_METHOD_WORKOS
@@ -15,7 +13,6 @@ from app.models.oauth_models import OAuthIntegration
 from app.models.user_models import BioStatus, UserDocument, UserUpdate
 from app.services.analytics_service import track_login, track_signup
 from app.services.composio.composio_service import get_composio_service
-from app.services.email import add_marketing_contact, send_welcome_email
 
 # Re-exported on purpose: the reader lives below this module now, and its
 # callers here keep importing it from the OAuth surface they already know.
@@ -41,10 +38,6 @@ from app.utils.email_utils import derive_name_from_email
 from app.utils.redis_utils import RedisPoolManager
 from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log, spawn_logged_task
-
-# Signup's ESP calls are fire-and-forget; this bounds each one so a hung provider
-# can't leak a task that never finishes.
-SIGNUP_EMAIL_TIMEOUT_SECONDS = 10
 
 
 def _returning_user_profile(
@@ -92,40 +85,20 @@ async def _run_signup_side_effects(user_id: str, email: str, signup_name: str) -
     # Welcome email + marketing contact are ESP round-trips that signup must not
     # wait on: a slow or unreachable provider used to hang user creation for as
     # long as the HTTP client allowed (observed: 90s+ with no timeout anywhere in
-    # the path). Bounded, and failures only log — the account is already created.
-    async def _send_welcome() -> None:
-        try:
-            async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
-                await send_welcome_email(email, signup_name, user_id=user_id)
-            log.info(f"{LogTag.OAUTH} Welcome email sent to new user", user={"id": user_id})
-        except Exception as e:
-            log.error(
-                f"{LogTag.OAUTH} Failed to send welcome email to",
-                user={"id": user_id},
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-    async def _add_contact() -> None:
-        try:
-            async with asyncio.timeout(SIGNUP_EMAIL_TIMEOUT_SECONDS):
-                await add_marketing_contact(email, signup_name, user_id=user_id)
-            log.info(
-                f"{LogTag.OAUTH} Contact added to marketing audience for new user",
-                user={"id": user_id},
-            )
-        except Exception as e:
-            log.error(
-                f"{LogTag.OAUTH} Failed to add marketing contact for",
-                user={"id": user_id},
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-    async def _deliver_signup_emails() -> None:
-        await asyncio.gather(_send_welcome(), _add_contact(), return_exceptions=True)
-
-    spawn_logged_task("deliver_signup_emails", _deliver_signup_emails())
+    # the path). They go on the worker queue rather than an in-process task
+    # because nothing drains those on shutdown — a restart mid-send dropped both
+    # deliveries without a trace. Queued, the job outlives this process.
+    try:
+        pool = await RedisPoolManager.get_pool()
+        await enqueue_worker_job(pool, "deliver_signup_emails", user_id, email, signup_name)
+        log.info(f"{LogTag.OAUTH} Queued signup email delivery", user={"id": user_id})
+    except Exception as e:
+        log.error(
+            f"{LogTag.OAUTH} Failed to queue signup email delivery",
+            user={"id": user_id},
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
     # Provision the user's workspace (system files + skills catalog) now, instead
     # of lazily on the first chat turn. Fire-and-forget so signup isn't blocked.
