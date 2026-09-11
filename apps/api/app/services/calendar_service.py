@@ -29,7 +29,7 @@ from app.models.calendar_models import (
     GoogleConferenceData,
     GoogleConferenceSolutionKey,
 )
-from app.services.composio.proxy_client import ProxyMethod, proxy_request
+from app.services.composio.proxy_client import ProxyMethod, ProxyRequest, proxy_request
 from app.utils.calendar_utils import CALENDAR_API_BASE, calendar_events_endpoint
 from app.utils.errors import AppError
 from shared.py.wide_events import log
@@ -60,12 +60,14 @@ async def _proxy(
     """
     try:
         return await proxy_request(
-            user_id=user_id,
-            toolkit=CALENDAR_TOOLKIT,
-            endpoint=endpoint,
-            method=method,
-            body=body.model_dump(exclude_none=True) if body is not None else None,
-            query=query,
+            ProxyRequest(
+                user_id=user_id,
+                toolkit=CALENDAR_TOOLKIT,
+                endpoint=endpoint,
+                method=method,
+                body=body.model_dump(exclude_none=True) if body is not None else None,
+                query=query,
+            )
         )
     except AppError as exc:
         # Integration not connected → emit the structured "integration" detail

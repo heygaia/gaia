@@ -15,7 +15,7 @@ from app.models.composio_schemas.linkedin import (
     LinkedInInitializeUploadResponse,
     LinkedInUserInfo,
 )
-from app.services.composio.proxy_client import ProxyMethod, proxy_request_sync
+from app.services.composio.proxy_client import ProxyMethod, ProxyRequest, proxy_request_sync
 from shared.py.wide_events import log
 
 LINKEDIN_API_BASE = "https://api.linkedin.com/v2"
@@ -48,14 +48,16 @@ def _proxy(
     validate it into a real model instead of reading fields off it directly.
     """
     return proxy_request_sync(
-        user_id=user_id,
-        toolkit=LINKEDIN_TOOLKIT,
-        endpoint=endpoint,
-        method=method,
-        body=body,
-        query=query,
-        headers=headers,
-        binary_body=binary_body,
+        ProxyRequest(
+            user_id=user_id,
+            toolkit=LINKEDIN_TOOLKIT,
+            endpoint=endpoint,
+            method=method,
+            body=body,
+            query=query,
+            headers=headers,
+            binary_body=binary_body,
+        )
     )
 
 
