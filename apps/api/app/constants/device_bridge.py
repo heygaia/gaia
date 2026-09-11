@@ -98,6 +98,7 @@ FRAME_MCP_OPEN: Final[str] = "mcp.open"
 FRAME_MCP_CLOSE: Final[str] = "mcp.close"
 FRAME_MCP_MSG: Final[str] = "mcp.msg"
 FRAME_REVOKE: Final[str] = "revoke"
+FRAME_SERVER_REMOVE: Final[str] = "server.remove"  # drop one server from the daemon's local config
 # device -> cloud
 FRAME_PONG: Final[str] = "pong"
 FRAME_HELLO: Final[str] = "hello"  # daemon announces its exposed servers on connect

@@ -7,6 +7,7 @@ import uuid
 from mcp_use.client.exceptions import OAuthAuthenticationError
 from sqlalchemy import delete
 
+from app.constants.device_bridge import DEVICE_CATEGORY
 from app.constants.log_tags import LogTag
 from app.db.chroma.chroma_cleanup import cleanup_integration_chroma_data
 from app.db.chroma.public_integrations_store import remove_public_integration
@@ -23,6 +24,9 @@ from app.models.integration_models import (
     UpdateCustomIntegrationRequest,
 )
 from app.models.mcp_config import MCPConfig
+from app.services.device.device_service import (
+    deregister_device_server_for_integration,
+)
 from app.services.integrations.user_integration_status import (
     update_user_integration_status,
 )
@@ -183,6 +187,12 @@ async def delete_custom_integration(user_id: str, integration_id: str) -> bool:
         deleted = await integration_repository.delete_custom(integration_id, user_id)
 
         if deleted:
+            # A device MCP server has an authoritative Postgres row that the Mongo
+            # delete above leaves behind (and which would resurrect the doc on the
+            # daemon's next register). Drop it and tell the device to forget it.
+            if doc.category == DEVICE_CATEGORY:
+                await deregister_device_server_for_integration(integration_id, notify_device=True)
+
             affected_user_ids = await user_integration_repository.user_ids_with_integration(
                 integration_id
             )

@@ -24,6 +24,7 @@ from app.constants.device_bridge import (
     FRAME_EXEC_EXIT,
     FRAME_EXEC_STDERR,
     FRAME_EXEC_STDOUT,
+    FRAME_HELLO,
     FRAME_MCP_ERROR,
     FRAME_MCP_MSG,
     FRAME_MCP_OPENED,
@@ -43,6 +44,7 @@ from app.services.device.device_auth import verify_device_token
 from app.services.device.device_service import (
     enqueue_device_server_warmup,
     get_active_device,
+    reconcile_device_servers,
 )
 from shared.py.wide_events import log
 
@@ -111,7 +113,7 @@ async def device_ws(websocket: WebSocket) -> None:
         asyncio.create_task(_heartbeat(websocket, device_id, state)),
     ]
     try:
-        await _receive_loop(websocket, device_id, state)
+        await _receive_loop(websocket, device_id, user_id, state)
     # evlog-map-disable-next-line error-handling -- normal websocket disconnect; info-level is correct
     except WebSocketDisconnect:
         log.set(disconnect_reason="client_close")
@@ -141,7 +143,9 @@ async def device_ws(websocket: WebSocket) -> None:
             await websocket.close()
 
 
-async def _receive_loop(websocket: WebSocket, device_id: str, state: dict[str, float]) -> None:
+async def _receive_loop(
+    websocket: WebSocket, device_id: str, user_id: str, state: dict[str, float]
+) -> None:
     """Read frames off the socket and route upstream ones onto Redis."""
     while True:
         raw = await websocket.receive_text()
@@ -172,7 +176,25 @@ async def _receive_loop(websocket: WebSocket, device_id: str, state: dict[str, f
             if isinstance(pod, str):
                 await publish_up_to_pod(pod, raw)
             continue
-        # FRAME_HELLO and unknown types are informational; ignore quietly.
+        if frame_type == FRAME_HELLO:
+            # The daemon announces its full configured server set on connect. Its
+            # local config is the source of truth, so prune any server rows it no
+            # longer exposes. Only act on an explicit list — an older daemon that
+            # omits `servers` must not wipe everything.
+            servers = frame.get("servers")
+            if isinstance(servers, list):
+                keys = [s for s in servers if isinstance(s, str)]
+                try:
+                    await reconcile_device_servers(user_id, device_id, keys)
+                except Exception as e:
+                    log.warning(
+                        f"{LogTag.API} Failed to reconcile device servers on HELLO",
+                        device_id=device_id,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+            continue
+        # Unknown frame types are informational; ignore quietly.
 
 
 async def _down_relay(websocket: WebSocket, device_id: str) -> None:

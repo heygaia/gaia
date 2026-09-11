@@ -22,6 +22,7 @@ from app.schemas.device.requests import (
     StartPairingRequest,
 )
 from app.schemas.device.responses import (
+    DeregisterServerResponse,
     DeviceListResponse,
     DevicePairApproveResponse,
     DeviceResponse,
@@ -40,6 +41,7 @@ from app.services.device.device_auth import create_device_token, verify_device_t
 from app.services.device.device_service import (
     PairingError,
     approve_pairing,
+    deregister_device_server,
     enqueue_device_server_warmup,
     get_active_device,
     list_device_servers,
@@ -225,6 +227,24 @@ async def register_server(
     return RegisterServerResponse(
         integration_id=server.integration_id, server_key=server.server_key
     )
+
+
+@router.delete("/servers/{server_key}", status_code=200)
+async def deregister_server(
+    server_key: str, device: DeviceTokenClaims = Depends(_current_device)
+) -> DeregisterServerResponse:
+    """Remove one MCP server the device no longer exposes; authed by the device JWT.
+
+    The daemon calls this right after dropping the server from its local config,
+    so it does not need to be told to remove it again (notify_device=False)."""
+    log.set(
+        device={"operation": "deregister_server", "id": device["device_id"]},
+        user={"id": device["user_id"]},
+    )
+    removed = await deregister_device_server(
+        device["user_id"], device["device_id"], server_key, notify_device=False
+    )
+    return DeregisterServerResponse(server_key=server_key, removed=removed)
 
 
 @router.get("/list")

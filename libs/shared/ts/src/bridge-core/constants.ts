@@ -9,6 +9,7 @@ export const FRAME = {
   MCP_CLOSE: "mcp.close",
   MCP_MSG: "mcp.msg",
   REVOKE: "revoke",
+  SERVER_REMOVE: "server.remove",
   // device -> cloud
   PONG: "pong",
   HELLO: "hello",

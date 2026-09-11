@@ -14,7 +14,7 @@ import secrets
 from urllib.parse import quote
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.device_bridge import (
@@ -24,6 +24,7 @@ from app.constants.device_bridge import (
     DEVICE_REFRESH_RETRY_PREFIX,
     DEVICE_TRANSPORT,
     DEVICE_USER_CODE_PREFIX,
+    FRAME_SERVER_REMOVE,
     MAX_ACTIVE_DEVICES_PER_USER,
     PAIRING_POLL_INTERVAL_SECONDS,
     PAIRING_TTL_SECONDS,
@@ -46,7 +47,7 @@ from app.models.device import (
 from app.models.integration_models import Integration
 from app.models.mcp_config import MCPConfig
 from app.schemas.device.responses import PollPairingResponse, StartPairingResponse
-from app.services.device.bridge import request_revoke
+from app.services.device.bridge import request_revoke, send_down
 from app.services.device.device_auth import (
     generate_refresh_token,
     hash_refresh_token,
@@ -466,6 +467,98 @@ async def _ensure_server_integration(user_id: str, server: DeviceMCPServer) -> N
         )
 
 
+async def _remove_server_cloud_mirror(user_id: str, integration_id: str) -> None:
+    """Drop a device server's cloud-side mirror: the Mongo integration doc, the
+    user link, and the integration caches. The Postgres row is deleted by callers."""
+    await integration_repository.delete(integration_id)
+    await remove_user_integration(user_id, integration_id)
+    await invalidate_user_integration_caches(user_id)
+
+
+async def _send_server_remove(device_id: str, server_key: str) -> None:
+    """Tell the daemon to drop a server from its local config (best-effort).
+
+    Delivered only if the device is online; on a miss the HELLO reconcile on the
+    next connect is the backstop, unless the daemon still has it configured.
+    """
+    try:
+        await send_down(device_id, {"t": FRAME_SERVER_REMOVE, "key": server_key})
+    except Exception as e:
+        log.warning(
+            f"{LogTag.API} Failed to send server-remove to device",
+            device_id=device_id,
+            server_key=server_key,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+
+async def deregister_device_server(
+    user_id: str, device_id: str, server_key: str, *, notify_device: bool
+) -> bool:
+    """Fully remove one device MCP server — Postgres row + cloud mirror. Deleting
+    the Postgres row is what stops ``_ensure_server_integration`` from resurrecting
+    the doc. Returns False if the server was already gone."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(
+                    DeviceMCPServer.device_id == device_id,
+                    DeviceMCPServer.server_key == server_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            return False
+        integration_id = server.integration_id
+        await session.delete(server)
+        await session.commit()
+
+    await _remove_server_cloud_mirror(user_id, integration_id)
+    if notify_device:
+        await _send_server_remove(device_id, server_key)
+    return True
+
+
+async def deregister_device_server_for_integration(
+    integration_id: str, *, notify_device: bool
+) -> bool:
+    """Delete the Postgres server row behind an integration (its Mongo mirror is
+    torn down by the integration-delete path that calls this). Used when a device
+    integration is deleted from the integrations page. Returns False if not a
+    device server."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(DeviceMCPServer.integration_id == integration_id)
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            return False
+        device_id, server_key = server.device_id, server.server_key
+        await session.delete(server)
+        await session.commit()
+
+    if notify_device:
+        await _send_server_remove(device_id, server_key)
+    return True
+
+
+async def reconcile_device_servers(user_id: str, device_id: str, reported_keys: list[str]) -> None:
+    """Prune server rows the daemon no longer exposes — the device's local config is
+    the source of truth. Driven by the HELLO frame the daemon sends on connect."""
+    reported = set(reported_keys)
+    servers = (await list_device_servers([device_id])).get(device_id, [])
+    stale = [s for s in servers if s.server_key not in reported]
+    for server in stale:
+        await deregister_device_server(user_id, device_id, server.server_key, notify_device=False)
+    if stale:
+        log.set(
+            device={"operation": "reconcile_servers", "device_id": device_id},
+            pruned=len(stale),
+        )
+
+
 async def list_devices(user_id: str) -> list[Device]:
     async with get_db_session() as session:
         result = await session.execute(
@@ -537,6 +630,11 @@ async def _teardown_revoked_device(
     for integration_id in integration_ids:
         await integration_repository.delete(integration_id)
         await remove_user_integration(user_id, integration_id)
+    # Drop the device's server rows too, so a revoked device leaves nothing
+    # dangling behind (the FK cascade only fires on a hard device delete).
+    async with get_db_session() as session:
+        await session.execute(delete(DeviceMCPServer).where(DeviceMCPServer.device_id == device_id))
+        await session.commit()
     await request_revoke(device_id)
 
 

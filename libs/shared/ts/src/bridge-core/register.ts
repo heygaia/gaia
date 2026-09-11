@@ -2,8 +2,14 @@
 // enqueuing warm-connect). Split from serving so `gaia bridge add` can register a
 // new server without starting a second tunnel.
 
-import { exchangeToken, registerServer } from "./api.js";
-import { loadConfig, loadCredentials, saveCredentials } from "./config.js";
+import { deregisterServer, exchangeToken, registerServer } from "./api.js";
+import {
+  loadConfig,
+  loadCredentials,
+  removeServer,
+  saveCredentials,
+} from "./config.js";
+import { bridgeLogger } from "./env.js";
 
 export async function registerConfiguredServers(): Promise<void> {
   const creds = loadCredentials();
@@ -29,4 +35,25 @@ export async function registerConfiguredServers(): Promise<void> {
       ),
     ),
   );
+}
+
+// Remove one server: drop it from local config first (durable regardless of
+// network), then best-effort tell the cloud to prune its rows. If the cloud call
+// fails, the HELLO reconcile on the next connect is the backstop.
+export async function deregisterConfiguredServer(
+  key: string,
+): Promise<boolean> {
+  const removed = removeServer(key);
+  const creds = loadCredentials();
+  if (!creds?.refreshToken) return removed;
+  try {
+    const token = await exchangeToken(creds.apiUrl, creds.refreshToken);
+    saveCredentials({ ...creds, refreshToken: token.refresh_token });
+    await deregisterServer(creds.apiUrl, token.access_token, key);
+  } catch (err) {
+    bridgeLogger().info(
+      `[gaia bridge] removed '${key}' locally; the cloud will reconcile on next connect (${err instanceof Error ? err.message : String(err)})`,
+    );
+  }
+  return removed;
 }

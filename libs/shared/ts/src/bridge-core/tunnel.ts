@@ -7,7 +7,12 @@ import { randomInt } from "node:crypto";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
 import { ApiError, exchangeToken } from "./api.js";
-import { loadConfig, loadCredentials, saveCredentials } from "./config.js";
+import {
+  loadConfig,
+  loadCredentials,
+  removeServer,
+  saveCredentials,
+} from "./config.js";
 import type { Credentials } from "./config.types.js";
 import {
   FRAME,
@@ -30,6 +35,8 @@ interface Frame {
   command?: string;
   cwd?: string;
   code?: number;
+  // server.remove carries the key of the server to drop from local config.
+  key?: string;
   // Consumer pod id from mcp.open; echoed on every up-frame so the owning pod
   // routes replies to the pod running the session. Explicitly `| undefined`
   // (not just optional) because call sites forward `frame.pod` verbatim,
@@ -176,6 +183,15 @@ export class Tunnel {
           "[gaia bridge] this device was revoked — exiting.",
         );
         await this.stop();
+        return;
+      case FRAME.SERVER_REMOVE:
+        // The server was deleted from the GAIA UI; drop it from local config so
+        // it isn't re-registered on the next reconnect.
+        if (frame.key && removeServer(frame.key)) {
+          bridgeLogger().info(
+            `[gaia bridge] removed server '${frame.key}' (deleted in GAIA).`,
+          );
+        }
         return;
       default:
         return;

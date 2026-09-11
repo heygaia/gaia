@@ -16,11 +16,11 @@ import {
   type BridgeStatus,
   clearCredentials,
   configureBridge,
+  deregisterConfiguredServer,
   isPaired,
   loadConfig,
   loadCredentials,
   registerConfiguredServers,
-  removeServer as removeServerFromConfig,
   type ServerConfig,
   saveCredentials,
   Tunnel,
@@ -193,7 +193,11 @@ export class BridgeHost {
   }
 
   async removeServer(key: string): Promise<boolean> {
-    return removeServerFromConfig(key);
+    // init() so the state dir points at userData/bridge before we touch config;
+    // deregisterConfiguredServer drops it locally and best-effort notifies the
+    // cloud (HELLO reconcile is the backstop if that call fails).
+    await this.init();
+    return deregisterConfiguredServer(key);
   }
 
   /** Pair this Mac as its own device off the app's authenticated session.

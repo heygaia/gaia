@@ -10,8 +10,11 @@ import {
   slugify,
   tokenizeCommand,
 } from "@gaia/shared/bridge-core/config-builders";
-import { registerConfiguredServers } from "@gaia/shared/bridge-core/register";
-import { loadConfig, removeServer, upsertServer } from "./config.js";
+import {
+  deregisterConfiguredServer,
+  registerConfiguredServers,
+} from "@gaia/shared/bridge-core/register";
+import { loadConfig, upsertServer } from "./config.js";
 import type { ServerConfig } from "./config.types.js";
 import { FILESYSTEM_SERVER_KEY } from "./constants.js";
 import { isPaired, runLogin } from "./login.js";
@@ -292,8 +295,11 @@ function serverLabel(server: ServerConfig): string {
 // menu of what this device exposes.
 export async function runRemove(key?: string): Promise<void> {
   if (key) {
+    const removed = await deregisterConfiguredServer(key);
     console.info(
-      removeServer(key) ? `Removed '${key}'.` : `No server '${key}'.`,
+      removed
+        ? `Removed '${key}' from this device and GAIA.`
+        : `No server '${key}'.`,
     );
     return;
   }
@@ -316,8 +322,8 @@ export async function runRemove(key?: string): Promise<void> {
     return;
   }
 
-  removeServer(chosen.key);
+  await deregisterConfiguredServer(chosen.key);
   console.info(
-    `Removed '${chosen.key}'. The tunnel stops serving it right away; it stays in GAIA until you remove the device from Settings -> Devices.`,
+    `Removed '${chosen.key}'. The tunnel stops serving it right away, and GAIA drops it too.`,
   );
 }

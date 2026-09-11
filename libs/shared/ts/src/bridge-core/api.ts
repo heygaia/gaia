@@ -60,6 +60,24 @@ async function post<T>(
   return (await res.json()) as T;
 }
 
+async function del<T>(apiUrl: string, path: string, token: string): Promise<T> {
+  const res = await fetch(`${apiUrl}/api/v1${path}`, {
+    method: "DELETE",
+    headers: { authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) {
+    let detail = `${res.status} ${res.statusText}`;
+    try {
+      const data = (await res.json()) as { detail?: string };
+      if (data.detail) detail = data.detail;
+    } catch {
+      // non-JSON error body; keep the status line
+    }
+    throw new ApiError(detail, res.status);
+  }
+  return (await res.json()) as T;
+}
+
 export function startPairing(
   apiUrl: string,
   name: string,
@@ -98,6 +116,18 @@ export function registerServer(
     apiUrl,
     "/device/servers",
     { server_key: serverKey, display_name: displayName, kind },
+    accessToken,
+  );
+}
+
+export function deregisterServer(
+  apiUrl: string,
+  accessToken: string,
+  serverKey: string,
+): Promise<{ server_key: string; removed: boolean }> {
+  return del(
+    apiUrl,
+    `/device/servers/${encodeURIComponent(serverKey)}`,
     accessToken,
   );
 }

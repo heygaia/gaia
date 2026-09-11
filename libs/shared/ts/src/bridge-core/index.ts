@@ -63,7 +63,10 @@ export type {
 } from "./ipc.types.js";
 export type { LoginListener } from "./login.js";
 export { isPaired, runLogin } from "./login.js";
-export { registerConfiguredServers } from "./register.js";
+export {
+  deregisterConfiguredServer,
+  registerConfiguredServers,
+} from "./register.js";
 export type { ServerSession } from "./servers.js";
 export { assertLoopbackUrl, openServerSession, testServer } from "./servers.js";
 export { Tunnel } from "./tunnel.js";

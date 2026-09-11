@@ -75,6 +75,13 @@ class RegisterServerResponse(BaseModel):
     server_key: str
 
 
+class DeregisterServerResponse(BaseModel):
+    """Result of the daemon deregistering one of its MCP servers."""
+
+    server_key: str
+    removed: bool
+
+
 class DevicePairApproveResponse(BaseModel):
     """Result of approving a pending device pairing."""
 
