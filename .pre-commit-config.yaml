@@ -48,6 +48,13 @@ repos:
         files: '^(apps/web/src/config/openui/|scripts/openui/generate-prompt\.ts|apps/web/package\.json|pnpm-lock\.yaml)'
         pass_filenames: false
 
+      - id: api-types
+        name: openapi.json + generated API types up to date
+        entry: bash -c 'mise run api:types && git add apps/api/openapi.json libs/shared/ts/src/api/generated/schema.d.ts'
+        language: system
+        files: '^(apps/api/app/.*\.py|apps/api/scripts/export_openapi\.py|apps/api/tests/offline_env\.py|scripts/ci/checks\.mjs|package\.json)$'
+        pass_filenames: false
+
       - id: generate-changelog-pages
         name: Generate changelog sub-pages from release-notes.mdx
         entry: bash -c 'node docs/scripts/generate-changelog-pages.js && git add docs/release-notes.mdx docs/release-notes/'

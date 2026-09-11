@@ -379,10 +379,7 @@ run = "dagger call -s test-python"
 
 [tasks."api:types"]
 description = "Export apps/api/openapi.json and regenerate the TypeScript API types in libs/shared/ts/src/api/generated (CI fails when either drifts)"
-run = """
-cd apps/api && LOG_LEVEL=ERROR uv run python scripts/export_openapi.py
-cd ../.. && pnpm exec openapi-typescript apps/api/openapi.json --alphabetize --output libs/shared/ts/src/api/generated/schema.d.ts
-"""
+run = "node scripts/ci/checks.mjs api-schema --write"
 
 [tasks."test:python:hermetic"]
 description = "Run the hermetic API suite (no Docker, no network) — must finish within the fast-suite budget"

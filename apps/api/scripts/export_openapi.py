@@ -10,11 +10,14 @@ Usage (from ``apps/api``)::
 """
 
 import json
+import os
 from pathlib import Path
 import sys
 
 API_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(API_ROOT))
+# create_app() mounts app/static relative to the working directory.
+os.chdir(API_ROOT)
 
 import tests.offline_env  # noqa: F401 -- must run before any app import
 

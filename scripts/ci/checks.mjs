@@ -20,6 +20,18 @@
  *   evlog-map-bots [--json] [--min-score N] [--min-entries N] [--files-from F]
  *                       Observability score for the bots' wide-event entry
  *                       points. Implementation in lib/evlog-map-bots.mjs.
+ *   api-schema [--write]
+ *                       Regenerate apps/api/openapi.json and the TypeScript
+ *                       types in libs/shared/ts/src/api/generated, then fail
+ *                       if either differs from what is committed. --write
+ *                       regenerates without checking (what `mise api:types`
+ *                       runs).
+ *   api-schema-types    Fail when a .ts/.tsx file outside the generated dir
+ *                       declares an interface/type named after an
+ *                       openapi.json component schema — the hand-written
+ *                       twin of a Pydantic model. config/api-schema-baseline.json
+ *                       lists the twins that predate the gate; it may only
+ *                       shrink.
  *
  * Env contract: CHANGED_FILES (see lib/explicit-file-list.mjs) scopes the
  * file-walking gates to a lane's changed files; empty means full scan.
@@ -27,7 +39,7 @@
  * (default master).
  */
 import { execFileSync, execSync } from "node:child_process";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { explicitFileList } from "./lib/explicit-file-list.mjs";
@@ -640,6 +652,152 @@ function cmdDuplication() {
   }
 }
 
+
+// ---------------------------------------------------------------------------
+// api-schema
+//
+// The contract between the API and every TypeScript consumer is the committed
+// openapi.json plus the types generated from it. Both are build outputs, so
+// the only honest check is to rebuild them and diff: a route change that was
+// committed without `mise api:types` shows up here as a dirty tree.
+// ---------------------------------------------------------------------------
+
+const OPENAPI_JSON = "apps/api/openapi.json";
+const GENERATED_TYPES = "libs/shared/ts/src/api/generated/schema.d.ts";
+const API_SCHEMA_DRIFT_MESSAGE =
+  "API schema drifted — run `mise api:types` and commit";
+
+function regenerateApiSchema() {
+  const opts = { stdio: "inherit" };
+  execFileSync(
+    "uv",
+    [
+      "run",
+      "--frozen",
+      "--project",
+      "apps/api",
+      "--group",
+      "backend",
+      "--group",
+      "dev",
+      "python",
+      "apps/api/scripts/export_openapi.py",
+    ],
+    { ...opts, env: { ...process.env, LOG_LEVEL: "ERROR" } },
+  );
+  execFileSync(
+    "pnpm",
+    [
+      "exec",
+      "openapi-typescript",
+      OPENAPI_JSON,
+      "--alphabetize",
+      "--output",
+      GENERATED_TYPES,
+    ],
+    opts,
+  );
+}
+
+function cmdApiSchema(argv) {
+  regenerateApiSchema();
+  if (argv.includes("--write")) return;
+
+  const dirty = execFileSync(
+    "git",
+    ["status", "--porcelain", "--", OPENAPI_JSON, GENERATED_TYPES],
+    { encoding: "utf8" },
+  ).trim();
+  if (dirty) {
+    console.log(dirty);
+    console.error(`❌ ${API_SCHEMA_DRIFT_MESSAGE}`);
+    process.exit(1);
+  }
+  console.log("✅ openapi.json and the generated API types match the routes.");
+}
+
+// ---------------------------------------------------------------------------
+// api-schema-types
+// ---------------------------------------------------------------------------
+
+const GENERATED_DIR = "libs/shared/ts/src/api/generated/";
+const API_SCHEMA_BASELINE = "config/api-schema-baseline.json";
+// `export interface TodoResponse`, `type Workflow =`, `declare interface X`
+const TYPE_DECLARATION =
+  /^\s*(?:export\s+)?(?:declare\s+)?(?:interface|type)\s+([A-Za-z0-9_]+)\b/gm;
+
+function schemaComponentNames() {
+  const doc = JSON.parse(readFileSync(OPENAPI_JSON, "utf8"));
+  return new Set(Object.keys(doc.components?.schemas ?? {}));
+}
+
+function readBaseline() {
+  if (!existsSync(API_SCHEMA_BASELINE)) return {};
+  return JSON.parse(readFileSync(API_SCHEMA_BASELINE, "utf8"));
+}
+
+function schemaTwinsIn(file, names) {
+  const src = readFileSync(file, "utf8");
+  return [...src.matchAll(TYPE_DECLARATION)]
+    .map((m) => m[1])
+    .filter((name) => names.has(name));
+}
+
+function cmdApiSchemaTypes(argv) {
+  const names = schemaComponentNames();
+  const baseline = readBaseline();
+  const scanned = typesFiles(argv).filter(
+    (file) => !file.startsWith(GENERATED_DIR) && !shouldIgnore(file),
+  );
+
+  const twins = new Map();
+  for (const file of scanned) {
+    const found = schemaTwinsIn(file, names);
+    if (found.length > 0) twins.set(file, found);
+  }
+
+  const violations = [];
+  for (const [file, found] of twins) {
+    const allowed = new Set(baseline[file] ?? []);
+    const fresh = found.filter((name) => !allowed.has(name));
+    if (fresh.length > 0) violations.push({ file, names: fresh });
+  }
+
+  // The baseline may only shrink: an entry whose twin is gone must be removed,
+  // or a re-added twin would slip back in under the old allowance.
+  const stale = [];
+  for (const [file, allowed] of Object.entries(baseline)) {
+    if (!scanned.includes(file)) continue;
+    const found = new Set(twins.get(file) ?? []);
+    for (const name of allowed) if (!found.has(name)) stale.push(`${file}: ${name}`);
+  }
+
+  if (violations.length > 0) {
+    console.log(
+      `\n❌ api-schema-types: ${violations.length} file(s) hand-write a type that mirrors an API model:\n`,
+    );
+    for (const v of violations) {
+      for (const name of v.names) {
+        console.log(
+          `  ${v.file}: ${name} — import { Schema } from "@gaia/shared/api/generated" and use Schema<'${name}'>`,
+        );
+      }
+    }
+    console.log(
+      "\nWhy: a hand-written twin of a Pydantic model drifts the moment the model changes;" +
+        " the generated type is regenerated by `mise api:types` and cannot.",
+    );
+  }
+  if (stale.length > 0) {
+    console.log(
+      `\n❌ api-schema-types: ${API_SCHEMA_BASELINE} lists twins that no longer exist — remove them:\n`,
+    );
+    for (const entry of stale) console.log(`  ${entry}`);
+  }
+  if (violations.length > 0 || stale.length > 0) process.exit(1);
+  console.log("✅ No hand-written twins of API schema types.");
+}
+
 // ---------------------------------------------------------------------------
 // dispatch
 // ---------------------------------------------------------------------------
@@ -655,6 +813,8 @@ function usage() {
       "  duplication                            copy-paste density on changed lines",
       "  evlog-map-bots [--json] [--min-score N] [--min-entries N] [--files-from F]",
       "                                         observability score for bot entry points",
+      "  api-schema [--write]                   regenerate openapi.json + TS types, fail on drift",
+      "  api-schema-types                       no hand-written twin of an API schema type",
     ].join("\n"),
   );
 }
@@ -677,6 +837,12 @@ function main() {
       break;
     case "evlog-map-bots":
       runEvlogMapBots(rest);
+      break;
+    case "api-schema":
+      cmdApiSchema(rest);
+      break;
+    case "api-schema-types":
+      cmdApiSchemaTypes(rest);
       break;
     default:
       console.error(`checks.mjs: unknown subcommand '${sub ?? ""}'`);
