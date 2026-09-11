@@ -35,6 +35,11 @@ TESTS_DIR = Path("apps/api/tests")
 LOCAL_BASE_BRANCH = "master"
 
 
+def _base_ref() -> str:
+    """The branch this diff is scoped to: the PR's base on CI, master locally."""
+    return os.environ.get("GITHUB_BASE_REF", "") or LOCAL_BASE_BRANCH
+
+
 def _merge_base() -> str:
     """The merge-base commit between HEAD and the PR's base ref, or "" outside CI.
 
@@ -57,7 +62,7 @@ def _merge_base() -> str:
     origin and no local master). Callers must treat "" as "scope unknown" and
     refuse to run — never as "nothing changed".
     """
-    base = os.environ.get("GITHUB_BASE_REF", "") or LOCAL_BASE_BRANCH
+    base = _base_ref()
     for ref in (f"origin/{base}", base):
         try:
             return subprocess.check_output(
@@ -227,10 +232,10 @@ def _importers_of(module: str) -> tuple[str, ...]:
 def _test_files_for(module_rel: str, tests_dir: Path = TESTS_DIR) -> list[str]:
     """Test files (repo-root-relative) referencing the module, unit tier first.
 
-    Real-tier suites (tests/integration/real/...) skip without
-    USE_REAL_SERVICES=1, which would leave the mutation run with zero
-    covering tests; prefer hermetic tests/unit/ hits so the lane can
-    actually exercise the module.
+    Ordered rather than filtered here: ``with_unit_mirror`` decides which
+    tiers the lane runs. Unit sorts first because it is hermetic; the contract
+    tier needs USE_REAL_SERVICES=1 and live Mongo/Redis, which the lane now
+    inherits from its job the way every other lane does.
     """
     module = f"app.{module_rel.replace('/', '.')}"
     module_py = f"{module}.py"
@@ -288,7 +293,15 @@ def with_unit_mirror(
     # Kept as a filter rather than a cap: dropping the slow tiers is what makes
     # the run finish, and dropping *arbitrary* files is what re-introduces the
     # false-green this function exists to prevent — so every unit file stays.
-    unit_only = [hit for hit in ordered if hit.startswith("tests/unit/")]
+    #
+    # The contract tier stays too. It is the ONLY tier that exercises a
+    # repository's query shapes against real Mongo, it runs in ~2s per
+    # repository, and dropping it was how every changed repository method
+    # reported "no covering test" while the gate passed (users.py, 19 lines,
+    # on one PR). The cost this filter guards against is e2e graph compilation,
+    # which contracts never do.
+    fast_tiers = ("tests/unit/", "tests/contracts/")
+    unit_only = [hit for hit in ordered if hit.startswith(fast_tiers)]
     # A module whose only coverage is integration/e2e keeps it: measuring it
     # slowly beats not measuring it, and reporting "no test file" would be a lie.
     ordered = unit_only or ordered
@@ -334,6 +347,16 @@ def main() -> int:
         return scope(sys.argv[2].removeprefix("apps/api/"))
     changed = [line.strip() for line in sys.stdin if line.strip()]
     merge_base = _merge_base()
+    # The base is the single input that decides the entire matrix, and nothing
+    # in the lane used to print it. PR #1202 packed 119 modules into 6 shards
+    # for an 11-module diff because it was still targeting master rather than
+    # the branch it is stacked on, and the only way to find that out was to
+    # read a shard's module list and diff the two branches by hand.
+    print(
+        f"mutation gate: diffing against {_base_ref()} "
+        f"(merge-base {merge_base[:12] or 'unresolved'})",
+        file=sys.stderr,
+    )
     matrix: list[dict[str, object]] = []
     failures: list[str] = []
     for module in changed:
