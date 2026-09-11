@@ -146,13 +146,7 @@ async def seed_dev_data(
         user_id,
         phase=OnboardingPhase.COMPLETED,
         bio_status=BioStatus.NO_GMAIL,
-        preferences=OnboardingPreferences(
-            profession="Developer",
-            needs=None,
-            other_need=None,
-            response_style="casual",
-            custom_instructions=None,
-        ),
+        preferences=OnboardingPreferences(profession="Developer", response_style="casual"),
     )
 
     # The seeded platform_user_id is part of the seed CONTRACT (harness clients

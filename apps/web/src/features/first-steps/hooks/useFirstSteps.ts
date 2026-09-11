@@ -1,6 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { usePathname } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { firstStepsApi } from "@/features/first-steps/api/firstStepsApi";
 import {
   FIRST_STEPS_POLL_INTERVAL_MS,
@@ -56,12 +56,19 @@ export function useFirstSteps(): UseFirstSteps {
     qc.invalidateQueries({ queryKey: FIRST_STEPS_QUERY_KEY });
   }, [pathname, qc]);
 
+  // Two quick clicks are two requests whose replies can land in either order.
+  // Each mutation takes a ticket; only the newest one may write the server's
+  // reply (or roll back) — a stale reply would put the checklist on the
+  // penultimate click, and a stale rollback would undo the newest one.
+  const latestCollapse = useRef(0);
   const collapseMutation = useMutation({
     mutationFn: firstStepsApi.setCollapsed,
     // The chevron has to move on the click, not on the round trip: the request
     // only persists a preference the user has already expressed. The in-flight
     // GET is cancelled first, or it can land afterwards and undo the write.
     onMutate: async (collapsed) => {
+      latestCollapse.current += 1;
+      const ticket = latestCollapse.current;
       await qc.cancelQueries({ queryKey: FIRST_STEPS_QUERY_KEY });
       const previous = qc.getQueryData<FirstStepsResponse>(
         FIRST_STEPS_QUERY_KEY,
@@ -70,12 +77,15 @@ export function useFirstSteps(): UseFirstSteps {
         FIRST_STEPS_QUERY_KEY,
         (current) => current && { ...current, collapsed },
       );
-      return { previous };
+      return { previous, ticket };
     },
     // The response is the whole checklist, so there is nothing to refetch.
-    onSuccess: (checklist) => qc.setQueryData(FIRST_STEPS_QUERY_KEY, checklist),
+    onSuccess: (checklist, _collapsed, context) => {
+      if (context.ticket !== latestCollapse.current) return;
+      qc.setQueryData(FIRST_STEPS_QUERY_KEY, checklist);
+    },
     onError: (_error, _collapsed, context) => {
-      if (context?.previous) {
+      if (context?.ticket === latestCollapse.current && context.previous) {
         qc.setQueryData<FirstStepsResponse>(
           FIRST_STEPS_QUERY_KEY,
           context.previous,

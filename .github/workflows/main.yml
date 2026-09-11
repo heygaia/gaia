@@ -13,7 +13,13 @@ on:
   # No `branches:` filter — same reason as code-quality.yml, where the full note
   # lives: the key matches the PR's BASE, so master-only left every stacked PR
   # ungated while still showing a green tick.
+  #
+  # `edited` for the same reason, and again the note lives in code-quality.yml:
+  # a retarget fires no other event, and these lanes scope to `github.base_ref`
+  # too (`nx affected`, `changes.sh docker-inputs`, the test-impact map). The
+  # `select-runner` guard below drops the title/body edits.
   pull_request:
+    types: [opened, synchronize, reopened, edited]
   push:
     branches: [master]
   workflow_dispatch:
@@ -58,6 +64,12 @@ jobs:
   # ── Runner selection (always runs on GH — no Tailscale needed) ─────────
   select-runner:
     name: Select runner
+    # Every job here is downstream of this one, so this condition is the
+    # workflow-level `if:` GitHub does not offer: an `edited` event that did
+    # not move the base changed no code, and `github.event.changes.base` is
+    # present only on a retarget (absent it is null, which casts to '' here).
+    # See the fuller note on the same guard in code-quality.yml.
+    if: ${{ github.event.action != 'edited' || github.event.changes.base != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -98,6 +110,11 @@ jobs:
       - name: Summary
         run: |
           echo "Selected: ${{ steps.pick.outputs.runner }} (is_self_hosted=${{ steps.pick.outputs.is_self_hosted }}, reason=${{ steps.pick.outputs.reason }})"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: select-runner
 
   # ── Watchdog: a run parked on a box that died after selection ────────────
   # select-runner decides once. If the box goes away before pickup, GitHub
@@ -180,6 +197,11 @@ jobs:
           echo "has_typescript=$([[ -n "$TS" ]] && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "Affected Python: $PY"
           echo "Affected TS: $TS"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: detect
 
   # ── Probe the actual execution capability on the chosen runner ───────────
   # This proves fallback works: the job lands wherever select-runner decided,
@@ -213,6 +235,11 @@ jobs:
           free -h 2>/dev/null | head -n 3 || vm_stat 2>/dev/null | head -n 10 || true
           df -h . | head -n 5
           echo "probe: OK — fallback contract verified (job landed, did not queue forever)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: probe
 
   # ── Build — insanely parallel on 16c (auto-detected), fallback 3 on 2c ---
   build:
@@ -259,6 +286,11 @@ jobs:
           # so build.time still measures only the build. No-op off the box.
           bash scripts/ci/runner.sh with-slots "$NX_PARALLEL" -- /usr/bin/time -v bash -c 'pnpm exec nx run-many -t build -p "$AFFECTED_TS_PROJECTS" --parallel="$NX_PARALLEL" --output-style=stream 2>&1 | tail -n 60' 2>&1 | tee "$RUNNER_TEMP/build.time"
           echo "Build: OK (parallel=$NX_PARALLEL)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: build
 
   # ── Test Python — four slices on four runner instances ───────────────────
   # One 16-worker run measured 183s; the box runs eleven `gaia-home` runner
@@ -449,6 +481,12 @@ jobs:
       - name: Stop the embedding sidecar
         if: always()
         run: bash scripts/ci/embedding-sidecar.sh stop
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: test-python-${{ matrix.slice.name }}
+          lane: test-python/${{ matrix.slice.name }}
 
   # ── Coverage gate — its own job, off the test lanes' critical path ────────
   #
@@ -499,6 +537,11 @@ jobs:
           name: coverage-xml
           path: apps/api/coverage.xml
           retention-days: 7
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: coverage
 
   # ── Test TypeScript — Nx parallel scales with cores ----------------------
   test-typescript:
@@ -555,6 +598,11 @@ jobs:
         run: |
           bash scripts/ci/runner.sh with-slots "$NX_PARALLEL" -- /usr/bin/time -v bash -c 'pnpm exec nx run-many -t test -p "$AFFECTED_TS_PROJECTS" --parallel="$NX_PARALLEL" --output-style=stream' 2>&1 | tee "$RUNNER_TEMP/tstest.time"
           echo "TS tests: OK (parallel=$NX_PARALLEL)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: test-typescript
 
   # ── Docker image build — proves the api image still builds, and times it ──
   # On the home box this uses the persistent shared `gaia-ci` builder created
@@ -623,6 +671,11 @@ jobs:
       - name: Stop the persistent builder when idle (self-hosted)
         if: always() && runner.environment == 'self-hosted'
         run: pgrep -f 'docker buildx build' >/dev/null || docker buildx stop gaia-ci
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: docker-image
 
   # --- Test: harness tooling (runner-native, every run) ---------------------
   # Not gated on the affected lists. `tools/` belongs to no Nx project, so a
@@ -658,6 +711,11 @@ jobs:
           echo "::endgroup::"
           echo "### Harness tooling tests — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Harness tooling tests: OK (tools/lints + tools/llm-stub + scripts/ci)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: test-harness-tools
 
   # --- Changelog sync check (always) --------------------------------------
   # GitHub-hosted on purpose: it pushes a branch and opens a PR, not compute.
@@ -776,6 +834,11 @@ jobs:
           # keep advisory until that PR merges, then flip to exit-code:1.
           exit-code: "0"
           ignore-unfixed: false
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: trivy-scan
 
   # --- Regression-proof: changed tests must FAIL on base -------------------
   # FastAPI's lesson: run the PR's changed test files against origin/master
@@ -808,11 +871,22 @@ jobs:
       - name: Stop the embedding sidecar
         if: always()
         run: bash scripts/ci/embedding-sidecar.sh stop
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: regression-proof
 
   # --- Quality gate (branch protection target) ----------------------------
   quality-gate:
     name: quality-gate
-    if: always()
+    # `always()` except for the edit that skipped the whole DAG. The verdict
+    # below fails only on `failure` or `cancelled`, so with every lane skipped
+    # a bare `always()` would print "quality-gate: PASSED" having run nothing —
+    # a green verdict for an untested tree, which is the one outcome this job
+    # exists to prevent. Skipping the gate itself is the honest answer; a
+    # retarget takes the guard's other branch and re-runs every lane.
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base != '') }}
     needs:
       - select-runner
       - detect
@@ -833,35 +907,33 @@ jobs:
       # static checks + dead-code live in code-quality.yml (its own gate)
     runs-on: ubuntu-latest
     timeout-minutes: 3
-    permissions: {}
+    permissions:
+      contents: read
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Every gated job uploads `verdict-<job>` through the
+      # ./.github/actions/upload-verdict composite; merge-multiple lands them
+      # as the one verify-logs/verdicts tree `consolidate` reads.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: verdict-*
+          path: verify-logs/verdicts
+          merge-multiple: true
       - name: Verdict
-        run: |
-          echo "Runner: ${{ needs.select-runner.outputs.runner }} (${{ needs.select-runner.outputs.runner_label }}, self_hosted=${{ needs.select-runner.outputs.is_self_hosted }})"
-          # select-runner is in the loop below: if it fails, every compute lane
-          # is skipped, and skipped counts as passing — the verdict would be
-          # green by accident.
-          printf "  %-16s %s\n" "select-runner:" "${{ needs.select-runner.result }}"
-          printf "  %-16s %s\n" "detect:" "${{ needs.detect.result }}"
-          printf "  %-16s %s\n" "probe:" "${{ needs.probe.result }}"
-          printf "  %-16s %s\n" "build:" "${{ needs.build.result }}"
-          printf "  %-16s %s\n" "test-python:" "${{ needs.test-python.result }}"
-          printf "  %-16s %s\n" "test-typescript:" "${{ needs.test-typescript.result }}"
-          printf "  %-16s %s\n" "coverage:" "${{ needs.coverage.result }}"
-          printf "  %-18s %s\n" "docker-image:" "${{ needs.docker-image.result }}"
-          printf "  %-18s %s\n" "test-harness-tools:" "${{ needs.test-harness-tools.result }}"
-          printf "  %-18s %s\n" "trivy-scan:" "${{ needs.trivy-scan.result }}"
-          printf "  %-18s %s\n" "regression-proof:" "${{ needs.regression-proof.result }}"
-          for r in "${{ needs.select-runner.result }}" "${{ needs.detect.result }}" "${{ needs.probe.result }}" "${{ needs.build.result }}" \
-                   "${{ needs.test-python.result }}" "${{ needs.coverage.result }}" "${{ needs.test-typescript.result }}" \
-                   "${{ needs.docker-image.result }}" "${{ needs.test-harness-tools.result }}" \
-                   "${{ needs.trivy-scan.result }}" "${{ needs.regression-proof.result }}"; do
-            if [[ "$r" == "failure" || "$r" == "cancelled" ]]; then
-              echo "::error::Required job $r"
-              exit 1
-            fi
-          done
-          echo "quality-gate: PASSED"
+        env:
+          # ONE list: every lane the gate needs, each carrying its job result.
+          # consolidate needs both halves — the result is what tells a
+          # legitimately SKIPPED lane apart from one that ran and reported
+          # nothing, and that second case is the drift this contract exists to
+          # catch. select-runner is in the list on purpose: if it fails, every
+          # compute lane skips, and skipped counts as passing, so the gate
+          # would go green by accident. Results go through env rather than
+          # inline expansion, like every other gate here.
+          EXPECT: >-
+            select-runner=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
+        run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"
 
   # --- Docker phase, split so the long part runs parallel to the gate -------
   # build-images starts right after detect (master only) and builds/publishes

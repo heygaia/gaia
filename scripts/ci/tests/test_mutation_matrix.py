@@ -244,6 +244,25 @@ def test_the_mirror_is_not_duplicated_when_it_also_references_the_module(
     ]
 
 
+def test_the_contract_tier_is_kept_beside_unit_and_the_slow_tiers_still_drop(
+    tmp_path: Path,
+) -> None:
+    # Contracts are the only tier that runs a repository's queries against real
+    # Mongo, and they cost ~2s — dropping them with e2e is how every changed
+    # repository method read as "no covering test" while the gate passed.
+    hits = [
+        "apps/api/tests/unit/db/repositories/test_users.py",
+        "apps/api/tests/contracts/test_users_repository.py",
+        "apps/api/tests/e2e/test_onboarding_flow.py",
+        "apps/api/tests/integration/real/test_users_real.py",
+    ]
+
+    assert mm.with_unit_mirror("db/repositories/users", hits, tmp_path) == [
+        "tests/unit/db/repositories/test_users.py",
+        "tests/contracts/test_users_repository.py",
+    ]
+
+
 def test_a_module_with_no_referencing_file_and_no_mirror_selects_nothing(
     tmp_path: Path,
 ) -> None:
@@ -304,3 +323,91 @@ def test_module_refs_returns_an_immutable_set(tmp_path: Path) -> None:
     refs = mm._module_refs(tmp_path / "test_refs.py")
 
     assert isinstance(refs, frozenset)
+
+
+# ---------------------------------------------------------------------------
+# The base the matrix scoped to — printed, because it decides everything else.
+#
+# PR #1202's plan job packed 119 modules into 6 shards for a diff of 11: the PR
+# was still targeting master rather than the branch it was stacked on, so every
+# module of the stack below it was re-mutated. Nothing in the lane's output
+# named the base, so the only way to see it was to open a shard and recognise a
+# module the PR never touched. The detector already resolves the base for its
+# line ranges; it now says which one it used.
+# ---------------------------------------------------------------------------
+
+MATRIX_SCRIPT = REPO_ROOT / "scripts" / "ci" / "lib" / "mutation_matrix.py"
+
+GIT_ENV = {
+    "GIT_AUTHOR_NAME": "t",
+    "GIT_AUTHOR_EMAIL": "t@example.com",
+    "GIT_COMMITTER_NAME": "t",
+    "GIT_COMMITTER_EMAIL": "t@example.com",
+    "PATH": "/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin",
+    "HOME": "/tmp",
+}
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(["git", "-C", str(repo), *args], check=True, env=GIT_ENV, capture_output=True)
+
+
+def _rev(repo: Path, *args: str) -> str:
+    return subprocess.check_output(["git", "-C", str(repo), *args], text=True, env=GIT_ENV).strip()
+
+
+@pytest.fixture
+def stacked_repo(tmp_path: Path) -> Path:
+    """master, a branch stacked on it, and a feature branch stacked on THAT.
+
+    The two candidate bases give different merge-bases on purpose: a detector
+    that ignored GITHUB_BASE_REF and fell back to master would still print a
+    plausible-looking sha, and only the value distinguishes the two.
+    """
+    root = tmp_path / "repo"
+    root.mkdir()
+    _git(root, "init", "-q", "-b", "master")
+    (root / "mod.py").write_text("x = 1\n")
+    _git(root, "add", "-A")
+    _git(root, "commit", "-qm", "master")
+
+    _git(root, "checkout", "-qb", "feat/base")
+    (root / "mod.py").write_text("x = 2\n")
+    _git(root, "commit", "-aqm", "the branch below")
+
+    _git(root, "checkout", "-qb", "feat/stacked")
+    (root / "mod.py").write_text("x = 3\n")
+    _git(root, "commit", "-aqm", "the PR itself")
+    return root
+
+
+def _matrix_stderr(repo: Path, base_ref: str) -> str:
+    process = subprocess.run(
+        ["python3", str(MATRIX_SCRIPT)],
+        cwd=repo,
+        input="",
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**GIT_ENV, "GITHUB_BASE_REF": base_ref},
+    )
+    assert process.returncode == 0, process.stderr
+    return process.stderr
+
+
+def test_the_matrix_names_the_base_it_scoped_to(stacked_repo: Path) -> None:
+    stderr = _matrix_stderr(stacked_repo, "feat/base")
+
+    assert "feat/base" in stderr
+
+
+def test_the_matrix_prints_the_merge_base_it_actually_used(stacked_repo: Path) -> None:
+    # The sha, not just the name: this is what makes a wrong base visible in
+    # the log instead of only in a shard's module list an hour later.
+    stacked = _rev(stacked_repo, "merge-base", "feat/base", "HEAD")
+    against_master = _rev(stacked_repo, "merge-base", "master", "HEAD")
+
+    stderr = _matrix_stderr(stacked_repo, "feat/base")
+
+    assert stacked[:12] in stderr
+    assert against_master[:12] not in stderr

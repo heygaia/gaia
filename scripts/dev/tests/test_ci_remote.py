@@ -1,215 +1,620 @@
-#!/usr/bin/env python3
-"""Fault-injection tests for scripts/dev/ci_remote.py via a stubbed `gh`.
+"""`mise ci:remote` — the failure itself, not a link to it (scripts/dev/ci_remote.py).
 
-Run: python3 scripts/dev/tests/test_ci_remote.py   (stdlib only)
+What this covers is the gap between "the PR is red" and "here is what broke".
+The old output printed `FAIL <name> <url>`; following that URL led to
+`gh run view --log`, which refuses until the whole run completes, so the working
+path was downloading the job's artifact and grepping a 190k-line log — ~12
+commands per red lane.
+
+Every assertion here is about that gap closing:
+  - a lane's verdict artifact is read (artifacts are downloadable mid-run) and
+    rendered as `file:line — message`, with long detail folded behind
+    `--verbose`;
+  - when a lane uploaded no verdict, the job log is cleaned (ANSI, the per-line
+    timestamp prefix, grouping markers) and windowed on the *last* `##[error]`
+    rather than the literal end of the file — the fixture is a trimmed excerpt
+    of a genuine shard log (PR #1161, run 34530501840, mutation-log-2) where the
+    error sits 51 lines from the end, so a plain tail shows `git config` calls;
+  - a stack PR whose GitHub base disagrees with its stack parent is called out,
+    because that mismatch scoped a gate to 119 modules instead of 11;
+  - `--json` carries the same four things so an agent can parse them.
+
+The network seam is mocked at `gh` / `gh_bytes` — the two functions that shell
+out. Everything above them is the real code.
+
+Run: uv run pytest scripts/dev/tests/test_ci_remote.py -p no:xdist
 """
 
 from __future__ import annotations
 
+import io
 import json
-import os
 from pathlib import Path
-import stat
-import subprocess
 import sys
-import tempfile
+from typing import Any
+import zipfile
 
-SCRIPT = Path(__file__).resolve().parent.parent / "ci_remote.py"
+import pytest
 
-PR_META_GREEN = {
-    "headRefOid": "abc123",
-    "url": "https://github.com/o/r/pull/7",
-    "isDraft": False,
-    "mergeable": "MERGEABLE",
-    "reviewDecision": "APPROVED",
-    "reviewThreads": {
-        "totalCount": 3,
-        "nodes": [{"isResolved": True}, {"isResolved": True}, {"isResolved": True}],
-    },
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import ci_remote  # the path insert above must precede this import
+
+# A trimmed excerpt of the real job log for `Mutation shard 3/6` — the bytes
+# `gh api .../jobs/103050508136/logs` returns, ISO prefixes and all. The last
+# `##[error]` is followed by post-job cleanup, which is the whole point.
+REAL_JOB_LOG = (
+    "2026-09-10T21:39:26.6261000Z tests/unit/workers/test_worker_lifecycle.py::test_max_jobs PASSED [ 67%]\n"
+    "2026-09-10T21:39:26.6261100Z tests/unit/workers/test_worker_lifecycle.py::test_log_results FAILED [ 68%]\n"
+    "2026-09-10T21:39:26.6261409Z ===================== 76 passed in 6.58s =====================\n"
+    "2026-09-10T21:39:26.6261514Z     exit code 0\n"
+    "2026-09-10T21:39:26.6261522Z \n"
+    "2026-09-10T21:39:26.6263167Z SKIP: app/workers/config/worker_settings.py — no covering tests\n"
+    "2026-09-10T21:39:26.6263384Z       mutmut 3.7 cannot mutate decorated functions (FastAPI\n"
+    "2026-09-10T21:39:26.6267265Z ##[error]mutation failed for: app/api/v1/endpoints/bot.py\n"
+    "2026-09-10T21:39:26.6270852Z ##[error]Process completed with exit code 1.\n"
+    "2026-09-10T21:39:26.6404318Z ##[group]Run actions/upload-artifact@043fb46\n"
+    "2026-09-10T21:39:26.6405100Z   compression-level: 6\n"
+    "2026-09-10T21:39:26.6405943Z ##[endgroup]\n"
+    "2026-09-10T21:39:27.8128627Z \x1b[36mUploading artifact: mutation-log-2.zip\x1b[0m\n"
+    "2026-09-10T21:39:33.6318578Z [command]/usr/bin/git config --global --add safe.directory /x\n"
+    "2026-09-10T21:39:33.9560775Z Cleaning up orphan processes\n"
+)
+
+VERDICT: dict[str, Any] = {
+    "lane": "mutation-shard-3",
+    "status": "fail",
+    "summary": "2 modules have surviving mutants",
+    "findings": [
+        {
+            "file": "app/api/v1/endpoints/bot.py",
+            "line": 212,
+            "message": "survivor: the once-a-day claim always succeeds",
+            "detail": "line 1\nline 2\nline 3\nline 4\nline 5",
+        },
+        {"file": "app/services/payments/payment_webhook_service.py", "message": "survivor: no-op"},
+    ],
+    "advice": ["Reproduce with `mise mutation:replay app/api/v1/endpoints/bot.py`."],
 }
-PR_META_CONFLICT = dict(PR_META_GREEN, mergeable="CONFLICTING")
-PR_META_UNRESOLVED = {
+
+PR_META: dict[str, Any] = {
+    "number": 7,
+    "title": "feat: a thing",
+    "url": "https://github.com/o/r/pull/7",
     "headRefOid": "abc123",
-    "url": "u",
+    "baseRefName": "master",
+    "headRefName": "feat/thing",
     "isDraft": False,
     "mergeable": "MERGEABLE",
     "reviewDecision": None,
-    "reviewThreads": {"totalCount": 2, "nodes": [{"isResolved": False}, {"isResolved": True}]},
+    "reviewThreads": {"totalCount": 1, "nodes": [{"isResolved": True}]},
+}
+
+FAILED_CHECK: dict[str, Any] = {
+    "name": "Mutation shard 3/6 (19 modules)",
+    "status": "completed",
+    "conclusion": "failure",
+    "html_url": "https://github.com/o/r/actions/runs/99/job/1234",
+    "app": {"slug": "github-actions"},
+}
+PASSED_CHECK: dict[str, Any] = {
+    "name": "lint",
+    "status": "completed",
+    "conclusion": "success",
+    "html_url": "https://github.com/o/r/actions/runs/99/job/1235",
+    "app": {"slug": "github-actions"},
 }
 
 
-def _meta(meta: dict) -> str:
-    return json.dumps({"data": {"repository": {"pullRequest": meta}}})
+def verdict_zip(*verdicts: dict[str, Any]) -> bytes:
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        for i, verdict in enumerate(verdicts):
+            archive.writestr(f"verify-logs/verdicts/{i}.json", json.dumps(verdict))
+    return buffer.getvalue()
 
 
-def _checks(*specs: tuple[str, str]) -> str:
-    return json.dumps(
-        {
-            "check_runs": [
-                {
-                    "name": n,
-                    "status": st,
-                    "conclusion": cc,
-                    "html_url": f"https://x/{n}",
-                    "app": {"slug": "gaia"},
-                    "started_at": None,
-                    "completed_at": None,
+class FakeGh:
+    """Routes `gh` argv to canned payloads and records what was asked for."""
+
+    def __init__(
+        self,
+        *,
+        checks: list[dict[str, Any]],
+        pr_meta: dict[str, Any] | None = None,
+        artifacts: list[dict[str, Any]] | None = None,
+        zip_blob: bytes = b"",
+        job_log: str = REAL_JOB_LOG,
+    ) -> None:
+        self.checks = checks
+        self.pr_meta = pr_meta or PR_META
+        self.artifacts = artifacts if artifacts is not None else []
+        self.zip_blob = zip_blob
+        self.job_log = job_log
+        self.calls: list[str] = []
+
+    def text(
+        self, args: list[str], timeout_s: int, stdin_text: str | None = None
+    ) -> tuple[int, str, str]:
+        endpoint = args[1] if len(args) > 1 else ""
+        self.calls.append(endpoint)
+        if endpoint == "graphql":
+            return 0, json.dumps({"data": {"repository": {"pullRequest": self.pr_meta}}}), ""
+        if "/check-runs" in endpoint:
+            return 0, json.dumps({"check_runs": self.checks}), ""
+        if "/artifacts" in endpoint:
+            return 0, json.dumps({"artifacts": self.artifacts}), ""
+        raise AssertionError(f"unexpected gh call: {args}")
+
+    def binary(self, args: list[str], timeout_s: int) -> tuple[int, bytes, str]:
+        endpoint = args[-1]
+        self.calls.append(endpoint)
+        if endpoint.endswith("/zip"):
+            return 0, self.zip_blob, ""
+        if endpoint.endswith("/logs"):
+            return 0, self.job_log.encode(), ""
+        raise AssertionError(f"unexpected gh_bytes call: {args}")
+
+
+@pytest.fixture
+def wire(monkeypatch: pytest.MonkeyPatch):
+    """Install a FakeGh and stub the git / gh-stack lookups around it."""
+
+    def install(fake: FakeGh, stack: dict[str, Any] | None = None) -> FakeGh:
+        monkeypatch.setattr(ci_remote, "gh", fake.text)
+        monkeypatch.setattr(ci_remote, "gh_bytes", fake.binary)
+        monkeypatch.setattr(ci_remote, "parse_repo", lambda: ("o", "r"))
+        monkeypatch.setattr(ci_remote, "current_branch", lambda: "feat/thing")
+        monkeypatch.setattr(
+            ci_remote,
+            "resolve_pr",
+            lambda *_a, **_k: (7, "https://github.com/o/r/pull/7", "abc123"),
+        )
+        monkeypatch.setattr(ci_remote, "fetch_stack", lambda _t: stack)
+        return fake
+
+    return install
+
+
+def run_cli(monkeypatch: pytest.MonkeyPatch, argv: list[str]) -> int:
+    monkeypatch.setattr(sys, "argv", ["ci_remote.py", *argv])
+    return ci_remote.main()
+
+
+# --------------------------------------------------------------------- log tail cleaning
+
+
+def test_the_tail_is_cleaned_of_everything_that_makes_a_raw_log_unreadable() -> None:
+    lines = ci_remote.clean_log(REAL_JOB_LOG)
+    joined = "\n".join(lines)
+    assert "2026-09-10T21:39" not in joined, "per-line ISO timestamp prefix survived"
+    assert "\x1b[" not in joined, "ANSI escapes survived"
+    assert "##[group]" not in joined and "##[endgroup]" not in joined
+    assert "" not in lines, "blank lines survived"
+    assert "ERROR: Process completed with exit code 1." in lines
+    # A -vv shard prints hundreds of PASSED lines; they would fill the window.
+    assert not any("PASSED [" in line for line in lines)
+    assert any("test_log_results FAILED [ 68%]" in line for line in lines)
+
+
+def test_the_run_view_prefix_form_is_stripped_too() -> None:
+    raw = "shard 3\tRun mutation\t2026-09-10T21:39:26.6267265Z ##[error]mutation failed for: x.py"
+    assert ci_remote.clean_log(raw) == ["ERROR: mutation failed for: x.py"]
+
+
+def test_the_tail_ends_at_the_failure_not_at_the_end_of_the_log() -> None:
+    """A shard log's literal tail is artifact uploads and `git config` calls."""
+    tail = ci_remote.failure_tail(ci_remote.clean_log(REAL_JOB_LOG), limit=5)
+    assert tail[-1] == "ERROR: Process completed with exit code 1."
+    assert "mutation failed for: app/api/v1/endpoints/bot.py" in tail[-2]
+    assert not any("Cleaning up orphan processes" in line for line in tail)
+    assert not any("git config" in line for line in tail)
+    assert len(tail) == 5
+
+
+def test_a_log_with_no_error_marker_falls_back_to_the_literal_tail() -> None:
+    lines = [f"line {i}" for i in range(10)]
+    assert ci_remote.failure_tail(lines, limit=3) == ["line 7", "line 8", "line 9"]
+
+
+# ------------------------------------------------------------------------ verdict output
+
+
+def test_a_failing_verdict_prints_lane_summary_and_file_line_message(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(
+        FakeGh(
+            checks=[FAILED_CHECK, PASSED_CHECK],
+            artifacts=[{"id": 55, "name": "verdict-mutation-shard-3", "expired": False}],
+            zip_blob=verdict_zip(VERDICT),
+        )
+    )
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert "FAIL  mutation-shard-3  [fail]" in out
+    assert "2 modules have surviving mutants" in out
+    assert "app/api/v1/endpoints/bot.py:212 — survivor: the once-a-day claim always succeeds" in out
+    # A finding with no line number still renders, without a dangling colon.
+    assert "app/services/payments/payment_webhook_service.py — survivor: no-op" in out
+
+
+def test_long_detail_is_folded_to_three_lines_until_verbose(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    args: dict[str, Any] = {
+        "checks": [FAILED_CHECK],
+        "artifacts": [{"id": 55, "name": "verdict-mutation-shard-3", "expired": False}],
+        "zip_blob": verdict_zip(VERDICT),
+    }
+    wire(FakeGh(**args))
+    run_cli(monkeypatch, [])
+    folded = capsys.readouterr().out
+    assert "line 3" in folded and "line 4" not in folded
+    assert "… 2 more lines (--verbose)" in folded
+
+    wire(FakeGh(**args))
+    run_cli(monkeypatch, ["--verbose"])
+    full = capsys.readouterr().out
+    assert "line 5" in full
+    assert "more lines (--verbose)" not in full
+
+
+def test_the_verdict_is_preferred_and_the_job_log_is_not_fetched(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = wire(
+        FakeGh(
+            checks=[FAILED_CHECK],
+            artifacts=[{"id": 55, "name": "verdict-mutation-shard-3", "expired": False}],
+            zip_blob=verdict_zip(VERDICT),
+        )
+    )
+    run_cli(monkeypatch, ["--verbose"])
+    assert not any(c.endswith("/logs") for c in fake.calls), "job log fetched despite a verdict"
+    assert "verdict artifact" in capsys.readouterr().out
+
+
+def test_a_lane_with_no_verdict_falls_back_to_the_job_log_and_says_so(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = wire(FakeGh(checks=[FAILED_CHECK], artifacts=[]))
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert "job log tail (lane uploaded no verdict artifact)" in out
+    assert "ERROR: mutation failed for: app/api/v1/endpoints/bot.py" in out
+    assert "actions/jobs/1234/logs" in " ".join(fake.calls)
+
+
+def test_an_external_check_says_to_open_the_url_rather_than_inventing_a_source(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    external = dict(
+        FAILED_CHECK,
+        name="SonarCloud",
+        html_url="https://github.com/o/r/runs/9",
+        app={"slug": "sonarcloud"},
+    )
+    wire(FakeGh(checks=[external]))
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "external check (sonarcloud) — open the URL" in out
+    assert "https://github.com/o/r/runs/9" in out
+
+
+def test_a_matrix_jobs_artifact_name_still_matches_its_check() -> None:
+    verdict: ci_remote.Verdict = {"lane": "test-python", "artifact": "verdict-test-python-unit-a"}
+    assert ci_remote.verdict_matches(verdict, "test-python (unit-a)")
+    assert not ci_remote.verdict_matches(verdict, "test-typescript")
+
+
+def test_a_failing_verdict_whose_lane_matches_no_check_is_still_printed(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    orphan = dict(VERDICT, lane="dead-code", summary="3 unused exports")
+    wire(
+        FakeGh(
+            checks=[FAILED_CHECK],
+            artifacts=[{"id": 55, "name": "verdict-dead-code", "expired": False}],
+            zip_blob=verdict_zip(orphan),
+        )
+    )
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "a lane failed inside a passing job" in out
+    assert "3 unused exports" in out
+
+
+# -------------------------------------------------------------------- output discipline
+
+
+def test_a_green_pr_prints_a_header_and_nothing_that_looks_like_a_failure(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[PASSED_CHECK]))
+    assert run_cli(monkeypatch, []) == 0
+    out = capsys.readouterr().out
+    assert "PR #7 feat: a thing" in out
+    assert "checks: 1 pass / 0 fail / 0 pending / 0 skipped" in out
+    assert "FAIL" not in out and "PEND" not in out
+    assert "Nothing blocking on GitHub's side" in out
+
+
+def test_advice_is_deduplicated_across_verdicts(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    second = dict(VERDICT, lane="mutation-shard-4")
+    wire(
+        FakeGh(
+            checks=[FAILED_CHECK],
+            artifacts=[{"id": 55, "name": "verdict-mutation-shard-3", "expired": False}],
+            zip_blob=verdict_zip(VERDICT, second),
+        )
+    )
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert out.count("Reproduce with `mise mutation:replay") == 1
+
+
+def test_a_conflicting_pr_is_red_even_with_green_checks(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[PASSED_CHECK], pr_meta=dict(PR_META, mergeable="CONFLICTING")))
+    assert run_cli(monkeypatch, []) == 1
+    assert "git merge origin/master" in capsys.readouterr().out
+
+
+# -------------------------------------------------------------------------------- stack
+
+
+STACK: dict[str, Any] = {
+    "trunk": "master",
+    "currentBranch": "feat/thing",
+    "branches": [
+        {"name": "feat/base", "isCurrent": False, "pr": {"number": 6}},
+        {"name": "feat/thing", "isCurrent": True, "pr": {"number": 7}},
+    ],
+}
+
+
+def stack_rollup(*prs: tuple[int, str]) -> dict[str, Any]:
+    one_green_check = {
+        "nodes": [
+            {
+                "commit": {
+                    "statusCheckRollup": {
+                        "contexts": {
+                            "nodes": [
+                                {
+                                    "__typename": "CheckRun",
+                                    "status": "COMPLETED",
+                                    "conclusion": "SUCCESS",
+                                }
+                            ]
+                        }
+                    }
                 }
-                for (n, st, cc) in specs
-            ]
+            }
+        ]
+    }
+    return {
+        "data": {
+            "repository": {
+                f"p{n}": {"number": n, "baseRefName": base, "commits": one_green_check}
+                for n, base in prs
+            }
         }
-    )
+    }
 
 
-GH_SHIM = r"""#!/usr/bin/env bash
-SC="${STUB_SCENARIO:-green}"
-ARGS=("$@")
-if [[ "${ARGS[0]:-}" == "pr" && "${ARGS[1]:-}" == "view" ]]; then
-  if [[ "$SC" == "auth_fail" ]]; then echo "gh: Bad credentials" >&2; exit 4; fi
-  echo '{"number":7,"url":"https://github.com/o/r/pull/7","headRefOid":"abc123"}'
-  exit 0
-fi
-if [[ "${ARGS[0]:-}" == "api" && "${ARGS[1]:-}" == "graphql" ]]; then
-  case "$SC" in
-    graphql_error) echo '{"errors":[{"message":"nope"}]}'; exit 0 ;;
-    timeout) sleep 30 ;;
-    unresolved) echo "$STUB_META_UNRESOLVED" ;;
-    conflicting) echo "$STUB_META_CONFLICT" ;;
-    *) echo "$STUB_META_GREEN" ;;
-  esac
-  exit 0
-fi
-if [[ "${ARGS[0]:-}" == "api" && "${ARGS[1]}" == repos/*"/check-runs"* ]]; then
-  case "$SC" in
-    has_failure) echo "${STUB_CHECKS_MIXED}" ;;
-    pending) echo "${STUB_CHECKS_PENDING}" ;;
-    *) echo "${STUB_CHECKS_PASS}" ;;
-  esac
-  exit 0
-fi
-echo "stub-gh: unexpected invocation: ${ARGS[*]}" >&2
-exit 64
-"""
+@pytest.fixture
+def stacked(wire, monkeypatch: pytest.MonkeyPatch):
+    """A two-PR stack; the second GraphQL call returns the rollup payload."""
+
+    def install(*prs: tuple[int, str]) -> FakeGh:
+        fake = FakeGh(checks=[PASSED_CHECK])
+        wire(fake, stack=STACK)
+        rollup = json.dumps(stack_rollup(*prs))
+        seen = {"graphql": 0}
+
+        def router(
+            args: list[str], timeout_s: int, stdin_text: str | None = None
+        ) -> tuple[int, str, str]:
+            if args[1] == "graphql":
+                seen["graphql"] += 1
+                if seen["graphql"] > 1:  # first is PR state, second is the stack rollup
+                    return 0, rollup, ""
+            return fake.text(args, timeout_s, stdin_text)
+
+        monkeypatch.setattr(ci_remote, "gh", router)
+        return fake
+
+    return install
 
 
-MIN_PY = (3, 11)  # indirect: UP036 flags literal comparisons vs ruff's target version
+def test_the_stack_lists_every_pr_with_its_base_and_marks_the_current_one(
+    stacked, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stacked((6, "master"), (7, "feat/base"))
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "   #6 feat/base" in out
+    assert " * #7 feat/thing" in out
+    assert "-> feat/base  1 pass / 0 fail / 0 pending" in out
+    assert "WARNING" not in out
 
 
-def _tool_python() -> list[str]:
-    """The tools target >=3.11 (datetime.UTC etc.). Prefer current interpreter
-    when new enough, else fall back to mise-managed python."""
-    if sys.version_info >= MIN_PY:
-        return [sys.executable]
-    probe = subprocess.run(
-        ["mise", "exec", "--", "python3", "-c", "import datetime; datetime.UTC"],
-        capture_output=True,
-        check=False,
-    )
-    if probe.returncode == 0:
-        return ["mise", "exec", "--", "python3"]
-    print("SKIP: need python >=3.11 (system python too old, mise unavailable)")
-    sys.exit(0)
+def test_a_pr_targeting_master_instead_of_its_stack_parent_is_warned_about(
+    stacked, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stacked((6, "master"), (7, "master"))  # #7 should target feat/base
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "GitHub base is 'master' but the stack parent is 'feat/base'" in out
+    assert "diff-scoped gate" in out
+    assert "gh pr edit 7 --base feat/base" in out
 
 
-PY = _tool_python()
+def test_no_stack_skips_the_section_entirely(
+    stacked, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    stacked((6, "master"), (7, "master"))
+    run_cli(monkeypatch, ["--no-stack"])
+    assert "STACK" not in capsys.readouterr().out
 
-FAILURES: list[str] = []
+
+# --------------------------------------------------------------------------------- json
 
 
-def run_scenario(scenario: str, extra_args: list[str]) -> tuple[int, str]:
-    with tempfile.TemporaryDirectory() as td:
-        shim_dir = Path(td) / "bin"
-        shim_dir.mkdir()
-        shim = shim_dir / "gh"
-        shim.write_text(GH_SHIM)
-        shim.chmod(shim.stat().st_mode | stat.S_IEXEC)
-        env = dict(os.environ)
-        env["PATH"] = f"{shim_dir}:{env['PATH']}"
-        env["STUB_SCENARIO"] = scenario
-        env["STUB_META_GREEN"] = _meta(PR_META_GREEN)
-        env["STUB_META_CONFLICT"] = _meta(PR_META_CONFLICT)
-        env["STUB_META_UNRESOLVED"] = _meta(PR_META_UNRESOLVED)
-        env["STUB_CHECKS_PASS"] = _checks(
-            ("lint", "completed", "success"), ("gate", "completed", "skipped")
+def test_json_carries_the_pr_checks_verdicts_and_fallback_tails(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(
+        FakeGh(
+            checks=[FAILED_CHECK, PASSED_CHECK],
+            artifacts=[{"id": 55, "name": "verdict-mutation-shard-3", "expired": False}],
+            zip_blob=verdict_zip(VERDICT),
         )
-        env["STUB_CHECKS_MIXED"] = _checks(
-            ("lint", "completed", "success"),
-            ("test-python", "completed", "failure"),
-            ("coderabbit", "in_progress", None),
+    )
+    assert run_cli(monkeypatch, ["--json"]) == 1
+    report = json.loads(capsys.readouterr().out)
+    assert report["schema_version"] == ci_remote.SCHEMA_VERSION
+    assert report["pr"]["number"] == 7
+    assert report["pr"]["title"] == "feat: a thing"
+    assert report["pr"]["base"] == "master"
+    assert report["counts"] == {
+        "passed": 1,
+        "failed": 1,
+        "pending": 0,
+        "skipped": 0,
+        "error": 0,
+        "timeout": 0,
+    }
+    assert report["verdicts"][0]["lane"] == "mutation-shard-3"
+    assert report["verdicts"][0]["artifact"] == "verdict-mutation-shard-3"
+    assert report["fallback_tails"] == {}
+    assert report["sources"][FAILED_CHECK["name"]] == "verdict artifact"
+    assert report["advice"][0].startswith("Reproduce with")
+
+
+def test_json_carries_the_fallback_tail_when_there_is_no_verdict(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[FAILED_CHECK]))
+    run_cli(monkeypatch, ["--json"])
+    report = json.loads(capsys.readouterr().out)
+    tail = report["fallback_tails"][FAILED_CHECK["name"]]
+    assert tail[-1] == "ERROR: Process completed with exit code 1."
+    assert report["verdicts"] == []
+
+
+def test_json_prints_nothing_but_json(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[PASSED_CHECK]))
+    run_cli(monkeypatch, ["--json"])
+    json.loads(capsys.readouterr().out)  # raises if a human line leaked onto stdout
+
+
+# ----------------------------------------------------------------------- fault injection
+
+
+def test_a_pending_check_is_not_a_failure(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    pending = dict(PASSED_CHECK, name="docker-image", status="in_progress", conclusion=None)
+    wire(FakeGh(checks=[pending]))
+    assert run_cli(monkeypatch, []) == 0
+    out = capsys.readouterr().out
+    assert "PEND  docker-image" in out
+    assert "1 check still running" in out
+
+
+def test_an_auth_failure_names_the_endpoint_and_exits_one(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[]))
+    monkeypatch.setattr(
+        ci_remote, "gh", lambda *_a, **_k: (4, "", "gh: Bad credentials (HTTP 401)")
+    )
+    with pytest.raises(SystemExit) as exc:
+        run_cli(monkeypatch, [])
+    assert exc.value.code == 1
+    assert "POST /graphql (pull request state) failed" in capsys.readouterr().err
+
+
+def test_a_graphql_errors_payload_exits_two_without_a_traceback(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[]))
+    monkeypatch.setattr(
+        ci_remote, "gh", lambda *_a, **_k: (0, json.dumps({"errors": [{"message": "nope"}]}), "")
+    )
+    with pytest.raises(SystemExit) as exc:
+        run_cli(monkeypatch, [])
+    assert exc.value.code == 2
+    assert "GraphQL errors (pull request state)" in capsys.readouterr().err
+
+
+def test_a_missing_job_log_says_so_instead_of_printing_an_empty_section(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[FAILED_CHECK]))
+    monkeypatch.setattr(ci_remote, "gh_bytes", lambda *_a, **_k: (1, b"", "HTTP 404: Not Found"))
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert "no log yet" in out
+    assert "logs appear once the run completes" in out
+
+
+def test_a_gate_job_is_not_log_fetched_when_its_run_already_has_a_failing_verdict(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`Quality gate (required)` will never slug to `verdict-test-mutation`.
+
+    The gate job is red because a lane it aggregates was red, and that lane's
+    verdict is on the same run — so the log tail would only repeat the lane
+    table the verdict already carries.
+    """
+    gate = dict(FAILED_CHECK, name="Quality gate (required)")
+    fake = wire(
+        FakeGh(
+            checks=[gate],
+            artifacts=[{"id": 55, "name": "verdict-test-mutation", "expired": False}],
+            zip_blob=verdict_zip(dict(VERDICT, lane="test-mutation")),
         )
-        env["STUB_CHECKS_PENDING"] = _checks(
-            ("lint", "completed", "success"), ("coderabbit", "queued", None)
-        )
-        proc = subprocess.run(
-            [*PY, str(SCRIPT), *extra_args],
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=120,
-            check=False,
-        )
-        return proc.returncode, proc.stdout
-
-
-def check(label: str, cond: bool, detail: str = "") -> None:
-    print(
-        f"  [{'PASS' if cond else 'FAIL'}] {label}"
-        + (f" — {detail}" if detail and not cond else "")
     )
-    if not cond:
-        FAILURES.append(label)
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert not any(c.endswith("/logs") for c in fake.calls)
+    assert "verdict artifacts on this run (see the lanes below)" in out
+    assert "2 modules have surviving mutants" in out
 
 
-def main() -> int:
-    print("ci_remote fault-injection fixtures:")
-
-    rc, out = run_scenario("green", ["--json"])
-    d = json.loads(out)
-    check("green: exit 0", rc == 0)
-    check(
-        "green: counts",
-        d["counts"]
-        == {"passed": 1, "failed": 0, "pending": 0, "skipped": 1, "error": 0, "timeout": 0},
-    )
-    check(
-        "green: unresolved 0 / total 3",
-        d["unresolved_thread_count"] == 0 and d["thread_count_total"] == 3,
-    )
-    check(
-        "green: mergeable surface",
-        d["pr"]["mergeable"] == "MERGEABLE" and d["pr"]["review_decision"] == "APPROVED",
-    )
-
-    rc, out = run_scenario("has_failure", ["--json"])
-    d = json.loads(out)
-    check("mixed: failed check counted", d["counts"]["failed"] == 1)
-    check("mixed: pending counted separately", d["counts"]["pending"] == 1)
-    check("mixed: exit 1", rc == 1)
-    check("mixed: failed check sorted first", d["checks"][0]["status"] == "failed")
-
-    rc, out = run_scenario("conflicting", ["--json"])
-    check("conflicting: exit 1 even with green checks", rc == 1)
-
-    rc, out = run_scenario("unresolved", ["--json"])
-    d = json.loads(out)
-    check("unresolved: counted", d["unresolved_thread_count"] == 1)
-
-    rc, out = run_scenario("auth_fail", [])
-    check("auth_fail: exit 1", rc == 1, f"got {rc}")
-
-    rc, out = run_scenario("graphql_error", ["--json"])
-    check("graphql_error: exit 2", rc == 2, f"got {rc}")
-
-    rc, out = run_scenario("timeout", ["--timeout", "1"])
-    check("timeout: exit 1 (network-class)", rc == 1, f"got {rc}")
-
-    print()
-    if FAILURES:
-        print(f"{len(FAILURES)} FAILED: {FAILURES}")
-        return 1
-    print("all fixtures passed")
-    return 0
+def test_a_red_lane_with_no_verdict_never_reads_as_nothing_blocking(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """Advice was empty when the only failures had no verdict, so a 3-lane-red
+    PR printed "Nothing blocking on GitHub's side"."""
+    wire(FakeGh(checks=[FAILED_CHECK]))
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert "Nothing blocking" not in out
+    assert "1 lane failed with no verdict artifact" in out
+    assert "upload-verdict" in out
 
 
-if __name__ == "__main__":
-    sys.exit(main())
+def test_the_shown_tail_is_trimmed_but_json_keeps_the_whole_window(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    long_log = "".join(f"2026-09-10T21:39:26.626{i:04d}Z step {i}\n" for i in range(60))
+    long_log += "2026-09-10T21:39:26.6270852Z ##[error]Process completed with exit code 1.\n"
+    wire(FakeGh(checks=[FAILED_CHECK], job_log=long_log))
+    run_cli(monkeypatch, [])
+    shown = capsys.readouterr().out
+    assert "step 41" in shown and "step 40" not in shown  # last 20 of the 40-line window
+    assert f"… {ci_remote.FALLBACK_TAIL_LINES - ci_remote.SHOWN_TAIL_LINES} earlier lines" in shown
+
+    wire(FakeGh(checks=[FAILED_CHECK], job_log=long_log))
+    run_cli(monkeypatch, ["--json"])
+    tail = json.loads(capsys.readouterr().out)["fallback_tails"][FAILED_CHECK["name"]]
+    assert len(tail) == ci_remote.FALLBACK_TAIL_LINES
