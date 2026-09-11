@@ -15,6 +15,8 @@ from app.config.settings import settings
 from app.constants.cache import (
     ACTIVE_PLANS_CACHE_KEY,
     ALL_PLANS_CACHE_KEY,
+    CHECKOUT_SCAN_MISS_CACHE_PREFIX,
+    CHECKOUT_SCAN_MISS_TTL,
     SUBSCRIPTION_PLAN_CACHE_PREFIX,
     SUBSCRIPTION_PLAN_CACHE_TTL,
 )
@@ -261,6 +263,9 @@ class DodoPaymentService:
                 user_id=user_id,
                 session_id=checkout_session.session_id,
             )
+        # "None of this user's sessions is paid" was judged against the
+        # sessions that existed; this one is not among them.
+        await redis_cache.delete(f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{user_id}")
 
         return CreateSubscriptionResponse(
             subscription_id=checkout_session.session_id,
@@ -392,40 +397,29 @@ class DodoPaymentService:
         return await subscription_repository.get_latest_active_for_user(user_id)
 
     async def _subscription_behind_checkout(
-        self, user_id: str, checkout: CheckoutSessionDocument
+        self, checkout: CheckoutSessionDocument
     ) -> Subscription | None:
         """The Dodo subscription this checkout session was paid for, if it was.
 
         ``None`` is the ordinary answer for a session nobody paid, or for a
         settled one-off payment with no subscription behind it. A Dodo API
-        failure is logged against the session and also answers ``None``:
-        best-effort by design, because the webhook remains the authoritative
-        path and Dodo retries delivery on its side.
+        failure propagates: the scan decides what one unanswerable session
+        means for the rest.
         """
-        try:
-            checkout_status = await asyncio.to_thread(
-                self.client.checkout_sessions.retrieve, checkout.session_id
-            )
-            payment_id = checkout_status.payment_id
-            if not payment_id or checkout_status.payment_status != "succeeded":
-                return None
-
-            payment = await asyncio.to_thread(self.client.payments.retrieve, payment_id)
-            subscription_id: str | None = getattr(payment, "subscription_id", None)
-            if not subscription_id:
-                # Payment settled but has no subscription behind it.
-                return None
-
-            return await asyncio.to_thread(self.client.subscriptions.retrieve, subscription_id)
-        except Exception as e:
-            log.warning(
-                f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=user_id,
-                session_id=checkout.session_id,
-            )
+        checkout_status = await asyncio.to_thread(
+            self.client.checkout_sessions.retrieve, checkout.session_id
+        )
+        payment_id = checkout_status.payment_id
+        if not payment_id or checkout_status.payment_status != "succeeded":
             return None
+
+        payment = await asyncio.to_thread(self.client.payments.retrieve, payment_id)
+        subscription_id: str | None = getattr(payment, "subscription_id", None)
+        if not subscription_id:
+            # Payment settled but has no subscription behind it.
+            return None
+
+        return await asyncio.to_thread(self.client.subscriptions.retrieve, subscription_id)
 
     async def _materialize_subscription_from_dodo(
         self, user_id: str
@@ -445,17 +439,48 @@ class DodoPaymentService:
         and each further block buried the real session deeper. One failed
         session does not end the scan for the same reason.
 
+        A scan that found nothing paid is cached for the result page's retry
+        window (``CHECKOUT_SCAN_MISS_TTL``): the web client verifies eight
+        times over about fifty seconds, and each verify re-asked Dodo about
+        every session. Only a conclusive miss is cached — a session Dodo could
+        not answer for, or a paid one whose subscription is not active yet, is
+        exactly what the next retry should ask about again.
+
         The sessions name the purchase; they do not authorise it. Ownership and
         the write itself are settled by ``_activate_verified_subscription``,
         the same way the ``subscription_id`` hint route settles them.
         """
+        miss_key = f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{user_id}"
+        if await redis_cache.get(miss_key):
+            log.set_ns("payment", checkout_scan="cached_miss")
+            return None
+
         sessions = await checkout_session_repository.list_recent_for_user(
             user_id, limit=CHECKOUT_SESSION_SCAN_LIMIT
         )
+        conclusive = True
         for checkout in sessions:
-            subscription = await self._subscription_behind_checkout(user_id, checkout)
-            if subscription:
-                return await self._activate_verified_subscription(user_id, subscription)
+            try:
+                subscription = await self._subscription_behind_checkout(checkout)
+            except Exception as e:
+                log.warning(
+                    f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    user_id=user_id,
+                    session_id=checkout.session_id,
+                )
+                conclusive = False
+                continue
+            if subscription is None:
+                continue
+            activated = await self._activate_verified_subscription(user_id, subscription)
+            if activated:
+                return activated
+            conclusive = False
+
+        if conclusive:
+            await redis_cache.set(miss_key, True, ttl=CHECKOUT_SCAN_MISS_TTL)
         return None
 
     async def verify_payment_completion(

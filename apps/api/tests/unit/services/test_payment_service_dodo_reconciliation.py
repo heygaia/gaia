@@ -97,6 +97,17 @@ def _service(remote: MagicMock | Exception) -> DodoPaymentService:
 
 
 @pytest.fixture(autouse=True)
+def _no_scan_cache():
+    """The checkout scan caches a miss in Redis; keep it in memory so one
+    test's miss never reaches the next through a real local Redis."""
+    with patch(f"{SERVICE_MODULE}.redis_cache") as cache:
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
+        cache.delete = AsyncMock()
+        yield
+
+
+@pytest.fixture(autouse=True)
 def _no_recorded_checkout_session():
     """These tests exercise the subscription-id hint. The other recovery path
     (the checkout session recorded at mint time) finds nothing, so the hint

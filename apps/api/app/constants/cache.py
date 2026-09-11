@@ -31,6 +31,14 @@ SUBSCRIPTION_PLAN_CACHE_TTL = FIVE_MINUTES_TTL
 ACTIVE_PLANS_CACHE_KEY = "plans:active"
 ALL_PLANS_CACHE_KEY = "plans:all"
 PLANS_CACHE_KEYS = (ACTIVE_PLANS_CACHE_KEY, ALL_PLANS_CACHE_KEY)
+# Payment verification found none of the user's recorded checkout sessions
+# paid. The result page retries the verify eight times over about fifty
+# seconds (verifyPaymentWithRetry.ts); without this each retry re-asked Dodo
+# about every session. The TTL covers that window and nothing more — the row
+# the webhook creates is read before the cache on every verify, and minting a
+# new session drops the key.
+CHECKOUT_SCAN_MISS_CACHE_PREFIX = "checkout_scan_miss:"
+CHECKOUT_SCAN_MISS_TTL = 60
 # A minted Dodo checkout session, per user and billing cycle. Reused rather than
 # re-minted so a user who asks to upgrade twice — or hits a limit repeatedly —
 # doesn't leave a trail of abandoned sessions in Dodo.
