@@ -1,3 +1,4 @@
+import type { Schema } from "@shared/api/generated";
 import type {
   ApprovalRequestData,
   RateLimitData as SharedRateLimitData,
@@ -9,11 +10,6 @@ import type {
   IntegrationConnectionData,
   IntegrationListStreamData,
 } from "@/features/integrations/types";
-import type {
-  MemoryDocument,
-  MemoryEntry,
-  MemoryEpisode,
-} from "@/features/memory/api/types";
 import type {
   CalendarDeleteOptions,
   CalendarEditOptions,
@@ -60,7 +56,7 @@ import type { WeatherData } from "@/types/features/weatherTypes";
 export type MemoryData =
   | {
       action: "add";
-      memories: MemoryEntry[];
+      memories: Schema<"MemoryEntry">[];
       folder: string;
       outcome: "new" | "updated" | "extended" | "duplicate";
       message: string;
@@ -69,12 +65,12 @@ export type MemoryData =
       action: "search";
       query: string;
       folder: string | null;
-      memories: MemoryEntry[];
+      memories: Schema<"MemoryEntry">[];
       message: string;
     }
   | {
       action: "update";
-      memories: MemoryEntry[];
+      memories: Schema<"MemoryEntry">[];
       message: string;
     }
   | {
@@ -86,12 +82,12 @@ export type MemoryData =
   | {
       action: "journal";
       query: string | null;
-      episodes: MemoryEpisode[];
+      episodes: Schema<"MemoryEpisode">[];
       message: string;
     }
   | {
       action: "document";
-      document: MemoryDocument;
+      document: Schema<"MemoryDocument">;
       updated: boolean;
       message: string;
     };

@@ -1,18 +1,4 @@
-import type {
-  CreateMemoryRequest,
-  CreateMemoryResponse,
-  DeleteMemoryResponse,
-  MemoryDocType,
-  MemoryDocument,
-  MemoryDocumentsResponse,
-  MemoryEntry,
-  MemoryEpisodesResponse,
-  MemoryGraphResponse,
-  MemoryListResponse,
-  MemoryOverviewResponse,
-  MemorySearchResult,
-  MemoryTreeResponse,
-} from "@/features/memory/api/types";
+import type { Schema } from "@shared/api/generated";
 import { apiService } from "@/lib/api/service";
 
 interface ListMemoriesParams {
@@ -26,13 +12,13 @@ export const memoryApi = {
     page = 1,
     pageSize = 20,
     category,
-  }: ListMemoriesParams = {}): Promise<MemoryListResponse> => {
+  }: ListMemoriesParams = {}): Promise<Schema<"MemoryListResponse">> => {
     const params = new URLSearchParams({
       page: String(page),
       page_size: String(pageSize),
     });
     if (category) params.set("category", category);
-    return apiService.get<MemoryListResponse>(`/memory?${params}`, {
+    return apiService.get<Schema<"MemoryListResponse">>(`/memory?${params}`, {
       silent: true,
     });
   },
@@ -40,33 +26,42 @@ export const memoryApi = {
   searchMemories: async (
     query: string,
     limit = 20,
-  ): Promise<MemorySearchResult> => {
+  ): Promise<Schema<"MemorySearchResult">> => {
     const params = new URLSearchParams({ q: query, limit: String(limit) });
-    return apiService.get<MemorySearchResult>(`/memory/search?${params}`, {
+    return apiService.get<Schema<"MemorySearchResult">>(
+      `/memory/search?${params}`,
+      {
+        silent: true,
+      },
+    );
+  },
+
+  getHistory: async (id: string): Promise<Schema<"MemorySearchResult">> => {
+    return apiService.get<Schema<"MemorySearchResult">>(
+      `/memory/${id}/history`,
+      {
+        silent: true,
+      },
+    );
+  },
+
+  getOverview: async (): Promise<Schema<"MemoryOverviewResponse">> => {
+    return apiService.get<Schema<"MemoryOverviewResponse">>(
+      "/memory/overview",
+      {
+        silent: true,
+      },
+    );
+  },
+
+  getTree: async (): Promise<Schema<"MemoryTreeResponse">> => {
+    return apiService.get<Schema<"MemoryTreeResponse">>("/memory/tree", {
       silent: true,
     });
   },
 
-  getHistory: async (id: string): Promise<MemorySearchResult> => {
-    return apiService.get<MemorySearchResult>(`/memory/${id}/history`, {
-      silent: true,
-    });
-  },
-
-  getOverview: async (): Promise<MemoryOverviewResponse> => {
-    return apiService.get<MemoryOverviewResponse>("/memory/overview", {
-      silent: true,
-    });
-  },
-
-  getTree: async (): Promise<MemoryTreeResponse> => {
-    return apiService.get<MemoryTreeResponse>("/memory/tree", {
-      silent: true,
-    });
-  },
-
-  getGraph: async (): Promise<MemoryGraphResponse> => {
-    return apiService.get<MemoryGraphResponse>("/memory/graph", {
+  getGraph: async (): Promise<Schema<"MemoryGraphResponse">> => {
+    return apiService.get<Schema<"MemoryGraphResponse">>("/memory/graph", {
       silent: true,
     });
   },
@@ -74,25 +69,28 @@ export const memoryApi = {
   getEpisodes: async (
     start: string,
     end: string,
-  ): Promise<MemoryEpisodesResponse> => {
+  ): Promise<Schema<"MemoryEpisodesResponse">> => {
     const params = new URLSearchParams({ start, end });
-    return apiService.get<MemoryEpisodesResponse>(
+    return apiService.get<Schema<"MemoryEpisodesResponse">>(
       `/memory/episodes?${params}`,
       { silent: true },
     );
   },
 
-  getDocuments: async (): Promise<MemoryDocumentsResponse> => {
-    return apiService.get<MemoryDocumentsResponse>("/memory/documents", {
-      silent: true,
-    });
+  getDocuments: async (): Promise<Schema<"MemoryDocumentsResponse">> => {
+    return apiService.get<Schema<"MemoryDocumentsResponse">>(
+      "/memory/documents",
+      {
+        silent: true,
+      },
+    );
   },
 
   updateDocument: async (
-    docType: MemoryDocType,
+    docType: Schema<"MemoryDocType">,
     content: string,
-  ): Promise<MemoryDocument> => {
-    return apiService.put<MemoryDocument>(
+  ): Promise<Schema<"MemoryDocument">> => {
+    return apiService.put<Schema<"MemoryDocument">>(
       `/memory/documents/${docType}`,
       { content },
       { silent: true },
@@ -100,29 +98,32 @@ export const memoryApi = {
   },
 
   createMemory: async (
-    request: CreateMemoryRequest,
-  ): Promise<CreateMemoryResponse> => {
-    return apiService.post<CreateMemoryResponse>("/memory", request, {
+    request: Schema<"CreateMemoryRequest">,
+  ): Promise<Schema<"CreateMemoryResponse">> => {
+    return apiService.post<Schema<"CreateMemoryResponse">>("/memory", request, {
       silent: true,
     });
   },
 
-  updateMemory: async (id: string, content: string): Promise<MemoryEntry> => {
-    return apiService.patch<MemoryEntry>(
+  updateMemory: async (
+    id: string,
+    content: string,
+  ): Promise<Schema<"MemoryEntry">> => {
+    return apiService.patch<Schema<"MemoryEntry">>(
       `/memory/${id}`,
       { content },
       { silent: true },
     );
   },
 
-  deleteMemory: async (id: string): Promise<DeleteMemoryResponse> => {
-    return apiService.delete<DeleteMemoryResponse>(`/memory/${id}`, {
+  deleteMemory: async (id: string): Promise<Schema<"DeleteMemoryResponse">> => {
+    return apiService.delete<Schema<"DeleteMemoryResponse">>(`/memory/${id}`, {
       silent: true,
     });
   },
 
-  deleteAllMemories: async (): Promise<DeleteMemoryResponse> => {
-    return apiService.delete<DeleteMemoryResponse>("/memory", {
+  deleteAllMemories: async (): Promise<Schema<"DeleteMemoryResponse">> => {
+    return apiService.delete<Schema<"DeleteMemoryResponse">>("/memory", {
       silent: true,
     });
   },

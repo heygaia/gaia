@@ -3434,6 +3434,7 @@
         },
         "required": [
           "success",
+          "memory_id",
           "message"
         ],
         "title": "CreateMemoryResponse",
@@ -7380,6 +7381,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "documents"
+        ],
         "title": "MemoryDocumentsResponse",
         "type": "object"
       },
@@ -7653,7 +7657,29 @@
           }
         },
         "required": [
-          "content"
+          "id",
+          "content",
+          "kind",
+          "category_path",
+          "importance",
+          "occurred_start",
+          "occurred_end",
+          "mentioned_at",
+          "version",
+          "is_latest",
+          "parent_id",
+          "root_id",
+          "relation_type",
+          "is_forgotten",
+          "forget_after",
+          "forget_reason",
+          "source_type",
+          "source_id",
+          "created_at",
+          "updated_at",
+          "relevance_score",
+          "previous_content",
+          "entities"
         ],
         "title": "MemoryEntry",
         "type": "object"
@@ -7688,7 +7714,9 @@
           }
         },
         "required": [
-          "date"
+          "date",
+          "entries",
+          "summary"
         ],
         "title": "MemoryEpisode",
         "type": "object"
@@ -7732,6 +7760,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "episodes"
+        ],
         "title": "MemoryEpisodesResponse",
         "type": "object"
       },
@@ -7775,7 +7806,8 @@
           "id",
           "source_entity_id",
           "target_entity_id",
-          "relationship"
+          "relationship",
+          "memory_id"
         ],
         "title": "MemoryGraphEdge",
         "type": "object"
@@ -7840,6 +7872,11 @@
             "type": "array"
           }
         },
+        "required": [
+          "nodes",
+          "edges",
+          "memories"
+        ],
         "title": "MemoryGraphResponse",
         "type": "object"
       },
@@ -7880,6 +7917,7 @@
           }
         },
         "required": [
+          "memories",
           "page",
           "page_size",
           "total_count"
@@ -7923,7 +7961,8 @@
           "total_memories",
           "total_entities",
           "folder_count",
-          "episode_count"
+          "episode_count",
+          "documents"
         ],
         "title": "MemoryOverviewResponse",
         "type": "object"
@@ -7956,6 +7995,10 @@
             "type": "integer"
           }
         },
+        "required": [
+          "memories",
+          "total_count"
+        ],
         "title": "MemorySearchResult",
         "type": "object"
       },
@@ -8016,7 +8059,9 @@
         "required": [
           "name",
           "path",
-          "count"
+          "count",
+          "children",
+          "memories"
         ],
         "title": "MemoryTreeNode",
         "type": "object"
@@ -8039,6 +8084,7 @@
           }
         },
         "required": [
+          "tree",
           "total_count"
         ],
         "title": "MemoryTreeResponse",

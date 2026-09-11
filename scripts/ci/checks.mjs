@@ -746,8 +746,10 @@ function schemaTwinsIn(file, names) {
 function cmdApiSchemaTypes(argv) {
   const names = schemaComponentNames();
   const baseline = readBaseline();
+  // existsSync: `git ls-files` still lists a file deleted but not yet staged.
   const scanned = typesFiles(argv).filter(
-    (file) => !file.startsWith(GENERATED_DIR) && !shouldIgnore(file),
+    (file) =>
+      !file.startsWith(GENERATED_DIR) && !shouldIgnore(file) && existsSync(file),
   );
 
   const twins = new Map();

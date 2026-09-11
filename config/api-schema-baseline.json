@@ -88,32 +88,6 @@
   "apps/web/src/features/landing/components/features/demos/SkillsDemo.tsx": [
     "Skill"
   ],
-  "apps/web/src/features/memory/api/types.ts": [
-    "MemoryKind",
-    "MemoryRelationType",
-    "MemoryEntityType",
-    "MemorySourceType",
-    "MemoryDocType",
-    "MemoryEntityRef",
-    "MemoryEntry",
-    "MemoryListResponse",
-    "MemorySearchResult",
-    "MemoryTreeNode",
-    "MemoryTreeResponse",
-    "MemoryGraphNode",
-    "MemoryGraphEdge",
-    "MemoryGraphResponse",
-    "MemoryEpisodeEntry",
-    "MemoryEpisode",
-    "MemoryEpisodesResponse",
-    "MemoryDocument",
-    "MemoryDocumentsResponse",
-    "MemoryDocumentPreview",
-    "MemoryOverviewResponse",
-    "CreateMemoryRequest",
-    "CreateMemoryResponse",
-    "DeleteMemoryResponse"
-  ],
   "apps/web/src/features/notification/components/EnhancedNotificationCard.tsx": [
     "ActionType",
     "ModalConfig",

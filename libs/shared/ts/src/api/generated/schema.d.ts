@@ -6944,7 +6944,7 @@ export interface components {
          */
         CreateMemoryResponse: {
             /** Memory Id */
-            memory_id?: string | null;
+            memory_id: string | null;
             /** Message */
             message: string;
             /** Success */
@@ -8942,7 +8942,7 @@ export interface components {
              * Documents
              * @description Core documents
              */
-            documents?: components["schemas"]["MemoryDocument"][];
+            documents: components["schemas"]["MemoryDocument"][];
         };
         /**
          * MemoryEntityRef
@@ -8988,27 +8988,27 @@ export interface components {
              * Created At
              * @description When the memory was created
              */
-            created_at?: string | null;
+            created_at: string | null;
             /**
              * Entities
              * @description Entities this memory mentions
              */
-            entities?: components["schemas"]["MemoryEntityRef"][];
+            entities: components["schemas"]["MemoryEntityRef"][];
             /**
              * Forget After
              * @description When this memory expires from recall, if temporal
              */
-            forget_after?: string | null;
+            forget_after: string | null;
             /**
              * Forget Reason
              * @description Why this memory was forgotten, when it was
              */
-            forget_reason?: string | null;
+            forget_reason: string | null;
             /**
              * Id
              * @description Unique identifier for the memory
              */
-            id?: string | null;
+            id: string | null;
             /**
              * Importance
              * @description Long-term importance score (0-1)
@@ -9036,44 +9036,44 @@ export interface components {
              * Mentioned At
              * @description When the user mentioned this
              */
-            mentioned_at?: string | null;
+            mentioned_at: string | null;
             /**
              * Occurred End
              * @description When the described event ended, if temporal
              */
-            occurred_end?: string | null;
+            occurred_end: string | null;
             /**
              * Occurred Start
              * @description When the described event started, if temporal
              */
-            occurred_start?: string | null;
+            occurred_start: string | null;
             /**
              * Parent Id
              * @description Memory this version supersedes or extends
              */
-            parent_id?: string | null;
+            parent_id: string | null;
             /**
              * Previous Content
              * @description Content of the directly superseded version, when this memory updated one
              */
-            previous_content?: string | null;
+            previous_content: string | null;
             /** @description How this version relates to its parent */
-            relation_type?: components["schemas"]["MemoryRelationType"] | null;
+            relation_type: components["schemas"]["MemoryRelationType"] | null;
             /**
              * Relevance Score
              * @description Relevance score when returned from search
              */
-            relevance_score?: number | null;
+            relevance_score: number | null;
             /**
              * Root Id
              * @description First memory in the chain
              */
-            root_id?: string | null;
+            root_id: string | null;
             /**
              * Source Id
              * @description Source identifier (conversation ID, email ID, ...)
              */
-            source_id?: string | null;
+            source_id: string | null;
             /**
              * @description Where this memory was ingested from
              * @default conversation
@@ -9083,7 +9083,7 @@ export interface components {
              * Updated At
              * @description When the memory was last updated
              */
-            updated_at?: string | null;
+            updated_at: string | null;
             /**
              * Version
              * @description Version number within the supersession chain
@@ -9105,12 +9105,12 @@ export interface components {
              * Entries
              * @description Journal lines appended through the day
              */
-            entries?: components["schemas"]["MemoryEpisodeEntry"][];
+            entries: components["schemas"]["MemoryEpisodeEntry"][];
             /**
              * Summary
              * @description Day summary, written lazily on day rollover
              */
-            summary?: string | null;
+            summary: string | null;
         };
         /**
          * MemoryEpisodeEntry
@@ -9142,7 +9142,7 @@ export interface components {
              * Episodes
              * @description One per day
              */
-            episodes?: components["schemas"]["MemoryEpisode"][];
+            episodes: components["schemas"]["MemoryEpisode"][];
         };
         /**
          * MemoryGraphEdge
@@ -9158,7 +9158,7 @@ export interface components {
              * Memory Id
              * @description Memory this edge was extracted from (provenance)
              */
-            memory_id?: string | null;
+            memory_id: string | null;
             /**
              * Relationship
              * @description Verb phrase, e.g. 'works at'
@@ -9207,17 +9207,17 @@ export interface components {
              * Edges
              * @description Relationship edges
              */
-            edges?: components["schemas"]["MemoryGraphEdge"][];
+            edges: components["schemas"]["MemoryGraphEdge"][];
             /**
              * Memories
              * @description Memories linked to the returned entities
              */
-            memories?: components["schemas"]["MemoryEntry"][];
+            memories: components["schemas"]["MemoryEntry"][];
             /**
              * Nodes
              * @description Entity nodes
              */
-            nodes?: components["schemas"]["MemoryGraphNode"][];
+            nodes: components["schemas"]["MemoryGraphNode"][];
         };
         /**
          * MemoryKind
@@ -9234,7 +9234,7 @@ export interface components {
              * Memories
              * @description Memories on this page
              */
-            memories?: components["schemas"]["MemoryEntry"][];
+            memories: components["schemas"]["MemoryEntry"][];
             /**
              * Page
              * @description Current page number (1-based)
@@ -9260,7 +9260,7 @@ export interface components {
              * Documents
              * @description Core document previews
              */
-            documents?: components["schemas"]["MemoryDocumentPreview"][];
+            documents: components["schemas"]["MemoryDocumentPreview"][];
             /**
              * Episode Count
              * @description Number of journal days
@@ -9297,7 +9297,7 @@ export interface components {
              * Memories
              * @description List of matching memories
              */
-            memories?: components["schemas"]["MemoryEntry"][];
+            memories: components["schemas"]["MemoryEntry"][];
             /**
              * Total Count
              * @description Total number of matching memories
@@ -9320,7 +9320,7 @@ export interface components {
              * Children
              * @description Sub-folders
              */
-            children?: components["schemas"]["MemoryTreeNode"][];
+            children: components["schemas"]["MemoryTreeNode"][];
             /**
              * Count
              * @description Number of memories in this folder and its children
@@ -9330,7 +9330,7 @@ export interface components {
              * Memories
              * @description Memories directly in this folder, when expanded
              */
-            memories?: components["schemas"]["MemoryEntry"][] | null;
+            memories: components["schemas"]["MemoryEntry"][] | null;
             /**
              * Name
              * @description Folder name (last path segment)
@@ -9356,7 +9356,7 @@ export interface components {
              * Tree
              * @description Top-level folders
              */
-            tree?: components["schemas"]["MemoryTreeNode"][];
+            tree: components["schemas"]["MemoryTreeNode"][];
         };
         /**
          * MessageDict
