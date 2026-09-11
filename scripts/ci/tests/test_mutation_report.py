@@ -656,17 +656,26 @@ def test_the_shard_takes_its_cpu_tokens_from_a_private_pool_never_the_host(
     for the semaphore's full 600 s fail-open wait — per test — and the harness
     lane died at its cap with the last 6% never reached (job 103243166187).
     conftest.py points every test at a pool of its own; this proves the shard
-    honours it: its grant lands there, and is gone again when it exits."""
+    honours it: its grant lands there, and is gone again when it exits.
+
+    The verdict is the same story one rung over: the first run of this test
+    inherited the job's RUNNER_TEMP, the shard wrote `mutation/app/services/
+    x.py` into the job's real verdict directory, and the harness job's
+    ownership check refused to upload a lane it does not own (run 34595547568).
+    """
     root = _sandbox(tmp_path, "exit 0")
     pool = Path(os.environ["GAIA_CPU_SLOTS_DIR"])
+    job_temp = tmp_path / "job-runner-temp"
 
     # The fake mutmut yields nothing, so the module fails on the zero-output
     # guard; the tokens are taken before that and released after regardless.
-    result = _shard_with_env(root, RUNNER_ENVIRONMENT="self-hosted")
+    result = _shard_with_env(root, RUNNER_ENVIRONMENT="self-hosted", RUNNER_TEMP=str(job_temp))
 
     assert "cpu-slots" not in result.stdout + result.stderr, "the governor should be live and quiet"
     assert (pool / "holders").is_dir(), "the shard never touched the private pool"
     assert not list((pool / "holders").iterdir()), "a grant leaked past the shard's exit"
+    assert not (job_temp / "verdicts").exists(), "the shard wrote into the job's own verdict dir"
+    assert (Path(os.environ["GAIA_VERDICT_DIR"]) / "mutation").is_dir()
 
 
 def test_the_shard_puts_verdicts_where_gaia_verdict_dir_says(tmp_path: Path) -> None:
