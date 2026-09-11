@@ -18,7 +18,11 @@ export function launchedHidden(): boolean {
   return app.getLoginItemSettings().wasOpenedAtLogin === true;
 }
 
-/** Register or clear the OS login item, mirroring the stored preference. */
+/** Register or clear the OS login item, mirroring the stored preference. A
+ * login item records the current executable's path; for an unpackaged dev
+ * binary that path is meaningless and macOS rejects it ("Operation not
+ * permitted"), so only real packaged builds own a login item. */
 export function applyLaunchAtLogin(enabled: boolean): void {
+  if (!app.isPackaged) return;
   app.setLoginItemSettings({ openAtLogin: enabled, args: [HIDDEN_ARG] });
 }
