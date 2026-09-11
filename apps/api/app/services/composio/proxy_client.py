@@ -159,7 +159,7 @@ def _resolve_connected_account_id(user_id: str, toolkit: str) -> str:
             meta={
                 "toolkit": toolkit,
                 "user_id": user_id,
-                "error_code": INTEGRATION_NOT_CONNECTED,
+                "code": INTEGRATION_NOT_CONNECTED,
             },
         )
 
@@ -277,7 +277,7 @@ def _proxy_call(
             "provider_response": response.data,
         }
         if status == 401:
-            meta["error_code"] = INTEGRATION_NOT_CONNECTED
+            meta["code"] = INTEGRATION_NOT_CONNECTED
         raise AppError(
             message=f"{toolkit} API error ({status})",
             why=f"Provider returned non-2xx for {method} {endpoint}",

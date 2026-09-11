@@ -480,7 +480,7 @@ class TestCancelSubscription:
             response = await client.post(SUBSCRIPTIONS_CANCEL_URL)
 
         assert response.status_code == 404
-        assert "No active subscription" in response.json()["detail"]
+        assert "No active subscription" in response.json()["message"]
 
 
 # ---------------------------------------------------------------------------
@@ -693,7 +693,7 @@ class TestDodoWebhook:
             )
 
         assert response.status_code == 503
-        assert "User not found" in response.json()["detail"]
+        assert "User not found" in response.json()["message"]
 
     async def test_a_refused_delivery_is_not_narrated_as_processed(self, client: AsyncClient):
         """It used to log "Webhook processed" at info on the way to refusing the
@@ -805,7 +805,7 @@ class TestDodoWebhook:
             )
 
         assert response.status_code == 401
-        assert "Invalid webhook signature" in response.json()["detail"]
+        assert "Invalid webhook signature" in response.json()["message"]
 
     async def test_webhook_missing_headers_returns_422(self, client: AsyncClient):
         response = await client.post(
@@ -832,7 +832,7 @@ class TestDodoWebhook:
             )
 
         assert response.status_code == 400
-        assert "Invalid JSON" in response.json()["detail"]
+        assert "Invalid JSON" in response.json()["message"]
 
     async def test_webhook_processing_error_returns_500(self, client: AsyncClient):
         with (
@@ -858,4 +858,4 @@ class TestDodoWebhook:
             )
 
         assert response.status_code == 500
-        assert "Webhook processing failed" in response.json()["detail"]
+        assert "Webhook processing failed" in response.json()["message"]

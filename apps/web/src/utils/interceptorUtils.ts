@@ -9,6 +9,7 @@ import {
   showTokenLimitToast,
 } from "@/components/shared/RateLimitToast";
 import { API_ERROR_CODES } from "@/lib/api/errorCodes";
+import { getErrorCode, getErrorMessage } from "@/lib/api/errors";
 import { toast } from "@/lib/toast";
 import { useLoginModalStore } from "@/stores/loginModalStore";
 import type { UpgradeOffer } from "@/stores/upgradeModal.types";
@@ -17,39 +18,6 @@ import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 interface ErrorHandlerDependencies {
   router: AppRouterInstance;
 }
-
-const getErrorCode = (data: unknown): string | undefined => {
-  const detail =
-    data && typeof data === "object" && "detail" in data
-      ? (data as { detail: unknown }).detail
-      : undefined;
-  if (detail && typeof detail === "object" && "error_code" in detail)
-    return (detail as { error_code?: string }).error_code;
-  return undefined;
-};
-
-/**
- * Extracts a human-readable message from an Axios error response body,
- * handling both string `detail` and the structured `{ message, ... }` detail
- * the backend returns for auth / integration / rate-limit errors. Prevents an
- * object `detail` from rendering as the literal "[object Object]".
- */
-export const getErrorMessage = (data: unknown): string | undefined => {
-  const detail =
-    data && typeof data === "object" && "detail" in data
-      ? (data as { detail: unknown }).detail
-      : undefined;
-  if (typeof detail === "string") return detail;
-  if (detail && typeof detail === "object" && "message" in detail) {
-    const message = (detail as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  if (data && typeof data === "object" && "message" in data) {
-    const message = (data as { message?: unknown }).message;
-    if (typeof message === "string") return message;
-  }
-  return undefined;
-};
 
 /**
  * Surfaces API error UI for app-shell requests. Only mounted inside the (main)
@@ -112,35 +80,17 @@ const handleForbiddenError = (
   errorData: unknown,
   router: AppRouterInstance,
 ): void => {
-  const detail =
-    errorData && typeof errorData === "object" && "detail" in errorData
-      ? (errorData as { detail: unknown }).detail
-      : undefined;
+  const code = getErrorCode(errorData);
+  const message = getErrorMessage(errorData);
 
-  if (
-    typeof detail === "object" &&
-    detail !== null &&
-    "error_code" in detail &&
-    (detail as { error_code: string }).error_code === "UPGRADE_REQUIRED"
-  ) {
+  if (code === "UPGRADE_REQUIRED") {
     return;
   }
 
-  if (
-    typeof detail === "object" &&
-    detail !== null &&
-    "type" in detail &&
-    detail.type === "integration"
-  ) {
-    const integrationDetail = detail as {
-      type: string;
-      message?: string;
-      toolkit?: string;
-    };
-    const toastKey = `integration-${integrationDetail.toolkit || "default"}`;
-
-    toast.error(integrationDetail.message || "Integration required.", {
-      id: toastKey,
+  if (code === API_ERROR_CODES.INTEGRATION_NOT_CONNECTED) {
+    const { toolkit } = errorData as { toolkit?: string };
+    toast.error(message || "Integration required.", {
+      id: `integration-${toolkit || "default"}`,
       duration: Infinity,
       action: {
         label: "Reconnect",
@@ -150,11 +100,9 @@ const handleForbiddenError = (
       },
     });
   } else {
-    const message =
-      typeof detail === "string"
-        ? detail
-        : "You don't have permission to access this resource.";
-    toast.error(message);
+    toast.error(
+      message || "You don't have permission to access this resource.",
+    );
   }
 };
 
@@ -197,22 +145,11 @@ const handleSubscriptionRequiredError = (errorData: unknown): boolean => {
  * Shared by the axios interceptor and the chat-stream client.
  */
 export const handleRateLimitError = (errorData: unknown): boolean => {
-  const rateLimitData =
-    errorData && typeof errorData === "object" && "detail" in errorData
-      ? (errorData as { detail: unknown }).detail
-      : undefined;
-
-  if (
-    typeof rateLimitData !== "object" ||
-    rateLimitData === null ||
-    !("error" in rateLimitData) ||
-    rateLimitData.error !== "rate_limit_exceeded"
-  ) {
+  if (getErrorCode(errorData) !== "rate_limit_exceeded") {
     return false;
   }
 
-  const rateLimit = rateLimitData as {
-    error: string;
+  const rateLimit = errorData as {
     feature?: string;
     plan_required?: string;
     reset_time?: string;

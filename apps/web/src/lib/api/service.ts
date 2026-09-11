@@ -1,4 +1,5 @@
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
+import { getErrorMessage } from "@/lib/api/errors";
 import { toast } from "@/lib/toast";
 import { apiauth } from "./client";
 
@@ -17,49 +18,6 @@ const DEFAULT_ERROR_MESSAGES: Record<HttpMethod, string> = {
   PATCH: "Failed to update data",
   DELETE: "Failed to delete data",
 };
-
-/**
- * Extract a human-readable error message from the various shapes the backend
- * (and upstream services) use for error payloads. Returns undefined when no
- * message can be found, so the caller can fall back to a default.
- */
-function extractErrorMessageFromData(data: unknown): string | undefined {
-  if (typeof data !== "object" || data === null) return undefined;
-
-  const errorData = data as Record<string, unknown>;
-
-  // Format 1: { detail: { message: "..." } }
-  if (
-    errorData.detail &&
-    typeof errorData.detail === "object" &&
-    errorData.detail !== null
-  ) {
-    const detail = errorData.detail as Record<string, unknown>;
-    return typeof detail.message === "string" ? detail.message : undefined;
-  }
-  // Format 2: { detail: "..." }
-  if (typeof errorData.detail === "string") {
-    return errorData.detail;
-  }
-  // Format 3: { message: "..." }
-  if (typeof errorData.message === "string") {
-    return errorData.message;
-  }
-  // Format 4: { error: "..." } or { error: { message: "..." } }
-  if (errorData.error) {
-    if (typeof errorData.error === "string") {
-      return errorData.error;
-    }
-    if (typeof errorData.error === "object" && errorData.error !== null) {
-      const errorObj = errorData.error as Record<string, unknown>;
-      if (typeof errorObj.message === "string") {
-        return errorObj.message;
-      }
-    }
-  }
-
-  return undefined;
-}
 
 /**
  * Generic API request handler with consistent error handling and toasting
@@ -131,7 +89,7 @@ async function request<T = unknown>(
       // back to a method-specific default.
       const errorMessage =
         options.errorMessage ||
-        extractErrorMessageFromData(err.response?.data) ||
+        getErrorMessage(err.response?.data) ||
         DEFAULT_ERROR_MESSAGES[method];
 
       toast?.error?.(errorMessage);

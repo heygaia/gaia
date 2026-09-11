@@ -10,6 +10,7 @@ import type {
 
 import type { DesktopToolResult } from "@shared/desktop-tools";
 import { getSubscriptionRequiredDetail } from "@shared/types/subscription";
+import { getErrorMessage } from "@/lib/api/errors";
 import { apiService } from "@/lib/api/service";
 import { desktopClientHeaders } from "@/lib/electron/api";
 import { streamLog, streamLogError } from "@/lib/streamLogger";
@@ -23,7 +24,6 @@ import type { ArtifactData } from "@/types/features/toolDataTypes";
 import type { WorkflowData } from "@/types/features/workflowTypes";
 import type { FileData } from "@/types/shared/fileTypes";
 import {
-  getErrorMessage,
   handleRateLimitError,
   subscriptionRequiredOfferFromDetail,
 } from "@/utils/interceptorUtils";

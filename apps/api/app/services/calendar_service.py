@@ -71,12 +71,12 @@ async def _proxy(
         # Integration not connected → emit the structured "integration" detail
         # the web client already understands (same shape as require_integration),
         # so it shows an actionable reconnect toast instead of the login modal.
-        if exc.meta.get("error_code") == INTEGRATION_NOT_CONNECTED:
+        if exc.meta.get("code") == INTEGRATION_NOT_CONNECTED:
             raise HTTPException(
                 status_code=exc.status_code,
                 detail={
                     "type": "integration",
-                    "error_code": INTEGRATION_NOT_CONNECTED,
+                    "code": INTEGRATION_NOT_CONNECTED,
                     "toolkit": exc.meta.get("toolkit"),
                     "message": "Reconnect Google Calendar to load your events.",
                 },

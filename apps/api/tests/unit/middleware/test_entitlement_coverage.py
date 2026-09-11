@@ -138,13 +138,13 @@ async def test_block_body_matches_the_documented_wire_contract(
     response = await gated_client.post("/api/v1/chat-stream")
 
     assert response.status_code == 402
-    detail = response.json()["detail"]
-    assert detail["code"] == "subscription_required"
+    body = response.json()
+    assert body["code"] == "subscription_required"
     # Present and null: the key is still part of the shape three clients parse,
     # but the gate never mints a session to fill it.
-    assert detail["checkout_url"] is None
-    assert set(detail) == {"code", "message", "checkout_url", "discount_code"}
-    assert detail["message"]
+    assert body["checkout_url"] is None
+    assert set(body) == {"code", "message", "checkout_url", "discount_code"}
+    assert body["message"]
 
 
 def test_allowlist_snapshot(gated_app: FastAPI) -> None:
@@ -349,7 +349,10 @@ async def test_plan_lookup_failure_fails_closed() -> None:
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE}
+    assert response.json() == {
+        "message": ENTITLEMENT_UNAVAILABLE_MESSAGE,
+        "code": "entitlement_unavailable",
+    }
 
 
 async def test_the_gate_asks_about_this_caller_and_names_the_path_it_blocked() -> None:
@@ -413,7 +416,10 @@ async def test_an_unreadable_plan_is_a_503_not_a_paywall() -> None:
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
     assert response.status_code == 503
-    assert response.json() == {"detail": ENTITLEMENT_UNAVAILABLE_MESSAGE}
+    assert response.json() == {
+        "message": ENTITLEMENT_UNAVAILABLE_MESSAGE,
+        "code": "entitlement_unavailable",
+    }
     assert response.headers["Retry-After"] == "5"
 
 
@@ -427,7 +433,7 @@ async def test_a_genuine_free_verdict_is_still_a_402() -> None:
         response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
 
     assert response.status_code == 402
-    assert response.json()["detail"]["code"] == "subscription_required"
+    assert response.json()["code"] == "subscription_required"
 
 
 async def test_a_request_no_auth_middleware_touched_passes_through() -> None:

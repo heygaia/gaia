@@ -23,6 +23,7 @@ from app.api.v1.middleware.timeout import RequestTimeoutMiddleware
 from app.api.v1.middleware.websocket_wide_event import WebSocketWideEventMiddleware
 from app.config.settings import settings
 from app.core.bot_auth_middleware import BotAuthMiddleware
+from app.schemas.errors import ErrorEnvelope, error_response
 from shared.py.wide_events import log as wide_log
 
 
@@ -37,13 +38,15 @@ async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
         method=request.method,
         retry_after=getattr(exc, "retry_after", None),
     )
-    return JSONResponse(
-        status_code=429,
-        content={
-            "error": "rate_limit_exceeded",
-            "detail": str(exc),
-            "retry_after": getattr(exc, "retry_after", None),
-        },
+    return error_response(
+        429,
+        ErrorEnvelope.model_validate(
+            {
+                "message": str(exc),
+                "code": "rate_limit_exceeded",
+                "retry_after": getattr(exc, "retry_after", None),
+            }
+        ),
     )
 
 

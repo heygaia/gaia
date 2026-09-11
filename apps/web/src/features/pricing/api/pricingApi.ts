@@ -1,7 +1,6 @@
 import type { AxiosError } from "axios";
-
+import { getErrorMessage } from "@/lib/api/errors";
 import { apiService } from "@/lib/api/service";
-import { getErrorMessage } from "@/utils/interceptorUtils";
 
 export interface Plan {
   id: string;
