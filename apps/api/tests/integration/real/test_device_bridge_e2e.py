@@ -299,6 +299,27 @@ class BridgeDaemon:
         self.daemon_pid = self._read_daemon_pid()
         assert self.daemon_pid is not None, f"`gaia bridge up` wrote no daemon pid: {output}"
 
+    async def run_bridge_command(self, *args: str, timeout: float = 30.0) -> str:
+        """Run a one-shot `gaia bridge <args>` (e.g. `rm <key>`), wait for it to
+        exit, and return its combined output. Asserts a clean exit."""
+        proc = await self._spawn(*args)
+        out: list[str] = []
+        self._pump(proc.stdout, out, f"{args[0]}/out")
+        self._pump(proc.stderr, out, f"{args[0]}/err")
+        await asyncio.wait_for(proc.wait(), timeout=timeout)
+        await self._drain()
+        output = "".join(out)
+        assert proc.returncode == 0, f"`gaia bridge {' '.join(args)}` failed: {output}"
+        return output
+
+    def read_config_keys(self) -> set[str]:
+        """The server keys the daemon currently has in its local config.json."""
+        config_file = self._daemon_dir() / "config.json"
+        if not config_file.exists():
+            return set()
+        servers = json.loads(config_file.read_text()).get("servers", [])
+        return {s["key"] for s in servers}
+
     async def wait_daemon_exits(self, timeout: float = 10.0) -> None:
         """After a revoke, the real background daemon must drop the tunnel and
         exit on its own — proof revocation propagates over the wire, not just as
@@ -581,6 +602,98 @@ class TestFullDeviceLifecycle:
             # is otherwise discarded — which is why the last CI timeout could
             # not be attributed to a phase at all. The detached daemon logs to a
             # file, not the parent's stdout, so surface both.
+            print(f"\n--- bridge daemon timeline ---\n{daemon.dump()}")
+            print(f"\n--- detached tunnel daemon.log ---\n{daemon.daemon_log()}")
+
+
+class TestDeviceServerRemoval:
+    """Removing a device MCP server keeps the cloud and the daemon in sync,
+    driven end to end through the real daemon + real HTTP (no internal calls)."""
+
+    async def _pair_and_expose_everything(
+        self, daemon: BridgeDaemon, owner: httpx.AsyncClient, api_url: str, entry: Path
+    ) -> str:
+        """Pair the daemon, expose the real everything server, wait until the
+        cloud sees the device online. Returns the device_id."""
+        await daemon.start_login(api_url, "e2e-removal-machine")
+        user_code = await daemon.wait_for_user_code()
+        approve = await owner.post("/api/v1/device/pair/approve", json={"user_code": user_code})
+        assert approve.status_code == 200, approve.text
+        device_id = approve.json()["device_id"]
+        await daemon.wait_login_complete()
+        daemon.write_config([everything_server(entry)])
+        await daemon.start_up()
+        await wait_device_online(owner, device_id)
+        return device_id
+
+    async def test_gaia_bridge_rm_removes_the_server_from_the_cloud(
+        self, tmp_path, live_api_server, clean_bridge_tables, everything_server_cached, warm_cli
+    ):
+        """Device-initiated removal: `gaia bridge rm` drops the server from local
+        config AND calls DELETE /device/servers/{key}, so the cloud row goes too."""
+        daemon = BridgeDaemon(tmp_path / "home")
+        owner = _client(live_api_server.url, "device-rm-owner")
+        try:
+            await self._pair_and_expose_everything(
+                daemon, owner, live_api_server.url, everything_server_cached
+            )
+            listing = await owner.get("/api/v1/device/list")
+            keys = [s["server_key"] for s in listing.json()["devices"][0]["servers"]]
+            assert keys == ["everything"], keys
+            daemon.mark("server registered in cloud")
+
+            output = await daemon.run_bridge_command("rm", "everything")
+            assert "Removed 'everything'" in output, output
+            daemon.mark("gaia bridge rm done")
+
+            listing_after = await owner.get("/api/v1/device/list")
+            assert listing_after.json()["devices"][0]["servers"] == []
+            assert daemon.read_config_keys() == set()
+        finally:
+            await owner.aclose()
+            await daemon.stop_all()
+            print(f"\n--- bridge daemon timeline ---\n{daemon.dump()}")
+            print(f"\n--- detached tunnel daemon.log ---\n{daemon.daemon_log()}")
+
+    async def test_deleting_the_integration_makes_the_daemon_forget_the_server(
+        self, tmp_path, live_api_server, clean_bridge_tables, everything_server_cached, warm_cli
+    ):
+        """Cloud-initiated delete: deleting the device integration deletes the
+        Postgres row AND sends a server.remove frame down the live tunnel, so the
+        daemon forgets the server and can't re-register it on reconnect."""
+        daemon = BridgeDaemon(tmp_path / "home")
+        owner = _client(live_api_server.url, "device-del-owner")
+        try:
+            await self._pair_and_expose_everything(
+                daemon, owner, live_api_server.url, everything_server_cached
+            )
+            server = (await owner.get("/api/v1/device/list")).json()["devices"][0]["servers"][0]
+            integration_id = server["integration_id"]
+            daemon.mark("server registered in cloud")
+
+            deleted = await owner.delete(f"/api/v1/integrations/custom/{integration_id}")
+            assert deleted.status_code == 200, deleted.text
+            daemon.mark("integration deleted in cloud")
+
+            # The cloud drops the server row immediately...
+            listing_after = await owner.get("/api/v1/device/list")
+            assert listing_after.json()["devices"][0]["servers"] == []
+
+            # ...and the running daemon receives server.remove over its live socket
+            # and forgets the server. Poll its config until the frame lands.
+            loop = asyncio.get_running_loop()
+            deadline = loop.time() + 10.0
+            while daemon.read_config_keys() != set():
+                if loop.time() >= deadline:
+                    raise AssertionError(
+                        f"daemon still exposes {daemon.read_config_keys()} after delete; "
+                        f"daemon.log:\n{daemon.daemon_log()}"
+                    )
+                await asyncio.sleep(0.1)
+            assert "removed server 'everything'" in daemon.daemon_log().lower()
+        finally:
+            await owner.aclose()
+            await daemon.stop_all()
             print(f"\n--- bridge daemon timeline ---\n{daemon.dump()}")
             print(f"\n--- detached tunnel daemon.log ---\n{daemon.daemon_log()}")
 
