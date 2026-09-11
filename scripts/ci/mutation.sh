@@ -195,7 +195,7 @@ import os
 # skipped lane, and a skipped lane counts as a pass.
 #
 # 6 rather than code-quality.yml's max-parallel of 4, deliberately. Sizing to
-# max-parallel (4, from 2026-08-29 against the 12-runner gaia-home-lint pool)
+# max-parallel (4, from 2026-08-29 against a 12-runner pool)
 # only holds while one wave can carry the whole diff: a 110-module diff packs 28
 # modules per shard, and on run 34476365942 shards 1 and 3 drew enough slow ones
 # to still be running at the step's cutoff — 25 of 28 finished, every one clean,
@@ -205,18 +205,21 @@ import os
 MAX_SHARDS = 6
 
 # The tier that needs live Mongo and Redis (mutation.sh's SERVICES_TIER, passed
-# in rather than repeated). A module mapped to one of these files cannot run in
-# the lint pool: those runner instances are numbered above test-services.sh's
-# MAX_LANE (13-20 vs 0-12), so `prepare` refuses the lane outright — six shards
-# died on that before the split existed. A shard is therefore homogeneous by
-# construction, and its pool travels with it.
+# in rather than repeated). A shard whose modules map to one of these files
+# brings the services up in setup (`pool: services`); every other shard is
+# `unit` and starts none, so it claims no test-services lane. A shard is
+# homogeneous by construction, and its pool travels with it: the workflow
+# conditions the services steps on it. (It once also chose the runner pool —
+# `unit` shards ran on the lint instances — until three stacked PRs showed nine
+# 30-minute shards starving every short lint lane; now all shards share the
+# `gaia-home` pool and `pool` only says whether services are needed.)
 SERVICES_TIER = os.environ["SERVICES_TIER"]
-POOLS = ("lint", "services")
+POOLS = ("unit", "services")
 
 modules = json.loads(os.environ["MATRIX_JSON"])
 members = {
     "services": [m for m in modules if any(f.startswith(SERVICES_TIER) for f in m["testfiles"])],
-    "lint": [m for m in modules if not any(f.startswith(SERVICES_TIER) for f in m["testfiles"])],
+    "unit": [m for m in modules if not any(f.startswith(SERVICES_TIER) for f in m["testfiles"])],
 }
 live = {pool: members[pool] for pool in POOLS if members[pool]}
 

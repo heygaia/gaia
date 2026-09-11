@@ -116,18 +116,25 @@ jobs:
           force-github: ${{ inputs.force_github && 'true' || 'false' }}
           github-token: ${{ secrets.HOMELAB_GH_PAT || github.token }}
 
-  # ── A second selection, for the shards that need live services ───────────
-  # The lint pool cannot run the contract tier, and this is not a policy but an
-  # arithmetic fact: those instances are 13-20 and test-services.sh serves lanes
-  # 0-12 (MAX_LANE — Redis is provisioned for 13 stripes of 32 DBs), so
-  # `prepare` rejects the lane and the job dies in setup. Run 34584038269 lost
-  # all six mutation shards to exactly that. Contract-mapped shards therefore go
-  # to the `gaia-home` pool, which main.yml's test lanes already share, and
-  # everything else stays on lint where it has always run.
+  # ── A second selection, for the mutation shards ──────────────────────────
+  # Every shard runs on the `gaia-home` pool, which main.yml's test lanes
+  # already share, for two reasons that each suffice on their own:
+  #
+  # * The lint pool cannot run the contract tier, and this is not a policy but
+  #   an arithmetic fact: those instances are 13-20 and test-services.sh serves
+  #   lanes 0-12 (MAX_LANE — Redis is provisioned for 13 stripes of 32 DBs), so
+  #   `prepare` rejects the lane and the job dies in setup. Run 34584038269
+  #   lost all six mutation shards to exactly that.
+  # * The lint pool exists for this workflow's many SHORT lanes. A shard is a
+  #   30-minute job; three stacked PRs pushed together put nine of them on the
+  #   nine lint instances (2026-09-11 11:27Z) while seven of the eleven
+  #   `gaia-home` instances sat idle, and the 14 lint lanes of every run
+  #   queued for the shards' whole lifetime.
   #
   # A separate job rather than a parameter on the one above: `runs-on` is
-  # resolved before any step runs, so a shard cannot pick its pool unless both
-  # answers already exist as job outputs.
+  # resolved before any step runs, so the shard pool has to exist as a job
+  # output of its own. The shard's `matrix.pool` still matters: it decides
+  # whether the services are brought up, not where the job lands.
   select-runner-services:
     name: Select runner (services pool)
     # Same guard as select-runner: a title edit must not start either probe.
@@ -1519,15 +1526,13 @@ jobs:
     # 50+ checks would carry its full test-file JSON and the module — the only
     # part a reader needs — would be truncated away in the checks list.
     name: Mutation ${{ matrix.label }}
-    needs: [select-runner, select-runner-services, changes, test-mutation-plan]
+    needs: [select-runner-services, changes, test-mutation-plan]
     if: needs.changes.outputs.has_python == 'true' && needs.test-mutation-plan.outputs.count != '0'
-    # The pool `mutation.sh plan` assigned this shard. GitHub evaluates `A && B
-    # || C` as a value expression, not a boolean one, so this yields whichever
-    # runner ARRAY the branch selects — the same shape the single
-    # `fromJSON(...)` had. Both selections are in `needs` because `runs-on` is
-    # resolved before the job starts and cannot ask for an output it did not
-    # declare.
-    runs-on: ${{ matrix.pool == 'services' && fromJSON(needs.select-runner-services.outputs.runner) || fromJSON(needs.select-runner.outputs.runner) }}
+    # The shard pool, never the lint selection: see select-runner-services for
+    # why every shard lands there whatever `matrix.pool` says. The selection is
+    # in `needs` because `runs-on` is resolved before the job starts and cannot
+    # ask for an output it did not declare.
+    runs-on: ${{ fromJSON(needs.select-runner-services.outputs.runner) }}
     # The base every scoped step in this job diffs against. Job-level because a
     # workflow-level `env:` cannot read `needs`, and every step here that calls
     # changes.sh, nx affected or jscpd must agree on one answer.
@@ -1543,9 +1548,9 @@ jobs:
       fail-fast: false
       # Each shard runs its modules in parallel with children of its own; nine
       # concurrent shards (measured 2026-08-28) filled every runner slot so the
-      # main pipeline's detect job queued behind lint. Four at a time keeps the
-      # lint pool's other lanes moving. This is the wave size, NOT the shard
-      # count: scripts/ci/mutation.sh plan packs modules into MAX_SHARDS (6)
+      # main pipeline's detect job queued behind them. Four at a time keeps the
+      # pool's test lanes moving. This is the wave size, NOT the shard count:
+      # scripts/ci/mutation.sh plan packs modules into MAX_SHARDS (6)
       # round-robin, so a large diff runs as 4 + 2 rather than overfilling four.
       max-parallel: 4
       matrix:
@@ -1558,14 +1563,12 @@ jobs:
           persist-credentials: false
       # A services shard installs through the composite that also brings up
       # Mongo and Redis for this runner instance and exports
-      # USE_REAL_SERVICES=1. It is only ever reached on the services pool: the
-      # composite's `test-services.sh prepare` refuses a lane above MAX_LANE,
-      # which is every instance in the lint pool.
+      # USE_REAL_SERVICES=1 — the contract tier in its test set needs them.
       - uses: ./.github/actions/setup-python-test-env
         if: matrix.pool == 'services'
-      # A lint shard installs the way every other Python lane on this pool does
-      # — setup-uv for the cached toolchain, then the project sync mutmut and
-      # pytest need. No services are started, so nothing claims a lane.
+      # Any other shard installs the way the lint lanes do — setup-uv for the
+      # cached toolchain, then the project sync mutmut and pytest need. No
+      # services are started, so nothing claims a test-services lane.
       - uses: ./.github/actions/setup-uv
         if: matrix.pool != 'services'
       - name: Sync Python dependencies
@@ -1585,9 +1588,9 @@ jobs:
           GROUP: ${{ matrix.group }}
         run: bash scripts/ci/mutation.sh shard
       # Only the services shards took a namespace, and only they hand it back.
-      # Running these on a lint shard would call test-services.sh with a lane
-      # number it rejects — teardown failing is how a lane goes red having
-      # passed. `always()` still, so a failed shard releases what it claimed.
+      # Releasing a lane a shard never claimed is a teardown error, and
+      # teardown failing is how a lane goes red having passed. `always()`
+      # still, so a failed shard releases what it claimed.
       - name: Release the test services
         if: always() && matrix.pool == 'services'
         run: bash scripts/ci/test-services.sh down

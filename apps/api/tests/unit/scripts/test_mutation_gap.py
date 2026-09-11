@@ -41,6 +41,16 @@ def caller(client: object) -> object:     # 10
 @decorated                                # 16
 def endpoint(n: int) -> int:              # 17
     return n + 1                          # 18
+                                          # 19
+class Kind(StrEnum):                      # 20
+    SAY_HI = "say_hi"                     # 21
+                                          # 22
+class Model(BaseModel):                   # 23
+    collapsed: bool = False               # 24
+    steps: list[int] = Field(default=[])  # 25
+                                          # 26
+    def total(self) -> int:               # 27
+        return len(self.steps) + 1        # 28
 '''
 
 
@@ -79,6 +89,20 @@ def test_a_decorated_function_counts_because_the_lane_patches_mutmut_to_mutate_i
     # Bare mutmut 3.7 skips decorated defs; scripts/test/mutmut_decorated_patch.py
     # lifts that for the lane, and this classifier loads the same patch.
     assert _lines([[18, 18]]) == [18]
+
+
+def test_class_fields_and_enum_members_are_not_a_gap() -> None:
+    """mutmut mutates a class-body assignment and tags it with the STATEMENT as
+    its enclosing node, so a truthiness check reads it as function-contained.
+    Only a def gets a trampoline; a field default or an enum member has no
+    function to be credited through. Every changed model file read as a gap
+    until this was checked by type (first_steps_models.py, run 34593115851)."""
+    assert _lines([[21, 21]]) == []
+    assert _lines([[24, 25]]) == []
+
+
+def test_a_method_body_is_still_reported() -> None:
+    assert _lines([[28, 28]]) == [28]
 
 
 def test_unparsable_source_reports_nothing_rather_than_crashing() -> None:
