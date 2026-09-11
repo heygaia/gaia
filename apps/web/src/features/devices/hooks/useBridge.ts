@@ -10,7 +10,11 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { getElectronAPI } from "@/lib/electron/api";
 import { toast } from "@/lib/toast";
 
-const OFFLINE_STATUS: BridgeStatus = { paired: false, running: false };
+const OFFLINE_STATUS: BridgeStatus = {
+  paired: false,
+  running: false,
+  deviceId: null,
+};
 
 /** Unwrap a bridge envelope, throwing the server-supplied message so the
  * caller's catch can surface the real reason (incl. the 409 device-cap text)
@@ -137,3 +141,7 @@ export function useBridge() {
     removeServer,
   };
 }
+
+/** The shape returned by {@link useBridge}, so the coordinator can own one
+ * instance and pass it to the card as a prop (single source of truth). */
+export type UseBridge = ReturnType<typeof useBridge>;

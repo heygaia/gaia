@@ -8,6 +8,7 @@ import type {
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { ThisMacCard } from "@/features/devices/components/ThisMacCard";
+import { useBridge } from "@/features/devices/hooks/useBridge";
 
 /**
  * "This Mac" is the desktop app's own device, driven over the bridge IPC
@@ -42,10 +43,17 @@ vi.mock("@/lib/toast", () => ({
 }));
 
 const ok = <T,>(value: T): BridgeInvokeResult<T> => ({ ok: true, value });
-const status = (paired: boolean, running: boolean): BridgeStatus => ({
-  paired,
-  running,
-});
+const status = (
+  paired: boolean,
+  running: boolean,
+  deviceId: string | null = null,
+): BridgeStatus => ({ paired, running, deviceId });
+
+// The card takes the bridge hook result as a prop; drive the real hook against
+// the mocked window.api.bridge so the test exercises the actual wiring.
+function Harness() {
+  return <ThisMacCard bridge={useBridge()} />;
+}
 
 beforeEach(() => {
   vi.clearAllMocks();
@@ -60,7 +68,7 @@ describe("ThisMacCard", () => {
     bridge.pair.mockResolvedValue(ok(status(true, false)));
     bridge.start.mockResolvedValue(ok(status(true, true)));
 
-    render(<ThisMacCard />);
+    render(<Harness />);
 
     const enable = await screen.findByRole("button", {
       name: /enable on this mac/i,
@@ -90,7 +98,7 @@ describe("ThisMacCard", () => {
     );
     bridge.removeServer.mockResolvedValue(ok<ServerConfig[]>([]));
 
-    render(<ThisMacCard />);
+    render(<Harness />);
 
     await screen.findByText("Everything server");
 

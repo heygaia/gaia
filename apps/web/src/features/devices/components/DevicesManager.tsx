@@ -19,6 +19,7 @@ import {
   BRIDGE_UP_COMMAND,
   DEVICE_BRIDGE_DOCS_URL,
 } from "../constants";
+import { useBridge } from "../hooks/useBridge";
 import { useDevices } from "../hooks/useDevices";
 import type { Device } from "../types";
 import { ThisMacCard } from "./ThisMacCard";
@@ -107,11 +108,19 @@ function DeviceRow({
   );
 }
 
-/** The paired CLI/other-machine devices (everything except "This Mac", which
- * the desktop app owns directly over IPC). */
-function PairedDevices({ showThisMac }: { showThisMac: boolean }) {
+/** The paired CLI/other-machine devices. Excludes "This Mac" (the desktop app's
+ * own device, shown as the card above) so it isn't listed twice with a Revoke
+ * button that would kill the card's tunnel. */
+function PairedDevices({
+  showThisMac,
+  excludeDeviceId,
+}: {
+  showThisMac: boolean;
+  excludeDeviceId: string | null;
+}) {
   const { devices, isLoading, error, refetch, revokeDevice, revokingId } =
     useDevices();
+  const otherDevices = devices.filter((d) => d.id !== excludeDeviceId);
 
   if (isLoading) {
     return (
@@ -132,7 +141,7 @@ function PairedDevices({ showThisMac }: { showThisMac: boolean }) {
     );
   }
 
-  if (devices.length === 0) {
+  if (otherDevices.length === 0) {
     // The "This Mac" card is a working device on its own, so an empty CLI list
     // beneath it needs no "install the CLI" nudge — only the pure-web view does.
     if (showThisMac) return null;
@@ -148,7 +157,7 @@ function PairedDevices({ showThisMac }: { showThisMac: boolean }) {
 
   return (
     <>
-      {devices.map((device) => (
+      {otherDevices.map((device) => (
         <DeviceRow
           key={device.id}
           device={device}
@@ -165,11 +174,17 @@ export function DevicesManager() {
   // First cut is macOS-only (the host resolves a login-shell PATH the darwin
   // way); the card stays hidden in the browser and on Windows/Linux desktop.
   const showThisMac = getElectronAPI() !== null && isMac;
+  // One bridge instance owns the status; the card consumes it and the list uses
+  // its deviceId to drop "This Mac" from the paired rows.
+  const bridge = useBridge();
 
   return (
     <div className="flex flex-col gap-3">
-      {showThisMac && <ThisMacCard />}
-      <PairedDevices showThisMac={showThisMac} />
+      {showThisMac && <ThisMacCard bridge={bridge} />}
+      <PairedDevices
+        showThisMac={showThisMac}
+        excludeDeviceId={showThisMac ? bridge.status.deviceId : null}
+      />
     </div>
   );
 }

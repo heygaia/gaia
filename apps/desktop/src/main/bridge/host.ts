@@ -119,7 +119,11 @@ export class BridgeHost {
   }
 
   status(): BridgeStatus {
-    return { paired: isPaired(), running: this.running };
+    return {
+      paired: isPaired(),
+      running: this.running,
+      deviceId: loadCredentials()?.deviceId ?? null,
+    };
   }
 
   onStatusChange(listener: (status: BridgeStatus) => void): void {

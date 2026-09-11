@@ -6,7 +6,7 @@ import { Spinner } from "@heroui/spinner";
 import { Switch } from "@heroui/switch";
 import { ComputerIcon, Delete02Icon, Folder01Icon, Link04Icon } from "@icons";
 import type { ServerConfig } from "@shared/bridge-core/config.types";
-import { useBridge } from "../hooks/useBridge";
+import type { UseBridge } from "../hooks/useBridge";
 import { AddServerModal } from "./AddServerModal";
 
 function StatusChip({
@@ -67,9 +67,9 @@ function ServerRow({
  * (gated by the caller); pairing is one click, the tunnel toggles live, and MCP
  * servers are added/removed here rather than via `gaia bridge add`.
  */
-export function ThisMacCard() {
+export function ThisMacCard({ bridge }: { bridge: UseBridge }) {
   const { status, servers, busy, pair, setRunning, addServer, removeServer } =
-    useBridge();
+    bridge;
 
   return (
     <div className="rounded-2xl bg-zinc-800 p-4">

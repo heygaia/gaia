@@ -8,10 +8,14 @@
 // the renderer through the IPC surface.
 
 /** Snapshot for the renderer/tray: whether this device is paired (has stored
- * credentials) and whether its tunnel is currently held open. */
+ * credentials) and whether its tunnel is currently held open. `deviceId` is the
+ * paired device's id (null when unpaired) so the renderer can tell which row in
+ * the devices list is "this Mac" and not show it twice; the refresh token is
+ * never included. */
 export interface BridgeStatus {
   paired: boolean;
   running: boolean;
+  deviceId: string | null;
 }
 
 /** Machine-readable outcome for a failed bridge invoke. `not_authenticated` and
