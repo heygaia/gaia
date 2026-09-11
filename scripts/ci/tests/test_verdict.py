@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import os
 from pathlib import Path
+import subprocess
 from typing import Any
 
 import pytest
@@ -620,3 +622,35 @@ def test_dir_prints_the_directory_emit_would_write_to(
     assert printed == f"{expected or verdict.CHECKOUT_VERDICT_DIR}\n", (
         "one line, no trailing noise — a script reads this into a variable"
     )
+
+
+def test_ci_verdict_still_finds_verdict_py_after_the_caller_changes_directory(
+    tmp_path: Path,
+) -> None:
+    """`ci_verdict` is called from inside worktrees and scratch dirs.
+
+    regression-proof sources log.sh as `../../scripts/ci/pytest.sh` does —
+    through a relative path — and then `cd`s into the base worktree before it
+    emits. Building the verdict.py path from ${BASH_SOURCE[0]} at CALL time
+    resolved it against that new directory, and the lane died with "can't open
+    …/../../scripts/ci/lib/../verdict.py" on run 34586500580 (#1202). The path
+    has to be fixed at source time.
+    """
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    script = (
+        # Source through a RELATIVE path from apps/api, exactly like the lane.
+        'cd "$REPO/apps/api" && source ../../scripts/ci/lib/log.sh && '
+        f'cd "{elsewhere}" && '
+        f'ci_verdict --lane probe --status pass --summary ok --out "{tmp_path}/verdicts"'
+    )
+    result = subprocess.run(
+        ["bash", "-c", script],
+        env={**os.environ, "REPO": str(REPO_ROOT)},
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (tmp_path / "verdicts" / "probe.json").exists()
