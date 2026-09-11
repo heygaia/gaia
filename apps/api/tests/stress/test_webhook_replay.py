@@ -272,19 +272,19 @@ class TestDodoWebhookReplay:
                 processed_repo,
             ),
             patch(
-                "app.services.payments.subscription_activation.subscription_repository",
+                "app.services.payments.subscription_events.subscription_repository",
                 subs_repo,
             ),
             patch(
-                "app.services.payments.subscription_activation.user_repository.get",
+                "app.services.payments.subscription_events.user_repository.get",
                 AsyncMock(return_value=None),
             ),
             patch(
-                "app.services.payments.payment_webhook_service.payment_service.invalidate_plan_cache_by_dodo_id",
+                "app.services.payments.subscription_events.invalidate_plan_cache",
                 invalidate_cache,
             ),
             patch(
-                "app.services.payments.subscription_activation.track_subscription_event",
+                "app.services.payments.subscription_events.track_subscription_event",
                 track,
             ),
         ):
@@ -315,19 +315,19 @@ class TestDodoWebhookReplay:
                 processed_repo,
             ),
             patch(
-                "app.services.payments.subscription_activation.subscription_repository",
+                "app.services.payments.subscription_events.subscription_repository",
                 subs_repo,
             ),
             patch(
-                "app.services.payments.subscription_activation.user_repository.get",
+                "app.services.payments.subscription_events.user_repository.get",
                 AsyncMock(return_value=None),
             ),
             patch(
-                "app.services.payments.payment_webhook_service.payment_service.invalidate_plan_cache_by_dodo_id",
+                "app.services.payments.subscription_events.invalidate_plan_cache",
                 AsyncMock(),
             ),
             patch(
-                "app.services.payments.subscription_activation.track_subscription_event",
+                "app.services.payments.subscription_events.track_subscription_event",
                 MagicMock(),
             ),
         ):

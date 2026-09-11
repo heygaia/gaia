@@ -44,13 +44,15 @@ from app.models.payment_models import (
     SubscriptionDetails,
     SubscriptionDocument,
     SubscriptionStatus,
-    SubscriptionUpdate,
     UserSubscriptionStatus,
 )
 from app.models.webhook_models import DodoSubscriptionData
 from app.services.payments.plan_cache import invalidate_plan_cache
-from app.services.payments.subscription_activation import (
-    activate_subscription,
+from app.services.payments.subscription_events import (
+    SubscriptionEvent,
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    apply_subscription_event,
     resolve_subscription_owner,
 )
 from shared.py.wide_events import log
@@ -297,18 +299,20 @@ class DodoPaymentService:
             )
             raise HTTPException(502, f"Payment service error: {e!s}") from e
 
-        # Mirror Dodo's authoritative state locally. cancelled_at is only set
-        # when Dodo supplied one — leaving it unset keeps it out of the $set.
-        update = SubscriptionUpdate(status=updated.status, cancel_at_next_billing_date=True)
-        if updated.cancelled_at:
-            update.cancelled_at = updated.cancelled_at.isoformat()
-        if updated.next_billing_date:
-            update.next_billing_date = updated.next_billing_date.isoformat()
-
-        updated_local = await subscription_repository.apply_update_by_dodo_id(
-            subscription.dodo_subscription_id, update
+        # Recorded as the scheduled cancel that was asked for, whatever status
+        # Dodo reports back: the same reducer the webhook goes through keeps
+        # the user on Pro until ``subscription.expired``, and the webhook that
+        # follows finds the state already written.
+        applied = await apply_subscription_event(
+            SubscriptionEvent(
+                kind=SubscriptionEventKind.CANCELLED,
+                occurred_at=datetime.now(UTC),
+                data=DodoSubscriptionData.model_validate(
+                    {**updated.model_dump(mode="json"), "cancel_at_next_billing_date": True}
+                ),
+            )
         )
-        if not updated_local:
+        if applied.outcome is SubscriptionEventOutcome.NO_ROW:
             # Dodo accepted the cancellation but no local row matched — surfacing
             # success here would leave the user's status stale and silently drop
             # the change. Fail loud so it gets attention instead of looking done.
@@ -321,7 +325,6 @@ class DodoPaymentService:
                 502,
                 "Cancellation processed by Dodo but could not be recorded locally",
             )
-        await self.invalidate_plan_cache_by_dodo_id(subscription.dodo_subscription_id)
 
         return await self.get_user_subscription_status(user_id)
 
@@ -356,8 +359,8 @@ class DodoPaymentService:
         Both recovery routes end here, so neither can drift from the webhook:
         the subscription is acted on only once Dodo reports it active and it is
         demonstrably this user's, and the row is then written by the same
-        ``activate_subscription`` the webhook uses — which is also what drops
-        the cached plan tier and restores the workflows that lapsed.
+        reducer the webhook goes through — which is also what drops the cached
+        plan tier and restores the workflows that lapsed.
         """
         sub_data = DodoSubscriptionData.model_validate(remote.model_dump(mode="json"))
         if sub_data.status != SubscriptionStatus.ACTIVE.value:
@@ -379,7 +382,13 @@ class DodoPaymentService:
             )
             return None
 
-        await activate_subscription(sub_data)
+        await apply_subscription_event(
+            SubscriptionEvent(
+                kind=SubscriptionEventKind.ACTIVATED,
+                occurred_at=datetime.now(UTC),
+                data=sub_data,
+            )
+        )
         return await subscription_repository.get_latest_active_for_user(user_id)
 
     async def _subscription_behind_checkout(
@@ -693,24 +702,6 @@ class DodoPaymentService:
         await redis_cache.set(cache_key, {"plan_type": plan.value}, ttl=SUBSCRIPTION_PLAN_CACHE_TTL)
         log.set_ns("payment", plan_type=plan.value, plan_source="subscription")
         return plan
-
-    async def invalidate_plan_cache_by_dodo_id(self, dodo_subscription_id: str) -> None:
-        """Drop the cached plan tier after a subscription change (applies immediately)."""
-        if not dodo_subscription_id:
-            return
-        user_id = await subscription_repository.get_user_id_by_dodo_id(dodo_subscription_id)
-        if not user_id:
-            # The billing change landed but nothing was dropped, so whoever owns
-            # this subscription keeps their pre-change tier until the TTL runs
-            # out — which reads downstream as the gate simply disagreeing with
-            # Dodo, with nothing to explain it.
-            log.warning(
-                f"{LogTag.PAYMENT} No local subscription for the Dodo id; cached tier not dropped",
-                failure_reason="subscription_not_found",
-                subscription_id=dodo_subscription_id,
-            )
-            return
-        await invalidate_plan_cache(user_id)
 
 
 payment_service = DodoPaymentService()

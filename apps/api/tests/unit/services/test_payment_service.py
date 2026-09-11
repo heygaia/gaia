@@ -35,6 +35,11 @@ from app.models.payment_models import (
 from app.services.analytics_service import AnalyticsEvents, SubscriptionPlan
 from app.services.payments import payment_service as payment_service_module
 from app.services.payments.payment_service import DodoPaymentService
+from app.services.payments.subscription_events import (
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    SubscriptionEventResult,
+)
 from shared.py.wide_events import log
 from tests.helpers import captured_wide_event
 from tests.unit.services.conftest import (
@@ -47,7 +52,8 @@ from tests.unit.services.conftest import (
     _set_user,
 )
 
-ACTIVATION_MODULE = "app.services.payments.subscription_activation"
+ACTIVATION_MODULE = "app.services.payments.subscription_events"
+SERVICE_MODULE = "app.services.payments.payment_service"
 OTHER_USER_ID = "507f1f77bcf86cd799439012"
 
 # ---------------------------------------------------------------------------
@@ -781,7 +787,7 @@ class TestCreateSubscription:
 class TestCancelSubscription:
     """Tests for DodoPaymentService.cancel_subscription."""
 
-    async def test_cancels_at_next_billing_date(
+    async def test_records_the_cancel_through_the_reducer_as_scheduled(
         self,
         payment_service,
         mock_subscription_repository,
@@ -789,57 +795,89 @@ class TestCancelSubscription:
         mock_redis_cache,
         mock_dodo_client,
     ):
+        """Dodo is asked for a period-end cancel, and the local row is written
+        by the same reducer the webhook uses — as a scheduled cancel whatever
+        status Dodo echoes back (``test_subscription_events.py`` pins that the
+        reducer keeps the user on Pro until ``subscription.expired``)."""
         mock_subscription_repository.get_active_for_user = AsyncMock(
             return_value=SAMPLE_SUBSCRIPTION
         )
-        mock_subscription_repository.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
-
-        updated = MagicMock()
-        updated.status = "active"
-        updated.cancelled_at = None
-        updated.next_billing_date = None
         mock_dodo_client.subscriptions = MagicMock()
-        mock_dodo_client.subscriptions.update = MagicMock(return_value=updated)
+        mock_dodo_client.subscriptions.update = MagicMock(
+            return_value=self._dodo_subscription(status="cancelled")
+        )
+        applied = SubscriptionEventResult(SubscriptionEventOutcome.APPLIED, FAKE_USER_ID)
 
-        result = await payment_service.cancel_subscription(FAKE_USER_ID)
+        with patch(
+            f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=applied)
+        ) as apply_event:
+            result = await payment_service.cancel_subscription(FAKE_USER_ID)
 
         mock_dodo_client.subscriptions.update.assert_called_once_with(
             "sub_xyz789",
             cancel_at_next_billing_date=True,
         )
-        # The local row is mirrored with the flag set and status kept.
-        update_call = mock_subscription_repository.apply_update_by_dodo_id.call_args
-        set_data = update_call.args[1].model_dump(exclude_unset=True)
-        assert set_data["cancel_at_next_billing_date"] is True
-        assert set_data["status"] == "active"
-        assert "cancelled_at" not in set_data
+        event = apply_event.await_args.args[0]
+        assert event.kind is SubscriptionEventKind.CANCELLED
+        assert event.data.subscription_id == "sub_xyz789"
+        assert event.data.cancel_at_next_billing_date is True
+        assert event.data.cancelled_at == "2025-06-15T00:00:00Z"
         assert isinstance(result, UserSubscriptionStatus)
 
-    async def test_cancels_with_cancelled_at(
+    async def test_a_cancel_with_no_local_row_fails_loud(
         self,
         payment_service,
         mock_subscription_repository,
-        mock_plan_repository,
-        mock_redis_cache,
         mock_dodo_client,
     ):
+        """Dodo accepted the cancellation; surfacing success while nothing
+        local recorded it would leave the user's status stale for good."""
         mock_subscription_repository.get_active_for_user = AsyncMock(
             return_value=SAMPLE_SUBSCRIPTION
         )
-        mock_subscription_repository.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
-
-        updated = MagicMock()
-        updated.status = "active"
-        updated.cancelled_at = datetime(2025, 6, 15, tzinfo=UTC)
-        updated.next_billing_date = None
         mock_dodo_client.subscriptions = MagicMock()
-        mock_dodo_client.subscriptions.update = MagicMock(return_value=updated)
+        mock_dodo_client.subscriptions.update = MagicMock(
+            return_value=self._dodo_subscription(status="active")
+        )
+        unmatched = SubscriptionEventResult(SubscriptionEventOutcome.NO_ROW, None)
 
-        await payment_service.cancel_subscription(FAKE_USER_ID)
+        with (
+            patch(f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=unmatched)),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await payment_service.cancel_subscription(FAKE_USER_ID)
 
-        update_call = mock_subscription_repository.apply_update_by_dodo_id.call_args
-        set_data = update_call.args[1].model_dump(exclude_unset=True)
-        assert set_data["cancelled_at"] == "2025-06-15T00:00:00+00:00"
+        assert exc_info.value.status_code == 502
+
+    @staticmethod
+    def _dodo_subscription(status: str) -> Subscription:
+        return Subscription.model_validate(
+            {
+                "subscription_id": "sub_xyz789",
+                "product_id": "prod_abc123",
+                "status": status,
+                "quantity": 1,
+                "currency": "USD",
+                "recurring_pre_tax_amount": 999,
+                "payment_frequency_count": 1,
+                "payment_frequency_interval": "Month",
+                "subscription_period_count": 1,
+                "subscription_period_interval": "Month",
+                "next_billing_date": datetime(2025, 7, 1, tzinfo=UTC),
+                "previous_billing_date": datetime(2025, 6, 1, tzinfo=UTC),
+                "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+                "cancelled_at": datetime(2025, 6, 15, tzinfo=UTC),
+                "metadata": {"user_id": FAKE_USER_ID},
+                "customer": {"customer_id": "cus_1", "email": FAKE_EMAIL, "name": "Alice"},
+                "billing": {"country": "US"},
+                "addons": [],
+                "meters": [],
+                "cancel_at_next_billing_date": True,
+                "on_demand": False,
+                "tax_inclusive": False,
+                "trial_period_days": 0,
+            }
+        )
 
     async def test_raises_404_without_active_subscription(
         self,
@@ -910,7 +948,7 @@ class TestVerifyPaymentCompletion:
 
     @pytest.fixture
     def activation_seams(self, mock_subscription_repository, mock_users_collection):
-        """The row is written by ``subscription_activation``, so verification's
+        """The row is written by ``subscription_events``, so verification's
         recovery runs through that module's seams.
 
         The same repository and user mocks stand behind both modules: the test
