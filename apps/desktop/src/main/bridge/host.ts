@@ -151,6 +151,15 @@ export class BridgeHost {
     this.intentionalStop = false;
     this.running = true;
     this.emitStatus();
+    // Register the configured servers with the cloud on every start (like
+    // `gaia bridge up`), so they appear as integrations and re-create their
+    // records if those were lost. Best-effort — a failure must not stop the
+    // tunnel from coming up.
+    void registerConfiguredServers().catch((err: unknown) =>
+      this.logger.error(
+        `[bridge] failed to register configured servers: ${err instanceof Error ? err.message : String(err)}`,
+      ),
+    );
     void this.superviseLoop();
   }
 
