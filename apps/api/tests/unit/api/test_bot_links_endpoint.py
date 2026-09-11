@@ -299,6 +299,11 @@ COMPLETE_PATCH = "app.api.v1.endpoints.bot_links.complete_platform_link"
 USER_PATCH = "app.api.v1.endpoints.bot_links.get_user_by_id"
 CONTACT_PATCH = "app.api.v1.endpoints.bot_links.build_first_contact"
 PERSIST_PATCH = "app.api.v1.endpoints.bot_links._persist_first_contact"
+# Patched on the class itself, not on a name bound in the endpoint module: the
+# endpoint calls it through ``PlatformLinkService``, so both sites see it.
+LINKED_LOOKUP_PATCH = (
+    "app.services.platform_link_service.PlatformLinkService.get_user_by_platform_id"
+)
 
 
 def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
@@ -324,6 +329,17 @@ class TestRedeemLinkCode:
         """
         with patch(USER_PATCH, new_callable=AsyncMock, return_value=None) as mock_get_user:
             yield mock_get_user
+
+    @pytest.fixture(autouse=True)
+    def _already_linked(self):
+        """Whether the presenting platform account is ALREADY linked.
+
+        Reads Mongo, so it is stubbed for the whole class and defaults to
+        "nobody": a code that is gone and a handle nobody knows is the expired
+        link every rejection test means. The idempotency tests override it.
+        """
+        with patch(LINKED_LOOKUP_PATCH, new_callable=AsyncMock, return_value=None) as mock_linked:
+            yield mock_linked
 
     @pytest.fixture(autouse=True)
     def _first_contact(self):
@@ -461,6 +477,93 @@ class TestRedeemLinkCode:
 
         assert first.status_code == 200
         assert second.status_code == 400
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_second_tap_by_the_account_the_code_already_linked_answers_linked(
+        self,
+        _auth: AsyncMock,
+        client: AsyncClient,
+        _already_linked: AsyncMock,
+        _first_contact: AsyncMock,
+    ):
+        """Tapping the deep link twice is the normal case on mobile, and the
+        second tap arrives with a code that is already spent. The state the code
+        asked for is the state we are in, so the answer is the success the first
+        tap gave -- being told "that link has expired" under a greeting that is
+        still on screen reads as a broken product."""
+        with (
+            patch(PEEK_PATCH, new_callable=AsyncMock, return_value=None),
+            patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
+            patch(COMPLETE_PATCH, new_callable=AsyncMock) as mock_complete,
+            patch(PERSIST_PATCH, new_callable=AsyncMock) as mock_persist,
+        ):
+            _already_linked.return_value = {"_id": "user1", "name": "Aryan Randeriya"}
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json() == {"linked": True}
+        _already_linked.assert_awaited_once_with("telegram", "TG42")
+        # Every side effect of a first link hangs off completion -- the outbound
+        # first-contact publish and the integration_connected capture both. Not
+        # calling it is what keeps the user from being greeted, counted and
+        # given a synthetic first message a second time.
+        mock_complete.assert_not_awaited()
+        _first_contact.assert_not_awaited()
+        mock_persist.assert_not_awaited()
+        mock_discard.assert_not_awaited()
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_spent_code_presented_by_an_unlinked_account_still_expires(
+        self, _auth: AsyncMock, client: AsyncClient, _already_linked: AsyncMock
+    ):
+        """The idempotent answer is for the account the code already linked and
+        nobody else: a spent code replayed from a different handle is a bearer
+        credential being reused, and must stay a dead link."""
+        with (
+            patch(PEEK_PATCH, new_callable=AsyncMock, return_value=None),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock) as mock_complete,
+        ):
+            _already_linked.return_value = None
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 400
+        assert "expired" in response.json()["message"].lower()
+        mock_complete.assert_not_awaited()
+
+    async def test_the_idempotent_answer_is_audited_as_a_link_that_already_held(self):
+        """A success that writes nothing still has to be findable: without its
+        own audit entry and outcome, a second tap is indistinguishable from a
+        fresh link in the trail, and from nothing at all in the wide event."""
+        body = RedeemLinkCodeRequest(platform="telegram", platform_user_id="TG42", code="CODE123")
+        request = MagicMock()
+        request.state = _make_request()
+
+        with (
+            patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new=AsyncMock()),
+            patch(PEEK_PATCH, new_callable=AsyncMock, return_value=None),
+            patch(
+                LINKED_LOOKUP_PATCH,
+                new_callable=AsyncMock,
+                return_value={"_id": "user1"},
+            ),
+        ):
+            async with log_context("redeem_link_code_test"):
+                result = await redeem_link_code(request, body)
+                event = dict(log.get())
+
+        assert result.linked is True
+        assert event["user"] == {"id": "user1"}
+        assert event["outcome"] == "success"
+        assert event["is_new_link"] is False
+        assert event["audit"] == [
+            {
+                "msg": "platform link code already redeemed by this account",
+                "actor": "user1",
+                "resource": "TG42",
+                "provider": "telegram",
+            }
+        ]
+        assert "CODE123" not in str(event)
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_account_linked_elsewhere_returns_409(
