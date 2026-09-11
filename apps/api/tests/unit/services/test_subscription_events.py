@@ -20,6 +20,7 @@ from app.models.webhook_models import DodoSubscriptionData
 from app.services.analytics_service import AnalyticsEvents, SubscriptionPlan
 from app.services.payments.payment_service import DodoPaymentService
 from app.services.payments.subscription_events import (
+    DESIRED_STATE,
     SubscriptionEvent,
     SubscriptionEventKind,
     SubscriptionEventOutcome,
@@ -95,7 +96,7 @@ class TestOrdering:
                 _event("subscription.on_hold", BEFORE_RECOVERY), "wh_late_hold"
             )
 
-        assert result.status == "ignored"
+        assert (result.status, result.message) == ("ignored", "Stale event")
         mock_webhook_subscription_repository.apply_update_by_dodo_id.assert_not_awaited()
         mock_track_subscription.assert_not_called()
         assert wide["warnings"] == [
@@ -497,9 +498,10 @@ class TestTransitionsDriveTheSideEffects:
 
         assert _written_fields(mock_webhook_subscription_repository)["status"] == "expired"
         mock_deactivate_workflows.assert_awaited_once_with(FAKE_USER_ID)
-        assert (
-            mock_track_subscription.call_args.kwargs["event_type"]
-            == AnalyticsEvents.SUBSCRIPTION_EXPIRED
+        mock_track_subscription.assert_called_once_with(
+            user_id=FAKE_USER_ID,
+            event_type=AnalyticsEvents.SUBSCRIPTION_EXPIRED,
+            subscription_id="sub_xyz789",
         )
 
     async def test_a_plan_change_touches_neither_workflows_nor_analytics(
@@ -595,6 +597,7 @@ class TestSideEffectsNeverFailTheEvent:
         with patch(f"{EVENTS_MODULE}.log") as mock_log:
             await send_welcome_email_safely(FAKE_USER_ID)
 
+        mock_webhook_users_collection.get.assert_awaited_once_with(FAKE_USER_ID)
         mock_webhook_send_email.assert_awaited_once_with(
             user_name="Alice", user_email=FAKE_EMAIL, user_id=FAKE_USER_ID
         )
@@ -656,3 +659,133 @@ class TestResolveSubscriptionOwner:
         mock_webhook_users_collection.get_by_email = AsyncMock(return_value=None)
 
         assert await resolve_subscription_owner(_sub_data(metadata={})) is None
+
+
+@pytest.mark.unit
+class TestDesiredState:
+    """What each event kind says the row should now have — the exact fields,
+    because the repository writes exactly these as ``$set``."""
+
+    def test_activation_and_renewal_carry_the_billing_dates(self) -> None:
+        for kind in (SubscriptionEventKind.ACTIVATED, SubscriptionEventKind.RENEWED):
+            desired = DESIRED_STATE[kind](_sub_data()).model_dump(exclude_unset=True)
+            assert desired == {
+                "status": "active",
+                "next_billing_date": "2025-02-01",
+                "previous_billing_date": "2025-01-01",
+            }
+
+    def test_a_scheduled_cancel_records_the_flag_and_leaves_the_status_alone(self) -> None:
+        desired = DESIRED_STATE[SubscriptionEventKind.CANCELLED](
+            _sub_data(cancel_at_next_billing_date=True, cancelled_at="2025-01-15T00:00:00Z")
+        )
+        assert desired.model_dump(exclude_unset=True) == {
+            "cancel_at_next_billing_date": True,
+            "cancelled_at": "2025-01-15T00:00:00Z",
+            "next_billing_date": "2025-02-01",
+        }
+
+    def test_an_immediate_cancel_drops_the_status_now(self) -> None:
+        desired = DESIRED_STATE[SubscriptionEventKind.CANCELLED](
+            _sub_data(cancel_at_next_billing_date=False, cancelled_at=None, next_billing_date=None)
+        )
+        assert desired.model_dump(exclude_unset=True) == {
+            "cancel_at_next_billing_date": False,
+            "status": "cancelled",
+        }
+
+    @pytest.mark.parametrize(
+        ("kind", "status"),
+        [
+            (SubscriptionEventKind.EXPIRED, "expired"),
+            (SubscriptionEventKind.FAILED, "failed"),
+            (SubscriptionEventKind.ON_HOLD, "on_hold"),
+        ],
+    )
+    def test_a_lapse_is_exactly_its_status(self, kind: SubscriptionEventKind, status: str) -> None:
+        assert DESIRED_STATE[kind](_sub_data()).model_dump(exclude_unset=True) == {"status": status}
+
+    def test_a_plan_change_is_the_product_quantity_and_price(self) -> None:
+        desired = DESIRED_STATE[SubscriptionEventKind.PLAN_CHANGED](
+            _sub_data(product_id="prod_new", quantity=3, recurring_pre_tax_amount=4500)
+        )
+        assert desired.model_dump(exclude_unset=True) == {
+            "product_id": "prod_new",
+            "quantity": 3,
+            "recurring_pre_tax_amount": 4500,
+        }
+
+
+@pytest.mark.unit
+class TestResultsNameTheOwnerAndTheRow:
+    """Every outcome hands back the owner the caller acts on, and every write
+    targets the row that was read — not some other id."""
+
+    async def test_an_equal_timestamp_is_not_stale_and_the_result_names_the_owner(
+        self,
+        mock_webhook_subscription_repository,
+        mock_track_subscription,
+        mock_subscription_plan_cache_drop,
+        mock_activation_workflow_reactivation,
+    ) -> None:
+        """Dodo can stamp two events in the same second; only strictly older
+        ones are stale."""
+        mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(
+            return_value=_row(status="on_hold", last_event_at=NOW)
+        )
+
+        result = await _apply(SubscriptionEventKind.RENEWED)
+
+        assert result == SubscriptionEventResult(SubscriptionEventOutcome.APPLIED, FAKE_USER_ID)
+        dodo_id, update = (
+            mock_webhook_subscription_repository.apply_update_by_dodo_id.await_args.args
+        )
+        assert dodo_id == "sub_xyz789"
+        assert update.last_event_at == NOW
+        mock_subscription_plan_cache_drop.assert_awaited_once_with(FAKE_USER_ID)
+        mock_activation_workflow_reactivation.assert_awaited_once_with(FAKE_USER_ID)
+        mock_track_subscription.assert_called_once_with(
+            user_id=FAKE_USER_ID,
+            event_type=AnalyticsEvents.SUBSCRIPTION_RENEWED,
+            subscription_id="sub_xyz789",
+            plan=SubscriptionPlan(currency="USD"),
+        )
+
+    async def test_a_stale_event_still_names_the_owner(
+        self, mock_webhook_subscription_repository, mock_track_subscription
+    ) -> None:
+        mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(
+            return_value=_row(last_event_at=NOW + timedelta(seconds=1))
+        )
+
+        result = await _apply(SubscriptionEventKind.ON_HOLD)
+
+        assert result == SubscriptionEventResult(SubscriptionEventOutcome.STALE, FAKE_USER_ID)
+
+    async def test_an_unchanged_event_still_names_the_owner(
+        self, mock_webhook_subscription_repository, mock_track_subscription
+    ) -> None:
+        mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(
+            return_value=_row(last_event_at=None)
+        )
+
+        result = await _apply(SubscriptionEventKind.ACTIVATED)
+
+        assert result == SubscriptionEventResult(SubscriptionEventOutcome.UNCHANGED, FAKE_USER_ID)
+
+    async def test_a_missing_row_is_on_the_record_by_kind_and_id(
+        self, mock_webhook_subscription_repository, mock_track_subscription
+    ) -> None:
+        mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(return_value=None)
+
+        async with captured_wide_event() as wide:
+            result = await _apply(SubscriptionEventKind.EXPIRED)
+
+        assert result == SubscriptionEventResult(SubscriptionEventOutcome.NO_ROW, None)
+        assert wide["errors"] == [
+            {
+                "msg": f"{LogTag.PAYMENT} No local subscription matched the Dodo id",
+                "event_kind": "expired",
+                "subscription_id": "sub_xyz789",
+            }
+        ]
