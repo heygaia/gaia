@@ -16,10 +16,11 @@ nothing; what did change decides the side effects — a status crossing into
 analytics event fires exactly once for the transition it names.
 """
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
+from functools import partial
 
 from app.constants.log_tags import LogTag
 from app.db.repositories.subscriptions import subscription_repository
@@ -204,10 +205,8 @@ def _cancelled_state(data: DodoSubscriptionData) -> SubscriptionUpdate:
     return desired
 
 
-def _status_state(
-    status: SubscriptionStatus,
-) -> Callable[[DodoSubscriptionData], SubscriptionUpdate]:
-    return lambda _data: SubscriptionUpdate(status=status.value)
+def _lapsed_state(status: SubscriptionStatus, _data: DodoSubscriptionData) -> SubscriptionUpdate:
+    return SubscriptionUpdate(status=status.value)
 
 
 def _plan_changed_state(data: DodoSubscriptionData) -> SubscriptionUpdate:
@@ -223,9 +222,9 @@ DESIRED_STATE: dict[SubscriptionEventKind, Callable[[DodoSubscriptionData], Subs
     SubscriptionEventKind.ACTIVATED: _active_state,
     SubscriptionEventKind.RENEWED: _active_state,
     SubscriptionEventKind.CANCELLED: _cancelled_state,
-    SubscriptionEventKind.EXPIRED: _status_state(SubscriptionStatus.EXPIRED),
-    SubscriptionEventKind.FAILED: _status_state(SubscriptionStatus.FAILED),
-    SubscriptionEventKind.ON_HOLD: _status_state(SubscriptionStatus.ON_HOLD),
+    SubscriptionEventKind.EXPIRED: partial(_lapsed_state, SubscriptionStatus.EXPIRED),
+    SubscriptionEventKind.FAILED: partial(_lapsed_state, SubscriptionStatus.FAILED),
+    SubscriptionEventKind.ON_HOLD: partial(_lapsed_state, SubscriptionStatus.ON_HOLD),
     SubscriptionEventKind.PLAN_CHANGED: _plan_changed_state,
 }
 
@@ -256,10 +255,7 @@ def _plan_of(data: DodoSubscriptionData) -> SubscriptionPlan:
 
 
 def _capture_transition(
-    event: SubscriptionEvent,
-    user_id: str,
-    changes: dict[str, object],
-    became_active: bool,
+    event: SubscriptionEvent, user_id: str, changes: Mapping[str, object]
 ) -> None:
     """Fire the one analytics event this transition names, if it names one.
 
@@ -269,7 +265,9 @@ def _capture_transition(
     """
     data = event.data
     match event.kind:
-        case SubscriptionEventKind.ACTIVATED if became_active:
+        case SubscriptionEventKind.ACTIVATED if (
+            changes.get("status") == SubscriptionStatus.ACTIVE.value
+        ):
             track_subscription_event(
                 user_id=user_id,
                 event_type=AnalyticsEvents.SUBSCRIPTION_ACTIVATED,
@@ -302,8 +300,6 @@ def _capture_transition(
                 event_type=AnalyticsEvents.SUBSCRIPTION_EXPIRED,
                 subscription_id=data.subscription_id,
             )
-        case _:
-            return
 
 
 async def _create_row(event: SubscriptionEvent) -> SubscriptionEventResult:
@@ -344,7 +340,7 @@ async def _create_row(event: SubscriptionEvent) -> SubscriptionEventResult:
         )
     )
 
-    _capture_transition(event, user_id, changes={}, became_active=True)
+    _capture_transition(event, user_id, {"status": SubscriptionStatus.ACTIVE.value})
     await invalidate_plan_cache(user_id)
     await send_welcome_email_safely(user_id)
     await reactivate_workflows_safely(user_id)
@@ -401,9 +397,8 @@ async def apply_subscription_event(event: SubscriptionEvent) -> SubscriptionEven
     await invalidate_plan_cache(row.user_id)
 
     new_status = changes.get("status")
-    became_active = new_status == SubscriptionStatus.ACTIVE.value
-    _capture_transition(event, row.user_id, changes, became_active)
-    if became_active:
+    _capture_transition(event, row.user_id, changes)
+    if new_status == SubscriptionStatus.ACTIVE.value:
         await reactivate_workflows_safely(row.user_id)
     elif new_status in LAPSED_STATUSES:
         await deactivate_workflows_safely(row.user_id)

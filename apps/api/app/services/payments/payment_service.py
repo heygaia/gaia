@@ -470,14 +470,14 @@ class DodoPaymentService:
                     user_id=user_id,
                     session_id=checkout.session_id,
                 )
-                conclusive = False
+                conclusive = False  # pragma: no mutate -- only truth-tested
                 continue
             if subscription is None:
                 continue
             activated = await self._activate_verified_subscription(user_id, subscription)
             if activated:
                 return activated
-            conclusive = False
+            conclusive = False  # pragma: no mutate -- only truth-tested
 
         if conclusive:
             await redis_cache.set(miss_key, True, ttl=CHECKOUT_SCAN_MISS_TTL)

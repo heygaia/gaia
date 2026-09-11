@@ -64,11 +64,21 @@ class TestPostLinkMessage:
         self, side_effects
     ) -> None:
         notify, publish, _ = side_effects
-        await complete_platform_link("u1", "whatsapp", "wa-1", first_contact=BUBBLES)
+        result = await complete_platform_link("u1", "whatsapp", "wa-1", first_contact=BUBBLES)
         publish.assert_awaited_once_with(
             ConversationSource.WHATSAPP, "u1", BUBBLES, ttl_seconds=OUTBOUND_TTL_SECONDS_GREETING
         )
         notify.assert_not_awaited()
+        # Reported back as delivered: the caller has the bot resend otherwise.
+        assert result.first_contact_delivered is True
+
+    async def test_a_link_with_nothing_to_say_reports_first_contact_as_delivered(
+        self, side_effects
+    ) -> None:
+        """No first contact means nothing failed to arrive; a False here would
+        make the caller resend a message that was never composed."""
+        result = await complete_platform_link("u1", "whatsapp", "wa-1")
+        assert result.first_contact_delivered is True
 
     async def test_a_first_contact_is_delivered_even_when_the_link_already_existed(
         self, side_effects
@@ -87,6 +97,7 @@ class TestPostLinkMessage:
         with patch(f"{MODULE}.log") as mock_log:
             result = await complete_platform_link("u1", "whatsapp", "wa-1", first_contact=BUBBLES)
         assert result.link.is_new_link is True
+        assert result.first_contact_delivered is False
         mock_log.warning.assert_called_once_with(
             "first contact was not delivered after a one-tap link",
             platform="whatsapp",

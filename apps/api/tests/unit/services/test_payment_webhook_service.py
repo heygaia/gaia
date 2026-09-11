@@ -11,9 +11,11 @@ from typing import get_args
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from dodopayments.types import WebhookEventType
+from pydantic import ValidationError
 import pytest
 
 from app.constants.log_tags import LogTag
+from app.constants.payments import WEBHOOK_ROW_WAIT_MAX
 from app.models.payment_models import ProcessedWebhookUpdate, SubscriptionDocument
 from app.models.webhook_models import (
     DodoWebhookEvent,
@@ -22,6 +24,11 @@ from app.models.webhook_models import (
 )
 from app.services.analytics_service import AnalyticsEvents
 from app.services.payments.payment_webhook_service import PaymentWebhookService
+from app.services.payments.subscription_events import (
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    SubscriptionEventResult,
+)
 from tests.helpers import captured_wide_event
 from tests.unit.services.conftest import (
     FAKE_EMAIL,
@@ -33,6 +40,8 @@ from tests.unit.services.conftest import (
     _make_webhook_event,
     _set_user,
 )
+
+MODULE = "app.services.payments.payment_webhook_service"
 
 
 def _now_iso() -> str:
@@ -314,14 +323,27 @@ class TestProcessWebhookIdempotency:
         validate any better on a retry — and the claim is handed back so a
         corrected manual redelivery is not turned away as a replay."""
         bad_data = {"type": "payment.succeeded", "data": {}}
+        with pytest.raises(ValidationError) as rejected:
+            DodoWebhookEvent(**bad_data)
 
-        result = await webhook_service.process_webhook(bad_data, "wh_bad")
+        async with captured_wide_event() as wide:
+            result = await webhook_service.process_webhook(bad_data, "wh_bad")
 
         mock_processed_webhook_repository.release.assert_awaited_once_with("wh_bad")
         mock_processed_webhook_repository.record_outcome.assert_not_awaited()
 
         assert result.status == "abandoned"
-        assert "Invalid payload" in result.message
+        assert result.message == f"Invalid payload: {rejected.value!s}"
+        # The entry is the only record of why a delivery was given up on:
+        # which one, and what the body was missing.
+        assert wide["errors"] == [
+            {
+                "msg": f"{LogTag.PAYMENT} Webhook payload rejected; abandoning the delivery",
+                "error": str(rejected.value),
+                "error_type": "ValidationError",
+                "webhook_id": "wh_bad",
+            }
+        ]
 
 
 # ============================================================================
@@ -1373,6 +1395,42 @@ class TestProcessWebhookCustomerIdExtraction:
 # ============================================================================
 
 
+class TestTheHandlerHandsTheReducerTheEventAsDodoSentIt:
+    async def test_the_reducer_receives_the_events_own_timestamp(
+        self, webhook_service, mock_processed_webhook_repository
+    ) -> None:
+        """Ordering is by Dodo's clock; a handler stamping its own time would
+        let a late redelivery look newer than the state it should not undo."""
+        applied = SubscriptionEventResult(SubscriptionEventOutcome.APPLIED, FAKE_USER_ID)
+        event_data = _make_webhook_event("subscription.renewed", SUBSCRIPTION_DATA_PAYLOAD)
+        event_data["timestamp"] = "2025-03-04T05:06:07Z"
+
+        with patch(
+            f"{MODULE}.apply_subscription_event", AsyncMock(return_value=applied)
+        ) as apply_event:
+            result = await webhook_service.process_webhook(event_data, "wh_stamped")
+
+        event = apply_event.await_args.args[0]
+        assert event.kind is SubscriptionEventKind.RENEWED
+        assert event.occurred_at == datetime(2025, 3, 4, 5, 6, 7, tzinfo=UTC)
+        assert event.data.subscription_id == SUBSCRIPTION_DATA_PAYLOAD["subscription_id"]
+        assert (result.status, result.message) == ("processed", "Subscription renewed")
+
+    async def test_a_stale_event_is_acknowledged_as_ignored(
+        self, webhook_service, mock_processed_webhook_repository
+    ) -> None:
+        stale = SubscriptionEventResult(SubscriptionEventOutcome.STALE, FAKE_USER_ID)
+        event_data = _make_webhook_event("subscription.on_hold", SUBSCRIPTION_DATA_PAYLOAD)
+
+        with patch(f"{MODULE}.apply_subscription_event", AsyncMock(return_value=stale)):
+            result = await webhook_service.process_webhook(event_data, "wh_stale")
+
+        assert (result.status, result.message) == ("ignored", "Stale event")
+        assert result.subscription_id == SUBSCRIPTION_DATA_PAYLOAD["subscription_id"]
+        mock_processed_webhook_repository.record_outcome.assert_awaited_once()
+        mock_processed_webhook_repository.release.assert_not_awaited()
+
+
 class TestAnUnlistedEventTypeIsAcknowledged:
     async def test_a_type_outside_the_enum_is_ignored_with_a_warning_not_failed(
         self, webhook_service, mock_processed_webhook_repository
@@ -1442,6 +1500,26 @@ class TestAPermanentFailureIsAbandonedNotRetried:
         assert result.status == "failed"
         assert result.message == "Subscription not found"
         mock_processed_webhook_repository.release.assert_awaited_once_with("wh_renew_young")
+
+    async def test_an_event_exactly_at_the_wait_limit_is_still_retried(
+        self,
+        webhook_service,
+        mock_processed_webhook_repository,
+        mock_webhook_subscription_repository,
+    ) -> None:
+        """The bound is "older than"; an event exactly one hour old still gets
+        its retry — the boundary is where a one-character slip would abandon
+        a delivery an hour early."""
+        mock_webhook_subscription_repository.get_by_dodo_id = AsyncMock(return_value=None)
+        now = datetime(2025, 6, 1, 12, 0, 0, tzinfo=UTC)
+        event_data = _make_webhook_event("subscription.renewed", SUBSCRIPTION_DATA_PAYLOAD)
+        event_data["timestamp"] = (now - WEBHOOK_ROW_WAIT_MAX).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        with patch(f"{MODULE}.datetime") as frozen:
+            frozen.now.return_value = now
+            result = await webhook_service.process_webhook(event_data, "wh_renew_edge")
+
+        assert result.status == "failed"
 
     async def test_a_lifecycle_event_older_than_an_hour_with_no_row_is_abandoned(
         self,
