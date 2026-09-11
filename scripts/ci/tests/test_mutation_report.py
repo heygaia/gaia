@@ -648,6 +648,27 @@ def _shard_with_env(root: Path, **env: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_the_shard_takes_its_cpu_tokens_from_a_private_pool_never_the_host(
+    tmp_path: Path, flock: str
+) -> None:
+    """A shard acquires nproc-2 host CPU tokens before its first module. Run on
+    the box with the pool inherited, this suite queued behind the real shards
+    for the semaphore's full 600 s fail-open wait — per test — and the harness
+    lane died at its cap with the last 6% never reached (job 103243166187).
+    conftest.py points every test at a pool of its own; this proves the shard
+    honours it: its grant lands there, and is gone again when it exits."""
+    root = _sandbox(tmp_path, "exit 0")
+    pool = Path(os.environ["GAIA_CPU_SLOTS_DIR"])
+
+    # The fake mutmut yields nothing, so the module fails on the zero-output
+    # guard; the tokens are taken before that and released after regardless.
+    result = _shard_with_env(root, RUNNER_ENVIRONMENT="self-hosted")
+
+    assert "cpu-slots" not in result.stdout + result.stderr, "the governor should be live and quiet"
+    assert (pool / "holders").is_dir(), "the shard never touched the private pool"
+    assert not list((pool / "holders").iterdir()), "a grant leaked past the shard's exit"
+
+
 def test_the_shard_puts_verdicts_where_gaia_verdict_dir_says(tmp_path: Path) -> None:
     """The top rung: an explicit override beats everything below it."""
     root = _sandbox(tmp_path, "exit 0")

@@ -30,6 +30,7 @@ import sys
 # loads them so this answers exactly what the lane would generate.
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "test"))
 
+import libcst as cst
 from mutmut.mutation.file_mutation import create_mutations
 import mutmut_decorated_patch  # noqa: F401  # side-effect import: patches mutmut's visitor to mutate decorated defs, as the lane does
 
@@ -39,12 +40,16 @@ def _mutants_on(path: str, source: str, lines: set[int]) -> int:
         _, mutations, _, _ = create_mutations(path, source, covered_lines=lines)
     except Exception:  # libcst raises its own parse errors; any of them means "nothing to mutate here", not a lane failure
         return 0
-    # Only mutants inside a function count. mutmut records a kill through the
+    # Only mutants inside a def count. mutmut records a kill through the
     # trampoline it installs on the enclosing function; a module-level mutant
-    # (a constant, a class field) has no trampoline, so no test can ever be
-    # credited with killing it — which is why every changed constants file
-    # read as "no covering test" and was, correctly, a skip.
-    return sum(1 for m in mutations if m.contained_by_top_level_function)
+    # (a constant) has no trampoline, so no test can ever be credited with
+    # killing it — which is why every changed constants file read as "no
+    # covering test" and was, correctly, a skip. Checked by TYPE, not truth:
+    # mutmut tags a class-body field or enum member with its own statement as
+    # the enclosing node, which is truthy and just as trampoline-less.
+    return sum(
+        1 for m in mutations if isinstance(m.contained_by_top_level_function, cst.FunctionDef)
+    )
 
 
 def mutable_changed_lines(path: str, source: str, ranges: list[list[int]]) -> list[int]:
