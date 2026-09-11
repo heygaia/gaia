@@ -94,7 +94,8 @@ export function ThisMacCard({
               <StatusChip paired={status.paired} running={status.running} />
             </div>
             <p className="text-sm text-zinc-500">
-              Runs inside the GAIA desktop app — no CLI needed.
+              While connected, GAIA can run commands and use MCP servers on{" "}
+              {noun}.
             </p>
           </div>
         </div>
