@@ -272,3 +272,116 @@ def test_matrix_only_offers_the_detector_mutatable_app_modules(tmp_path: Path) -
 
     assert process.returncode == 0, process.stderr
     assert process.stdout.split() == ["apps/api/app/services/real.py"]
+
+
+# ---------------------------------------------------------------------------
+# Pools — a shard runs where its tests can actually connect.
+#
+# The contract tier is in the mapped test set, and it needs live Mongo and
+# Redis. The lint pool cannot provide them: those runner instances are numbered
+# 13-20, above test-services.sh's MAX_LANE of 12, so `prepare` refuses the lane
+# and the job dies in setup. Six shards died that way on run 34584038269. The
+# planner therefore separates the two kinds of module and labels each shard
+# with the pool it must run on; `runs-on` reads that label.
+# ---------------------------------------------------------------------------
+
+CONTRACT_TEST = "tests/contracts/test_repo.py"
+UNIT_TEST = "tests/unit/test_thing.py"
+
+
+def _pools(outputs: dict[str, str]) -> dict[str, list[str]]:
+    """Modules by the pool their shard was assigned to."""
+    by_pool: dict[str, list[str]] = {}
+    for item in json.loads(outputs["matrix"]):
+        for entry in json.loads(item["group"]):
+            by_pool.setdefault(item["pool"], []).append(entry["module"])
+    return by_pool
+
+
+def test_a_contract_mapped_module_runs_in_the_services_pool(harness) -> None:
+    process, outputs = harness(
+        [
+            _entry("app/db/repositories/users.py", [CONTRACT_TEST], [1]),
+            _entry("app/services/plain.py", [UNIT_TEST], [2]),
+        ]
+    )
+
+    assert process.returncode == 0, process.stderr
+    assert _pools(outputs) == {
+        "services": ["app/db/repositories/users.py"],
+        "lint": ["app/services/plain.py"],
+    }
+
+
+def test_a_module_is_a_services_module_if_any_of_its_tests_is(harness) -> None:
+    # The mapping keeps every referencing file, so the common repository module
+    # carries a unit file AND a contract file. One contract file is enough: the
+    # shard has to run somewhere those tests can connect.
+    _, outputs = harness([_entry("app/db/repositories/users.py", [UNIT_TEST, CONTRACT_TEST], [1])])
+
+    assert _pools(outputs) == {"services": ["app/db/repositories/users.py"]}
+
+
+def test_a_unit_only_plan_stays_entirely_in_the_lint_pool(harness) -> None:
+    # The control, and the common case: nothing is routed to the scarce
+    # services pool unless it genuinely needs it.
+    _, outputs = harness(
+        [_entry(f"app/m{i}.py", [f"tests/unit/test_m{i}.py"], [i]) for i in range(3)]
+    )
+
+    assert set(_pools(outputs)) == {"lint"}
+
+
+def test_no_shard_mixes_the_two_pools(harness) -> None:
+    # A shard is one job on one runner. A mixed shard would be unrunnable in
+    # either pool, which is the bug this split exists to prevent.
+    _, outputs = harness(
+        [_entry(f"app/repo{i}.py", [CONTRACT_TEST], [i]) for i in range(3)]
+        + [_entry(f"app/unit{i}.py", [UNIT_TEST], [i]) for i in range(5)]
+    )
+
+    for item in json.loads(outputs["matrix"]):
+        tests = {
+            file for entry in json.loads(item["group"]) for file in json.loads(entry["testfiles"])
+        }
+        needs_services = any(test.startswith("tests/contracts/") for test in tests)
+        assert needs_services == (item["pool"] == "services"), (
+            f"shard {item['label']!r} is on the {item['pool']} pool with tests {sorted(tests)}"
+        )
+
+
+def test_the_two_pools_share_one_shard_budget(harness) -> None:
+    # MAX_SHARDS bounds the PLAN, not each pool: two pools helping themselves to
+    # six each would double the wave and walk back toward GitHub's job limit.
+    _, outputs = harness(
+        [_entry(f"app/repo{i}.py", [CONTRACT_TEST], [i]) for i in range(10)]
+        + [_entry(f"app/unit{i}.py", [UNIT_TEST], [i]) for i in range(30)]
+    )
+
+    assert int(outputs["count"]) == MAX_SHARDS
+    # And both pools are represented — a budget that starved one of them would
+    # leave its modules unmutated.
+    assert set(_pools(outputs)) == {"lint", "services"}
+
+
+def test_the_heavier_pool_gets_the_spare_shards(harness) -> None:
+    # Every live pool starts at one shard and the rest follow the diff. The
+    # typical PR touches one repository and many plain modules, so the services
+    # pool takes one shard and the lint pool takes the remaining five.
+    _, outputs = harness(
+        [_entry("app/repo.py", [CONTRACT_TEST], [1])]
+        + [_entry(f"app/unit{i}.py", [UNIT_TEST], [i]) for i in range(20)]
+    )
+
+    shards_per_pool: dict[str, int] = {}
+    for item in json.loads(outputs["matrix"]):
+        shards_per_pool[item["pool"]] = shards_per_pool.get(item["pool"], 0) + 1
+    assert shards_per_pool == {"services": 1, "lint": MAX_SHARDS - 1}
+
+
+def test_a_services_shard_says_so_in_its_check_name(harness) -> None:
+    # The check name is all a reviewer sees in the PR list; a red services
+    # shard and a red lint shard are debugged in different places.
+    _, outputs = harness([_entry("app/db/repositories/users.py", [CONTRACT_TEST], [1])])
+
+    assert json.loads(outputs["matrix"])[0]["label"] == "app/db/repositories/users.py (services)"

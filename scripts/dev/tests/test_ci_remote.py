@@ -123,12 +123,14 @@ class FakeGh:
         pr_meta: dict[str, Any] | None = None,
         artifacts: list[dict[str, Any]] | None = None,
         zip_blob: bytes = b"",
+        zip_blobs: dict[int, bytes] | None = None,
         job_log: str = REAL_JOB_LOG,
     ) -> None:
         self.checks = checks
         self.pr_meta = pr_meta or PR_META
         self.artifacts = artifacts if artifacts is not None else []
         self.zip_blob = zip_blob
+        self.zip_blobs = zip_blobs or {}
         self.job_log = job_log
         self.calls: list[str] = []
 
@@ -149,7 +151,8 @@ class FakeGh:
         endpoint = args[-1]
         self.calls.append(endpoint)
         if endpoint.endswith("/zip"):
-            return 0, self.zip_blob, ""
+            artifact_id = int(endpoint.rsplit("/", 2)[-2])
+            return 0, self.zip_blobs.get(artifact_id, self.zip_blob), ""
         if endpoint.endswith("/logs"):
             return 0, self.job_log.encode(), ""
         raise AssertionError(f"unexpected gh_bytes call: {args}")
@@ -169,7 +172,7 @@ def wire(monkeypatch: pytest.MonkeyPatch):
             "resolve_pr",
             lambda *_a, **_k: (7, "https://github.com/o/r/pull/7", "abc123"),
         )
-        monkeypatch.setattr(ci_remote, "fetch_stack", lambda _t: stack)
+        monkeypatch.setattr(ci_remote, "fetch_stack", lambda _repo: stack)
         return fake
 
     return install
@@ -280,7 +283,7 @@ def test_a_lane_with_no_verdict_falls_back_to_the_job_log_and_says_so(
     fake = wire(FakeGh(checks=[FAILED_CHECK], artifacts=[]))
     assert run_cli(monkeypatch, []) == 1
     out = capsys.readouterr().out
-    assert "job log tail (lane uploaded no verdict artifact)" in out
+    assert "lane uploaded no verdict artifact — log tail" in out
     assert "ERROR: mutation failed for: app/api/v1/endpoints/bot.py" in out
     assert "actions/jobs/1234/logs" in " ".join(fake.calls)
 
@@ -566,28 +569,35 @@ def test_a_missing_job_log_says_so_instead_of_printing_an_empty_section(
     assert "logs appear once the run completes" in out
 
 
-def test_a_gate_job_is_not_log_fetched_when_its_run_already_has_a_failing_verdict(
+def test_an_aggregate_gate_job_gets_its_own_log_not_another_lanes_verdict(
     wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """`Quality gate (required)` will never slug to `verdict-test-mutation`.
+    """`Quality gate (required)` slugs to no lane, so it has no verdict of its own.
 
-    The gate job is red because a lane it aggregates was red, and that lane's
-    verdict is on the same run — so the log tail would only repeat the lane
-    table the verdict already carries.
+    Pointing it at whatever else on the run happened to fail is misdirection —
+    it once sent six mutation shards to python-static's verdict. Its log tail
+    is the lane table, which names the lane that took the gate down.
     """
     gate = dict(FAILED_CHECK, name="Quality gate (required)")
+    gate_log = (
+        "2026-09-10T21:52:33.9375589Z   test-mutation:         failure\n"
+        "2026-09-10T21:52:33.9393569Z ##[error]lane 'test-mutation' did not pass\n"
+    )
     fake = wire(
         FakeGh(
             checks=[gate],
-            artifacts=[{"id": 55, "name": "verdict-test-mutation", "expired": False}],
-            zip_blob=verdict_zip(dict(VERDICT, lane="test-mutation")),
+            artifacts=[{"id": 55, "name": "verdict-python-static", "expired": False}],
+            zip_blob=verdict_zip(dict(VERDICT, lane="python-static")),
+            job_log=gate_log,
         )
     )
     assert run_cli(monkeypatch, []) == 1
     out = capsys.readouterr().out
-    assert not any(c.endswith("/logs") for c in fake.calls)
-    assert "verdict artifacts on this run (see the lanes below)" in out
-    assert "2 modules have surviving mutants" in out
+    assert "no failing verdict in this run's artifacts — log tail" in out
+    assert "ERROR: lane 'test-mutation' did not pass" in out
+    assert any(c.endswith("/logs") for c in fake.calls)
+    # python-static's verdict still shows, but as its own unmatched lane.
+    assert "a lane failed inside a passing job" in out
 
 
 def test_a_red_lane_with_no_verdict_never_reads_as_nothing_blocking(
@@ -618,3 +628,66 @@ def test_the_shown_tail_is_trimmed_but_json_keeps_the_whole_window(
     run_cli(monkeypatch, ["--json"])
     tail = json.loads(capsys.readouterr().out)["fallback_tails"][FAILED_CHECK["name"]]
     assert len(tail) == ci_remote.FALLBACK_TAIL_LINES
+
+
+# The artifact set PR #1161 run 34584038269 actually produced: one
+# `verdict-test-mutation-<i>` per shard, each holding a single `mutation/shard-<i>`
+# verdict with status `pass` — written before the shard's job went on to fail.
+# Nothing in the run's artifacts says why any shard is red.
+SHARD_ARTIFACTS = [
+    {"id": 1000 + i, "name": f"verdict-test-mutation-{i}", "expired": False} for i in range(4)
+]
+SHARD_BLOBS = {
+    1000 + i: verdict_zip({"lane": f"mutation/shard-{i}", "status": "pass", "summary": "passed"})
+    for i in range(4)
+}
+SHARD_CHECKS = [
+    dict(
+        FAILED_CHECK,
+        name=f"Mutation shard {i + 1}/6 (19 modules)",
+        conclusion="failure" if i == 0 else "success",
+        html_url=f"https://github.com/o/r/actions/runs/99/job/{1234 + i}",
+    )
+    for i in range(4)
+]
+
+
+def test_a_passing_shard_verdict_is_never_printed_as_a_failure(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """`mutation/shard-1` (pass) prefix-matches the red check `Mutation shard 1/6`.
+
+    It used to render as `FAIL mutation/shard-1 [pass]` and, worse, count as
+    the check's explanation — so the log tail that held the real reason was
+    never fetched.
+    """
+    wire(FakeGh(checks=SHARD_CHECKS, artifacts=SHARD_ARTIFACTS, zip_blobs=SHARD_BLOBS))
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert "[pass]" not in out
+    assert "FAIL  mutation/shard-" not in out
+    headers = [line for line in out.splitlines() if line.startswith("FAIL  ")]
+    assert headers == [
+        "FAIL  Mutation shard 1/6 (19 modules)  [failed]  "
+        "(no failing verdict in this run's artifacts — log tail)"
+    ]
+
+
+def test_a_red_check_with_only_passing_verdicts_falls_back_to_the_log_and_says_so(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = wire(FakeGh(checks=SHARD_CHECKS, artifacts=SHARD_ARTIFACTS, zip_blobs=SHARD_BLOBS))
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "no failing verdict in this run's artifacts — log tail" in out
+    assert "see the lanes below" not in out, "there are no failing lanes below to see"
+    assert "ERROR: mutation failed for: app/api/v1/endpoints/bot.py" in out
+    assert "actions/jobs/1234/logs" in " ".join(fake.calls)
+
+
+def test_the_lane_uploaded_nothing_wording_is_reserved_for_a_run_with_no_verdicts(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire(FakeGh(checks=[FAILED_CHECK], artifacts=[]))
+    run_cli(monkeypatch, [])
+    assert "lane uploaded no verdict artifact — log tail" in capsys.readouterr().out
