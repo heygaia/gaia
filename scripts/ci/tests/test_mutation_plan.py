@@ -275,14 +275,14 @@ def test_matrix_only_offers_the_detector_mutatable_app_modules(tmp_path: Path) -
 
 
 # ---------------------------------------------------------------------------
-# Pools — a shard runs where its tests can actually connect.
+# Pools — a shard brings up the services only when its tests need them.
 #
 # The contract tier is in the mapped test set, and it needs live Mongo and
-# Redis. The lint pool cannot provide them: those runner instances are numbered
-# 13-20, above test-services.sh's MAX_LANE of 12, so `prepare` refuses the lane
-# and the job dies in setup. Six shards died that way on run 34584038269. The
-# planner therefore separates the two kinds of module and labels each shard
-# with the pool it must run on; `runs-on` reads that label.
+# Redis, which cost setup time and a test-services lane. The planner therefore
+# separates the two kinds of module and labels each shard `services` or `unit`;
+# the workflow conditions the services steps on that label. Mixing them would
+# either start services for a shard that has no use for them or skip every
+# contract test in a shard that does.
 # ---------------------------------------------------------------------------
 
 CONTRACT_TEST = "tests/contracts/test_repo.py"
@@ -309,7 +309,7 @@ def test_a_contract_mapped_module_runs_in_the_services_pool(harness) -> None:
     assert process.returncode == 0, process.stderr
     assert _pools(outputs) == {
         "services": ["app/db/repositories/users.py"],
-        "lint": ["app/services/plain.py"],
+        "unit": ["app/services/plain.py"],
     }
 
 
@@ -322,14 +322,14 @@ def test_a_module_is_a_services_module_if_any_of_its_tests_is(harness) -> None:
     assert _pools(outputs) == {"services": ["app/db/repositories/users.py"]}
 
 
-def test_a_unit_only_plan_stays_entirely_in_the_lint_pool(harness) -> None:
+def test_a_unit_only_plan_stays_entirely_in_the_unit_pool(harness) -> None:
     # The control, and the common case: nothing is routed to the scarce
     # services pool unless it genuinely needs it.
     _, outputs = harness(
         [_entry(f"app/m{i}.py", [f"tests/unit/test_m{i}.py"], [i]) for i in range(3)]
     )
 
-    assert set(_pools(outputs)) == {"lint"}
+    assert set(_pools(outputs)) == {"unit"}
 
 
 def test_no_shard_mixes_the_two_pools(harness) -> None:
@@ -361,13 +361,13 @@ def test_the_two_pools_share_one_shard_budget(harness) -> None:
     assert int(outputs["count"]) == MAX_SHARDS
     # And both pools are represented — a budget that starved one of them would
     # leave its modules unmutated.
-    assert set(_pools(outputs)) == {"lint", "services"}
+    assert set(_pools(outputs)) == {"unit", "services"}
 
 
 def test_the_heavier_pool_gets_the_spare_shards(harness) -> None:
     # Every live pool starts at one shard and the rest follow the diff. The
     # typical PR touches one repository and many plain modules, so the services
-    # pool takes one shard and the lint pool takes the remaining five.
+    # pool takes one shard and the unit pool takes the remaining five.
     _, outputs = harness(
         [_entry("app/repo.py", [CONTRACT_TEST], [1])]
         + [_entry(f"app/unit{i}.py", [UNIT_TEST], [i]) for i in range(20)]
@@ -376,12 +376,12 @@ def test_the_heavier_pool_gets_the_spare_shards(harness) -> None:
     shards_per_pool: dict[str, int] = {}
     for item in json.loads(outputs["matrix"]):
         shards_per_pool[item["pool"]] = shards_per_pool.get(item["pool"], 0) + 1
-    assert shards_per_pool == {"services": 1, "lint": MAX_SHARDS - 1}
+    assert shards_per_pool == {"services": 1, "unit": MAX_SHARDS - 1}
 
 
 def test_a_services_shard_says_so_in_its_check_name(harness) -> None:
     # The check name is all a reviewer sees in the PR list; a red services
-    # shard and a red lint shard are debugged in different places.
+    # shard and a red unit shard are debugged in different places.
     _, outputs = harness([_entry("app/db/repositories/users.py", [CONTRACT_TEST], [1])])
 
     assert json.loads(outputs["matrix"])[0]["label"] == "app/db/repositories/users.py (services)"
