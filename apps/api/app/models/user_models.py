@@ -163,11 +163,15 @@ def role_of_need(need: OnboardingNeed) -> str | None:
 
 class OnboardingPreferences(BaseModel):
     profession: str | None = Field(
-        None,
+        # `default=` by keyword: mypy's dataclass-transform support does not read
+        # a positional default, so `Field(None, ...)` typed as REQUIRED while the
+        # runtime defaulted it — a caller omitting it was red for mypy and green
+        # for pydantic. The keyword form is the one both agree on.
+        default=None,
         description="User's profession or main area of focus",
     )
     needs: list[OnboardingNeed] | None = Field(
-        None,
+        default=None,
         max_length=NEEDS_MAX_SELECTION,
         description="The jobs the user handed GAIA (onboarding Q2, up to three)",
     )
@@ -190,7 +194,7 @@ class OnboardingPreferences(BaseModel):
         description="Preferred communication style: brief, detailed, casual, professional",
     )
     other_need: str | None = Field(
-        None,
+        default=None,
         max_length=OTHER_NEED_MAX_LENGTH,
         description="What the user typed under 'Something else' in onboarding Q2, verbatim",
     )
