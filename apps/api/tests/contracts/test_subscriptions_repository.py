@@ -63,11 +63,6 @@ class TestSubscriptionsRepository:
         assert await repo.has_any_for_user("lapsed") is True
         assert await repo.has_any_for_user("never-paid") is False
 
-    async def test_get_user_id_by_dodo_id(self, repo):
-        await repo.create(_sub(user_id="owner", dodo_subscription_id="s"))
-        assert await repo.get_user_id_by_dodo_id("s") == "owner"
-        assert await repo.get_user_id_by_dodo_id("nope") is None
-
     async def test_apply_update_by_dodo_id_sets_status_and_stamps_updated_at(self, repo):
         created = await repo.create(_sub(dodo_subscription_id="s", status="active"))
         matched = await repo.apply_update_by_dodo_id("s", SubscriptionUpdate(status="cancelled"))

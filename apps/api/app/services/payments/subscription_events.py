@@ -16,6 +16,7 @@ nothing; what did change decides the side effects — a status crossing into
 analytics event fires exactly once for the transition it names.
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from enum import StrEnum
@@ -173,48 +174,60 @@ async def resolve_subscription_owner(sub_data: DodoSubscriptionData) -> str | No
     return str(user.id) if user else None
 
 
-def _desired_state(event: SubscriptionEvent) -> SubscriptionUpdate:
-    """The fields this event says the row should now have.
+def _active_state(data: DodoSubscriptionData) -> SubscriptionUpdate:
+    """Active with the billing dates the event carries.
 
-    A field is set only when the event carries it: the repository writes
+    A date is set only when the event carries it: the repository writes
     ``exclude_unset`` as ``$set``, so a date the event omits must stay out of
     the update rather than write null over the stored value.
     """
-    data = event.data
-    match event.kind:
-        case SubscriptionEventKind.ACTIVATED | SubscriptionEventKind.RENEWED:
-            desired = SubscriptionUpdate(status=SubscriptionStatus.ACTIVE.value)
-            if data.next_billing_date is not None:
-                desired.next_billing_date = data.next_billing_date
-            if data.previous_billing_date is not None:
-                desired.previous_billing_date = data.previous_billing_date
-        case SubscriptionEventKind.CANCELLED:
-            # A cancel scheduled for period end keeps the user on Pro until
-            # ``subscription.expired``; only an immediate cancel drops the
-            # status now. The payload's own status is never trusted here — a
-            # scheduled cancel reporting "cancelled" would downgrade early.
-            desired = SubscriptionUpdate(
-                cancel_at_next_billing_date=data.cancel_at_next_billing_date
-            )
-            if not data.cancel_at_next_billing_date:
-                desired.status = SubscriptionStatus.CANCELLED.value
-            if data.cancelled_at:
-                desired.cancelled_at = data.cancelled_at
-            if data.next_billing_date is not None:
-                desired.next_billing_date = data.next_billing_date
-        case SubscriptionEventKind.EXPIRED:
-            desired = SubscriptionUpdate(status=SubscriptionStatus.EXPIRED.value)
-        case SubscriptionEventKind.FAILED:
-            desired = SubscriptionUpdate(status=SubscriptionStatus.FAILED.value)
-        case SubscriptionEventKind.ON_HOLD:
-            desired = SubscriptionUpdate(status=SubscriptionStatus.ON_HOLD.value)
-        case SubscriptionEventKind.PLAN_CHANGED:
-            desired = SubscriptionUpdate(
-                product_id=data.product_id,
-                quantity=data.quantity,
-                recurring_pre_tax_amount=data.recurring_pre_tax_amount,
-            )
+    desired = SubscriptionUpdate(status=SubscriptionStatus.ACTIVE.value)
+    if data.next_billing_date is not None:
+        desired.next_billing_date = data.next_billing_date
+    if data.previous_billing_date is not None:
+        desired.previous_billing_date = data.previous_billing_date
     return desired
+
+
+def _cancelled_state(data: DodoSubscriptionData) -> SubscriptionUpdate:
+    """A cancel scheduled for period end keeps the user on Pro until
+    ``subscription.expired``; only an immediate cancel drops the status now.
+    The payload's own status is never trusted here — a scheduled cancel
+    reporting "cancelled" would downgrade early."""
+    desired = SubscriptionUpdate(cancel_at_next_billing_date=data.cancel_at_next_billing_date)
+    if not data.cancel_at_next_billing_date:
+        desired.status = SubscriptionStatus.CANCELLED.value
+    if data.cancelled_at:
+        desired.cancelled_at = data.cancelled_at
+    if data.next_billing_date is not None:
+        desired.next_billing_date = data.next_billing_date
+    return desired
+
+
+def _status_state(
+    status: SubscriptionStatus,
+) -> Callable[[DodoSubscriptionData], SubscriptionUpdate]:
+    return lambda _data: SubscriptionUpdate(status=status.value)
+
+
+def _plan_changed_state(data: DodoSubscriptionData) -> SubscriptionUpdate:
+    return SubscriptionUpdate(
+        product_id=data.product_id,
+        quantity=data.quantity,
+        recurring_pre_tax_amount=data.recurring_pre_tax_amount,
+    )
+
+
+# What each event kind says the row should now have.
+DESIRED_STATE: dict[SubscriptionEventKind, Callable[[DodoSubscriptionData], SubscriptionUpdate]] = {
+    SubscriptionEventKind.ACTIVATED: _active_state,
+    SubscriptionEventKind.RENEWED: _active_state,
+    SubscriptionEventKind.CANCELLED: _cancelled_state,
+    SubscriptionEventKind.EXPIRED: _status_state(SubscriptionStatus.EXPIRED),
+    SubscriptionEventKind.FAILED: _status_state(SubscriptionStatus.FAILED),
+    SubscriptionEventKind.ON_HOLD: _status_state(SubscriptionStatus.ON_HOLD),
+    SubscriptionEventKind.PLAN_CHANGED: _plan_changed_state,
+}
 
 
 def _changes(row: SubscriptionDocument, desired: SubscriptionUpdate) -> dict[str, object]:
@@ -371,7 +384,7 @@ async def apply_subscription_event(event: SubscriptionEvent) -> SubscriptionEven
         )
         return SubscriptionEventResult(SubscriptionEventOutcome.STALE, row.user_id)
 
-    changes = _changes(row, _desired_state(event))
+    changes = _changes(row, DESIRED_STATE[event.kind](event.data))
     if not changes:
         log.info(
             f"{LogTag.PAYMENT} Subscription already in the reported state",

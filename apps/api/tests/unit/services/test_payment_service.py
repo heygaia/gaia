@@ -111,7 +111,6 @@ def mock_subscription_repository():
     with patch("app.services.payments.payment_service.subscription_repository") as mock_repo:
         mock_repo.get_active_for_user = AsyncMock(return_value=None)
         mock_repo.get_latest_active_for_user = AsyncMock(return_value=None)
-        mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=None)
         mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
         mock_repo.has_any_for_user = AsyncMock(return_value=False)
         yield mock_repo
@@ -418,15 +417,14 @@ class TestGetPlans:
 class TestCreateSubscription:
     """Tests for DodoPaymentService.create_subscription."""
 
+    @pytest.mark.usefixtures(
+        "mock_users_collection",
+        "mock_subscription_repository",
+        "mock_plan_repository",
+        "mock_checkout_session_repository",
+    )
     async def test_minting_a_new_checkout_forgets_the_cached_unpaid_scan(
-        self,
-        payment_service,
-        mock_users_collection,
-        mock_subscription_repository,
-        mock_plan_repository,
-        mock_checkout_session_repository,
-        mock_dodo_client,
-        mock_redis_cache,
+        self, payment_service, mock_dodo_client, mock_redis_cache
     ):
         """ "None of your sessions is paid" was cached against the sessions that
         existed; a new one is not among them, so the verdict is void."""
