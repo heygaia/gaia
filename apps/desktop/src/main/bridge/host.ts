@@ -24,6 +24,7 @@ import {
   type ServerConfig,
   saveCredentials,
   Tunnel,
+  testServer,
   upsertServer,
 } from "@gaia/shared/bridge-core";
 import { app, session } from "electron";
@@ -172,6 +173,12 @@ export class BridgeHost {
   }
 
   async addServer(config: ServerConfig): Promise<void> {
+    // Verify the server actually starts and speaks MCP before saving — a typo
+    // like `npm` for `npx` otherwise becomes a dead server with no feedback.
+    // init() first so the login-shell PATH is set and npx/uvx resolve; testServer
+    // throws a descriptive error that the IPC envelope surfaces to the card.
+    await this.init();
+    await testServer(config);
     upsertServer(config);
     await registerConfiguredServers();
   }
