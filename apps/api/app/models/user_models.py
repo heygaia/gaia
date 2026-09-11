@@ -399,6 +399,9 @@ class AuthenticatedUser(TypedDict, total=False):
     nurture: dict[str, Any] | None
     # Activation checklist collapse (first_steps_service).
     first_steps: FirstStepsState | None
+    # Signup delivery stamps (signup_email_tasks) — absent while still owed.
+    welcome_email_sent_at: datetime | None
+    marketing_contact_added_at: datetime | None
 
 
 class PlatformLinkRecord(TypedDict, total=False):
