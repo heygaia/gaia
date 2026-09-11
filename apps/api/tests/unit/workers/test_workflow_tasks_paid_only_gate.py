@@ -14,6 +14,8 @@ from uuid import uuid4
 import pytest
 
 from app.constants.log_tags import LogTag
+from app.decorators import entitlements
+from app.models.payment_models import PlanType
 from app.models.user_models import UserDocument
 from app.services.analytics_service import AnalyticsEvents
 from app.workers.tasks.workflow_tasks import PAYWALL_FEATURE_WORKFLOW, execute_workflow_by_id
@@ -63,8 +65,7 @@ class TestPaidOnlyGateBlocksFreeUsers:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}.execute_workflow_as_chat", mock_execute_chat),
             patch(f"{MODULE}.create_execution", mock_create_execution),
             patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
@@ -93,8 +94,7 @@ class TestPaidOnlyGateBlocksFreeUsers:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}.execute_workflow_as_chat", mock_execute_chat),
         ):
             result = await execute_workflow_by_id({}, workflow.id, {"trigger_type": "manual"})
@@ -113,8 +113,7 @@ class TestPaidOnlyGateBlocksFreeUsers:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}.drain_trigger_batch", mock_drain),
         ):
             result = await execute_workflow_by_id(
@@ -127,7 +126,7 @@ class TestPaidOnlyGateBlocksFreeUsers:
         mock_drain.assert_not_called()
 
     async def test_gate_checks_the_workflow_owner_not_a_stale_context_user(self) -> None:
-        """is_subscription_active must be asked about the workflow's actual
+        """is_paid must be asked about the workflow's actual
         owner (workflow.user_id) — not any id that happens to be lying around
         in the trigger context."""
         workflow = _make_workflow(user_id="the-real-owner")
@@ -137,8 +136,7 @@ class TestPaidOnlyGateBlocksFreeUsers:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", mock_is_active),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", mock_is_active),
         ):
             await execute_workflow_by_id({}, workflow.id, {"trigger_type": "manual"})
 
@@ -162,8 +160,7 @@ class TestTheBlockReachesTheFunnel:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}.capture_event") as capture,
         ):
             await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
@@ -181,8 +178,7 @@ class TestTheBlockReachesTheFunnel:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=True)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=True)),
             patch(f"{MODULE}._admit_fire", AsyncMock(return_value=None)),
             patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
             patch(
@@ -197,6 +193,37 @@ class TestTheBlockReachesTheFunnel:
         assert AnalyticsEvents.PAYWALL_BLOCKED not in captured
 
 
+class TestTheGateReadsTheRowWhenTheCacheSaysFree:
+    async def test_a_user_who_just_paid_runs_off_the_row_not_the_stale_cache(self) -> None:
+        """The real gate, not a stub of it: the cache says FREE, the row says
+        PRO, and the run goes ahead."""
+        workflow = _make_workflow(user_id="user-paid-stale-3")
+        scheduler, p_scheduler = _patch_scheduler(workflow)
+
+        with (
+            p_scheduler,
+            patch(f"{MODULE}.is_paid", entitlements.is_paid),
+            patch(
+                "app.decorators.entitlements.payment_service.get_cached_plan_type",
+                AsyncMock(return_value=PlanType.FREE),
+            ),
+            patch(
+                "app.decorators.entitlements.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=MagicMock(plan_type=PlanType.PRO)),
+            ),
+            patch("app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock),
+            patch(f"{MODULE}._admit_fire", AsyncMock(return_value=None)),
+            patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
+            patch(
+                f"{MODULE}._drain_trigger_events",
+                AsyncMock(return_value=({"trigger_type": "schedule"}, "drained-for-test")),
+            ),
+        ):
+            result = await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
+
+        assert result == "drained-for-test"
+
+
 class TestPaidOnlyGateLetsProUsersThrough:
     async def test_pro_user_run_proceeds_to_execution(self) -> None:
         workflow = _make_workflow(user_id="user-pro-1")
@@ -207,8 +234,7 @@ class TestPaidOnlyGateLetsProUsersThrough:
 
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=True)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=True)),
             patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
             patch(
                 f"{MODULE}.create_execution",
@@ -229,29 +255,11 @@ class TestPaidOnlyGateLetsProUsersThrough:
         mock_execute_chat.assert_awaited_once()
 
 
-class TestTheGateNeverDestroysAndNeverTrustsTheCacheAlone:
+class TestTheGateNeverDestroys:
     """Found in review: the gate deactivated every workflow the user owned off a
     five-minute-stale cache read. Deactivation belongs to the billing webhook;
-    the gate only skips, and asks the database once before it does."""
-
-    async def test_a_stale_free_read_gets_a_fresh_read_and_a_paying_user_runs(self) -> None:
-        workflow = _make_workflow(user_id="user-paid-stale")
-        scheduler, p_scheduler = _patch_scheduler(workflow)
-        with (
-            p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=True)) as confirm,
-            patch(f"{MODULE}._admit_fire", AsyncMock(return_value=None)),
-            patch(f"{MODULE}.enforce_daily_cost_budget", new_callable=AsyncMock),
-            patch(
-                f"{MODULE}._drain_trigger_events",
-                AsyncMock(return_value=({"trigger_type": "schedule"}, "drained-for-test")),
-            ),
-        ):
-            result = await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
-
-        confirm.assert_awaited_once_with("user-paid-stale")
-        assert result == "drained-for-test"
+    the gate only skips (``is_paid`` asks the database before it does — see
+    ``TestTheGateReadsTheRowWhenTheCacheSaysFree``)."""
 
     async def test_a_skipped_scheduled_run_is_re_armed_not_deactivated(self) -> None:
         workflow = _make_workflow(user_id="user-free-4")
@@ -259,8 +267,7 @@ class TestTheGateNeverDestroysAndNeverTrustsTheCacheAlone:
         scheduler, p_scheduler = _patch_scheduler(workflow)
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}.WorkflowService") as service,
         ):
             await execute_workflow_by_id({}, workflow.id, {"trigger_type": "schedule"})
@@ -276,8 +283,7 @@ class TestTheGateNeverDestroysAndNeverTrustsTheCacheAlone:
         scheduler, p_scheduler = _patch_scheduler(workflow)
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
             patch(f"{MODULE}._rearm_quietly", new_callable=AsyncMock) as rearm,
         ):
             context = {"trigger_type": "schedule"}
@@ -291,8 +297,7 @@ class TestTheGateNeverDestroysAndNeverTrustsTheCacheAlone:
         scheduler, p_scheduler = _patch_scheduler(workflow)
         with (
             p_scheduler,
-            patch(f"{MODULE}.is_subscription_active", AsyncMock(return_value=False)),
-            patch(f"{MODULE}.confirm_subscription_active", AsyncMock(return_value=False)),
+            patch(f"{MODULE}.is_paid", AsyncMock(return_value=False)),
         ):
             await execute_workflow_by_id({}, workflow.id, {"trigger_type": "manual"})
 

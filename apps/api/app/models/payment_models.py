@@ -215,9 +215,17 @@ class SubscriptionDocument(MongoDocument):
     user_id: str
     product_id: str | None = None
     status: str = "pending"
+    quantity: int | None = None
+    recurring_pre_tax_amount: int | None = None
     cancel_at_next_billing_date: bool | None = None
-    #: The ISO string Dodo sends, stored verbatim (see ``SubscriptionUpdate``).
+    #: The ISO strings Dodo sends, stored verbatim (see ``SubscriptionUpdate``).
     next_billing_date: str | None = None
+    previous_billing_date: str | None = None
+    cancelled_at: str | None = None
+    #: When, by Dodo's clock, the last applied event happened. The reducer
+    #: refuses anything older, so a redelivery that arrives late cannot undo a
+    #: newer state (``app/services/payments/subscription_events.py``).
+    last_event_at: datetime | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -246,6 +254,7 @@ class SubscriptionUpdate(BaseModel):
     previous_billing_date: str | None = None
     cancelled_at: str | None = None
     cancel_at_next_billing_date: bool | None = None
+    last_event_at: datetime | None = None
 
 
 class CheckoutSessionDocument(UserScopedDocument):

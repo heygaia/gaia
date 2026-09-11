@@ -20,7 +20,7 @@ from app.constants.platform_links import (
     LINK_CONFLICT_PLATFORM_TAKEN,
 )
 from app.models.chat_models import ConversationSource
-from app.models.platform_models import PlatformLinkResult
+from app.models.platform_models import PlatformLinkCompletion
 from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import AnalyticsEvents, capture_event
 from app.services.outbound_delivery import (
@@ -44,7 +44,7 @@ async def complete_platform_link(
     profile: Mapping[str, str | None] | None = None,
     *,
     first_contact: list[str] | None = None,
-) -> PlatformLinkResult:
+) -> PlatformLinkCompletion:
     """Link the account and run every side effect a successful link owes.
 
     Whatever GAIA says after the link is sent from here, on the outbound queue
@@ -52,6 +52,10 @@ async def complete_platform_link(
     composed opening for the one-tap onboarding link (hello, promise, first
     move) and is delivered as-is; without it a new link gets the generic
     "you're connected" text. The bots deliver, they never compose.
+
+    Reports back whether that first contact actually went out: nothing retries
+    the publish, so a caller holding the bubbles is the only thing standing
+    between a failed delivery and a linked platform that never said a word.
 
     Raises AppError(409) when the platform account belongs to another GAIA user
     (or the user already has a different account on this platform) — the one
@@ -99,6 +103,7 @@ async def complete_platform_link(
             code=LINK_CONFLICT_ACCOUNT_HAS_OTHER,
         ) from e
 
+    delivered = True
     if first_contact:
         delivery = await publish_outbound_message(
             ConversationSource.coerce(platform) or ConversationSource.WEB,
@@ -106,9 +111,11 @@ async def complete_platform_link(
             first_contact,
             ttl_seconds=OUTBOUND_TTL_SECONDS_GREETING,
         )
-        if delivery is not OutboundResult.PUBLISHED:
+        delivered = delivery is OutboundResult.PUBLISHED
+        if not delivered:
             # The link itself held; the one message a new user is guaranteed
-            # to read did not. Loud, because nothing else will retry it.
+            # to read did not. Loud, because nothing else will retry it — and
+            # reported back so the caller can have the bot send it instead.
             log.warning(
                 "first contact was not delivered after a one-tap link",
                 platform=platform,
@@ -118,12 +125,17 @@ async def complete_platform_link(
     elif result.is_new_link:
         await notify_account_linked(platform, user_id)
     schedule_account_sync(user_id)
-    # capture_event, not capture_context_event: the bot route resolves its user
-    # from the link code, not a session, so there is no request identity to
-    # inherit and the event would land on an anonymous profile.
-    capture_event(
-        user_id,
-        AnalyticsEvents.INTEGRATION_CONNECTED,
-        {"integration_id": platform, "is_new_link": result.is_new_link},
-    )
-    return result
+    if result.is_new_link:
+        # Only a link that did not exist a moment ago is a connection. An
+        # idempotent re-link — a second tap on the same deep link, a re-issued
+        # token — used to capture too, so the connection count tracked taps.
+        #
+        # capture_event, not capture_context_event: the bot route resolves its
+        # user from the link code, not a session, so there is no request
+        # identity to inherit and the event would land on an anonymous profile.
+        capture_event(
+            user_id,
+            AnalyticsEvents.INTEGRATION_CONNECTED,
+            {"integration_id": platform, "is_new_link": result.is_new_link},
+        )
+    return PlatformLinkCompletion(link=result, first_contact_delivered=delivered)

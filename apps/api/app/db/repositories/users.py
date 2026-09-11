@@ -101,12 +101,16 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
 
     # ------------------------------------------------------------ worker scans
 
+    # The cohort reads below are lenient: a single legacy row whose
+    # ``onboarding`` is the wrong type used to raise here — above the per-user
+    # try/except in every sweep — so nobody in the cohort got their mail. The
+    # bad row is skipped and logged; the rest of the cohort goes through.
     async def find_stuck_personalization(
         self, cutoff: datetime, *, limit: int = 50
     ) -> list[UserDocument]:
         """Users stuck at personalization-pending whose last update predates
         ``cutoff`` (or was never stamped) — the re-queue candidates."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "onboarding.phase": OnboardingPhase.PERSONALIZATION_PENDING.value,
                 "$or": [
@@ -120,7 +124,7 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
     async def find_inactive_email_candidates(self, before: datetime) -> list[UserDocument]:
         """Active users inactive since ``before`` who have not been emailed since
         then — the inactivity-email candidates (throttling is decided per user)."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "last_active_at": {"$lt": before},
                 "is_active": {"$ne": False},
@@ -136,7 +140,7 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
         ``last_active_at`` missing means the account has never been seen active, so
         those count as dormant too; without the ``$exists`` arm a `$lt` comparison
         silently skips them."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "is_active": {"$ne": False},
                 "$or": [
@@ -151,7 +155,7 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
         """Recently-signed-up, still-active users — the nurture-sequence cohort.
         Send eligibility (timezone hour, frequency caps, step windows) is decided
         per user per run, not by this query."""
-        return await self._find(
+        return await self._find_lenient(
             {"created_at": {"$gte": created_since}, "is_active": {"$ne": False}},
         )
 

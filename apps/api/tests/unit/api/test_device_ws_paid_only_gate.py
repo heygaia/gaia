@@ -6,11 +6,12 @@ MCP traffic forever. Closing with 1008 (policy violation) matches how the same
 handler already rejects a revoked device.
 """
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from app.api.v1.endpoints.device_ws import device_ws
+from app.models.payment_models import PlanType
 
 pytestmark = pytest.mark.unit
 
@@ -29,7 +30,7 @@ async def test_free_user_socket_is_closed_with_policy_violation() -> None:
     with (
         patch(f"{MODULE}.verify_device_token", return_value=TOKEN_INFO),
         patch(f"{MODULE}.get_active_device", new_callable=AsyncMock, return_value={"id": "dev-1"}),
-        patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock, return_value=False),
+        patch(f"{MODULE}.is_paid", new_callable=AsyncMock, return_value=False),
     ):
         await device_ws(websocket)
 
@@ -43,7 +44,7 @@ async def test_gate_runs_before_the_socket_is_accepted() -> None:
     with (
         patch(f"{MODULE}.verify_device_token", return_value=TOKEN_INFO),
         patch(f"{MODULE}.get_active_device", new_callable=AsyncMock, return_value={"id": "dev-1"}),
-        patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock, return_value=False),
+        patch(f"{MODULE}.is_paid", new_callable=AsyncMock, return_value=False),
         patch(f"{MODULE}.device_connection_manager") as manager,
         patch(f"{MODULE}.mark_online", new_callable=AsyncMock) as mark_online,
     ):
@@ -61,7 +62,7 @@ async def test_the_close_is_attributed_to_the_paywall_in_the_wide_event() -> Non
     with (
         patch(f"{MODULE}.verify_device_token", return_value=TOKEN_INFO),
         patch(f"{MODULE}.get_active_device", new_callable=AsyncMock, return_value={"id": "dev-1"}),
-        patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock, return_value=False),
+        patch(f"{MODULE}.is_paid", new_callable=AsyncMock, return_value=False),
         patch(f"{MODULE}.log") as mock_log,
     ):
         await device_ws(websocket)
@@ -75,8 +76,40 @@ async def test_gate_asks_about_the_tokens_own_user() -> None:
     with (
         patch(f"{MODULE}.verify_device_token", return_value=TOKEN_INFO),
         patch(f"{MODULE}.get_active_device", new_callable=AsyncMock, return_value={"id": "dev-1"}),
-        patch(f"{MODULE}.is_subscription_active", is_active),
+        patch(f"{MODULE}.is_paid", is_active),
     ):
         await device_ws(websocket)
 
     is_active.assert_awaited_once_with("user-1")
+
+
+async def test_a_user_who_just_paid_connects_off_the_row_not_the_stale_cache() -> None:
+    """The daemon dials the moment the user pays; the cache can still say
+    FREE for five minutes. Reading it alone closed a paying user's tunnel
+    with the paywall code on every reconnect until the TTL ran out."""
+    websocket = _socket()
+    with (
+        patch(f"{MODULE}.verify_device_token", return_value=TOKEN_INFO),
+        patch(f"{MODULE}.get_active_device", new_callable=AsyncMock, return_value={"id": "dev-1"}),
+        patch(
+            "app.decorators.entitlements.payment_service.get_cached_plan_type",
+            new_callable=AsyncMock,
+            return_value=PlanType.FREE,
+        ),
+        patch(
+            "app.decorators.entitlements.payment_service.get_user_subscription_status",
+            new_callable=AsyncMock,
+            return_value=MagicMock(plan_type=PlanType.PRO),
+        ),
+        patch("app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock),
+        patch(f"{MODULE}.device_connection_manager"),
+        patch(f"{MODULE}.mark_online", new_callable=AsyncMock),
+        patch(f"{MODULE}.mark_offline", new_callable=AsyncMock),
+        patch(f"{MODULE}._down_relay", new_callable=AsyncMock),
+        patch(f"{MODULE}._heartbeat", new_callable=AsyncMock),
+        patch(f"{MODULE}._receive_loop", new_callable=AsyncMock),
+    ):
+        await device_ws(websocket)
+
+    websocket.accept.assert_awaited_once()
+    assert all(call.kwargs.get("code") != 1008 for call in websocket.close.await_args_list)

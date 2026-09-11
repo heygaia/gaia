@@ -2,6 +2,7 @@
 Clean webhook models for Dodo Payments based on actual webhook format.
 """
 
+from datetime import datetime
 from enum import Enum, StrEnum
 from typing import Any, Literal
 
@@ -127,13 +128,21 @@ class DodoWebhookEvent(BaseModel):
     """Dodo webhook event structure."""
 
     business_id: str
-    type: DodoWebhookEventType
+    #: A plain string, not the enum: Dodo adds event types without notice, and
+    #: an unlisted one must parse so it can be acknowledged and ignored rather
+    #: than rejected as a validation error the sender keeps retrying.
+    type: str
     timestamp: str
     data: dict[str, Any]
 
+    @property
+    def occurred_at(self) -> datetime:
+        """When Dodo says this happened — the ordering key for subscription state."""
+        return datetime.fromisoformat(self.timestamp)
+
     def get_payment_data(self) -> DodoPaymentData | None:
         """Extract payment data if payment event."""
-        if self.type.value.startswith("payment."):
+        if self.type.startswith("payment."):
             try:
                 return DodoPaymentData(**self.data)
             except ValidationError as exc:
@@ -150,7 +159,7 @@ class DodoWebhookEvent(BaseModel):
 
     def get_subscription_data(self) -> DodoSubscriptionData | None:
         """Extract subscription data if subscription event."""
-        if self.type.value.startswith("subscription."):
+        if self.type.startswith("subscription."):
             try:
                 return DodoSubscriptionData(**self.data)
             except ValidationError as exc:
@@ -171,15 +180,19 @@ class WebhookProcessingStatus(StrEnum):
 
     ``PROCESSED`` and ``IGNORED`` are both final — the delivery is recorded
     under its webhook id and acknowledged with a 200. ``FAILED`` is not: the
-    state change the event carried never landed, so the claim is handed back
-    and the sender is asked to retry. Acknowledging a failure would end the
-    event's life, because a 200 stops Dodo resending and the claim would turn
-    a manual redelivery away as a replay.
+    state change the event carried never landed and a retry can still land
+    it, so the claim is handed back and the sender is asked to retry.
+    ``ABANDONED`` is a failure no retry can fix (no GAIA user behind the
+    subscription, a row that never arrived in the time it had, a body that
+    does not validate): it is acknowledged so Dodo stops redelivering, the
+    claim is released so a human can redeliver it by hand once the cause is
+    fixed, and it is on the wide event at error level.
     """
 
     PROCESSED = "processed"
     IGNORED = "ignored"
     FAILED = "failed"
+    ABANDONED = "abandoned"
 
 
 class DodoWebhookProcessingResult(BaseModel):

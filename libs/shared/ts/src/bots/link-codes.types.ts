@@ -12,12 +12,16 @@ export interface ParsedLinkCode {
 /** `unknown` when the check itself failed — which is not "not linked". */
 export type LinkState = "linked" | "unlinked" | "unknown";
 
-/** Why a redemption was refused, as far as the person tapping is concerned. */
+/** Why a redemption was refused, as far as the person tapping is concerned.
+ *
+ * ``failed`` is the one that is not about them: GAIA broke. It still gets an
+ * answer, because this is the user's first-ever message. */
 export type LinkCodeFailure =
   | "expired"
   | "conflict"
   | "account-has-other"
-  | "plan";
+  | "plan"
+  | "failed";
 
 export interface InboundLinkCodeArgs {
   gaia: GaiaClient;

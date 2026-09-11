@@ -2,6 +2,8 @@
 Payment and billing constants.
 """
 
+from datetime import timedelta
+
 # How many charges a payment-history read returns. Deep history belongs in the
 # billing portal; the agent only ever needs "what have I been charged lately".
 PAYMENT_HISTORY_LIMIT = 10
@@ -13,6 +15,12 @@ PAYMENT_HISTORY_LIMIT = 10
 # single verify can make (the scan stops at the first session Dodo calls paid,
 # so a user who just paid normally costs one).
 CHECKOUT_SESSION_SCAN_LIMIT = 10
+
+# How long a lifecycle webhook (renewed, cancelled, ...) for a subscription GAIA
+# has no row for is still asked to be retried. ``subscription.active`` is its
+# own delivery with its own retries and may simply be behind; past this age it
+# is not coming, and asking Dodo to keep redelivering only masks that.
+WEBHOOK_ROW_WAIT_MAX = timedelta(hours=1)
 
 NO_USER_MESSAGE = "Could not identify the user, so their billing state is unavailable."
 

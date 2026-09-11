@@ -12,8 +12,7 @@ import pytest
 from app.decorators.entitlements import (
     PAYWALL_MESSAGE,
     SubscriptionRequiredException,
-    confirm_subscription_active,
-    is_subscription_active,
+    is_paid,
     require_active_subscription,
 )
 from app.models.payment_models import PlanType
@@ -34,18 +33,55 @@ def _checkout(payment_link: str) -> MagicMock:
     return checkout
 
 
-class TestIsSubscriptionActive:
-    async def test_pro_plan_is_active(self) -> None:
-        plan_lookup = AsyncMock(return_value=PlanType.PRO)
-        with patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup):
-            assert await is_subscription_active("u1") is True
-        plan_lookup.assert_awaited_once_with("u1")
+class TestIsPaid:
+    """The one entitlement answer every decision surface reads.
 
-    async def test_free_plan_is_not_active(self) -> None:
-        plan_lookup = AsyncMock(return_value=PlanType.FREE)
-        with patch(f"{ENT}.payment_service.get_cached_plan_type", new=plan_lookup):
-            assert await is_subscription_active("u1") is False
-        plan_lookup.assert_awaited_once_with("u1")
+    The cached tier lags a payment by up to its TTL. A cached PRO is trusted;
+    a cached FREE is confirmed against the database once, and a live
+    subscription found there drops the stale key so the next read is right.
+    """
+
+    async def test_a_cached_pro_is_trusted_without_a_database_read(self) -> None:
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type", AsyncMock(return_value=PlanType.PRO)
+            ) as cached,
+            patch(f"{ENT}.payment_service.get_user_subscription_status") as fresh,
+        ):
+            assert await is_paid("u1") is True
+        cached.assert_awaited_once_with("u1")
+        fresh.assert_not_called()
+
+    async def test_a_cached_free_is_confirmed_from_the_row_and_the_stale_key_dropped(
+        self,
+    ) -> None:
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type", AsyncMock(return_value=PlanType.FREE)
+            ),
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=MagicMock(plan_type=PlanType.PRO)),
+            ) as fresh,
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await is_paid("u1") is True
+        fresh.assert_awaited_once_with("u1")
+        invalidate.assert_awaited_once_with("u1")
+
+    async def test_a_free_user_is_refused_and_the_cache_left_alone(self) -> None:
+        with (
+            patch(
+                f"{ENT}.payment_service.get_cached_plan_type", AsyncMock(return_value=PlanType.FREE)
+            ),
+            patch(
+                f"{ENT}.payment_service.get_user_subscription_status",
+                AsyncMock(return_value=MagicMock(plan_type=PlanType.FREE)),
+            ),
+            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
+        ):
+            assert await is_paid("u1") is False
+        invalidate.assert_not_awaited()
 
 
 class TestRequireActiveSubscription:
@@ -155,32 +191,3 @@ class TestRequireActiveSubscription:
             await require_active_subscription("u1", feature="get_token")
 
         mock_capture.assert_not_called()
-
-
-class TestConfirmSubscriptionActive:
-    async def test_a_live_subscription_is_confirmed_from_the_database_and_drops_the_stale_key(
-        self,
-    ) -> None:
-        status = MagicMock(plan_type=PlanType.PRO)
-        with (
-            patch(
-                f"{ENT}.payment_service.get_user_subscription_status",
-                AsyncMock(return_value=status),
-            ) as fresh,
-            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
-        ):
-            assert await confirm_subscription_active("u1") is True
-        fresh.assert_awaited_once_with("u1")
-        invalidate.assert_awaited_once_with("u1")
-
-    async def test_a_free_user_is_not_confirmed_and_the_cache_is_left_alone(self) -> None:
-        status = MagicMock(plan_type=PlanType.FREE)
-        with (
-            patch(
-                f"{ENT}.payment_service.get_user_subscription_status",
-                AsyncMock(return_value=status),
-            ),
-            patch(f"{ENT}.invalidate_plan_cache", new_callable=AsyncMock) as invalidate,
-        ):
-            assert await confirm_subscription_active("u1") is False
-        invalidate.assert_not_awaited()
