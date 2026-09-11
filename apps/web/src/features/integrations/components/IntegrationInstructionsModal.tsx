@@ -77,6 +77,7 @@ export const IntegrationInstructionsModal = ({
       <IntegrationIcon
         integrationId={integration.id}
         iconUrl={integration.iconUrl}
+        category={integration.category}
         size={16}
       />
     ),
@@ -155,6 +156,7 @@ export const IntegrationInstructionsModal = ({
             <IntegrationIcon
               integrationId={integration.id}
               iconUrl={integration.iconUrl}
+              category={integration.category}
               size={26}
             />
           </div>

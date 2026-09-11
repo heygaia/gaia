@@ -56,6 +56,7 @@ const IntegrationRow: React.FC<{
           <IntegrationIcon
             integrationId={integration.id}
             iconUrl={integration.iconUrl}
+            category={integration.category}
             size={32}
           />
         </div>

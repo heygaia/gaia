@@ -73,6 +73,7 @@ export const IntegrationSidebar: React.FC<IntegrationSidebarProps> = ({
           <IntegrationIcon
             integrationId={integration.id}
             iconUrl={integration.iconUrl}
+            category={integration.category}
             size={40}
           />
         </div>
