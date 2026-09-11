@@ -36,12 +36,23 @@ class SubscriptionsRepository(MongoRepository[SubscriptionDocument, Subscription
         """
         return await self._find({"user_id": user_id}, sort=[("created_at", -1)])
 
+    async def has_any_for_user(self, user_id: str) -> bool:
+        """Whether this user has ever had a subscription, in any status.
+
+        Distinguishes a lapsed subscriber from someone who has never paid — the
+        paywall shows different copy for each.
+        """
+        return await self._find_one({"user_id": user_id}) is not None
+
+    async def delete_all_for_user(self, user_id: str) -> int:
+        """Drop every subscription record of one user, any status; returns the count.
+
+        The local reset tool's way back to the paywall. Nothing in the product
+        calls this: a real cancellation keeps its history."""
+        return await self._delete_many({"user_id": user_id}, scope=REPO_GLOBAL_SCOPE)
+
     async def get_by_dodo_id(self, dodo_subscription_id: str) -> SubscriptionDocument | None:
         return await self._find_one({"dodo_subscription_id": dodo_subscription_id})
-
-    async def get_user_id_by_dodo_id(self, dodo_subscription_id: str) -> str | None:
-        subscription = await self._find_one({"dodo_subscription_id": dodo_subscription_id})
-        return subscription.user_id if subscription is not None else None
 
     async def apply_update_by_dodo_id(
         self, dodo_subscription_id: str, update: SubscriptionUpdate

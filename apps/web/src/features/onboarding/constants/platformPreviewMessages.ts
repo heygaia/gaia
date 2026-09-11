@@ -1,108 +1,511 @@
 /**
  * Profession-keyed message scripts for the platform preview shown in the
- * `platforms` onboarding stage. The 20 profession enum values are grouped
- * into 5 archetypes; each archetype owns three scripts (one per platform)
- * that demonstrate the three things the copy promises: morning briefings,
- * urgent email flags, and workflow-finished pings.
+ * `platformPick` onboarding stage. One script set per profession value from
+ * question one (the same value the wizard stores), three scripts each, one per
+ * platform. Every script demonstrates the three things the copy promises:
+ * morning briefings, urgent email flags, and workflow-finished pings, and
+ * GAIA addresses the user by first name where the account has one.
  *
- * Rebucket professions or rewrite scripts here, the preview component is
- * data-driven and has no other coupling to profession.
+ * Rewrite scripts here; the preview component is data-driven and has no
+ * other coupling to profession.
  */
 
 import type {
   PlatformPreviewPlatform,
   PlatformScript,
-  ProfessionArchetype,
   UserIdentity,
 } from "./platformPreviewMessages.types";
 
 export type {
   PlatformPreviewPlatform,
   PlatformScript,
-  ProfessionArchetype,
   UserIdentity,
 } from "./platformPreviewMessages.types";
 
-const PROFESSION_TO_ARCHETYPE: Record<string, ProfessionArchetype> = {
-  engineer: "builder",
-  developer: "builder",
-  designer: "builder",
-
-  manager: "operator",
-  consultant: "operator",
-  analyst: "operator",
-  accountant: "operator",
-  sales: "operator",
-  marketing: "operator",
-
-  entrepreneur: "founder",
-  freelancer: "founder",
-
-  student: "scholar",
-  teacher: "scholar",
-  researcher: "scholar",
-  doctor: "scholar",
-  lawyer: "scholar",
-  writer: "scholar",
-
-  artist: "default",
-  retired: "default",
-  other: "default",
-};
-
-export function getArchetype(
-  profession: string | undefined,
-): ProfessionArchetype {
-  if (!profession) return "default";
-  return PROFESSION_TO_ARCHETYPE[profession.toLowerCase()] ?? "default";
-}
-
-type ArchetypeScripts = Record<PlatformPreviewPlatform, PlatformScript>;
+type PlatformScripts = Record<PlatformPreviewPlatform, PlatformScript>;
 
 export const PLATFORM_PREVIEW_ORDER: PlatformPreviewPlatform[] = [
   "telegram",
   "whatsapp",
-  "slack",
-  "discord",
+  "imessage",
 ];
 
 export const PLATFORM_LABELS: Record<PlatformPreviewPlatform, string> = {
   telegram: "Telegram",
   whatsapp: "WhatsApp",
-  slack: "Slack",
-  discord: "Discord",
+  imessage: "iMessage",
 };
 
 export const PLATFORM_ICONS: Record<PlatformPreviewPlatform, string> = {
   telegram: "/images/icons/macos/telegram.webp",
   whatsapp: "/images/icons/macos/whatsapp.webp",
-  slack: "/images/icons/macos/slack.webp",
-  discord: "/images/icons/macos/discord.webp",
+  imessage: "/images/icons/macos/imessage.webp",
 };
 
-const USER_PLACEHOLDER_NAME = "__user__";
-const USER_PLACEHOLDER_AVATAR = "__user_avatar__";
-const USER_COLOR = "#FFB37A";
-const FALLBACK_USER_AVATAR = "/aryan-avatar.webp";
+/** The `professionOptions` values; a typed-in job falls back to `other`. */
+export const PROFESSION_SCRIPT_KEYS = [
+  "founder",
+  "executive",
+  "sales",
+  "product",
+  "creative",
+  "engineering",
+  "marketing",
+  "finance",
+  "student",
+  "other",
+] as const;
+export type ProfessionScriptKey = (typeof PROFESSION_SCRIPT_KEYS)[number];
 
-const BUILDER: ArchetypeScripts = {
+/** GAIA's lines carry this token; it always follows a word, so dropping it for
+ *  an account with no first name leaves a natural sentence behind. */
+const NAME_TOKEN = "{name}";
+
+export function isPreviewPlatform(
+  platform: string,
+): platform is PlatformPreviewPlatform {
+  return PLATFORM_PREVIEW_ORDER.includes(platform as PlatformPreviewPlatform);
+}
+
+function toScriptKey(profession: string | undefined): ProfessionScriptKey {
+  return PROFESSION_SCRIPT_KEYS.includes(profession as ProfessionScriptKey)
+    ? (profession as ProfessionScriptKey)
+    : "other";
+}
+
+function personalize(text: string, firstName: string | undefined): string {
+  return firstName
+    ? text.replaceAll(NAME_TOKEN, firstName)
+    : text.replaceAll(` ${NAME_TOKEN}`, "");
+}
+
+const FOUNDER_SCRIPTS: PlatformScripts = {
   telegram: {
     title: "GAIA",
-    subtitle: "bot",
     messages: [
       {
         from: "them",
-        text: "morning! quick heads up, i pushed your 9am standup back to 10 so you've got a bit more breathing room.",
+        text: "morning {name}! inbox is sorted, 3 investor replies drafted and waiting for your ok.",
+        time: "8:12",
+      },
+      {
+        from: "them",
+        text: "also the board deck is due friday. i pulled last month's numbers into the template already.",
+        time: "8:12",
+      },
+      {
+        from: "me",
+        text: "anything from the seed lead?",
+        time: "8:14",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "yep, she asked for the updated runway. i attached it to the draft, just hit send.",
+        time: "8:14",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, your 2pm with the hiring candidate moved to 3. I updated the invite.",
+        time: "9:05",
+      },
+      {
+        from: "them",
+        text: "Two team standups have no notes yet. Want me to chase?",
+        time: "9:05",
+      },
+      {
+        from: "me",
+        text: "chase them, and remind me to send the offer letter",
+        time: "9:07",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Done. Both pinged, and I'll remind you at 4 about the offer.",
+        time: "9:07",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Runway update is ready, MRR is up 6% on last month.",
+        time: "7:48",
+      },
+      {
+        from: "them",
+        text: "Your competitor shipped pricing changes overnight. One-paragraph summary is in your inbox.",
+        time: "7:48",
+      },
+      {
+        from: "me",
+        text: "book 20 min with Priya to go over it",
+        time: "7:51",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Booked for 11:30. She has the summary too.",
+        time: "7:51",
+      },
+    ],
+  },
+};
+
+const EXECUTIVE_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! 3 reports landed overnight, i read them so you don't have to. one decision needs you.",
+        time: "7:55",
+      },
+      {
+        from: "them",
+        text: "ops wants a yes or no on the vendor contract by noon. the two options are in your inbox, side by side.",
+        time: "7:55",
+      },
+      {
+        from: "me",
+        text: "go with option B, tell them",
+        time: "7:58",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "sent {name}. contract's on its way for signature.",
+        time: "7:58",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, the board pre-read got 4 comments. I summarised them, two are quick fixes.",
+        time: "8:20",
+      },
+      {
+        from: "them",
+        text: "Your 10am and 10:30 overlap. Move the 10:30?",
+        time: "8:20",
+      },
+      {
+        from: "me",
+        text: "yes, and draft a reply to the CFO's comment",
+        time: "8:22",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Moved to 11. Draft's in your inbox, tone matches your last reply to him.",
+        time: "8:22",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Today: leadership sync at 9, two 1:1s, investor dinner at 7.",
+        time: "7:30",
+      },
+      {
+        from: "them",
+        text: "The Q3 numbers you asked for are in the sync invite. Revenue beat plan by 4%.",
+        time: "7:30",
+      },
+      {
+        from: "me",
+        text: "cancel the 3pm, I need thinking time",
+        time: "7:33",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Cancelled and rescheduled for Thursday. Your afternoon is clear.",
+        time: "7:33",
+      },
+    ],
+  },
+};
+
+const SALES_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! 2 leads went quiet this week. i drafted follow-ups for both, warm not pushy.",
+        time: "8:05",
+      },
+      {
+        from: "them",
+        text: "your 11am call is with Nadia at Northwind. she just raised a series A, i put the details in your brief.",
+        time: "8:05",
+      },
+      {
+        from: "me",
+        text: "send both follow-ups",
+        time: "8:07",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "sent. i'll flag you the second either one replies.",
+        time: "8:07",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, the Acme proposal was opened 3 times last night. They're reading it.",
+        time: "9:10",
+      },
+      {
+        from: "them",
+        text: "Their CTO also joined the deal thread. I pulled his background into your call notes.",
+        time: "9:10",
+      },
+      {
+        from: "me",
+        text: "book a demo with them for tomorrow",
+        time: "9:12",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Sent them three slots. I'll confirm the moment they pick one.",
+        time: "9:12",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Pipeline is at 82% of quota, two deals could close this week.",
+        time: "7:45",
+      },
+      {
+        from: "them",
+        text: "Call research is done for all 4 meetings today. Each brief is one screen.",
+        time: "7:45",
+      },
+      {
+        from: "me",
+        text: "move the Lumen call to after lunch",
+        time: "7:48",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Moved to 2:15. Their side accepted already.",
+        time: "7:48",
+      },
+    ],
+  },
+};
+
+const PRODUCT_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! 14 pieces of feedback came in overnight. 3 are the same onboarding bug, i grouped them.",
+        time: "8:20",
+      },
+      {
+        from: "them",
+        text: "the spec for the export feature is drafted from your notes. it's in the doc, needs your eyes on scope.",
+        time: "8:20",
+      },
+      {
+        from: "me",
+        text: "file the onboarding bug and tag it high",
+        time: "8:22",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "filed and tagged. eng lead is on it, i'll tell you when it ships.",
+        time: "8:22",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, design posted the new checkout flow. Two comments from support are worth a look.",
+        time: "9:00",
+      },
+      {
+        from: "them",
+        text: "Your roadmap review is at 2, I put the updated numbers in the invite.",
+        time: "9:00",
+      },
+      {
+        from: "me",
+        text: "summarise the support comments for the review",
+        time: "9:03",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Done, one paragraph each, added to the invite.",
+        time: "9:03",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Feature adoption is up 12% since the release. Three users asked for the same thing.",
+        time: "7:50",
+      },
+      {
+        from: "them",
+        text: "Your customer interview is at 11. I wrote the questions from last week's gaps.",
+        time: "7:50",
+      },
+      {
+        from: "me",
+        text: "send the questions to Dev before the call",
+        time: "7:53",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Sent. He's reviewed them and added one.",
+        time: "7:53",
+      },
+    ],
+  },
+};
+
+const CREATIVE_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! 2 clients replied on the brand deck. one loves it, one wants the type bigger.",
+        time: "8:30",
+      },
+      {
+        from: "them",
+        text: "your client call moved to 3. that gives you the whole morning to make.",
+        time: "8:30",
+      },
+      {
+        from: "me",
+        text: "send the type feedback to the print shop",
+        time: "8:32",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "sent {name}. they'll have a proof by tomorrow.",
+        time: "8:32",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, the invoice from March finally got paid. I logged it.",
+        time: "9:15",
+      },
+      {
+        from: "them",
+        text: "New inquiry came in, a podcast wants cover art. Budget looks right for you.",
+        time: "9:15",
+      },
+      {
+        from: "me",
+        text: "reply that I can start next week",
+        time: "9:17",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Replied, with your usual rate and next Tuesday as the start.",
+        time: "9:17",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Your portfolio got 40 new visits from that post yesterday.",
+        time: "7:55",
+      },
+      {
+        from: "them",
+        text: "Two references you saved this week are in a folder called moodboard, ready for the pitch.",
+        time: "7:55",
+      },
+      {
+        from: "me",
+        text: "block tomorrow morning for deep work",
+        time: "7:58",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Blocked 9 to 1. No meetings can land there now.",
+        time: "7:58",
+      },
+    ],
+  },
+};
+
+const ENGINEERING_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! pushed your 9am standup back to 10 so you've got a bit more breathing room.",
         time: "8:40",
       },
       {
         from: "them",
-        text: "you have 2 code reviews waiting on you, and last night's deploy went through fine. nothing to worry about there.",
+        text: "2 code reviews are waiting on you, and last night's deploy went through fine.",
         time: "8:40",
       },
       {
         from: "me",
-        text: "anything actually on fire i should know about?",
+        text: "anything actually on fire?",
         time: "8:41",
         status: "read",
       },
@@ -112,598 +515,415 @@ const BUILDER: ArchetypeScripts = {
         time: "8:41",
       },
     ],
+    subtitle: "bot",
   },
   whatsapp: {
     title: "GAIA",
     messages: [
       {
         from: "them",
-        text: "hey, your tech lead just replied on the migration thread and she wants to hop on a call today.",
-        time: "11:02",
+        text: "Heads up {name}, your tech lead replied on the migration thread. She wants a call today.",
+        time: "9:05",
+      },
+      {
+        from: "them",
+        text: "The flaky test you muted is failing on main again. I opened an issue with the last 3 runs.",
+        time: "9:05",
       },
       {
         from: "me",
-        text: "ugh, can you draft a reply for me?",
-        time: "11:02",
+        text: "book 15 min with her after lunch",
+        time: "9:07",
         status: "read",
       },
       {
         from: "them",
-        text: "already done. i offered her 3pm or 4pm. want me to send it, or do you want to read it first?",
-        time: "11:03",
+        text: "Booked 1:30. The thread and the issue are in the invite.",
+        time: "9:07",
       },
-      { from: "me", text: "just send it", time: "11:03", status: "read" },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
       {
         from: "them",
-        text: "sent! she picked 3pm. i blocked it on your calendar and added a quick agenda.",
-        time: "11:04",
-      },
-    ],
-  },
-  slack: {
-    title: "eng",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "you've got 2 code reviews waiting today. one is a small fix, the other is a bigger change to how login works.",
-        time: "9:12 AM",
+        text: "Morning {name}. The deploy you kicked off last night finished clean, zero errors.",
+        time: "7:52",
       },
       {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "tell me about the bigger one",
-        time: "9:13 AM",
+        from: "them",
+        text: "Two PRs are waiting on your review. I summarised both, the second one touches auth.",
+        time: "7:52",
       },
       {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "it rewrites the login flow, so it really needs careful eyes before merging. want me to pull it up for you?",
-        time: "9:13 AM",
-      },
-    ],
-  },
-  discord: {
-    title: "releases",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "this week's changelog is all written up. 14 updates, ready to publish whenever you are.",
-        time: "Fri 5:30 PM",
+        from: "me",
+        text: "move standup to 10, I want to read the auth one first",
+        time: "7:55",
+        status: "read",
       },
       {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "want me to post it right now, or should i wait and auto publish it at 6?",
-        time: "Fri 5:30 PM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "post it now",
-        time: "Fri 5:31 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "posted! also wanted to flag, one task has been stuck for over a week now. should i nudge the dev about it?",
-        time: "Fri 5:31 PM",
+        from: "them",
+        text: "Done. Standup is at 10, the team has the new invite.",
+        time: "7:55",
       },
     ],
   },
 };
 
-const OPERATOR: ArchetypeScripts = {
+const MARKETING_SCRIPTS: PlatformScripts = {
   telegram: {
     title: "GAIA",
-    subtitle: "bot",
     messages: [
       {
         from: "them",
-        text: "morning! here's how your day is shaping up:",
-        time: "8:30",
+        text: "morning {name}! yesterday's campaign email got a 31% open rate, best this quarter.",
+        time: "8:15",
       },
       {
         from: "them",
-        text: "you've got 3 internal meetings, the client presentation prep at 2pm, and a board update draft due by end of day.",
-        time: "8:30",
+        text: "3 people replied asking about pricing. i drafted replies and looped in sales on one.",
+        time: "8:15",
       },
       {
         from: "me",
-        text: "can you move the client prep earlier?",
-        time: "8:31",
+        text: "what's the plan for the launch post?",
+        time: "8:17",
         status: "read",
       },
       {
         from: "them",
-        text: "moved it to 11am and blocked off a full hour so you can actually focus.",
-        time: "8:31",
-      },
-      {
-        from: "me",
-        text: "and start the board update for me",
-        time: "8:32",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "on it now. you'll have a first draft by noon.",
-        time: "8:32",
+        text: "draft's ready, i pulled the 3 strongest customer quotes in. want it in your inbox?",
+        time: "8:17",
       },
     ],
+    subtitle: "bot",
   },
   whatsapp: {
     title: "GAIA",
     messages: [
       {
         from: "them",
-        text: "your client from yesterday's call followed up. they want pricing options by tomorrow.",
-        time: "2:14 PM",
+        text: "Heads up {name}, the agency sent the new landing page copy. Two headlines to pick from.",
+        time: "9:20",
+      },
+      {
+        from: "them",
+        text: "Your content review moved to 4. Everything for it is in the invite.",
+        time: "9:20",
       },
       {
         from: "me",
-        text: "draft 3 different options and show me first",
-        time: "2:15 PM",
+        text: "go with the second headline",
+        time: "9:22",
         status: "read",
       },
       {
         from: "them",
-        text: "got it, working on it now. should be ready in about 10 minutes.",
-        time: "2:15 PM",
+        text: "Told them. They'll have the page live by Thursday.",
+        time: "9:22",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Weekly numbers are in: traffic up 9%, signups flat, one post did most of the work.",
+        time: "7:40",
       },
       {
         from: "them",
-        text: "all done. 3 pricing tiers are sitting in your drafts. i also looped in your sales lead so they're in the loop.",
-        time: "2:24 PM",
-      },
-    ],
-  },
-  slack: {
-    title: "leadership",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "heads up, your client meeting is at 2pm today. i drafted talking points and saved them to your notes.",
-        time: "1:05 PM",
+        text: "A journalist asked for a quote by noon. I drafted one in your voice.",
+        time: "7:40",
       },
       {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "can you add last quarter's numbers too?",
-        time: "1:06 PM",
+        from: "me",
+        text: "send the quote, and schedule the recap post for 10",
+        time: "7:43",
+        status: "read",
       },
       {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "added! revenue, retention, and customer satisfaction scores are all in the doc now.",
-        time: "1:06 PM",
-      },
-    ],
-  },
-  discord: {
-    title: "leadership",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your monthly report is ready. growth was flat this month, but churn is down 1.2%.",
-        time: "Mon 9:00 AM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "biggest win was enterprise sales, up 18% from last month.",
-        time: "Mon 9:00 AM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "post a quick summary in here too",
-        time: "Mon 9:01 AM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "posted! i also flagged it so it'll come up in monday's standup.",
-        time: "Mon 9:01 AM",
+        from: "them",
+        text: "Quote sent, recap scheduled for 10. I'll share the reach at 5.",
+        time: "7:43",
       },
     ],
   },
 };
 
-const FOUNDER: ArchetypeScripts = {
+const FINANCE_SCRIPTS: PlatformScripts = {
   telegram: {
     title: "GAIA",
-    subtitle: "bot",
     messages: [
       {
         from: "them",
-        text: "morning! here's the quick brief for today:",
+        text: "morning {name}! month-end close is 80% there. 4 invoices are still missing receipts, i chased all four.",
+        time: "8:00",
+      },
+      {
+        from: "them",
+        text: "the FX move overnight shifts the forecast by about 2%. updated sheet is in your inbox.",
+        time: "8:00",
+      },
+      {
+        from: "me",
+        text: "which invoices?",
+        time: "8:02",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "two from travel, two from the design agency. i'll ping you when they land.",
+        time: "8:02",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, the auditor asked for the Q2 reconciliation. I found it and replied with the file.",
+        time: "9:30",
+      },
+      {
+        from: "them",
+        text: "Your budget review is at 2. Variance summary is in the invite, two lines need a comment.",
+        time: "9:30",
+      },
+      {
+        from: "me",
+        text: "draft the comments from last month's notes",
+        time: "9:32",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Drafted both, they're in the sheet next to the numbers.",
+        time: "9:32",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Cash position is steady, runway is 19 months on current burn.",
+        time: "7:35",
+      },
+      {
+        from: "them",
+        text: "Payroll is queued for Friday. One new starter is missing bank details, I've asked HR.",
+        time: "7:35",
+      },
+      {
+        from: "me",
+        text: "remind me to approve payroll thursday morning",
+        time: "7:38",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Set for Thursday 9am. I'll include the final total.",
+        time: "7:38",
+      },
+    ],
+  },
+};
+
+const STUDENT_SCRIPTS: PlatformScripts = {
+  telegram: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "morning {name}! your essay draft is due thursday. i pulled the 5 sources you saved into one outline.",
+        time: "8:25",
+      },
+      {
+        from: "them",
+        text: "lecture at 10 moved rooms, it's in the science block now. calendar's updated.",
+        time: "8:25",
+      },
+      {
+        from: "me",
+        text: "what's due this week?",
+        time: "8:27",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "essay thursday, problem set friday. i blocked 2 hours tomorrow for the problem set.",
+        time: "8:27",
+      },
+    ],
+    subtitle: "bot",
+  },
+  whatsapp: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Heads up {name}, your professor replied about the extension. Yes, until Monday.",
+        time: "9:40",
+      },
+      {
+        from: "them",
+        text: "Your group chat picked Wednesday 6pm for the project. I added it to your calendar.",
+        time: "9:40",
+      },
+      {
+        from: "me",
+        text: "remind me to email the internship people tonight",
+        time: "9:42",
+        status: "read",
+      },
+      {
+        from: "them",
+        text: "Reminder set for 8pm, with the draft you wrote last week attached.",
+        time: "9:42",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Three lectures today, one quiz at 2. Your notes from last week are summarised.",
         time: "7:45",
       },
       {
         from: "them",
-        text: "investor follow up from maya, 2 new candidate intros to look at, and stripe just flagged a failed payment from a customer.",
+        text: "The library book you need is available again. Want me to reserve it?",
         time: "7:45",
       },
       {
         from: "me",
-        text: "fix the stripe thing first",
-        time: "7:46",
+        text: "yes, and block friday afternoon to study",
+        time: "7:48",
         status: "read",
       },
       {
         from: "them",
-        text: "already on it. i'm retrying the payment now. i'll update you in about 5 minutes.",
-        time: "7:46",
-      },
-      {
-        from: "them",
-        text: "good news, the payment went through. customer's already been notified, all sorted.",
-        time: "7:51",
-      },
-    ],
-  },
-  whatsapp: {
-    title: "GAIA",
-    messages: [
-      {
-        from: "them",
-        text: "your lead from last week's demo just replied. she's interested and wants to set up a call.",
-        time: "4:12 PM",
-      },
-      {
-        from: "me",
-        text: "book it. any time tomorrow works",
-        time: "4:13 PM",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "sent her 3 time slots and she picked 11am.",
-        time: "4:14 PM",
-      },
-      {
-        from: "them",
-        text: "i also added a quick 5 minute prep summary to your calendar invite so you're not going in cold.",
-        time: "4:14 PM",
-      },
-    ],
-  },
-  slack: {
-    title: "founders",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your investor update goes out friday. the draft is ready in your notes whenever you want to take a look.",
-        time: "10:14 AM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "can you tighten up the numbers section?",
-        time: "10:15 AM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "done! i trimmed it down to revenue, costs, and how long the cash will last. want me to send you a preview?",
-        time: "10:15 AM",
-      },
-    ],
-  },
-  discord: {
-    title: "sales",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "12 personalized intros are queued up and ready to go out monday morning.",
-        time: "Sun 8:00 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "fyi 3 of them are warm leads. they actually replied to your last message.",
-        time: "Sun 8:00 PM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "approve them all",
-        time: "Sun 8:01 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "going out monday at 9am. i'll flag any replies as they come in.",
-        time: "Sun 8:01 PM",
+        text: "Reserved, and Friday 1 to 5 is blocked. No one can book over it.",
+        time: "7:48",
       },
     ],
   },
 };
 
-const SCHOLAR: ArchetypeScripts = {
+const OTHER_SCRIPTS: PlatformScripts = {
   telegram: {
     title: "GAIA",
-    subtitle: "bot",
     messages: [
       {
         from: "them",
-        text: "morning! two things on the agenda for you today:",
-        time: "9:00",
+        text: "morning {name}! inbox is sorted, 2 emails need a reply from you and i drafted both.",
+        time: "8:15",
       },
       {
         from: "them",
-        text: "the reading list you started yesterday is still open, and friday's submission deadline is creeping up.",
-        time: "9:00",
+        text: "dentist at 11, call with Sam at 3. Sam wants the proposal first, it's attached to the invite.",
+        time: "8:15",
       },
       {
         from: "me",
-        text: "pull the 3 most cited papers on the topic",
-        time: "9:01",
+        text: "send the proposal now",
+        time: "8:17",
         status: "read",
       },
       {
         from: "them",
-        text: "on it. sending you the summaries shortly.",
-        time: "9:01",
-      },
-      {
-        from: "me",
-        text: "and block 2 hours friday morning so i can actually write",
-        time: "9:02",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "blocked off. i'll also send you a soft reminder thursday so it doesn't sneak up on you.",
-        time: "9:02",
+        text: "sent. i'll nudge you before the call.",
+        time: "8:17",
       },
     ],
+    subtitle: "bot",
   },
   whatsapp: {
     title: "GAIA",
     messages: [
       {
         from: "them",
-        text: "your supervisor just replied on the draft. she wants revisions to section 3.",
-        time: "10:48",
+        text: "Heads up {name}, your 3pm moved to 4. I updated the invite and told Sam.",
+        time: "9:25",
+      },
+      {
+        from: "them",
+        text: "The form you were waiting on came back signed. It's filed.",
+        time: "9:25",
       },
       {
         from: "me",
-        text: "can you summarize what she's asking for?",
-        time: "10:49",
+        text: "remind me to call the bank tomorrow",
+        time: "9:27",
         status: "read",
       },
       {
         from: "them",
-        text: "three things basically: tighten up the methodology, add 2 more citations, and soften the conclusion a bit.",
-        time: "10:49",
+        text: "Reminder set for 10am tomorrow, with the account number in it.",
+        time: "9:27",
+      },
+    ],
+  },
+  imessage: {
+    title: "GAIA",
+    messages: [
+      {
+        from: "them",
+        text: "Morning {name}. Two things need you today, the rest I handled.",
+        time: "7:50",
+      },
+      {
+        from: "them",
+        text: "Your package arrives between 2 and 4. I'll ping you when it's at the door.",
+        time: "7:50",
       },
       {
         from: "me",
-        text: "find me citation options for the first two",
-        time: "10:50",
+        text: "move my 2pm so I'm home for it",
+        time: "7:53",
         status: "read",
       },
       {
         from: "them",
-        text: "5 candidates are queued up for you. pick whenever you're ready.",
-        time: "10:51",
-      },
-    ],
-  },
-  slack: {
-    title: "lab",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your weekly reading digest is up. 6 new papers in your research area this week.",
-        time: "Mon 8:30 AM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "rank them for me by what's most important",
-        time: "Mon 8:31 AM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "the top one is worth your monday. it actually cites a paper you bookmarked last month.",
-        time: "Mon 8:31 AM",
-      },
-    ],
-  },
-  discord: {
-    title: "research",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "this week's reading digest is up. 6 new papers in your area.",
-        time: "Sun 7:00 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "one of them cites a paper you bookmarked last month. same author too.",
-        time: "Sun 7:00 PM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "summarize the top 3 for me",
-        time: "Sun 7:01 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "summaries are in your notes, ranked by relevance to your current work.",
-        time: "Sun 7:01 PM",
+        text: "Moved to 11. You're free from 2.",
+        time: "7:53",
       },
     ],
   },
 };
 
-const DEFAULT_SCRIPTS: ArchetypeScripts = {
-  telegram: {
-    title: "GAIA",
-    subtitle: "bot",
-    messages: [
-      {
-        from: "them",
-        text: "morning! looks like a pretty small day for you:",
-        time: "8:30",
-      },
-      {
-        from: "them",
-        text: "one calendar event at 2pm, and a couple of emails worth a quick look.",
-        time: "8:30",
-      },
-      {
-        from: "me",
-        text: "anything urgent?",
-        time: "8:31",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "nope, easy one. nothing time sensitive today.",
-        time: "8:31",
-      },
-      {
-        from: "me",
-        text: "remind me to call mom at 7",
-        time: "8:32",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "set! i'll give you a nudge 5 minutes before so you're ready.",
-        time: "8:32",
-      },
-    ],
-  },
-  whatsapp: {
-    title: "GAIA",
-    messages: [
-      {
-        from: "them",
-        text: "sarah just got back to you. she's free for coffee on thursday.",
-        time: "3:20 PM",
-      },
-      {
-        from: "me",
-        text: "book it for 4pm",
-        time: "3:20 PM",
-        status: "read",
-      },
-      {
-        from: "them",
-        text: "done, it's on your calendar.",
-        time: "3:21 PM",
-      },
-      {
-        from: "them",
-        text: "want me to suggest a coffee spot somewhere between both of you?",
-        time: "3:21 PM",
-      },
-      { from: "me", text: "yes please", time: "3:22 PM", status: "read" },
-    ],
-  },
-  slack: {
-    title: "general",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your weekly digest is ready. nothing urgent this week, just the highlights.",
-        time: "Sun 6:00 PM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "anything i should look at first?",
-        time: "Sun 6:01 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your annual review is due in 2 weeks. that's really the only firm deadline coming up.",
-        time: "Sun 6:01 PM",
-      },
-    ],
-  },
-  discord: {
-    title: "personal",
-    messages: [
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "your weekly digest is ready. a few things worth a glance.",
-        time: "Sun 6:00 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "nothing urgent though, just the highlights this week.",
-        time: "Sun 6:00 PM",
-      },
-      {
-        author: USER_PLACEHOLDER_NAME,
-        avatar: USER_PLACEHOLDER_AVATAR,
-        authorColor: USER_COLOR,
-        text: "anything with a deadline?",
-        time: "Sun 6:01 PM",
-      },
-      {
-        author: "GAIA",
-        authorColor: "#9CC3FF",
-        text: "yep, your annual review is due in 2 weeks.",
-        time: "Sun 6:01 PM",
-      },
-    ],
-  },
-};
-
-const ARCHETYPE_SCRIPTS: Record<ProfessionArchetype, ArchetypeScripts> = {
-  builder: BUILDER,
-  operator: OPERATOR,
-  founder: FOUNDER,
-  scholar: SCHOLAR,
-  default: DEFAULT_SCRIPTS,
+const PROFESSION_SCRIPTS: Record<ProfessionScriptKey, PlatformScripts> = {
+  founder: FOUNDER_SCRIPTS,
+  executive: EXECUTIVE_SCRIPTS,
+  sales: SALES_SCRIPTS,
+  product: PRODUCT_SCRIPTS,
+  creative: CREATIVE_SCRIPTS,
+  engineering: ENGINEERING_SCRIPTS,
+  marketing: MARKETING_SCRIPTS,
+  finance: FINANCE_SCRIPTS,
+  student: STUDENT_SCRIPTS,
+  other: OTHER_SCRIPTS,
 };
 
 export function getPlatformScript(
   profession: string | undefined,
   platform: PlatformPreviewPlatform,
-  user: UserIdentity = { name: undefined, avatar: undefined },
+  user: UserIdentity = { firstName: undefined },
 ): PlatformScript {
-  const archetype = getArchetype(profession);
-  const raw = ARCHETYPE_SCRIPTS[archetype][platform];
-  const liveName = user.name?.trim() || "you";
-  const liveAvatar = user.avatar?.trim() || FALLBACK_USER_AVATAR;
+  const raw = PROFESSION_SCRIPTS[toScriptKey(profession)][platform];
   return {
     ...raw,
-    messages: raw.messages.map((m) => ({
-      ...m,
-      author: m.author === USER_PLACEHOLDER_NAME ? liveName : m.author,
-      avatar: m.avatar === USER_PLACEHOLDER_AVATAR ? liveAvatar : m.avatar,
-    })),
+    messages: raw.messages.map((m) =>
+      m.from === "them" && m.text
+        ? { ...m, text: personalize(m.text, user.firstName) }
+        : m,
+    ),
   };
 }

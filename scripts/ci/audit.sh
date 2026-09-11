@@ -20,7 +20,7 @@
 #                     entries; 2 the audit itself could not run.
 #   playwright-pin    none.
 #   alert-rule-tools  RUNNER_TEMP (required), GITHUB_PATH.
-#   evlog             GITHUB_BASE_REF (required), RUNNER_TEMP; needs a
+#   evlog             GAIA_PR_BASE or GITHUB_BASE_REF (required), RUNNER_TEMP; needs a
 #                     fetch-depth: 0 checkout.
 set -euo pipefail
 
@@ -179,7 +179,11 @@ cmd_alert_rule_tools() {
 
 cmd_evlog() {
 
-  BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
+  # GAIA_PR_BASE first: on a stacked PR the event payload names the stack's
+  # trunk, so this ratchet would compare against the bottom of the stack and
+  # demand a score for every file the PRs below it touched. See the note at the
+  # top of changes.sh.
+  BASE_SHA=$(git merge-base "origin/${GAIA_PR_BASE:-$GITHUB_BASE_REF}" HEAD)
   # Scratch lives under the job's own temp dir, never a fixed /tmp name: /tmp
   # is sticky and shared by every user on a self-hosted box, so a file left
   # behind by another runner user is unwritable (EACCES) for this one.

@@ -58,10 +58,10 @@ class TestSubscriptionsRepository:
         latest = await repo.get_latest_active_for_user("u")
         assert latest is not None and latest.dodo_subscription_id == "new"
 
-    async def test_get_user_id_by_dodo_id(self, repo):
-        await repo.create(_sub(user_id="owner", dodo_subscription_id="s"))
-        assert await repo.get_user_id_by_dodo_id("s") == "owner"
-        assert await repo.get_user_id_by_dodo_id("nope") is None
+    async def test_has_any_for_user_ignores_status_and_scopes_to_the_user(self, repo):
+        await repo.create(_sub(user_id="lapsed", dodo_subscription_id="s", status="cancelled"))
+        assert await repo.has_any_for_user("lapsed") is True
+        assert await repo.has_any_for_user("never-paid") is False
 
     async def test_apply_update_by_dodo_id_sets_status_and_stamps_updated_at(self, repo):
         created = await repo.create(_sub(dodo_subscription_id="s", status="active"))

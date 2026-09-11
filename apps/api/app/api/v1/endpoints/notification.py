@@ -25,6 +25,7 @@ from app.models.device_token_models import (
 from app.models.notification.notification_models import (
     ChannelPreferences,
     ChannelPreferencesUpdate,
+    NotificationQuery,
     NotificationRecord,
     NotificationStatus,
     NotificationView,
@@ -118,7 +119,10 @@ async def get_notifications(
     try:
         notifications, notification_count = await asyncio.gather(
             notification_service.get_user_notifications(
-                user_id, status, limit, offset, channel_type
+                user_id,
+                NotificationQuery(
+                    status=status, channel_type=channel_type, limit=limit, offset=offset
+                ),
             ),
             notification_service.get_user_notifications_count(user_id, status, channel_type),
         )

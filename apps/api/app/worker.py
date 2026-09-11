@@ -2,6 +2,9 @@ from typing import cast
 
 from arq import cron
 from arq.typing import WorkerCoroutine
+from arq.worker import func
+
+from app.constants.onboarding import INTELLIGENCE_TASK
 
 # The worker runs the executor agent + Composio custom tools, so it needs the
 # same monkey-patches as the API process (main.py). Without this, custom tools
@@ -21,7 +24,6 @@ from app.workers.tasks import (
     generate_workflow_steps,
     process_gmail_emails_to_memory,
     process_onboarding_intelligence_task,
-    process_onboarding_workflows_task,
     process_reminder,
     process_workflow_generation_task,
     promote_usage_badges,
@@ -56,8 +58,14 @@ _execute_workflow_by_id = arq_task(execute_workflow_by_id)
 _regenerate_workflow_steps = arq_task(regenerate_workflow_steps)
 _generate_workflow_steps = arq_task(generate_workflow_steps)
 _process_gmail_emails_to_memory = arq_task(process_gmail_emails_to_memory)
-_process_onboarding_intelligence_task = arq_task(process_onboarding_intelligence_task)
-_process_onboarding_workflows_task = arq_task(process_onboarding_workflows_task)
+# The job id is per user and doubles as the "one run at a time" claim
+# (`intelligence_job.personalization_job_id`); a kept result would make ARQ
+# refuse the next enqueue for an hour after a failed run, so keep none.
+_process_onboarding_intelligence_task = func(
+    arq_task(process_onboarding_intelligence_task),
+    name=INTELLIGENCE_TASK,
+    keep_result=0,
+)
 _cleanup_stuck_personalization = arq_task(cleanup_stuck_personalization)
 _backfill_active_users = arq_task(backfill_active_users)
 _backfill_user_memories = arq_task(backfill_user_memories)
@@ -87,7 +95,6 @@ WorkerSettings.functions = [
     _generate_workflow_steps,
     _process_gmail_emails_to_memory,
     _process_onboarding_intelligence_task,
-    _process_onboarding_workflows_task,
     _cleanup_stuck_personalization,
     _sweep_idle_sandboxes,
     _prune_inactive_sessions,

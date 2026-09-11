@@ -6,7 +6,9 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import HeaderManager from "@/components/layout/headers/HeaderManager";
 import StatusBanner from "@/components/layout/StatusBanner";
 import Sidebar from "@/components/layout/sidebar/MainSidebar";
-import RightSidebar from "@/components/layout/sidebar/RightSidebar";
+import RightSidebarSlot, {
+  RightSidebarSlotProvider,
+} from "@/components/layout/sidebar/RightSidebarSlot";
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { useOnboardingGuard } from "@/features/auth/hooks/useOnboardingGuard";
@@ -15,20 +17,14 @@ import { useBackgroundSync } from "@/hooks/useBackgroundSync";
 import ProvidersLayout from "@/layouts/ProvidersLayout";
 import SidebarLayout, { CustomSidebarTrigger } from "@/layouts/SidebarLayout";
 import { useChatStoreSync } from "@/stores/chatStore";
-import { useHoloCardModalStore } from "@/stores/holoCardModalStore";
-import { useRightSidebar } from "@/stores/rightSidebarStore";
-import { useUIStoreSidebar } from "@/stores/uiStore";
+import { useLayoutSidebar } from "@/stores/layoutStore";
 
 export const dynamic = "force-dynamic";
 
-const HoloCardModal = nextDynamic(
-  () => import("@/features/onboarding/components/HoloCardModal"),
-  { ssr: false },
-);
-const GlobalPricingModal = nextDynamic(
+const UpgradeModal = nextDynamic(
   () =>
-    import("@/features/pricing/components/GlobalPricingModal").then((m) => ({
-      default: m.GlobalPricingModal,
+    import("@/features/pricing/components/UpgradeModal").then((m) => ({
+      default: m.UpgradeModal,
     })),
   { ssr: false },
 );
@@ -54,19 +50,11 @@ const HeaderSidebarTrigger = () => {
 };
 
 export default function MainLayout({ children }: { children: ReactNode }) {
-  const { isOpen, isMobileOpen, setOpen, setMobileOpen } = useUIStoreSidebar();
-  const {
-    content: rightSidebarContent,
-    isOpen: rightSidebarOpen,
-    variant: rightSidebarVariant,
-  } = useRightSidebar();
+  const { isOpen, isMobileOpen, setOpen, setMobileOpen } = useLayoutSidebar();
   const isMobile = useIsMobile();
   const [defaultOpen, setDefaultOpen] = useState(true);
   const dragRef = useRef<HTMLDivElement>(null);
   const [commandMenuOpen, setCommandMenuOpen] = useState(false);
-  const { open: isHoloCardModalOpen, closeModal: closeHoloCardModal } =
-    useHoloCardModalStore();
-
   // Check if user needs onboarding
   useOnboardingGuard();
   useBackgroundSync();
@@ -123,58 +111,51 @@ export default function MainLayout({ children }: { children: ReactNode }) {
   return (
     <ProvidersLayout>
       <TooltipProvider>
-        <SidebarProvider
-          open={currentOpen}
-          onOpenChange={handleOpenChange}
-          defaultOpen={defaultOpen}
-        >
-          <div className="relative flex h-screen w-full dark" ref={dragRef}>
-            <SidebarLayout>
-              <Sidebar />
-            </SidebarLayout>
+        <RightSidebarSlotProvider>
+          <SidebarProvider
+            open={currentOpen}
+            onOpenChange={handleOpenChange}
+            defaultOpen={defaultOpen}
+          >
+            <div className="relative flex h-screen w-full dark" ref={dragRef}>
+              <SidebarLayout>
+                <Sidebar />
+              </SidebarLayout>
 
-            <SidebarInset className="flex h-screen min-w-0 w-auto flex-col bg-primary-bg">
-              <StatusBanner />
-              {/* Tapping anywhere outside the mobile sidebar dismisses it via
+              <SidebarInset className="flex h-screen min-w-0 w-auto flex-col bg-primary-bg">
+                <StatusBanner />
+                {/* Tapping anywhere outside the mobile sidebar dismisses it via
                   the Sheet's own modal overlay (see ui/sidebar), so the shell
                   needs no click handler of its own here. */}
-              <header className="flex shrink-0 items-center justify-between p-2">
-                <HeaderSidebarTrigger />
-                <HeaderManager />
-              </header>
-              <main className="flex flex-1 flex-col overflow-hidden">
-                {/* <Suspense fallback={<SuspenseLoader />}> */}
-                {children}
-                {/* </Suspense> */}
-              </main>
-            </SidebarInset>
+                <header className="flex shrink-0 items-center justify-between p-2">
+                  <HeaderSidebarTrigger />
+                  <HeaderManager />
+                </header>
+                <main className="flex flex-1 flex-col overflow-hidden">
+                  {/* <Suspense fallback={<SuspenseLoader />}> */}
+                  {children}
+                  {/* </Suspense> */}
+                </main>
+              </SidebarInset>
 
-            <RightSidebar
-              isOpen={rightSidebarOpen}
-              variant={rightSidebarVariant}
-            >
-              {rightSidebarContent}
-            </RightSidebar>
-          </div>
+              <RightSidebarSlot />
+            </div>
 
-          {/* Global Pricing Modal */}
-          <GlobalPricingModal />
+            {/* The one Pro upsell modal — non-dismissible when opened by
+              enforcement (402 subscription_required), dismissible when the
+              user opened it themselves. */}
+            <UpgradeModal />
 
-          {/* What's New Modal */}
-          <WhatsNewModal />
+            {/* What's New Modal */}
+            <WhatsNewModal />
 
-          {/* Global Command Menu */}
-          <CommandMenu
-            open={commandMenuOpen}
-            onOpenChange={setCommandMenuOpen}
-          />
-
-          {/* Onboarding Components */}
-          <HoloCardModal
-            isOpen={isHoloCardModalOpen}
-            onClose={closeHoloCardModal}
-          />
-        </SidebarProvider>
+            {/* Global Command Menu */}
+            <CommandMenu
+              open={commandMenuOpen}
+              onOpenChange={setCommandMenuOpen}
+            />
+          </SidebarProvider>
+        </RightSidebarSlotProvider>
       </TooltipProvider>
     </ProvidersLayout>
   );
