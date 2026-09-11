@@ -342,7 +342,7 @@ class TestWorkflowTaskExecution:
         gate — default the owner to an active subscription so it stays out of
         the way."""
         with patch(
-            "app.workers.tasks.workflow_tasks.is_subscription_active",
+            "app.workers.tasks.workflow_tasks.is_paid",
             new_callable=AsyncMock,
             return_value=True,
         ):

@@ -23,7 +23,15 @@ const CODE = "Ab3-_xY9zQ1234567890wE";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 const FRONTEND_URL = "https://gaia.test";
-const okRedeem = () => vi.fn(async () => ({ linked: true }));
+/** The API delivered GAIA's first contact itself, so the bot owes nothing. */
+const okRedeem = () =>
+  vi.fn(async () => ({ linked: true, delivered: true, firstContact: [] }));
+/** The bubbles the API hands back when the outbound publish did not take them. */
+const FIRST_CONTACT = [
+  "Hey Aryan, I'm with you on Telegram now.",
+  "From here, every morning your inbox comes sorted with replies drafted.",
+  "That starts with your inbox, which I can't see yet.",
+];
 
 function fakeTarget(): MessageTarget & { sent: string[] } {
   const sent: string[] = [];
@@ -108,10 +116,36 @@ describe("redeemLinkCode", () => {
     );
 
     expect(result).toBe(true);
-    expect(redeem).toHaveBeenCalledWith("telegram", "TG42", CODE, {
-      username: "tg_user",
-    });
+    expect(redeem).toHaveBeenCalledWith(
+      "telegram",
+      "TG42",
+      CODE,
+      { username: "tg_user" },
+      undefined,
+    );
     expect(target.sent).toEqual([]);
+  });
+
+  it("sends the first contact itself when the queue did not take it", async () => {
+    // Nothing retries the API's outbound publish, so a bot that ignores this
+    // leaves the user on a freshly linked platform that never said a word.
+    const redeem = vi.fn(async () => ({
+      linked: true,
+      delivered: false,
+      firstContact: FIRST_CONTACT,
+    }));
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "telegram",
+      "TG42",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(true);
+    expect(target.sent).toEqual(FIRST_CONTACT);
   });
 
   it("explains an expired code instead of throwing", async () => {
@@ -218,16 +252,47 @@ describe("redeemLinkCode", () => {
     expect(target.sent[0]).not.toContain("someone else");
   });
 
-  it("lets an unexpected failure propagate rather than faking a link", async () => {
+  it("answers an API blip instead of leaving the user in silence", async () => {
+    // This is the user's first-ever message to GAIA. The adapters only log a
+    // thrown error, so propagating one answered a 500 with nothing at all.
     const redeem = vi.fn(async () => {
       throw new GaiaApiError("API error: 500", 500);
     });
     const target = fakeTarget();
 
-    await expect(
-      redeemLinkCode(fakeGaia(redeem), "whatsapp", "WA1", CODE, target),
-    ).rejects.toThrow(GaiaApiError);
-    expect(target.sent).toEqual([]);
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("failed", FRONTEND_URL),
+    ]);
+    expect(target.sent[0]).not.toContain("expired");
+  });
+
+  it("answers a failure that is not an API error at all", async () => {
+    const redeem = vi.fn(async () => {
+      throw new Error("socket hang up");
+    });
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "whatsapp",
+      "WA1",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(false);
+    expect(target.sent).toEqual([
+      buildLinkCodeFailureMessage("failed", FRONTEND_URL),
+    ]);
   });
 });
 
@@ -275,6 +340,44 @@ describe("consumeInboundLinkCode", () => {
     expect(result).toBeNull();
     expect(redeem).toHaveBeenCalledOnce();
     expect(target.sent).toEqual([]);
+  });
+
+  it("carries the text the user actually typed into the redemption", async () => {
+    // The wa.me prefill is editable, so this is their real first question. It
+    // is stored as their opening turn; without it the canned line was stored
+    // as theirs and the question was dropped.
+    const redeem = okRedeem();
+    const edited = "actually, can you sort my inbox before monday?";
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `${edited} #${CODE}`,
+        linkState: async () => "unlinked" as const,
+      }),
+    );
+
+    expect(redeem).toHaveBeenCalledWith(
+      "whatsapp",
+      "WA1",
+      CODE,
+      undefined,
+      edited,
+    );
+  });
+
+  it("sends no first message when the code arrived on its own", async () => {
+    const redeem = okRedeem();
+
+    await consumeInboundLinkCode(
+      base({
+        gaia: fakeGaia(redeem),
+        text: `#${CODE}`,
+        linkState: async () => "unlinked" as const,
+      }),
+    );
+
+    expect(redeem).toHaveBeenCalledWith("whatsapp", "WA1", CODE, undefined, "");
   });
 
   it("does not greet when the inbound redemption fails", async () => {

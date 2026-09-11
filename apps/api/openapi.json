@@ -11612,6 +11612,18 @@
             "description": "Display name on the platform",
             "title": "Display Name"
           },
+          "first_message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "What the user actually sent alongside the code, with the code stripped. Absent on Telegram, where the deep link carries no text: a tap is not a message and none is stored.",
+            "title": "First Message"
+          },
           "platform": {
             "description": "Platform name (discord, telegram, etc.)",
             "title": "Platform",
@@ -11647,6 +11659,19 @@
       "RedeemLinkCodeResponse": {
         "description": "Response model for a redeemed one-tap link code.",
         "properties": {
+          "delivered": {
+            "description": "Whether GAIA's first contact is on its way on the outbound queue. When false the bot owes the user the bubbles in first_contact.",
+            "title": "Delivered",
+            "type": "boolean"
+          },
+          "first_contact": {
+            "description": "Ordered bubbles the bot must send itself because delivery failed. Empty whenever delivered is true \u2014 sending them then would say everything twice.",
+            "items": {
+              "type": "string"
+            },
+            "title": "First Contact",
+            "type": "array"
+          },
           "linked": {
             "description": "Whether the platform account is now linked",
             "title": "Linked",
@@ -11654,7 +11679,8 @@
           }
         },
         "required": [
-          "linked"
+          "linked",
+          "delivered"
         ],
         "title": "RedeemLinkCodeResponse",
         "type": "object"

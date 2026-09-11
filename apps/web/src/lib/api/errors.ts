@@ -8,6 +8,7 @@
 interface ErrorBody {
   message?: unknown;
   code?: unknown;
+  fix?: unknown;
 }
 
 const asErrorBody = (data: unknown): ErrorBody | undefined =>
@@ -26,4 +27,14 @@ export const getErrorCode = (data: unknown): string | undefined => {
 export const getErrorMessage = (data: unknown): string | undefined => {
   const message = asErrorBody(data)?.message;
   return typeof message === "string" ? message : undefined;
+};
+
+/**
+ * The remediation hint an envelope carries alongside its message ("Ask the
+ * bot for a fresh link."). Worth rendering: it is the half of the error that
+ * tells the user what to do next.
+ */
+export const getErrorFix = (data: unknown): string | undefined => {
+  const fix = asErrorBody(data)?.fix;
+  return typeof fix === "string" ? fix : undefined;
 };

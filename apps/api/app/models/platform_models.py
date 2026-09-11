@@ -77,6 +77,20 @@ class PlatformLinkResult(BaseModel):
     is_new_link: bool
 
 
+class PlatformLinkCompletion(BaseModel):
+    """What ``complete_platform_link`` reports back to its callers.
+
+    ``first_contact_delivered`` is False only when a first contact was handed
+    over and the outbound queue did not take it. Nothing retries that publish,
+    so the caller has to hand the bubbles back to the bot that asked for the
+    link — otherwise the one message a new user is guaranteed to read is simply
+    lost. True when there was nothing to deliver.
+    """
+
+    link: PlatformLinkResult
+    first_contact_delivered: bool
+
+
 class LinkPlatformResponse(BaseModel):
     """Response model for linking a platform account."""
 

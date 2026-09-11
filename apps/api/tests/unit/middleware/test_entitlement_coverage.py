@@ -10,7 +10,7 @@ the snapshot test below turns into a reviewed diff.
 
 from collections.abc import AsyncGenerator, Iterator
 from typing import Any
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from fastapi import FastAPI, Request, Response
 from httpx import ASGITransport, AsyncClient
@@ -209,6 +209,8 @@ def test_allowlist_snapshot(gated_app: FastAPI) -> None:
         "/api/v1/support/requests",
         "/api/v1/support/requests/my",
         "/api/v1/support/requests/with-attachments",
+        "/api/v1/user/first-steps",
+        "/api/v1/user/first-steps/collapse",
         "/api/v1/user/holo-card/card_id",
         "/api/v1/user/holo-card/colors",
         "/api/v1/user/logout",
@@ -240,6 +242,28 @@ async def test_llm_spend_under_a_free_prefix_keeps_its_own_gate(gated_client: As
             json={"edited_summary": "short and warm", "profession": "founder"},
         )
     assert response.status_code == 402
+
+
+@pytest.mark.usefixtures("free_caller")
+@pytest.mark.parametrize(
+    ("method", "path"),
+    [("GET", "/api/v1/user/first-steps"), ("POST", "/api/v1/user/first-steps/collapse")],
+)
+async def test_the_activation_checklist_never_raises_the_paywall(
+    gated_client: AsyncClient, method: str, path: str
+) -> None:
+    """The checklist is a read of the caller's own activation state, not a paid surface.
+
+    The widget is mounted app-wide and refetches on every route change, so a
+    402 here is not a quiet failure — the web interceptor opens the
+    non-dismissible paywall on it. Entitlement is cached for up to five
+    minutes, which means the user this fires at first is the one who *just
+    paid*: the checkout succeeds, the next navigation 402s on the stale plan,
+    and they are told to pay again.
+    """
+    response = await gated_client.request(method, path, json={"collapsed": True})
+
+    assert response.status_code != 402
 
 
 @pytest.mark.parametrize(("method", "path"), PRO_SAMPLE)
@@ -417,6 +441,33 @@ async def test_an_unreadable_plan_is_a_503_not_a_paywall() -> None:
         "code": "entitlement_unavailable",
     }
     assert response.headers["Retry-After"] == "5"
+
+
+async def test_a_user_who_just_paid_passes_the_gate_off_the_row_and_refreshes_the_cache() -> None:
+    """The cached tier lags a payment by up to its TTL. The gate read it alone,
+    so a user who had just paid was 402'd on every gated request until the key
+    expired. One rule everywhere: a cached FREE is confirmed from the row and
+    the stale key dropped."""
+    with (
+        patch(
+            "app.decorators.entitlements.payment_service.get_cached_plan_type",
+            new_callable=AsyncMock,
+            return_value=PlanType.FREE,
+        ),
+        patch(
+            "app.decorators.entitlements.payment_service.get_user_subscription_status",
+            new_callable=AsyncMock,
+            return_value=MagicMock(plan_type=PlanType.PRO),
+        ),
+        patch(
+            "app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock
+        ) as invalidate,
+    ):
+        response = await _get(_minimal_app(FAKE_USER), "/api/v1/paid")
+
+    assert response.status_code == 200
+    assert response.json() == {"ok": "yes"}
+    invalidate.assert_awaited_once_with(FAKE_USER["user_id"])
 
 
 async def test_a_genuine_free_verdict_is_still_a_402() -> None:

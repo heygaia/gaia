@@ -18,7 +18,11 @@ from dodopayments.types import Subscription
 from fastapi import HTTPException
 import pytest
 
-from app.constants.cache import ACTIVE_PLANS_CACHE_KEY
+from app.constants.cache import (
+    ACTIVE_PLANS_CACHE_KEY,
+    CHECKOUT_SCAN_MISS_CACHE_PREFIX,
+    CHECKOUT_SCAN_MISS_TTL,
+)
 from app.constants.log_tags import LogTag
 from app.constants.payments import CHECKOUT_SESSION_SCAN_LIMIT, PAYMENT_HISTORY_LIMIT
 from app.models.payment_models import (
@@ -35,6 +39,11 @@ from app.models.payment_models import (
 from app.services.analytics_service import AnalyticsEvents, SubscriptionPlan
 from app.services.payments import payment_service as payment_service_module
 from app.services.payments.payment_service import DodoPaymentService
+from app.services.payments.subscription_events import (
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    SubscriptionEventResult,
+)
 from shared.py.wide_events import log
 from tests.helpers import captured_wide_event
 from tests.unit.services.conftest import (
@@ -47,7 +56,8 @@ from tests.unit.services.conftest import (
     _set_user,
 )
 
-ACTIVATION_MODULE = "app.services.payments.subscription_activation"
+ACTIVATION_MODULE = "app.services.payments.subscription_events"
+SERVICE_MODULE = "app.services.payments.payment_service"
 OTHER_USER_ID = "507f1f77bcf86cd799439012"
 
 # ---------------------------------------------------------------------------
@@ -101,7 +111,6 @@ def mock_subscription_repository():
     with patch("app.services.payments.payment_service.subscription_repository") as mock_repo:
         mock_repo.get_active_for_user = AsyncMock(return_value=None)
         mock_repo.get_latest_active_for_user = AsyncMock(return_value=None)
-        mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=None)
         mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
         mock_repo.has_any_for_user = AsyncMock(return_value=False)
         yield mock_repo
@@ -407,6 +416,27 @@ class TestGetPlans:
 
 class TestCreateSubscription:
     """Tests for DodoPaymentService.create_subscription."""
+
+    @pytest.mark.usefixtures(
+        "mock_users_collection",
+        "mock_subscription_repository",
+        "mock_plan_repository",
+        "mock_checkout_session_repository",
+    )
+    async def test_minting_a_new_checkout_forgets_the_cached_unpaid_scan(
+        self, payment_service, mock_dodo_client, mock_redis_cache
+    ):
+        """ "None of your sessions is paid" was cached against the sessions that
+        existed; a new one is not among them, so the verdict is void."""
+        mock_dodo_client.checkout_sessions.create = MagicMock(
+            return_value=SimpleNamespace(session_id="ches_new", checkout_url="https://pay/x")
+        )
+
+        await payment_service.create_subscription(FAKE_USER_ID, "prod_abc123")
+
+        mock_redis_cache.delete.assert_awaited_once_with(
+            f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{FAKE_USER_ID}"
+        )
 
     @pytest.mark.usefixtures("mock_redis_cache")
     async def test_success_returns_payment_link(
@@ -781,7 +811,7 @@ class TestCreateSubscription:
 class TestCancelSubscription:
     """Tests for DodoPaymentService.cancel_subscription."""
 
-    async def test_cancels_at_next_billing_date(
+    async def test_records_the_cancel_through_the_reducer_as_scheduled(
         self,
         payment_service,
         mock_subscription_repository,
@@ -789,57 +819,89 @@ class TestCancelSubscription:
         mock_redis_cache,
         mock_dodo_client,
     ):
+        """Dodo is asked for a period-end cancel, and the local row is written
+        by the same reducer the webhook uses — as a scheduled cancel whatever
+        status Dodo echoes back (``test_subscription_events.py`` pins that the
+        reducer keeps the user on Pro until ``subscription.expired``)."""
         mock_subscription_repository.get_active_for_user = AsyncMock(
             return_value=SAMPLE_SUBSCRIPTION
         )
-        mock_subscription_repository.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
-
-        updated = MagicMock()
-        updated.status = "active"
-        updated.cancelled_at = None
-        updated.next_billing_date = None
         mock_dodo_client.subscriptions = MagicMock()
-        mock_dodo_client.subscriptions.update = MagicMock(return_value=updated)
+        mock_dodo_client.subscriptions.update = MagicMock(
+            return_value=self._dodo_subscription(status="cancelled")
+        )
+        applied = SubscriptionEventResult(SubscriptionEventOutcome.APPLIED, FAKE_USER_ID)
 
-        result = await payment_service.cancel_subscription(FAKE_USER_ID)
+        with patch(
+            f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=applied)
+        ) as apply_event:
+            result = await payment_service.cancel_subscription(FAKE_USER_ID)
 
         mock_dodo_client.subscriptions.update.assert_called_once_with(
             "sub_xyz789",
             cancel_at_next_billing_date=True,
         )
-        # The local row is mirrored with the flag set and status kept.
-        update_call = mock_subscription_repository.apply_update_by_dodo_id.call_args
-        set_data = update_call.args[1].model_dump(exclude_unset=True)
-        assert set_data["cancel_at_next_billing_date"] is True
-        assert set_data["status"] == "active"
-        assert "cancelled_at" not in set_data
+        event = apply_event.await_args.args[0]
+        assert event.kind is SubscriptionEventKind.CANCELLED
+        assert event.data.subscription_id == "sub_xyz789"
+        assert event.data.cancel_at_next_billing_date is True
+        assert event.data.cancelled_at == "2025-06-15T00:00:00Z"
         assert isinstance(result, UserSubscriptionStatus)
 
-    async def test_cancels_with_cancelled_at(
+    async def test_a_cancel_with_no_local_row_fails_loud(
         self,
         payment_service,
         mock_subscription_repository,
-        mock_plan_repository,
-        mock_redis_cache,
         mock_dodo_client,
     ):
+        """Dodo accepted the cancellation; surfacing success while nothing
+        local recorded it would leave the user's status stale for good."""
         mock_subscription_repository.get_active_for_user = AsyncMock(
             return_value=SAMPLE_SUBSCRIPTION
         )
-        mock_subscription_repository.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
-
-        updated = MagicMock()
-        updated.status = "active"
-        updated.cancelled_at = datetime(2025, 6, 15, tzinfo=UTC)
-        updated.next_billing_date = None
         mock_dodo_client.subscriptions = MagicMock()
-        mock_dodo_client.subscriptions.update = MagicMock(return_value=updated)
+        mock_dodo_client.subscriptions.update = MagicMock(
+            return_value=self._dodo_subscription(status="active")
+        )
+        unmatched = SubscriptionEventResult(SubscriptionEventOutcome.NO_ROW, None)
 
-        await payment_service.cancel_subscription(FAKE_USER_ID)
+        with (
+            patch(f"{SERVICE_MODULE}.apply_subscription_event", AsyncMock(return_value=unmatched)),
+            pytest.raises(HTTPException) as exc_info,
+        ):
+            await payment_service.cancel_subscription(FAKE_USER_ID)
 
-        update_call = mock_subscription_repository.apply_update_by_dodo_id.call_args
-        set_data = update_call.args[1].model_dump(exclude_unset=True)
-        assert set_data["cancelled_at"] == "2025-06-15T00:00:00+00:00"
+        assert exc_info.value.status_code == 502
+
+    @staticmethod
+    def _dodo_subscription(status: str) -> Subscription:
+        return Subscription.model_validate(
+            {
+                "subscription_id": "sub_xyz789",
+                "product_id": "prod_abc123",
+                "status": status,
+                "quantity": 1,
+                "currency": "USD",
+                "recurring_pre_tax_amount": 999,
+                "payment_frequency_count": 1,
+                "payment_frequency_interval": "Month",
+                "subscription_period_count": 1,
+                "subscription_period_interval": "Month",
+                "next_billing_date": datetime(2025, 7, 1, tzinfo=UTC),
+                "previous_billing_date": datetime(2025, 6, 1, tzinfo=UTC),
+                "created_at": datetime(2025, 1, 1, tzinfo=UTC),
+                "cancelled_at": datetime(2025, 6, 15, tzinfo=UTC),
+                "metadata": {"user_id": FAKE_USER_ID},
+                "customer": {"customer_id": "cus_1", "email": FAKE_EMAIL, "name": "Alice"},
+                "billing": {"country": "US"},
+                "addons": [],
+                "meters": [],
+                "cancel_at_next_billing_date": True,
+                "on_demand": False,
+                "tax_inclusive": False,
+                "trial_period_days": 0,
+            }
+        )
 
     async def test_raises_404_without_active_subscription(
         self,
@@ -905,12 +967,17 @@ class TestGetCachedPlanType:
 
 
 @pytest.mark.unit
+@pytest.mark.usefixtures("mock_redis_cache")
 class TestVerifyPaymentCompletion:
-    """Tests for DodoPaymentService.verify_payment_completion."""
+    """Tests for DodoPaymentService.verify_payment_completion.
+
+    Redis is stubbed for the whole class: the checkout scan caches its miss,
+    and a real local Redis would carry one test's miss into the next.
+    """
 
     @pytest.fixture
     def activation_seams(self, mock_subscription_repository, mock_users_collection):
-        """The row is written by ``subscription_activation``, so verification's
+        """The row is written by ``subscription_events``, so verification's
         recovery runs through that module's seams.
 
         The same repository and user mocks stand behind both modules: the test
@@ -1208,6 +1275,115 @@ class TestVerifyPaymentCompletion:
 
         assert result.payment_completed is False
         mock_dodo_client.payments.retrieve.assert_not_called()
+
+    @staticmethod
+    def _memory_cache(mock_redis_cache) -> dict[str, object]:
+        """A dict-backed Redis, so a second verify sees what the first cached."""
+        store: dict[str, object] = {}
+
+        async def _get(key: str, model: object = None) -> object:
+            return store.get(key)
+
+        async def _set(key: str, value: object, ttl: int = 0, model: object = None) -> bool:
+            store[key] = value
+            return True
+
+        async def _delete(key: str) -> None:
+            store.pop(key, None)
+
+        mock_redis_cache.get = AsyncMock(side_effect=_get)
+        mock_redis_cache.set = AsyncMock(side_effect=_set)
+        mock_redis_cache.delete = AsyncMock(side_effect=_delete)
+        return store
+
+    async def test_an_unpaid_scan_runs_once_across_the_web_clients_retries(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+        mock_redis_cache,
+    ):
+        """The result page verifies eight times over ~50 s
+        (``verifyPaymentWithRetry.ts``). Every retry re-scanned every recorded
+        session against Dodo — up to CHECKOUT_SESSION_SCAN_LIMIT round trips
+        per verify, eight times, for an answer that had not changed. The
+        negative result is cached for the retry window so the scan costs one
+        pass, and the eight verifies read the row (which the webhook may have
+        created meanwhile) before ever asking Dodo again."""
+        store = self._memory_cache(mock_redis_cache)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        sessions = [
+            SimpleNamespace(session_id=f"ches_{i}", product_id="prod_abc123") for i in range(3)
+        ]
+        mock_checkout_session_repository.list_recent_for_user = AsyncMock(return_value=sessions)
+        unpaid = SimpleNamespace(payment_id=None, payment_status=None)
+        mock_dodo_client.checkout_sessions = SimpleNamespace(
+            retrieve=MagicMock(return_value=unpaid)
+        )
+
+        for _ in range(8):
+            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+            assert result.payment_completed is False
+
+        assert mock_dodo_client.checkout_sessions.retrieve.call_count == len(sessions)
+        mock_redis_cache.set.assert_awaited_once_with(
+            f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{FAKE_USER_ID}", True, ttl=CHECKOUT_SCAN_MISS_TTL
+        )
+        assert f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{FAKE_USER_ID}" in store
+
+    async def test_a_session_dodo_could_not_answer_for_is_not_cached_as_unpaid(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+        mock_redis_cache,
+    ):
+        """A Dodo outage during the scan is transient; caching it as "not paid"
+        would hide a paid session from every retry in the window."""
+        self._memory_cache(mock_redis_cache)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.list_recent_for_user = AsyncMock(
+            return_value=[self._pending_checkout()]
+        )
+        mock_dodo_client.checkout_sessions = SimpleNamespace(
+            retrieve=MagicMock(side_effect=RuntimeError("Dodo API down"))
+        )
+
+        await payment_service.verify_payment_completion(FAKE_USER_ID)
+        await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert mock_dodo_client.checkout_sessions.retrieve.call_count == 2
+        mock_redis_cache.set.assert_not_awaited()
+
+    async def test_a_paid_session_whose_subscription_is_not_yet_active_is_asked_again(
+        self,
+        payment_service,
+        mock_subscription_repository,
+        mock_checkout_session_repository,
+        mock_dodo_client,
+        mock_redis_cache,
+    ):
+        """Paid but Dodo has not flipped the subscription to active yet: the
+        next retry is exactly the one that should find it active."""
+        self._memory_cache(mock_redis_cache)
+        mock_subscription_repository.get_active_for_user = AsyncMock(return_value=None)
+        mock_subscription_repository.get_latest_active_for_user = AsyncMock(return_value=None)
+        mock_checkout_session_repository.list_recent_for_user = AsyncMock(
+            return_value=[self._pending_checkout()]
+        )
+        self._wire_dodo_checkout_chain(
+            mock_dodo_client, FAKE_USER_ID, subscription_status="pending"
+        )
+
+        await payment_service.verify_payment_completion(FAKE_USER_ID)
+        await payment_service.verify_payment_completion(FAKE_USER_ID)
+
+        assert mock_dodo_client.subscriptions.retrieve.call_count == 2
+        mock_redis_cache.set.assert_not_awaited()
 
     async def test_settled_payment_not_succeeded_returns_not_completed(
         self,

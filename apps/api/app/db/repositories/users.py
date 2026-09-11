@@ -20,6 +20,7 @@ cached read may carry a slightly stale ``last_active_at``; nothing reads that
 field off a cached path (the inactivity scan is an uncached query).
 """
 
+from collections.abc import Iterable
 from datetime import UTC, datetime
 
 from bson import ObjectId
@@ -30,6 +31,7 @@ from app.constants.cache import (
     REPO_GLOBAL_SCOPE,
     USER_CACHE_PREFIX,
 )
+from app.constants.email import SignupDelivery
 from app.constants.first_steps import (
     FIRST_STEPS_COLLAPSED_AT_FIELD,
     FIRST_STEPS_COLLAPSED_FIELD,
@@ -101,12 +103,16 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
 
     # ------------------------------------------------------------ worker scans
 
+    # The cohort reads below are lenient: a single legacy row whose
+    # ``onboarding`` is the wrong type used to raise here — above the per-user
+    # try/except in every sweep — so nobody in the cohort got their mail. The
+    # bad row is skipped and logged; the rest of the cohort goes through.
     async def find_stuck_personalization(
         self, cutoff: datetime, *, limit: int = 50
     ) -> list[UserDocument]:
         """Users stuck at personalization-pending whose last update predates
         ``cutoff`` (or was never stamped) — the re-queue candidates."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "onboarding.phase": OnboardingPhase.PERSONALIZATION_PENDING.value,
                 "$or": [
@@ -120,7 +126,7 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
     async def find_inactive_email_candidates(self, before: datetime) -> list[UserDocument]:
         """Active users inactive since ``before`` who have not been emailed since
         then — the inactivity-email candidates (throttling is decided per user)."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "last_active_at": {"$lt": before},
                 "is_active": {"$ne": False},
@@ -136,7 +142,7 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
         ``last_active_at`` missing means the account has never been seen active, so
         those count as dormant too; without the ``$exists`` arm a `$lt` comparison
         silently skips them."""
-        return await self._find(
+        return await self._find_lenient(
             {
                 "is_active": {"$ne": False},
                 "$or": [
@@ -151,9 +157,28 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
         """Recently-signed-up, still-active users — the nurture-sequence cohort.
         Send eligibility (timezone hour, frequency caps, step windows) is decided
         per user per run, not by this query."""
-        return await self._find(
+        return await self._find_lenient(
             {"created_at": {"$gte": created_since}, "is_active": {"$ne": False}},
         )
+
+    async def find_undelivered_signup_ids(
+        self, created_since: datetime, *, limit: int
+    ) -> list[str]:
+        """Ids of recent signups still missing at least one delivery stamp.
+
+        ``created_since`` is load-bearing rather than cosmetic: every account
+        that predates the stamps is missing both, so an unbounded window would
+        hand the entire user base to the recovery sweep.
+        """
+        docs = await self._find(
+            {
+                "created_at": {"$gte": created_since},
+                "$or": [{delivery.value: {"$exists": False}} for delivery in SignupDelivery],
+            },
+            sort=[("created_at", -1)],
+            limit=limit,
+        )
+        return [doc.id for doc in docs]
 
     def _backfill_query(
         self, active_since: datetime, eligible_before: datetime
@@ -620,6 +645,23 @@ class UserRepository(MongoRepository[UserDocument, UserUpdate]):
             return_document=False,
         )
         return updated is not None
+
+    async def stamp_signup_deliveries(
+        self, user_id: str, deliveries: Iterable[SignupDelivery]
+    ) -> None:
+        """Record signup deliveries as settled, so nothing repeats them.
+
+        Written on each delivery's own success, and for all of them at once when
+        a dev-minted user is created — that account is owed none of them and
+        would otherwise look undelivered to the recovery sweep forever.
+        """
+        now = datetime.now(UTC)
+        await self._apply_raw_update(
+            {"_id": self._id_value(user_id)},
+            {"$set": {delivery.value: now for delivery in deliveries}},
+            scope=REPO_GLOBAL_SCOPE,
+            return_document=False,
+        )
 
     async def mark_memory_backfilled(self, user_id: str) -> None:
         """Stamp the memory-backfill marker so the daily cron won't re-select the user."""

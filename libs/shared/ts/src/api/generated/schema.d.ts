@@ -10931,6 +10931,11 @@ export interface components {
              */
             display_name?: string | null;
             /**
+             * First Message
+             * @description What the user actually sent alongside the code, with the code stripped. Absent on Telegram, where the deep link carries no text: a tap is not a message and none is stored.
+             */
+            first_message?: string | null;
+            /**
              * Platform
              * @description Platform name (discord, telegram, etc.)
              */
@@ -10951,6 +10956,16 @@ export interface components {
          * @description Response model for a redeemed one-tap link code.
          */
         RedeemLinkCodeResponse: {
+            /**
+             * Delivered
+             * @description Whether GAIA's first contact is on its way on the outbound queue. When false the bot owes the user the bubbles in first_contact.
+             */
+            delivered: boolean;
+            /**
+             * First Contact
+             * @description Ordered bubbles the bot must send itself because delivery failed. Empty whenever delivered is true — sending them then would say everything twice.
+             */
+            first_contact?: string[];
             /**
              * Linked
              * @description Whether the platform account is now linked

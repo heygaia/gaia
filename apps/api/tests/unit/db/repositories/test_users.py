@@ -12,7 +12,7 @@ seam every read and write in the base repository goes through.
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import AsyncIterator, Awaitable, Callable, Iterator
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -28,6 +28,7 @@ from app.constants.first_steps import (
 )
 from app.db.repositories.users import UserRepository
 from app.models.user_models import OnboardingPreferences
+from tests.helpers import captured_wide_event
 
 USER_ID = "68d1f8a2c3b4a5d6e7f80912"
 NOW = datetime(2026, 9, 2, 9, 0, tzinfo=UTC)
@@ -201,3 +202,70 @@ class TestSetFirstStepsCollapsed:
         self, repo: UserRepository, collection: MagicMock
     ) -> None:
         assert await repo.set_first_steps_collapsed(USER_ID, True) is False
+
+
+class _Cursor:
+    """A Motor cursor over raw documents: chainable, awaitable to a list,
+    async-iterable — the shapes ``_find`` and ``_find_lenient`` each use."""
+
+    def __init__(self, docs: list[dict[str, Any]]) -> None:
+        self._docs = docs
+
+    def sort(self, *_: object) -> _Cursor:
+        return self
+
+    def skip(self, *_: object) -> _Cursor:
+        return self
+
+    def limit(self, *_: object) -> _Cursor:
+        return self
+
+    async def to_list(self, length: int | None = None) -> list[dict[str, Any]]:
+        return self._docs
+
+    def __aiter__(self) -> AsyncIterator[dict[str, Any]]:
+        return self._iterate()
+
+    async def _iterate(self) -> AsyncIterator[dict[str, Any]]:
+        for doc in self._docs:
+            yield doc
+
+
+def _good(email: str) -> dict[str, Any]:
+    return {
+        "_id": ObjectId(),
+        "email": email,
+        "created_at": NOW,
+        "updated_at": NOW,
+        "last_active_at": NOW,
+    }
+
+
+@pytest.mark.parametrize(
+    "read",
+    [
+        lambda repo: repo.find_nurture_candidates(NOW),
+        lambda repo: repo.find_inactive_email_candidates(NOW),
+        lambda repo: repo.find_dormant_since(NOW),
+        lambda repo: repo.find_stuck_personalization(NOW),
+    ],
+    ids=["nurture", "inactive_email", "dormant", "stuck_personalization"],
+)
+async def test_a_cohort_read_skips_one_malformed_row_and_keeps_the_rest(
+    repo: UserRepository, collection: MagicMock, read: Callable[[UserRepository], Awaitable[Any]]
+) -> None:
+    """A legacy ``onboarding`` value of the wrong type raised inside the
+    repository call — above every per-user try/except in the nurture and
+    inactivity sweeps — so one bad row meant nobody in the cohort got mail."""
+    legacy = {**_good("legacy@example.com"), "onboarding": "completed"}
+    collection.find = MagicMock(
+        return_value=_Cursor([_good("a@example.com"), legacy, _good("b@example.com")])
+    )
+
+    async with captured_wide_event() as wide:
+        found = await read(repo)
+
+    assert [user.email for user in found] == ["a@example.com", "b@example.com"]
+    (warning,) = wide["warnings"]
+    assert warning["collection"] == "users"
+    assert warning["document_id"] == legacy["_id"]

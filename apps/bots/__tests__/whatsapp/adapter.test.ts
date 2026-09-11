@@ -394,7 +394,9 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
 
   it("redeems a trailing #code from an unlinked sender and says nothing itself", async () => {
     mockMarkRead.mockResolvedValue({});
-    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
+    const redeemLinkCode = vi
+      .fn()
+      .mockResolvedValue({ linked: true, delivered: true, firstContact: [] });
     (adapter as unknown as { gaia: unknown }).gaia = {
       checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
       redeemLinkCode,
@@ -413,6 +415,8 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
       "15551234567",
       LINK_CODE,
       undefined,
+      // The prefill is editable, so what they sent is their own opening turn.
+      LINK_FIRST_MESSAGE,
     );
     // The API composes the first contact and delivers it on the outbound queue
     // when the link completes, so the bot must not send anything of its own:

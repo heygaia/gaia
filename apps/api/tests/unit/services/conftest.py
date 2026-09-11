@@ -154,28 +154,24 @@ def _make_webhook_event(event_type: str, data: dict[str, Any]) -> dict[str, Any]
 
 @pytest.fixture
 def mock_webhook_subscription_repository():
-    """One mock behind both modules that write subscription rows.
+    """The repository behind ``subscription_events``, the one writer of rows.
 
-    ``subscription.active`` activates through
-    ``subscription_activation.activate_subscription`` (shared with payment
-    verification's Dodo reconciliation); the other handlers still update the row
-    from the webhook service itself.
+    By default the subscription already exists as an active row with no
+    billing dates recorded (``SAMPLE_SUBSCRIPTION``), which is what every
+    lifecycle event needs to find; a test about activation creating the row
+    sets ``get_by_dodo_id`` to return ``None``.
     """
     mock_repo = MagicMock()
-    mock_repo.get_by_dodo_id = AsyncMock(return_value=None)
-    mock_repo.get_user_id_by_dodo_id = AsyncMock(return_value=FAKE_USER_ID)
+    mock_repo.get_by_dodo_id = AsyncMock(return_value=SAMPLE_SUBSCRIPTION)
     mock_repo.create = AsyncMock()
     mock_repo.apply_update_by_dodo_id = AsyncMock(return_value=True)
-    with (
-        patch("app.services.payments.payment_webhook_service.subscription_repository", mock_repo),
-        patch("app.services.payments.subscription_activation.subscription_repository", mock_repo),
-    ):
+    with patch("app.services.payments.subscription_events.subscription_repository", mock_repo):
         yield mock_repo
 
 
 @pytest.fixture
 def mock_webhook_users_collection():
-    with patch("app.services.payments.subscription_activation.user_repository") as mock_repo:
+    with patch("app.services.payments.subscription_events.user_repository") as mock_repo:
         _set_user(mock_repo, SAMPLE_USER_DOC)
         yield mock_repo
 
@@ -199,18 +195,16 @@ def mock_track_payment():
 
 @pytest.fixture
 def mock_track_subscription():
-    mock_fn = MagicMock()
-    with (
-        patch("app.services.payments.payment_webhook_service.track_subscription_event", mock_fn),
-        patch("app.services.payments.subscription_activation.track_subscription_event", mock_fn),
-    ):
+    with patch("app.services.payments.subscription_events.track_subscription_event") as mock_fn:
         yield mock_fn
 
 
 @pytest.fixture
 def mock_deactivate_workflows():
+    """The reducer pauses lapsed workflows through a deferred import (see
+    ``mock_activation_workflow_reactivation``), so the seam is the source."""
     with patch(
-        "app.services.payments.payment_webhook_service.deactivate_workflows_for_lapsed_subscription",
+        "app.services.workflow.subscription_pause.deactivate_workflows_for_lapsed_subscription",
         new_callable=AsyncMock,
     ) as mock_fn:
         mock_fn.return_value = 0
@@ -220,7 +214,7 @@ def mock_deactivate_workflows():
 @pytest.fixture
 def mock_webhook_send_email():
     with patch(
-        "app.services.payments.subscription_activation.send_pro_subscription_email",
+        "app.services.payments.subscription_events.send_pro_subscription_email",
         new_callable=AsyncMock,
     ) as mock_fn:
         yield mock_fn
@@ -228,7 +222,7 @@ def mock_webhook_send_email():
 
 @pytest.fixture
 def mock_activation_workflow_reactivation():
-    """``activate_subscription`` resumes lapsed workflows; that reaches the
+    """The reducer resumes lapsed workflows on activation; that reaches the
     workflow stack, which no webhook test wants to run. Patched at the source
     module because the import is deferred to break a cycle.
 
@@ -258,27 +252,26 @@ def webhook_service():
 
 
 @pytest.fixture
-def webhook_side_effects_stubbed(mock_track_subscription, mock_payment_service_invalidation):
+def webhook_side_effects_stubbed(mock_track_subscription, mock_subscription_plan_cache_drop):
     """The side effects a webhook fires that most tests only need kept in memory.
 
     Analytics and the plan-cache bust are requested by name where a test asserts
     on them; this bundles the pair for the tests that merely must not let them
-    reach PostHog or Mongo, so a signature lists what it checks rather than what
+    reach PostHog or Redis, so a signature lists what it checks rather than what
     it is avoiding.
     """
-    return mock_track_subscription, mock_payment_service_invalidation
+    return mock_track_subscription, mock_subscription_plan_cache_drop
 
 
 @pytest.fixture
-def mock_payment_service_invalidation():
-    """Prevent payment_service.invalidate_plan_cache_by_dodo_id from hitting the DB.
+def mock_subscription_plan_cache_drop():
+    """Keep the reducer's plan-cache drop out of Redis.
 
-    process_webhook now calls this after each successful handler to bust the
-    subscription-plan cache.  Patch the module-level singleton so every webhook
-    test stays fully in-memory. Not autouse here for the same reason as
-    ``mock_activation_workflow_reactivation`` above — opted into via
-    ``pytestmark`` in the payment webhook test module.
+    Every applied subscription event drops the owner's cached tier. Not
+    autouse here for the same reason as ``mock_activation_workflow_reactivation``
+    above — opted into via ``pytestmark`` in the payment webhook test module.
     """
-    with patch("app.services.payments.payment_webhook_service.payment_service") as mock_svc:
-        mock_svc.invalidate_plan_cache_by_dodo_id = AsyncMock()
-        yield mock_svc
+    with patch(
+        "app.services.payments.subscription_events.invalidate_plan_cache", new_callable=AsyncMock
+    ) as mock_fn:
+        yield mock_fn

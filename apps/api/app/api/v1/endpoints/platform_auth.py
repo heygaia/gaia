@@ -167,7 +167,7 @@ async def _link_platform_account(
     user_id: str, config: PlatformOAuthConfig, platform_user_id: str, profile: dict[str, str | None]
 ) -> None:
     try:
-        link_result = await complete_platform_link(
+        completion = await complete_platform_link(
             user_id, config.platform, platform_user_id, profile=profile or None
         )
     except AppError as e:
@@ -195,7 +195,7 @@ async def _link_platform_account(
         actor=user_id,
         resource=platform_user_id,
         provider=config.platform,
-        is_new_link=bool(link_result.is_new_link),
+        is_new_link=completion.link.is_new_link,
     )
 
 

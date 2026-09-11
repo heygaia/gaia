@@ -520,7 +520,7 @@ def pro_plan() -> Iterator[MagicMock]:
 
     Patches the single seam every gate reads — ``get_cached_plan_type`` — so it
     covers the ``EntitlementMiddleware``, the imperative ``require_active_subscription``
-    decorator and the imperative ``is_subscription_active`` helper at once.
+    decorator and the imperative ``is_paid`` helper at once.
 
     Deliberately NOT autouse. The suite's default caller is FREE (the global
     ``get_user_subscription_status`` patch reports a free plan), and a dozen

@@ -26,17 +26,16 @@ from app.models.bot_models import (
     RedeemLinkCodeResponse,
 )
 from app.models.chat_models import MessageModel, UpdateMessagesRequest
-from app.models.user_models import AuthenticatedUser, OnboardingPreferences
+from app.models.user_models import AuthenticatedUser
 from app.services.bot_service import BotService
 from app.services.conversation_service import update_messages
 from app.services.onboarding.first_contact import build_first_contact
-from app.services.onboarding.first_message import compose_first_message
 from app.services.platform_link_code_service import (
     discard_platform_link_code,
     peek_platform_link_code,
 )
 from app.services.platform_link_completion import complete_platform_link
-from app.services.platform_link_service import require_platform_plan
+from app.services.platform_link_service import PlatformLinkService, require_platform_plan
 from app.services.user_service import get_user_by_id
 from app.utils.errors import create_error
 from shared.py.wide_events import log
@@ -136,8 +135,12 @@ async def create_link_token(
 async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> RedeemLinkCodeResponse:
     """Consume a web-minted code and link the platform account that presented it.
 
-    Returns GAIA's whole first contact as ordered bubbles for the bot to send.
-    No model turn runs: the bubbles ARE the first message.
+    GAIA's whole first contact is composed here and delivered on the outbound
+    queue; no model turn runs, the bubbles ARE the first message. They come
+    back in the response only when that delivery failed, for the bot to send.
+
+    Idempotent for the account the code already linked: a repeat tap on a spent
+    code answers ``linked=True`` without running the link's side effects again.
     """
     await require_bot_api_key(request)
     log.set(operation="redeem_link_code", platform=body.platform)
@@ -163,6 +166,30 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
 
     payload = await peek_platform_link_code(body.code)
     if payload is None:
+        # A spent code presented by an account that is already linked is the
+        # second tap, not a dead link: mobile clients re-fire the deep link and
+        # Telegram resends /start, and the state the code asked for is the state
+        # we are in. Answering with the success the first tap gave is the whole
+        # fix — every side effect hangs off ``complete_platform_link``, which is
+        # not reached, so nobody is greeted, counted or re-introduced twice.
+        # Handled here rather than in each adapter so every platform inherits it.
+        linked_user = await PlatformLinkService.get_user_by_platform_id(
+            body.platform, body.platform_user_id
+        )
+        if linked_user is not None:
+            linked_user_id = str(linked_user["_id"])
+            log.set(user={"id": linked_user_id})
+            log.audit(
+                "platform link code already redeemed by this account",
+                actor=linked_user_id,
+                resource=body.platform_user_id,
+                provider=body.platform,
+            )
+            log.set(outcome="success", is_new_link=False)
+            # The first tap delivered the first contact; a second one owes
+            # nothing, so there is nothing for the bot to send.
+            return RedeemLinkCodeResponse(linked=True, delivered=True)
+
         # Never log the code — it is the credential. The platform account that
         # presented it and the outcome are what make a probe findable.
         log.audit(
@@ -193,7 +220,7 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
     bubbles = await build_first_contact(
         payload.user_id, body.platform, (user or {}).get("name"), payload.preferences
     )
-    result = await complete_platform_link(
+    completion = await complete_platform_link(
         payload.user_id,
         body.platform,
         body.platform_user_id,
@@ -207,19 +234,23 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
         resource=body.platform_user_id,
         provider=body.platform,
     )
-    log.set(outcome="success", is_new_link=result.is_new_link)
-    await _persist_first_contact(payload.user_id, body, user, payload.preferences, bubbles)
-    return RedeemLinkCodeResponse(linked=True)
+    delivered = completion.first_contact_delivered
+    log.set(outcome="success", is_new_link=completion.link.is_new_link, delivered=delivered)
+    await _persist_first_contact(payload.user_id, body, user, bubbles)
+    # A publish the queue refused is never retried, so the bubbles go back to
+    # the bot that asked for the link rather than being lost.
+    return RedeemLinkCodeResponse(
+        linked=True, delivered=delivered, first_contact=[] if delivered else bubbles
+    )
 
 
 async def _persist_first_contact(
     user_id: str,
     body: RedeemLinkCodeRequest,
     user: dict | None,
-    preferences: OnboardingPreferences,
     bubbles: list[str],
 ) -> None:
-    """Write the exchange into the platform's bot conversation.
+    """Write the first contact into the platform's bot conversation.
 
     Nothing else does it: no chat turn ran, so without this the user's next
     message arrives into an empty thread and GAIA has no idea it just introduced
@@ -236,25 +267,29 @@ async def _persist_first_contact(
             body.platform, body.platform_user_id, None, actor, is_dm=True
         )
         now = datetime.now(UTC)
+        messages: list[MessageModel] = []
+        # Only a turn the user really sent. The WhatsApp/iMessage prefill is
+        # editable, so what arrives is their own words and is stored verbatim;
+        # a Telegram deep link carries no text at all, and writing the canned
+        # opener as their turn stored a message they never sent — which is also
+        # what any "have they said anything yet" signal then counts.
+        if body.first_message:
+            messages.append(
+                MessageModel(
+                    type="user",
+                    response=body.first_message,
+                    date=(now - timedelta(milliseconds=100)).isoformat(),
+                )
+            )
+        messages.append(
+            MessageModel(
+                type="bot",
+                response=NEW_MESSAGE_BREAKER.join(bubbles),
+                date=now.isoformat(),
+            )
+        )
         await update_messages(
-            UpdateMessagesRequest(
-                conversation_id=conversation_id,
-                messages=[
-                    # The user's own opener: on WhatsApp and iMessage they
-                    # literally sent this text, and on Telegram it is what the
-                    # deep link stood in for. Either way it is their turn.
-                    MessageModel(
-                        type="user",
-                        response=compose_first_message(preferences),
-                        date=(now - timedelta(milliseconds=100)).isoformat(),
-                    ),
-                    MessageModel(
-                        type="bot",
-                        response=NEW_MESSAGE_BREAKER.join(bubbles),
-                        date=now.isoformat(),
-                    ),
-                ],
-            ),
+            UpdateMessagesRequest(conversation_id=conversation_id, messages=messages),
             user=actor,
         )
     except Exception as e:

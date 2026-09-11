@@ -54,10 +54,6 @@ class SubscriptionsRepository(MongoRepository[SubscriptionDocument, Subscription
     async def get_by_dodo_id(self, dodo_subscription_id: str) -> SubscriptionDocument | None:
         return await self._find_one({"dodo_subscription_id": dodo_subscription_id})
 
-    async def get_user_id_by_dodo_id(self, dodo_subscription_id: str) -> str | None:
-        subscription = await self._find_one({"dodo_subscription_id": dodo_subscription_id})
-        return subscription.user_id if subscription is not None else None
-
     async def apply_update_by_dodo_id(
         self, dodo_subscription_id: str, update: SubscriptionUpdate
     ) -> bool:

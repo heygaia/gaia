@@ -5,8 +5,8 @@ or rejected ``subscription.active`` webhook therefore left a paying user with
 no local subscription row and no path to Pro — ``/payment/success`` told them
 the payment had not completed while Dodo happily held their money.
 
-The fix routes the reconciliation through the SAME activation used by the
-webhook (``subscription_activation.activate_subscription``), so a recovered
+The fix routes the reconciliation through the SAME reducer the webhook goes
+through (``subscription_events.apply_subscription_event``), so a recovered
 payment and a webhook-delivered one produce identical state. These tests pin
 the ownership refusal too: the subscription id arrives in a URL the client
 controls, so it is a hint, never an authorisation.
@@ -26,7 +26,7 @@ from tests.helpers import captured_wide_event
 from tests.unit.services.conftest import SAMPLE_USER_DOC, _set_user
 
 SERVICE_MODULE = "app.services.payments.payment_service"
-ACTIVATION_MODULE = "app.services.payments.subscription_activation"
+ACTIVATION_MODULE = "app.services.payments.subscription_events"
 
 USER_ID = "507f1f77bcf86cd799439011"
 OTHER_USER_ID = "507f1f77bcf86cd799439012"
@@ -94,6 +94,17 @@ def _service(remote: MagicMock | Exception) -> DodoPaymentService:
     else:
         service.client.subscriptions.retrieve.return_value = remote
     return service
+
+
+@pytest.fixture(autouse=True)
+def _no_scan_cache():
+    """The checkout scan caches a miss in Redis; keep it in memory so one
+    test's miss never reaches the next through a real local Redis."""
+    with patch(f"{SERVICE_MODULE}.redis_cache") as cache:
+        cache.get = AsyncMock(return_value=None)
+        cache.set = AsyncMock()
+        cache.delete = AsyncMock()
+        yield
 
 
 @pytest.fixture(autouse=True)
@@ -297,7 +308,7 @@ class TestVerifyPaymentMaterializesFromTheCheckoutSession:
     """The recovery route taken when Dodo's return URL carries no subscription id.
 
     It used to build the subscription row itself instead of delegating to
-    ``activate_subscription``, so a user whose ``subscription.active`` webhook
+    the shared activation, so a user whose ``subscription.active`` webhook
     was slow kept the pre-payment tier cached (402 for up to five more minutes)
     and the workflows paused when their subscription lapsed never came back.
     These tests pin the delegation, not the row's contents — the shared path's

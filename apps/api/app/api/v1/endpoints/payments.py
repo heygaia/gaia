@@ -85,6 +85,8 @@ async def create_subscription_endpoint(
             },
         )
         return result
+    except HTTPException:
+        raise
     except Exception as e:
         log.error(
             f"{LogTag.PAYMENT} Error creating subscription",
@@ -288,11 +290,22 @@ async def handle_dodo_webhook(
             )
             raise HTTPException(status_code=503, detail=result.message)
 
-        log.info(
-            f"{LogTag.PAYMENT} Webhook processed",
-            event_type=result.event_type,
-            processing_status=result.status,
-        )
+        if result.status == WebhookProcessingStatus.ABANDONED:
+            # Acknowledged, because a retry cannot land it — but at the level
+            # that gets it looked at: this is a paid user GAIA could not
+            # activate, or a billing change it could not record.
+            log.error(
+                f"{LogTag.PAYMENT} Webhook abandoned; the delivery cannot be completed by a retry",
+                event_type=result.event_type,
+                processing_status=result.status,
+                failure_reason=result.message,
+            )
+        else:
+            log.info(
+                f"{LogTag.PAYMENT} Webhook processed",
+                event_type=result.event_type,
+                processing_status=result.status,
+            )
 
         return DodoWebhookAckResponse(
             event_type=result.event_type,

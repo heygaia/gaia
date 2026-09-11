@@ -6,7 +6,7 @@ from .caching import Cacheable, CacheInvalidator
 from .documentation import with_doc
 from .entitlements import (
     SubscriptionRequiredException,
-    is_subscription_active,
+    is_paid,
     require_active_subscription,
 )
 from .rate_limiting import (
@@ -39,6 +39,6 @@ __all__ = [
     "CacheInvalidator",
     # Entitlements
     "SubscriptionRequiredException",
-    "is_subscription_active",
+    "is_paid",
     "require_active_subscription",
 ]

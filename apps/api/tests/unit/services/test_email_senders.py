@@ -131,16 +131,18 @@ class TestAddMarketingContact:
         f"{RESEND_PROVIDER}.resend.Contacts.create",
         side_effect=RuntimeError("network error"),
     )
-    async def test_exception_swallowed(self, mock_create, mock_settings):
-        """add_marketing_contact swallows exceptions so user creation still succeeds.
+    async def test_provider_failure_is_recorded_and_re_raised(self, mock_create, mock_settings):
+        """A rejected contact must reach the caller. While this swallowed, the
+        worker job's own except branch was unreachable: it logged the contact as
+        added and stamped it settled on a signup that never joined the audience.
 
-        Swallowing is only defensible while the failure stays queryable, so the
-        wide event has to carry it — keyed on the user ID, never the email.
+        The failure still has to stay queryable, so the wide event carries it —
+        keyed on the user ID, never the email.
         """
         mock_settings.RESEND_AUDIENCE_ID = "aud-test"  # pragma: allowlist secret
         async with captured_wide_event() as event:
-            # Should NOT raise
-            await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
+            with pytest.raises(RuntimeError, match="network error"):
+                await add_marketing_contact("user@example.com", "Alice", user_id=SENDER_USER_ID)
 
         assert event["errors"] == [
             {

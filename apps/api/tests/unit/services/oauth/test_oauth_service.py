@@ -8,8 +8,10 @@ import pytest
 from tests.factories import make_integration_config
 from tests.helpers import captured_wide_event
 
+from app.constants.email import SignupDelivery
 from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
+from app.services.email.signup_delivery import signup_email_job_id
 from app.services.oauth.oauth_service import (
     check_integration_status,
     check_multiple_integrations_status,
@@ -36,6 +38,7 @@ def mock_user_repo():
         mock_repo.update = AsyncMock()
         mock_repo.create = AsyncMock()
         mock_repo.set_bio_status = AsyncMock()
+        mock_repo.stamp_signup_deliveries = AsyncMock()
         yield mock_repo
 
 
@@ -308,11 +311,17 @@ class TestStoreUserInfo:
 
         assert mock_user_repo.create.call_args.args[0].name == "Aryan Randeriya"
         assert mock_track_signup.call_args.kwargs["name"] == "Aryan Randeriya"
-        # The derived name is what the queued delivery must carry: the job is
-        # the only thing that still knows it by the time the email is written.
-        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
-            "deliver_signup_emails", uid, "aryan.randeriya@test.com", "Aryan Randeriya"
+        # The derived name is what the queued delivery reads back off the row,
+        # so storing it is what decides how the welcome email greets the user.
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            uid,
         )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(uid)
 
     async def test_new_user_keeps_the_workos_name_when_there_is_one(
         self,
@@ -361,9 +370,37 @@ class TestStoreUserInfo:
 
         await store_user_info("Bob", "bob@test.com", None)
 
-        mock_redis_pool_manager.enqueue_job.assert_awaited_once_with(
-            "deliver_signup_emails", uid, "bob@test.com", "Bob"
+        # Not assert_awaited_once_with: enqueue_worker_job also attaches the
+        # caller's trace id, which is not this test's subject.
+        assert mock_redis_pool_manager.enqueue_job.await_args.args == (
+            "deliver_signup_emails",
+            uid,
         )
+        assert mock_redis_pool_manager.enqueue_job.await_args.kwargs[
+            "_job_id"
+        ] == signup_email_job_id(uid)
+
+    async def test_a_dev_minted_user_is_stamped_so_the_sweep_never_mails_it(
+        self,
+        mock_user_repo,
+        mock_track_signup,
+        mock_redis_pool_manager,
+    ):
+        """Suppressing the side effects is not enough on its own. The recovery
+        sweep selects on a *missing* delivery stamp, so an unstamped seeded
+        account looks exactly like a signup whose enqueue was lost — and every
+        dev user would get a founder email and a marketing contact an hour
+        after minting, which is the one thing this path promises never happens.
+        """
+        uid = str(ObjectId())
+        mock_user_repo.get_by_email.return_value = None
+        mock_user_repo.create.return_value = UserDocument(id=uid)
+
+        await store_user_info("Bob", "bob@test.com", None, external_side_effects=False)
+
+        mock_user_repo.stamp_signup_deliveries.assert_awaited_once_with(uid, list(SignupDelivery))
+        mock_redis_pool_manager.enqueue_job.assert_not_awaited()
+        mock_track_signup.assert_not_called()
 
     async def test_new_user_signup_tracking_failure_does_not_raise(
         self,
