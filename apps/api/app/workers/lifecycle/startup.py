@@ -26,6 +26,7 @@ from app.core.provider_registration import (
     setup_warnings,
     unified_startup,
 )
+from app.services.device.up_listener import start_up_listener
 from app.utils.browser_reaper import start_browser_reaper
 from app.workers.metrics import start_metrics_server
 from shared.py.wide_events import log, log_context
@@ -58,6 +59,14 @@ async def startup(ctx: dict[str, Any]) -> None:
 
         # Use unified startup function - handles provider registration, eager init, and auto-init
         await unified_startup("arq_worker")
+
+        # The warm_device_servers task opens MCP-over-bridge sessions from this
+        # process. The device socket is owned by the API pod, so the daemon's
+        # reply frames are routed back to THIS process's per-pod up-channel — the
+        # up-listener must be subscribed here too, or every device warm-connect
+        # times out waiting for mcp.opened. (The API starts its own in lifespan;
+        # the worker needs its own because it has a distinct POD_ID.)
+        start_up_listener()
 
         # Reap any crawl4ai browser drivers that escape teardown (worker crawl
         # tasks are routinely cancelled; see app/utils/browser_reaper.py).
