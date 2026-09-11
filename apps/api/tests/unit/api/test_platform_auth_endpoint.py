@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, patch
 from httpx import AsyncClient
 import pytest
 
-from app.models.platform_models import PlatformLinkResult
+from app.models.platform_models import PlatformLinkCompletion, PlatformLinkResult
 from app.utils.errors import create_error
 
 _MODULE = "app.api.v1.endpoints.platform_auth"
@@ -55,12 +55,15 @@ class TestPlatformOAuthCallback:
     """GET /api/v1/platform-auth/{platform}/callback"""
 
     async def test_discord_callback_captures_connected_event(self, client: AsyncClient) -> None:
-        link_result = PlatformLinkResult(
-            status="linked",
-            platform="discord",
-            platform_user_id="DISC1",
-            connected_at="2024-01-01T00:00:00Z",
-            is_new_link=True,
+        completion = PlatformLinkCompletion(
+            link=PlatformLinkResult(
+                status="linked",
+                platform="discord",
+                platform_user_id="DISC1",
+                connected_at="2024-01-01T00:00:00Z",
+                is_new_link=True,
+            ),
+            first_contact_delivered=True,
         )
         with (
             patch(
@@ -72,7 +75,7 @@ class TestPlatformOAuthCallback:
             patch(
                 f"{_MODULE}.complete_platform_link",
                 new_callable=AsyncMock,
-                return_value=link_result,
+                return_value=completion,
             ) as mock_complete,
         ):
             resp = await client.get(
@@ -463,18 +466,21 @@ class TestLinkPlatformAccount:
         from app.api.v1.endpoints.platform_auth import PLATFORM_CONFIGS, _link_platform_account
 
         profile: dict[str, str | None] = {"username": "u", "display_name": "U"}
-        link_result = PlatformLinkResult(
-            status="linked",
-            platform="discord",
-            platform_user_id="DISC1",
-            connected_at="2024-01-01T00:00:00Z",
-            is_new_link=True,
+        completion = PlatformLinkCompletion(
+            link=PlatformLinkResult(
+                status="linked",
+                platform="discord",
+                platform_user_id="DISC1",
+                connected_at="2024-01-01T00:00:00Z",
+                is_new_link=True,
+            ),
+            first_contact_delivered=True,
         )
         with (
             patch(
                 f"{_MODULE}.complete_platform_link",
                 new_callable=AsyncMock,
-                return_value=link_result,
+                return_value=completion,
             ) as mock_complete,
             patch(f"{_MODULE}.log") as log,
         ):
@@ -602,12 +608,15 @@ class TestCallbackRedirectTargets:
     async def test_success_returns_to_the_stored_redirect_path_naming_the_integration(
         self, client: AsyncClient
     ) -> None:
-        link_result = PlatformLinkResult(
-            status="linked",
-            platform="discord",
-            platform_user_id="DISC1",
-            connected_at="2024-01-01T00:00:00Z",
-            is_new_link=True,
+        completion = PlatformLinkCompletion(
+            link=PlatformLinkResult(
+                status="linked",
+                platform="discord",
+                platform_user_id="DISC1",
+                connected_at="2024-01-01T00:00:00Z",
+                is_new_link=True,
+            ),
+            first_contact_delivered=True,
         )
         with (
             patch(
@@ -619,7 +628,7 @@ class TestCallbackRedirectTargets:
             patch(
                 f"{_MODULE}.complete_platform_link",
                 new_callable=AsyncMock,
-                return_value=link_result,
+                return_value=completion,
             ),
             patch(f"{_MODULE}.log") as log,
         ):

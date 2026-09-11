@@ -146,10 +146,11 @@ function classifyLinkFailure(error: GaiaApiError): LinkCodeFailure {
  * Redeems `code` for `platformUserId`.
  *
  * The API composes GAIA's whole first contact and delivers it itself on the
- * outbound queue the moment the link completes, so this sends nothing on
- * success. No model turn runs: the opener turn used to skip the per-pick lines
- * and lose the links, and the one message a new user is guaranteed to read does
- * not get to be unreliable.
+ * outbound queue the moment the link completes, so this normally sends nothing
+ * on success. No model turn runs: the opener turn used to skip the per-pick
+ * lines and lose the links, and the one message a new user is guaranteed to
+ * read does not get to be unreliable. When that delivery failed the API hands
+ * the bubbles back and they are sent from here — nothing else will.
  *
  * Returns true once the link is in. On a failure the user can act on
  * (expired/used code, handle already linked elsewhere) it messages them and
@@ -173,11 +174,27 @@ export async function redeemLinkCode(
     },
     async () => {
       try {
-        await gaia.redeemLinkCode(platform, platformUserId, code, profile);
+        const redeemed = await gaia.redeemLinkCode(
+          platform,
+          platformUserId,
+          code,
+          profile,
+        );
         wideLog.audit("platform_linked_via_code", {
           user_hash: hashLogIdentifier(platformUserId),
         });
-        wideLog.set({ link_result: "linked" });
+        // The outbound publish is never retried, so bubbles the queue refused
+        // are sent from here or not at all — and the one message a new user is
+        // guaranteed to read is the whole point of the link.
+        if (!redeemed.delivered) {
+          for (const bubble of redeemed.firstContact) {
+            await target.send(bubble);
+          }
+        }
+        wideLog.set({
+          link_result: "linked",
+          first_contact_sent_by_bot: !redeemed.delivered,
+        });
         return true;
       } catch (error: unknown) {
         if (!(error instanceof GaiaApiError)) throw error;

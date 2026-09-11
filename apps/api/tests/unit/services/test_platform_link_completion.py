@@ -86,7 +86,7 @@ class TestPostLinkMessage:
         publish.return_value = OutboundResult.FAILED
         with patch(f"{MODULE}.log") as mock_log:
             result = await complete_platform_link("u1", "whatsapp", "wa-1", first_contact=BUBBLES)
-        assert result.is_new_link is True
+        assert result.link.is_new_link is True
         mock_log.warning.assert_called_once_with(
             "first contact was not delivered after a one-tap link",
             platform="whatsapp",

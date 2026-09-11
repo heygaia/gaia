@@ -394,7 +394,9 @@ describe("WhatsAppAdapter - handleIncomingMessage", () => {
 
   it("redeems a trailing #code from an unlinked sender and says nothing itself", async () => {
     mockMarkRead.mockResolvedValue({});
-    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
+    const redeemLinkCode = vi
+      .fn()
+      .mockResolvedValue({ linked: true, delivered: true, firstContact: [] });
     (adapter as unknown as { gaia: unknown }).gaia = {
       checkAuthStatus: vi.fn().mockResolvedValue({ authenticated: false }),
       redeemLinkCode,

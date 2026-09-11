@@ -23,9 +23,10 @@ from app.models.bot_models import (
     RedeemLinkCodeRequest,
 )
 from app.models.payment_models import PlanType
-from app.models.platform_models import PlatformLinkResult
+from app.models.platform_models import PlatformLinkCompletion, PlatformLinkResult
 from app.models.user_models import OnboardingNeed, OnboardingPreferences
 from app.services.onboarding.first_message import compose_first_message
+from app.services.outbound_delivery import OutboundResult
 from app.services.platform_link_code_service import PlatformLinkCodePayload
 from app.utils.errors import AppError
 from shared.py.wide_events import log, log_context
@@ -306,6 +307,11 @@ LINKED_LOOKUP_PATCH = (
 )
 
 
+#: Link completion's own module, patched whole when a test needs the real
+#: completion to run (the delivery outcome it reports is what is under test).
+COMPLETION_MODULE = "app.services.platform_link_completion"
+
+
 def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
     return PlatformLinkResult(
         status="linked",
@@ -314,6 +320,11 @@ def _link_result(is_new_link: bool = True) -> PlatformLinkResult:
         connected_at="2026-09-01T00:00:00Z",
         is_new_link=is_new_link,
     )
+
+
+def _completion(is_new_link: bool = True, delivered: bool = True) -> PlatformLinkCompletion:
+    """What the endpoint gets back from link completion."""
+    return PlatformLinkCompletion(link=_link_result(is_new_link), first_contact_delivered=delivered)
 
 
 class TestRedeemLinkCode:
@@ -369,7 +380,7 @@ class TestRedeemLinkCode:
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock) as mock_discard,
             patch(
-                COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()
+                COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()
             ) as mock_complete,
         ):
             response = await client.post(
@@ -378,7 +389,8 @@ class TestRedeemLinkCode:
             )
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True}
+        # Delivered on the outbound queue, so the bot is handed nothing to send.
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
         mock_discard.assert_awaited_once_with("CODE123")
         # The code, not the request body, decides which GAIA user gets linked.
         # The composed first contact travels with the link: completion delivers
@@ -410,7 +422,7 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -436,7 +448,7 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
             patch(PERSIST_PATCH, new_callable=AsyncMock) as mock_persist,
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
@@ -445,6 +457,75 @@ class TestRedeemLinkCode:
         mock_persist.assert_awaited_once_with(
             "user1", RedeemLinkCodeRequest(**REDEEM_BODY), linked_user, PREFS, BUBBLES
         )
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_first_contact_the_queue_refused_comes_back_for_the_bot_to_send(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """The link held, the one message a new user is guaranteed to read did not go out.
+
+        Nothing retries the outbound publish, so a silent failure left the user
+        on a linked platform that never said anything. The bubbles come back
+        with ``delivered=False`` and the bot sends them itself.
+        """
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(
+                f"{COMPLETION_MODULE}.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                return_value=_link_result(),
+            ),
+            patch(
+                f"{COMPLETION_MODULE}.publish_outbound_message",
+                new_callable=AsyncMock,
+                return_value=OutboundResult.FAILED,
+            ),
+            patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
+            patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "linked": True,
+            "delivered": False,
+            "first_contact": BUBBLES,
+        }
+
+    @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
+    async def test_a_delivered_first_contact_is_not_handed_back_as_well(
+        self, _auth: AsyncMock, client: AsyncClient
+    ):
+        """Otherwise the bot sends what the outbound queue already sent."""
+        with (
+            patch(
+                PEEK_PATCH,
+                new_callable=AsyncMock,
+                return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
+            ),
+            patch(DISCARD_PATCH, new_callable=AsyncMock),
+            patch(
+                f"{COMPLETION_MODULE}.PlatformLinkService.link_account",
+                new_callable=AsyncMock,
+                return_value=_link_result(),
+            ),
+            patch(
+                f"{COMPLETION_MODULE}.publish_outbound_message",
+                new_callable=AsyncMock,
+                return_value=OutboundResult.PUBLISHED,
+            ),
+            patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
+            patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+        ):
+            response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
+
+        assert response.status_code == 200
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_expired_or_unknown_code_is_rejected_without_linking(
@@ -470,7 +551,7 @@ class TestRedeemLinkCode:
         with (
             patch(PEEK_PATCH, new_callable=AsyncMock, side_effect=[payload, None]),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             first = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
             second = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
@@ -501,7 +582,9 @@ class TestRedeemLinkCode:
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
-        assert response.json() == {"linked": True}
+        # The first tap's first contact was delivered and is still on screen;
+        # the second owes nothing, so the bot is handed nothing to send.
+        assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
         _already_linked.assert_awaited_once_with("telegram", "TG42")
         # Every side effect of a first link hangs off completion -- the outbound
         # first-contact publish and the integration_connected capture both. Not
@@ -707,7 +790,7 @@ class TestRedeemLinkCode:
                 return_value=PlatformLinkCodePayload(user_id="user1", preferences=PREFS),
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -729,7 +812,7 @@ class TestRedeemLinkCode:
             patch(
                 "app.api.v1.endpoints.bot_links.require_platform_plan", new_callable=AsyncMock
             ) as mock_plan,
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -783,7 +866,7 @@ class TestRedeemLinkCode:
             ),
             patch(DISCARD_PATCH, new_callable=AsyncMock),
             patch("app.api.v1.endpoints.bot_links.require_platform_plan", new=AsyncMock()),
-            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_link_result()),
+            patch(COMPLETE_PATCH, new_callable=AsyncMock, return_value=_completion()),
         ):
             async with log_context("redeem_link_code_test"):
                 result = await redeem_link_code(request, body)

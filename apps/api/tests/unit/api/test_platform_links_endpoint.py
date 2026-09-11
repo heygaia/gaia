@@ -322,11 +322,9 @@ class TestLinkPlatform:
             "DISC123",
             profile={"username": "testuser", "display_name": "Test User"},
         )
-        mock_capture.assert_called_once_with(
-            FAKE_USER_ID,
-            AnalyticsEvents.INTEGRATION_CONNECTED,
-            {"integration_id": "discord", "is_new_link": False},
-        )
+        # Re-linking an account the user already has is not a new connection,
+        # so it is not captured — the count would otherwise track taps.
+        mock_capture.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_link_new_platform_captures_is_new_link_true(self, client: AsyncClient) -> None:

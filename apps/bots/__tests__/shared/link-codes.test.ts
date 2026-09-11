@@ -23,7 +23,15 @@ const CODE = "Ab3-_xY9zQ1234567890wE";
 const FIRST_MESSAGE =
   "Hi! I'm a founder. I could use help with my inbox. Who are you?";
 const FRONTEND_URL = "https://gaia.test";
-const okRedeem = () => vi.fn(async () => ({ linked: true }));
+/** The API delivered GAIA's first contact itself, so the bot owes nothing. */
+const okRedeem = () =>
+  vi.fn(async () => ({ linked: true, delivered: true, firstContact: [] }));
+/** The bubbles the API hands back when the outbound publish did not take them. */
+const FIRST_CONTACT = [
+  "Hey Aryan, I'm with you on Telegram now.",
+  "From here, every morning your inbox comes sorted with replies drafted.",
+  "That starts with your inbox, which I can't see yet.",
+];
 
 function fakeTarget(): MessageTarget & { sent: string[] } {
   const sent: string[] = [];
@@ -112,6 +120,28 @@ describe("redeemLinkCode", () => {
       username: "tg_user",
     });
     expect(target.sent).toEqual([]);
+  });
+
+  it("sends the first contact itself when the queue did not take it", async () => {
+    // Nothing retries the API's outbound publish, so a bot that ignores this
+    // leaves the user on a freshly linked platform that never said a word.
+    const redeem = vi.fn(async () => ({
+      linked: true,
+      delivered: false,
+      firstContact: FIRST_CONTACT,
+    }));
+    const target = fakeTarget();
+
+    const result = await redeemLinkCode(
+      fakeGaia(redeem),
+      "telegram",
+      "TG42",
+      CODE,
+      target,
+    );
+
+    expect(result).toBe(true);
+    expect(target.sent).toEqual(FIRST_CONTACT);
   });
 
   it("explains an expired code instead of throwing", async () => {

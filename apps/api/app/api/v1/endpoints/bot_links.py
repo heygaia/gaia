@@ -136,8 +136,9 @@ async def create_link_token(
 async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> RedeemLinkCodeResponse:
     """Consume a web-minted code and link the platform account that presented it.
 
-    Returns GAIA's whole first contact as ordered bubbles for the bot to send.
-    No model turn runs: the bubbles ARE the first message.
+    GAIA's whole first contact is composed here and delivered on the outbound
+    queue; no model turn runs, the bubbles ARE the first message. They come
+    back in the response only when that delivery failed, for the bot to send.
 
     Idempotent for the account the code already linked: a repeat tap on a spent
     code answers ``linked=True`` without running the link's side effects again.
@@ -186,7 +187,9 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
                 provider=body.platform,
             )
             log.set(outcome="success", is_new_link=False)
-            return RedeemLinkCodeResponse(linked=True)
+            # The first tap delivered the first contact; a second one owes
+            # nothing, so there is nothing for the bot to send.
+            return RedeemLinkCodeResponse(linked=True, delivered=True)
 
         # Never log the code — it is the credential. The platform account that
         # presented it and the outcome are what make a probe findable.
@@ -218,7 +221,7 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
     bubbles = await build_first_contact(
         payload.user_id, body.platform, (user or {}).get("name"), payload.preferences
     )
-    result = await complete_platform_link(
+    completion = await complete_platform_link(
         payload.user_id,
         body.platform,
         body.platform_user_id,
@@ -232,9 +235,14 @@ async def redeem_link_code(request: Request, body: RedeemLinkCodeRequest) -> Red
         resource=body.platform_user_id,
         provider=body.platform,
     )
-    log.set(outcome="success", is_new_link=result.is_new_link)
+    delivered = completion.first_contact_delivered
+    log.set(outcome="success", is_new_link=completion.link.is_new_link, delivered=delivered)
     await _persist_first_contact(payload.user_id, body, user, payload.preferences, bubbles)
-    return RedeemLinkCodeResponse(linked=True)
+    # A publish the queue refused is never retried, so the bubbles go back to
+    # the bot that asked for the link rather than being lost.
+    return RedeemLinkCodeResponse(
+        linked=True, delivered=delivered, first_contact=[] if delivered else bubbles
+    )
 
 
 async def _persist_first_contact(

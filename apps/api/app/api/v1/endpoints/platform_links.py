@@ -182,7 +182,7 @@ async def link_platform(
     if token_data.get("display_name"):
         profile["display_name"] = token_data["display_name"]
 
-    result = await complete_platform_link(
+    completion = await complete_platform_link(
         user_id, platform, platform_user_id, profile=profile or None
     )
     # Spent only now, after the link is written — the mirror of
@@ -195,10 +195,10 @@ async def link_platform(
     # is_new_link is an internal signal for the greeting, not part of the
     # payload the client reads — build the response field by field.
     return LinkPlatformResponse(
-        status=result.status,
-        platform=result.platform,
-        platform_user_id=result.platform_user_id,
-        connected_at=result.connected_at,
+        status=completion.link.status,
+        platform=completion.link.platform,
+        platform_user_id=completion.link.platform_user_id,
+        connected_at=completion.link.connected_at,
     )
 
 

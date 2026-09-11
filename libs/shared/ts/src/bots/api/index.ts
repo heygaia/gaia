@@ -13,6 +13,7 @@ import type {
   BotWorkflowExecutionResponse,
   BotWorkflowListResponse,
   ChatRequest,
+  RedeemedLinkCode,
   SettingsResponse,
 } from "../types";
 import { getErrorReason, getHttpStatus } from "../utils/logger";
@@ -649,7 +650,7 @@ export class GaiaClient {
     platformUserId: string,
     code: string,
     profile?: { username?: string; displayName?: string },
-  ): Promise<{ linked: boolean }> {
+  ): Promise<RedeemedLinkCode> {
     return this.request(async () => {
       const { data } = await this.client.post(
         "/api/v1/bot/redeem-link-code",
@@ -668,7 +669,11 @@ export class GaiaClient {
           },
         },
       );
-      return { linked: data.linked };
+      return {
+        linked: data.linked,
+        delivered: data.delivered,
+        firstContact: data.first_contact,
+      };
     });
   }
 }
