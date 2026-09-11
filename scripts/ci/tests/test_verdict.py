@@ -413,3 +413,39 @@ def test_a_family_with_no_members_at_all_is_still_NO_VERDICT(
     # Reported under the JOB name, which is what the reader sees in the checks
     # list — not under the family, which names no job.
     assert "test-mutation" in out
+
+
+def test_a_result_only_lane_passes_without_any_verdict(tmp_path: Path) -> None:
+    # `select-runner` checks out the default branch and `probe` never checks
+    # out, so neither can run the local upload composite. Demanding a verdict
+    # from them reds every run; dropping them from the list un-enforces them.
+    (tmp_path / "v").mkdir()
+
+    assert _consolidate(tmp_path, "select-runner@result-only=success") == 0
+
+
+def test_a_result_only_lane_still_reds_the_gate_when_its_job_failed(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "v").mkdir()
+
+    assert _consolidate(tmp_path, "select-runner@result-only=failure") == 1
+    assert "fail" in capsys.readouterr().out
+
+
+def test_a_result_only_lane_that_was_cancelled_reads_as_timed_out(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    (tmp_path / "v").mkdir()
+
+    assert _consolidate(tmp_path, "probe@result-only=cancelled") == 1
+    assert "timed_out" in capsys.readouterr().out
+
+
+def test_result_only_is_opt_in_never_the_default_for_silence(tmp_path: Path) -> None:
+    # The control for the three above: an ordinary lane that reports nothing is
+    # still a failure. If `result-only` ever leaked into the default path, this
+    # is what would notice.
+    (tmp_path / "v").mkdir()
+
+    assert _consolidate(tmp_path, "biome=success") == 1
