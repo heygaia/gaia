@@ -2,6 +2,7 @@ import {
   type EventSourceMessage,
   fetchEventSource,
 } from "@microsoft/fetch-event-source";
+import type { Schema } from "@shared/api/generated";
 import type {
   ApprovalDecisionPayload,
   BatchApprovalDecisionPayload,
@@ -22,7 +23,7 @@ import { useUpgradeModalStore } from "@/stores/upgradeModalStore";
 import type { MessageType } from "@/types/features/convoTypes";
 import type { ArtifactData } from "@/types/features/toolDataTypes";
 import type { WorkflowData } from "@/types/features/workflowTypes";
-import type { FileData } from "@/types/shared/fileTypes";
+import type { AttachedFileData } from "@/types/shared/fileTypes";
 import {
   handleRateLimitError,
   subscriptionRequiredOfferFromDetail,
@@ -78,7 +79,7 @@ export interface ChatStreamRequest {
   onClose: (sawDone: boolean) => void;
   onError: (err: Error) => void;
   controller: AbortController;
-  fileData: FileData[];
+  fileData: AttachedFileData[];
   selectedTool: string | null;
   toolCategory: string | null;
   selectedWorkflow: WorkflowData | null;
@@ -153,10 +154,7 @@ export interface FetchConversationsResponse {
   total_pages: number;
 }
 
-export interface ConversationSyncItem {
-  conversation_id: string;
-  last_updated?: string;
-}
+export type ConversationSyncItem = Schema<"ConversationSyncItem">;
 
 export interface SyncedConversation {
   conversation_id: string;

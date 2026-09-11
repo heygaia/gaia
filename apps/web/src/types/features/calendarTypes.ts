@@ -1,22 +1,11 @@
 // Recurrence types for calendar events
 export type RecurrenceFrequency = "DAILY" | "WEEKLY" | "MONTHLY" | "YEARLY";
 
-export interface RecurrenceRule {
-  frequency: RecurrenceFrequency;
-  interval?: number; // default: 1
-  count?: number;
-  until?: string; // ISO date string (YYYY-MM-DD or YYYY-MM-DDTHH:MM:SS±HH:MM)
-  by_day?: string[]; // e.g., ["MO", "WE"]
-  by_month_day?: number[];
-  by_month?: number[];
-  exclude_dates?: string[]; // YYYY-MM-DD
-  include_dates?: string[]; // YYYY-MM-DD
-}
+export type RecurrenceRule = Schema<"RecurrenceRule">;
 
-export interface RecurrenceData {
-  rrule: RecurrenceRule;
-}
+export type RecurrenceData = Schema<"RecurrenceData">;
 
+import type { Schema } from "@shared/api/generated";
 import type { CalendarItem } from "@/types/api/calendarApiTypes";
 
 export interface CalendarCardProps {

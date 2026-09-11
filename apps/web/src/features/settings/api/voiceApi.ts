@@ -1,24 +1,9 @@
+import type { Schema } from "@shared/api/generated";
 import { apiService } from "@/lib/api/service";
 
-export interface VoiceOption {
-  voice_id: string;
-  name: string;
-  language: string;
-  accent: string;
-  country_code: string;
-  gender: string;
-  description: string;
-  preview_url: string | null;
-  source: string;
-  /** All verified languages (display names, primary first). */
-  languages: string[];
-  starred: boolean;
-}
+export type VoiceOption = Schema<"VoiceOption">;
 
-export interface VoiceListResponse {
-  voices: VoiceOption[];
-  selected_voice_id: string | null;
-}
+export type VoiceListResponse = Schema<"VoiceListResponse">;
 
 export const voiceApi = {
   getVoices: async (): Promise<VoiceListResponse> => {

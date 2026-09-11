@@ -13,8 +13,8 @@ export interface SearchResponse {
   total: number;
 }
 
-// Interface for the message search response from Search.tsx
-export interface MessageSearchResult {
+/** A message hit as Search.tsx renders it — trimmed from the API's MessageSearchHit. */
+export interface MessageSearchHit {
   message: {
     message_id: string;
     response: string;
@@ -25,7 +25,7 @@ export interface MessageSearchResult {
 }
 
 export interface MessageSearchResponse {
-  results: MessageSearchResult[];
+  results: MessageSearchHit[];
 }
 
 // Interfaces for search results (matching SearchCard.tsx expectations)

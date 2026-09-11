@@ -7,6 +7,8 @@
  * from `../types`.
  */
 
+import type { Schema } from "@shared/api/generated";
+
 export type {
   IntegrationConnectionData,
   IntegrationStatusRecord as IntegrationStatus,
@@ -64,39 +66,15 @@ export interface Integration {
   slug: string;
 }
 
-export interface CreateCustomIntegrationRequest {
-  name: string;
-  description?: string;
-  category?: string;
-  server_url: string;
-  requires_auth?: boolean;
-  auth_type?: "none" | "oauth" | "bearer";
-  is_public?: boolean;
-  bearer_token?: string;
-}
-
-/**
- * Result of connection testing after creating a custom integration
- * Matches backend CustomIntegrationConnectionResult
- */
-export interface ConnectionTestResult {
-  status: "connected" | "requires_oauth" | "failed" | "created";
-  toolsCount?: number;
-  oauthUrl?: string;
-  error?: string;
-}
+export type CreateCustomIntegrationRequest =
+  Schema<"CreateCustomIntegrationRequest">;
 
 /**
  * Response from create custom integration endpoint
  * Matches backend CreateCustomIntegrationResponse
  */
-export interface CreateCustomIntegrationResponse {
-  status: string;
-  message: string;
-  integrationId: string;
-  name: string;
-  connection?: ConnectionTestResult;
-}
+export type CreateCustomIntegrationResponse =
+  Schema<"CreateCustomIntegrationResponse">;
 
 /**
  * Suggested public integration from search
@@ -124,26 +102,9 @@ export interface IntegrationListStreamData {
  * Community/Public Marketplace Types
  */
 
-export interface IntegrationHowItWorksStep {
-  title: string;
-  body: string;
-}
+export type IntegrationContent = Schema<"IntegrationContent">;
 
-export interface IntegrationFAQ {
-  question: string;
-  answer: string;
-}
-
-export interface IntegrationContent {
-  useCases: string[];
-  howItWorks: IntegrationHowItWorksStep[];
-  faqs: IntegrationFAQ[];
-}
-
-export interface CommunityIntegrationCreator {
-  name: string | null;
-  picture: string | null;
-}
+export type CommunityIntegrationCreator = Schema<"CommunityIntegrationCreator">;
 
 export interface CommunityIntegration {
   integrationId: string;

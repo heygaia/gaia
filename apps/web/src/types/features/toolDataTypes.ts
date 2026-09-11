@@ -1,11 +1,9 @@
 // Tool data types for various AI-powered features
 
 // Define image data structure for image generation
-export type ImageData = {
-  url: string;
-  prompt?: string;
-  improved_prompt?: string | null;
-};
+import type { Schema } from "@shared/api/generated";
+
+export type ImageData = Schema<"ImageData">;
 
 // Define memory data structure for memory operations
 export type MemoryData = {

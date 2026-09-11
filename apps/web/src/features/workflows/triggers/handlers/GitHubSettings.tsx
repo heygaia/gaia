@@ -20,14 +20,14 @@ import {
 import { TriggerTagInput } from "../components/TriggerTagInput";
 import { useInfiniteTriggerOptions } from "../hooks/useInfiniteTriggerOptions";
 import type { TriggerSettingsProps } from "../registry";
-import type { TriggerConfig } from "../types";
+import type { TriggerConfigDraft } from "../types";
 
-interface GitHubTriggerData {
+type GitHubTriggerData = {
   trigger_name: string;
   repos?: string[];
-}
+};
 
-export interface GitHubConfig extends TriggerConfig {
+export interface GitHubConfig extends TriggerConfigDraft {
   trigger_name?: string;
   trigger_data?: GitHubTriggerData;
 }

@@ -1,6 +1,6 @@
 import { apiService } from "@/lib/api/service";
 import type {
-  CalendarEventsResponse,
+  CalendarEventsResult,
   CalendarItem,
 } from "@/types/api/calendarApiTypes";
 import type {
@@ -14,13 +14,13 @@ export const calendarApi = {
   fetchCalendarEvents: async (
     calendarId: string,
     pageToken?: string | null,
-  ): Promise<CalendarEventsResponse> => {
+  ): Promise<CalendarEventsResult> => {
     // Build URL with query parameters
     const params = new URLSearchParams();
     if (pageToken) params.append("page_token", pageToken);
     const url = `/calendar/${calendarId}/events${params.toString() ? `?${params.toString()}` : ""}`;
 
-    return apiService.get<CalendarEventsResponse>(url, {
+    return apiService.get<CalendarEventsResult>(url, {
       silent: true, // Silent to avoid toasts for internal operations
     });
   },
@@ -33,12 +33,17 @@ export const calendarApi = {
     startDate?: string, // YYYY-MM-DD format
     endDate?: string, // YYYY-MM-DD format
     fetchAll = true, // Default to true for calendar page - fetches ALL events
-  ): Promise<CalendarEventsResponse> => {
+  ): Promise<CalendarEventsResult> => {
     if (!calendarIds.length) {
-      return { events: [], nextPageToken: null };
+      return {
+        events: [],
+        has_more: false,
+        calendars_truncated: [],
+        selectedCalendars: [],
+      };
     }
 
-    return apiService.post<CalendarEventsResponse>(
+    return apiService.post<CalendarEventsResult>(
       "/calendar/events/query",
       {
         selected_calendars: calendarIds,
