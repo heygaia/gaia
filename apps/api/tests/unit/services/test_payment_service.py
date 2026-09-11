@@ -1364,8 +1364,10 @@ class TestVerifyPaymentCompletion:
             retrieve=MagicMock(return_value=unpaid)
         )
 
-        result = await payment_service.verify_payment_completion(FAKE_USER_ID)
+        async with captured_wide_event() as event:
+            result = await payment_service.verify_payment_completion(FAKE_USER_ID)
         assert result.payment_completed is False
+        assert event["payment"] == {"checkout_scan": "miss"}
         for _ in range(7):
             async with captured_wide_event() as event:
                 result = await payment_service.verify_payment_completion(FAKE_USER_ID)
@@ -1401,11 +1403,13 @@ class TestVerifyPaymentCompletion:
             retrieve=MagicMock(side_effect=RuntimeError("Dodo API down"))
         )
 
-        await payment_service.verify_payment_completion(FAKE_USER_ID)
+        async with captured_wide_event() as event:
+            await payment_service.verify_payment_completion(FAKE_USER_ID)
         await payment_service.verify_payment_completion(FAKE_USER_ID)
 
         assert mock_dodo_client.checkout_sessions.retrieve.call_count == 2
         mock_redis_cache.set.assert_not_awaited()
+        assert event["payment"] == {"checkout_scan": "inconclusive"}
 
     async def test_a_paid_session_whose_subscription_is_not_yet_active_is_asked_again(
         self,
@@ -1427,11 +1431,13 @@ class TestVerifyPaymentCompletion:
             mock_dodo_client, FAKE_USER_ID, subscription_status="pending"
         )
 
-        await payment_service.verify_payment_completion(FAKE_USER_ID)
+        async with captured_wide_event() as event:
+            await payment_service.verify_payment_completion(FAKE_USER_ID)
         await payment_service.verify_payment_completion(FAKE_USER_ID)
 
         assert mock_dodo_client.subscriptions.retrieve.call_count == 2
         mock_redis_cache.set.assert_not_awaited()
+        assert event["payment"]["checkout_scan"] == "inconclusive"
 
     async def test_settled_payment_not_succeeded_returns_not_completed(
         self,
