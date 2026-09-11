@@ -234,7 +234,8 @@ def test_a_failing_verdict_prints_lane_summary_and_file_line_message(
     )
     assert run_cli(monkeypatch, []) == 1
     out = capsys.readouterr().out
-    assert "FAIL  mutation-shard-3  [fail]" in out
+    assert "FAIL  Mutation shard 3/6 (19 modules)  [failed]" in out
+    assert "  mutation-shard-3  [fail]" in out
     assert "2 modules have surviving mutants" in out
     assert "app/api/v1/endpoints/bot.py:212 — survivor: the once-a-day claim always succeeds" in out
     # A finding with no line number still renders, without a dangling colon.
@@ -495,7 +496,7 @@ def test_json_carries_the_pr_checks_verdicts_and_fallback_tails(
     assert report["verdicts"][0]["lane"] == "mutation-shard-3"
     assert report["verdicts"][0]["artifact"] == "verdict-mutation-shard-3"
     assert report["fallback_tails"] == {}
-    assert report["sources"][FAILED_CHECK["name"]] == "verdict artifact"
+    assert report["sources"][FAILED_CHECK["name"]] == "verdict artifact verdict-mutation-shard-3"
     assert report["advice"][0].startswith("Reproduce with")
 
 
@@ -691,3 +692,111 @@ def test_the_lane_uploaded_nothing_wording_is_reserved_for_a_run_with_no_verdict
     wire(FakeGh(checks=[FAILED_CHECK], artifacts=[]))
     run_cli(monkeypatch, [])
     assert "lane uploaded no verdict artifact — log tail" in capsys.readouterr().out
+
+
+# Run 34586506166 (PR #1175): `Mutation shard 3/6 (21 modules)` is red, and the
+# only artifact that explains it is `verdict-test-mutation-2` — matrix value 2,
+# which no slug of "Mutation shard 3/6" will ever produce. It carries 21
+# per-module verdicts (one `fail` with a file:line) plus a `mutation/shard-2`
+# rollup whose summary is a pointer to the log and nothing else.
+SHARD_3_CHECK: dict[str, Any] = {
+    "name": "Mutation shard 3/6 (21 modules)",
+    "status": "completed",
+    "conclusion": "failure",
+    "html_url": "https://github.com/o/r/actions/runs/99/job/1234",
+    "app": {"slug": "github-actions"},
+}
+CONVERSATION_SERVICE_VERDICT: dict[str, Any] = {
+    "lane": "mutation/app/services/conversation_service.py",
+    "status": "fail",
+    "summary": "1 changed line(s) no test reaches in app/services/conversation_service.py",
+    "findings": [
+        {
+            "file": "apps/api/app/services/conversation_service.py",
+            "line": 446,
+            "message": "no mapped test executes this changed line, so no mutant on it could ever be killed",
+        }
+    ],
+    "advice": [
+        "Write a test that executes apps/api/app/services/conversation_service.py:446 "
+        "and asserts what it does."
+    ],
+}
+SHARD_2_ROLLUP: dict[str, Any] = {
+    "lane": "mutation/shard-2",
+    "status": "fail",
+    "summary": "the lane failed and has not adopted the verdict contract — "
+    "its reason is only in this job's log",
+    "findings": [],
+    "advice": ["Open this job's log."],
+}
+SHARD_2_PASS: dict[str, Any] = {
+    "lane": "mutation/app/core/stream_manager.py",
+    "status": "pass",
+    "summary": "every mutant on the changed lines of app/core/stream_manager.py was killed",
+    "findings": [],
+}
+
+
+def wire_shard_3(wire) -> FakeGh:
+    return wire(
+        FakeGh(
+            checks=[SHARD_3_CHECK],
+            artifacts=[{"id": 77, "name": "verdict-test-mutation-2", "expired": False}],
+            zip_blob=verdict_zip(SHARD_2_PASS, CONVERSATION_SERVICE_VERDICT, SHARD_2_ROLLUP),
+        )
+    )
+
+
+def test_a_shards_verdicts_are_attributed_to_it_by_matrix_index(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    fake = wire_shard_3(wire)
+    assert run_cli(monkeypatch, []) == 1
+    out = capsys.readouterr().out
+    assert (
+        "FAIL  Mutation shard 3/6 (21 modules)  [failed]  (verdict artifact verdict-test-mutation-2)"
+        in out
+    )
+    assert "mutation/app/services/conversation_service.py  [fail]" in out
+    assert "apps/api/app/services/conversation_service.py:446 — no mapped test executes" in out
+    # It is the check's own finding now, not a stray.
+    assert "no matching check run" not in out
+    # And the log tail is not needed.
+    assert not any(c.endswith("/logs") for c in fake.calls)
+
+
+def test_the_content_free_shard_rollup_does_not_bury_the_finding(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire_shard_3(wire)
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "its reason is only in this job's log" not in out
+    assert "mutation/shard-2" not in out
+    assert "Open this job's log." not in out
+    assert "Write a test that executes" in out  # the real advice survives
+
+
+def test_a_passing_per_module_verdict_stays_out_of_the_failure_section(
+    wire, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    wire_shard_3(wire)
+    run_cli(monkeypatch, [])
+    out = capsys.readouterr().out
+    assert "stream_manager" not in out
+
+
+def test_matrix_index_matching_needs_a_shared_word_not_just_a_number() -> None:
+    """`verdict-anything-else-2` must not claim `Mutation shard 3/6`."""
+    assert ci_remote.matrix_index("Mutation shard 3/6 (21 modules)") == 2
+    assert ci_remote.matrix_index("Quality gate (required)") is None
+    assert ci_remote.artifact_index("verdict-test-mutation-2") == ("test-mutation", 2)
+    assert ci_remote.artifact_index("verdict-test-mutation-plan") is None
+
+    right = {"lane": "mutation/x.py", "artifact": "verdict-test-mutation-2"}
+    wrong_name = {"lane": "other/x.py", "artifact": "verdict-unrelated-thing-2"}
+    wrong_index = {"lane": "mutation/x.py", "artifact": "verdict-test-mutation-4"}
+    assert ci_remote.verdict_matches(right, "Mutation shard 3/6 (21 modules)")
+    assert not ci_remote.verdict_matches(wrong_name, "Mutation shard 3/6 (21 modules)")
+    assert not ci_remote.verdict_matches(wrong_index, "Mutation shard 3/6 (21 modules)")

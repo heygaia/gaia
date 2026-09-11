@@ -36,8 +36,21 @@ LOCAL_BASE_BRANCH = "master"
 
 
 def _base_ref() -> str:
-    """The branch this diff is scoped to: the PR's base on CI, master locally."""
-    return os.environ.get("GITHUB_BASE_REF", "") or LOCAL_BASE_BRANCH
+    """The branch this diff is scoped to: the PR's base on CI, master locally.
+
+    GAIA_PR_BASE before GITHUB_BASE_REF, and the order is load-bearing rather
+    than defensive. For a PR in a native GitHub stack the `pull_request` payload
+    carries the STACK'S TRUNK in base.ref, not the PR's parent — measured
+    2026-09-11, when #1175 (parent feat/first-steps-activation, a one-module
+    diff) planned 119 modules against master. `changes.sh base` asks the API,
+    which is the only source that names the parent, and the run hands that
+    answer to every lane as GAIA_PR_BASE.
+    """
+    return (
+        os.environ.get("GAIA_PR_BASE", "")
+        or os.environ.get("GITHUB_BASE_REF", "")
+        or LOCAL_BASE_BRANCH
+    )
 
 
 def _merge_base() -> str:
@@ -72,7 +85,9 @@ def _merge_base() -> str:
             ).strip()
         except subprocess.CalledProcessError:
             continue
-    if os.environ.get("GITHUB_BASE_REF"):
+    # Either variable means "a PR run told us a base", and an unresolvable base
+    # there is a hard error rather than the local fallback below.
+    if os.environ.get("GAIA_PR_BASE") or os.environ.get("GITHUB_BASE_REF"):
         print(
             f"::error::mutation gate: could not resolve merge-base with origin/{base}",
             file=sys.stderr,
@@ -385,7 +400,21 @@ def main() -> int:
         rel_py = rel_py.removesuffix(".py")
         testfiles = with_unit_mirror(rel_py, _test_files_for(rel_py))
         if testfiles:
-            matrix.append(_entry(rel, testfiles, merge_base))
+            entry = _entry(rel, testfiles, merge_base)
+            # A diff that only DELETES lines adds nothing to mutate, the same
+            # way a comment-only one does — and it has to be dropped HERE.
+            # `mutation.sh module` refuses an empty scope (exit 2) because an
+            # empty scope classifies every survivor as out-of-scope and exits 0,
+            # so passing this module on would fail the shard for a module with
+            # no work in it. Printed, never silent.
+            if merge_base and not entry["changed_lines"]:
+                print(
+                    f"::notice::mutation gate: {rel}'s diff vs {merge_base[:12]} only "
+                    "deletes lines (nothing added to mutate) — skipping",
+                    file=sys.stderr,
+                )
+                continue
+            matrix.append(entry)
             continue
         unit_mirror = f"tests/unit/{Path(rel_py).parent}/test_{Path(rel_py).stem}.py"
         failures.append(
@@ -441,8 +470,19 @@ def _changed_line_ranges(path: str, merge_base: str) -> list[list[int]]:
         if not match:
             continue
         start = int(match.group(1))
-        count = int(match.group(2) or "1")
-        ranges.append([start, start + max(count, 1) - 1])
+        # A missing count is git's shorthand for exactly one line (`@@ +446 @@`).
+        # An EXPLICIT zero is the opposite: `@@ -447 +446,0 @@` is a pure
+        # deletion, which adds nothing and so leaves nothing to mutate. The old
+        # `max(count, 1)` collapsed the two, and the range it invented —
+        # [446, 446] — points at the line that happened to follow the deleted
+        # one: unchanged code the PR never touched. Every consumer believed it.
+        # On #1175 the gate failed conversation_service.py for "1 changed line
+        # no test reaches (line 446)" against a line the diff only deleted
+        # above, and mutmut's covered_lines scope carried the same phantom.
+        count = int(match.group(2)) if match.group(2) is not None else 1
+        if count == 0:
+            continue
+        ranges.append([start, start + count - 1])
     return ranges
 
 

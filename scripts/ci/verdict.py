@@ -27,6 +27,15 @@ Subcommands:
         (`ci_verdict_die` in lib/log.sh is the dying call site). `--job-status`
         is what the upload-verdict composite passes for a lane that wrote no
         verdict of its own — see JOB_STATUS_VERDICT.
+    dir
+        Print the directory `emit` writes to, by the same resolution:
+        $GAIA_VERDICT_DIR, else $RUNNER_TEMP/verdicts, else the checkout's
+        verify-logs/verdicts. For scripts that need the path — read it, never
+        re-derive it.
+    check-ownership --family F [--out DIR]
+        Exit 1 naming any verdict in the directory whose lane this job does not
+        own, so a stray file is a red line pointing at itself rather than a
+        phantom lane in the gate's table.
     consolidate DIR --expect "job[@family][=job-result],…"
         The gate's verdict. Print the table every lane's JSON forms and exit 1
         if any lane failed, timed out, errored — or never reported at all.
@@ -70,7 +79,28 @@ import sys
 from typing import NamedTuple, NotRequired, TypedDict
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_OUT_DIR = REPO_ROOT / "verify-logs" / "verdicts"
+# Where verdicts go, most specific first. The checkout is LAST on purpose: a
+# self-hosted workspace persists between jobs (`clean:` is false there), so a
+# previous job's verdicts sit in the tree waiting to be uploaded by the next
+# one — stale lanes from another PR reaching a gate. And anything else running
+# in the job that writes there pollutes the lane's verdict: run 34586506166's
+# gate table carried `mutation/app/does_not_exist.py`, a fixture from an
+# end-to-end TEST that `test-harness-tools` had just run, reported as a lane.
+# RUNNER_TEMP is per-job and GitHub wipes it, so it is right by construction on
+# a runner; `verify-logs/verdicts` stays the answer on a dev machine.
+VERDICT_DIR_ENV = "GAIA_VERDICT_DIR"
+CHECKOUT_VERDICT_DIR = REPO_ROOT / "verify-logs" / "verdicts"
+
+
+def default_out_dir() -> Path:
+    """The verdict directory when no `--out` says otherwise."""
+    override = os.environ.get(VERDICT_DIR_ENV)
+    if override:
+        return Path(override)
+    runner_temp = os.environ.get("RUNNER_TEMP")
+    if runner_temp:
+        return Path(runner_temp) / "verdicts"
+    return CHECKOUT_VERDICT_DIR
 
 
 class Status(StrEnum):
@@ -231,7 +261,7 @@ def report(
         "findings": findings or [],
         "advice": advice or [],
     }
-    write_verdict(doc, out_dir or DEFAULT_OUT_DIR)
+    write_verdict(doc, out_dir or default_out_dir())
     announce(doc)
     return doc
 
@@ -240,7 +270,7 @@ def _verdict_parser(prog: str, *, default_lane: str) -> argparse.ArgumentParser:
     """The flags every verdict-producing subcommand shares."""
     parser = argparse.ArgumentParser(prog=f"verdict.py {prog}")
     parser.add_argument("--lane", default=default_lane)
-    parser.add_argument("--out", type=Path, default=DEFAULT_OUT_DIR)
+    parser.add_argument("--out", type=Path, default=default_out_dir())
     parser.add_argument(
         "--path-prefix",
         default="",
@@ -421,6 +451,10 @@ def _load_verdicts(directory: Path) -> dict[str, VerdictDoc]:
     return found
 
 
+def _belongs(lane: str, family: str) -> bool:
+    return lane == family or lane.startswith(f"{family}/")
+
+
 def _matching_lanes(family: str, found: dict[str, VerdictDoc]) -> list[str]:
     """Every verdict belonging to one expected lane.
 
@@ -431,7 +465,7 @@ def _matching_lanes(family: str, found: dict[str, VerdictDoc]) -> list[str]:
     a per-shard `--expect` list in YAML would drift from the planner on the
     first large diff.
     """
-    return sorted(k for k in found if k == family or k.startswith(f"{family}/"))
+    return sorted(k for k in found if _belongs(k, family))
 
 
 def _row_for(entry: str, found: dict[str, VerdictDoc]) -> list[Row]:
@@ -466,6 +500,67 @@ def consolidated_rows(expect: str, found: dict[str, VerdictDoc]) -> list[Row]:
         for key in sorted(set(found) - claimed)
     ]
     return flat
+
+
+# ---------------------------------------------------------------------------
+# dir
+#
+# The resolution, as a value other scripts can read. Re-deriving it in bash is
+# how it goes wrong: `${GAIA_VERDICT_DIR:-$REPO_ROOT/verify-logs/verdicts}`
+# looks equivalent but has no RUNNER_TEMP rung, so on a runner it names the
+# checkout while the composite uploads from the runner's temp dir — every
+# verdict written through it would miss the gate. One resolution, one owner.
+# ---------------------------------------------------------------------------
+
+
+def cmd_dir(args: list[str]) -> int:
+    """Print the directory `emit` writes to. One line, nothing else."""
+    argparse.ArgumentParser(prog="verdict.py dir").parse_args(args)
+    print(default_out_dir())
+    return 0
+
+
+# ---------------------------------------------------------------------------
+# check-ownership
+#
+# A job uploads a DIRECTORY, so it ships whatever is in it. Anything else in the
+# job that writes a verdict — most obviously a test of the verdict machinery
+# itself — rides along and reaches the gate as a lane nobody can find. Run
+# 34586506166 consolidated `mutation/app/does_not_exist.py`, which is a fixture
+# path from `test-harness-tools`'s own end-to-end test.
+#
+# "Belongs" is the same prefix rule `--expect` families use: a verdict belongs
+# to this job if its lane IS the job's family or sits under `<family>/`. The
+# family is the composite's `family` input, defaulting to its `lane` — the
+# mutation shards pass `mutation`, because mutation.sh writes one verdict per
+# module under that namespace rather than under the shard's own lane.
+# ---------------------------------------------------------------------------
+
+
+def cmd_check_ownership(args: list[str]) -> int:
+    """Exit 1 naming any verdict in the directory that this job does not own."""
+    parser = argparse.ArgumentParser(prog="verdict.py check-ownership")
+    parser.add_argument("--family", required=True)
+    parser.add_argument("--out", type=Path, default=default_out_dir())
+    opts = parser.parse_args(args)
+
+    if not opts.out.is_dir():
+        return 0
+    lanes = [
+        (path, json.loads(path.read_text())["lane"]) for path in sorted(opts.out.rglob("*.json"))
+    ]
+    strays = [(path, lane) for path, lane in lanes if not _belongs(lane, opts.family)]
+    if not strays:
+        return 0
+    for path, lane in strays:
+        print(f"::error file={path}::verdict for lane '{lane}', which this job does not own")
+    print(
+        f"::error::{len(strays)} foreign verdict(s) in {opts.out} — this job owns "
+        f"'{opts.family}' and lanes under it. Something else in this job wrote there; "
+        "uploading them would put lanes nobody can find in front of the gate.",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def cmd_consolidate(args: list[str]) -> int:
@@ -1000,6 +1095,8 @@ def cmd_step_outcomes(args: list[str]) -> int:
 SUBCOMMANDS = {
     "emit": cmd_emit,
     "consolidate": cmd_consolidate,
+    "check-ownership": cmd_check_ownership,
+    "dir": cmd_dir,
     "pytest-verdict": cmd_pytest_verdict,
     "regression-proof-select": cmd_regression_proof_select,
     "regression-proof-verdict": cmd_regression_proof_verdict,

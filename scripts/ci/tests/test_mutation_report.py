@@ -15,6 +15,7 @@ genuine shard log (PR #1161, mutation-log-2), not hand-written approximations
 of one — the parser's whole job is to read what mutmut actually prints.
 """
 
+from collections.abc import Iterator
 import json
 import os
 from pathlib import Path
@@ -224,7 +225,7 @@ def _collect(
     records = tmp_path / "records"
     records.mkdir(exist_ok=True)
     shard_verdict = tmp_path / "shard.verdict.json"
-    verdicts = tmp_path / "verify-logs" / "verdicts"
+    verdicts = tmp_path / "verdicts"
     summary = tmp_path / "summary.md"
     summary.touch()
     result = subprocess.run(
@@ -248,9 +249,10 @@ def _collect(
         capture_output=True,
         text=True,
         check=False,
-        env={**os.environ, "GITHUB_STEP_SUMMARY": str(summary)},
+        env=_isolated_env(tmp_path, GITHUB_STEP_SUMMARY=str(summary)),
     )
     assert result.returncode == 0, result.stdout + result.stderr
+    _assert_nothing_escaped(tmp_path)
     emitted = {
         json.loads(path.read_text())["lane"]: json.loads(path.read_text())
         for path in verdicts.rglob("*.json")
@@ -446,11 +448,68 @@ def _sandbox(tmp_path: Path, mutmut_behaviour: str) -> Path:
         # whole invocation, not on `*mutmut*`: the verdict call carries the word
         # in its --reason text, and a looser pattern swallowed it here.
         '  "-m mutmut"*) exit 0 ;;\n'
+        # `lib/mutation_gap.py <module> <ranges>` — the gap classifier asks
+        # mutmut (with the lane's patches) which changed lines can host a
+        # mutant, so it needs the API venv, which this fake stands in for.
+        # Line 2 of the sandbox module is the one answer these tests rely on;
+        # the classifier's own correctness is proven with real mutmut in
+        # apps/api/tests/unit/scripts/test_mutation_gap.py.
+        "  *lib/mutation_gap.py*) echo 2 ;;\n"
         f'  *) exec {sys.executable} "$@" ;;\n'
         "esac\n"
     )
     venv_python.chmod(0o755)
     return root
+
+
+# The repo's own verdict tree. Nothing in this file may create it: whatever
+# lands there is uploaded by the lane's composite and consolidated by the
+# quality gate as a REAL lane — a test fixture named `app/does_not_exist.py`
+# surfaced on the gate of run 34586506166 exactly that way.
+REPO_VERDICTS = REPO_ROOT / "verify-logs" / "verdicts"
+
+
+def _isolated_env(tmp_path: Path, **extra: str) -> dict[str, str]:
+    """The environment every emitting subprocess runs in.
+
+    `verdict.py emit` resolves its output directory as
+    `--out > $GAIA_VERDICT_DIR > $RUNNER_TEMP/verdicts > verify-logs/verdicts`,
+    so a test that sets neither writes a REAL lane verdict — into the job's
+    upload directory on a runner, into the checkout on a laptop. RUNNER_TEMP is
+    pointed at a disposable path too, and asserted empty afterwards, so the
+    override is shown to be what is doing the work.
+    """
+    return {
+        **os.environ,
+        "GAIA_VERDICT_DIR": str(tmp_path / "verdicts"),
+        "RUNNER_TEMP": str(tmp_path / "runner-temp"),
+        **extra,
+    }
+
+
+def _assert_nothing_escaped(tmp_path: Path) -> None:
+    """Neither fallback directory received a verdict from this test."""
+    runner_verdicts = tmp_path / "runner-temp" / "verdicts"
+    assert not runner_verdicts.exists(), sorted(runner_verdicts.rglob("*"))
+
+
+def _assert_repo_verdicts_untouched(before: set[Path]) -> None:
+    """The repo's verdict tree is not a test output directory.
+
+    Checked by path rather than by `git status`, which is blind here:
+    verify-logs/ is gitignored, so a verdict written into the checkout is
+    invisible to git and visible to the gate — the worst way round.
+    """
+    after = set(REPO_VERDICTS.rglob("*")) if REPO_VERDICTS.exists() else set()
+    assert after == before, f"the test wrote into the repo's verdict tree: {after - before}"
+
+
+@pytest.fixture(autouse=True)
+def repo_verdicts_untouched() -> Iterator[None]:
+    """Applies the guard to every test in this file, including future ones."""
+    before = set(REPO_VERDICTS.rglob("*")) if REPO_VERDICTS.exists() else set()
+    yield
+    _assert_repo_verdicts_untouched(before)
 
 
 def _run_shard(root: Path, module: str = "app/services/x.py") -> subprocess.CompletedProcess[str]:
@@ -463,7 +522,7 @@ def _run_shard(root: Path, module: str = "app/services/x.py") -> subprocess.Comp
         text=True,
         check=False,
         cwd=root,
-        env={**os.environ, "GROUP": group, "SHARD_LOG": str(root / "shard.log")},
+        env=_isolated_env(root, GROUP=group, SHARD_LOG=str(root / "shard.log")),
     )
 
 
@@ -473,7 +532,7 @@ def _consolidate(root: Path, expect: str) -> subprocess.CompletedProcess[str]:
             sys.executable,
             str(root / "scripts" / "ci" / "verdict.py"),
             "consolidate",
-            str(root / "verify-logs" / "verdicts"),
+            str(root / "verdicts"),
             "--expect",
             expect,
         ],
@@ -498,9 +557,7 @@ def test_a_mutmut_child_that_produced_nothing_is_an_error_not_a_pass(tmp_path: P
     assert result.returncode != 0, result.stdout + result.stderr
     assert "MUTATION RUN PRODUCED NO RESULTS" in result.stdout
     assert "Mutation: OK" not in result.stdout
-    verdict = json.loads(
-        (root / "verify-logs/verdicts/mutation/app/services/x.py.json").read_text()
-    )
+    verdict = json.loads((root / "verdicts/mutation/app/services/x.py.json").read_text())
     assert verdict["lane"] == "mutation/app/services/x.py"
     assert verdict["status"] == "error"
     assert verdict["summary"] == "mutmut produced no results — the child did not run"
@@ -518,9 +575,7 @@ def test_a_run_that_generated_no_mutants_is_a_skip_not_a_pass(tmp_path: Path) ->
     assert result.returncode == 0, result.stdout + result.stderr
     assert "Mutation: OK" not in result.stdout
     assert "generated no mutants" in result.stdout
-    verdict = json.loads(
-        (root / "verify-logs/verdicts/mutation/app/services/x.py.json").read_text()
-    )
+    verdict = json.loads((root / "verdicts/mutation/app/services/x.py.json").read_text())
     assert verdict["status"] == "skip"
     assert "generated no mutants" in verdict["summary"]
 
@@ -538,9 +593,7 @@ def test_a_module_no_test_reaches_fails_the_gate(tmp_path: Path) -> None:
     result = _run_shard(root)
 
     assert result.returncode != 0, result.stdout + result.stderr
-    verdict = json.loads(
-        (root / "verify-logs/verdicts/mutation/app/services/x.py.json").read_text()
-    )
+    verdict = json.loads((root / "verdicts/mutation/app/services/x.py.json").read_text())
     assert verdict["status"] == "fail"
     assert "no test reaches" in verdict["summary"]
     assert [finding["line"] for finding in verdict["findings"]] == [2]
@@ -574,13 +627,87 @@ def test_the_gate_passes_when_every_module_is_clean(tmp_path: Path) -> None:
     assert "mutation/app/services/x.py" in result.stdout
 
 
+def _shard_with_env(root: Path, **env: str) -> subprocess.CompletedProcess[str]:
+    """Drive the shard with an explicit environment, nothing inherited but PATH."""
+    group = json.dumps(
+        [
+            {
+                "module": "app/services/x.py",
+                "testfiles": '["tests/unit/test_x.py"]',
+                "ranges": "[[2,2]]",
+            }
+        ]
+    )
+    return subprocess.run(
+        ["bash", str(root / "scripts" / "ci" / "mutation.sh"), "shard"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=root,
+        env={**os.environ, "GROUP": group, "SHARD_LOG": str(root / "shard.log"), **env},
+    )
+
+
+def test_the_shard_puts_verdicts_where_gaia_verdict_dir_says(tmp_path: Path) -> None:
+    """The top rung: an explicit override beats everything below it."""
+    root = _sandbox(tmp_path, "exit 0")
+    chosen = tmp_path / "chosen" / "verdicts"
+    runner_temp = tmp_path / "runner-temp"
+    _shard_with_env(root, GAIA_VERDICT_DIR=str(chosen), RUNNER_TEMP=str(runner_temp))
+
+    assert (chosen / "mutation" / "app" / "services" / "x.py.json").exists()
+    assert not (runner_temp / "verdicts").exists()
+    assert not (root / "verify-logs" / "verdicts").exists()
+
+
+def test_the_shard_falls_back_to_the_runner_temp_rung(tmp_path: Path) -> None:
+    """The CI rung, and the one a shell copy of the order got wrong.
+
+    Nothing sets GAIA_VERDICT_DIR on a runner: `verdict.py` resolves
+    `$RUNNER_TEMP/verdicts`, which is per-job, wiped between jobs, and where the
+    upload composite and the gate both read. A mutation.sh that defaulted to the
+    checkout instead would put every verdict somewhere the gate calls NO
+    VERDICT — so this rung is asserted, not assumed.
+    """
+    root = _sandbox(tmp_path, "exit 0")
+    runner_temp = tmp_path / "runner-temp"
+    env = {key: value for key, value in os.environ.items() if key != "GAIA_VERDICT_DIR"}
+    result = subprocess.run(
+        ["bash", str(root / "scripts" / "ci" / "mutation.sh"), "shard"],
+        capture_output=True,
+        text=True,
+        check=False,
+        cwd=root,
+        env={
+            **env,
+            "GROUP": json.dumps(
+                [
+                    {
+                        "module": "app/services/x.py",
+                        "testfiles": '["tests/unit/test_x.py"]',
+                        "ranges": "[[2,2]]",
+                    }
+                ]
+            ),
+            "SHARD_LOG": str(root / "shard.log"),
+            "RUNNER_TEMP": str(runner_temp),
+        },
+    )
+
+    assert (runner_temp / "verdicts" / "mutation" / "app" / "services" / "x.py.json").exists(), (
+        result.stdout + result.stderr
+    )
+    # Not the checkout default, which is the rung below this one.
+    assert not (root / "verify-logs" / "verdicts").exists()
+
+
 def test_the_shard_keeps_its_replay_artifact_out_of_the_verdict_tree(tmp_path: Path) -> None:
     """`consolidate` crashes on a foreign shape; only emit's output goes there."""
     root = _sandbox(tmp_path, "exit 0")
     _run_shard(root)
 
     assert (root / "shard.verdict.json").exists()
-    for path in (root / "verify-logs" / "verdicts").rglob("*.json"):
+    for path in (root / "verdicts").rglob("*.json"):
         assert "lane" in json.loads(path.read_text()), f"{path} is not a lane verdict"
 
 
@@ -784,6 +911,25 @@ def test_replay_fails_loudly_when_the_diff_no_longer_matches(tmp_path: Path) -> 
     result = _replay(root, record, "app.calc.x_total__mutmut_1")
     assert result.returncode != 0
     assert "does not match the file on disk" in result.stderr
+
+
+def test_mutation_sh_asks_for_the_verdict_directory_instead_of_deriving_it() -> None:
+    """`verdict.py dir` is the only thing that knows where verdicts go.
+
+    A copy of the resolution order in shell is wrong the moment it moves, and
+    it did move: a `${GAIA_VERDICT_DIR:-<checkout>}` default sent verdicts to
+    the checkout, where no runner reads and the gate sees NO VERDICT.
+    """
+    code = [
+        line for line in MUTATION_SH.read_text().splitlines() if not line.lstrip().startswith("#")
+    ]
+    assert [line for line in code if 'verdict.py" dir' in line or 'verdict.py" dir' in line], (
+        "mutation.sh must ask `verdict.py dir` for the verdict directory"
+    )
+    for derived in ("verify-logs/verdicts", "GAIA_VERDICT_DIR", "RUNNER_TEMP"):
+        assert not [line for line in code if derived in line], (
+            f"mutation.sh derives the verdict directory itself via {derived}"
+        )
 
 
 def test_default_replay_invocation_stays_local_friendly() -> None:

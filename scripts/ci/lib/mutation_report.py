@@ -449,7 +449,7 @@ def first_surviving_line(verdict: ModuleVerdict) -> int | None:
 
 
 def emit_command(
-    verdict: ModuleVerdict, repo_root: Path, detail_dir: Path, out_dir: Path | None
+    verdict: ModuleVerdict, repo_root: Path, detail_dir: Path, out_dir: Path
 ) -> list[str]:
     """The `verdict.py emit` call that reports this module to the gate.
 
@@ -488,19 +488,25 @@ def emit_command(
         ]
     for item in advice(verdict):
         command += ["--advice", item]
-    if out_dir is not None:
-        command += ["--out", str(out_dir)]
-    return command
+    # The directory is passed through, never computed here: mutation.sh gets it
+    # from `verdict.py dir`, so both ends of this call agree by construction.
+    return [*command, "--out", str(out_dir)]
 
 
-def emit_shared_verdict(
-    verdict: ModuleVerdict, repo_root: Path, out_dir: Path | None = None
-) -> None:
+def emit_shared_verdict(verdict: ModuleVerdict, repo_root: Path, out_dir: Path) -> None:
     """Report one module to the gate. `verdict.py emit` is the only producer."""
     with tempfile.TemporaryDirectory(prefix="mutation-detail-") as detail_dir:
-        subprocess.run(
-            emit_command(verdict, repo_root, Path(detail_dir), out_dir),
-            check=True,
+        command = emit_command(verdict, repo_root, Path(detail_dir), out_dir)
+        result = subprocess.run(command, check=False)
+    if result.returncode != 0:
+        # Loud and named, not a traceback: `emit` needs python >= 3.11 (it uses
+        # StrEnum), and a lane invoked under an older interpreter fails here
+        # with nothing pointing at the interpreter. A shard whose verdict did
+        # not reach the gate must say exactly which call did not land.
+        raise SystemExit(
+            f"mutation: reporting {verdict.module} to the gate failed (exit "
+            f"{result.returncode}) — the module's verdict never reached the gate.\n"
+            f"  {' '.join(command)}"
         )
 
 
@@ -744,7 +750,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
     sections = dict(split_shard_log(Path(args.log).read_text()))
     record_dir = Path(args.dir)
     repo_root = Path(args.repo_root)
-    out_dir = Path(args.verdict_out) if args.verdict_out else None
+    verdict_out = Path(args.verdict_out)
     verdicts: list[ModuleVerdict] = []
     for raw in Path(args.rcs).read_text().splitlines():
         if not raw.strip():
@@ -772,7 +778,7 @@ def cmd_collect(args: argparse.Namespace) -> int:
             verdict.reason = f"{module} exited {rc} without reaching a verdict — see shard.log"
         verdicts.append(verdict)
     for verdict in verdicts:
-        emit_shared_verdict(verdict, repo_root, out_dir)
+        emit_shared_verdict(verdict, repo_root, verdict_out)
     write_record_set(Path(args.out), verdicts)
     summary_path = os.environ.get("GITHUB_STEP_SUMMARY")
     if summary_path:
@@ -1001,8 +1007,8 @@ def main(argv: list[str]) -> int:
     collect.add_argument("--repo-root", required=True, help="where scripts/ci/verdict.py lives")
     collect.add_argument(
         "--verdict-out",
-        default="",
-        help="verdict.py's --out; empty means its own default (verify-logs/verdicts)",
+        required=True,
+        help="the verdict tree, as `verdict.py dir` reports it — never derived here",
     )
     collect.add_argument("--api-prefix", default="apps/api")
 

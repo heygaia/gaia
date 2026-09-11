@@ -157,6 +157,10 @@ jobs:
       has_typescript: ${{ steps.affected.outputs.has_typescript }}
       python_projects: ${{ steps.affected.outputs.python_projects }}
       typescript_projects: ${{ steps.affected.outputs.typescript_projects }}
+      # The branch every lane below diffs against. Resolved here, once — see the
+      # note at the top of scripts/ci/changes.sh for why the event payload
+      # cannot be trusted for it on a stacked PR.
+      base_ref: ${{ steps.base.outputs.base_ref }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -168,6 +172,14 @@ jobs:
           # an already-full workspace is a ~1 s delta.
           fetch-depth: 0
           persist-credentials: false
+      # The PR's REAL base, from the API — the event payload names the stack's
+      # trunk for a PR in a native GitHub stack.
+      - name: Resolve the PR's base branch
+        id: base
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: bash scripts/ci/changes.sh base
       - uses: nrwl/nx-set-shas@afb73a62d26e41464e9254689e1fd6122ee683c1 # v5.0.1
         with:
           main-branch-name: master
@@ -239,6 +251,11 @@ jobs:
     needs: [select-runner, detect]
     if: needs.detect.outputs.has_typescript == 'true'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -301,6 +318,11 @@ jobs:
     needs: [select-runner, detect]
     if: needs.detect.outputs.has_python == 'true'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 22
     permissions:
       contents: read
@@ -384,7 +406,10 @@ jobs:
           # The slice's paths and its ignores TOGETHER say what it runs; without
           # the ignores unit-b re-ran every unit-a file the diff touched.
           SLICE_IGNORE: ${{ matrix.slice.ignore }}
-          BASE_REF: ${{ github.base_ref }}
+          # The resolved base, not github.base_ref: the payload names the
+          # stack's trunk on a stacked PR, so selection would pick up every test
+          # the PRs below this one touched.
+          BASE_REF: ${{ needs.detect.outputs.base_ref }}
         run: python3 scripts/ci/test_impact.py select
       # --cov-fail-under=0: pyproject's fail_under=80 is the COMBINED gate,
       # enforced by the coverage job below; one slice alone cannot reach it.
@@ -502,6 +527,11 @@ jobs:
     # nothing would be entitled to read.
     if: needs.detect.outputs.has_python == 'true' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 8
     permissions:
       contents: read
@@ -550,6 +580,11 @@ jobs:
     needs: [select-runner, detect]
     if: needs.detect.outputs.has_typescript == 'true'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     # 15, not 12, because the step below queues on the CPU governor: the acquire
     # fails open only after GAIA_CPU_SLOTS_TIMEOUT (600s), so a job cap has to
     # cover that wait PLUS the work, or a lane that was merely patient dies on
@@ -620,6 +655,11 @@ jobs:
     needs: [select-runner, detect]
     if: needs.detect.outputs.has_python == 'true'
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 40
     permissions:
       contents: read
@@ -641,7 +681,10 @@ jobs:
         id: inputs
         if: github.event_name == 'pull_request'
         env:
-          BASE_BRANCH: ${{ github.base_ref }}
+          # The resolved base, not github.base_ref — which on a stacked PR names
+          # the stack's trunk and rebuilds the image for inputs a PR below this
+          # one changed.
+          BASE_BRANCH: ${{ needs.detect.outputs.base_ref }}
         run: bash scripts/ci/changes.sh docker-inputs
       - name: Playwright pin matches uv.lock
         if: steps.inputs.outputs.build != 'false'
@@ -696,7 +739,17 @@ jobs:
     needs: [select-runner, detect, build, test-typescript]
     if: ${{ !cancelled() && needs.select-runner.result == 'success' }}
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
-    timeout-minutes: 10
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
+    # 15, measured: the lane went from 167 to 425 tests in one day (the verdict
+    # contract, mutation report/replay, ci:remote and workflow-invariant tests),
+    # and on the shared box its pytest alone takes ~5.5 min where a laptop takes
+    # ~1.8 — run 34586500580 was cancelled at 10:31 with nothing hung. The cap
+    # is for a hang, and a hang here is minutes, not a doubling of honest work.
+    timeout-minutes: 15
     permissions:
       contents: read
     steps:
@@ -715,7 +768,7 @@ jobs:
         run: |
           trap 'echo "::error::repro: uv run --no-project --with pytest"' ERR
           echo "::group::pytest output"
-          uv run --no-project --with pytest --with defusedxml pytest tools/lints tools/llm-stub scripts/ci -q
+          uv run --no-project --with pytest --with defusedxml pytest tools/lints tools/llm-stub scripts/ci -q --durations=10
           echo "::endgroup::"
           echo "### Harness tooling tests — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Harness tooling tests: OK (tools/lints + tools/llm-stub + scripts/ci)"
@@ -734,6 +787,11 @@ jobs:
     needs: [detect, build, test-typescript]
     if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 8
     permissions:
       contents: write
@@ -791,6 +849,11 @@ jobs:
     needs: [select-runner, detect, build, test-typescript]
     if: ${{ !cancelled() && needs.select-runner.result == 'success' }}
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 10
     permissions:
       contents: read
@@ -864,6 +927,11 @@ jobs:
     needs: [select-runner, detect, build, test-typescript]
     if: ${{ !cancelled() && needs.select-runner.result == 'success' && needs.detect.outputs.has_python == 'true' && github.event_name == 'pull_request' }}
     runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The base every scoped step in this job diffs against. Job-level because a
+    # workflow-level `env:` cannot read `needs`, and every step here that calls
+    # changes.sh, nx affected or pytest.sh must agree on one answer.
+    env:
+      GAIA_PR_BASE: ${{ needs.detect.outputs.base_ref }}
     timeout-minutes: 15
     permissions:
       contents: read
@@ -874,9 +942,14 @@ jobs:
           persist-credentials: false
           fetch-depth: 0
       - uses: ./.github/actions/setup-python-test-env
+      # Against THIS PR's base, not master. Against master, a stacked PR is
+      # charged with every regression test the PRs below it added: this run
+      # reported "7 new regression tests" on #1175, which added none — and a
+      # test that must fail on master but passes on the parent (because the
+      # parent already contains its fix) fails the lane for being correct.
       - name: Changed test files must fail on base
         working-directory: apps/api
-        run: bash ../../scripts/ci/pytest.sh regression-proof origin/master
+        run: bash ../../scripts/ci/pytest.sh regression-proof "origin/${GAIA_PR_BASE:-master}"
       # setup-python-test-env brings up services + the embedding sidecar; on the
       # shared box that namespace must be released like every other lane does.
       - name: Release the test services
@@ -936,7 +1009,10 @@ jobs:
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           pattern: verdict-*
-          path: verify-logs/verdicts
+          # runner.temp, not the checkout: that is where every lane wrote and
+          # uploaded from, and it is per-job and wiped, so nothing a previous
+          # job left on a persistent self-hosted workspace can reach the gate.
+          path: ${{ runner.temp }}/verdicts
           merge-multiple: true
       - name: Verdict
         env:
@@ -957,7 +1033,7 @@ jobs:
           # enforced on their job result — declared, not dropped.
           EXPECT: >-
             select-runner@result-only=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe@result-only=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
-        run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"
+        run: python3 scripts/ci/verdict.py consolidate "$RUNNER_TEMP/verdicts" --expect "$EXPECT"
 
   # --- Docker phase, split so the long part runs parallel to the gate -------
   # build-images starts right after detect (master only) and builds/publishes
