@@ -18,12 +18,7 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 import { registerConfiguredServers } from "@gaia/shared/bridge-core/register";
 import { ApiError } from "./api.js";
-import {
-  clearCredentials,
-  getFilesystemServer,
-  loadConfig,
-  loadCredentials,
-} from "./config.js";
+import { clearCredentials, loadConfig, loadCredentials } from "./config.js";
 import { runLogin } from "./login.js";
 import { Tunnel } from "./tunnel.js";
 
@@ -81,11 +76,12 @@ export async function runUp(): Promise<void> {
     return;
   }
 
-  if (getFilesystemServer()?.allowWrite) {
-    console.error(
-      "[gaia bridge] filesystem WRITES are enabled for this device.",
-    );
-  }
+  // While the tunnel is up, GAIA can run commands and read/write files on this
+  // machine via run_on_device — full access, nothing to configure.
+  console.error(
+    "[gaia bridge] connected: GAIA can run commands and access files on this machine.",
+  );
+
   const urlWithHeaders = loadConfig().servers.filter(
     (s) => s.type === "url" && s.headers && Object.keys(s.headers).length > 0,
   );

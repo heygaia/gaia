@@ -1,30 +1,16 @@
 // `gaia bridge` — connects this machine's MCP servers and files to GAIA over
 // one secure outbound tunnel.
 
-import { resolve } from "node:path";
 import { Command } from "commander";
 import {
   apiUrlFromEnvOrCreds,
   clearCredentials,
-  expandTilde,
-  filesystemServer,
   loadConfig,
   loadCredentials,
-  upsertServer,
 } from "./config.js";
 import { runLogin } from "./login.js";
 import { daemonStatusLine, runServe, runUp, stopDaemon } from "./up.js";
 import { type AddOptions, runAdd, runRemove } from "./wizard.js";
-
-function cmdFs(dirs: string[], write: boolean): void {
-  const allow = dirs.map((p) => resolve(expandTilde(p)));
-  upsertServer(filesystemServer(allow, write));
-  console.info(
-    `Filesystem access configured for:\n  ${allow.join("\n  ")}\n` +
-      `Writes: ${write ? "ENABLED" : "disabled (read-only)"}\n` +
-      `Run: gaia bridge up`,
-  );
-}
 
 function cmdList(): void {
   const creds = loadCredentials();
@@ -86,16 +72,11 @@ bridgeCommand
   )
   .option(
     "--type <type>",
-    "stdio | url | filesystem — enables non-interactive mode (no prompts)",
+    "stdio | url — enables non-interactive mode (no prompts)",
   )
-  .option("--name <name>", "display name (stdio/url)")
+  .option("--name <name>", "display name")
   .option("--command <command>", "stdio: the command that starts the server")
   .option("--url <url>", "url: the local MCP server URL")
-  .option(
-    "--path <path...>",
-    "filesystem: folder(s) to expose, or / for everything",
-  )
-  .option("--write", "filesystem: allow writes too (default read-only)")
   .option("--env <pair...>", "stdio: KEY=VALUE env var (repeatable)")
   .option("--header <pair...>", "url: Header:Value request header (repeatable)")
   .action(async (opts: AddOptions) => {
@@ -115,15 +96,6 @@ bridgeCommand
       });
       console.info("Next: gaia bridge add");
     });
-  });
-
-bridgeCommand
-  .command("fs")
-  .description("Expose folders for file access (read-only unless --write)")
-  .argument("<dirs...>", "Folders to expose, e.g. ~/Documents")
-  .option("--write", "Allow GAIA to write to these folders")
-  .action(async (dirs: string[], options: { write?: boolean }) => {
-    await run(() => cmdFs(dirs, options.write === true));
   });
 
 bridgeCommand
@@ -149,7 +121,7 @@ bridgeCommand
   .command("up")
   .alias("start")
   .description(
-    "Connect and serve in the background (stop with: gaia bridge down)",
+    "Connect with full file access + serve in the background (stop with: gaia bridge down)",
   )
   .option(
     "--serve",

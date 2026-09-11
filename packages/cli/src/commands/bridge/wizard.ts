@@ -3,7 +3,7 @@
 // how does the server run (command or URL) → env vars → verify it actually
 // starts and lists tools → save → offer to bring the tunnel up.
 
-import { basename, resolve } from "node:path";
+import { basename } from "node:path";
 import {
   type AddOptions,
   buildConfigFromFlags,
@@ -11,15 +11,9 @@ import {
   tokenizeCommand,
 } from "@gaia/shared/bridge-core/config-builders";
 import { registerConfiguredServers } from "@gaia/shared/bridge-core/register";
-import {
-  expandTilde,
-  filesystemServer,
-  loadConfig,
-  removeServer,
-  upsertServer,
-} from "./config.js";
+import { loadConfig, removeServer, upsertServer } from "./config.js";
 import type { ServerConfig } from "./config.types.js";
-import { ENTIRE_FS_ROOT, FILESYSTEM_SERVER_KEY } from "./constants.js";
+import { FILESYSTEM_SERVER_KEY } from "./constants.js";
 import { isPaired, runLogin } from "./login.js";
 import { ask, askSecret, choose, confirm } from "./prompt.js";
 import { assertLoopbackUrl, testServer } from "./servers.js";
@@ -184,40 +178,6 @@ async function buildUrlConfig(): Promise<ServerConfig> {
   };
 }
 
-async function buildFilesystemConfig(): Promise<ServerConfig> {
-  const scope = await choose("Which files should GAIA be able to reach?", [
-    "Specific folders",
-    "My entire filesystem (everything this user account can read)",
-  ]);
-
-  let allow: string[];
-  if (scope === 0) {
-    for (;;) {
-      const line = await ask(
-        'Folders to expose, space-separated (e.g. ~/Documents "~/My Code")',
-      );
-      let tokens: string[] = [];
-      try {
-        const { command, args } = tokenizeCommand(line);
-        tokens = [command, ...args];
-      } catch {
-        tokens = [];
-      }
-      allow = tokens.map((p) => resolve(expandTilde(p)));
-      if (allow.length) break;
-      console.info("Enter at least one folder, or Ctrl+C to abort.");
-    }
-  } else {
-    allow = [ENTIRE_FS_ROOT];
-  }
-
-  const write = await confirm(
-    "Let GAIA WRITE/modify files too (not just read)?",
-    false,
-  );
-  return filesystemServer(allow, write);
-}
-
 async function verifyServer(config: ServerConfig): Promise<boolean> {
   for (;;) {
     console.info(
@@ -291,14 +251,8 @@ export async function runAdd(opts: AddOptions = {}): Promise<void> {
   const kind = await choose("What do you want to connect?", [
     "A command starts an MCP server (stdio) — npx / uvx / docker / python …",
     "An MCP server already running at a local URL — e.g. http://localhost:3000/mcp",
-    "Local files & folders — no MCP needed (GAIA reads, and writes if you allow)",
   ]);
-  const config =
-    kind === 0
-      ? await buildStdioConfig()
-      : kind === 1
-        ? await buildUrlConfig()
-        : await buildFilesystemConfig();
+  const config = kind === 0 ? await buildStdioConfig() : await buildUrlConfig();
 
   if (!(await verifyServer(config))) throw new Error("aborted");
 
