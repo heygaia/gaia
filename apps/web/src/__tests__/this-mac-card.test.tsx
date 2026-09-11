@@ -78,7 +78,9 @@ describe("ThisMacCard", () => {
     await waitFor(() => expect(bridge.pair).toHaveBeenCalledTimes(1));
     expect(bridge.start).toHaveBeenCalledTimes(1);
 
-    const toggle = (await screen.findByRole("switch")) as HTMLInputElement;
+    const toggle = (await screen.findByRole("switch", {
+      name: /keep this mac connected/i,
+    })) as HTMLInputElement;
     await waitFor(() => expect(toggle.checked).toBe(true));
   });
 
@@ -108,6 +110,56 @@ describe("ThisMacCard", () => {
 
     await waitFor(() =>
       expect(bridge.removeServer).toHaveBeenCalledWith("everything"),
+    );
+  });
+
+  it("full file access toggle grants the entire filesystem, read+write", async () => {
+    bridge.status.mockResolvedValue(ok(status(true, true)));
+    bridge.listServers.mockResolvedValue(ok<ServerConfig[]>([]));
+    bridge.addServer.mockResolvedValue(ok<ServerConfig[]>([]));
+
+    render(<Harness />);
+
+    const fileAccess = (await screen.findByRole("switch", {
+      name: /full file access/i,
+    })) as HTMLInputElement;
+    expect(fileAccess.checked).toBe(false);
+    fireEvent.click(fileAccess);
+
+    await waitFor(() =>
+      expect(bridge.addServer).toHaveBeenCalledWith({
+        type: "filesystem",
+        path: ["/"],
+        write: true,
+      }),
+    );
+  });
+
+  it("turning file access off removes the filesystem server", async () => {
+    bridge.status.mockResolvedValue(ok(status(true, true)));
+    bridge.listServers.mockResolvedValue(
+      ok<ServerConfig[]>([
+        {
+          type: "filesystem",
+          key: "filesystem",
+          name: "Local Files",
+          allow: ["/"],
+          allowWrite: true,
+        },
+      ]),
+    );
+    bridge.removeServer.mockResolvedValue(ok<ServerConfig[]>([]));
+
+    render(<Harness />);
+
+    const fileAccess = (await screen.findByRole("switch", {
+      name: /full file access/i,
+    })) as HTMLInputElement;
+    await waitFor(() => expect(fileAccess.checked).toBe(true));
+    fireEvent.click(fileAccess);
+
+    await waitFor(() =>
+      expect(bridge.removeServer).toHaveBeenCalledWith("filesystem"),
     );
   });
 });

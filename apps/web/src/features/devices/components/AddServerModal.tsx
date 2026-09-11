@@ -1,7 +1,6 @@
 "use client";
 
 import { Button } from "@heroui/button";
-import { Checkbox } from "@heroui/checkbox";
 import { Input, Textarea } from "@heroui/input";
 import {
   Modal,
@@ -12,13 +11,13 @@ import {
   useDisclosure,
 } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
-import { Switch } from "@heroui/switch";
 import { PlusSignIcon } from "@icons";
 import type { AddOptions } from "@shared/bridge-core/config-builders";
 import { useState } from "react";
-import { ENTIRE_FS_PATH } from "../constants";
 
-type ServerType = "stdio" | "url" | "filesystem";
+// Folder access is a one-switch toggle on the card (the built-in filesystem
+// server); this modal is only for the user's own MCP servers.
+type ServerType = "stdio" | "url";
 
 const SERVER_TYPES: { key: ServerType; label: string; hint: string }[] = [
   {
@@ -31,19 +30,14 @@ const SERVER_TYPES: { key: ServerType; label: string; hint: string }[] = [
     label: "Local URL",
     hint: "Point at an MCP server already running on a localhost port.",
   },
-  {
-    key: "filesystem",
-    label: "Folder access",
-    hint: "Let GAIA read (and optionally write) files on this Mac.",
-  },
 ];
 
-const NAME_PLACEHOLDER: Record<Exclude<ServerType, "filesystem">, string> = {
+const NAME_PLACEHOLDER: Record<ServerType, string> = {
   stdio: "Everything server",
   url: "Local API",
 };
 
-/** Split a textarea into trimmed, non-empty lines (env/header/path entries). */
+/** Split a textarea into trimmed, non-empty lines (env/header entries). */
 function lines(value: string): string[] {
   return value
     .split("\n")
@@ -63,47 +57,26 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
   const [name, setName] = useState("");
   const [command, setCommand] = useState("");
   const [url, setUrl] = useState("");
-  const [paths, setPaths] = useState("");
   const [pairs, setPairs] = useState("");
-  const [fullFs, setFullFs] = useState(false);
-  const [allowWrite, setAllowWrite] = useState(false);
 
   const reset = () => {
     setType("stdio");
     setName("");
     setCommand("");
     setUrl("");
-    setPaths("");
     setPairs("");
-    setFullFs(false);
-    setAllowWrite(false);
   };
 
-  // Folder access is a single built-in server (always "Local Files"), so it
-  // needs no name; the other types key off the name the user types.
-  const canSubmit =
-    type === "filesystem"
-      ? fullFs || lines(paths).length > 0
-      : name.trim().length > 0;
-
   const submit = async () => {
-    let opts: AddOptions;
-    if (type === "stdio") {
-      opts = {
-        type,
-        name: name.trim(),
-        command: command.trim(),
-        env: lines(pairs),
-      };
-    } else if (type === "url") {
-      opts = { type, name: name.trim(), url: url.trim(), header: lines(pairs) };
-    } else {
-      opts = {
-        type,
-        path: fullFs ? [ENTIRE_FS_PATH] : lines(paths),
-        write: allowWrite,
-      };
-    }
+    const opts: AddOptions =
+      type === "stdio"
+        ? {
+            type,
+            name: name.trim(),
+            command: command.trim(),
+            env: lines(pairs),
+          }
+        : { type, name: name.trim(), url: url.trim(), header: lines(pairs) };
     if (await onAdd(opts)) {
       reset();
       onClose();
@@ -126,7 +99,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
         <ModalContent>
           {() => (
             <>
-              <ModalHeader>Expose a server on this Mac</ModalHeader>
+              <ModalHeader>Add an MCP server</ModalHeader>
               <ModalBody className="gap-3">
                 <Select
                   label="Type"
@@ -140,17 +113,15 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                   ))}
                 </Select>
 
-                {type !== "filesystem" && (
-                  <Input
-                    label="Name"
-                    value={name}
-                    onValueChange={setName}
-                    placeholder={NAME_PLACEHOLDER[type]}
-                    isRequired
-                  />
-                )}
+                <Input
+                  label="Name"
+                  value={name}
+                  onValueChange={setName}
+                  placeholder={NAME_PLACEHOLDER[type]}
+                  isRequired
+                />
 
-                {type === "stdio" && (
+                {type === "stdio" ? (
                   <>
                     <Input
                       label="Command"
@@ -166,9 +137,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                       minRows={2}
                     />
                   </>
-                )}
-
-                {type === "url" && (
+                ) : (
                   <>
                     <Input
                       label="URL"
@@ -185,33 +154,6 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                     />
                   </>
                 )}
-
-                {type === "filesystem" && (
-                  <>
-                    <Switch
-                      size="sm"
-                      isSelected={fullFs}
-                      onValueChange={setFullFs}
-                    >
-                      Full filesystem access
-                    </Switch>
-                    {!fullFs && (
-                      <Textarea
-                        label="Folders"
-                        value={paths}
-                        onValueChange={setPaths}
-                        placeholder={"~/Documents\n~/projects"}
-                        minRows={2}
-                      />
-                    )}
-                    <Checkbox
-                      isSelected={allowWrite}
-                      onValueChange={setAllowWrite}
-                    >
-                      Allow writes
-                    </Checkbox>
-                  </>
-                )}
               </ModalBody>
               <ModalFooter>
                 <Button variant="light" onPress={onClose}>
@@ -221,7 +163,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                   color="primary"
                   onPress={submit}
                   isLoading={isBusy}
-                  isDisabled={!canSubmit}
+                  isDisabled={name.trim().length === 0}
                 >
                   Add
                 </Button>
