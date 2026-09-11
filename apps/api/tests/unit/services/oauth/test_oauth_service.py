@@ -8,7 +8,6 @@ import pytest
 from tests.factories import make_integration_config
 from tests.helpers import captured_wide_event
 
-from app.constants.email import SignupDelivery
 from app.constants.log_tags import LogTag
 from app.models.user_models import BioStatus, UserDocument
 from app.services.email.signup_delivery import signup_email_job_id
@@ -370,6 +369,12 @@ class TestStoreUserInfo:
 
         await store_user_info("Bob", "bob@test.com", None)
 
+        # A real signup is created owing both deliveries. Stamping here instead
+        # would mark them settled before the ESP was ever called, and the sweep
+        # would have nothing left to recover when the queued job was lost.
+        created = mock_user_repo.create.call_args.args[0]
+        assert created.welcome_email_sent_at is None
+        assert created.marketing_contact_added_at is None
         # Not assert_awaited_once_with: enqueue_worker_job also attaches the
         # caller's trace id, which is not this test's subject.
         assert mock_redis_pool_manager.enqueue_job.await_args.args == (
@@ -391,6 +396,11 @@ class TestStoreUserInfo:
         account looks exactly like a signup whose enqueue was lost — and every
         dev user would get a founder email and a marketing contact an hour
         after minting, which is the one thing this path promises never happens.
+
+        The stamps ride in the insert rather than a follow-up write. One round
+        trip, and no window in which the row exists unstamped for a sweep to
+        find — mint is also the one signup path callers drive without a live
+        event loop of their own, and a second write there had nothing to run on.
         """
         uid = str(ObjectId())
         mock_user_repo.get_by_email.return_value = None
@@ -398,7 +408,10 @@ class TestStoreUserInfo:
 
         await store_user_info("Bob", "bob@test.com", None, external_side_effects=False)
 
-        mock_user_repo.stamp_signup_deliveries.assert_awaited_once_with(uid, list(SignupDelivery))
+        created = mock_user_repo.create.call_args.args[0]
+        assert created.welcome_email_sent_at is not None
+        assert created.marketing_contact_added_at is not None
+        mock_user_repo.stamp_signup_deliveries.assert_not_awaited()
         mock_redis_pool_manager.enqueue_job.assert_not_awaited()
         mock_track_signup.assert_not_called()
 

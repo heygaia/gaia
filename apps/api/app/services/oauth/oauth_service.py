@@ -1,7 +1,8 @@
+from datetime import UTC, datetime
+
 from fastapi import BackgroundTasks, HTTPException
 
 from app.constants.auth import LOGIN_METHOD_WORKOS
-from app.constants.email import SignupDelivery
 from app.constants.integrations import (
     GMAIL_INTEGRATION_ID,
     GOOGLE_CALENDAR_INTEGRATION_ID,
@@ -178,15 +179,24 @@ async def store_user_info(
     # store an empty name forever. The email's local part is the fallback; the
     # user can correct it in settings and no later login overwrites it.
     signup_name = name or derive_name_from_email(email)
+    # A user whose side effects are suppressed is owed neither signup delivery,
+    # so it is created with both already settled: the recovery sweep selects on
+    # a *missing* stamp and would otherwise mail and enrol every seeded account
+    # an hour after minting. The stamps ride in the insert rather than a
+    # follow-up write — one round trip, and no window in which the row exists
+    # unstamped. A real signup is created owing both; only the job stamps those.
+    settled_at = None if external_side_effects else datetime.now(UTC)
     created = await user_repository.create(
-        UserDocument(name=signup_name, email=email, picture=picture_url or "")
+        UserDocument(
+            name=signup_name,
+            email=email,
+            picture=picture_url or "",
+            welcome_email_sent_at=settled_at,
+            marketing_contact_added_at=settled_at,
+        )
     )
 
     if not external_side_effects:
-        # A dev-minted user is owed neither delivery, so record both settled
-        # now. The recovery sweep selects on a *missing* stamp, and would
-        # otherwise mail and enrol every seeded account an hour after minting.
-        await user_repository.stamp_signup_deliveries(created.id, list(SignupDelivery))
         return created.id, True
 
     await _run_signup_side_effects(created.id, email, signup_name)
