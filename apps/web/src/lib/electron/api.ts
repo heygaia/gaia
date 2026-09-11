@@ -17,6 +17,8 @@ import type {
   DesktopShortcutUpdateResult,
   DesktopToolRequest,
   DesktopToolResult,
+  FolderAccessResult,
+  ProtectedFolder,
 } from "@shared/desktop-tools";
 
 /** The API surface exposed by the desktop app's preload script. */
@@ -42,6 +44,7 @@ export interface ElectronAPI {
   requestDesktopPermission: (
     pane: DesktopPermissionPane,
   ) => Promise<DesktopPermissionStatus>;
+  requestFolderAccess: (folder: ProtectedFolder) => Promise<FolderAccessResult>;
   relaunchDesktopApp: () => void;
   getDesktopSettings: () => Promise<DesktopSettingsSnapshot>;
   setPopupShortcut: (

@@ -76,7 +76,22 @@ export interface DesktopPermissionStatus {
   accessibility: "granted" | "denied" | "unknown";
 }
 
-export type DesktopPermissionPane = "microphone" | "screen" | "accessibility";
+export type DesktopPermissionPane =
+  | "microphone"
+  | "screen"
+  | "accessibility"
+  | "full-disk";
+
+/** macOS folders gated by a per-folder TCC prompt (the
+ * NS<Folder>FolderUsageDescription strings). Reading one triggers the prompt. */
+export type ProtectedFolder = "downloads" | "documents" | "desktop";
+
+export interface FolderAccessResult {
+  folder: ProtectedFolder;
+  /** True if the app can read the folder now (the user allowed it or it was
+   * already granted); false if macOS denied it. */
+  granted: boolean;
+}
 
 /** Per-machine desktop preferences (never synced to the backend). */
 export interface DesktopSettings {

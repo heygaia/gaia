@@ -9,6 +9,7 @@ import type { ServerConfig } from "@shared/bridge-core/config.types";
 import type { UseBridge } from "../hooks/useBridge";
 import { thisDeviceLabel } from "../hooks/useDesktopPlatform";
 import { AddServerModal } from "./AddServerModal";
+import { FileAccessSection } from "./FileAccessSection";
 
 function StatusChip({
   paired,
@@ -67,7 +68,8 @@ function ServerRow({
  * bridge IPC surface (no CLI, no pairing code). Renders only inside the desktop
  * app (gated by the caller). Pairing is one click and the tunnel toggles live;
  * while connected GAIA can run commands and read/write files on the machine
- * (via run_on_device), so there is nothing to configure for file access.
+ * (via run_on_device). On macOS the file-access section grants the OS-level
+ * permissions those commands need (per-folder prompts + Full Disk Access).
  */
 export function ThisMacCard({
   bridge,
@@ -133,6 +135,7 @@ export function ThisMacCard({
           <div className="flex">
             <AddServerModal onAdd={addServer} isBusy={busy === "server"} />
           </div>
+          {platform === "darwin" && <FileAccessSection />}
         </div>
       )}
     </div>

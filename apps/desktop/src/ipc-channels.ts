@@ -24,6 +24,7 @@ export const IPC = {
   desktopToolPermissions: "desktop-tool:permissions",
   desktopToolRequestPermission: "desktop-tool:request-permission",
   desktopToolOpenPermissionSettings: "desktop-tool:open-permission-settings",
+  desktopToolRequestFolderAccess: "desktop-tool:request-folder-access",
   desktopAppRelaunch: "desktop-app:relaunch",
   desktopSettingsGet: "desktop-settings:get",
   desktopSettingsSetShortcut: "desktop-settings:set-shortcut",

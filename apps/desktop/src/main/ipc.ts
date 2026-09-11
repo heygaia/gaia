@@ -12,6 +12,7 @@ import type {
   DesktopPermissionPane,
   DesktopSettingsSnapshot,
   DesktopToolRequest,
+  ProtectedFolder,
 } from "@gaia/shared/desktop-tools";
 import { app, ipcMain, shell } from "electron";
 import { IPC } from "../ipc-channels";
@@ -23,6 +24,7 @@ import { dispatchDesktopTool } from "./tools";
 import {
   getPermissionStatus,
   openPermissionSettings,
+  requestFolderAccess,
   requestPermission,
 } from "./tools/permissions";
 import {
@@ -102,6 +104,11 @@ export function registerIpcHandlers(onWindowReady: () => void): void {
     (_event, pane: DesktopPermissionPane) => {
       openPermissionSettings(pane);
     },
+  );
+
+  ipcMain.handle(
+    IPC.desktopToolRequestFolderAccess,
+    (_event, folder: ProtectedFolder) => requestFolderAccess(folder),
   );
 
   // Screen Recording grants only apply after relaunch — TCC keeps the

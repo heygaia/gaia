@@ -12,6 +12,8 @@ import type {
   DesktopShortcutUpdateResult,
   DesktopToolRequest,
   DesktopToolResult,
+  FolderAccessResult,
+  ProtectedFolder,
 } from "@gaia/shared/desktop-tools";
 
 declare global {
@@ -32,6 +34,9 @@ declare global {
       requestDesktopPermission: (
         pane: DesktopPermissionPane,
       ) => Promise<DesktopPermissionStatus>;
+      requestFolderAccess: (
+        folder: ProtectedFolder,
+      ) => Promise<FolderAccessResult>;
       relaunchDesktopApp: () => void;
       getDesktopSettings: () => Promise<DesktopSettingsSnapshot>;
       setPopupShortcut: (

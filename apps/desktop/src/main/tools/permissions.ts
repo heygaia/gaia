@@ -7,11 +7,14 @@
  * @module tools/permissions
  */
 
+import { readdir } from "node:fs/promises";
 import type {
   DesktopPermissionPane,
   DesktopPermissionStatus,
+  FolderAccessResult,
+  ProtectedFolder,
 } from "@gaia/shared/desktop-tools";
-import { shell, systemPreferences } from "electron";
+import { app, shell, systemPreferences } from "electron";
 
 const PRIVACY_PANE_URLS: Record<DesktopPermissionPane, string> = {
   microphone:
@@ -20,6 +23,8 @@ const PRIVACY_PANE_URLS: Record<DesktopPermissionPane, string> = {
     "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture",
   accessibility:
     "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility",
+  "full-disk":
+    "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles",
 };
 
 export function getPermissionStatus(): DesktopPermissionStatus {
@@ -63,5 +68,27 @@ export function openPermissionSettings(pane: DesktopPermissionPane): void {
   const url = PRIVACY_PANE_URLS[pane];
   if (url && process.platform === "darwin") {
     shell.openExternal(url);
+  }
+}
+
+/**
+ * Trigger the one-time macOS TCC prompt for a protected folder by reading it.
+ * The prompt uses the NS<Folder>FolderUsageDescription strings in the packaged
+ * Info.plist. A grant lets the commands GAIA runs on this Mac (run_on_device)
+ * reach the folder; a denial (or an already-denied grant) reads as not granted.
+ *
+ * TCC attributes the grant to the app's code signature, so this only prompts
+ * and persists reliably on a Developer-ID-signed build; in an unsigned dev
+ * build the prompt may not appear or may attribute to the wrong app.
+ */
+export async function requestFolderAccess(
+  folder: ProtectedFolder,
+): Promise<FolderAccessResult> {
+  if (process.platform !== "darwin") return { folder, granted: true };
+  try {
+    await readdir(app.getPath(folder));
+    return { folder, granted: true };
+  } catch {
+    return { folder, granted: false };
   }
 }

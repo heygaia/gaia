@@ -27,6 +27,8 @@ import type {
   DesktopShortcutUpdateResult,
   DesktopToolRequest,
   DesktopToolResult,
+  FolderAccessResult,
+  ProtectedFolder,
 } from "@gaia/shared/desktop-tools";
 import { contextBridge, ipcRenderer } from "electron";
 import { IPC } from "../ipc-channels";
@@ -184,6 +186,14 @@ const api = {
     pane: DesktopPermissionPane,
   ): Promise<DesktopPermissionStatus> =>
     ipcRenderer.invoke(IPC.desktopToolRequestPermission, pane),
+
+  /**
+   * Trigger the one-time macOS TCC prompt for a protected folder (Downloads /
+   * Documents / Desktop) by reading it in the main process; resolves to whether
+   * the app can now read it. Reliable only on a signed build.
+   */
+  requestFolderAccess: (folder: ProtectedFolder): Promise<FolderAccessResult> =>
+    ipcRenderer.invoke(IPC.desktopToolRequestFolderAccess, folder),
 
   /**
    * Relaunch the app. Needed after granting Screen Recording — macOS only
