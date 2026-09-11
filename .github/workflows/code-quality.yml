@@ -21,6 +21,10 @@ on:
   # that most needs the gate: its diff is what lands, and its base is a branch
   # that has not merged yet.
   pull_request:
+    # `edited` is what a retarget fires, and the default types do not include
+    # it — so a PR restacked onto its real base kept master-scoped verdicts
+    # until someone pushed. select-runner below makes a title/body edit free.
+    types: [opened, synchronize, reopened, edited]
   push:
     branches:
       - master
@@ -65,6 +69,14 @@ jobs:
   # nothing from cores.
   select-runner:
     name: Select runner
+    # Every job here is downstream of this one, so this condition is the
+    # workflow-level `if:` GitHub does not offer: an `edited` event that did
+    # not move the base changed no code, and `github.event.changes.base` is
+    # present only on a retarget (absent it is null, which casts to '' here),
+    # so the whole DAG skips for a title or body edit. A retarget takes the
+    # other branch and re-runs every lane against the new base — the case
+    # that used to leave a restacked PR with verdicts scoped to master.
+    if: ${{ github.event.action != 'edited' || github.event.changes.base != '' }}
     runs-on: ubuntu-latest
     timeout-minutes: 2
     permissions:
@@ -174,6 +186,11 @@ jobs:
           echo "python: ${PY:-none} | typescript: ${TS:-none} | alert-rules: $ALERTS"
           echo "Affected Python: $PY"
           echo "Affected TypeScript: $TS"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: changes
   # --- Biome lint + format -------------------------------------------------
   # ── Scheduling on the home box ───────────────────────────────────────────
   # One push runs this workflow and Quality Checks on the same 16 threads.
@@ -240,6 +257,11 @@ jobs:
           esac
           [ "$BIOME_STATUS" -eq 0 ] || exit "$BIOME_STATUS"
           echo "Biome: OK (0 errors; dead-suppression gate passed)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: biome
 
   # --- Workspace dependency hygiene ---------------------------------------
   deps:
@@ -279,6 +301,11 @@ jobs:
           echo "::endgroup::"
           echo "### Deps (pkg-json) — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "pkg-json: OK (all package.json files conform to schema)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: deps
 
   # --- Circular dependency check ------------------------------------------
   circular:
@@ -302,6 +329,11 @@ jobs:
           echo "::endgroup::"
           echo "### Circular deps — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Circular deps: OK (no cycles found)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: circular
 
   # --- File size limit (per-extension + allowlist + hard cap) -------------
   file-size:
@@ -332,6 +364,11 @@ jobs:
           echo "::endgroup::"
           echo "### File size — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "File size: OK (no hard-cap violations)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: file-size
 
   # --- Types must live in dedicated type files ----------------------------
   types-location:
@@ -362,6 +399,11 @@ jobs:
           echo "::endgroup::"
           echo "### Types location — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Type colocation: OK (no file exports > 3 types unless in *.types.ts)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: types-location
 
   # --- Components-per-file ------------------------------------------------
   components-per-file:
@@ -392,6 +434,11 @@ jobs:
           echo "::endgroup::"
           echo "### Components per file — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Components: OK (no file declares > 2 React components)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: components-per-file
 
   # --- Copy-paste detection -----------------------------------------------
   duplicates:
@@ -418,6 +465,11 @@ jobs:
           echo "::endgroup::"
           echo "### Duplicates (jscpd) — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Duplicates: OK (<= 3% on changed lines)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: duplicates
 
   # --- Published package hygiene ------------------------------------------
   package-hygiene:
@@ -460,6 +512,11 @@ jobs:
       # config/pnpm-audit-allowlist.json (an expired entry fails the lane too).
       - name: pnpm audit (production dependencies, high and above)
         run: bash scripts/ci/audit.sh pnpm
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: package-hygiene
 
   # --- TypeScript strict type-check ---------------------------------------
   type-check:
@@ -490,6 +547,11 @@ jobs:
           fi
           echo "::endgroup::"
           echo "TypeScript: OK (all affected workspaces pass strict tsc)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: type-check
 
   # --- Python static analysis (ruff + xenon + interrogate + security) ------
   # One job, not four: each of these tools is seconds of work behind ~40s of
@@ -634,11 +696,11 @@ jobs:
           echo "::group::bandit (low severity, low confidence — no exclusions)"
           FILES=$(scripts/ci/changes.sh py-source)
           if [ "$FILES" = "__FULL__" ]; then
-            uvx --no-build bandit@1.9.4 -c pyproject.toml -r apps/api/app apps/voice-agent/src libs/shared/py --severity-level low --confidence-level low 2>&1 | tee "$RUNNER_TEMP/bandit.out"; _rc=${PIPESTATUS[0]}; python3 scripts/ci/report.py annotations < "$RUNNER_TEMP/bandit.out" || true; test $_rc -eq 0
+            uvx --no-build bandit@1.9.4 -c pyproject.toml -r apps/api/app apps/voice-agent/src libs/shared/py --severity-level low --confidence-level low 2>&1 | tee "$RUNNER_TEMP/bandit.out"; _rc=${PIPESTATUS[0]}; python3 scripts/ci/verdict.py collect --into "$RUNNER_TEMP/findings.jsonl" < "$RUNNER_TEMP/bandit.out"; test $_rc -eq 0
           elif [ -z "$FILES" ]; then
             echo "No matching changed files — skipping."
           else
-            uvx --no-build bandit@1.9.4 -c pyproject.toml $FILES --severity-level low --confidence-level low 2>&1 | tee "$RUNNER_TEMP/bandit.out"; _rc=${PIPESTATUS[0]}; python3 scripts/ci/report.py annotations < "$RUNNER_TEMP/bandit.out" || true; test $_rc -eq 0
+            uvx --no-build bandit@1.9.4 -c pyproject.toml $FILES --severity-level low --confidence-level low 2>&1 | tee "$RUNNER_TEMP/bandit.out"; _rc=${PIPESTATUS[0]}; python3 scripts/ci/verdict.py collect --into "$RUNNER_TEMP/findings.jsonl" < "$RUNNER_TEMP/bandit.out"; test $_rc -eq 0
           fi
           echo "::endgroup::"
           echo "### Bandit — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
@@ -671,7 +733,8 @@ jobs:
           BANDIT: ${{ steps.bandit.outcome }}
           PIP_AUDIT: ${{ steps.pip-audit.outcome }}
         run: |
-          python3 scripts/ci/report.py step-outcomes \
+          python3 scripts/ci/verdict.py step-outcomes --lane python-static \
+            --findings "$RUNNER_TEMP/findings.jsonl" \
             "ruff=$RUFF" \
             "custom-lints=$CUSTOM_LINTS" \
             "ignore-whys=$IGNORE_WHYS" \
@@ -680,6 +743,11 @@ jobs:
             "interrogate=$INTERROGATE" \
             "bandit=$BANDIT" \
             "pip-audit=$PIP_AUDIT"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: python-static
 
   # --- Python mypy --------------------------------------------------------
   python-mypy:
@@ -767,6 +835,11 @@ jobs:
           fi
           echo "::endgroup::"
           echo "mypy: OK (no type errors)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: python-mypy
 
   # --- Observability score (evlog map) ------------------------------------
   # Python port of evlog's `map` (tools/evlog_map): scores every FastAPI/ARQ
@@ -855,6 +928,11 @@ jobs:
           node scripts/ci/checks.mjs evlog-map-bots --min-score 100
           echo "::endgroup::"
           echo "observability-bots: OK (surface held at 100)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: observability
 
   # --- Wide-event cross-runtime conformance --------------------------------
   # The Python services and the TypeScript bots must emit the SAME log shape,
@@ -885,6 +963,11 @@ jobs:
           echo "::endgroup::"
           echo "### Wide-event conformance — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "wide events: OK (Python and TypeScript emit one shape)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: wide-event-conformance
 
   # --- Dead code detection (knip + vulture) — enforced ---------------------
   # Runs in --strict mode: any knip (TS) or vulture (Python) finding fails the
@@ -918,6 +1001,11 @@ jobs:
           echo "::endgroup::"
           echo "### Dead code — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Dead code: OK (no unused TS or Python code)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: dead-code
 
   # --- Grafana alert rules (pint + promtool) ------------------------------
   # Grafana's alert rules are managed objects, not Prometheus rule files, so they
@@ -987,6 +1075,11 @@ jobs:
           echo "::endgroup::"
           echo "### Alert rules (promtool test) — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "promtool: OK (all per-rule firing + quiet tests pass)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: alert-rules
 
   # --- Suppression hygiene -------------------------------------------------
   # Baseline-free governance: every inline suppression (# noqa / # type: ignore
@@ -997,7 +1090,10 @@ jobs:
   suppression-hygiene:
     name: "Suppression hygiene (every # noqa / # type: ignore / biome-ignore has a why)"
     needs: [select-runner, changes, python-static, python-mypy, dead-code]
-    if: ${{ !cancelled() }}
+    # `!cancelled()` alone runs this on a skipped DAG, where `runs-on` is
+    # `fromJSON('')` and the lane dies on the runner lookup — the same shape
+    # main.yml's trivy-scan and test-harness-tools already guard against.
+    if: ${{ !cancelled() && needs.select-runner.result == 'success' }}
     # No job-level language gate on purpose: check_tool_pins reads the WORKFLOW
     # FILES themselves (code-quality.yml, main.yml), so a workflow-only PR is
     # exactly the change this lane validates — and nx-affected correctly marks
@@ -1058,6 +1154,11 @@ jobs:
           echo "::endgroup::"
           echo "### Tool pins — ✅ passed" >> "$GITHUB_STEP_SUMMARY"
           echo "Tool pins: OK (hooks and CI run identical versions)"
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: suppression-hygiene
 
   # --- Secret scanning (gitleaks, diff-scoped) -----------------------------
   # gitleaks-action is free for personal-account repos but requires a (free,
@@ -1094,6 +1195,11 @@ jobs:
           # cap — the upload then errors out and fails the step on size, not on
           # leaks. Full results remain in the uploaded sarif artifact.
           GITLEAKS_ENABLE_SUMMARY: false
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: gitleaks
 
 
   # --- Python semgrep (SSRF / path traversal / injection) ------------------
@@ -1136,6 +1242,11 @@ jobs:
         uses: docker://semgrep/semgrep@sha256:b68f9b68483955b85042dac7b4533757779625a02dcf91e470da4c2df1b430be # v1.145.0
         with:
           args: semgrep scan --config tools/semgrep/p-python.yaml apps/api/app --error --metrics=off
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: semgrep
 
   # --- Quality gate (single required status check) -------------------------
   # --- Mutation testing (changed modules, self-contained) -----------------
@@ -1176,6 +1287,11 @@ jobs:
       - name: Compute the mutation matrix
         id: plan
         run: bash scripts/ci/mutation.sh plan
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          name: test-mutation-plan
 
   # One runner per changed module. mutmut re-runs a module's whole test
   # selection once per mutant, so a heavy module costs tens of minutes; in a
@@ -1215,9 +1331,14 @@ jobs:
           clean: ${{ runner.environment != 'self-hosted' }}
           fetch-depth: 0
           persist-credentials: false
-      - uses: ./.github/actions/setup-uv
-      - name: Sync Python dependencies
-        run: uv sync --frozen --package gaia --group backend --group dev
+      # The composite, not a hand-rolled `uv sync`: it owns the install (see
+      # CLAUDE.md "Install through the composites") and it brings up Mongo and
+      # Redis for this runner instance and exports USE_REAL_SERVICES=1. The
+      # shard needs them because the contract tier is in the mapped test set:
+      # it is the only tier that exercises a repository's query shapes, and
+      # without it every changed repository method reported "no covering
+      # test" while the gate passed. Unit-only modules are unaffected.
+      - uses: ./.github/actions/setup-python-test-env
       - name: Mutation check (zero survivors required)
         # STEP-level timeout so a stuck shard fails as a step (job continues,
         # the shard-log artifact uploads, logs survive) instead of the job
@@ -1231,6 +1352,14 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
         run: bash scripts/ci/mutation.sh shard
+      # setup-python-test-env brings up services + the embedding sidecar; on the
+      # shared box that namespace must be released like every other lane does.
+      - name: Release the test services
+        if: always()
+        run: bash scripts/ci/test-services.sh down
+      - name: Stop the embedding sidecar
+        if: always()
+        run: bash scripts/ci/embedding-sidecar.sh stop
       - name: Upload shard log
         # Belt and braces for the diagnosis path: runs even when the step
         # above fails or the job is cancelled, so the evidence survives the
@@ -1239,13 +1368,36 @@ jobs:
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: mutation-log-${{ strategy.job-index }}
-          path: shard.log
+          # shard.verdict.json rides with the log: it is the replay artifact
+          # every failing mutation verdict's advice points at, so it has to
+          # be fetchable from the same place as the log it was made from.
+          path: |
+            shard.log
+            shard.verdict.json
           retention-days: 3
           if-no-files-found: ignore
+      - name: Upload the verdict
+        if: always()
+        uses: ./.github/actions/upload-verdict
+        with:
+          # job-index, not matrix.group: the group is a generated label and the
+          # shard-log artifact beside this one already keys on the index.
+          name: test-mutation-${{ strategy.job-index }}
+          # This job's lanes live in the `mutation/` family, not `test-mutation/`:
+          # mutation.sh writes one verdict per mutated MODULE
+          # (verify-logs/verdicts/mutation/<module>.json) plus its own
+          # mutation/shard-<n>. The id here matches that shard verdict exactly,
+          # so --only-if-missing stands down when mutation.sh already wrote one
+          # and fills in only when the shard died with nothing to say.
+          lane: mutation/shard-${{ strategy.job-index }}
 
   quality-gate:
     name: Quality gate (required)
-    if: always()
+    # `always()` except for the edit that skipped the whole DAG: this verdict
+    # fails on `changes != success`, so a bare `always()` would red every PR
+    # for a title typo. Skipping the gate is the honest answer for a run that
+    # ran nothing, and a skipped required check counts as passing.
+    if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base != '') }}
     needs:
       - changes
       - biome
@@ -1271,88 +1423,29 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 2
     steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Every gated job uploads `verdict-<job>` through the
+      # ./.github/actions/upload-verdict composite; merge-multiple lands them
+      # as the one verify-logs/verdicts tree `consolidate` reads. The mutation
+      # shards' per-module verdicts ride along in the same tree.
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: verdict-*
+          path: verify-logs/verdicts
+          merge-multiple: true
       - name: Verdict
         env:
-          # Lane results passed through env to avoid inline-expansion injection.
-          CHANGES: ${{ needs.changes.result }}
-          BIOME: ${{ needs.biome.result }}
-          DEPS: ${{ needs.deps.result }}
-          CIRCULAR: ${{ needs.circular.result }}
-          FILE_SIZE: ${{ needs.file-size.result }}
-          TYPES_LOCATION: ${{ needs.types-location.result }}
-          COMPONENTS_PER_FILE: ${{ needs.components-per-file.result }}
-          DUPLICATES: ${{ needs.duplicates.result }}
-          PACKAGE_HYGIENE: ${{ needs.package-hygiene.result }}
-          TYPE_CHECK: ${{ needs.type-check.result }}
-          PYTHON_STATIC: ${{ needs.python-static.result }}
-          PYTHON_MYPY: ${{ needs.python-mypy.result }}
-          OBSERVABILITY: ${{ needs.observability.result }}
-          WIDE_EVENT_CONFORMANCE: ${{ needs.wide-event-conformance.result }}
-          DEAD_CODE: ${{ needs.dead-code.result }}
-          ALERT_RULES: ${{ needs.alert-rules.result }}
-          SUPPRESSION_HYGIENE: ${{ needs.suppression-hygiene.result }}
-          GITLEAKS: ${{ needs.gitleaks.result }}
-          SEMGREP: ${{ needs.semgrep.result }}
-          MUTATION_PLAN: ${{ needs.test-mutation-plan.result }}
-          MUTATION: ${{ needs.test-mutation.result }}
-        run: |
-          # Lane skips are only trustworthy if change detection succeeded.
-          if [[ "$CHANGES" != "success" ]]; then
-            echo "::error::change detection failed (result: $CHANGES) — cannot trust lane skips"
-            exit 1
-          fi
-
-          declare -A RESULT=(
-            [biome]="$BIOME"
-            [deps]="$DEPS"
-            [circular]="$CIRCULAR"
-            [file-size]="$FILE_SIZE"
-            [types-location]="$TYPES_LOCATION"
-            [components-per-file]="$COMPONENTS_PER_FILE"
-            [duplicates]="$DUPLICATES"
-            [package-hygiene]="$PACKAGE_HYGIENE"
-            [type-check]="$TYPE_CHECK"
-            [python-static]="$PYTHON_STATIC"
-            [python-mypy]="$PYTHON_MYPY"
-            [observability]="$OBSERVABILITY"
-            [wide-event-conformance]="$WIDE_EVENT_CONFORMANCE"
-            [dead-code]="$DEAD_CODE"
-            [alert-rules]="$ALERT_RULES"
-            [suppression-hygiene]="$SUPPRESSION_HYGIENE"
-            [gitleaks]="$GITLEAKS"
-            [semgrep]="$SEMGREP"
-            [test-mutation-plan]="$MUTATION_PLAN"
-            [test-mutation]="$MUTATION"
-          )
-          LANES=(biome deps circular file-size types-location components-per-file \
-                 duplicates package-hygiene type-check \
-                 python-static python-mypy \
-                 observability wide-event-conformance \
-                 dead-code alert-rules suppression-hygiene gitleaks semgrep test-mutation-plan test-mutation)
-
-          echo "::group::Per-lane results"
-          for lane in "${LANES[@]}"; do
-            printf '  %-22s %-12s\n' "$lane:" "${RESULT[$lane]}"
-          done
-          echo "::endgroup::"
-
-          # Every lane is enforced: a lane that is neither success nor skipped
-          # (the changes job proved its language was untouched) fails the gate.
-          # The old marker-file ratchet is gone — the rollout it enabled is
-          # complete, and the two sources of truth had drifted
-          # (observability + wide-event-conformance were enforced but missing
-          # from LANES).
-          failed=0
-          for lane in "${LANES[@]}"; do
-            r="${RESULT[$lane]}"
-            if [[ "$r" != "success" && "$r" != "skipped" ]]; then
-              echo "::error::lane '$lane' did not pass (result: $r)"
-              failed=$((failed + 1))
-            fi
-          done
-
-          if [[ "$failed" -gt 0 ]]; then
-            echo "::error::Quality gate FAILED — $failed lane(s) did not pass"
-            exit 1
-          fi
-          echo "Quality gate: PASSED — ${#LANES[@]} lanes enforced"
+          # ONE list: every lane the gate needs, each carrying its job result.
+          # consolidate needs both halves. The result is what tells a
+          # legitimately SKIPPED lane (the `changes` job proved its language
+          # untouched) apart from a lane that ran and reported nothing — and
+          # only the second is a bug. It also keeps the old rule that lane
+          # skips are worthless if `changes` itself failed: `changes` is in the
+          # list, so its failure reds the gate on its own. `@mutation` is the
+          # lane FAMILY that job reports under (see consolidate --help).
+          # Results go through env, not inline expansion.
+          EXPECT: >-
+            changes=${{ needs.changes.result }},biome=${{ needs.biome.result }},deps=${{ needs.deps.result }},circular=${{ needs.circular.result }},file-size=${{ needs.file-size.result }},types-location=${{ needs.types-location.result }},components-per-file=${{ needs.components-per-file.result }},duplicates=${{ needs.duplicates.result }},package-hygiene=${{ needs.package-hygiene.result }},type-check=${{ needs.type-check.result }},python-static=${{ needs.python-static.result }},python-mypy=${{ needs.python-mypy.result }},observability=${{ needs.observability.result }},wide-event-conformance=${{ needs.wide-event-conformance.result }},dead-code=${{ needs.dead-code.result }},alert-rules=${{ needs.alert-rules.result }},suppression-hygiene=${{ needs.suppression-hygiene.result }},gitleaks=${{ needs.gitleaks.result }},semgrep=${{ needs.semgrep.result }},test-mutation-plan=${{ needs.test-mutation-plan.result }},test-mutation@mutation=${{ needs.test-mutation.result }}
+        run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"

@@ -19,19 +19,30 @@
 #                            lane runs it — the plan wired to the shards, sized
 #                            to the local CPU budget. Logs under
 #                            verify-logs/mutation/.
+#   replay <verdict|dir|shard.log> <mutant-id|file.py:LINE>
+#                            Re-apply ONE survivor's diff to a scratch copy of
+#                            apps/api and run that module's mapped tests —
+#                            killed or survived, without a lane run. mutmut's
+#                            mutant numbering depends on the diff scope and
+#                            cannot be regenerated locally, so the recorded diff
+#                            is the only way back to a named survivor. The
+#                            working tree is never touched, and that is checked.
 #
 # Env contract:
 #   matrix  none directly; delegates the diff to `changes.sh files py`.
 #   plan    GITHUB_OUTPUT (stdout-only when unset).
 #   shard   GROUP (required, compact JSON array of {module,testfiles,ranges});
-#           SHARD_LOG (shard.log), GITHUB_STEP_SUMMARY.
-#   module  MUTMUT_WORKDIR_BASE, MUTMUT_MAX_CHILDREN, MUTMUT_KEEP_WORKDIR.
+#           SHARD_LOG (shard.log), GITHUB_STEP_SUMMARY. Produces TWO things:
+#           <shard>.verdict.json beside the log — this lane's own uncapped
+#           record, what `replay` reads back — and one shared-schema verdict per
+#           module, written by `verdict.py emit` into verify-logs/verdicts/,
+#           which is what the quality gate consolidates.
+#   module  MUTMUT_WORKDIR_BASE, MUTMUT_MAX_CHILDREN, MUTMUT_KEEP_WORKDIR,
+#           MUTATION_VERDICT_DIR (where the module RECORD lands; the shard sets
+#           it to a scratch dir beside the log).
 #   local   MUTATION_JOBS, MUTATION_CPU_BUDGET, MUTMUT_MAX_CHILDREN.
+#   replay  none.
 set -euo pipefail
-
-# How much of each survivor's diff the failing shard prints.
-MAX_SHOWN_SURVIVORS="${MAX_SHOWN_SURVIVORS:-40}"
-MAX_SHOWN_LINES="${MAX_SHOWN_LINES:-40}"
 
 # shellcheck source=scripts/ci/lib/log.sh
 source "$(dirname "$0")/lib/log.sh"
@@ -40,6 +51,51 @@ source "$(dirname "$0")/lib/cpu-slots.sh"
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
+
+# The interpreter that has mutmut and the API's test dependencies. Both the
+# mutation run and `replay` need it, and "which python" is not a question either
+# of them should answer differently.
+_venv_python() {
+  local candidate
+  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/apps/api/.venv/bin/python"; do
+    if [ -x "$candidate" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  echo "ERROR: mutation.sh — venv python not found (run nx run api:sync first)." >&2
+  return 1
+}
+
+# `app/services/x.py` -> `app_services_x`, the record file's name. Mirrors
+# `module_slug` in lib/mutation_report.py: the shell side names the file, the
+# python side names it in the advice it prints, and they have to agree.
+_record_slug() {
+  local module="${1%.py}"
+  printf '%s\n' "${module//\//_}"
+}
+
+# This module's record — this lane's own schema, merged into the shard's
+# verdict.json and reported to the gate by `collect`. Called from cmd_module
+# only, and reads MODULE / TESTFILES / VENV_PY / WORKDIR from it: every exit
+# path of that function owes the shard a record, and threading five values
+# through each of them is how one path ends up not writing one.
+#
+#   _write_record <status> <reason> <records-tsv> <diffs-file>
+_write_record() {
+  local status="$1" reason="$2" records="$3" diffs="$4" testfiles_json
+  testfiles_json="$(printf '%s\n' "${TESTFILES[@]+"${TESTFILES[@]}"}" | python3 -c '
+import json
+import sys
+
+print(json.dumps([line for line in sys.stdin.read().splitlines() if line]))')"
+  "$VENV_PY" "$SCRIPT_DIR/lib/mutation_report.py" module \
+    --module "$MODULE" --path "apps/api/$MODULE" \
+    --module-file "$REPO_ROOT/apps/api/$MODULE" \
+    --records "$records" --diffs "$diffs" \
+    --testfiles "$testfiles_json" --status "$status" --reason "$reason" \
+    --out "${MUTATION_VERDICT_DIR:-$WORKDIR}/$(_record_slug "$MODULE").json" >&2
+}
 
 # Emit the mutation-check matrix: every changed app module + its test file.
 #
@@ -194,6 +250,28 @@ for entry in entries:
   SHARD_LOG="${SHARD_LOG:-shard.log}"
   : > "$SHARD_LOG"
 
+  # This lane's own record of the run, beside the log: every survivor with its
+  # mutant id, line, one-line change and full diff — what `replay` reads back.
+  # Deliberately NOT under verify-logs/verdicts/: `verdict.py consolidate` reads
+  # every JSON in that tree as a lane verdict and indexes doc["lane"], so a file
+  # of a different shape there does not degrade, it crashes the gate. The
+  # contract is reported separately, through `verdict.py emit` (see `collect`).
+  #
+  # Both names derive from SHARD_LOG: `local` runs every module as its own
+  # single-module shard in ONE directory, and fixed names would have those
+  # shards overwrite each other's record.
+  SHARD_VERDICT="${SHARD_LOG%.log}.verdict.json"
+  RECORD_DIR="${SHARD_LOG%.log}.records"
+  rm -rf "$RECORD_DIR"
+  mkdir -p "$RECORD_DIR"
+  RECORD_DIR="$(cd "$RECORD_DIR" && pwd)"
+  export MUTATION_VERDICT_DIR="$RECORD_DIR"
+  # module<TAB>exit-code, one row per module in the order the shard ran them.
+  # The exit code is recorded rather than inferred from the log: a module whose
+  # log says nothing conclusive but exited non-zero must not merge as a pass.
+  SHARD_RCS="$(mktemp)"
+  trap 'rm -f "$SHARD_TSV" "$SHARD_RCS"' EXIT
+
   # timeout(1) bounds a genuine mutmut hang from OUTSIDE the script: bash defers
   # traps while waiting on a foreground child, so an in-script watchdog can never
   # fire. It is coreutils, so it is absent on a stock macOS — resolve it here
@@ -243,6 +321,7 @@ for entry in entries:
       rc="$module_rc"
       failed_modules+=("$module")
     fi
+    printf '%s\t%s\n' "$module" "$module_rc" >> "$SHARD_RCS"
   done < "$SHARD_TSV"
   cpu_slots_release "$SLOTS"
 
@@ -255,6 +334,19 @@ for entry in entries:
   echo "--- $SHARD_LOG (last 200KB; full file in the artifact) ---"
   tail -c 200000 "$SHARD_LOG"
 
+  # Merge the module records into this lane's replay artifact, and report every
+  # module to the quality gate through `verdict.py emit` — one verdict per
+  # module, with a finding per surviving line and that line's diffs as its
+  # detail. Reported HERE rather than inside `module` because `emit` prints the
+  # ::error annotations, and a module's own output is redirected into
+  # $SHARD_LOG, where an annotation is just text GitHub never sees.
+  python3 "$SCRIPT_DIR/lib/mutation_report.py" collect \
+    --log "$SHARD_LOG" --dir "$RECORD_DIR" --rcs "$SHARD_RCS" \
+    --out "$SHARD_VERDICT" --repo-root "$REPO_ROOT"
+  # The records were inputs to a merge that succeeded; keeping both copies only
+  # invites reading the stale one. A FAILED merge leaves them as the evidence.
+  rm -rf "$RECORD_DIR"
+
   # The verdict, last and on its own. A shard carries several modules when the
   # diff is large, so "this check is red" has to say WHICH — otherwise the only
   # way to find out is scrolling a 200KB tail.
@@ -262,11 +354,6 @@ for entry in entries:
     echo "Mutation shard OK — every module clean"
   else
     echo "::error::mutation failed for: ${failed_modules[*]}"
-    {
-      echo "### Mutation failures"
-      echo
-      for module in "${failed_modules[@]}"; do echo "- \`$module\`"; done
-    } >> "${GITHUB_STEP_SUMMARY:-/dev/null}"
   fi
 
   exit "$rc"
@@ -283,6 +370,13 @@ cmd_local() {
   LOG_DIR="verify-logs/mutation"
   rm -rf "$LOG_DIR"
   mkdir -p "$LOG_DIR"
+
+  # The shared-schema verdicts live in a SIBLING directory
+  # (verify-logs/verdicts/), which the wipe above must never reach: every other
+  # lane writes its verdict there too, and deleting the tree would take theirs
+  # with it. Only this lane's own subdirectory is cleared, and only here — the
+  # per-module shards below run concurrently and must not wipe each other's.
+  rm -rf "verify-logs/verdicts/mutation"
 
   if [ "$#" -gt 0 ]; then
     MATRIX="$(printf '%s\n' "$@" | sed 's|^apps/api/||; s|^|apps/api/|' |
@@ -499,17 +593,7 @@ EOF
     fi
   done
 
-  VENV_PY=""
-  for candidate in "$REPO_ROOT/.venv/bin/python" "$REPO_ROOT/apps/api/.venv/bin/python"; do
-    if [ -x "$candidate" ]; then
-      VENV_PY="$candidate"
-      break
-    fi
-  done
-  if [ -z "$VENV_PY" ]; then
-    echo "ERROR: mutation.sh module — venv python not found (run nx run api:sync first)." >&2
-    exit 1
-  fi
+  VENV_PY="$(_venv_python)" || exit 1
 
   # Per-invocation workdir: parallel-safe isolation for the config swap, the
   # mutants/ dir, and the pytest run. Absolute path: the trap runs after
@@ -649,6 +733,21 @@ EOF
   # it but it does have the mechanism — scripts/test/mutmut_diff_scope.py, loaded
   # into the mutmut process below, reads these two env vars. The survivor-verdict
   # layer further down stays as defense-in-depth.
+  # Contract tests hit real Redis, and their teardown flushes a DB keyed on
+  # PYTEST_XDIST_WORKER — which mutmut never sets, so every mutant child would
+  # land on one DB and flush each other's keys mid-test. A test failed by a
+  # neighbour's flush is counted as a kill, and a false kill is a false green.
+  # One mutant worker for these modules: a repository's contract suite is ~2s,
+  # so serial is cheap exactly where parallel would be wrong.
+  for tf in ${TESTFILES[@]+"${TESTFILES[@]}"}; do
+    case "$tf" in
+      tests/contracts/*)
+        export MUTMUT_MAX_CHILDREN=1
+        echo "mutation: $MODULE maps a contract test — one mutant worker so real-Redis teardown cannot race" >&2
+        break
+        ;;
+    esac
+  done
   export MUTMUT_CHANGED_RANGES="$CHANGED_RANGES"
   export MUTMUT_SCOPED_MODULE="$MODULE"
   MUTMUT_RC=0
@@ -673,14 +772,17 @@ import subprocess
 import sys
 
 env = dict(os.environ)
-# The Dagger CI container exports USE_REAL_SERVICES=1; under the lane's
-# 4-way parallelism that makes every mutant's covering tests dial real
-# Postgres/Mongo/Redis on a 2-core runner — runs that take seconds
-# hermetically stretch past mutmut's per-mutant timeout and read as ⏰
-# timeouts. The mutation lane is a unit-test instrument: the conftest
-# hermetic fence (blanked creds, mocked DBs) is the intended environment,
-# and real-service integration is covered by test-python.
-env.pop('USE_REAL_SERVICES', None)
+# USE_REAL_SERVICES is inherited from the job, not stripped. It used to be
+# popped here so the contract tier would skip under mutmut — sized for a
+# 2-core Dagger runner where per-mutant real-DB calls blew the timeout. The
+# cost of that was invisible: repository code is tested THROUGH Mongo in
+# tests/contracts, so with the tier skipped every changed repository method
+# reported 'no covering test' and the gate passed on it (users.py, 19 lines,
+# on one PR). The home box runs the services per runner instance already
+# (setup-python-test-env brings them up, namespaced by RUNNER_INDEX), the
+# contract suite for a repository runs in ~2s, and the host CPU governor
+# bounds the parallelism the old comment feared. Locally the variable is
+# simply whatever the developer exported, as in every other lane.
 patch_dir = sys.argv[1]
 env['PYTHONPATH'] = patch_dir + os.pathsep + env.get('PYTHONPATH', '')
 max_children = os.environ.get('MUTMUT_MAX_CHILDREN', '')
@@ -736,20 +838,31 @@ finally:
 sys.exit(proc.returncode)
 " "$MUTMUT_PATCH_DIR" 2>&1 | tee "$WORKDIR/mutmut.log" >&2 || MUTMUT_RC=$?
   if [ "$MUTMUT_RC" -ne 0 ]; then
-    # mutmut 3.7 cannot mutate decorated functions (verified in its source:
-    # file_mutation.py skips every FunctionDef with decorators — FastAPI
-    # endpoints, @Cacheable wrappers, etc. are never mutated). When the
-    # module's exercised code is all decorated, the stats phase finds no
-    # mutant with covering tests and stops early. That is a tool limitation,
-    # not a test weakness — the endpoint tests + diff-cover carry that
-    # surface. Skip with a reason instead of failing the lane.
+    # "No mutant had covering tests" is two different facts wearing one
+    # message, and they need opposite answers. Either the changed lines hold
+    # nothing a test could pin — imports, constants, docstrings, decorators,
+    # or code inside a decorated function, which mutmut 3.7 never mutates
+    # (verified in its file_mutation.py) — and silence is right; or they are
+    # executable code inside a function that NO test reaches, which is the
+    # exact gap this lane exists to catch and used to exit 0 on. One PR had
+    # 39 of these SKIPs; 10 were the second kind, and the message pointed at
+    # a diff-cover lane that does not run on PRs as the reason not to worry.
+    # lib/mutation_gap.py draws the line; only the second kind fails.
     if grep -q "could not find any test case for any mutant" "$WORKDIR/mutmut.log"; then
-      echo "SKIP: $MODULE — no mutant had covering tests. Causes:" >&2
-      echo "      mutmut 3.7 cannot mutate decorated functions (FastAPI" >&2
-      echo "      endpoints, @Cacheable, ...), and with the diff-driven scoping" >&2
-      echo "      the changed lines may hold nothing mutatable (imports," >&2
-      echo "      decorators, strings). The changed behavior is covered by the" >&2
-      echo "      module's tests + diff-cover." >&2
+      GAP_LINES="$("$VENV_PY" "$SCRIPT_DIR/lib/mutation_gap.py" "$REPO_ROOT/apps/api/$MODULE" "$CHANGED_RANGES" | tr '\n' ' ')"
+      if [ -n "${GAP_LINES// /}" ]; then
+        echo "MUTATION FAILED — changed code no test reaches in $MODULE:" >&2
+        echo "      line(s) $GAP_LINES" >&2
+        echo "      These are executable lines inside a function that this PR added or" >&2
+        echo "      changed, and none of the module's mapped tests execute them, so no" >&2
+        echo "      mutant there could ever be killed. Write a test that runs them and" >&2
+        echo "      asserts what they do — or, if they are only reachable through the" >&2
+        echo "      contract tier, say so: that tier does not run in this lane." >&2
+        exit 1
+      fi
+      echo "SKIP: $MODULE — nothing on the changed lines for a test to pin" >&2
+      echo "      (imports, constants, docstrings, decorators, or code inside a" >&2
+      echo "      decorated function, which mutmut 3.7 cannot mutate)." >&2
       exit 0
     fi
     # mutmut's stats/clean/mutant phases share ONE process, so module-level
@@ -857,6 +970,33 @@ sys.exit(proc.returncode)
   SEGFAULT="$(printf '%s\n' "$RESULTS" | grep -c ": segfault$" || true)"
   SKIPPED="$(printf '%s\n' "$RESULTS" | grep -c ": skipped$" || true)"
   TYPECHECK="$(printf '%s\n' "$RESULTS" | grep -c ": caught by type check$" || true)"
+  # NOTHING came back. Every guard below needs TOTAL > 0 to fire, so a run that
+  # produced no results at all used to fall straight through them and print
+  # "Mutation: OK" — a module reported as proven by a mutmut that never ran.
+  # That is not hypothetical: a stray double quote in a comment inside the
+  # bash-quoted python child truncated the program, so the child exited 0 having
+  # printed nothing, and every module in the lane reported OK for a day.
+  #
+  # Keyed on the three facts together — no results, an empty log, no mutants
+  # tree — so that this cannot swallow the legitimate zero-mutant case below,
+  # where mutmut ran, said so, and simply found nothing to mutate.
+  if [ "${TOTAL:-0}" -eq 0 ] && [ ! -s "$WORKDIR/mutmut.log" ] && [ ! -d "$WORKDIR/mutants" ]; then
+    echo "MUTATION RUN PRODUCED NO RESULTS — the mutmut child did not run." >&2
+    echo "  No results, an empty mutmut.log, and no mutants/ tree: nothing was" >&2
+    echo "  mutated and nothing was proven about $MODULE. Reporting this as OK is" >&2
+    echo "  the false green this guard exists to stop. Check the mutmut invocation" >&2
+    echo "  itself (its python program is a bash-quoted string — an unescaped \" or" >&2
+    echo "  \$ inside it truncates the program and the child exits 0 in silence)." >&2
+    _write_record error "mutmut produced no results — the child did not run" /dev/null /dev/null
+    exit 1
+  fi
+  if [ "${TOTAL:-0}" -eq 0 ]; then
+    echo "SKIP: $MODULE — mutmut ran and generated no mutants on the changed lines." >&2
+    echo "      Nothing was proven here either way; it is not a pass." >&2
+    _write_record skip "mutmut generated no mutants on the changed lines of $MODULE" \
+      /dev/null /dev/null
+    exit 0
+  fi
   if [ "${NOT_CHECKED:-0}" -gt 0 ]; then
     echo "MUTATION RUN INCOMPLETE — $NOT_CHECKED mutant(s) were never checked;" >&2
     echo "the run was interrupted. See mutmut's output above." >&2
@@ -936,6 +1076,13 @@ sys.exit(proc.returncode)
   EQUIVALENT=""
   UNCHANGED=""
   LOGGING=""
+  # One row per survivor — name, mutmut's status, the classifier's verdict
+  # (CHANGED:<line> / LOGGING:<line> / UNCHANGED:<line> / EQUIV) — for
+  # lib/mutation_report.py to turn into verdict.json. The line number is the
+  # classifier's, resolved against the REAL module, and it is the whole reason
+  # survivors can be grouped by source line instead of listed by mutant id.
+  RECORDS="$WORKDIR/survivor-records.tsv"
+  : > "$RECORDS"
   _phase "classify survivors"
   if [ -n "$SURVIVORS" ]; then
     while IFS= read -r line; do
@@ -967,6 +1114,8 @@ sys.exit(proc.returncode)
           echo "  Re-run: $VENV_PY $CLASSIFIER '$line' '$WORKDIR' '$CHANGED_RANGES' '$MODULE'" >&2
           exit 1 ;;
       esac
+      SURVIVOR_NAME="${line#"${line%%[![:space:]]*}"}"
+      printf '%s\t%s\t%s\n' "${SURVIVOR_NAME%%:*}" "survived" "$VERDICT" >> "$RECORDS"
     done <<< "$SURVIVORS"
   fi
   NO_TESTS_CHANGED=""
@@ -1035,28 +1184,59 @@ sys.exit(proc.returncode)
     echo "      verdict so an exclusion is never invisible, including on a failing run:" >&2
     echo "$LOGGING" >&2
   fi
+  # Every survivor's diff, uncapped. The old cap was 40, which on a real run
+  # left 39 survivors carrying a name and nothing else — and a mutant id with no
+  # diff is not actionable, since the numbering depends on the diff scope and
+  # cannot be regenerated locally. A survivor's diff is ~12 lines: even a
+  # hundred of them is noise-free next to the 190k-line log they sit in.
+  # `mutmut show` is the same call the log already made, so this costs nothing
+  # extra per mutant; its output is captured to a file because it is also what
+  # the structured verdict and `replay` read.
+  SURVIVOR_DIFFS="$WORKDIR/survivor-diffs.txt"
+  : > "$SURVIVOR_DIFFS"
   if [ -n "$REAL_SURVIVORS" ]; then
-    echo "MUTATION FAILED — the suite would not notice if this code were wrong:" >&2
-    echo "$REAL_SURVIVORS" >&2
-    # The diff of each survivor, so the log says which change went unnoticed
-    # rather than only a mutant id nobody can act on without rerunning the lane.
-    # Bounded: a shard with many survivors still prints a readable log.
-    SHOWN=0
+    _phase "collect survivor diffs"
     while IFS= read -r line; do
       [ -z "$line" ] && continue
-      [ "$SHOWN" -ge "$MAX_SHOWN_SURVIVORS" ] && { echo "  … $((SURVIVED - SHOWN)) more survivor(s) not shown" >&2; break; }
       name="${line#"${line%%[![:space:]]*}"}"
       name="${name%: survived}"
-      "$VENV_PY" -m mutmut show "$name" 2>&1 | head -n "$MAX_SHOWN_LINES" >&2 || echo "  (diff of $name unavailable)" >&2
-      SHOWN=$((SHOWN + 1))
+      "$VENV_PY" -m mutmut show "$name" >> "$SURVIVOR_DIFFS" 2>&1 ||
+        echo "  (diff of $name unavailable)" >&2
     done <<< "$REAL_SURVIVORS"
+    cat "$SURVIVOR_DIFFS" >&2
+  fi
+
+  # The lane verdict + the grouped human report. Written on the passing path
+  # too: "this module was checked and came back clean" is a fact the gate must
+  # read, not an absence it has to infer.
+  MODULE_STATUS=pass
+  [ -n "$REAL_SURVIVORS" ] && MODULE_STATUS=survivors
+  _write_record "$MODULE_STATUS" "" "$RECORDS" "$SURVIVOR_DIFFS"
+
+  if [ -n "$REAL_SURVIVORS" ]; then
     exit 1
   fi
   echo "Mutation: OK — no survivors on changed lines in $MODULE"
 }
 
+# Reproduce ONE survivor on this machine: apply its recorded diff to a scratch
+# copy of apps/api and run the module's mapped tests there. Nothing under the
+# working tree is written — the copy is the whole point, and the replay checks
+# `git status --porcelain` before and after to prove it.
+cmd_replay() {
+  local source="${1:-}" selector="${2:-}"
+  if [ -z "$source" ] || [ -z "$selector" ]; then
+    echo "usage: mutation.sh replay <verdict.json|shard.log> <mutant-id|file.py:LINE>" >&2
+    exit 2
+  fi
+  local venv_py
+  venv_py="$(_venv_python)" || exit 1
+  "$venv_py" "$SCRIPT_DIR/lib/mutation_report.py" replay "$source" "$selector" \
+    --repo-root "$REPO_ROOT" --api-root "$REPO_ROOT/apps/api" --python "$venv_py"
+}
+
 usage() {
-  sed -n '2,29p' "$0" >&2
+  sed -n '2,41p' "$0" >&2
 }
 
 main() {
@@ -1068,6 +1248,7 @@ main() {
     shard)  cmd_shard "$@" ;;
     module) cmd_module "$@" ;;
     local)  cmd_local "$@" ;;
+    replay) cmd_replay "$@" ;;
     *)
       echo "mutation.sh: unknown subcommand '${sub}'" >&2
       usage

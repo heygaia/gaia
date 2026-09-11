@@ -1,14 +1,20 @@
 #!/usr/bin/env python3
-"""mise ci:remote [branch] — the merge-readiness dashboard for a PR's GitHub side.
+"""mise ci:remote [branch|PR#] — why this PR is red, in one command.
 
-One command answers "what stands between this branch and merge?":
-  - every check run on the head commit (passed/failed/pending/skipped)
-  - mergeability (conflicts?), review decision (approved? changes requested?), draft
-  - unresolved review-thread count (cross-ref: `mise pr:comments` for the threads)
+Prints the PR's gate state and then, for every non-green check, the failure
+itself: the lane's machine-readable verdict artifact when the lane uploaded one,
+otherwise the relevant tail of the job log (anchored on the last ``##[error]``,
+because a GitHub job log ends in post-job cleanup, not in the failure).
+
+Verdict artifacts are downloadable while the run is still in progress; job logs
+are not ("logs will be available when it is complete"), which is why the
+artifact is the preferred source.
 
 `--watch` polls until checks go terminal (bounded), printing transitions.
+`--verbose` adds full finding details, passing lanes, and the source used.
+`--json` emits the same report as one object.
 
-Exit codes: 0 = no failed checks and no conflicts (pending is NOT failure — read counts);
+Exit codes: 0 = no failed checks and no conflicts (pending is NOT failure);
             1 = at least one failed check or conflicting branch;
             2 = usage/auth/config error.
 """
@@ -16,11 +22,17 @@ Exit codes: 0 = no failed checks and no conflicts (pending is NOT failure — re
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime
+import io
 import json
 import os
+import re
+import subprocess
 import sys
 import time
+from typing import TypedDict
+import zipfile
 
 sys.path.insert(0, str(__file__.rsplit("/", 1)[0]))
 from gaia_gh import (
@@ -32,8 +44,19 @@ from gaia_gh import (
     resolve_pr,
 )
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 MAX_CHECK_PAGES = 6  # 100/page -> up to 600 check runs; plenty for any PR
+MAX_PARALLEL_FETCHES = 8
+VERDICT_PREFIX = "verdict-"
+FALLBACK_TAIL_LINES = 40  # kept in --json; the human render shows the last SHOWN_TAIL_LINES
+SHOWN_TAIL_LINES = 20
+DETAIL_PREVIEW_LINES = 3
+MAX_CHECK_PAGE_SIZE = 100
+FAILING = ("failed", "error", "timeout")
+VERDICT_BAD = ("fail", "error", "timed_out")
+ERROR_MARK = "ERROR: "
+COUNT_KEYS = ("passed", "failed", "pending", "skipped", "error", "timeout")
+
 CONCLUSION_MAP = {
     "success": "passed",
     "failure": "failed",
@@ -46,18 +69,92 @@ CONCLUSION_MAP = {
     "stale": "skipped",
 }
 
+ANSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
+# `gh run view --log` prefixes every line with "job\tstep\ttimestamp ".
+RUNVIEW_PREFIX_RE = re.compile(r"^[^\t]*\t[^\t]*\t\d{4}-\d{2}-\d{2}T[\d:.]+Z\s?")
+# `gh api .../jobs/{id}/logs` prefixes every line with an ISO timestamp.
+TS_PREFIX_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d+Z\s?")
+NOISE_RE = re.compile(r"^##\[(?:group|endgroup|debug|section|start-action|end-action)\b")
+# `test_x PASSED [ 34%]` — pytest's -vv progress. Never why a job went red.
+PYTEST_PASS_RE = re.compile(r"\s(?:PASSED|SKIPPED|XFAIL|XPASS)\s+\[\s*\d+%\]$")
+RUN_ID_RE = re.compile(r"/actions/runs/(\d+)")
+JOB_ID_RE = re.compile(r"/job/(\d+)")
+SLUG_RE = re.compile(r"[^a-z0-9]+")
 
-def step(n: int, total: int, msg: str, quiet: bool) -> None:
-    if not quiet:
-        print(f"[{n}/{total}] {msg}", flush=True)
+
+class Finding(TypedDict, total=False):
+    file: str
+    line: int
+    message: str
+    detail: str
 
 
-def fetch_snapshot(owner: str, name: str, pr_number: int, timeout_s: int) -> dict:
+class Verdict(TypedDict, total=False):
+    lane: str
+    status: str
+    summary: str
+    findings: list[Finding]
+    advice: list[str]
+    artifact: str
+    run_id: int
+
+
+class Check(TypedDict):
+    name: str
+    app: str
+    status: str
+    url: str | None
+    run_id: int | None
+    job_id: int | None
+    started_at: str | None
+    completed_at: str | None
+
+
+class StackRow(TypedDict):
+    branch: str
+    pr: int | None
+    base: str | None
+    expected_base: str
+    is_current: bool
+    counts: dict[str, int]
+    base_mismatch: bool
+
+
+def gh_bytes(args: list[str], timeout_s: int) -> tuple[int, bytes, str]:
+    """`gh` with undecoded stdout — artifact zips and ANSI-laden job logs.
+
+    gaia_gh.gh decodes as text, which mangles a zip; this is the binary twin.
+    """
+    try:
+        proc = subprocess.run(["gh", *args], capture_output=True, timeout=timeout_s, check=False)
+    except subprocess.TimeoutExpired:
+        return 124, b"", f"gh timed out after {timeout_s}s"
+    except FileNotFoundError:
+        return 127, b"", "gh CLI not found on PATH"
+    return proc.returncode, proc.stdout, proc.stderr.decode("utf-8", "replace")
+
+
+def slug(text: str) -> str:
+    return SLUG_RE.sub("-", text.lower()).strip("-")
+
+
+def plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
+
+
+def empty_counts() -> dict[str, int]:
+    return dict.fromkeys(COUNT_KEYS, 0)
+
+
+# --------------------------------------------------------------------- PR + check runs
+
+
+def fetch_pr_state(owner: str, name: str, pr_number: int, timeout_s: int) -> dict:
     """One GraphQL round trip: PR meta + review state + unresolved thread count."""
     query = """
 query($owner:String!,$name:String!,$number:Int!){
   repository(owner:$owner,name:$name){ pullRequest(number:$number){
-    headRefOid url isDraft mergeable reviewDecision
+    number title url headRefOid baseRefName headRefName isDraft mergeable reviewDecision
     reviewThreads(first:100){ totalCount nodes{ isResolved } }
   } } }
 """
@@ -66,11 +163,13 @@ query($owner:String!,$name:String!,$number:Int!){
     )
     rc, out, err = gh(["api", "graphql", "--input", "-"], timeout_s, stdin_text=payload)
     if rc != 0:
-        eprint(f"ci:remote: GraphQL fetch failed:\n{err.strip()[:400]}")
+        eprint(f"ci:remote: POST /graphql (pull request state) failed:\n{err.strip()[:400]}")
         sys.exit(classify_failure(err, rc))
     data = json.loads(out)
     if "errors" in data:
-        eprint(f"ci:remote: GraphQL errors: {json.dumps(data['errors'])[:300]}")
+        eprint(
+            f"ci:remote: GraphQL errors (pull request state): {json.dumps(data['errors'])[:300]}"
+        )
         sys.exit(2)
     return data["data"]["repository"]["pullRequest"]
 
@@ -81,40 +180,43 @@ def fetch_check_runs(
     """All check runs on the head commit. Returns (runs, truncated)."""
     runs: list[dict] = []
     page = 1
+    endpoint = f"repos/{owner}/{name}/commits/{head_sha}/check-runs"
     while page <= MAX_CHECK_PAGES:
-        rc, out, err = gh(
-            ["api", f"repos/{owner}/{name}/commits/{head_sha}/check-runs?per_page=100&page={page}"],
-            timeout_s,
-        )
+        rc, out, err = gh(["api", f"{endpoint}?per_page=100&page={page}"], timeout_s)
         if rc != 0:
-            eprint(f"ci:remote: check-runs fetch failed:\n{err.strip()[:400]}")
+            eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
             sys.exit(classify_failure(err, rc))
         batch = json.loads(out).get("check_runs", [])
         runs.extend(batch)
-        if len(batch) < 100:
+        if len(batch) < MAX_CHECK_PAGE_SIZE:
             return runs, False
         page += 1
     return runs, True
 
 
-def normalize(runs: list[dict]) -> list[dict]:
-    out = []
-    for r in runs:
-        completed = r.get("status") == "completed"
-        conclusion = r.get("conclusion")
+def normalize(runs: list[dict]) -> list[Check]:
+    out: list[Check] = []
+    for run in runs:
+        completed = run.get("status") == "completed"
+        conclusion = run.get("conclusion")
         if not completed or conclusion is None:
             status = "pending"
         else:
             status = CONCLUSION_MAP.get(conclusion, "error")
+        url = run.get("html_url") or ""
+        run_match = RUN_ID_RE.search(url)
+        job_match = JOB_ID_RE.search(url)
         out.append(
-            {
-                "name": r.get("name", "?"),
-                "app": (r.get("app") or {}).get("slug", ""),
-                "status": status,
-                "url": r.get("html_url"),
-                "started_at": r.get("started_at"),
-                "completed_at": r.get("completed_at"),
-            }
+            Check(
+                name=run.get("name", "?"),
+                app=(run.get("app") or {}).get("slug", ""),
+                status=status,
+                url=run.get("html_url"),
+                run_id=int(run_match.group(1)) if run_match else None,
+                job_id=int(job_match.group(1)) if job_match else None,
+                started_at=run.get("started_at"),
+                completed_at=run.get("completed_at"),
+            )
         )
     return sorted(
         out,
@@ -125,73 +227,433 @@ def normalize(runs: list[dict]) -> list[dict]:
     )
 
 
-def render(
-    checks: list[dict],
-    counts: dict[str, int],
-    pr_number: int,
-    duration_ms: int,
-    truncated: bool,
-) -> None:
-    print(
-        f"\nci:remote #{pr_number}: {len(checks)} checks — "
-        f"{counts['passed']} passed, {counts['failed']} failed, "
-        f"{counts['pending']} pending, {counts['skipped']} skipped"
-        + (
-            f", {counts['timeout']} timeout, {counts['error']} error"
-            if (counts["timeout"] or counts["error"])
-            else ""
-        )
-        + f" [{duration_ms} ms]"
-        + ("  ⚠ TRUNCATED (>600 checks)" if truncated else "")
+# ----------------------------------------------------------------------------- verdicts
+
+
+def fetch_run_verdicts(owner: str, name: str, run_id: int, timeout_s: int) -> list[Verdict]:
+    """Every `verdict-*` artifact on a run, unzipped and parsed.
+
+    Artifacts are downloadable while the run is still in progress — unlike job
+    logs, which only materialise once the whole run completes.
+    """
+    endpoint = f"repos/{owner}/{name}/actions/runs/{run_id}/artifacts"
+    rc, out, err = gh(["api", f"{endpoint}?per_page=100"], timeout_s)
+    if rc != 0:
+        eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
+        sys.exit(classify_failure(err, rc))
+    wanted = [
+        a
+        for a in json.loads(out).get("artifacts", [])
+        if a.get("name", "").startswith(VERDICT_PREFIX) and not a.get("expired")
+    ]
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
+        blobs = list(pool.map(lambda a: fetch_artifact(owner, name, a["id"], timeout_s), wanted))
+
+    verdicts: list[Verdict] = []
+    for artifact, blob in zip(wanted, blobs, strict=True):
+        with zipfile.ZipFile(io.BytesIO(blob)) as archive:
+            for member in archive.namelist():
+                if not member.endswith(".json"):
+                    continue
+                parsed: Verdict = json.loads(archive.read(member))
+                parsed["artifact"] = artifact["name"]
+                parsed["run_id"] = run_id
+                verdicts.append(parsed)
+    return verdicts
+
+
+def fetch_artifact(owner: str, name: str, artifact_id: int, timeout_s: int) -> bytes:
+    endpoint = f"repos/{owner}/{name}/actions/artifacts/{artifact_id}/zip"
+    rc, blob, err = gh_bytes(["api", endpoint], timeout_s)
+    if rc != 0:
+        eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
+        sys.exit(classify_failure(err, rc))
+    return blob
+
+
+def verdict_matches(verdict: Verdict, check_name: str) -> bool:
+    """A verdict belongs to a check when its lane or artifact name slugs to it.
+
+    A check name carries decoration the artifact name cannot: matrix jobs render
+    as `test-python (unit-a)` and sharded ones as `Mutation shard 3/6 (19
+    modules)`, so a slug prefix counts — but only on a token boundary, or
+    `verdict-lint` would claim `lint-python`.
+    """
+    target = slug(check_name)
+    candidates = (
+        slug(verdict.get("lane", "")),
+        slug(verdict.get("artifact", "")[len(VERDICT_PREFIX) :]),
     )
-    for c in checks:
-        if c["status"] in ("failed", "error", "timeout"):
-            print(f"  FAIL  {c['name']}  {c['url']}")
-    for c in checks:
-        if c["status"] == "pending":
-            print(f"  PEND  {c['name']}")
+    return any(c and (target == c or target.startswith(f"{c}-")) for c in candidates)
 
 
-def next_steps(pr_meta: dict, unresolved: int, counts: dict[str, int], branch: str) -> None:
-    mergeable = pr_meta.get("mergeable")
-    review_decision = pr_meta.get("reviewDecision")
-    steps: list[str] = []
-    if mergeable == "CONFLICTING":
-        steps.append(
-            "Branch has merge conflicts with master — merge/rebase origin/master into it and resolve."
+# ----------------------------------------------------------------------------- job logs
+
+
+def clean_log(raw: str) -> list[str]:
+    """Strip the prefixes that make a raw Actions log unreadable.
+
+    Removes ANSI, the per-line ISO timestamp (`gh api .../logs`) or the
+    `job\tstep\ttimestamp` prefix (`gh run view --log`), grouping markers and
+    blank lines; rewrites `##[error]` as `ERROR: ` so the failure reads as
+    English.
+
+    Per-test PASSED/SKIPPED progress lines go too: a `-vv` mutation shard
+    prints hundreds of them, and they fill the whole window with tests that
+    did not fail. FAILED and ERROR lines are kept.
+    """
+    lines: list[str] = []
+    for raw_line in raw.splitlines():
+        line = ANSI_RE.sub("", raw_line)
+        line = RUNVIEW_PREFIX_RE.sub("", line)
+        line = TS_PREFIX_RE.sub("", line).rstrip()
+        if not line.strip() or NOISE_RE.match(line) or PYTEST_PASS_RE.search(line):
+            continue
+        lines.append(line.replace("##[error]", ERROR_MARK).replace("##[warning]", "WARNING: "))
+    return lines
+
+
+def failure_tail(lines: list[str], limit: int = FALLBACK_TAIL_LINES) -> list[str]:
+    """The window ending at the last `ERROR:` line, not at the end of the log.
+
+    A job log's literal tail is post-job cleanup: on a real mutation-shard
+    failure the `##[error]` sat 51 lines from the end, so a plain tail showed
+    artifact uploads and `git config` calls instead of the failure.
+    """
+    anchor: int | None = None
+    for i, line in enumerate(lines):
+        if line.startswith(ERROR_MARK):
+            anchor = i
+    if anchor is None:
+        return lines[-limit:]
+    return lines[max(0, anchor + 1 - limit) : anchor + 1]
+
+
+def fetch_job_tail(owner: str, name: str, job_id: int, timeout_s: int) -> list[str]:
+    endpoint = f"repos/{owner}/{name}/actions/jobs/{job_id}/logs"
+    rc, blob, err = gh_bytes(["api", "--allow-escape-sequences", endpoint], timeout_s)
+    if rc != 0 and "unknown flag" in err.lower():  # older gh has no such flag
+        rc, blob, err = gh_bytes(["api", endpoint], timeout_s)
+    if rc != 0:
+        if "404" in err or "not found" in err.lower():
+            return [f"(no log yet: GET {endpoint} -> 404; logs appear once the run completes)"]
+        eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
+        sys.exit(classify_failure(err, rc))
+    return failure_tail(clean_log(blob.decode("utf-8", "replace")))
+
+
+# ---------------------------------------------------------------------------- diagnosis
+
+
+def diagnose(
+    owner: str, name: str, checks: list[Check], timeout_s: int
+) -> tuple[list[Verdict], dict[str, list[str]], dict[str, str]]:
+    """For every failing check: its verdict, else its job-log tail.
+
+    Returns (verdicts, fallback tails by check name, source label by check name).
+    """
+    failing = [c for c in checks if c["status"] in FAILING]
+    if not failing:
+        return [], {}, {}
+
+    run_ids = sorted({c["run_id"] for c in failing if c["run_id"] is not None})
+    with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
+        batches = list(pool.map(lambda r: fetch_run_verdicts(owner, name, r, timeout_s), run_ids))
+    verdicts = [v for batch in batches for v in batch]
+
+    # A run whose verdicts already name a failure needs no log: the check that
+    # is red may be the gate job rather than the lane, and its display name
+    # ("Quality gate (required)") will never slug to the lane's artifact name.
+    runs_with_a_failing_verdict = {
+        v.get("run_id") for v in verdicts if v.get("status") in VERDICT_BAD
+    }
+
+    sources: dict[str, str] = {}
+    needs_log: list[Check] = []
+    for check in failing:
+        if any(verdict_matches(v, check["name"]) for v in verdicts):
+            sources[check["name"]] = "verdict artifact"
+        elif check["run_id"] in runs_with_a_failing_verdict:
+            sources[check["name"]] = "verdict artifacts on this run (see the lanes below)"
+        elif check["job_id"] is None:
+            sources[check["name"]] = (
+                f"external check ({check['app'] or 'unknown app'}) — open the URL"
+            )
+        else:
+            needs_log.append(check)
+
+    tails: dict[str, list[str]] = {}
+    if needs_log:
+        job_ids = [c["job_id"] for c in needs_log]
+        with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
+            fetched = list(
+                pool.map(lambda j: fetch_job_tail(owner, name, j or 0, timeout_s), job_ids)
+            )
+        for check, tail in zip(needs_log, fetched, strict=True):
+            tails[check["name"]] = tail
+            sources[check["name"]] = "job log tail (lane uploaded no verdict artifact)"
+    return verdicts, tails, sources
+
+
+# -------------------------------------------------------------------------------- stack
+
+
+def fetch_stack(timeout_s: int) -> dict | None:
+    """`gh stack view --json`, or None when the branch is not in a stack.
+
+    Never `gh stack view` bare — without `--json` it opens a TUI that hangs
+    under a PTY.
+    """
+    try:
+        proc = subprocess.run(
+            ["gh", "stack", "view", "--json"],
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
         )
-    if unresolved > 0:
-        steps.append(
-            f"{unresolved} unresolved review thread(s): run `mise pr:comments {branch}` for the full list + resolution syntax."
+    except (subprocess.TimeoutExpired, FileNotFoundError):
+        return None
+    if proc.returncode != 0:
+        return None  # 2 = not in a stack; anything else = extension absent
+    return json.loads(proc.stdout)
+
+
+def fetch_stack_states(
+    owner: str, name: str, numbers: list[int], timeout_s: int
+) -> dict[int, dict]:
+    """One GraphQL for every stack PR's base branch + check rollup."""
+    if not numbers:
+        return {}
+    aliases = " ".join(
+        f"p{n}: pullRequest(number:{n}){{ number baseRefName "
+        "commits(last:1){nodes{commit{statusCheckRollup{contexts(first:100){nodes{"
+        "__typename ... on CheckRun{conclusion status} ... on StatusContext{state}"
+        "}}}}}} }"
+        for n in numbers
+    )
+    query = (
+        f"query($owner:String!,$name:String!){{repository(owner:$owner,name:$name){{{aliases}}}}}"
+    )
+    payload = json.dumps({"query": query, "variables": {"owner": owner, "name": name}})
+    rc, out, err = gh(["api", "graphql", "--input", "-"], timeout_s, stdin_text=payload)
+    if rc != 0:
+        eprint(f"ci:remote: POST /graphql (stack rollups) failed:\n{err.strip()[:400]}")
+        sys.exit(classify_failure(err, rc))
+    data = json.loads(out)
+    if "errors" in data:
+        eprint(f"ci:remote: GraphQL errors (stack rollups): {json.dumps(data['errors'])[:300]}")
+        sys.exit(2)
+    repo = data["data"]["repository"] or {}
+    return {pr["number"]: pr for pr in repo.values() if pr is not None}
+
+
+def rollup_counts(pr_state: dict) -> dict[str, int]:
+    counts = empty_counts()
+    commits = (pr_state.get("commits") or {}).get("nodes") or []
+    if not commits:
+        return counts
+    rollup = commits[0]["commit"].get("statusCheckRollup") or {}
+    for node in (rollup.get("contexts") or {}).get("nodes", []):
+        if node.get("__typename") == "CheckRun":
+            raw = node.get("conclusion") if node.get("status") == "COMPLETED" else None
+        else:
+            raw = {"SUCCESS": "success", "FAILURE": "failure", "ERROR": "failure"}.get(
+                node.get("state", "")
+            )
+        counts[CONCLUSION_MAP.get((raw or "").lower(), "pending") if raw else "pending"] += 1
+    return counts
+
+
+def build_stack(owner: str, name: str, payload: dict, timeout_s: int) -> list[StackRow]:
+    branches = payload.get("branches") or []
+    trunk = payload.get("trunk") or "master"
+    numbers = [b["pr"]["number"] for b in branches if b.get("pr")]
+    states = fetch_stack_states(owner, name, numbers, timeout_s)
+    rows: list[StackRow] = []
+    for i, entry in enumerate(branches):
+        expected = trunk if i == 0 else branches[i - 1]["name"]
+        number = entry["pr"]["number"] if entry.get("pr") else None
+        state = states.get(number) if number else None
+        base = (state or {}).get("baseRefName")
+        rows.append(
+            StackRow(
+                branch=entry["name"],
+                pr=number,
+                base=base,
+                expected_base=expected,
+                is_current=bool(entry.get("isCurrent")),
+                counts=rollup_counts(state) if state else empty_counts(),
+                base_mismatch=bool(base and base != expected),
+            )
         )
-    if counts["failed"] or counts["error"] or counts["timeout"]:
-        steps.append("Fix the failing checks above; their links point at the run logs.")
+    return rows
+
+
+# ---------------------------------------------------------------------------- rendering
+
+
+def header(report: dict) -> None:
+    pr = report["pr"]
+    counts = report["counts"]
+    draft = "  [DRAFT]" if pr["is_draft"] else ""
+    print(f"PR #{pr['number']} {pr['title']}{draft}")
+    print(
+        f"  base {pr['base']} | {pr['mergeable']} | "
+        f"review: {pr['review_decision'] or 'none yet'} | "
+        f"{plural(report['unresolved_thread_count'], 'unresolved thread')}"
+    )
+    failed = counts["failed"] + counts["error"] + counts["timeout"]
+    print(
+        f"  checks: {counts['passed']} pass / {failed} fail / "
+        f"{counts['pending']} pending / {counts['skipped']} skipped"
+        + ("  [TRUNCATED >600 checks]" if report["truncated"] else "")
+    )
+
+
+def render_verdict(verdict: Verdict, verbose: bool) -> None:
+    print(f"FAIL  {verdict.get('lane', '?')}  [{verdict.get('status', '?')}]")
+    if verdict.get("summary"):
+        print(f"  {verdict['summary']}")
+    for finding in verdict.get("findings", []):
+        where = finding.get("file", "?")
+        if finding.get("line") is not None:
+            where = f"{where}:{finding['line']}"
+        print(f"  {where} — {finding.get('message', '')}")
+        detail = (finding.get("detail") or "").splitlines()
+        if not detail:
+            continue
+        for detail_line in detail if verbose else detail[:DETAIL_PREVIEW_LINES]:
+            print(f"      {detail_line}")
+        if not verbose and len(detail) > DETAIL_PREVIEW_LINES:
+            print(f"      … {len(detail) - DETAIL_PREVIEW_LINES} more lines (--verbose)")
+
+
+def render_failures(report: dict, verbose: bool) -> None:
+    printed: set[str] = set()
+    for check in report["checks"]:
+        if check["status"] not in FAILING:
+            continue
+        source = report["sources"].get(check["name"], "")
+        matched = [v for v in report["verdicts"] if verdict_matches(v, check["name"])]
+        if matched:
+            for verdict in matched:
+                render_verdict(verdict, verbose)
+                printed.add(slug(verdict.get("lane", "")))
+        else:
+            print(f"FAIL  {check['name']}  [{check['status']}]  ({source})")
+            tail = report["fallback_tails"].get(check["name"], [])
+            shown = tail if verbose else tail[-SHOWN_TAIL_LINES:]
+            if len(tail) > len(shown):
+                print(f"  … {len(tail) - len(shown)} earlier lines (--verbose)")
+            for line in shown:
+                print(f"  {line}")
+            if not tail:
+                print(f"  {check['url']}")
+        if verbose and check["url"]:
+            print(f"  source: {source or 'verdict artifact'} | {check['url']}")
+        print()
+
+    for verdict in report["verdicts"]:
+        if verdict.get("status") in VERDICT_BAD and slug(verdict.get("lane", "")) not in printed:
+            print("(verdict with no matching check run — a lane failed inside a passing job)")
+            render_verdict(verdict, verbose)
+            print()
+
+
+def render_pending(report: dict) -> None:
+    pending = [c["name"] for c in report["checks"] if c["status"] == "pending"]
+    for name in pending:
+        print(f"PEND  {name}")
+    if pending:
+        print()
+
+
+def render_stack(rows: list[StackRow], current_pr: int) -> None:
+    if not rows:
+        return
+    print("STACK")
+    width = max(len(r["branch"]) for r in rows)
+    for row in rows:
+        counts = row["counts"]
+        marker = "*" if row["pr"] == current_pr else " "
+        summary = (
+            f"{counts['passed']} pass / {counts['failed']} fail / {counts['pending']} pending"
+            if row["pr"]
+            else "no PR"
+        )
+        number = f"#{row['pr']}" if row["pr"] else "#----"
+        print(f" {marker} {number} {row['branch']:<{width}}  -> {row['base'] or '?'}  {summary}")
+        if row["base_mismatch"]:
+            print(
+                f"     WARNING: GitHub base is '{row['base']}' but the stack parent is "
+                f"'{row['expected_base']}' — every diff-scoped gate (mutation, test-impact, "
+                "diff-cover) is scoped against the wrong branch."
+            )
+    print()
+
+
+def collect_advice(report: dict, branch: str) -> list[str]:
+    advice: list[str] = []
+    for verdict in report["verdicts"]:
+        advice.extend(verdict.get("advice", []))
+    pr = report["pr"]
+    counts = report["counts"]
+    if pr["mergeable"] == "CONFLICTING":
+        advice.append(f"Merge conflicts with '{pr['base']}' — `git merge origin/{pr['base']}`.")
+    if report["unresolved_thread_count"]:
+        advice.append(
+            f"{plural(report['unresolved_thread_count'], 'unresolved review thread')}: "
+            f"`mise pr:comments {branch}`."
+        )
     if counts["pending"]:
-        steps.append(
-            f"{counts['pending']} check(s) still running: re-run `mise ci:remote --watch {branch}` to poll until terminal."
+        advice.append(
+            f"{plural(counts['pending'], 'check')} still running: "
+            f"`mise ci:remote --watch {branch}`."
         )
-    if review_decision == "CHANGES_REQUESTED":
-        steps.append("A reviewer has requested changes — address them, then re-request review.")
-    elif review_decision == "REVIEW_REQUIRED":
-        steps.append("Approval required before merge (policy: humans merge, agents never do).")
-    if (
-        mergeable == "MERGEABLE"
-        and unresolved == 0
-        and not counts["failed"]
-        and not counts["error"]
-        and not counts["timeout"]
-        and not counts["pending"]
-        and review_decision in ("APPROVED", None)
-    ):
-        steps.append(
-            "All clear locally-known state: checks green, no conflicts, approved. Merge per team policy."
+    red = [c["name"] for c in report["checks"] if c["status"] in FAILING]
+    if red and not any(v.get("status") in VERDICT_BAD for v in report["verdicts"]):
+        advice.append(
+            f"{plural(len(red), 'lane')} failed with no verdict artifact — the tails above are "
+            "all GitHub has. Give the lane a verdict (.github/actions/upload-verdict) "
+            "so the next reader gets file:line."
         )
-    if steps:
-        print("\nNEXT STEPS:")
-        for s_ in steps:
-            print(f"  - {s_}")
+    if pr["review_decision"] == "CHANGES_REQUESTED":
+        advice.append("A reviewer requested changes — address them, then re-request review.")
+    for row in report["stack"]:
+        if row["base_mismatch"]:
+            advice.append(
+                f"Retarget #{row['pr']} onto '{row['expected_base']}': "
+                f"`gh pr edit {row['pr']} --base {row['expected_base']}`."
+            )
+    deduped: list[str] = []
+    for line in advice:
+        if line not in deduped:
+            deduped.append(line)
+    return deduped
+
+
+def render(report: dict, verbose: bool) -> None:
+    header(report)
+    print()
+    render_failures(report, verbose)
+    render_pending(report)
+    render_stack(report["stack"], report["pr"]["number"])
+    if report["advice"]:
+        print("ADVICE")
+        for line in report["advice"]:
+            print(f"  - {line}")
     else:
-        print("\nNEXT: nothing actionable surfaced.")
+        print("ADVICE\n  - Nothing blocking on GitHub's side. Merge per team policy.")
+
+    if verbose:
+        print("\nPASSING")
+        for check in report["checks"]:
+            if check["status"] not in FAILING and check["status"] != "pending":
+                print(f"  {check['status']:<8}{check['name']}")
+
+
+# ------------------------------------------------------------------------------- driver
 
 
 def snapshot_once(
@@ -199,76 +661,64 @@ def snapshot_once(
     name: str,
     pr_number: int,
     gh_timeout: int,
-    quiet_json: bool,
     branch: str,
-    show_next: bool = True,
-    quiet_human: bool = False,
+    with_stack: bool,
 ) -> tuple[dict, int]:
     t0 = time.monotonic()
-    quiet_all = quiet_json or quiet_human
-    step(1, 2, f"fetching PR state + review threads for #{pr_number} …", quiet_all)
-    pr_meta = fetch_snapshot(owner, name, pr_number, gh_timeout)
-    step(2, 2, "fetching check runs on head sha …", quiet_all)
+    pr_meta = fetch_pr_state(owner, name, pr_number, gh_timeout)
     runs, truncated = fetch_check_runs(owner, name, pr_meta["headRefOid"], gh_timeout)
     checks = normalize(runs)
-    counts = {
-        k: sum(1 for c in checks if c["status"] == k)
-        for k in ("passed", "failed", "pending", "skipped", "error", "timeout")
-    }
+    counts = {k: sum(1 for c in checks if c["status"] == k) for k in COUNT_KEYS}
+    verdicts, tails, sources = diagnose(owner, name, checks, gh_timeout)
+
+    stack_payload = fetch_stack(gh_timeout) if with_stack else None
+    stack_rows = build_stack(owner, name, stack_payload, gh_timeout) if stack_payload else []
+
     unresolved = sum(1 for t in pr_meta["reviewThreads"]["nodes"] if not t["isResolved"])
     thread_total = pr_meta["reviewThreads"]["totalCount"]
-    duration_ms = int((time.monotonic() - t0) * 1000)
-
     report = {
         "schema_version": SCHEMA_VERSION,
         "repo": f"{owner}/{name}",
         "pr": {
             "number": pr_number,
+            "title": pr_meta["title"],
             "url": pr_meta["url"],
             "head_sha": pr_meta["headRefOid"],
+            "base": pr_meta["baseRefName"],
+            "head": pr_meta["headRefName"],
             "mergeable": pr_meta["mergeable"],
             "review_decision": pr_meta["reviewDecision"],
             "is_draft": bool(pr_meta["isDraft"]),
         },
         "checks": checks,
+        "verdicts": verdicts,
+        "fallback_tails": tails,
+        "sources": sources,
+        "stack": stack_rows,
         "unresolved_thread_count": unresolved,
         "thread_count_total": thread_total,
         "threads_truncated": thread_total > 100,
         "counts": counts,
         "truncated": truncated,
         "fetched_at": datetime.now(UTC).isoformat(),
-        "durationMs": duration_ms,
+        "durationMs": int((time.monotonic() - t0) * 1000),
     }
-
-    if not quiet_all:
-        render(checks, counts, pr_number, duration_ms, truncated)
-        draft_txt = " [DRAFT]" if pr_meta["isDraft"] else ""
-        print(
-            f"PR STATE: mergeable={pr_meta.get('mergeable')} | "
-            f"review={pr_meta.get('reviewDecision') or 'none yet'}{draft_txt}"
-            f" | unresolved_threads={unresolved}/{thread_total}"
-        )
-        if show_next:
-            next_steps(pr_meta, unresolved, counts, branch)
-    return report, (
-        1
-        if (
-            counts["failed"]
-            or counts["error"]
-            or counts["timeout"]
-            or pr_meta["mergeable"] == "CONFLICTING"
-        )
-        else 0
-    )
+    report["advice"] = collect_advice(report, branch)
+    red = counts["failed"] or counts["error"] or counts["timeout"]
+    return report, (1 if (red or pr_meta["mergeable"] == "CONFLICTING") else 0)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(
-        description="Merge-readiness dashboard for a PR's GitHub gates."
+    parser = argparse.ArgumentParser(description="Why this PR is red, in one command.")
+    parser.add_argument(
+        "branch", nargs="?", default=None, help="branch or PR number (default: current branch)"
     )
-    parser.add_argument("branch", nargs="?", default=None, help="branch (default: current)")
     parser.add_argument("--json", action="store_true", help="emit only the JSON report")
+    parser.add_argument(
+        "--verbose", action="store_true", help="full finding details + passing lanes"
+    )
     parser.add_argument("--watch", action="store_true", help="poll until checks are terminal")
+    parser.add_argument("--no-stack", action="store_true", help="skip the gh stack section")
     parser.add_argument(
         "--interval",
         default=os.environ.get("GAIA_CI_INTERVAL", "30"),
@@ -293,85 +743,55 @@ def main() -> int:
     except ValueError:
         eprint("usage error: --timeout/--interval/--max-wait must be integers")
         sys.exit(2)
-    for label, v in (("--timeout", gh_timeout), ("--interval", interval), ("--max-wait", max_wait)):
-        if v <= 0:
+    for label, value in (
+        ("--timeout", gh_timeout),
+        ("--interval", interval),
+        ("--max-wait", max_wait),
+    ):
+        if value <= 0:
             eprint(f"usage error: {label} must be >= 1")
             sys.exit(2)
 
     owner, name = parse_repo()
-    repo_slug = f"{owner}/{name}"
     branch = args.branch or current_branch()
-    resolved = resolve_pr(repo_slug, branch, gh_timeout)
+    resolved = resolve_pr(f"{owner}/{name}", branch, gh_timeout)
     if resolved is None:
-        print(f"ci:remote: no open PR for branch '{branch}' — push first or check the branch name.")
+        print(f"ci:remote: no open PR for '{branch}' — push first or check the branch name.")
         return 0
     pr_number, _, _ = resolved
+    with_stack = not args.no_stack
 
     if not args.watch:
-        report, exit_code = snapshot_once(owner, name, pr_number, gh_timeout, args.json, branch)
+        report, exit_code = snapshot_once(owner, name, pr_number, gh_timeout, branch, with_stack)
         if args.json:
             print(json.dumps(report, indent=2))
+        else:
+            render(report, args.verbose)
         return exit_code
 
-    # watch mode: bounded polling with transition lines
     deadline = time.monotonic() + max_wait
     poll = 0
     while True:
         poll += 1
-        report, exit_code = snapshot_once(
-            owner,
-            name,
-            pr_number,
-            gh_timeout,
-            args.json,
-            branch,
-            show_next=False,
-            quiet_human=True,
-        )
+        report, exit_code = snapshot_once(owner, name, pr_number, gh_timeout, branch, with_stack)
         counts = report["counts"]
-        stamp = datetime.now(UTC).strftime("%H:%M:%S")
-        elapsed = int(time.monotonic() - (deadline - max_wait))
         if not args.json:
+            elapsed = int(time.monotonic() - (deadline - max_wait))
             print(
-                f"  watch[{poll}] {stamp}: {counts['failed']} failed, "
-                f"{report['counts']['pending']} pending (elapsed {elapsed}s / max {max_wait}s)"
+                f"watch[{poll}] {datetime.now(UTC).strftime('%H:%M:%S')}: "
+                f"{counts['failed']} failed, {counts['pending']} pending "
+                f"(elapsed {elapsed}s / max {max_wait}s)"
             )
-        if report["counts"]["pending"] == 0 or time.monotonic() + interval > deadline:
-            if not args.json:
-                if report["counts"]["pending"]:
-                    print(
-                        f"  watch: stopping after {max_wait}s with "
-                        f"{report['counts']['pending']} still pending — re-run later."
-                    )
+        if counts["pending"] == 0 or time.monotonic() + interval > deadline:
+            if counts["pending"] and not args.json:
+                print(f"watch: stopped after {max_wait}s with {counts['pending']} still pending.")
             break
         time.sleep(interval)
-    if not args.json:
-        # terminal iteration: full verdict + guidance now
-        render(
-            report["checks"],
-            report["counts"],
-            report["pr"]["number"],
-            report["durationMs"],
-            report["truncated"],
-        )
-        draft_txt = " [DRAFT]" if report["pr"]["is_draft"] else ""
-        print(
-            f"PR STATE: mergeable={report['pr']['mergeable']} | "
-            f"review={report['pr']['review_decision'] or 'none yet'}{draft_txt}"
-            f" | unresolved_threads={report['unresolved_thread_count']}/{report['thread_count_total']}"
-        )
-        next_steps(
-            {
-                "mergeable": report["pr"]["mergeable"],
-                "reviewDecision": report["pr"]["review_decision"],
-            },
-            report["unresolved_thread_count"],
-            report["counts"],
-            branch,
-        )
-
     if args.json:
         print(json.dumps(report, indent=2))
+    else:
+        print()
+        render(report, args.verbose)
     return exit_code
 
 

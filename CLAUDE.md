@@ -282,6 +282,25 @@ Area-specific rules live in nested `CLAUDE.md` files that load automatically whe
 
 **Always spawn subagents wherever possible** — for research, exploration, or independent tasks, use the Agent tool with specialized subagents in parallel. Don't do sequentially what can be done concurrently.
 
+**One writer per working tree, and commit only between phases.** The commit
+hooks (`prek`) stash every unstaged change in the tree before running and
+restore them afterwards — that is how hooks see exactly the staged snapshot,
+and prek has no option to skip it. Under a live edit that rewind-and-reapply
+drops or duplicates hunks, and a whole-file `git checkout --` / `git restore` /
+`git stash` by any agent wipes every other agent's uncommitted work outright
+(both happened in one session: ~280 lines of workflow edits lost, three agents'
+changes gone from one file). So:
+
+- Agents that edit files run in their own worktree (`isolation: worktree` on
+  the Agent tool) and their work is merged back — or, if several must share
+  one checkout, they use targeted edits only and never a whole-file restore or
+  rewrite of a file another agent touches.
+- The orchestrator commits in a phase: only when every agent that edits the
+  tree has reported idle, never on the assumption that one is done. Confirm
+  with `ListAgents` (state `idle`) before any git command that touches the
+  working tree; a mid-commit `F821` that changes between hook runs means a file
+  is still moving.
+
 ### Deep Exploration
 
 When investigating a bug, feature, or unfamiliar area of the codebase:
@@ -313,7 +332,7 @@ When asked to find bugs or issues in the code, **only report problems that a rea
 
 ### Testing
 
-**Running tests locally: one file at a time, never with xdist.** The API's default `addopts` includes `-n 4`, and every xdist worker is a full import of the app with its own memory; a single agent running a few suites in parallel has taken a 24 GB laptop down. Always run `uv run pytest <one test file> -p no:xdist -o addopts=""`, run files back to back in one command rather than in separate concurrent calls, never start a second test, type-check or mutation process while one is running, and count subagents' tool runs as load. Full suites, mutation runs and the coverage lanes are CI's job (`mise ci:local` when you must, with `--only <lane>`).
+**Running tests locally: one file at a time, never with xdist.** The nx suite targets run with `-n 4`, and every xdist worker is a full import of the app with its own memory; a single agent running a few suites in parallel has taken a 24 GB laptop down. Always run `mise test:one <test file> [more files]` — it is `uv run pytest -p no:xdist -q` with `pytest.ini`'s real `addopts` intact. Do **not** pass `-o addopts=""`: that drops `--strict-markers` and the `-m` deselection, so an unregistered marker or a `composio` test passes locally and fails collection in CI (this shipped). Run files back to back in one command rather than in separate concurrent calls, never start a second test, type-check or mutation process while one is running, and count subagents' tool runs as load. Full suites, mutation runs and the coverage lanes are CI's job (`mise ci:local` when you must, with `--only <lane>`).
 
 Tests are first-class: every new feature/refactor ships a test at the right tier; every bug ships a failing-then-passing test (see `apps/api/tests/CLAUDE.md` for which tier).
 
@@ -329,7 +348,7 @@ A bug that ships without a failing-then-passing test is a bug that will come bac
 
 ### After Major Changes
 
-One-shot gate mirror: `mise ci:local` runs the same quality lanes CI runs (pinned versions, per-lane results, logs in `verify-logs/`). Iterate with `mise ci:local --only <lane,…>`, go full with `mise ci:local --all --with-heavy`, machine-readable via `--json`. Lane table: scripts/dev/verify-lanes.json — edit it in the same commit as any workflow lane change. For PR review state: `mise pr:comments` (read-only; unresolved threads + exact resolve/reply syntax). GitHub-side PR state (checks, conflicts, review decision, unresolved count): `mise ci:remote [branch]`, `--watch` to poll.
+One-shot gate mirror: `mise ci:local` runs the same quality lanes CI runs (pinned versions, per-lane results, logs in `verify-logs/`). Iterate with `mise ci:local --only <lane,…>`, go full with `mise ci:local --all --with-heavy`, machine-readable via `--json`. Lane table: scripts/dev/verify-lanes.json — edit it in the same commit as any workflow lane change. For PR review state: `mise pr:comments` (read-only; unresolved threads + exact resolve/reply syntax). When a PR is red, `mise ci:remote [branch|PR#]` is the only command you need: it prints the PR header (mergeable, review decision, unresolved threads, check counts), then for every non-green lane the failure itself — the lane's `verdict-*` artifact when it uploaded one (artifacts are readable while the run is still in progress; job logs are not), else the job log windowed on the last `##[error]` with timestamp prefixes and ANSI stripped — then the `gh stack`, warning when a PR's GitHub base differs from its stack parent. `--verbose` for full finding detail and passing lanes, `--json` to parse it, `--watch` to poll, `--no-stack` to skip the stack section.
 
 Always run type-check and lint for every affected layer before considering work complete:
 
@@ -389,6 +408,7 @@ Only use the `bd` CLI when the user explicitly asks for it. `bd` is a project-in
 - **`master` is the single base branch.** All feature branches are created from and merged into `master`. There is no `develop`. When comparing branches, analyzing diffs, or creating PRs, always use `master` as the base.
 - **NEVER merge pull requests.** Do not run `gh pr merge`, do not call any GitHub API merge endpoint, and do not take any action that merges a PR into any branch. PRs are merged by the team — not by Claude. This is an absolute rule with no exceptions.
 - Work is **not complete until `git push` succeeds.** Always push before ending a session.
+- **Stacked PRs are managed with `gh stack`, and only `gh stack` makes a stack.** Read `gh stack view --json` (never bare `gh stack view` — it opens a TUI) before assuming any PR's base; link with `gh stack link <pr> <pr> ...` bottom to top. A chain of `baseRefName`s and a hand-written "Stacked on #N" in a PR body is not a stack: GitHub shows no stack, and a PR left on `master` scopes every diff-driven gate to the whole stack (119 modules instead of 11, one CI round wasted). Retargeting a PR fires `edited`, which re-runs nothing — push a commit after restacking.
 - **Never use `git pull --rebase` or `git rebase` when pulling/merging `origin/master`.** Always use plain `git merge` — rebase inverts conflict markers (HEAD vs incoming) and causes confusion. Session close sequence (mandatory when code changed):
   ```bash
   git fetch origin
@@ -407,6 +427,13 @@ mv -f source dest      # NOT: mv source dest
 rm -f file             # NOT: rm file
 rm -rf directory       # NOT: rm -r directory
 ```
+
+`cd` is aliased to zoxide's `z` in the interactive shell, so in a non-interactive tool shell `cd <path>` fails with `command not found: z`. Use `builtin cd <path>`, or `git -C <path>` / `--project` flags and skip the `cd`.
+
+Two sources of noise that cost an agent context on every command:
+
+- **In a secondary worktree**, `mise` has not re-activated, so every `uv run` warns `VIRTUAL_ENV=... does not match the project environment path`. Prefix `env -u VIRTUAL_ENV` (or run through `mise -C <worktree> exec --`) and the line goes away.
+- **Any `python -c` that imports `app.*` boots settings** — Infisical plus ~20 startup lines. `LOG_LEVEL=ERROR` silences the lines (the "Missing configuration" entries are warnings, so `WARNING` is not enough); the secrets fetch itself still costs ~3s and is unavoidable.
 
 ## CI Parallelism & Caching — Rules
 
