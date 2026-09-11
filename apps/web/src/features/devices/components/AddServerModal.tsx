@@ -12,17 +12,36 @@ import {
   useDisclosure,
 } from "@heroui/modal";
 import { Select, SelectItem } from "@heroui/select";
+import { Switch } from "@heroui/switch";
 import { PlusSignIcon } from "@icons";
 import type { AddOptions } from "@shared/bridge-core/config-builders";
 import { useState } from "react";
+import { ENTIRE_FS_PATH } from "../constants";
 
 type ServerType = "stdio" | "url" | "filesystem";
 
-const SERVER_TYPES: { key: ServerType; label: string }[] = [
-  { key: "stdio", label: "Command (stdio)" },
-  { key: "url", label: "Local URL" },
-  { key: "filesystem", label: "Folder access" },
+const SERVER_TYPES: { key: ServerType; label: string; hint: string }[] = [
+  {
+    key: "stdio",
+    label: "Command (stdio)",
+    hint: "Run a local MCP server process, e.g. an npx/uvx package.",
+  },
+  {
+    key: "url",
+    label: "Local URL",
+    hint: "Point at an MCP server already running on a localhost port.",
+  },
+  {
+    key: "filesystem",
+    label: "Folder access",
+    hint: "Let GAIA read (and optionally write) files on this Mac.",
+  },
 ];
+
+const NAME_PLACEHOLDER: Record<Exclude<ServerType, "filesystem">, string> = {
+  stdio: "Everything server",
+  url: "Local API",
+};
 
 /** Split a textarea into trimmed, non-empty lines (env/header/path entries). */
 function lines(value: string): string[] {
@@ -46,6 +65,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
   const [url, setUrl] = useState("");
   const [paths, setPaths] = useState("");
   const [pairs, setPairs] = useState("");
+  const [fullFs, setFullFs] = useState(false);
   const [allowWrite, setAllowWrite] = useState(false);
 
   const reset = () => {
@@ -55,26 +75,42 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
     setUrl("");
     setPaths("");
     setPairs("");
+    setFullFs(false);
     setAllowWrite(false);
   };
 
+  // Folder access is a single built-in server (always "Local Files"), so it
+  // needs no name; the other types key off the name the user types.
+  const canSubmit =
+    type === "filesystem"
+      ? fullFs || lines(paths).length > 0
+      : name.trim().length > 0;
+
   const submit = async () => {
-    const opts: AddOptions = { type, name: name.trim() };
+    let opts: AddOptions;
     if (type === "stdio") {
-      opts.command = command.trim();
-      opts.env = lines(pairs);
+      opts = {
+        type,
+        name: name.trim(),
+        command: command.trim(),
+        env: lines(pairs),
+      };
     } else if (type === "url") {
-      opts.url = url.trim();
-      opts.header = lines(pairs);
+      opts = { type, name: name.trim(), url: url.trim(), header: lines(pairs) };
     } else {
-      opts.path = lines(paths);
-      opts.write = allowWrite;
+      opts = {
+        type,
+        path: fullFs ? [ENTIRE_FS_PATH] : lines(paths),
+        write: allowWrite,
+      };
     }
     if (await onAdd(opts)) {
       reset();
       onClose();
     }
   };
+
+  const activeHint = SERVER_TYPES.find((t) => t.key === type)?.hint;
 
   return (
     <>
@@ -94,6 +130,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
               <ModalBody className="gap-3">
                 <Select
                   label="Type"
+                  description={activeHint}
                   selectedKeys={[type]}
                   onChange={(e) => setType(e.target.value as ServerType)}
                   disallowEmptySelection
@@ -102,13 +139,17 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                     <SelectItem key={option.key}>{option.label}</SelectItem>
                   ))}
                 </Select>
-                <Input
-                  label="Name"
-                  value={name}
-                  onValueChange={setName}
-                  placeholder="Everything server"
-                  isRequired
-                />
+
+                {type !== "filesystem" && (
+                  <Input
+                    label="Name"
+                    value={name}
+                    onValueChange={setName}
+                    placeholder={NAME_PLACEHOLDER[type]}
+                    isRequired
+                  />
+                )}
+
                 {type === "stdio" && (
                   <>
                     <Input
@@ -126,6 +167,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                     />
                   </>
                 )}
+
                 {type === "url" && (
                   <>
                     <Input
@@ -143,15 +185,25 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                     />
                   </>
                 )}
+
                 {type === "filesystem" && (
                   <>
-                    <Textarea
-                      label="Folders"
-                      value={paths}
-                      onValueChange={setPaths}
-                      placeholder={"~/Documents\n~/projects"}
-                      minRows={2}
-                    />
+                    <Switch
+                      size="sm"
+                      isSelected={fullFs}
+                      onValueChange={setFullFs}
+                    >
+                      Full filesystem access
+                    </Switch>
+                    {!fullFs && (
+                      <Textarea
+                        label="Folders"
+                        value={paths}
+                        onValueChange={setPaths}
+                        placeholder={"~/Documents\n~/projects"}
+                        minRows={2}
+                      />
+                    )}
                     <Checkbox
                       isSelected={allowWrite}
                       onValueChange={setAllowWrite}
@@ -169,7 +221,7 @@ export function AddServerModal({ onAdd, isBusy }: AddServerModalProps) {
                   color="primary"
                   onPress={submit}
                   isLoading={isBusy}
-                  isDisabled={name.trim().length === 0}
+                  isDisabled={!canSubmit}
                 >
                   Add
                 </Button>
