@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from datetime import UTC, datetime
 import io
 import json
@@ -120,6 +121,35 @@ class StackRow(TypedDict):
     base_mismatch: bool
 
 
+@dataclass(frozen=True)
+class Repo:
+    """Where to ask, and how long to wait — the triple every fetch needs."""
+
+    owner: str
+    name: str
+    timeout_s: int
+
+    @property
+    def slug(self) -> str:
+        return f"{self.owner}/{self.name}"
+
+    def api(self, suffix: str) -> str:
+        return f"repos/{self.owner}/{self.name}/{suffix}"
+
+
+@dataclass(frozen=True)
+class Options:
+    """The flags, parsed and validated once."""
+
+    as_json: bool
+    verbose: bool
+    watch: bool
+    with_stack: bool
+    interval: int
+    max_wait: int
+    timeout_s: int
+
+
 def gh_bytes(args: list[str], timeout_s: int) -> tuple[int, bytes, str]:
     """`gh` with undecoded stdout — artifact zips and ANSI-laden job logs.
 
@@ -149,7 +179,7 @@ def empty_counts() -> dict[str, int]:
 # --------------------------------------------------------------------- PR + check runs
 
 
-def fetch_pr_state(owner: str, name: str, pr_number: int, timeout_s: int) -> dict:
+def fetch_pr_state(repo: Repo, pr_number: int) -> dict:
     """One GraphQL round trip: PR meta + review state + unresolved thread count."""
     query = """
 query($owner:String!,$name:String!,$number:Int!){
@@ -159,9 +189,9 @@ query($owner:String!,$name:String!,$number:Int!){
   } } }
 """
     payload = json.dumps(
-        {"query": query, "variables": {"owner": owner, "name": name, "number": pr_number}}
+        {"query": query, "variables": {"owner": repo.owner, "name": repo.name, "number": pr_number}}
     )
-    rc, out, err = gh(["api", "graphql", "--input", "-"], timeout_s, stdin_text=payload)
+    rc, out, err = gh(["api", "graphql", "--input", "-"], repo.timeout_s, stdin_text=payload)
     if rc != 0:
         eprint(f"ci:remote: POST /graphql (pull request state) failed:\n{err.strip()[:400]}")
         sys.exit(classify_failure(err, rc))
@@ -174,15 +204,13 @@ query($owner:String!,$name:String!,$number:Int!){
     return data["data"]["repository"]["pullRequest"]
 
 
-def fetch_check_runs(
-    owner: str, name: str, head_sha: str, timeout_s: int
-) -> tuple[list[dict], bool]:
+def fetch_check_runs(repo: Repo, head_sha: str) -> tuple[list[dict], bool]:
     """All check runs on the head commit. Returns (runs, truncated)."""
     runs: list[dict] = []
     page = 1
-    endpoint = f"repos/{owner}/{name}/commits/{head_sha}/check-runs"
+    endpoint = repo.api(f"commits/{head_sha}/check-runs")
     while page <= MAX_CHECK_PAGES:
-        rc, out, err = gh(["api", f"{endpoint}?per_page=100&page={page}"], timeout_s)
+        rc, out, err = gh(["api", f"{endpoint}?per_page=100&page={page}"], repo.timeout_s)
         if rc != 0:
             eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
             sys.exit(classify_failure(err, rc))
@@ -230,14 +258,14 @@ def normalize(runs: list[dict]) -> list[Check]:
 # ----------------------------------------------------------------------------- verdicts
 
 
-def fetch_run_verdicts(owner: str, name: str, run_id: int, timeout_s: int) -> list[Verdict]:
+def fetch_run_verdicts(repo: Repo, run_id: int) -> list[Verdict]:
     """Every `verdict-*` artifact on a run, unzipped and parsed.
 
     Artifacts are downloadable while the run is still in progress — unlike job
     logs, which only materialise once the whole run completes.
     """
-    endpoint = f"repos/{owner}/{name}/actions/runs/{run_id}/artifacts"
-    rc, out, err = gh(["api", f"{endpoint}?per_page=100"], timeout_s)
+    endpoint = repo.api(f"actions/runs/{run_id}/artifacts")
+    rc, out, err = gh(["api", f"{endpoint}?per_page=100"], repo.timeout_s)
     if rc != 0:
         eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
         sys.exit(classify_failure(err, rc))
@@ -247,7 +275,7 @@ def fetch_run_verdicts(owner: str, name: str, run_id: int, timeout_s: int) -> li
         if a.get("name", "").startswith(VERDICT_PREFIX) and not a.get("expired")
     ]
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
-        blobs = list(pool.map(lambda a: fetch_artifact(owner, name, a["id"], timeout_s), wanted))
+        blobs = list(pool.map(lambda a: fetch_artifact(repo, a["id"]), wanted))
 
     verdicts: list[Verdict] = []
     for artifact, blob in zip(wanted, blobs, strict=True):
@@ -262,9 +290,9 @@ def fetch_run_verdicts(owner: str, name: str, run_id: int, timeout_s: int) -> li
     return verdicts
 
 
-def fetch_artifact(owner: str, name: str, artifact_id: int, timeout_s: int) -> bytes:
-    endpoint = f"repos/{owner}/{name}/actions/artifacts/{artifact_id}/zip"
-    rc, blob, err = gh_bytes(["api", endpoint], timeout_s)
+def fetch_artifact(repo: Repo, artifact_id: int) -> bytes:
+    endpoint = repo.api(f"actions/artifacts/{artifact_id}/zip")
+    rc, blob, err = gh_bytes(["api", endpoint], repo.timeout_s)
     if rc != 0:
         eprint(f"ci:remote: GET {endpoint} failed:\n{err.strip()[:400]}")
         sys.exit(classify_failure(err, rc))
@@ -285,6 +313,20 @@ def verdict_matches(verdict: Verdict, check_name: str) -> bool:
         slug(verdict.get("artifact", "")[len(VERDICT_PREFIX) :]),
     )
     return any(c and (target == c or target.startswith(f"{c}-")) for c in candidates)
+
+
+def explaining_verdicts(check: Check, verdicts: list[Verdict]) -> list[Verdict]:
+    """The verdicts on this check that say why it is red.
+
+    A `pass` verdict never explains a red check, and matching one is not
+    hypothetical: the mutation shards write `mutation/shard-N` as `pass` before
+    the job later fails, and that lane prefix-matches the failing check
+    `Mutation shard N/6 (19 modules)`. Printing it put `FAIL … [pass]` in the
+    failure section and suppressed the log tail that held the real reason.
+    """
+    return [
+        v for v in verdicts if v.get("status") in VERDICT_BAD and verdict_matches(v, check["name"])
+    ]
 
 
 # ----------------------------------------------------------------------------- job logs
@@ -329,11 +371,11 @@ def failure_tail(lines: list[str], limit: int = FALLBACK_TAIL_LINES) -> list[str
     return lines[max(0, anchor + 1 - limit) : anchor + 1]
 
 
-def fetch_job_tail(owner: str, name: str, job_id: int, timeout_s: int) -> list[str]:
-    endpoint = f"repos/{owner}/{name}/actions/jobs/{job_id}/logs"
-    rc, blob, err = gh_bytes(["api", "--allow-escape-sequences", endpoint], timeout_s)
+def fetch_job_tail(repo: Repo, job_id: int) -> list[str]:
+    endpoint = repo.api(f"actions/jobs/{job_id}/logs")
+    rc, blob, err = gh_bytes(["api", "--allow-escape-sequences", endpoint], repo.timeout_s)
     if rc != 0 and "unknown flag" in err.lower():  # older gh has no such flag
-        rc, blob, err = gh_bytes(["api", endpoint], timeout_s)
+        rc, blob, err = gh_bytes(["api", endpoint], repo.timeout_s)
     if rc != 0:
         if "404" in err or "not found" in err.lower():
             return [f"(no log yet: GET {endpoint} -> 404; logs appear once the run completes)"]
@@ -346,7 +388,7 @@ def fetch_job_tail(owner: str, name: str, job_id: int, timeout_s: int) -> list[s
 
 
 def diagnose(
-    owner: str, name: str, checks: list[Check], timeout_s: int
+    repo: Repo, checks: list[Check]
 ) -> tuple[list[Verdict], dict[str, list[str]], dict[str, str]]:
     """For every failing check: its verdict, else its job-log tail.
 
@@ -358,23 +400,19 @@ def diagnose(
 
     run_ids = sorted({c["run_id"] for c in failing if c["run_id"] is not None})
     with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
-        batches = list(pool.map(lambda r: fetch_run_verdicts(owner, name, r, timeout_s), run_ids))
+        batches = list(pool.map(lambda r: fetch_run_verdicts(repo, r), run_ids))
     verdicts = [v for batch in batches for v in batch]
 
-    # A run whose verdicts already name a failure needs no log: the check that
-    # is red may be the gate job rather than the lane, and its display name
-    # ("Quality gate (required)") will never slug to the lane's artifact name.
-    runs_with_a_failing_verdict = {
-        v.get("run_id") for v in verdicts if v.get("status") in VERDICT_BAD
-    }
-
+    # No run-level fallback: "some lane on this run failed" is not an answer to
+    # "why is THIS check red". Pointing six mutation shards at python-static's
+    # verdict because they share a run is worse than saying nothing, so a check
+    # with no verdict of its own goes to its log — including an aggregate job
+    # like `Quality gate (required)`, whose log tail is the lane table.
     sources: dict[str, str] = {}
     needs_log: list[Check] = []
     for check in failing:
-        if any(verdict_matches(v, check["name"]) for v in verdicts):
+        if explaining_verdicts(check, verdicts):
             sources[check["name"]] = "verdict artifact"
-        elif check["run_id"] in runs_with_a_failing_verdict:
-            sources[check["name"]] = "verdict artifacts on this run (see the lanes below)"
         elif check["job_id"] is None:
             sources[check["name"]] = (
                 f"external check ({check['app'] or 'unknown app'}) — open the URL"
@@ -386,19 +424,21 @@ def diagnose(
     if needs_log:
         job_ids = [c["job_id"] for c in needs_log]
         with ThreadPoolExecutor(max_workers=MAX_PARALLEL_FETCHES) as pool:
-            fetched = list(
-                pool.map(lambda j: fetch_job_tail(owner, name, j or 0, timeout_s), job_ids)
-            )
+            fetched = list(pool.map(lambda j: fetch_job_tail(repo, j or 0), job_ids))
         for check, tail in zip(needs_log, fetched, strict=True):
             tails[check["name"]] = tail
-            sources[check["name"]] = "job log tail (lane uploaded no verdict artifact)"
+            sources[check["name"]] = (
+                "no failing verdict in this run's artifacts — log tail"
+                if check["run_id"] in {v.get("run_id") for v in verdicts}
+                else "lane uploaded no verdict artifact — log tail"
+            )
     return verdicts, tails, sources
 
 
 # -------------------------------------------------------------------------------- stack
 
 
-def fetch_stack(timeout_s: int) -> dict | None:
+def fetch_stack(repo: Repo) -> dict | None:
     """`gh stack view --json`, or None when the branch is not in a stack.
 
     Never `gh stack view` bare — without `--json` it opens a TUI that hangs
@@ -409,7 +449,7 @@ def fetch_stack(timeout_s: int) -> dict | None:
             ["gh", "stack", "view", "--json"],
             capture_output=True,
             text=True,
-            timeout=timeout_s,
+            timeout=repo.timeout_s,
             check=False,
         )
     except (subprocess.TimeoutExpired, FileNotFoundError):
@@ -419,9 +459,7 @@ def fetch_stack(timeout_s: int) -> dict | None:
     return json.loads(proc.stdout)
 
 
-def fetch_stack_states(
-    owner: str, name: str, numbers: list[int], timeout_s: int
-) -> dict[int, dict]:
+def fetch_stack_states(repo: Repo, numbers: list[int]) -> dict[int, dict]:
     """One GraphQL for every stack PR's base branch + check rollup."""
     if not numbers:
         return {}
@@ -435,8 +473,8 @@ def fetch_stack_states(
     query = (
         f"query($owner:String!,$name:String!){{repository(owner:$owner,name:$name){{{aliases}}}}}"
     )
-    payload = json.dumps({"query": query, "variables": {"owner": owner, "name": name}})
-    rc, out, err = gh(["api", "graphql", "--input", "-"], timeout_s, stdin_text=payload)
+    payload = json.dumps({"query": query, "variables": {"owner": repo.owner, "name": repo.name}})
+    rc, out, err = gh(["api", "graphql", "--input", "-"], repo.timeout_s, stdin_text=payload)
     if rc != 0:
         eprint(f"ci:remote: POST /graphql (stack rollups) failed:\n{err.strip()[:400]}")
         sys.exit(classify_failure(err, rc))
@@ -444,8 +482,8 @@ def fetch_stack_states(
     if "errors" in data:
         eprint(f"ci:remote: GraphQL errors (stack rollups): {json.dumps(data['errors'])[:300]}")
         sys.exit(2)
-    repo = data["data"]["repository"] or {}
-    return {pr["number"]: pr for pr in repo.values() if pr is not None}
+    repository = data["data"]["repository"] or {}
+    return {pr["number"]: pr for pr in repository.values() if pr is not None}
 
 
 def rollup_counts(pr_state: dict) -> dict[str, int]:
@@ -465,11 +503,11 @@ def rollup_counts(pr_state: dict) -> dict[str, int]:
     return counts
 
 
-def build_stack(owner: str, name: str, payload: dict, timeout_s: int) -> list[StackRow]:
+def build_stack(repo: Repo, payload: dict) -> list[StackRow]:
     branches = payload.get("branches") or []
     trunk = payload.get("trunk") or "master"
     numbers = [b["pr"]["number"] for b in branches if b.get("pr")]
-    states = fetch_stack_states(owner, name, numbers, timeout_s)
+    states = fetch_stack_states(repo, numbers)
     rows: list[StackRow] = []
     for i, entry in enumerate(branches):
         expected = trunk if i == 0 else branches[i - 1]["name"]
@@ -529,30 +567,37 @@ def render_verdict(verdict: Verdict, verbose: bool) -> None:
             print(f"      … {len(detail) - DETAIL_PREVIEW_LINES} more lines (--verbose)")
 
 
+def render_log_tail(report: dict, check: Check, source: str, verbose: bool) -> None:
+    print(f"FAIL  {check['name']}  [{check['status']}]  ({source})")
+    tail = report["fallback_tails"].get(check["name"], [])
+    shown = tail if verbose else tail[-SHOWN_TAIL_LINES:]
+    if len(tail) > len(shown):
+        print(f"  … {len(tail) - len(shown)} earlier lines (--verbose)")
+    for line in shown:
+        print(f"  {line}")
+    if not tail:
+        print(f"  {check['url']}")
+
+
+def render_failing_check(report: dict, check: Check, verbose: bool) -> set[str]:
+    """Render one red check. Returns the lane slugs it accounted for."""
+    source = report["sources"].get(check["name"], "")
+    matched = explaining_verdicts(check, report["verdicts"])
+    for verdict in matched:
+        render_verdict(verdict, verbose)
+    if not matched:
+        render_log_tail(report, check, source, verbose)
+    if verbose and check["url"]:
+        print(f"  source: {source or 'verdict artifact'} | {check['url']}")
+    print()
+    return {slug(v.get("lane", "")) for v in matched}
+
+
 def render_failures(report: dict, verbose: bool) -> None:
     printed: set[str] = set()
     for check in report["checks"]:
-        if check["status"] not in FAILING:
-            continue
-        source = report["sources"].get(check["name"], "")
-        matched = [v for v in report["verdicts"] if verdict_matches(v, check["name"])]
-        if matched:
-            for verdict in matched:
-                render_verdict(verdict, verbose)
-                printed.add(slug(verdict.get("lane", "")))
-        else:
-            print(f"FAIL  {check['name']}  [{check['status']}]  ({source})")
-            tail = report["fallback_tails"].get(check["name"], [])
-            shown = tail if verbose else tail[-SHOWN_TAIL_LINES:]
-            if len(tail) > len(shown):
-                print(f"  … {len(tail) - len(shown)} earlier lines (--verbose)")
-            for line in shown:
-                print(f"  {line}")
-            if not tail:
-                print(f"  {check['url']}")
-        if verbose and check["url"]:
-            print(f"  source: {source or 'verdict artifact'} | {check['url']}")
-        print()
+        if check["status"] in FAILING:
+            printed |= render_failing_check(report, check, verbose)
 
     for verdict in report["verdicts"]:
         if verdict.get("status") in VERDICT_BAD and slug(verdict.get("lane", "")) not in printed:
@@ -656,29 +701,22 @@ def render(report: dict, verbose: bool) -> None:
 # ------------------------------------------------------------------------------- driver
 
 
-def snapshot_once(
-    owner: str,
-    name: str,
-    pr_number: int,
-    gh_timeout: int,
-    branch: str,
-    with_stack: bool,
-) -> tuple[dict, int]:
+def snapshot_once(repo: Repo, pr_number: int, branch: str, with_stack: bool) -> tuple[dict, int]:
     t0 = time.monotonic()
-    pr_meta = fetch_pr_state(owner, name, pr_number, gh_timeout)
-    runs, truncated = fetch_check_runs(owner, name, pr_meta["headRefOid"], gh_timeout)
+    pr_meta = fetch_pr_state(repo, pr_number)
+    runs, truncated = fetch_check_runs(repo, pr_meta["headRefOid"])
     checks = normalize(runs)
     counts = {k: sum(1 for c in checks if c["status"] == k) for k in COUNT_KEYS}
-    verdicts, tails, sources = diagnose(owner, name, checks, gh_timeout)
+    verdicts, tails, sources = diagnose(repo, checks)
 
-    stack_payload = fetch_stack(gh_timeout) if with_stack else None
-    stack_rows = build_stack(owner, name, stack_payload, gh_timeout) if stack_payload else []
+    stack_payload = fetch_stack(repo) if with_stack else None
+    stack_rows = build_stack(repo, stack_payload) if stack_payload else []
 
     unresolved = sum(1 for t in pr_meta["reviewThreads"]["nodes"] if not t["isResolved"])
     thread_total = pr_meta["reviewThreads"]["totalCount"]
     report = {
         "schema_version": SCHEMA_VERSION,
-        "repo": f"{owner}/{name}",
+        "repo": repo.slug,
         "pr": {
             "number": pr_number,
             "title": pr_meta["title"],
@@ -708,7 +746,7 @@ def snapshot_once(
     return report, (1 if (red or pr_meta["mergeable"] == "CONFLICTING") else 0)
 
 
-def main() -> int:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Why this PR is red, in one command.")
     parser.add_argument(
         "branch", nargs="?", default=None, help="branch or PR number (default: current branch)"
@@ -734,64 +772,84 @@ def main() -> int:
         default=os.environ.get("GAIA_PR_TIMEOUT", "45"),
         help="per-network-call timeout seconds (default 45)",
     )
-    args = parser.parse_args()
+    return parser
 
-    try:
-        gh_timeout = int(args.timeout)
-        interval = int(args.interval)
-        max_wait = int(args.max_wait)
-    except ValueError:
-        eprint("usage error: --timeout/--interval/--max-wait must be integers")
-        sys.exit(2)
-    for label, value in (
-        ("--timeout", gh_timeout),
-        ("--interval", interval),
-        ("--max-wait", max_wait),
-    ):
-        if value <= 0:
+
+def parse_options(args: argparse.Namespace) -> Options:
+    """Validate the three duration flags together; exit 2 on any bad one."""
+    durations = {
+        "--timeout": args.timeout,
+        "--interval": args.interval,
+        "--max-wait": args.max_wait,
+    }
+    parsed: dict[str, int] = {}
+    for label, raw in durations.items():
+        try:
+            parsed[label] = int(raw)
+        except ValueError:
+            eprint(f"usage error: {label} must be an integer, got {raw!r}")
+            sys.exit(2)
+        if parsed[label] <= 0:
             eprint(f"usage error: {label} must be >= 1")
             sys.exit(2)
+    return Options(
+        as_json=args.json,
+        verbose=args.verbose,
+        watch=args.watch,
+        with_stack=not args.no_stack,
+        interval=parsed["--interval"],
+        max_wait=parsed["--max-wait"],
+        timeout_s=parsed["--timeout"],
+    )
 
+
+def watch(repo: Repo, pr_number: int, branch: str, options: Options) -> tuple[dict, int]:
+    """Poll until no check is pending or the budget runs out."""
+    deadline = time.monotonic() + options.max_wait
+    poll = 0
+    while True:
+        poll += 1
+        report, exit_code = snapshot_once(repo, pr_number, branch, options.with_stack)
+        pending = report["counts"]["pending"]
+        if not options.as_json:
+            elapsed = int(time.monotonic() - (deadline - options.max_wait))
+            print(
+                f"watch[{poll}] {datetime.now(UTC).strftime('%H:%M:%S')}: "
+                f"{report['counts']['failed']} failed, {pending} pending "
+                f"(elapsed {elapsed}s / max {options.max_wait}s)"
+            )
+        if pending == 0 or time.monotonic() + options.interval > deadline:
+            if pending and not options.as_json:
+                print(f"watch: stopped after {options.max_wait}s with {pending} still pending.")
+            break
+        time.sleep(options.interval)
+    if not options.as_json:
+        print()
+    return report, exit_code
+
+
+def main() -> int:
+    args = build_parser().parse_args()
+    options = parse_options(args)
     owner, name = parse_repo()
+    repo = Repo(owner, name, options.timeout_s)
     branch = args.branch or current_branch()
-    resolved = resolve_pr(f"{owner}/{name}", branch, gh_timeout)
+
+    resolved = resolve_pr(repo.slug, branch, options.timeout_s)
     if resolved is None:
         print(f"ci:remote: no open PR for '{branch}' — push first or check the branch name.")
         return 0
     pr_number, _, _ = resolved
-    with_stack = not args.no_stack
 
-    if not args.watch:
-        report, exit_code = snapshot_once(owner, name, pr_number, gh_timeout, branch, with_stack)
-        if args.json:
-            print(json.dumps(report, indent=2))
-        else:
-            render(report, args.verbose)
-        return exit_code
+    if options.watch:
+        report, exit_code = watch(repo, pr_number, branch, options)
+    else:
+        report, exit_code = snapshot_once(repo, pr_number, branch, options.with_stack)
 
-    deadline = time.monotonic() + max_wait
-    poll = 0
-    while True:
-        poll += 1
-        report, exit_code = snapshot_once(owner, name, pr_number, gh_timeout, branch, with_stack)
-        counts = report["counts"]
-        if not args.json:
-            elapsed = int(time.monotonic() - (deadline - max_wait))
-            print(
-                f"watch[{poll}] {datetime.now(UTC).strftime('%H:%M:%S')}: "
-                f"{counts['failed']} failed, {counts['pending']} pending "
-                f"(elapsed {elapsed}s / max {max_wait}s)"
-            )
-        if counts["pending"] == 0 or time.monotonic() + interval > deadline:
-            if counts["pending"] and not args.json:
-                print(f"watch: stopped after {max_wait}s with {counts['pending']} still pending.")
-            break
-        time.sleep(interval)
-    if args.json:
+    if options.as_json:
         print(json.dumps(report, indent=2))
     else:
-        print()
-        render(report, args.verbose)
+        render(report, options.verbose)
     return exit_code
 
 

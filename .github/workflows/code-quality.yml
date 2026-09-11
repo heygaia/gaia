@@ -116,6 +116,51 @@ jobs:
           force-github: ${{ inputs.force_github && 'true' || 'false' }}
           github-token: ${{ secrets.HOMELAB_GH_PAT || github.token }}
 
+  # ── A second selection, for the shards that need live services ───────────
+  # The lint pool cannot run the contract tier, and this is not a policy but an
+  # arithmetic fact: those instances are 13-20 and test-services.sh serves lanes
+  # 0-12 (MAX_LANE — Redis is provisioned for 13 stripes of 32 DBs), so
+  # `prepare` rejects the lane and the job dies in setup. Run 34584038269 lost
+  # all six mutation shards to exactly that. Contract-mapped shards therefore go
+  # to the `gaia-home` pool, which main.yml's test lanes already share, and
+  # everything else stays on lint where it has always run.
+  #
+  # A separate job rather than a parameter on the one above: `runs-on` is
+  # resolved before any step runs, so a shard cannot pick its pool unless both
+  # answers already exist as job outputs.
+  select-runner-services:
+    name: Select runner (services pool)
+    # Same guard as select-runner: a title edit must not start either probe.
+    if: ${{ github.event.action != 'edited' || github.event.changes.base != '' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions:
+      contents: read
+    outputs:
+      runner: ${{ steps.pick.outputs.runner }}
+      runner_label: ${{ steps.pick.outputs.runner_label }}
+      is_self_hosted: ${{ steps.pick.outputs.is_self_hosted }}
+    steps:
+      # The default branch, NOT the PR head — same reason as select-runner
+      # above: this job hands HOMELAB_GH_PAT to a script from the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          fetch-depth: 1
+          persist-credentials: false
+      # No `cancel-superseded` step here: select-runner already ran it for this
+      # run, and a second pass would race it for no gain.
+      - id: pick
+        uses: ./.github/actions/select-runner
+        with:
+          # Hardcoded, not `inputs.runner_label`: that dispatch input names a
+          # LINT pool to probe, and pointing the services selection at it would
+          # send contract shards straight back to the instances that cannot
+          # serve them.
+          runner-label: gaia-home
+          force-github: ${{ inputs.force_github && 'true' || 'false' }}
+          github-token: ${{ secrets.HOMELAB_GH_PAT || github.token }}
+
   # --- Change detection (no toolchain install) -----------------------------
   # Unified with main.yml detect: uses nx-set-shas + nx show projects --affected
   # with same base (origin/master via NX_BASE/NX_HEAD) so both workflows
@@ -190,6 +235,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: changes
   # --- Biome lint + format -------------------------------------------------
   # ── Scheduling on the home box ───────────────────────────────────────────
@@ -261,6 +309,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: biome
 
   # --- Workspace dependency hygiene ---------------------------------------
@@ -305,6 +356,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: deps
 
   # --- Circular dependency check ------------------------------------------
@@ -333,6 +387,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: circular
 
   # --- File size limit (per-extension + allowlist + hard cap) -------------
@@ -368,6 +425,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: file-size
 
   # --- Types must live in dedicated type files ----------------------------
@@ -403,6 +463,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: types-location
 
   # --- Components-per-file ------------------------------------------------
@@ -438,6 +501,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: components-per-file
 
   # --- Copy-paste detection -----------------------------------------------
@@ -469,6 +535,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: duplicates
 
   # --- Published package hygiene ------------------------------------------
@@ -516,6 +585,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: package-hygiene
 
   # --- TypeScript strict type-check ---------------------------------------
@@ -551,6 +623,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: type-check
 
   # --- Python static analysis (ruff + xenon + interrogate + security) ------
@@ -747,6 +822,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: python-static
 
   # --- Python mypy --------------------------------------------------------
@@ -839,6 +917,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: python-mypy
 
   # --- Observability score (evlog map) ------------------------------------
@@ -932,6 +1013,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: observability
 
   # --- Wide-event cross-runtime conformance --------------------------------
@@ -967,6 +1051,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: wide-event-conformance
 
   # --- Dead code detection (knip + vulture) — enforced ---------------------
@@ -1005,6 +1092,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: dead-code
 
   # --- Grafana alert rules (pint + promtool) ------------------------------
@@ -1079,6 +1169,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: alert-rules
 
   # --- Suppression hygiene -------------------------------------------------
@@ -1158,6 +1251,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: suppression-hygiene
 
   # --- Secret scanning (gitleaks, diff-scoped) -----------------------------
@@ -1199,6 +1295,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: gitleaks
 
 
@@ -1246,6 +1345,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: semgrep
 
   # --- Quality gate (single required status check) -------------------------
@@ -1291,6 +1393,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: test-mutation-plan
 
   # One runner per changed module. mutmut re-runs a module's whole test
@@ -1305,9 +1410,15 @@ jobs:
     # 50+ checks would carry its full test-file JSON and the module — the only
     # part a reader needs — would be truncated away in the checks list.
     name: Mutation ${{ matrix.label }}
-    needs: [select-runner, changes, test-mutation-plan]
+    needs: [select-runner, select-runner-services, changes, test-mutation-plan]
     if: needs.changes.outputs.has_python == 'true' && needs.test-mutation-plan.outputs.count != '0'
-    runs-on: ${{ fromJSON(needs.select-runner.outputs.runner) }}
+    # The pool `mutation.sh plan` assigned this shard. GitHub evaluates `A && B
+    # || C` as a value expression, not a boolean one, so this yields whichever
+    # runner ARRAY the branch selects — the same shape the single
+    # `fromJSON(...)` had. Both selections are in `needs` because `runs-on` is
+    # resolved before the job starts and cannot ask for an output it did not
+    # declare.
+    runs-on: ${{ matrix.pool == 'services' && fromJSON(needs.select-runner-services.outputs.runner) || fromJSON(needs.select-runner.outputs.runner) }}
     # Job cap, kept above the step timeout below so a slow shard is failed by
     # the step (which keeps its log artifact) rather than cancelled by the job
     # (which retains nothing).
@@ -1331,14 +1442,21 @@ jobs:
           clean: ${{ runner.environment != 'self-hosted' }}
           fetch-depth: 0
           persist-credentials: false
-      # The composite, not a hand-rolled `uv sync`: it owns the install (see
-      # CLAUDE.md "Install through the composites") and it brings up Mongo and
-      # Redis for this runner instance and exports USE_REAL_SERVICES=1. The
-      # shard needs them because the contract tier is in the mapped test set:
-      # it is the only tier that exercises a repository's query shapes, and
-      # without it every changed repository method reported "no covering
-      # test" while the gate passed. Unit-only modules are unaffected.
+      # A services shard installs through the composite that also brings up
+      # Mongo and Redis for this runner instance and exports
+      # USE_REAL_SERVICES=1. It is only ever reached on the services pool: the
+      # composite's `test-services.sh prepare` refuses a lane above MAX_LANE,
+      # which is every instance in the lint pool.
       - uses: ./.github/actions/setup-python-test-env
+        if: matrix.pool == 'services'
+      # A lint shard installs the way every other Python lane on this pool does
+      # — setup-uv for the cached toolchain, then the project sync mutmut and
+      # pytest need. No services are started, so nothing claims a lane.
+      - uses: ./.github/actions/setup-uv
+        if: matrix.pool != 'services'
+      - name: Sync Python dependencies
+        if: matrix.pool != 'services'
+        run: uv sync --frozen --package gaia --group backend --group dev
       - name: Mutation check (zero survivors required)
         # STEP-level timeout so a stuck shard fails as a step (job continues,
         # the shard-log artifact uploads, logs survive) instead of the job
@@ -1352,13 +1470,15 @@ jobs:
         env:
           GROUP: ${{ matrix.group }}
         run: bash scripts/ci/mutation.sh shard
-      # setup-python-test-env brings up services + the embedding sidecar; on the
-      # shared box that namespace must be released like every other lane does.
+      # Only the services shards took a namespace, and only they hand it back.
+      # Running these on a lint shard would call test-services.sh with a lane
+      # number it rejects — teardown failing is how a lane goes red having
+      # passed. `always()` still, so a failed shard releases what it claimed.
       - name: Release the test services
-        if: always()
+        if: always() && matrix.pool == 'services'
         run: bash scripts/ci/test-services.sh down
       - name: Stop the embedding sidecar
-        if: always()
+        if: always() && matrix.pool == 'services'
         run: bash scripts/ci/embedding-sidecar.sh stop
       - name: Upload shard log
         # Belt and braces for the diagnosis path: runs even when the step
@@ -1380,6 +1500,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           # job-index, not matrix.group: the group is a generated label and the
           # shard-log artifact beside this one already keys on the index.
           name: test-mutation-${{ strategy.job-index }}
@@ -1399,6 +1522,12 @@ jobs:
     # ran nothing, and a skipped required check counts as passing.
     if: ${{ always() && (github.event.action != 'edited' || github.event.changes.base != '') }}
     needs:
+      # Infra, and in the list for one reason: if the services selection fails,
+      # every contract-mapped shard is SKIPPED, and `consolidate` reads a
+      # skipped lane as "change detection proved there was nothing to check" —
+      # a green gate with the repository modules unmutated. `select-runner` is
+      # absent because `changes` already depends on it and carries its failure.
+      - select-runner-services
       - changes
       - biome
       - deps
@@ -1447,5 +1576,5 @@ jobs:
           # lane FAMILY that job reports under (see consolidate --help).
           # Results go through env, not inline expansion.
           EXPECT: >-
-            changes=${{ needs.changes.result }},biome=${{ needs.biome.result }},deps=${{ needs.deps.result }},circular=${{ needs.circular.result }},file-size=${{ needs.file-size.result }},types-location=${{ needs.types-location.result }},components-per-file=${{ needs.components-per-file.result }},duplicates=${{ needs.duplicates.result }},package-hygiene=${{ needs.package-hygiene.result }},type-check=${{ needs.type-check.result }},python-static=${{ needs.python-static.result }},python-mypy=${{ needs.python-mypy.result }},observability=${{ needs.observability.result }},wide-event-conformance=${{ needs.wide-event-conformance.result }},dead-code=${{ needs.dead-code.result }},alert-rules=${{ needs.alert-rules.result }},suppression-hygiene=${{ needs.suppression-hygiene.result }},gitleaks=${{ needs.gitleaks.result }},semgrep=${{ needs.semgrep.result }},test-mutation-plan=${{ needs.test-mutation-plan.result }},test-mutation@mutation=${{ needs.test-mutation.result }}
+            changes=${{ needs.changes.result }},biome=${{ needs.biome.result }},deps=${{ needs.deps.result }},circular=${{ needs.circular.result }},file-size=${{ needs.file-size.result }},types-location=${{ needs.types-location.result }},components-per-file=${{ needs.components-per-file.result }},duplicates=${{ needs.duplicates.result }},package-hygiene=${{ needs.package-hygiene.result }},type-check=${{ needs.type-check.result }},python-static=${{ needs.python-static.result }},python-mypy=${{ needs.python-mypy.result }},observability=${{ needs.observability.result }},wide-event-conformance=${{ needs.wide-event-conformance.result }},dead-code=${{ needs.dead-code.result }},alert-rules=${{ needs.alert-rules.result }},suppression-hygiene=${{ needs.suppression-hygiene.result }},gitleaks=${{ needs.gitleaks.result }},semgrep=${{ needs.semgrep.result }},test-mutation-plan=${{ needs.test-mutation-plan.result }},test-mutation@mutation=${{ needs.test-mutation.result }},select-runner-services@result-only=${{ needs.select-runner-services.result }}
         run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"

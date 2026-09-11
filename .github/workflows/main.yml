@@ -196,6 +196,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: detect
 
   # ── Probe the actual execution capability on the chosen runner ───────────
@@ -230,11 +233,6 @@ jobs:
           free -h 2>/dev/null | head -n 3 || vm_stat 2>/dev/null | head -n 10 || true
           df -h . | head -n 5
           echo "probe: OK — fallback contract verified (job landed, did not queue forever)"
-      - name: Upload the verdict
-        if: always()
-        uses: ./.github/actions/upload-verdict
-        with:
-          name: probe
 
   # ── Build — insanely parallel on 16c (auto-detected), fallback 3 on 2c ---
   build:
@@ -285,6 +283,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: build
 
   # ── Test Python — four slices on four runner instances ───────────────────
@@ -480,6 +481,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: test-python-${{ matrix.slice.name }}
           lane: test-python/${{ matrix.slice.name }}
 
@@ -536,6 +540,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: coverage
 
   # ── Test TypeScript — Nx parallel scales with cores ----------------------
@@ -597,6 +604,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: test-typescript
 
   # ── Docker image build — proves the api image still builds, and times it ──
@@ -670,6 +680,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: docker-image
 
   # --- Test: harness tooling (runner-native, every run) ---------------------
@@ -710,6 +723,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: test-harness-tools
 
   # --- Changelog sync check (always) --------------------------------------
@@ -833,6 +849,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: trivy-scan
 
   # --- Regression-proof: changed tests must FAIL on base -------------------
@@ -870,6 +889,9 @@ jobs:
         if: always()
         uses: ./.github/actions/upload-verdict
         with:
+          # job.status, not a status function inside the composite:
+          # those read the composite's own steps and always said success.
+          status: ${{ job.status }}
           name: regression-proof
 
   # --- Quality gate (branch protection target) ----------------------------
@@ -934,7 +956,7 @@ jobs:
           # composite this branch adds is not in its tree). Both are still
           # enforced on their job result — declared, not dropped.
           EXPECT: >-
-            select-runner@result-only=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
+            select-runner@result-only=${{ needs.select-runner.result }},detect=${{ needs.detect.result }},probe@result-only=${{ needs.probe.result }},build=${{ needs.build.result }},test-python=${{ needs.test-python.result }},coverage=${{ needs.coverage.result }},test-typescript=${{ needs.test-typescript.result }},docker-image=${{ needs.docker-image.result }},test-harness-tools=${{ needs.test-harness-tools.result }},trivy-scan=${{ needs.trivy-scan.result }},regression-proof=${{ needs.regression-proof.result }}
         run: python3 scripts/ci/verdict.py consolidate verify-logs/verdicts --expect "$EXPECT"
 
   # --- Docker phase, split so the long part runs parallel to the gate -------

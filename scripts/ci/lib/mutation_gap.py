@@ -34,42 +34,24 @@ def _is_docstring(stmt: ast.stmt) -> bool:
     )
 
 
-def _statement_lines(body: list[ast.stmt]) -> set[int]:
-    """Every source line occupied by an executable statement in ``body``.
+def _statement_lines(node: ast.AST) -> set[int]:
+    """Every source line occupied by an executable statement under ``node``.
 
-    Nested undecorated defs contribute their own bodies; nested decorated
-    defs contribute nothing, for the same reason top-level ones do not. The
-    ``def`` line itself is not a statement a mutant can live on.
+    Generic over the tree rather than special-casing ``orelse``/``handlers``:
+    any ``ast.stmt`` reachable without crossing a nested ``def`` or ``class``
+    counts, and a docstring does not. Nested defs are skipped here because the
+    walk in ``_function_lines`` visits each undecorated one on its own — and a
+    decorated one contributes nothing, for the same reason top-level ones do
+    not. The ``def`` line itself is not a statement a mutant can live on.
     """
     lines: set[int] = set()
-    for stmt in body:
-        if isinstance(stmt, ast.FunctionDef | ast.AsyncFunctionDef):
-            if not stmt.decorator_list:
-                lines |= _statement_lines(_body_after_docstring(stmt.body))
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, ast.FunctionDef | ast.AsyncFunctionDef | ast.ClassDef):
             continue
-        if isinstance(stmt, ast.ClassDef):
-            lines |= _statement_lines(stmt.body)
-            continue
-        if _is_docstring(stmt):
-            continue
-        lines.update(range(stmt.lineno, (stmt.end_lineno or stmt.lineno) + 1))
-        for child in ast.iter_child_nodes(stmt):
-            nested = getattr(child, "body", None)
-            if isinstance(nested, list) and nested and isinstance(nested[0], ast.stmt):
-                lines |= _statement_lines(nested)
-            for attr in ("orelse", "finalbody", "handlers"):
-                extra = getattr(child, attr, None) or getattr(stmt, attr, None)
-                if isinstance(extra, list):
-                    for item in extra:
-                        if isinstance(item, ast.stmt):
-                            lines |= _statement_lines([item])
-                        elif isinstance(item, ast.ExceptHandler):
-                            lines |= _statement_lines(item.body)
+        if isinstance(child, ast.stmt) and not _is_docstring(child):
+            lines.update(range(child.lineno, (child.end_lineno or child.lineno) + 1))
+        lines |= _statement_lines(child)
     return lines
-
-
-def _body_after_docstring(body: list[ast.stmt]) -> list[ast.stmt]:
-    return body[1:] if body and _is_docstring(body[0]) else body
 
 
 def _function_lines(tree: ast.Module) -> set[int]:
@@ -77,7 +59,7 @@ def _function_lines(tree: ast.Module) -> set[int]:
     lines: set[int] = set()
     for node in ast.walk(tree):
         if isinstance(node, ast.FunctionDef | ast.AsyncFunctionDef) and not node.decorator_list:
-            lines |= _statement_lines(_body_after_docstring(node.body))
+            lines |= _statement_lines(node)
     return lines
 
 

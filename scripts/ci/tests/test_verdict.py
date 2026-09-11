@@ -449,3 +449,68 @@ def test_result_only_is_opt_in_never_the_default_for_silence(tmp_path: Path) -> 
     (tmp_path / "v").mkdir()
 
     assert _consolidate(tmp_path, "biome=success") == 1
+
+
+# ---------------------------------------------------------------------------
+# --job-status: the caller's job.status decides a silent lane's verdict.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("job_status", "expected"),
+    [("success", "pass"), ("failure", "fail"), ("cancelled", "timed_out"), ("skipped", "skip")],
+)
+def test_the_job_status_decides_a_silent_lanes_verdict(
+    tmp_path: Path, job_status: str, expected: str
+) -> None:
+    # This mapping used to be three `if: success()/failure()/cancelled()` steps
+    # inside the composite. Inside a composite those functions evaluate the
+    # ACTION's own prior steps, not the job, so the success branch always won:
+    # run 34584038269's mutation shard 5/6 died in `setup-python-test-env` and
+    # still uploaded {"lane": "mutation/shard-4", "status": "pass"}. The caller
+    # now passes ${{ job.status }} and the mapping lives here, where this test
+    # can reach it.
+    _emit(tmp_path, "--lane", "lane", "--job-status", job_status)
+
+    assert _read(tmp_path, "lane")["status"] == expected
+
+
+def test_a_failing_job_status_carries_advice_worth_reading(tmp_path: Path) -> None:
+    _emit(tmp_path, "--lane", "lane", "--job-status", "failure")
+
+    doc = _read(tmp_path, "lane")
+    assert "only in this job's log" in doc["summary"]
+    assert doc["advice"], "a failed lane with no findings must at least say where to look"
+
+
+def test_a_job_status_never_overwrites_the_lanes_own_verdict(tmp_path: Path) -> None:
+    # The composite always runs; a lane that reported real findings keeps them
+    # even when the job as a whole is green.
+    _emit(
+        tmp_path,
+        "--lane",
+        "lane",
+        "--status",
+        "fail",
+        "--summary",
+        "2 survivors",
+        "--finding",
+        "app/x.py:3:survivor",
+    )
+
+    _emit(tmp_path, "--lane", "lane", "--job-status", "success", "--only-if-missing")
+
+    doc = _read(tmp_path, "lane")
+    assert doc["status"] == "fail"
+    assert doc["findings"]
+
+
+def test_emit_refuses_both_a_status_and_a_job_status(tmp_path: Path) -> None:
+    # They answer the same question two ways; silently preferring one is how a
+    # caller ends up asserting something it did not mean.
+    with pytest.raises(SystemExit):
+        _emit(
+            tmp_path, "--lane", "l", "--status", "pass", "--summary", "s", "--job-status", "failure"
+        )
+    with pytest.raises(SystemExit):
+        _emit(tmp_path, "--lane", "l", "--summary", "s")

@@ -246,45 +246,72 @@ def _widen(text: str, start: int, end: int, forward: bool) -> int:
 
 
 def change_summary(removed: list[str], added: list[str]) -> str:
-    """One line naming the edit: `"1" → None`, `nx=True → nx=None`, `dropped …`."""
-    # Lines a multi-line hunk carries unchanged are not the edit. Trimming them
-    # first is what turns "return 1 x = 2 → return 1" into "dropped `x = 2`".
+    """One line naming the edit: `"1" → None`, `nx=True → nx=None`, `dropped …`.
+
+    Two shapes of answer, best first: the token that changed within one line,
+    and — when the hunk spans lines, or the within-line difference is invisible
+    once stripped — the lines themselves.
+    """
+    removed, added = _trim_common_lines(removed, added)
+    if len(removed) == 1 and len(added) == 1:
+        token = _token_change(removed[0], added[0])
+        if token is not None:
+            return token
+    return _describe(
+        " ".join(line.strip() for line in removed if line.strip()),
+        " ".join(line.strip() for line in added if line.strip()),
+    )
+
+
+def _trim_common_lines(removed: list[str], added: list[str]) -> tuple[list[str], list[str]]:
+    """Drop the lines a multi-line hunk carries unchanged — they are not the edit.
+
+    This is what turns "return 1 x = 2 → return 1" into "dropped `x = 2`".
+    """
     while removed and added and removed[0] == added[0]:
         removed, added = removed[1:], added[1:]
     while removed and added and removed[-1] == added[-1]:
         removed, added = removed[:-1], added[:-1]
-    if len(removed) == 1 and len(added) == 1:
-        before, after = removed[0], added[0]
-        head = 0
-        while head < min(len(before), len(after)) and before[head] == after[head]:
-            head += 1
-        tail = 0
-        while (
-            tail < min(len(before), len(after)) - head
-            and before[len(before) - 1 - tail] == after[len(after) - 1 - tail]
-        ):
-            tail += 1
-        old = before[head : len(before) - tail]
-        new = after[head : len(after) - tail]
-        if old.strip() and new.strip():
-            start = _widen(before, head, len(before) - tail, forward=False)
-            end = _widen(before, head, len(before) - tail, forward=True)
-            widened_old = before[start:end]
-            widened_new = after[start : len(after) - (len(before) - end)]
-            if widened_old.strip() and widened_new.strip():
-                old, new = widened_old, widened_new
-            return f"{old.strip()} → {new.strip()}"
-        if old.strip():
-            return f"dropped `{old.strip()}`"
-        if new.strip():
-            return f"inserted `{new.strip()}`"
-    before_text = " ".join(line.strip() for line in removed if line.strip())
-    after_text = " ".join(line.strip() for line in added if line.strip())
-    if not after_text:
-        return f"dropped `{_clip(before_text)}`"
-    if not before_text:
-        return f"inserted `{_clip(after_text)}`"
-    return f"{_clip(before_text)} → {_clip(after_text)}"
+    return removed, added
+
+
+def _token_change(before: str, after: str) -> str | None:
+    """The token that changed between two versions of ONE line.
+
+    None when the difference vanishes once stripped (a whitespace-only edit):
+    the caller then falls back to naming the lines, because "` → `" is not an
+    answer.
+    """
+    head = 0
+    while head < min(len(before), len(after)) and before[head] == after[head]:
+        head += 1
+    tail = 0
+    while (
+        tail < min(len(before), len(after)) - head
+        and before[len(before) - 1 - tail] == after[len(after) - 1 - tail]
+    ):
+        tail += 1
+    old, new = before[head : len(before) - tail], after[head : len(after) - tail]
+    if not old.strip() and not new.strip():
+        return None
+    if old.strip() and new.strip():
+        start = _widen(before, head, len(before) - tail, forward=False)
+        end = _widen(before, head, len(before) - tail, forward=True)
+        widened_old = before[start:end]
+        widened_new = after[start : len(after) - (len(before) - end)]
+        if widened_old.strip() and widened_new.strip():
+            old, new = widened_old, widened_new
+    return _describe(old, new)
+
+
+def _describe(old: str, new: str) -> str:
+    """`a → b`, or the one-sided form when the edit only removed or only added."""
+    old, new = old.strip(), new.strip()
+    if old and new:
+        return f"{_clip(old)} → {_clip(new)}"
+    if old:
+        return f"dropped `{_clip(old)}`"
+    return f"inserted `{_clip(new)}`"
 
 
 def _clip(text: str, limit: int = 90) -> str:
