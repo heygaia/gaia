@@ -869,7 +869,9 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       "help",
       helpCommand,
     );
-    const redeemLinkCode = vi.fn().mockResolvedValue({ linked: true });
+    const redeemLinkCode = vi
+      .fn()
+      .mockResolvedValue({ linked: true, delivered: true, firstContact: [] });
     (adapter as unknown as { gaia: unknown }).gaia = {
       redeemLinkCode,
       getFrontendUrl: () => "https://gaia.test",
@@ -895,6 +897,8 @@ describe("TelegramAdapter - registerCommands command routing", () => {
       "999",
       LINK_CODE,
       expect.objectContaining({ username: "aliceuser", displayName: "Alice" }),
+      // A deep link is a tap, not a message: no opening turn is invented.
+      undefined,
     );
     // The API composes the first contact and delivers it on the outbound queue
     // when the link completes, so /start sends nothing of its own — a bubble

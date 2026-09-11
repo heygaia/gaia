@@ -47,7 +47,7 @@ from app.db.repositories.todos import todo_repository
 from app.db.repositories.users import user_repository
 from app.db.repositories.workflows import workflow_repository
 from app.decorators import enforce_daily_cost_budget
-from app.decorators.entitlements import confirm_subscription_active, is_subscription_active
+from app.decorators.entitlements import is_paid
 from app.decorators.rate_limiting import enforce_tiered_limit
 from app.models.chat_models import MessageModel, ToolDataEntry
 from app.models.message_models import MessageRequestWithHistory
@@ -1485,13 +1485,10 @@ async def execute_workflow_by_id(
         # of trigger type (schedule, manual run-now, or a Composio/email trigger
         # fire) — every one of those paths enqueues this same ARQ task, so this
         # is the single choke point that covers all of them. The gate only
-        # skips: the cached tier can lag a payment by minutes, so a cached FREE
-        # gets one fresh read, and deactivating a user's workflows belongs to
-        # the billing webhook, which acts on a real Dodo event. A recurring
-        # workflow is re-armed so it resumes the moment the subscription is back.
-        if not await is_subscription_active(workflow.user_id) and not (
-            await confirm_subscription_active(workflow.user_id)
-        ):
+        # skips: deactivating a user's workflows belongs to the billing webhook,
+        # which acts on a real Dodo event. A recurring workflow is re-armed so
+        # it resumes the moment the subscription is back.
+        if not await is_paid(workflow.user_id):
             log.warning(
                 f"{LogTag.WORKER} Workflow skipped — subscription required",
                 workflow_id=workflow_id,

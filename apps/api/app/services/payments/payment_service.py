@@ -15,6 +15,8 @@ from app.config.settings import settings
 from app.constants.cache import (
     ACTIVE_PLANS_CACHE_KEY,
     ALL_PLANS_CACHE_KEY,
+    CHECKOUT_SCAN_MISS_CACHE_PREFIX,
+    CHECKOUT_SCAN_MISS_TTL,
     SUBSCRIPTION_PLAN_CACHE_PREFIX,
     SUBSCRIPTION_PLAN_CACHE_TTL,
 )
@@ -44,13 +46,15 @@ from app.models.payment_models import (
     SubscriptionDetails,
     SubscriptionDocument,
     SubscriptionStatus,
-    SubscriptionUpdate,
     UserSubscriptionStatus,
 )
 from app.models.webhook_models import DodoSubscriptionData
 from app.services.payments.plan_cache import invalidate_plan_cache
-from app.services.payments.subscription_activation import (
-    activate_subscription,
+from app.services.payments.subscription_events import (
+    SubscriptionEvent,
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    apply_subscription_event,
     resolve_subscription_owner,
 )
 from shared.py.wide_events import log
@@ -259,6 +263,9 @@ class DodoPaymentService:
                 user_id=user_id,
                 session_id=checkout_session.session_id,
             )
+        # "None of this user's sessions is paid" was judged against the
+        # sessions that existed; this one is not among them.
+        await redis_cache.delete(f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{user_id}")
 
         return CreateSubscriptionResponse(
             subscription_id=checkout_session.session_id,
@@ -297,18 +304,20 @@ class DodoPaymentService:
             )
             raise HTTPException(502, f"Payment service error: {e!s}") from e
 
-        # Mirror Dodo's authoritative state locally. cancelled_at is only set
-        # when Dodo supplied one — leaving it unset keeps it out of the $set.
-        update = SubscriptionUpdate(status=updated.status, cancel_at_next_billing_date=True)
-        if updated.cancelled_at:
-            update.cancelled_at = updated.cancelled_at.isoformat()
-        if updated.next_billing_date:
-            update.next_billing_date = updated.next_billing_date.isoformat()
-
-        updated_local = await subscription_repository.apply_update_by_dodo_id(
-            subscription.dodo_subscription_id, update
+        # Recorded as the scheduled cancel that was asked for, whatever status
+        # Dodo reports back: the same reducer the webhook goes through keeps
+        # the user on Pro until ``subscription.expired``, and the webhook that
+        # follows finds the state already written.
+        applied = await apply_subscription_event(
+            SubscriptionEvent(
+                kind=SubscriptionEventKind.CANCELLED,
+                occurred_at=datetime.now(UTC),
+                data=DodoSubscriptionData.model_validate(
+                    {**updated.model_dump(mode="json"), "cancel_at_next_billing_date": True}
+                ),
+            )
         )
-        if not updated_local:
+        if applied.outcome is SubscriptionEventOutcome.NO_ROW:
             # Dodo accepted the cancellation but no local row matched — surfacing
             # success here would leave the user's status stale and silently drop
             # the change. Fail loud so it gets attention instead of looking done.
@@ -321,7 +330,6 @@ class DodoPaymentService:
                 502,
                 "Cancellation processed by Dodo but could not be recorded locally",
             )
-        await self.invalidate_plan_cache_by_dodo_id(subscription.dodo_subscription_id)
 
         return await self.get_user_subscription_status(user_id)
 
@@ -356,8 +364,8 @@ class DodoPaymentService:
         Both recovery routes end here, so neither can drift from the webhook:
         the subscription is acted on only once Dodo reports it active and it is
         demonstrably this user's, and the row is then written by the same
-        ``activate_subscription`` the webhook uses — which is also what drops
-        the cached plan tier and restores the workflows that lapsed.
+        reducer the webhook goes through — which is also what drops the cached
+        plan tier and restores the workflows that lapsed.
         """
         sub_data = DodoSubscriptionData.model_validate(remote.model_dump(mode="json"))
         if sub_data.status != SubscriptionStatus.ACTIVE.value:
@@ -379,44 +387,39 @@ class DodoPaymentService:
             )
             return None
 
-        await activate_subscription(sub_data)
+        await apply_subscription_event(
+            SubscriptionEvent(
+                kind=SubscriptionEventKind.ACTIVATED,
+                occurred_at=datetime.now(UTC),
+                data=sub_data,
+            )
+        )
         return await subscription_repository.get_latest_active_for_user(user_id)
 
     async def _subscription_behind_checkout(
-        self, user_id: str, checkout: CheckoutSessionDocument
+        self, checkout: CheckoutSessionDocument
     ) -> Subscription | None:
         """The Dodo subscription this checkout session was paid for, if it was.
 
         ``None`` is the ordinary answer for a session nobody paid, or for a
         settled one-off payment with no subscription behind it. A Dodo API
-        failure is logged against the session and also answers ``None``:
-        best-effort by design, because the webhook remains the authoritative
-        path and Dodo retries delivery on its side.
+        failure propagates: the scan decides what one unanswerable session
+        means for the rest.
         """
-        try:
-            checkout_status = await asyncio.to_thread(
-                self.client.checkout_sessions.retrieve, checkout.session_id
-            )
-            payment_id = checkout_status.payment_id
-            if not payment_id or checkout_status.payment_status != "succeeded":
-                return None
-
-            payment = await asyncio.to_thread(self.client.payments.retrieve, payment_id)
-            subscription_id: str | None = getattr(payment, "subscription_id", None)
-            if not subscription_id:
-                # Payment settled but has no subscription behind it.
-                return None
-
-            return await asyncio.to_thread(self.client.subscriptions.retrieve, subscription_id)
-        except Exception as e:
-            log.warning(
-                f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=user_id,
-                session_id=checkout.session_id,
-            )
+        checkout_status = await asyncio.to_thread(
+            self.client.checkout_sessions.retrieve, checkout.session_id
+        )
+        payment_id = checkout_status.payment_id
+        if not payment_id or checkout_status.payment_status != "succeeded":
             return None
+
+        payment = await asyncio.to_thread(self.client.payments.retrieve, payment_id)
+        subscription_id: str | None = getattr(payment, "subscription_id", None)
+        if not subscription_id:
+            # Payment settled but has no subscription behind it.
+            return None
+
+        return await asyncio.to_thread(self.client.subscriptions.retrieve, subscription_id)
 
     async def _materialize_subscription_from_dodo(
         self, user_id: str
@@ -436,17 +439,48 @@ class DodoPaymentService:
         and each further block buried the real session deeper. One failed
         session does not end the scan for the same reason.
 
+        A scan that found nothing paid is cached for the result page's retry
+        window (``CHECKOUT_SCAN_MISS_TTL``): the web client verifies eight
+        times over about fifty seconds, and each verify re-asked Dodo about
+        every session. Only a conclusive miss is cached — a session Dodo could
+        not answer for, or a paid one whose subscription is not active yet, is
+        exactly what the next retry should ask about again.
+
         The sessions name the purchase; they do not authorise it. Ownership and
         the write itself are settled by ``_activate_verified_subscription``,
         the same way the ``subscription_id`` hint route settles them.
         """
+        miss_key = f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{user_id}"
+        if await redis_cache.get(miss_key):
+            log.set_ns("payment", checkout_scan="cached_miss")
+            return None
+
         sessions = await checkout_session_repository.list_recent_for_user(
             user_id, limit=CHECKOUT_SESSION_SCAN_LIMIT
         )
+        conclusive = True
         for checkout in sessions:
-            subscription = await self._subscription_behind_checkout(user_id, checkout)
-            if subscription:
-                return await self._activate_verified_subscription(user_id, subscription)
+            try:
+                subscription = await self._subscription_behind_checkout(checkout)
+            except Exception as e:
+                log.warning(
+                    f"{LogTag.PAYMENT} Failed to resolve checkout with Dodo during verify",
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    user_id=user_id,
+                    session_id=checkout.session_id,
+                )
+                conclusive = False
+                continue
+            if subscription is None:
+                continue
+            activated = await self._activate_verified_subscription(user_id, subscription)
+            if activated:
+                return activated
+            conclusive = False
+
+        if conclusive:
+            await redis_cache.set(miss_key, True, ttl=CHECKOUT_SCAN_MISS_TTL)
         return None
 
     async def verify_payment_completion(
@@ -693,24 +727,6 @@ class DodoPaymentService:
         await redis_cache.set(cache_key, {"plan_type": plan.value}, ttl=SUBSCRIPTION_PLAN_CACHE_TTL)
         log.set_ns("payment", plan_type=plan.value, plan_source="subscription")
         return plan
-
-    async def invalidate_plan_cache_by_dodo_id(self, dodo_subscription_id: str) -> None:
-        """Drop the cached plan tier after a subscription change (applies immediately)."""
-        if not dodo_subscription_id:
-            return
-        user_id = await subscription_repository.get_user_id_by_dodo_id(dodo_subscription_id)
-        if not user_id:
-            # The billing change landed but nothing was dropped, so whoever owns
-            # this subscription keeps their pre-change tier until the TTL runs
-            # out — which reads downstream as the gate simply disagreeing with
-            # Dodo, with nothing to explain it.
-            log.warning(
-                f"{LogTag.PAYMENT} No local subscription for the Dodo id; cached tier not dropped",
-                failure_reason="subscription_not_found",
-                subscription_id=dodo_subscription_id,
-            )
-            return
-        await invalidate_plan_cache(user_id)
 
 
 payment_service = DodoPaymentService()

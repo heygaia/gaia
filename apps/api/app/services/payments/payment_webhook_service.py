@@ -3,40 +3,60 @@ Clean payment webhook service for Dodo Payments integration.
 Handles webhook events and updates database state accordingly.
 """
 
+from collections.abc import Awaitable, Callable
+from datetime import UTC, datetime
 from typing import Any
 
+from pydantic import ValidationError
 from standardwebhooks.webhooks import Webhook
 
 from app.config.settings import settings
 from app.constants.log_tags import LogTag
+from app.constants.payments import WEBHOOK_ROW_WAIT_MAX
 from app.db.repositories.processed_webhooks import processed_webhook_repository
-from app.db.repositories.subscriptions import subscription_repository
-from app.models.payment_models import ProcessedWebhookUpdate, SubscriptionUpdate
+from app.models.payment_models import ProcessedWebhookUpdate
 from app.models.webhook_models import (
     DodoPaymentData,
-    DodoSubscriptionData,
     DodoWebhookEvent,
     DodoWebhookEventType,
     DodoWebhookProcessingResult,
     WebhookProcessingStatus,
 )
 from app.services.account_fs import schedule_account_sync
-from app.services.analytics_service import (
-    AnalyticsEvents,
-    SubscriptionPlan,
-    track_payment_event,
-    track_subscription_event,
-)
-from app.services.payments.payment_service import payment_service
-from app.services.payments.subscription_activation import (
+from app.services.analytics_service import AnalyticsEvents, track_payment_event
+from app.services.payments.subscription_events import (
     CENTS_PER_UNIT,
-    activate_subscription,
-    reactivate_workflows_safely,
-)
-from app.services.workflow.subscription_pause import (
-    deactivate_workflows_for_lapsed_subscription,
+    SubscriptionEvent,
+    SubscriptionEventKind,
+    SubscriptionEventOutcome,
+    apply_subscription_event,
 )
 from shared.py.wide_events import log
+
+WebhookHandler = Callable[[DodoWebhookEvent], Awaitable[DodoWebhookProcessingResult]]
+
+# The subscription events GAIA acts on, and what each one reports.
+SUBSCRIPTION_EVENT_KINDS: dict[DodoWebhookEventType, SubscriptionEventKind] = {
+    DodoWebhookEventType.SUBSCRIPTION_ACTIVE: SubscriptionEventKind.ACTIVATED,
+    DodoWebhookEventType.SUBSCRIPTION_RENEWED: SubscriptionEventKind.RENEWED,
+    DodoWebhookEventType.SUBSCRIPTION_CANCELLED: SubscriptionEventKind.CANCELLED,
+    DodoWebhookEventType.SUBSCRIPTION_EXPIRED: SubscriptionEventKind.EXPIRED,
+    DodoWebhookEventType.SUBSCRIPTION_FAILED: SubscriptionEventKind.FAILED,
+    DodoWebhookEventType.SUBSCRIPTION_ON_HOLD: SubscriptionEventKind.ON_HOLD,
+    DodoWebhookEventType.SUBSCRIPTION_PLAN_CHANGED: SubscriptionEventKind.PLAN_CHANGED,
+}
+
+# The message is the only thing distinguishing what a delivery did in Dodo's
+# dashboard and in GAIA's own webhook log.
+SUBSCRIPTION_APPLIED_MESSAGES: dict[SubscriptionEventKind, str] = {
+    SubscriptionEventKind.ACTIVATED: "Subscription activated",
+    SubscriptionEventKind.RENEWED: "Subscription renewed",
+    SubscriptionEventKind.CANCELLED: "Subscription cancelled",
+    SubscriptionEventKind.EXPIRED: "Subscription expired",
+    SubscriptionEventKind.FAILED: "Subscription failed",
+    SubscriptionEventKind.ON_HOLD: "Subscription on hold",
+    SubscriptionEventKind.PLAN_CHANGED: "Subscription plan changed",
+}
 
 
 def _outcome_of(result: DodoWebhookProcessingResult) -> ProcessedWebhookUpdate:
@@ -68,18 +88,12 @@ class PaymentWebhookService:
         else:
             self.webhook_verifier = None
 
-        self.handlers = {
+        self.handlers: dict[DodoWebhookEventType, WebhookHandler] = {
             DodoWebhookEventType.PAYMENT_SUCCEEDED: self._handle_payment_succeeded,
             DodoWebhookEventType.PAYMENT_FAILED: self._handle_payment_failed,
             DodoWebhookEventType.PAYMENT_PROCESSING: self._handle_payment_processing,
             DodoWebhookEventType.PAYMENT_CANCELLED: self._handle_payment_cancelled,
-            DodoWebhookEventType.SUBSCRIPTION_ACTIVE: self._handle_subscription_active,
-            DodoWebhookEventType.SUBSCRIPTION_RENEWED: self._handle_subscription_renewed,
-            DodoWebhookEventType.SUBSCRIPTION_CANCELLED: self._handle_subscription_cancelled,
-            DodoWebhookEventType.SUBSCRIPTION_EXPIRED: self._handle_subscription_expired,
-            DodoWebhookEventType.SUBSCRIPTION_FAILED: self._handle_subscription_failed,
-            DodoWebhookEventType.SUBSCRIPTION_ON_HOLD: self._handle_subscription_on_hold,
-            DodoWebhookEventType.SUBSCRIPTION_PLAN_CHANGED: self._handle_subscription_plan_changed,
+            **dict.fromkeys(SUBSCRIPTION_EVENT_KINDS, self._handle_subscription_event),
         }
 
     def verify_webhook_signature(self, payload: str, headers: dict[str, str]) -> bool:
@@ -176,10 +190,10 @@ class PaymentWebhookService:
 
             event = DodoWebhookEvent(**webhook_data)
 
-            handler = self.handlers.get(event.type)
+            handler = self._handler_for(event.type, webhook_id)
             if not handler:
                 result = DodoWebhookProcessingResult(
-                    event_type=event.type.value,
+                    event_type=event.type,
                     status=WebhookProcessingStatus.IGNORED,
                     message=f"No handler for {event.type}",
                 )
@@ -200,15 +214,26 @@ class PaymentWebhookService:
                 log.error(
                     f"{LogTag.PAYMENT} Webhook handler did not complete; releasing the claim",
                     webhook_id=webhook_id,
-                    event_type=event.type.value,
+                    event_type=event.type,
                     failure_reason=result.message,
                 )
                 await processed_webhook_repository.release(webhook_id)
                 return result
 
-            # Bust the cached plan tier so a plan change applies immediately.
-            if result.subscription_id:
-                await payment_service.invalidate_plan_cache_by_dodo_id(result.subscription_id)
+            if result.status == WebhookProcessingStatus.ABANDONED:
+                # No retry can land this one. The endpoint acknowledges it so
+                # Dodo stops redelivering; the claim is released so a human can
+                # redeliver it by hand once the cause (a missing user, a row
+                # that never came) is fixed, instead of being turned away as a
+                # replay.
+                log.error(
+                    f"{LogTag.PAYMENT} Webhook abandoned; releasing the claim for manual redelivery",
+                    webhook_id=webhook_id,
+                    event_type=event.type,
+                    failure_reason=result.message,
+                )
+                await processed_webhook_repository.release(webhook_id)
+                return result
 
             # Keep the workspace's account/subscription projection honest after
             # any billing state change.
@@ -221,6 +246,21 @@ class PaymentWebhookService:
             await processed_webhook_repository.record_outcome(webhook_id, _outcome_of(result))
             return result
 
+        except (ValidationError, ValueError) as e:
+            # The body itself is the problem: it will not validate any better
+            # on the retry Dodo would send for a failure.
+            log.error(
+                f"{LogTag.PAYMENT} Webhook payload rejected; abandoning the delivery",
+                error=str(e),
+                error_type=type(e).__name__,
+                webhook_id=webhook_id,
+            )
+            await processed_webhook_repository.release(webhook_id)
+            return DodoWebhookProcessingResult(
+                event_type=event_type_raw,
+                status=WebhookProcessingStatus.ABANDONED,
+                message=f"Invalid payload: {e!s}",
+            )
         except Exception as e:
             log.error(
                 f"{LogTag.PAYMENT} Webhook processing failed",
@@ -233,6 +273,24 @@ class PaymentWebhookService:
                 status=WebhookProcessingStatus.FAILED,
                 message=f"Processing error: {e!s}",
             )
+
+    def _handler_for(self, event_type: str, webhook_id: str) -> WebhookHandler | None:
+        """The handler for this type, if GAIA acts on it.
+
+        Resolved through the enum so an event type Dodo added since is
+        acknowledged and ignored — not rejected as a validation error the
+        sender keeps retrying.
+        """
+        try:
+            known = DodoWebhookEventType(event_type)
+        except ValueError:
+            log.warning(
+                f"{LogTag.PAYMENT} Unlisted Dodo event type acknowledged and ignored",
+                event_type=event_type,
+                webhook_id=webhook_id,
+            )
+            return None
+        return self.handlers.get(known)
 
     async def _get_user_id_from_metadata(self, metadata: dict[str, Any]) -> str | None:
         """Get the stable application user ID from payment metadata."""
@@ -285,7 +343,7 @@ class PaymentWebhookService:
         await self._capture_payment(AnalyticsEvents.PAYMENT_SUCCEEDED, payment_data)
 
         return DodoWebhookProcessingResult(
-            event_type=event.type.value,
+            event_type=event.type,
             status=WebhookProcessingStatus.PROCESSED,
             message="Payment success logged",
             payment_id=payment_data.payment_id,
@@ -303,7 +361,7 @@ class PaymentWebhookService:
         await self._capture_payment(AnalyticsEvents.PAYMENT_FAILED, payment_data)
 
         return DodoWebhookProcessingResult(
-            event_type=event.type.value,
+            event_type=event.type,
             status=WebhookProcessingStatus.PROCESSED,
             message="Payment failure logged",
             payment_id=payment_data.payment_id,
@@ -319,7 +377,7 @@ class PaymentWebhookService:
             raise ValueError("Invalid payment data")
 
         return DodoWebhookProcessingResult(
-            event_type=event.type.value,
+            event_type=event.type,
             status=WebhookProcessingStatus.PROCESSED,
             message="Payment processing noted",
             payment_id=payment_data.payment_id,
@@ -335,7 +393,7 @@ class PaymentWebhookService:
             raise ValueError("Invalid payment data")
 
         return DodoWebhookProcessingResult(
-            event_type=event.type.value,
+            event_type=event.type,
             status=WebhookProcessingStatus.PROCESSED,
             message="Payment cancellation noted",
             payment_id=payment_data.payment_id,
@@ -343,298 +401,52 @@ class PaymentWebhookService:
         )
 
     # Subscription event handlers
-    async def _handle_subscription_active(
+    async def _handle_subscription_event(
         self, event: DodoWebhookEvent
     ) -> DodoWebhookProcessingResult:
-        """Handle subscription activation - CREATE subscription record here."""
+        """Parse the payload and hand it to the reducer; it owns every write."""
         sub_data = event.get_subscription_data()
         if not sub_data:
             raise ValueError("Invalid subscription data")
 
-        activation = await activate_subscription(sub_data)
-        if activation.user_id is None:
-            return DodoWebhookProcessingResult(
-                event_type=event.type.value,
-                status=WebhookProcessingStatus.FAILED,
-                message="User not found",
-                subscription_id=sub_data.subscription_id,
-            )
-
+        kind = SUBSCRIPTION_EVENT_KINDS[DodoWebhookEventType(event.type)]
+        applied = await apply_subscription_event(
+            SubscriptionEvent(kind=kind, occurred_at=event.occurred_at, data=sub_data)
+        )
+        status, message = self._reply_for(applied.outcome, event, kind)
         return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription activated"
-            if activation.created
-            else "Subscription already active",
+            event_type=event.type,
+            status=status,
+            message=message,
             subscription_id=sub_data.subscription_id,
         )
 
-    async def _handle_subscription_renewed(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription renewal."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
+    @staticmethod
+    def _reply_for(
+        outcome: SubscriptionEventOutcome, event: DodoWebhookEvent, kind: SubscriptionEventKind
+    ) -> tuple[WebhookProcessingStatus, str]:
+        """What the delivery is owed for what the reducer did.
 
-        # Set each billing date only when the event carries one. Passing it
-        # marks the field in model_fields_set even when None, and the repository
-        # applies model_dump(exclude_unset=True) as $set — so an event that omits
-        # a date would otherwise write null over the stored value.
-        update = SubscriptionUpdate(status="active")
-        if sub_data.next_billing_date is not None:
-            update.next_billing_date = sub_data.next_billing_date
-        if sub_data.previous_billing_date is not None:
-            update.previous_billing_date = sub_data.previous_billing_date
-
-        unmirrored = await self._mirror_subscription_state(event, sub_data, update)
-        if unmirrored:
-            return unmirrored
-
-        # Track subscription renewal in PostHog
-        user_id = await self._owner_of_subscription(event, sub_data.subscription_id)
-        if user_id:
-            track_subscription_event(
-                user_id=user_id,
-                event_type=AnalyticsEvents.SUBSCRIPTION_RENEWED,
-                subscription_id=sub_data.subscription_id,
-                plan=SubscriptionPlan(currency=sub_data.currency),
-            )
-            await reactivate_workflows_safely(user_id)
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription renewed",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _handle_subscription_cancelled(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription cancellation."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
-
-        # A cancel scheduled for the end of the billing period
-        # (cancel_at_next_billing_date=True) keeps the subscription active —
-        # and the user on Pro — until the period ends. Status is deliberately
-        # left untouched in that case: Dodo's documented payload for a
-        # scheduled cancel reports status "active", but trusting the payload's
-        # status would downgrade the user early if a future Dodo change ever
-        # reported "cancelled" there. Only the `subscription.expired` event
-        # flips status. An immediate cancellation (flag false) sets it now.
-        update = SubscriptionUpdate(
-            cancel_at_next_billing_date=sub_data.cancel_at_next_billing_date
-        )
-        if not sub_data.cancel_at_next_billing_date:
-            update.status = "cancelled"
-        # cancelled_at is only set when Dodo supplied one — leaving it unset keeps
-        # it out of the $set rather than writing null over a stored value.
-        if sub_data.cancelled_at:
-            update.cancelled_at = sub_data.cancelled_at
-
-        unmirrored = await self._mirror_subscription_state(event, sub_data, update)
-        if unmirrored:
-            return unmirrored
-
-        # Track subscription cancellation in PostHog
-        user_id = await self._owner_of_subscription(event, sub_data.subscription_id)
-        if user_id:
-            track_subscription_event(
-                user_id=user_id,
-                event_type=AnalyticsEvents.SUBSCRIPTION_CANCELLED,
-                subscription_id=sub_data.subscription_id,
-                properties={
-                    "product_id": sub_data.product_id,
-                    "billing_interval": sub_data.payment_frequency_interval,
-                },
-            )
-            # Only an immediate cancellation actually drops the user from Pro now —
-            # a cancel scheduled for period end (status left untouched above) keeps
-            # them paid until `subscription.expired` fires, so their workflows stay on.
-            if not sub_data.cancel_at_next_billing_date:
-                await self._deactivate_workflows_for_lapsed_subscription(user_id)
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription cancelled",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _handle_subscription_expired(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription expiration."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
-
-        unmirrored = await self._mirror_subscription_state(
-            event, sub_data, SubscriptionUpdate(status="expired")
-        )
-        if unmirrored:
-            return unmirrored
-
-        # Track subscription expiration in PostHog
-        user_id = await self._owner_of_subscription(event, sub_data.subscription_id)
-        if user_id:
-            track_subscription_event(
-                user_id=user_id,
-                event_type=AnalyticsEvents.SUBSCRIPTION_EXPIRED,
-                subscription_id=sub_data.subscription_id,
-            )
-            await self._deactivate_workflows_for_lapsed_subscription(user_id)
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription expired",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _handle_subscription_failed(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription failure."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
-
-        unmirrored = await self._mirror_subscription_state(
-            event, sub_data, SubscriptionUpdate(status="failed")
-        )
-        if unmirrored:
-            return unmirrored
-
-        user_id = await self._owner_of_subscription(event, sub_data.subscription_id)
-        if user_id:
-            await self._deactivate_workflows_for_lapsed_subscription(user_id)
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription failed",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _handle_subscription_on_hold(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription on hold."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
-
-        unmirrored = await self._mirror_subscription_state(
-            event, sub_data, SubscriptionUpdate(status="on_hold")
-        )
-        if unmirrored:
-            return unmirrored
-
-        user_id = await self._owner_of_subscription(event, sub_data.subscription_id)
-        if user_id:
-            await self._deactivate_workflows_for_lapsed_subscription(user_id)
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription on hold",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _handle_subscription_plan_changed(
-        self, event: DodoWebhookEvent
-    ) -> DodoWebhookProcessingResult:
-        """Handle subscription plan change."""
-        sub_data = event.get_subscription_data()
-        if not sub_data:
-            raise ValueError("Invalid subscription data")
-
-        unmirrored = await self._mirror_subscription_state(
-            event,
-            sub_data,
-            SubscriptionUpdate(
-                product_id=sub_data.product_id,
-                quantity=sub_data.quantity,
-                recurring_pre_tax_amount=sub_data.recurring_pre_tax_amount,
-            ),
-        )
-        if unmirrored:
-            return unmirrored
-
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.PROCESSED,
-            message="Subscription plan changed",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _owner_of_subscription(
-        self, event: DodoWebhookEvent, subscription_id: str
-    ) -> str | None:
-        """The GAIA user behind a subscription row that was just mirrored.
-
-        A miss is not routine here: the row matched moments ago, so no owner
-        means a subscription nobody can be billed for. Both things hanging off
-        this id — the analytics event and the workflow switch — do nothing at
-        all when it is missing, which is how a cancelled subscription leaves its
-        automations running with no trace of why.
+        A missing row is the one outcome whose answer depends on time:
+        ``subscription.active`` is a separate delivery with its own retries,
+        so a lifecycle event that beat it is asked to come back — but only for
+        as long as the activation could plausibly still be on its way.
         """
-        user_id = await subscription_repository.get_user_id_by_dodo_id(subscription_id)
-        if not user_id:
-            log.error(
-                f"{LogTag.PAYMENT} Mirrored subscription has no owner; "
-                "analytics and workflow changes skipped",
-                failure_reason="subscription_owner_missing",
-                event_type=event.type.value,
-                subscription_id=subscription_id,
-            )
-        return user_id
-
-    async def _mirror_subscription_state(
-        self,
-        event: DodoWebhookEvent,
-        sub_data: DodoSubscriptionData,
-        update: SubscriptionUpdate,
-    ) -> DodoWebhookProcessingResult | None:
-        """Apply Dodo's state to the local row; ``None`` once it is mirrored.
-
-        A miss is returned as a failure rather than logged and shrugged off:
-        the row may still be on its way — ``subscription.active`` is a separate
-        delivery with its own retries — and reporting a state change that never
-        landed leaves the user on a tier Dodo says they no longer have.
-        """
-        if await subscription_repository.apply_update_by_dodo_id(sub_data.subscription_id, update):
-            return None
-
-        log.error(
-            f"{LogTag.PAYMENT} No local subscription matched the Dodo id",
-            event_type=event.type.value,
-            subscription_id=sub_data.subscription_id,
-        )
-        return DodoWebhookProcessingResult(
-            event_type=event.type.value,
-            status=WebhookProcessingStatus.FAILED,
-            message="Subscription not found",
-            subscription_id=sub_data.subscription_id,
-        )
-
-    async def _deactivate_workflows_for_lapsed_subscription(self, user_id: str) -> None:
-        """Turn off this user's automation once they're no longer paid. Never raises —
-        a workflow-deactivation failure must not turn an otherwise-successful billing
-        webhook into a "failed" result that Dodo would retry."""
-        try:
-            await deactivate_workflows_for_lapsed_subscription(user_id)
-        except Exception as e:
-            log.error(
-                f"{LogTag.PAYMENT} Failed to deactivate workflows for lapsed subscription",
-                error=str(e),
-                error_type=type(e).__name__,
-                user_id=user_id,
-            )
+        match outcome:
+            case SubscriptionEventOutcome.CREATED:
+                return WebhookProcessingStatus.PROCESSED, "Subscription activated"
+            case SubscriptionEventOutcome.APPLIED:
+                return WebhookProcessingStatus.PROCESSED, SUBSCRIPTION_APPLIED_MESSAGES[kind]
+            case SubscriptionEventOutcome.UNCHANGED:
+                return WebhookProcessingStatus.PROCESSED, "Subscription already in this state"
+            case SubscriptionEventOutcome.STALE:
+                return WebhookProcessingStatus.IGNORED, "Stale event"
+            case SubscriptionEventOutcome.NO_OWNER:
+                return WebhookProcessingStatus.ABANDONED, "User not found"
+            case SubscriptionEventOutcome.NO_ROW:
+                if datetime.now(UTC) - event.occurred_at > WEBHOOK_ROW_WAIT_MAX:
+                    return WebhookProcessingStatus.ABANDONED, "Subscription not found"
+                return WebhookProcessingStatus.FAILED, "Subscription not found"
 
 
 # Single instance

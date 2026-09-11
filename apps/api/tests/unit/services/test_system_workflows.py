@@ -14,6 +14,7 @@ from pymongo.errors import DuplicateKeyError
 import pytest
 
 from app.constants.log_tags import LogTag
+from app.models.payment_models import PlanType
 
 MODULE = "app.services.system_workflows.provisioner"
 
@@ -1059,7 +1060,34 @@ class TestActivationForPayingUsers:
     inbox tonight") is kept. Anyone else keeps it dormant."""
 
     @patch(f"{MODULE}.WorkflowService")
-    @patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock)
+    @patch(
+        "app.decorators.entitlements.payment_service.get_user_subscription_status",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "app.decorators.entitlements.payment_service.get_cached_plan_type",
+        new_callable=AsyncMock,
+    )
+    async def test_a_user_who_just_paid_is_activated_off_the_row_not_the_stale_cache(
+        self, cached_plan: AsyncMock, fresh_status: AsyncMock, mock_service: MagicMock
+    ) -> None:
+        """Provisioning runs right after onboarding, minutes after payment —
+        exactly when the five-minute cache still says FREE. Reading the cache
+        alone left the paying user's system workflow dormant forever: nothing
+        later re-asks."""
+        from app.services.system_workflows.provisioner import _activate_for_paying_user
+
+        cached_plan.return_value = PlanType.FREE
+        fresh_status.return_value = MagicMock(plan_type=PlanType.PRO)
+        mock_service.activate_workflow = AsyncMock()
+
+        with patch("app.decorators.entitlements.invalidate_plan_cache", new_callable=AsyncMock):
+            await _activate_for_paying_user("wf-9", "user-1", "gmail:email_intelligence")
+
+        mock_service.activate_workflow.assert_awaited_once_with("wf-9", "user-1")
+
+    @patch(f"{MODULE}.WorkflowService")
+    @patch(f"{MODULE}.is_paid", new_callable=AsyncMock)
     async def test_a_pro_user_gets_the_workflow_activated(
         self, is_active: AsyncMock, mock_service: MagicMock
     ) -> None:
@@ -1074,7 +1102,7 @@ class TestActivationForPayingUsers:
         mock_service.activate_workflow.assert_awaited_once_with("wf-9", "user-1")
 
     @patch(f"{MODULE}.WorkflowService")
-    @patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock)
+    @patch(f"{MODULE}.is_paid", new_callable=AsyncMock)
     async def test_a_user_without_a_plan_keeps_it_dormant(
         self, is_active: AsyncMock, mock_service: MagicMock
     ) -> None:
@@ -1088,7 +1116,7 @@ class TestActivationForPayingUsers:
         mock_service.activate_workflow.assert_not_awaited()
 
     @patch(f"{MODULE}.WorkflowService")
-    @patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock)
+    @patch(f"{MODULE}.is_paid", new_callable=AsyncMock)
     async def test_an_activation_failure_is_logged_with_its_cause_and_swallowed(
         self, is_active: AsyncMock, mock_service: MagicMock
     ) -> None:

@@ -15,7 +15,7 @@ from pymongo.errors import DuplicateKeyError
 
 from app.constants.log_tags import LogTag
 from app.db.repositories.workflows import workflow_repository
-from app.decorators.entitlements import is_subscription_active
+from app.decorators.entitlements import is_paid
 from app.models.notification.notification_models import (
     ActionConfig,
     ActionStyle,
@@ -148,7 +148,7 @@ async def _activate_for_paying_user(workflow_id: str, user_id: str, key: str) ->
     logged but never blocks the rest of provisioning: the workflow exists and can
     be switched on by hand.
     """
-    if not await is_subscription_active(user_id):
+    if not await is_paid(user_id):
         log.info(
             f"{LogTag.WORKFLOW} System workflow left dormant for user without a plan",
             key=key,

@@ -159,7 +159,7 @@ async def test_a_reminder_with_no_id_is_refused_and_named_in_the_wide_event() ->
     log.reset()
 
     with (
-        patch(f"{MODULE}.is_subscription_active", new_callable=AsyncMock) as is_active,
+        patch(f"{MODULE}.is_paid", new_callable=AsyncMock) as is_active,
         patch(
             "app.tasks.reminder_tasks.notification_service.create_notification",
             new_callable=AsyncMock,

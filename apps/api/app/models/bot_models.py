@@ -109,6 +109,14 @@ class RedeemLinkCodeRequest(BaseModel):
     code: str = Field(..., description="Single-use code minted by the web at onboarding")
     username: str | None = Field(None, description=_USERNAME_DESC)
     display_name: str | None = Field(None, description=_DISPLAY_NAME_DESC)
+    first_message: str | None = Field(
+        None,
+        description=(
+            "What the user actually sent alongside the code, with the code "
+            "stripped. Absent on Telegram, where the deep link carries no text: "
+            "a tap is not a message and none is stored."
+        ),
+    )
 
     @field_validator("platform")
     @classmethod
@@ -123,6 +131,21 @@ class RedeemLinkCodeResponse(BaseModel):
     """Response model for a redeemed one-tap link code."""
 
     linked: bool = Field(..., description="Whether the platform account is now linked")
+    delivered: bool = Field(
+        ...,
+        description=(
+            "Whether GAIA's first contact is on its way on the outbound queue. "
+            "When false the bot owes the user the bubbles in first_contact."
+        ),
+    )
+    first_contact: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Ordered bubbles the bot must send itself because delivery failed. "
+            "Empty whenever delivered is true — sending them then would say "
+            "everything twice."
+        ),
+    )
 
 
 class ResetSessionRequest(BaseModel):

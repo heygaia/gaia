@@ -29,7 +29,7 @@ from app.constants.device_bridge import (
 )
 from app.constants.log_tags import LogTag
 from app.db.redis import redis_cache
-from app.decorators.entitlements import is_subscription_active
+from app.decorators.entitlements import is_paid
 from app.services.device.bridge import (
     down_channel,
     mark_offline,
@@ -84,7 +84,7 @@ async def device_ws(websocket: WebSocket) -> None:
     # user's daemon would otherwise keep tunnelling MCP traffic indefinitely.
     # Checked at connect, which is also where revocation is checked — the
     # daemon reconnects, so a downgrade takes effect within one dial.
-    if not await is_subscription_active(user_id):
+    if not await is_paid(user_id):
         log.set(disconnect_reason="subscription_required")
         await websocket.close(code=1008)
         return

@@ -96,14 +96,14 @@ const useFetchUser = () => {
     const needsOnboarding = !data.onboarding?.completed;
 
     if (needsOnboarding && currentPath !== "/onboarding") {
-      redirect("/onboarding", RedirectType.push);
+      redirect("/onboarding", RedirectType.replace);
     }
 
     if (
       !needsOnboarding &&
       (currentPath === "/onboarding" || PUBLIC_PAGES.includes(currentPath))
     ) {
-      redirect("/c", RedirectType.push);
+      redirect("/c", RedirectType.replace);
     }
   }
 

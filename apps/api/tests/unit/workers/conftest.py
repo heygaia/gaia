@@ -11,7 +11,7 @@ def _subscription_active_by_default():
     paid-only choke point stays out of the way. Its own tests
     (test_workflow_tasks_paid_only_gate.py) override this to FREE."""
     with patch(
-        "app.workers.tasks.workflow_tasks.is_subscription_active",
+        "app.workers.tasks.workflow_tasks.is_paid",
         AsyncMock(return_value=True),
     ):
         yield
