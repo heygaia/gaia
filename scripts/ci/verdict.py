@@ -338,6 +338,23 @@ RESULT_FALLBACK: dict[str, tuple[Status, str]] = {
 }
 _NO_VERDICT = (Status.ERROR, "NO VERDICT — this lane never reported")
 
+# `<job>@result-only`: a lane that CANNOT report. The upload composite is a path
+# in the checked-out tree, so a job with no checkout at all (`probe`) or one
+# pinned to another revision (`select-runner` checks out the DEFAULT BRANCH on
+# purpose — it handles a PAT and must not run PR-authored code, so a composite
+# this branch adds does not exist in its tree) can never run it. Such a lane is
+# DECLARED here rather than quietly dropped from the list: the gate still fails
+# on its job result, it just has no artifact to wait for. Silence from an
+# undeclared lane stays a failure, which is the whole point of the list.
+RESULT_ONLY_FAMILY = "result-only"
+RESULT_ONLY: dict[str, tuple[Status, str]] = {
+    "success": (Status.PASS, "passed (result-only — this job cannot run a local composite)"),
+    "skipped": (Status.SKIP, "skipped"),
+    "failure": (Status.FAIL, "the job failed — its reason is in its own log, not in a verdict"),
+    "cancelled": (Status.TIMED_OUT, "cancelled — it hit its cap, or the run was superseded"),
+}
+_RESULT_ONLY_UNKNOWN = (Status.ERROR, "result-only, but the job result did not reach the gate")
+
 
 def _load_verdicts(directory: Path) -> dict[str, VerdictDoc]:
     found: dict[str, VerdictDoc] = {}
@@ -373,7 +390,12 @@ def cmd_consolidate(args: list[str]) -> int:
             "ids differ (test-mutation@mutation — the mutation gate reports one "
             "verdict per MODULE, not one per job). A family is satisfied by any "
             "verdict whose lane is it or starts with `<family>/`, because how "
-            "many members there are is decided at runtime."
+            "many members there are is decided at runtime. "
+            "The family `result-only` (select-runner@result-only) marks a job that "
+            "CANNOT report — no checkout, or a checkout pinned to another revision, "
+            "so it can never run the local upload composite. It is still enforced on "
+            "its job result; it just has no verdict to wait for. Declaring it is the "
+            "point: an undeclared lane that reports nothing still fails the gate."
         ),
     )
     opts = parser.parse_args(args)
@@ -386,6 +408,9 @@ def cmd_consolidate(args: list[str]) -> int:
             continue
         job, _, result = entry.partition("=")
         lane, _, family = job.partition("@")
+        if family == RESULT_ONLY_FAMILY:
+            rows.append((lane, *RESULT_ONLY.get(result, _RESULT_ONLY_UNKNOWN)))
+            continue
         matched = _matching_lanes(family or lane, found)
         if not matched:
             rows.append((lane, *RESULT_FALLBACK.get(result, _NO_VERDICT)))

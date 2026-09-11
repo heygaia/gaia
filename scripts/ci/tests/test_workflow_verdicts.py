@@ -27,6 +27,10 @@ WORKFLOWS = {
     "code-quality.yml": REPO_ROOT / ".github" / "workflows" / "code-quality.yml",
 }
 UPLOAD_VERDICT = "./.github/actions/upload-verdict"
+# A lane that cannot run a local composite at all — no checkout, or a checkout
+# pinned to another revision. It is declared, never silently dropped: the gate
+# still fails on its job result, it just has no verdict artifact to wait for.
+RESULT_ONLY = "result-only"
 
 
 @pytest.fixture(scope="module", params=sorted(WORKFLOWS))
@@ -45,6 +49,19 @@ def _gated_jobs(workflow: dict[str, Any]) -> list[str]:
     return [j for j in _gate(workflow)["needs"] if "steps" in workflow["jobs"][j]]
 
 
+def _result_only(workflow: dict[str, Any]) -> set[str]:
+    return {
+        entry.partition("=")[0].partition("@")[0].strip()
+        for entry in _expect_arg(workflow).split(",")
+        if f"@{RESULT_ONLY}" in entry
+    }
+
+
+def _reporting_jobs(workflow: dict[str, Any]) -> list[str]:
+    declared = _result_only(workflow)
+    return [j for j in _gated_jobs(workflow) if j not in declared]
+
+
 def _expect_arg(workflow: dict[str, Any]) -> str:
     for step in _gate(workflow)["steps"]:
         env = step.get("env", {})
@@ -54,7 +71,7 @@ def _expect_arg(workflow: dict[str, Any]) -> str:
 
 
 def test_every_gated_job_uploads_its_verdict(workflow: dict[str, Any]) -> None:
-    for name in _gated_jobs(workflow):
+    for name in _reporting_jobs(workflow):
         steps = [s for s in workflow["jobs"][name]["steps"] if s.get("uses") == UPLOAD_VERDICT]
         assert steps, (
             f"job '{name}' is in quality-gate.needs but never runs {UPLOAD_VERDICT} — "
@@ -65,7 +82,7 @@ def test_every_gated_job_uploads_its_verdict(workflow: dict[str, Any]) -> None:
 def test_the_upload_runs_even_when_the_lane_failed(workflow: dict[str, Any]) -> None:
     # The whole point is the red lane. Without always() the upload is skipped
     # exactly when its findings matter.
-    for name in _gated_jobs(workflow):
+    for name in _reporting_jobs(workflow):
         for step in workflow["jobs"][name]["steps"]:
             if step.get("uses") == UPLOAD_VERDICT:
                 assert "always()" in str(step.get("if", "")), (
@@ -79,7 +96,7 @@ def test_verdict_artifact_names_are_unique(workflow: dict[str, Any]) -> None:
     # fold its matrix value into the name fails its own upload — after the
     # lane has already passed, where nobody looks.
     names: list[str] = []
-    for name in _gated_jobs(workflow):
+    for name in _reporting_jobs(workflow):
         job = workflow["jobs"][name]
         for step in job["steps"]:
             if step.get("uses") != UPLOAD_VERDICT:
@@ -131,3 +148,32 @@ def test_the_gate_passes_each_lanes_job_result(workflow: dict[str, Any]) -> None
         assert re.fullmatch(r"\$\{\{\s*needs\." + re.escape(lane) + r"\.result\s*\}\}", result), (
             f"lane '{lane}' in --expect carries {result!r}, not its needs.<job>.result"
         )
+
+
+def test_a_reporting_job_can_actually_reach_the_composite(workflow: dict[str, Any]) -> None:
+    # The composite is a path in the checked-out tree. A job with no checkout,
+    # or one pinned to another revision, cannot see it — `select-runner` pins to
+    # the default branch on purpose and `probe` never checks out at all. Such a
+    # job must be declared result-only rather than handed a step that cannot run.
+    for name in _reporting_jobs(workflow):
+        steps = workflow["jobs"][name]["steps"]
+        checkouts = [s for s in steps if "actions/checkout" in str(s.get("uses", ""))]
+        assert checkouts, (
+            f"job '{name}' has no checkout, so it cannot run {UPLOAD_VERDICT}. "
+            f"Declare it `{name}@{RESULT_ONLY}=...` in the gate's EXPECT instead."
+        )
+        assert not any((c.get("with") or {}).get("ref") for c in checkouts), (
+            f"job '{name}' pins its checkout to another revision, so a composite this "
+            f"branch adds does not exist in its tree. Declare it `{name}@{RESULT_ONLY}=...`."
+        )
+
+
+def test_a_result_only_lane_still_fails_the_gate_on_its_job_result(
+    workflow: dict[str, Any],
+) -> None:
+    # Result-only means "no verdict expected", never "not enforced". The job
+    # result still travels, so `verdict.py consolidate` can still red the gate.
+    for entry in _expect_arg(workflow).split(","):
+        if f"@{RESULT_ONLY}" not in entry:
+            continue
+        assert "=" in entry, f"result-only entry {entry!r} carries no job result — it is unenforced"

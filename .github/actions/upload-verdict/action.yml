@@ -16,12 +16,19 @@ inputs:
   name:
     description: >
       Artifact suffix, uploaded as `verdict-<name>`. Must be unique across the
-      run: a matrix job has to fold its matrix value in
-      (`test-python-${{ matrix.slice.name }}`) or the second shard's upload
-      collides with the first's.
+      run, so a matrix job folds its matrix value in — the CALLER does that,
+      passing `name: test-python-<matrix value>`, because a composite has no
+      matrix context of its own.
+
+      Written without expression syntax on purpose: an expression inside a
+      `description` is template-parsed exactly like one in a step, and a usage
+      example here failed EVERY job that used this action with
+      "Unrecognized named-value: 'matrix'".
     required: true
   lane:
-    description: Lane id in the contract. Defaults to the artifact name.
+    description: >
+      Lane id in the contract. Defaults to the artifact name. Also caller-filled
+      for the same reason — `mutation/shard-<n>`, `test-python/<slice>`.
     required: false
     default: ""
   path:

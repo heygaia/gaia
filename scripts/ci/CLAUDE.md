@@ -177,6 +177,21 @@ therefore a strict improvement, not a prerequisite. The gate downloads every
 `verdict-*` and runs `verdict.py consolidate` with
 `--expect "<job>[@<family>]=<job result>,…"` covering exactly its `needs:` list.
 
+Two jobs CANNOT report, and say so: the composite is a path in the checked-out
+tree, so `probe` (no checkout at all) and `select-runner` (checks out the
+DEFAULT BRANCH on purpose — it handles a PAT and must not run PR-authored code,
+so a composite this branch adds is not in its tree) are declared
+`<job>@result-only=…`. They are still enforced on their job result; they just
+have no artifact to wait for. Declaring is the point — silence from an
+UNDECLARED lane stays a failure. The same constraint is why a composite must
+never read `matrix`, `needs`, `strategy` or `job`: it has none of those
+contexts, and the runner rejects the whole action at parse time on every job
+that uses it. Anything matrix-dependent is an input the caller fills. Both
+rules are enforced by `scripts/ci/tests/test_composite_actions.py`, which reads
+every `.github/actions/*/action.yml` — including expressions inside an input's
+`description`, which are template-parsed exactly like a step's and are how this
+first shipped broken.
+
 A lane may report as a FAMILY of sub-units — `test-python` as one verdict per
 slice (`test-python/unit-a`), `test-mutation` as one per mutated MODULE
 (`mutation/<module>`, plus `mutation/shard-<n>`) — and the family is satisfied
