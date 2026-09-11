@@ -18,7 +18,7 @@ from mcp.shared.auth import OAuthMetadata, ProtectedResourceMetadata
 from pydantic import ValidationError
 import pytest
 
-from app.models.integration_models import IntegrationTool
+from app.models.integration_models import StoredIntegrationTool
 from app.models.mcp_config import MCPConfig, OAuthDiscovery
 from app.services.mcp.mcp_client import MCPClient
 from app.services.mcp.mcp_client_pool import MCPClientPool, PooledClient
@@ -949,7 +949,7 @@ class TestToolDiscovery:
         integration_id, stored_tools = mock_store.await_args.args
         assert integration_id == "tool-int"
         assert [t.name for t in stored_tools] == ["get_data", "post_data"]
-        assert all(isinstance(t, IntegrationTool) for t in stored_tools)
+        assert all(isinstance(t, StoredIntegrationTool) for t in stored_tools)
 
     def test_format_tools_strips_whitespace_and_filters_empty(self):
         """_format_tools strips whitespace and drops tools without names."""
@@ -979,7 +979,7 @@ class TestToolDiscovery:
         """get_integration_tools returns the repository's stored tools as dicts."""
         with patch(
             "app.services.mcp.mcp_tools_service.integration_repository.get_tools",
-            AsyncMock(return_value=[IntegrationTool(name="tool_a", description="Tool A")]),
+            AsyncMock(return_value=[StoredIntegrationTool(name="tool_a", description="Tool A")]),
         ):
             result = await get_integration_tools("my-int")
 

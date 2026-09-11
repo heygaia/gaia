@@ -116,7 +116,7 @@ class TestResolveConnectedAccountId:
             with pytest.raises(AppError) as exc:
                 _resolve_connected_account_id("u1", "GMAIL")
         assert exc.value.status_code == 403
-        assert exc.value.meta["error_code"] == INTEGRATION_NOT_CONNECTED
+        assert exc.value.meta["code"] == INTEGRATION_NOT_CONNECTED
 
     def test_returns_active_account_id(self) -> None:
         composio = _make_composio(account_id="acc_xyz")
