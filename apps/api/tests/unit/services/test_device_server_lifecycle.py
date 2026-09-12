@@ -8,7 +8,7 @@ the only fakes — every function's real branching and string-building runs.
 """
 
 import contextlib
-from datetime import datetime
+from datetime import UTC, datetime
 import hashlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -18,11 +18,16 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import StaticPool
 
-from app.constants.device_bridge import DEVICE_CATEGORY, DEVICE_TRANSPORT, FRAME_SERVER_REMOVE
+from app.constants.device_bridge import (
+    DEVICE_CATEGORY,
+    DEVICE_TRANSPORT,
+    FRAME_SERVER_REMOVE,
+    MAX_ACTIVE_DEVICES_PER_USER,
+)
 from app.db.postgresql import Base
 from app.models.device import Device, DeviceMCPServer, DeviceServerStatus, DeviceStatus
-from app.utils.errors import AppError
 from app.services.device import device_service
+from app.utils.errors import AppError
 from tests.helpers import captured_wide_event
 
 pytestmark = pytest.mark.unit
@@ -475,8 +480,6 @@ class TestRecordDeviceServerSync:
         # it — spy on the clock instead: now() must be called with UTC, since
         # Postgres stores what it's given and a naive stamp breaks every
         # timezone-aware comparison downstream.
-        from datetime import UTC as dt_utc
-
         seen: list[object] = []
         real_datetime = datetime
 
@@ -491,7 +494,7 @@ class TestRecordDeviceServerSync:
             await s.commit()
         with patch.object(device_service, "datetime", SpyDateTime):
             await device_service.record_device_server_sync("int-1")
-        assert seen == [dt_utc]
+        assert seen == [UTC]
 
     async def test_records_error_and_truncates_to_2000(self, sqlite_session) -> None:
         async with sqlite_session() as s:
@@ -529,16 +532,17 @@ class TestCreateDeviceCapQueries:
         )
 
     async def test_cap_counts_only_this_users_active_devices(self, sqlite_session) -> None:
-        # 20 ACTIVE for someone else + INACTIVE decoys for self: the cap must
-        # not see them. A dropped user_id predicate (or a dropped ACTIVE
-        # predicate) counts strangers and wrongly rejects.
+        # 20 ACTIVE for someone else + a full cap's worth of REVOKED decoys for
+        # self: the cap must see neither. A dropped user_id predicate counts
+        # strangers; a dropped ACTIVE predicate counts the revoked rows —
+        # both wrongly reject a user who owns nothing active.
         async with sqlite_session() as s:
             await self._seed(
                 s,
-                [self._device(f"other-{n}", "user-b") for n in range(20)]
+                [self._device(f"other-{n}", "user-b") for n in range(MAX_ACTIVE_DEVICES_PER_USER)]
                 + [
                     self._device(f"mine-off-{n}", "user-a", DeviceStatus.REVOKED)
-                    for n in range(5)
+                    for n in range(MAX_ACTIVE_DEVICES_PER_USER)
                 ],
             )
         device_id, refresh_token = await device_service.self_pair_device(
@@ -549,9 +553,7 @@ class TestCreateDeviceCapQueries:
         from app.services.device.device_auth import hash_refresh_token
 
         async with sqlite_session() as s:
-            row = (
-                await s.execute(select(Device).where(Device.id == device_id))
-            ).scalar_one()
+            row = (await s.execute(select(Device).where(Device.id == device_id))).scalar_one()
         assert hash_refresh_token(refresh_token) == row.refresh_token_hash
         assert row.status == DeviceStatus.ACTIVE
 
@@ -583,9 +585,7 @@ class TestDeregisterScopesToDevice:
         with (
             patch.object(device_service.integration_repository, "delete", delete_mock),
             patch.object(device_service, "remove_user_integration", remove_mock),
-            patch.object(
-                device_service, "invalidate_user_integration_caches", invalidate_mock
-            ),
+            patch.object(device_service, "invalidate_user_integration_caches", invalidate_mock),
         ):
             assert (
                 await device_service.deregister_device_server(
@@ -597,6 +597,7 @@ class TestDeregisterScopesToDevice:
             remaining = (await s.execute(select(DeviceMCPServer.integration_id))).scalars().all()
         assert remaining == ["int-2"]
         delete_mock.assert_awaited_once_with("int-1")
+
     def _redis(self, claimed: bool = True):
         cache = Mock()
         cache.client.set = AsyncMock(return_value=claimed)
@@ -625,9 +626,7 @@ class TestDeregisterScopesToDevice:
         # The coalesce marker carries the identical work key with the exact
         # SETNX shape — a dropped nx/ex, a blanked arg, or a reformatted key
         # all silently disable burst collapsing.
-        cache.client.set.assert_awaited_once_with(
-            f"device:warmup:dev1:{work}", "1", nx=True, ex=60
-        )
+        cache.client.set.assert_awaited_once_with(f"device:warmup:dev1:{work}", "1", nx=True, ex=60)
 
     async def test_defaults_server_keys_to_none(self) -> None:
         pool = object()
