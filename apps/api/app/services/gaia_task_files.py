@@ -20,7 +20,7 @@ from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import TodoDocument
 from app.services.gaia_tasks_fs import fetch_active_projections, project_gaia_task
-from app.services.storage._vfs_common import INDEX_FILENAME, folder_name, meta_body
+from app.services.storage._vfs_common import INDEX_FILENAME, meta_body
 from app.services.storage.gaia_tasks_vfs import GAIA_TASKS_DIRNAME, render_index
 from app.services.todo_canvas_storage import write_activity, write_canvas
 from app.services.tracked_todo_service import tracked_todo_service
@@ -143,11 +143,6 @@ async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | Non
     return None
 
 
-def task_folder(todo_id: str, title: str | None) -> str:
-    """The ``<slug>-<shortid>`` folder the agent sees for this todo."""
-    return folder_name(todo_id, title)
-
-
 __all__ = [
     "GaiaTaskFile",
     "GaiaTaskPath",
@@ -156,7 +151,6 @@ __all__ = [
     "TaskFile",
     "read_file",
     "resolve",
-    "task_folder",
     "write_file",
     "write_refusal",
 ]

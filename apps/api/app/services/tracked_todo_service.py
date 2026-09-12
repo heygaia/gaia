@@ -22,6 +22,7 @@ from app.db.repositories.todos import todo_repository
 from app.models.todo_models import Priority, TodoDocument, TodoModel, TodoResponse, TodoUpdate
 from app.services.canvas_markdown import section_body, split_legacy_canvas
 from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
+from app.services.storage._vfs_common import folder_name
 from app.services.todo_canvas_storage import (
     append_activity,
     append_log,
@@ -107,7 +108,7 @@ def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: 
     return (
         f'  {prefix}"{doc.title}"{labels_str}{_format_due_string(doc.due_date, now)}'
         f" — {age_days}d old, updated {last_update}d ago"
-        f" | ID: {doc.id}"
+        f" | ID: {doc.id} | files: gaia-tasks/{folder_name(doc.id, doc.title)}/"
     )
 
 

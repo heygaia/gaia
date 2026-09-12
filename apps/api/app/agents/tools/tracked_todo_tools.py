@@ -16,7 +16,7 @@ from langchain_core.tools import tool
 from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import Priority, TodoDocument, TodoResponse, TodoUpdate
-from app.services.gaia_task_files import task_folder
+from app.services.storage._vfs_common import folder_name
 from app.services.tracked_todo_service import tracked_todo_service
 from app.services.user_service import get_user_by_id
 from app.utils.canvas_vector_utils import search_canvas_context
@@ -368,7 +368,7 @@ def _format_create_output(
     notes: list[str],
 ) -> str:
     """Assemble the user-facing summary returned by create_tracked_todo."""
-    folder = f"/workspace/gaia-tasks/{task_folder(result.id, result.title)}"
+    folder = f"/workspace/gaia-tasks/{folder_name(result.id, result.title)}"
     out = (
         f"Tracked todo created: {result.id}\n"
         f"Title: {result.title}\n"
