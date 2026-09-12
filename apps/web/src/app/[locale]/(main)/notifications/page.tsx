@@ -26,11 +26,16 @@ export default function NotificationsPage() {
     refetch: refreshNotifications,
     markAsRead,
     markAllAsRead,
+    hasMoreUnseen,
   } = useNotifications({
     status: NotificationStatus.DELIVERED,
     limit: 100,
     channel_type: INAPP_CHANNEL,
   });
+
+  // The loaded page can undercount unread notifications, so a button gated on
+  // it alone could hide even though an older delivered notification exists.
+  const canMarkAllAsRead = unreadNotifications.length > 0 || hasMoreUnseen;
 
   const { notifications: allNotifications, loading: allLoading } =
     useNotifications({
@@ -55,9 +60,9 @@ export default function NotificationsPage() {
   };
 
   const handleMarkAllAsRead = useCallback(async () => {
-    if (unreadNotifications.length === 0) return;
+    if (!canMarkAllAsRead) return;
     await markAllAsRead(INAPP_CHANNEL);
-  }, [unreadNotifications.length, markAllAsRead]);
+  }, [canMarkAllAsRead, markAllAsRead]);
 
   // Keep a ref so the header's onMarkAllAsRead always calls the latest version
   // without adding handleMarkAllAsRead to the setHeader effect's dep array
@@ -74,6 +79,7 @@ export default function NotificationsPage() {
         selectedTab={selectedTab}
         onTabChange={setSelectedTab}
         unreadCount={unreadNotifications.length}
+        showMarkAllAsRead={canMarkAllAsRead}
         onMarkAllAsRead={() => handleMarkAllAsReadRef.current()}
       />,
     );
@@ -81,7 +87,7 @@ export default function NotificationsPage() {
     return () => {
       setHeader(null);
     };
-  }, [selectedTab, unreadNotifications.length, setHeader]);
+  }, [selectedTab, unreadNotifications.length, canMarkAllAsRead, setHeader]);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-primary-bg">

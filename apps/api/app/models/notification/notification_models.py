@@ -347,3 +347,19 @@ class ChannelPreferencesUpdate(BaseModel):
     discord: bool | None = None
     whatsapp: bool | None = None
     slack: bool | None = None
+
+
+class NotificationListFilters(BaseModel):
+    """Query filters for listing a user's notifications.
+
+    Bundled because this exact parameter set threads unchanged through the
+    repository, storage, orchestrator, and service layers — a shared shape,
+    not a per-layer convention.
+    """
+
+    status: NotificationStatus | None = None
+    channel_type: str | None = None
+    notification_type: NotificationType | None = None
+    source: NotificationSourceEnum | None = None
+    limit: int = 50
+    offset: int = 0

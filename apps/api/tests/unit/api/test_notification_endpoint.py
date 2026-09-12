@@ -7,9 +7,12 @@ routing, status codes, response bodies, auth, and validation.
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from httpx import AsyncClient
+from fastapi import FastAPI
+from httpx import ASGITransport, AsyncClient
 import pytest
 
+from app.api.v1.dependencies.oauth_dependencies import get_current_user
+from app.constants.log_tags import LogTag
 from app.models.notification.notification_models import (
     NotificationContent,
     NotificationContentView,
@@ -412,17 +415,28 @@ class TestBulkActions:
         )
         assert response.status_code == 500
 
+    @patch("app.api.v1.endpoints.notification.log")
     @patch(
         "app.api.v1.endpoints.notification.notification_service.bulk_actions",
         new_callable=AsyncMock,
     )
-    async def test_bulk_actions_error(self, mock_bulk: AsyncMock, client: AsyncClient):
+    async def test_bulk_actions_error(
+        self, mock_bulk: AsyncMock, mock_log: MagicMock, client: AsyncClient
+    ):
         mock_bulk.side_effect = Exception("boom")
         response = await client.post(
             f"{NOTIF_BASE}/bulk-actions",
             json={"notification_ids": ["n1"], "action": "mark_read"},
         )
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to perform bulk actions"
+        mock_log.error.assert_called_once_with(
+            f"{LogTag.NOTIFICATION} Failed to perform bulk actions",
+            user_id=FAKE_USER_ID,
+            notification_count=1,
+            error_type="Exception",
+            error="boom",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -433,39 +447,89 @@ class TestBulkActions:
 class TestMarkAllRead:
     """POST /api/v1/notifications/mark-all-read"""
 
+    @patch("app.api.v1.endpoints.notification.log")
     @patch(
         "app.api.v1.endpoints.notification.notification_service.mark_all_read",
         new_callable=AsyncMock,
     )
-    async def test_mark_all_read_success(self, mock_mark_all: AsyncMock, client: AsyncClient):
+    async def test_mark_all_read_success(
+        self, mock_mark_all: AsyncMock, mock_log: MagicMock, client: AsyncClient
+    ):
         mock_mark_all.return_value = 7
         response = await client.post(f"{NOTIF_BASE}/mark-all-read")
+
         assert response.status_code == 200
         body = response.json()
         assert body["success"] is True
+        assert body["message"] == "Marked 7 notifications as read"
         assert body["data"]["updated_count"] == 7
         mock_mark_all.assert_awaited_once_with(FAKE_USER_ID, channel_type=None)
 
+        first_set, second_set = mock_log.set.call_args_list
+        assert first_set.kwargs == {
+            "user": {"id": FAKE_USER_ID},
+            "operation": "mark_all_read",
+            "notification": {"operation": "mark_all_read"},
+        }
+        assert second_set.kwargs == {"outcome": "success"}
+        mock_log.set_ns.assert_called_once_with("notification", result_count=7, success=True)
+
+    @patch("app.api.v1.endpoints.notification.log")
     @patch(
         "app.api.v1.endpoints.notification.notification_service.mark_all_read",
         new_callable=AsyncMock,
     )
     async def test_mark_all_read_passes_channel_type(
-        self, mock_mark_all: AsyncMock, client: AsyncClient
+        self, mock_mark_all: AsyncMock, mock_log: MagicMock, client: AsyncClient
     ):
         mock_mark_all.return_value = 3
         response = await client.post(f"{NOTIF_BASE}/mark-all-read?channel_type=inapp")
+
         assert response.status_code == 200
         mock_mark_all.assert_awaited_once_with(FAKE_USER_ID, channel_type="inapp")
 
+        first_set = mock_log.set.call_args_list[0]
+        assert first_set.kwargs["notification"] == {
+            "operation": "mark_all_read",
+            "channel": "inapp",
+        }
+
+    @patch("app.api.v1.endpoints.notification.log")
     @patch(
         "app.api.v1.endpoints.notification.notification_service.mark_all_read",
         new_callable=AsyncMock,
     )
-    async def test_mark_all_read_error(self, mock_mark_all: AsyncMock, client: AsyncClient):
+    async def test_mark_all_read_error(
+        self, mock_mark_all: AsyncMock, mock_log: MagicMock, client: AsyncClient
+    ):
         mock_mark_all.side_effect = Exception("boom")
         response = await client.post(f"{NOTIF_BASE}/mark-all-read")
+
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to mark all notifications as read"
+        mock_log.error.assert_called_once_with(
+            f"{LogTag.NOTIFICATION} Failed to mark all notifications as read",
+            user_id=FAKE_USER_ID,
+            error_type="Exception",
+            error="boom",
+        )
+
+    async def test_mark_all_read_no_user_id(self, test_app: FastAPI) -> None:
+        """Missing user_id yields 401 with the exact detail string."""
+        original = test_app.dependency_overrides.get(get_current_user)
+        test_app.dependency_overrides[get_current_user] = lambda: {"user_id": None}
+        try:
+            transport = ASGITransport(app=test_app, raise_app_exceptions=False)
+            async with AsyncClient(transport=transport, base_url="http://test") as ac:  # NOSONAR
+                response = await ac.post(f"{NOTIF_BASE}/mark-all-read")
+        finally:
+            if original is None:
+                test_app.dependency_overrides.pop(get_current_user, None)
+            else:
+                test_app.dependency_overrides[get_current_user] = original
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "User not authenticated or user_id not found"
 
 
 # ---------------------------------------------------------------------------

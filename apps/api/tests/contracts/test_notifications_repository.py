@@ -10,6 +10,7 @@ from app.db.repositories.notifications import NotificationRepository
 from app.models.notification.notification_models import (
     ChannelDeliveryStatus,
     NotificationContent,
+    NotificationListFilters,
     NotificationRecord,
     NotificationRequest,
     NotificationSourceEnum,
@@ -66,7 +67,9 @@ class TestNotificationRepository:
     async def test_list_filters_by_status(self, repo):
         await repo.create(_record(id="p", user_id="f", status=NotificationStatus.PENDING))
         await repo.create(_record(id="r", user_id="f", status=NotificationStatus.READ))
-        read = await repo.list_for_user("f", status=NotificationStatus.READ)
+        read = await repo.list_for_user(
+            "f", filters=NotificationListFilters(status=NotificationStatus.READ)
+        )
         assert [i.id for i in read] == ["r"]
 
 

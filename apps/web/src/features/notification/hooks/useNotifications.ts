@@ -22,6 +22,11 @@ interface UseNotificationsReturn {
   bulkArchive: (ids: string[]) => Promise<void>;
   markAllAsRead: (channelType?: string) => Promise<void>;
   unreadCount: number;
+  /** True when the shared store hit its fetch cap, so `unreadCount` may
+   * undercount — an older delivered notification could exist past the loaded
+   * page. Callers gating "is there anything to mark read" must OR this in
+   * rather than trust `unreadCount === 0` alone. */
+  hasMoreUnseen: boolean;
   addNotification: (notification: NotificationRecord) => void;
   updateNotification: (notification: NotificationRecord) => void;
 }
@@ -220,6 +225,11 @@ export function useNotifications(
     [allNotifications],
   );
 
+  // The shared fetch is capped at NOTIFICATION_PAGE_SIZE — if it came back
+  // full, an older, still-unread notification may exist beyond what's loaded.
+  const hasMoreUnseen =
+    (allNotifications ?? []).length >= NOTIFICATION_PAGE_SIZE;
+
   // Initial fetch — skipped if store is already populated
   useEffect(() => {
     fetchNotifications();
@@ -236,6 +246,7 @@ export function useNotifications(
     bulkArchive,
     markAllAsRead,
     unreadCount,
+    hasMoreUnseen,
     addNotification,
     updateNotification,
   };

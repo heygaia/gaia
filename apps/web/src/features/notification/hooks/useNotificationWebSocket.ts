@@ -13,6 +13,7 @@ import type {
 } from "@/types/features/notificationTypes";
 import {
   ActionType,
+  NotificationStatus,
   NotificationType,
 } from "@/types/features/notificationTypes";
 
@@ -22,11 +23,13 @@ interface WebSocketMessage {
     | "notification.updated"
     | "notification.read"
     | "notification.reactivated"
+    | "notification.all_read"
     | "ping"
     | "error";
   notification?: NotificationRecord;
   notification_id?: string;
   updates?: NotificationUpdate;
+  channel_type?: string | null;
   message?: string;
 }
 
@@ -111,7 +114,8 @@ function handleDeliveredNotification(
 export function useNotificationWebSocket() {
   const user = useUser();
   const isAuthenticated = !!user?.email;
-  const { addNotification, updateNotification } = useNotificationStore();
+  const { addNotification, updateNotification, setNotifications } =
+    useNotificationStore();
   const router = useRouter();
   const pathname = usePathname();
   // Ref keeps handleMessage stable so the ws listener isn't re-registered.
@@ -143,6 +147,28 @@ export function useNotificationWebSocket() {
           }
           break;
 
+        case "notification.all_read": {
+          const channelType = message.channel_type;
+          const prev = useNotificationStore.getState().notifications;
+          setNotifications(
+            prev.map((n) => {
+              if (n.status !== NotificationStatus.DELIVERED) return n;
+              if (
+                channelType &&
+                !n.channels?.some((c) => c.channel_type === channelType)
+              ) {
+                return n;
+              }
+              return {
+                ...n,
+                status: NotificationStatus.READ,
+                read_at: new Date().toISOString(),
+              };
+            }),
+          );
+          break;
+        }
+
         case "error":
           console.error("WebSocket error message:", message.message);
           break;
@@ -151,7 +177,7 @@ export function useNotificationWebSocket() {
           console.warn("Unknown notification message type:", message.type);
       }
     },
-    [addNotification, updateNotification, router],
+    [addNotification, updateNotification, setNotifications, router],
   );
 
   const handleError = useCallback((error: Error) => {
@@ -163,12 +189,14 @@ export function useNotificationWebSocket() {
 
     wsManager.on("notification.delivered", handleMessage);
     wsManager.on("notification.updated", handleMessage);
+    wsManager.on("notification.all_read", handleMessage);
     wsManager.on("error", handleMessage);
     wsManager.onError(handleError);
 
     return () => {
       wsManager.off("notification.delivered", handleMessage);
       wsManager.off("notification.updated", handleMessage);
+      wsManager.off("notification.all_read", handleMessage);
       wsManager.off("error", handleMessage);
       wsManager.offError(handleError);
     };

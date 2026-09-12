@@ -25,6 +25,7 @@ from app.models.device_token_models import (
 from app.models.notification.notification_models import (
     ChannelPreferences,
     ChannelPreferencesUpdate,
+    NotificationListFilters,
     NotificationRecord,
     NotificationStatus,
     NotificationView,
@@ -117,10 +118,11 @@ async def get_notifications(
     )
 
     try:
+        filters = NotificationListFilters(
+            status=status, channel_type=channel_type, limit=limit, offset=offset
+        )
         notifications, notification_count = await asyncio.gather(
-            notification_service.get_user_notifications(
-                user_id, status, limit, offset, channel_type
-            ),
+            notification_service.get_user_notifications(user_id, filters=filters),
             notification_service.get_user_notifications_count(user_id, status, channel_type),
         )
 
@@ -140,7 +142,7 @@ async def get_notifications(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to get notifications") from e
 
 
 @router.get("/notifications/preferences/channels", response_model=ChannelPreferences)
@@ -170,7 +172,7 @@ async def get_channel_preferences(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to get channel preferences") from e
 
 
 @router.put("/notifications/preferences/channels", response_model=ChannelPreferences)
@@ -222,7 +224,7 @@ async def update_channel_preferences(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to update channel preferences") from e
 
 
 @router.post("/notifications/{notification_id}/actions/{action_id}/execute")
@@ -273,7 +275,7 @@ async def execute_action(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to execute action") from e
 
 
 @router.post("/notifications/{notification_id}/read")
@@ -320,7 +322,7 @@ async def mark_as_read(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to mark notification as read") from e
 
 
 @router.post("/notifications/bulk-actions")
@@ -371,7 +373,7 @@ async def bulk_actions(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to perform bulk actions") from e
 
 
 @router.post("/notifications/mark-all-read")
@@ -415,7 +417,9 @@ async def mark_all_read(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(
+            status_code=500, detail="Failed to mark all notifications as read"
+        ) from e
 
 
 @router.post("/notifications/register-device", response_model=DeviceTokenResponse)
@@ -477,7 +481,7 @@ async def register_device_token(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to register device token") from e
 
 
 @router.post("/notifications/unregister-device", response_model=DeviceTokenResponse)
@@ -515,7 +519,7 @@ async def unregister_device_token(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to unregister device token") from e
 
 
 @router.get("/notifications/{notification_id}")
@@ -557,4 +561,4 @@ async def get_notification(
             error_type=type(e).__name__,
             error=str(e),
         )
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        raise HTTPException(status_code=500, detail="Failed to get notification") from e

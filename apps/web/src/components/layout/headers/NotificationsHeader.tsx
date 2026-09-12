@@ -9,6 +9,9 @@ interface NotificationsHeaderProps {
   selectedTab: string;
   onTabChange: (key: string) => void;
   unreadCount: number;
+  /** Whether the mark-all-read button should show. Separate from `unreadCount`
+   * because the loaded count can undercount when the store hit its page cap. */
+  showMarkAllAsRead: boolean;
   onMarkAllAsRead: () => void;
 }
 
@@ -16,6 +19,7 @@ export default function NotificationsHeader({
   selectedTab,
   onTabChange,
   unreadCount,
+  showMarkAllAsRead,
   onMarkAllAsRead,
 }: NotificationsHeaderProps) {
   return (
@@ -48,7 +52,7 @@ export default function NotificationsHeader({
           <Tab key="all" title="All" />
         </Tabs>
 
-        {unreadCount > 0 && (
+        {showMarkAllAsRead && (
           <Button variant="flat" size="sm" onPress={onMarkAllAsRead}>
             Mark All as Read
           </Button>
