@@ -807,6 +807,21 @@ class TestFormatTrackedTodoFull:
         assert "Priority: high" in result
         assert "(ID: t1)" in result
 
+    def test_names_the_notes_folder_so_the_agent_can_read_without_a_second_lookup(self):
+        now = datetime.now(UTC)
+        doc = TodoDocument(
+            id="66f838cc8829054e5f10e407",
+            user_id="u1",
+            title="Fix the thing",
+            labels=[GAIA_TRACKED_LABEL],
+            created_at=now,
+            updated_at=now,
+        )
+
+        result = _format_tracked_todo_full(doc, now)
+
+        assert "files: /workspace/gaia-tasks/fix-the-thing-5f10e407/" in result
+
     def test_includes_detail_line_when_scheduling_fields_present(self):
         now = datetime.now(UTC)
         doc = TodoDocument(
@@ -860,6 +875,25 @@ class TestSearchTodoContext:
         assert "t1" in result
         assert "some context" in result
         assert "[completed]" not in result
+
+    async def test_matches_name_the_notes_folder(self):
+        matches = [
+            {
+                "title": "Fix the thing",
+                "todo_id": "66f838cc8829054e5f10e407",
+                "score": 0.9,
+                "snippet": "ctx",
+                "completed": True,
+            }
+        ]
+        with patch(
+            "app.agents.tools.tracked_todo_tools.search_canvas_context",
+            new_callable=AsyncMock,
+            return_value=matches,
+        ):
+            result = await search_todo_context.coroutine(config=_config(), query="q")
+
+        assert "files: /workspace/gaia-tasks/fix-the-thing-5f10e407/" in result
 
     async def test_completed_match_is_flagged(self):
         matches = [

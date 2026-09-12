@@ -414,6 +414,7 @@ def _format_tracked_todo_full(doc: TodoDocument, now: datetime) -> str:
     parts = [
         f'- "{doc.title}"{labels_str} (ID: {doc.id})',
         f"  Priority: {doc.priority.value} | Age: {age_days}d | Last updated: {last_update}d ago",
+        f"  files: /workspace/gaia-tasks/{folder_name(doc.id, doc.title)}/",
     ]
     detail_parts = _build_list_detail_parts(doc, now)
     if detail_parts:
@@ -650,8 +651,10 @@ async def search_todo_context(
     lines = []
     for m in matches:
         status = " [completed]" if m.get("completed") else ""
+        folder = folder_name(m["todo_id"], m["title"])
         lines.append(
             f"- [{m['title']}]{status} (todo_id: {m['todo_id']}, score: {m['score']})\n"
+            f"  files: /workspace/gaia-tasks/{folder}/\n"
             f"  {m['snippet'][:200]}"
         )
     return "\n".join(lines)
