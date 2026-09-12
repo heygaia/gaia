@@ -30,7 +30,7 @@ A case's ``expected`` block carries:
   silently passing. Supported: ``todos`` (count / title / title_contains /
   completed / priority / labels_contains / project / subtask_count /
   subtasks_completed), ``tracked_todos`` (count / title / title_contains /
-  canvas_contains / purpose), ``reminders`` (count / title / title_contains /
+  canvas_contains (canvas.md + activity.md) / purpose), ``reminders`` (count / title / title_contains /
   datetime_contains), ``projects`` (count / name / name_contains), ``labels``
   (count / name), ``notifications`` (count / title_contains / body_contains /
   channel), ``workflows`` (count), plus the scalars ``answer_contains`` (checked
@@ -819,10 +819,18 @@ def _matched_title(
 
 def _doc_text(doc: object) -> str:
     parts: list[str] = []
-    for attr in ("title", "description", "canvas_content", "body"):
+    for attr in ("title", "description", "canvas_content", "activity_content", "body"):
         value = getattr(doc, attr, None)
         if value:
             parts.append(str(value))
+    return " ".join(parts).lower()
+
+
+def _notes_text(doc: object) -> str:
+    """A tracked todo's notes: canvas.md and activity.md together, lowercased."""
+    parts = [
+        str(v) for v in (getattr(doc, a, None) for a in ("canvas_content", "activity_content")) if v
+    ]
     return " ".join(parts).lower()
 
 
@@ -1019,11 +1027,7 @@ async def _project_tracked_todos(user_id: str, want: list[object]) -> list[dict[
             term = item.get("canvas_contains")
             if term is not None:
                 term = str(term)
-                canvas = (
-                    str(getattr(match, "canvas_content", "") or "").lower()
-                    if match is not None
-                    else ""
-                )
+                canvas = _notes_text(match) if match is not None else ""
                 term = term if match is not None and term.lower() in canvas else None
             entry["canvas_contains"] = term
         purpose_term = item.get("purpose")
