@@ -16,8 +16,10 @@ import pytest
 
 from app.models.todo_models import TodoDocument
 from app.services.todo_canvas_storage import (
+    _schedule_reindex,
     append_log,
     build_vfs_label,
+    embedding_text,
     read_canvas,
     write_canvas,
 )
@@ -29,6 +31,7 @@ TODO_ID = "todo-1"
 
 def _todo_doc(**overrides: object) -> TodoDocument:
     data: dict[str, object] = {
+        "id": TODO_ID,
         "user_id": USER_ID,
         "title": "Ship the thing",
         "canvas_content": "canvas-v1",
@@ -55,6 +58,51 @@ def mock_repo():
 def mock_sync():
     with patch(f"{_MOD}.schedule_gaia_tasks_sync", new_callable=MagicMock) as m:
         yield m
+
+
+class TestEmbeddingText:
+    def test_joins_canvas_and_activity_with_blank_line(self):
+        doc = _todo_doc(canvas_content="c", activity_content="a")
+
+        assert embedding_text(doc) == "c\n\na"
+
+    def test_skips_empty_parts(self):
+        assert embedding_text(_todo_doc(canvas_content="c", activity_content=None)) == "c"
+        assert embedding_text(_todo_doc(canvas_content=None, activity_content="a")) == "a"
+
+    def test_empty_when_both_empty(self):
+        assert embedding_text(_todo_doc(canvas_content=None, activity_content=None)) == ""
+
+
+class TestScheduleReindex:
+    def test_reindexes_with_the_exact_arguments(self):
+        doc = _todo_doc(canvas_content="c", activity_content="a", labels=["x"])
+        with patch(f"{_MOD}.update_canvas_embedding", new_callable=AsyncMock) as embed:
+            with patch(f"{_MOD}.spawn_logged_task") as spawn:
+                _schedule_reindex(doc)
+
+        name, coro = spawn.call_args.args
+        assert name == "canvas_reindex"
+        coro.close()
+        assert embed.call_args.kwargs == {
+            "todo_id": TODO_ID,
+            "canvas_content": "c\n\na",
+            "user_id": USER_ID,
+            "title": "Ship the thing",
+            "labels": ["x"],
+            "revision": doc.updated_at.isoformat(),
+        }
+
+    def test_empty_bodies_delete_the_embedding_instead(self):
+        doc = _todo_doc(canvas_content=None, activity_content=None)
+        with patch(f"{_MOD}.delete_canvas_embedding", new_callable=AsyncMock) as delete:
+            with patch(f"{_MOD}.spawn_logged_task") as spawn:
+                _schedule_reindex(doc)
+
+        name, coro = spawn.call_args.args
+        coro.close()
+        assert name == "canvas_reindex_delete"
+        delete.assert_called_once_with(TODO_ID)
 
 
 class TestBuildVfsLabel:
@@ -92,8 +140,10 @@ class TestWriteCanvas:
         ok = await write_canvas(TODO_ID, USER_ID, "new content")
 
         assert ok is True
-        update = mock_repo.replace_note_fields.await_args.kwargs["update"]
-        assert update.canvas_content == "new content"
+        kwargs = mock_repo.replace_note_fields.await_args.kwargs
+        assert kwargs["update"].canvas_content == "new content"
+        assert kwargs["update"].title is None  # only the canvas body is replaced
+        assert kwargs["expected_updated_at"] is None
         mock_sync.assert_called_once_with(USER_ID)
 
     async def test_false_when_update_matches_nothing(self, mock_repo, mock_sync):
@@ -108,7 +158,7 @@ class TestAppendLog:
         mock_repo.append_text_field.return_value = _todo_doc()
 
         assert await append_log(TODO_ID, USER_ID, "audit v2") is True
-        kwargs = mock_repo.append_text_field.await_args.kwargs
-        assert kwargs["field"] == "log_content"
-        assert kwargs["suffix"] == "\naudit v2"
+        mock_repo.append_text_field.assert_awaited_once_with(
+            TODO_ID, USER_ID, field="log_content", suffix="\naudit v2"
+        )
         mock_sync.assert_called_once_with(USER_ID)

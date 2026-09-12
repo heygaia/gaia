@@ -1,8 +1,15 @@
 """Unit tests for canvas_markdown — section extraction and the legacy split."""
 
+from datetime import UTC, datetime
+
 import pytest
 
-from app.services.canvas_markdown import section_body, split_legacy_canvas
+from app.services.canvas_markdown import (
+    _extract_entries,
+    _line_timestamp,
+    section_body,
+    split_legacy_canvas,
+)
 
 LEGACY = """# Fix the thing
 
@@ -127,16 +134,48 @@ class TestSplitLegacyCanvas:
 
         new_canvas, activity = split_legacy_canvas(canvas)
 
-        assert activity is not None
-        assert activity.index("rescued early") < activity.index("timeline middle")
-        assert activity.index("timeline middle") < activity.index("activity late")
-        assert section_body(new_canvas, "Learnings") == "Real learning."
+        # Exact output, not just relative order: this pins the sort key (a
+        # lambda over the timestamp) and the blank-line join separator. A
+        # looser `index()` check let the sort-key and join-separator mutants
+        # survive.
+        assert activity == (
+            "### 2026-08-20\n- rescued early\n\n"
+            "- 2026-08-21T10:00:00+00:00 timeline middle\n\n"
+            "- 2026-08-22T10:00:00+00:00 activity late"
+        )
+        assert new_canvas == "# T\n\n## Key Details\nk\n\n## Learnings\nReal learning.\n"
 
     def test_idempotent(self):
         once, activity = split_legacy_canvas(LEGACY)
 
         assert split_legacy_canvas(once) == (once, None)
         assert activity is not None
+
+    def test_blank_section_at_start_yields_leading_newline_not_none(self):
+        """A section removed with no preceding content leaves `"\\n"`, not
+        `""`/`None` — pins the `before` empty check in `_remove_section`."""
+        new_canvas, activity = split_legacy_canvas("## Timeline\n- a")
+
+        assert new_canvas == "\n"
+        assert activity == "- a"
+
+    def test_undated_block_is_kept_verbatim_and_trailing_lines_join_with_newline(self):
+        """A `### ` block with no date is undated; the surrounding text is
+        re-joined with `\\n`, not concatenated — pins both branches."""
+        dated, undated = _extract_entries("### nope\ntail one\ntail two")
+
+        assert dated == []
+        assert undated == ["### nope", "tail one", "tail two"]
+
+    def test_naive_timestamps_are_tagged_utc(self):
+        """A timeline line with no offset is assumed UTC; an aware one is kept
+        as-is. Pins the `stamp.tzinfo is None` branch and the `.replace` tz."""
+        assert _line_timestamp("- 2026-08-21T09:00:00 rest") == datetime(
+            2026, 8, 21, 9, 0, tzinfo=UTC
+        )
+        assert _line_timestamp("- 2026-08-21T09:00:00+02:00 rest") == datetime.fromisoformat(
+            "2026-08-21T09:00:00+02:00"
+        )
 
 
 @pytest.mark.parametrize("heading", ["Activity Log", "Timeline"])

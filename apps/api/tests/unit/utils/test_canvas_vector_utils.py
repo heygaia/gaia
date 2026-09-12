@@ -27,7 +27,12 @@ async def test_store_canvas_embedding_indexes_content() -> None:
         return_value=collection,
     ) as get_client:
         ok = await store_canvas_embedding(
-            "todo-1", "canvas text", "user-1", title="T", labels=["a", "b"]
+            "todo-1",
+            "canvas text",
+            "user-1",
+            title="T",
+            labels=["a", "b"],
+            revision="2026-09-12T13:00:00+00:00",
         )
 
     assert ok is True
@@ -38,8 +43,30 @@ async def test_store_canvas_embedding_indexes_content() -> None:
     meta = kwargs["metadatas"][0]
     assert meta["user_id"] == "user-1"
     assert meta["todo_id"] == "todo-1"
+    assert meta["title"] == "T"
     assert meta["labels"] == "a, b"
+    assert meta["revision"] == "2026-09-12T13:00:00+00:00"
     assert meta["completed"] is False
+    # A fresh timestamp is stamped on every write; assert it is present so a
+    # dropped `updated_at` key is caught (the value is now()).
+    assert meta["updated_at"]
+
+
+async def test_store_canvas_embedding_omits_optional_metadata_when_absent() -> None:
+    """No labels / revision means the keys are absent, not blank — the
+    `if labels:` / `if revision is not None:` guards both matter."""
+    collection = AsyncMock()
+    with patch(
+        "app.utils.canvas_vector_utils.ChromaClient.get_langchain_client",
+        new_callable=AsyncMock,
+        return_value=collection,
+    ):
+        await store_canvas_embedding("todo-1", "x", "user-1")
+
+    meta = collection.aadd_texts.await_args.kwargs["metadatas"][0]
+    assert "labels" not in meta
+    assert "revision" not in meta
+    assert meta["title"] == ""
 
 
 async def test_store_canvas_embedding_failure_returns_false() -> None:
@@ -70,7 +97,7 @@ async def test_update_canvas_embedding_reindexes() -> None:
 
     assert ok is True
     delete.assert_awaited_once_with("todo-1")
-    store.assert_awaited_once()
+    store.assert_awaited_once_with("todo-1", "new text", "user-1", "", None, revision=None)
 
 
 def _revision_collection(revision: str | None) -> MagicMock:
@@ -175,8 +202,43 @@ async def test_update_writes_when_revision_newer_and_stores_it() -> None:
 
     assert ok is True
     delete.assert_awaited_once_with("todo-1")
-    store.assert_awaited_once()
-    assert store.await_args.kwargs["revision"] == "2026-09-12T13:00:00+00:00"
+    store.assert_awaited_once_with(
+        "todo-1", "new text", "user-1", "", None, revision="2026-09-12T13:00:00+00:00"
+    )
+
+
+async def test_update_canvas_embedding_stores_new_content_when_metadata_lookup_fails() -> None:
+    """A Chroma metadata-read failure (collection missing / offline) must not
+    skip the rebuild: with no stored revision there is nothing to compare
+    against, so the write proceeds and carries the new revision."""
+    raw_client = MagicMock()
+    raw_client.get_collection = AsyncMock(side_effect=RuntimeError("collection missing"))
+    with (
+        patch(
+            "app.utils.canvas_vector_utils.ChromaClient.get_client",
+            new_callable=AsyncMock,
+            return_value=raw_client,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.delete_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as delete,
+        patch(
+            "app.utils.canvas_vector_utils.store_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as store,
+    ):
+        ok = await update_canvas_embedding(
+            "todo-1", "new text", "user-1", revision="2026-09-12T13:00:00+00:00"
+        )
+
+    assert ok is True
+    delete.assert_awaited_once_with("todo-1")
+    store.assert_awaited_once_with(
+        "todo-1", "new text", "user-1", "", None, revision="2026-09-12T13:00:00+00:00"
+    )
 
 
 async def test_delete_canvas_embedding() -> None:
