@@ -1,9 +1,8 @@
-import type { Schema } from "@shared/api/generated";
-
-("use client");
+"use client";
 
 import { Kbd } from "@heroui/kbd";
 import { MessageMultiple02Icon, SearchIcon } from "@icons";
+import type { Schema } from "@shared/api/generated";
 import { Command } from "cmdk";
 import { AnimatePresence } from "motion/react";
 import * as m from "motion/react-m";

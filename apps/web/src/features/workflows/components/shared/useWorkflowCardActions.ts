@@ -1,11 +1,10 @@
-import { toTriggerConfig } from "@/features/workflows/triggers/types";
-
-("use client");
+"use client";
 
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
+import { toTriggerConfig } from "@/features/workflows/triggers/types";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
 import { useAppendToInput } from "@/stores/composerStore";

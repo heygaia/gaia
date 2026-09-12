@@ -1,6 +1,4 @@
-import type { ContentCreator } from "@/types/shared/contentTypes";
-
-("use client");
+"use client";
 
 import { Button, ButtonGroup } from "@heroui/button";
 import { Chip } from "@heroui/chip";
@@ -28,8 +26,8 @@ import {
   resolveCreatorName,
 } from "@/features/workflows/utils/creator";
 import { cn } from "@/lib/utils";
-
 import type { IntegrationRef } from "@/types/features/workflowTypes";
+import type { ContentCreator } from "@/types/shared/contentTypes";
 
 import { missingIntegrationsMessage } from "./workflowCardHelpers";
 

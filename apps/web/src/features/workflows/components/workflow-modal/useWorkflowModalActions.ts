@@ -1,16 +1,14 @@
-import { toTriggerConfig } from "@/features/workflows/triggers/types";
-
-("use client");
+"use client";
 
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Dispatch } from "react";
 import { useCallback, useMemo, useState } from "react";
-
 import { useWorkflowSelection } from "@/features/chat/hooks/useWorkflowSelection";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import type { Integration } from "@/features/integrations/types";
 import { useIsPaid } from "@/features/pricing/hooks/useIsPaid";
 import { useWorkflowCreation } from "@/features/workflows/hooks/useWorkflowCreation";
+import { toTriggerConfig } from "@/features/workflows/triggers/types";
 import { useRouter } from "@/i18n/navigation";
 import { ANALYTICS_EVENTS, trackEvent } from "@/lib/analytics";
 import { toast } from "@/lib/toast";
