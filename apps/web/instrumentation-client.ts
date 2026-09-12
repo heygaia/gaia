@@ -112,6 +112,10 @@ if (typeof window !== "undefined") {
         defaults: "2025-05-24",
         capture_exceptions: true,
         debug: process.env.NODE_ENV === "development",
+        // Session replay must be opted into in code — without an explicit
+        // `session_recording` block the SDK sends events but no `$snapshot`
+        // data, leaving Replay/Sessions empty.
+        session_recording: {},
         // Drop the same crawler / extension / third-party exception noise
         // Sentry filters above so both sinks stay in agreement.
         before_send: filterExceptionBeforeSend,
