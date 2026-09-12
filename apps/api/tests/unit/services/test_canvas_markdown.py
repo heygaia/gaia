@@ -188,26 +188,49 @@ class TestSplitLegacyCanvas:
         assert activity == "- a"
 
     def test_multiple_dated_blocks_and_undated_text_merge(self):
-        """Two dated blocks plus an undated line: `_extract_entries` returns
-        them in source order (the merge sorts downstream)."""
+        """Multiple dated blocks through the matcher: each `### `-headed block
+        is captured whole, and the text after the last block is scanned for
+        standalone entries."""
         dated, undated = _extract_entries(
-            "- 2026-08-22T10:00:00+00:00 late\nnote line\n- 2026-08-20T10:00:00+00:00 early"
+            "### 2026-01-01\n- early\ntail one\ntail two\n### 2026-01-02\n- late"
         )
 
         assert [entry for _, entry in dated] == [
-            "- 2026-08-22T10:00:00+00:00 late",
-            "- 2026-08-20T10:00:00+00:00 early",
+            "### 2026-01-01\n- early\ntail one\ntail two",
+            "### 2026-01-02\n- late",
         ]
-        assert undated == ["note line"]
+        assert undated == []
+
+    def test_blank_line_before_dated_content_does_not_stop_the_scan(self):
+        """Blank lines are skipped, not a stop signal — an entry after one is
+        still collected."""
+        dated, undated = _extract_entries(
+            "note\n\n- 2026-01-02T00:00:00+00:00 late\n- 2026-01-03T00:00:00+00:00 later"
+        )
+
+        assert [entry for _, entry in dated] == [
+            "- 2026-01-02T00:00:00+00:00 late",
+            "- 2026-01-03T00:00:00+00:00 later",
+        ]
+        assert undated == ["note"]
 
     def test_all_dated_entries_drop_the_undated_list(self):
-        """When every entry is dated the result is the sorted dated list and
-        nothing else — pins the `merged if merged else None` tail."""
+        """Dates out of source order get sorted oldest-first, and when every
+        entry is dated the result is exactly the sorted list. Pins the sort key
+        and the `merged if merged else None` tail."""
         _, activity = split_legacy_canvas(
             "## Activity Log\n- 2026-08-22T10:00:00+00:00 late\n- 2026-08-20T10:00:00+00:00 early\n"
         )
 
         assert activity == ("- 2026-08-20T10:00:00+00:00 early\n\n- 2026-08-22T10:00:00+00:00 late")
+
+    def test_section_between_content_keeps_blank_line_before_the_next_heading(self):
+        """A removed section with content both before and after — pins the
+        `before and after.startswith("\\n## ")` blank-line branch."""
+        new_canvas, activity = split_legacy_canvas("pre\n\n## Timeline\n- a\n\n## B\n2\n")
+
+        assert new_canvas == "pre\n\n## B\n2\n"
+        assert activity == "- a"
 
     def test_remove_section_is_a_noop_when_absent(self):
         assert _remove_section("# T\n\n## B\n2\n", "Missing") == ("# T\n\n## B\n2\n", None)
