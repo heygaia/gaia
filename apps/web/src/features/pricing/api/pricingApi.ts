@@ -1,7 +1,7 @@
 import type { Schema } from "@shared/api/generated";
 import type { AxiosError } from "axios";
 import { getErrorMessage } from "@/lib/api/errors";
-import { apiService } from "@/lib/api/service";
+import { api } from "@/lib/api/typed";
 
 export type Plan = Schema<"PlanResponse">;
 
@@ -51,9 +51,9 @@ class PricingApi {
   // Get all available plans
   async getPlans(activeOnly = true): Promise<Plan[]> {
     try {
-      return await apiService.get<Plan[]>(
-        `/payments/plans?active_only=${activeOnly}`,
-      );
+      return await api.get("/api/v1/payments/plans", {
+        query: { active_only: activeOnly },
+      });
     } catch (error) {
       return handleApiError(error, "Get plans");
     }
@@ -64,10 +64,7 @@ class PricingApi {
     data: CreateSubscriptionRequest,
   ): Promise<CreateSubscriptionResponse> {
     try {
-      return await apiService.post<CreateSubscriptionResponse>(
-        "/payments/subscriptions",
-        data,
-      );
+      return await api.post("/api/v1/payments/subscriptions", { body: data });
     } catch (error) {
       return handleApiError(error, "Create subscription");
     }
@@ -79,10 +76,9 @@ class PricingApi {
     data: CreateCheckoutSessionRequest,
   ): Promise<CreateSubscriptionResponse> {
     try {
-      return await apiService.post<CreateSubscriptionResponse>(
-        "/payments/checkout-session",
-        data,
-      );
+      return await api.post("/api/v1/payments/checkout-session", {
+        body: data,
+      });
     } catch (error) {
       return handleApiError(error, "Create checkout session");
     }
@@ -95,10 +91,9 @@ class PricingApi {
     subscriptionId?: string | null,
   ): Promise<PaymentVerificationResponse> {
     try {
-      return await apiService.post<PaymentVerificationResponse>(
-        "/payments/verify-payment",
-        subscriptionId ? { subscription_id: subscriptionId } : {},
-      );
+      return await api.post("/api/v1/payments/verify-payment", {
+        body: subscriptionId ? { subscription_id: subscriptionId } : {},
+      });
     } catch (error) {
       return handleApiError(error, "Verify payment");
     }
@@ -107,9 +102,7 @@ class PricingApi {
   // Get user subscription status
   async getSubscriptionStatus(): Promise<UserSubscriptionStatus> {
     try {
-      return await apiService.get<UserSubscriptionStatus>(
-        "/payments/subscription-status",
-      );
+      return await api.get("/api/v1/payments/subscription-status");
     } catch (error) {
       return handleApiError(error, "Get subscription status");
     }
@@ -118,14 +111,10 @@ class PricingApi {
   // Cancel the user's subscription (effective at the end of the billing period)
   async cancelSubscription(): Promise<UserSubscriptionStatus> {
     try {
-      return await apiService.post<UserSubscriptionStatus>(
-        "/payments/subscriptions/cancel",
-        {},
-        {
-          successMessage: "Subscription cancelled",
-          errorMessage: "Failed to cancel subscription",
-        },
-      );
+      return await api.post("/api/v1/payments/subscriptions/cancel", {
+        successMessage: "Subscription cancelled",
+        errorMessage: "Failed to cancel subscription",
+      });
     } catch (error) {
       return handleApiError(error, "Cancel subscription");
     }
