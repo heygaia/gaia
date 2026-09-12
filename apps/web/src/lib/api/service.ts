@@ -3,11 +3,14 @@ import { getErrorMessage } from "@/lib/api/errors";
 import { toast } from "@/lib/toast";
 import { apiauth } from "./client";
 
-interface ApiOptions {
+export interface ApiOptions {
   successMessage?: string;
   errorMessage?: string;
   silent?: boolean;
 }
+
+/** Query parameters; `undefined` entries are dropped by axios. */
+export type QueryParams = Record<string, unknown>;
 
 type HttpMethod = "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
 
@@ -27,11 +30,12 @@ const DEFAULT_ERROR_MESSAGES: Record<HttpMethod, string> = {
  * @param options - Configuration options
  * @returns Promise with response data
  */
-async function request<T = unknown>(
+export async function request<T = unknown>(
   method: HttpMethod,
   url: string,
   data?: unknown,
   options: ApiOptions = {},
+  params?: QueryParams,
 ): Promise<T> {
   try {
     const config = method === "DELETE" && data ? { data } : {};
@@ -39,6 +43,10 @@ async function request<T = unknown>(
       method,
       url,
       data: ["POST", "PUT", "PATCH"].includes(method) ? data : undefined,
+      params,
+      // FastAPI reads a list query param as repeated keys (`labels=a&labels=b`);
+      // axios's default `labels[]=a` is invisible to it.
+      paramsSerializer: { indexes: null },
       ...config,
     });
 
