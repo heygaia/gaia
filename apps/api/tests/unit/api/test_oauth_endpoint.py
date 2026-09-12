@@ -53,8 +53,10 @@ def _mock_auth_response(
 def stubbed_oauth_side_effects():
     """Patch the callback's fire-and-forget side effects no test asserts."""
     with (
-        patch("app.api.v1.endpoints.oauth.capture_event"),
-        patch("app.api.v1.endpoints.oauth.handle_oauth_connection", new_callable=AsyncMock),
+        patch("app.services.oauth.composio_callback.capture_event"),
+        patch(
+            "app.services.oauth.composio_callback.handle_oauth_connection", new_callable=AsyncMock
+        ),
     ):
         yield
 
@@ -375,10 +377,10 @@ class TestWorkOSCallback:
 class TestComposioCallback:
     """GET /api/v1/oauth/composio/callback"""
 
-    @patch("app.api.v1.endpoints.oauth.capture_event")
-    @patch("app.api.v1.endpoints.oauth.handle_oauth_connection", new_callable=AsyncMock)
-    @patch("app.api.v1.endpoints.oauth.get_integration_by_config")
-    @patch("app.api.v1.endpoints.oauth.get_composio_service")
+    @patch("app.services.oauth.composio_callback.capture_event")
+    @patch("app.services.oauth.composio_callback.handle_oauth_connection", new_callable=AsyncMock)
+    @patch("app.services.oauth.composio_callback.get_integration_by_config")
+    @patch("app.services.oauth.composio_callback.get_composio_service")
     @patch(
         "app.api.v1.endpoints.oauth.validate_and_consume_oauth_state",
         new_callable=AsyncMock,
@@ -419,10 +421,10 @@ class TestComposioCallback:
         )
 
     @pytest.mark.usefixtures("stubbed_oauth_side_effects")
-    @patch("app.api.v1.endpoints.oauth.get_integration_by_config")
-    @patch("app.api.v1.endpoints.oauth.get_composio_service")
-    @patch("app.api.v1.endpoints.oauth.user_integration_repository")
-    @patch("app.api.v1.endpoints.oauth.log")
+    @patch("app.services.oauth.composio_callback.get_integration_by_config")
+    @patch("app.services.oauth.composio_callback.get_composio_service")
+    @patch("app.services.oauth.composio_callback.user_integration_repository")
+    @patch("app.services.oauth.composio_callback.log")
     @patch(
         "app.api.v1.endpoints.oauth.validate_and_consume_oauth_state",
         new_callable=AsyncMock,
@@ -473,8 +475,8 @@ class TestComposioCallback:
         # source actually carried the id on a real delivery.
         assert _oauth_ns(mock_log)["connected_account_id_source"] == "stored_record"
 
-    @patch("app.api.v1.endpoints.oauth.user_integration_repository")
-    @patch("app.api.v1.endpoints.oauth.log")
+    @patch("app.services.oauth.composio_callback.user_integration_repository")
+    @patch("app.services.oauth.composio_callback.log")
     @patch(
         "app.api.v1.endpoints.oauth.validate_and_consume_oauth_state",
         new_callable=AsyncMock,

@@ -11,6 +11,7 @@ from app.services.analytics_service import AnalyticsEvents
 
 MCP_BASE = "/api/v1/mcp"
 _MODULE = "app.api.v1.endpoints.mcp"
+_CALLBACK = "app.services.mcp.oauth_callback"
 
 
 class TestMCPOAuthCallback:
@@ -31,10 +32,10 @@ class TestMCPOAuthCallback:
                 new_callable=AsyncMock,
                 return_value=resolved,
             ),
-            patch(f"{_MODULE}.invalidate_user_integration_caches", new_callable=AsyncMock),
+            patch(f"{_CALLBACK}.invalidate_user_integration_caches", new_callable=AsyncMock),
             patch(f"{_MODULE}.get_api_base_url", return_value="http://api"),
             patch(f"{_MODULE}.get_frontend_url", return_value="http://frontend"),
-            patch(f"{_MODULE}.capture_context_event") as mock_capture,
+            patch(f"{_CALLBACK}.capture_context_event") as mock_capture,
         ):
             resp = await client.get(
                 f"{MCP_BASE}/oauth/callback",
