@@ -44,6 +44,11 @@ GUIDE_FILENAME = "GUIDE.md"
 
 READONLY_MODE = 0o444
 RW_MODE = 0o644
+# A projected task folder is read-only too: `sed -i` and rename-based writers
+# never open the 0444 body, they create a sibling and rename over it, which
+# needs write permission on the directory, not the file.
+READONLY_DIR_MODE = 0o555
+RW_DIR_MODE = 0o755
 
 # --- Slug / shortid policy --------------------------------------------------
 
@@ -169,8 +174,12 @@ def _force_remove(func: Callable[..., Any], path: str, _exc_info: ExcInfo) -> No
 
 
 def remove_tree(path: Path) -> None:
-    """Recursively remove ``path``; tolerate 0444 children. No-op if missing."""
+    """Recursively remove ``path``; tolerate 0444 children and 0555 folders."""
     if path.exists() and path.is_dir():
+        path.chmod(RW_DIR_MODE)
+        for child in path.rglob("*"):
+            if child.is_dir():
+                child.chmod(RW_DIR_MODE)
         shutil.rmtree(path, onerror=_force_remove)
 
 

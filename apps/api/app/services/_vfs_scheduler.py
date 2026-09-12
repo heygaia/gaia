@@ -105,7 +105,15 @@ def make_scheduler(
       — fire-and-forget MUST NOT crash the host coroutine.
     * Spawns via ``spawn_background_task`` so tasks aren't
       garbage-collected mid-flight.
+    * Runs at most one sync per user at a time. Each sync fetches its own
+      Mongo snapshot, so two in flight can finish in the wrong order and
+      leave the older snapshot on disk (marker included) until some later
+      write. A schedule that lands mid-flight marks the user dirty and the
+      running task re-syncs once more with a fresh snapshot; a burst of
+      writes therefore costs two syncs, not one per write.
     """
+    in_flight: set[str] = set()
+    dirty: set[str] = set()
 
     async def _safe(user_id: str) -> None:
         # Own ``wide_task`` scope: this body runs in a fire-and-forget task with
@@ -116,6 +124,18 @@ def make_scheduler(
             async with wide_task(log_name, user=UserContext(id=user_id)):
                 await sync_fn(user_id)
 
+    async def _drain(user_id: str) -> None:
+        try:
+            while True:
+                dirty.discard(user_id)
+                await _safe(user_id)
+                # No await between this check and the ``finally``: a schedule()
+                # that arrives after the loop exits sees the user idle and spawns.
+                if user_id not in dirty:
+                    return
+        finally:
+            in_flight.discard(user_id)
+
     def schedule(user_id: str) -> None:
         if not _is_mounted():
             return
@@ -123,6 +143,10 @@ def make_scheduler(
             asyncio.get_running_loop()
         except RuntimeError:
             return
-        spawn_background_task(_safe(user_id))
+        if user_id in in_flight:
+            dirty.add(user_id)
+            return
+        in_flight.add(user_id)
+        spawn_background_task(_drain(user_id))
 
     return schedule

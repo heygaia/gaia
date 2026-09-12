@@ -171,6 +171,38 @@ def test_projected_bodies_are_read_only_so_a_raw_edit_cannot_silently_desync_the
         assert folder.joinpath(name).stat().st_mode & 0o777 == 0o444, name
 
 
+def test_the_task_folder_is_read_only_so_sed_i_cannot_replace_a_body(tmp_path: Path) -> None:
+    # `sed -i` and `write` via rename never open the 0444 file: they create a
+    # temp file and rename over it, which only needs write permission on the
+    # DIRECTORY. Seen on the dockered stack: `sed -i` on canvas.md exited 0 and
+    # left a 0644 file the hash gate would never repaint.
+    materialize_gaia_tasks(tmp_path, [task(ID_A)], GUIDE)
+
+    folder = tmp_path / gtv.GAIA_TASKS_DIRNAME / "ship-the-release-00000001"
+    assert folder.stat().st_mode & 0o777 == 0o555
+    with pytest.raises(PermissionError):
+        (folder / "canvas.md.tmp").write_text("x")
+
+
+def test_a_read_only_folder_is_still_rewritten_when_the_body_changes(tmp_path: Path) -> None:
+    materialize_gaia_tasks(tmp_path, [task(ID_A, "Alpha")], GUIDE)
+
+    written = materialize_gaia_tasks(tmp_path, [task(ID_A, "Alpha", canvas="# v2\n")], GUIDE)
+
+    folder = tmp_path / gtv.GAIA_TASKS_DIRNAME / "alpha-00000001"
+    assert written == 1
+    assert (folder / "canvas.md").read_text() == "# v2\n"
+    assert folder.stat().st_mode & 0o777 == 0o555
+
+
+def test_a_read_only_folder_is_still_removed_when_the_task_goes_stale(tmp_path: Path) -> None:
+    materialize_gaia_tasks(tmp_path, [task(ID_A, "Alpha")], GUIDE)
+
+    materialize_gaia_tasks(tmp_path, [], GUIDE)
+
+    assert not (tmp_path / gtv.GAIA_TASKS_DIRNAME / "alpha-00000001").exists()
+
+
 def test_the_guide_and_index_are_writable_because_every_sync_rewrites_them(
     tmp_path: Path,
 ) -> None:

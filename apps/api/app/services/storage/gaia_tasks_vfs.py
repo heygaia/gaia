@@ -37,6 +37,8 @@ from app.services.storage._vfs_common import (
     GUIDE_FILENAME,
     INDEX_FILENAME,
     META_FILENAME,
+    READONLY_DIR_MODE,
+    RW_DIR_MODE,
     folder_name as common_folder_name,
     hash_body_with_meta,
     meta_body,
@@ -226,10 +228,12 @@ def _write_changed_docs(
             continue
 
         folder.mkdir(parents=True, exist_ok=True)
+        folder.chmod(RW_DIR_MODE)
         write_readonly_body(folder / CANVAS_FILENAME, doc["canvas"])
         write_readonly_body(folder / ACTIVITY_FILENAME, doc["activity"])
         write_readonly_body(folder / LOG_FILENAME, doc["log"])
         write_readonly_body(folder / META_FILENAME, meta_body(doc["meta"]))
+        folder.chmod(READONLY_DIR_MODE)
         write_marker(marker_path, sig)
         written += 1
     return written, expected
