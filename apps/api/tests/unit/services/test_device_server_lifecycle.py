@@ -20,7 +20,8 @@ from sqlalchemy.pool import StaticPool
 
 from app.constants.device_bridge import DEVICE_CATEGORY, DEVICE_TRANSPORT, FRAME_SERVER_REMOVE
 from app.db.postgresql import Base
-from app.models.device import Device, DeviceMCPServer, DeviceServerStatus
+from app.models.device import Device, DeviceMCPServer, DeviceServerStatus, DeviceStatus
+from app.utils.errors import AppError
 from app.services.device import device_service
 from tests.helpers import captured_wide_event
 
@@ -132,6 +133,13 @@ class TestBuildDeviceApproveUrl:
         with patch.object(device_service, "get_frontend_url", return_value="https://gaia.test/"):
             url = device_service.build_device_approve_url("  gaia 7f3k  ")
         assert url == "https://gaia.test/settings/devices/approve?code=GAIA%207F3K"
+
+    def test_rstrip_strips_only_slashes(self) -> None:
+        # rstrip takes a char set: rstrip("/") must not eat a trailing "X" the
+        # way a widened set would — the host keeps its name verbatim.
+        with patch.object(device_service, "get_frontend_url", return_value="https://gaia.test/X"):
+            url = device_service.build_device_approve_url("AB12")
+        assert url == "https://gaia.test/X/settings/devices/approve?code=AB12"
 
 
 class TestRegisterDeviceServer:
@@ -248,6 +256,10 @@ class TestCreateServerIntegration:
             'MCP server hosted on your device "My Laptop" — its tools run '
             "locally on that machine, not the cloud sandbox."
         )
+        assert integration.mcp_config.server_url == "device://dev1/fs"
+        # The dedup key is the normalized device URL — a None key would opt the
+        # mirror out of the per-creator unique index.
+        assert integration.mcp_config.server_url_normalized == "device://dev1/fs"
         assert integration.category == DEVICE_CATEGORY
         assert integration.managed_by == "mcp"
         assert integration.source == "custom"
@@ -458,6 +470,29 @@ class TestRecordDeviceServerSync:
         assert isinstance(rows["int-1"].tools_synced_at, datetime)
         assert rows["int-2"].status == DeviceServerStatus.ERROR  # untouched by the predicate
 
+    async def test_success_stamp_is_timezone_aware_utc(self, sqlite_session) -> None:
+        # SQLite does not round-trip tzinfo, so the read-back row cannot prove
+        # it — spy on the clock instead: now() must be called with UTC, since
+        # Postgres stores what it's given and a naive stamp breaks every
+        # timezone-aware comparison downstream.
+        from datetime import UTC as dt_utc
+
+        seen: list[object] = []
+        real_datetime = datetime
+
+        class SpyDateTime(real_datetime):  # type: ignore[no-redef]
+            @classmethod
+            def now(cls, tz=None):  # type: ignore[override]
+                seen.append(tz)
+                return real_datetime.now(tz)
+
+        async with sqlite_session() as s:
+            s.add(_server("dev1", "fs", "int-1", status=DeviceServerStatus.ERROR))
+            await s.commit()
+        with patch.object(device_service, "datetime", SpyDateTime):
+            await device_service.record_device_server_sync("int-1")
+        assert seen == [dt_utc]
+
     async def test_records_error_and_truncates_to_2000(self, sqlite_session) -> None:
         async with sqlite_session() as s:
             s.add(_server("dev1", "fs", "int-1", status=DeviceServerStatus.CONNECTED))
@@ -476,7 +511,92 @@ class TestRecordDeviceServerSync:
         assert row.tools_synced_at is None
 
 
-class TestEnqueueWarmup:
+class TestCreateDeviceCapQueries:
+    async def _seed(self, s, rows: list[Device]) -> None:
+        for row in rows:
+            s.add(row)
+        await s.commit()
+
+    def _device(
+        self, device_id: str, user_id: str, status: DeviceStatus = DeviceStatus.ACTIVE
+    ) -> Device:
+        return Device(
+            id=device_id,
+            user_id=user_id,
+            name=device_id,
+            refresh_token_hash=f"hash-{device_id}",
+            status=status,
+        )
+
+    async def test_cap_counts_only_this_users_active_devices(self, sqlite_session) -> None:
+        # 20 ACTIVE for someone else + INACTIVE decoys for self: the cap must
+        # not see them. A dropped user_id predicate (or a dropped ACTIVE
+        # predicate) counts strangers and wrongly rejects.
+        async with sqlite_session() as s:
+            await self._seed(
+                s,
+                [self._device(f"other-{n}", "user-b") for n in range(20)]
+                + [
+                    self._device(f"mine-off-{n}", "user-a", DeviceStatus.REVOKED)
+                    for n in range(5)
+                ],
+            )
+        device_id, refresh_token = await device_service.self_pair_device(
+            "user-a", "Mine", "macos", "desktop", None
+        )
+        assert device_id
+        # And the minted credential is the stored hash (same-row write check).
+        from app.services.device.device_auth import hash_refresh_token
+
+        async with sqlite_session() as s:
+            row = (
+                await s.execute(select(Device).where(Device.id == device_id))
+            ).scalar_one()
+        assert hash_refresh_token(refresh_token) == row.refresh_token_hash
+        assert row.status == DeviceStatus.ACTIVE
+
+    async def test_cap_fires_at_exactly_max_active(self, sqlite_session) -> None:
+        # Inverted predicates (!=) count the complement (zero here) and would
+        # let a 21st device through — the boundary must reject.
+        from app.constants.device_bridge import MAX_ACTIVE_DEVICES_PER_USER
+
+        async with sqlite_session() as s:
+            await self._seed(
+                s, [self._device(f"mine-{n}", "user-a") for n in range(MAX_ACTIVE_DEVICES_PER_USER)]
+            )
+        with pytest.raises(AppError) as exc:
+            await device_service.self_pair_device("user-a", "Extra", "macos", "desktop", None)
+        assert exc.value.status_code == 409
+
+
+class TestDeregisterScopesToDevice:
+    async def test_drops_only_this_devices_row(self, sqlite_session) -> None:
+        # Same server_key on two devices: dropping the device_id predicate
+        # would delete the stranger's row too.
+        delete_mock = AsyncMock()
+        remove_mock = AsyncMock()
+        invalidate_mock = AsyncMock()
+        async with sqlite_session() as s:
+            s.add(_server("dev1", "fs", "int-1"))
+            s.add(_server("dev2", "fs", "int-2"))
+            await s.commit()
+        with (
+            patch.object(device_service.integration_repository, "delete", delete_mock),
+            patch.object(device_service, "remove_user_integration", remove_mock),
+            patch.object(
+                device_service, "invalidate_user_integration_caches", invalidate_mock
+            ),
+        ):
+            assert (
+                await device_service.deregister_device_server(
+                    "u1", "dev1", "fs", notify_device=False
+                )
+                is True
+            )
+        async with sqlite_session() as s:
+            remaining = (await s.execute(select(DeviceMCPServer.integration_id))).scalars().all()
+        assert remaining == ["int-2"]
+        delete_mock.assert_awaited_once_with("int-1")
     def _redis(self, claimed: bool = True):
         cache = Mock()
         cache.client.set = AsyncMock(return_value=claimed)
@@ -487,10 +607,11 @@ class TestEnqueueWarmup:
         enqueue_mock = AsyncMock()
         rpm = Mock()
         rpm.get_pool = AsyncMock(return_value=pool)
+        cache = self._redis()
         with (
             patch.object(device_service, "RedisPoolManager", rpm),
             patch.object(device_service, "enqueue_worker_job", enqueue_mock),
-            patch.object(device_service, "redis_cache", self._redis()),
+            patch.object(device_service, "redis_cache", cache),
         ):
             await device_service.enqueue_device_server_warmup("dev1", ["fs"])
         work = hashlib.sha256(b"fs").hexdigest()
@@ -500,6 +621,12 @@ class TestEnqueueWarmup:
             "dev1",
             ["fs"],
             _job_id=f"device-warmup:dev1:{work}",
+        )
+        # The coalesce marker carries the identical work key with the exact
+        # SETNX shape — a dropped nx/ex, a blanked arg, or a reformatted key
+        # all silently disable burst collapsing.
+        cache.client.set.assert_awaited_once_with(
+            f"device:warmup:dev1:{work}", "1", nx=True, ex=60
         )
 
     async def test_defaults_server_keys_to_none(self) -> None:
@@ -521,6 +648,8 @@ class TestEnqueueWarmup:
     async def test_burst_shares_one_job_id_regardless_of_key_order(self) -> None:
         # Registration storms enqueue the same set repeatedly — one deterministic
         # id lets ARQ collapse the burst instead of running overlapping jobs.
+        # The id pins the exact scope hash: a changed joiner/sort would fork
+        # identical bursts into distinct jobs.
         pool = object()
         enqueue_mock = AsyncMock()
         rpm = Mock()
@@ -533,7 +662,7 @@ class TestEnqueueWarmup:
             await device_service.enqueue_device_server_warmup("dev1", ["b", "a"])
             await device_service.enqueue_device_server_warmup("dev1", ["a", "b"])
         ids = {c.kwargs["_job_id"] for c in enqueue_mock.await_args_list}
-        assert len(ids) == 1
+        assert ids == {f"device-warmup:dev1:{hashlib.sha256(b'a,b').hexdigest()}"}
 
     async def test_repeat_within_window_skips_enqueue(self) -> None:
         # The job record is freed on completion (keep_result=0), so spaced
@@ -561,6 +690,21 @@ class TestEnqueueWarmup:
             patch.object(device_service, "redis_cache", self._redis()),
         ):
             await device_service.enqueue_device_server_warmup("dev1", ["fs"])
+            await device_service.enqueue_device_server_warmup("dev1")
+        assert enqueue_mock.await_count == 2
+
+    async def test_empty_scope_is_not_the_full_warmup(self) -> None:
+        # [] warms nothing; None warms everything. Sharing one marker would let
+        # a no-op suppress a real full warmup (or vice versa).
+        enqueue_mock = AsyncMock()
+        rpm = Mock()
+        rpm.get_pool = AsyncMock(return_value=object())
+        with (
+            patch.object(device_service, "RedisPoolManager", rpm),
+            patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis()),
+        ):
+            await device_service.enqueue_device_server_warmup("dev1", [])
             await device_service.enqueue_device_server_warmup("dev1")
         assert enqueue_mock.await_count == 2
 

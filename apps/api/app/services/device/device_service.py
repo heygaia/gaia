@@ -641,7 +641,7 @@ async def enqueue_device_server_warmup(
     other enqueue on this path: a Redis outage raises, and the caller falls back
     to the next connect re-driving the warmup.
     """
-    scope = ",".join(sorted(server_keys)) if server_keys else "all"
+    scope = ",".join(sorted(server_keys)) if server_keys is not None else "all"
     work_key = hashlib.sha256(scope.encode()).hexdigest()
     marker = f"{DEVICE_WARMUP_COALESCE_PREFIX}{device_id}:{work_key}"
     claimed = await redis_cache.client.set(
