@@ -210,6 +210,10 @@ is killed if it runs too long). A non-zero exit code means the command failed:
 read stderr, fix, and re-run rather than assuming success.
 
 NOTES:
+- NOT for a device's MCP servers. If a device exposes an MCP server (shown under
+  CONNECTED DEVICES as "exposing: <name>"), use that server's own tools to
+  operate it - retrieve them and hand off to its subagent - never shell out to it
+  with this tool. run_on_device is for shell commands, not for calling MCP tools.
 - This is the one way to touch the user's real files; the coding sandbox is a
   cloud container that cannot see their machine.
 - The device must be online (the `gaia bridge up` daemon running). If it is
