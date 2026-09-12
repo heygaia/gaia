@@ -8,11 +8,10 @@ import { useState } from "react";
 import { ChevronUp } from "@/components/shared/icons";
 import type { Workflow } from "@/features/workflows/api/workflowApi";
 import UnifiedWorkflowCard from "@/features/workflows/components/shared/UnifiedWorkflowCard";
-import { useExploreWorkflows } from "@/features/workflows/hooks/useExploreWorkflows";
 import { useWorkflows } from "@/features/workflows/hooks/useWorkflows";
 import type { UseCase } from "@/types/features/workflowTypes";
 import { useScrollContainer } from "../hooks/useScrollContainer";
-import { toUseCase } from "../utils/toUseCase";
+import { useUseCaseCategories } from "../hooks/useUseCaseCategories";
 
 // Smoothly scroll the given scroll region (or window) back to the top.
 function scrollToTop(
@@ -214,28 +213,11 @@ export default function UseCaseSection({
     !hideUserWorkflows,
   );
 
-  // Fetch explore workflows from centralized store (skip if provided via props)
-  const { workflows: storeExploreWorkflows } = useExploreWorkflows(
-    !propExploreWorkflows || propExploreWorkflows.length === 0,
-  );
-
-  // Use provided explore workflows or the store's, shaped for the grid
-  const exploreWorkflows =
-    propExploreWorkflows && propExploreWorkflows.length > 0
-      ? propExploreWorkflows
-      : storeExploreWorkflows.map(toUseCase);
-
-  // Generate categories dynamically from the actual data
-  const dynamicCategories = Array.from(
-    new Set(exploreWorkflows.flatMap((uc) => uc.categories || [])),
-  ).toSorted();
-
-  const allCategories = [
-    ...(hideAllCategory ? [] : ["all"]),
-    "featured",
-    ...(hideUserWorkflows ? [] : ["workflows"]),
-    ...dynamicCategories.filter((cat) => cat !== "featured"),
-  ];
+  const { exploreWorkflows, allCategories } = useUseCaseCategories({
+    exploreWorkflows: propExploreWorkflows,
+    hideAllCategory,
+    hideUserWorkflows,
+  });
 
   const getScrollContainer = useScrollContainer(dummySectionRef, scroller);
 
