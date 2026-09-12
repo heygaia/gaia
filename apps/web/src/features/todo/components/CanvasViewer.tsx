@@ -3,7 +3,7 @@
 import { Spinner } from "@heroui/spinner";
 import { ActivityIcon, CanvasIcon } from "@icons";
 import type React from "react";
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import MarkdownViewerModal from "@/components/common/MarkdownViewerModal";
 import { getTodoCanvas, type TodoNotes } from "@/features/todo/api/todoApi";
 
@@ -37,8 +37,16 @@ const FILES: {
 const CanvasViewer: React.FC<CanvasViewerProps> = ({ todoId, todoTitle }) => {
   const [openFile, setOpenFile] = useState<NotesFile | null>(null);
   const [notes, setNotes] = useState<TodoNotes | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
+  // Which todo the notes above were fetched for. Compared at render time so
+  // a late response for the previous todo can never render under the current
+  // title (the sidebar keeps this component mounted across selections).
+  const [notesTodoId, setNotesTodoId] = useState<string | null>(null);
+  // Which request the spinner belongs to (null when idle). Loading is tied
+  // to the request identity — not a bare flag — so a supplanted request can
+  // never hide the spinner of the request that replaced it.
+  const [loadingRequest, setLoadingRequest] = useState<number | null>(null);
   const [hasError, setHasError] = useState(false);
+  const isLoading = loadingRequest !== null;
   // The sidebar keeps this component mounted across todo selections, so a
   // fetch started for todo A can resolve after todo B is selected. Only the
   // latest request may touch state.
@@ -51,28 +59,23 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({ todoId, todoTitle }) => {
     const current = todoId;
     const myRequest = ++requestId.current;
     const isCurrent = () => requestId.current === myRequest;
-    setIsLoading(true);
+    setLoadingRequest(myRequest);
     setHasError(false);
     try {
       const fetched = await getTodoCanvas(current);
-      if (isCurrent()) setNotes(fetched);
+      if (isCurrent()) {
+        setNotes(fetched);
+        setNotesTodoId(current);
+      }
     } catch {
       if (isCurrent()) setHasError(true);
     } finally {
-      if (isCurrent()) setIsLoading(false);
+      // Functional update: only the request that set the spinner may clear
+      // it. Unconditional call, identity-checked transition — a late
+      // loser cannot hide the winner's loading state.
+      setLoadingRequest((active) => (active === myRequest ? null : active));
     }
   };
-
-  // A fetch started for the previous todo must never populate this one:
-  // invalidate in-flight requests and drop their state on selection change.
-  // The next open refetches (see handleOpen), so this fails safe to empty
-  // rather than showing the wrong todo's notes under the new title.
-  useEffect(() => {
-    requestId.current += 1;
-    setNotes(null);
-    setIsLoading(false);
-    setHasError(false);
-  }, [todoId]);
 
   const open = FILES.find((f) => f.name === openFile);
 
@@ -104,7 +107,9 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({ todoId, todoTitle }) => {
         isOpen={openFile !== null}
         onClose={() => setOpenFile(null)}
         title={`${openFile ?? "canvas.md"} — ${todoTitle}`}
-        content={notes && open ? open.pick(notes) : null}
+        content={
+          notes && open && notesTodoId === todoId ? open.pick(notes) : null
+        }
         isLoading={isLoading}
         hasError={hasError}
         errorMessage={`Couldn't load ${openFile ?? "the notes"}. Close and reopen to try again.`}
