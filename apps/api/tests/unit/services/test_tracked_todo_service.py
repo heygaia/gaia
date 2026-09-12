@@ -89,6 +89,39 @@ def mock_deps():
 
 
 class TestCreateTrackedTodo:
+    async def test_activity_in_the_initial_canvas_is_moved_to_activity_md(
+        self, mock_repo, mock_deps
+    ):
+        """Seen with a real model: it still composes an ``## Activity Log`` inside
+        ``initial_canvas``. The split at create time keeps canvas.md a recall doc
+        without waiting for the sweep."""
+        mock_deps.create.return_value = _todo_response()
+        initial = (
+            "# T\n\n## Key Details\n- Thread: NW-4471\n\n## Current State\nWaiting.\n\n"
+            "## Activity Log\n- 2026-09-12: Tracked todo created.\n\n## Learnings\n"
+        )
+
+        await TrackedTodoService.create_tracked_todo(
+            USER_ID, "Prepare Q3 report", initial_canvas=initial
+        )
+
+        update = mock_repo.update.await_args.kwargs["update"]
+        assert "## Activity Log" not in update.canvas_content
+        assert "- Thread: NW-4471" in update.canvas_content
+        assert update.activity_content.endswith("\n\n- 2026-09-12: Tracked todo created.")
+        assert "Tracked todo created" in mock_deps.store.await_args.kwargs["canvas_content"]
+
+    async def test_a_clean_initial_canvas_sets_no_activity(self, mock_repo, mock_deps):
+        mock_deps.create.return_value = _todo_response()
+
+        await TrackedTodoService.create_tracked_todo(
+            USER_ID, "Prepare Q3 report", initial_canvas="# T\n\n## Key Details\nk\n"
+        )
+
+        update = mock_repo.update.await_args.kwargs["update"]
+        assert update.canvas_content == "# T\n\n## Key Details\nk\n"
+        assert update.activity_content.count("\n") == 0  # only the creation marker
+
     async def test_creates_with_template_canvas_and_indexes(self, mock_repo, mock_deps):
         mock_deps.create.return_value = _todo_response()
 
@@ -105,6 +138,11 @@ class TestCreateTrackedTodo:
         assert update.canvas_content == CANVAS_TEMPLATE.format(title="Prepare Q3 report")
         assert "[CREATED]" in update.log_content
         assert "Source: agent" in update.log_content
+        # activity.md is never empty: an `edit` that appends needs a last line
+        # to anchor on, and a real model tried exactly that on a fresh todo.
+        assert update.activity_content is not None
+        assert update.activity_content.startswith("- 20")
+        assert "tracked todo created" in update.activity_content
 
         mock_deps.store.assert_awaited_once()
         store_kwargs = mock_deps.store.call_args.kwargs
@@ -122,7 +160,7 @@ class TestCreateTrackedTodo:
         )
 
         assert mock_repo.update.await_args.kwargs["update"].canvas_content == "custom canvas"
-        assert mock_deps.store.call_args.kwargs["canvas_content"] == "custom canvas"
+        assert mock_deps.store.call_args.kwargs["canvas_content"].startswith("custom canvas")
 
     async def test_preserves_caller_labels(self, mock_repo, mock_deps):
         mock_deps.create.return_value = _todo_response()
@@ -224,6 +262,18 @@ class TestGetActiveTrackedSummary:
 
         assert USER_ID not in summary
         assert "/users/" not in summary
+
+    async def test_summary_names_the_absolute_notes_folder(self, mock_repo):
+        """Relative paths resolve into the session scratch dir in the file tools;
+        a real model read `gaia-tasks/<folder>/canvas.md` from this line and got
+        "file not found" before retrying with the absolute path."""
+        mock_repo.list_active_tracked.return_value = [
+            _todo_doc(id="66f838cc8829054e5f10e407", title="Fix the thing")
+        ]
+
+        summary = await TrackedTodoService.get_active_tracked_summary(USER_ID)
+
+        assert "files: /workspace/gaia-tasks/fix-the-thing-5f10e407/" in summary
 
     async def test_renders_summary_lines(self, mock_repo):
         mock_repo.list_active_tracked.return_value = [_todo_doc()]

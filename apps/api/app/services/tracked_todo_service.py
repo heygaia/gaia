@@ -82,7 +82,7 @@ def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: 
     return (
         f'  {prefix}"{doc.title}"{labels_str}{_format_due_string(doc.due_date, now)}'
         f" — {age_days}d old, updated {last_update}d ago"
-        f" | ID: {doc.id} | files: gaia-tasks/{folder_name(doc.id, doc.title)}/"
+        f" | ID: {doc.id} | files: /workspace/gaia-tasks/{folder_name(doc.id, doc.title)}/"
     )
 
 
@@ -129,7 +129,15 @@ class TrackedTodoService:
 
         vfs_path = build_vfs_label(todo_id)
         canvas_content = initial_canvas or CANVAS_TEMPLATE.format(title=title)
+        # Models still compose an "## Activity Log" inside initial_canvas; keep
+        # canvas.md a recall doc from the first write by splitting it here.
+        canvas_content, moved_activity = split_legacy_canvas(canvas_content)
         now = datetime.now(UTC)
+        # activity.md always starts with a creation marker: an `edit` that appends
+        # needs a last line to anchor on, and models reach for edit before write.
+        activity_content = "\n\n".join(
+            p for p in (f"- {now.isoformat()} ▶ tracked todo created", moved_activity) if p
+        )
         log_content = (
             f"# System Log: {title}\n\n"
             f"## {now.isoformat()} [CREATED]\n"
@@ -143,6 +151,7 @@ class TrackedTodoService:
             update=TodoUpdate(
                 vfs_path=vfs_path,
                 canvas_content=canvas_content,
+                activity_content=activity_content,
                 log_content=log_content,
                 source_conversation_id=source_conversation_id,
             ),
@@ -150,7 +159,7 @@ class TrackedTodoService:
 
         await store_canvas_embedding(
             todo_id=todo_id,
-            canvas_content=canvas_content,
+            canvas_content="\n\n".join(p for p in (canvas_content, activity_content) if p),
             user_id=user_id,
             title=title,
             labels=all_labels,

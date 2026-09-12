@@ -105,6 +105,12 @@ class TestResolve:
 
         assert await resolve(f"gaia-tasks/{FOLDER}/notes.md", USER_ID) is None
 
+    async def test_gaia_tasks_under_a_session_dir_names_the_absolute_path(self, mock_repo):
+        """A relative `gaia-tasks/...` resolves into the session scratch dir;
+        the error must hand the model the path it meant."""
+        with pytest.raises(GaiaTaskPathError, match="/workspace/gaia-tasks/"):
+            await resolve(f"sessions/conv-1/scratch/gaia-tasks/{FOLDER}/canvas.md", USER_ID)
+
     async def test_nested_path_falls_through(self, mock_repo):
         assert await resolve(f"gaia-tasks/{FOLDER}/sub/canvas.md", USER_ID) is None
 

@@ -65,6 +65,14 @@ async def resolve(rel: str, user_id: str) -> GaiaTaskPath | None:
     """
     parts = rel.split("/")
     if parts[0] != GAIA_TASKS_DIRNAME:
+        # A relative "gaia-tasks/..." resolves into the session scratch dir;
+        # hand back the absolute path the caller meant instead of "not found".
+        if GAIA_TASKS_DIRNAME in parts[1:]:
+            tail = "/".join(parts[parts.index(GAIA_TASKS_DIRNAME) :])
+            raise GaiaTaskPathError(
+                f"tracked-todo files live at /workspace/{GAIA_TASKS_DIRNAME}/ (absolute path); "
+                f"use /workspace/{tail}"
+            )
         return None
     if len(parts) == 2:
         return RootFile(name=parts[1]) if parts[1] == INDEX_FILENAME else None
