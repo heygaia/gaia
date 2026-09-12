@@ -41,8 +41,8 @@ type BodyOf<C> = C extends { "application/json": infer J }
   ? J
   : C extends { "multipart/form-data": unknown }
     ? FormData
-    : C extends { "application/x-www-form-urlencoded": infer F }
-      ? F | URLSearchParams | FormData
+    : C extends { "application/x-www-form-urlencoded": unknown }
+      ? URLSearchParams | FormData
       : never;
 
 /** The request body: required, optional (`| undefined`), or `undefined` when the route takes none. */

@@ -74,9 +74,7 @@ export const dashboardApi = {
   },
 
   getActiveWorkflowsCount: async (): Promise<number> => {
-    const response = await apiService.get<WorkflowListResponse>(
-      `/workflows${buildQueryString({ activated: true })}`,
-    );
-    return response.workflows.length;
+    const response = await apiService.get<WorkflowListResponse>("/workflows");
+    return response.workflows.filter((workflow) => workflow.activated).length;
   },
 };

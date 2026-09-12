@@ -7,8 +7,7 @@ import { Text } from "@/components/ui/text";
 import { useResponsive } from "@/lib/responsive";
 import { AppStatusChip } from "@/shared/components/ui/app-status-chip";
 import { WORKFLOW_COLORS } from "../constants/colors";
-import { ACTIVATION_STATUS, EXECUTION_STATUS } from "../constants/status";
-import { useWorkflowPolling } from "../hooks/use-workflow-polling";
+import { ACTIVATION_STATUS } from "../constants/status";
 import type { Workflow } from "../types/workflow-types";
 import { formatRunCount, getTriggerLabel } from "../utils/format-utils";
 import { WorkflowStepIcons } from "./workflow-step-icons";
@@ -31,7 +30,6 @@ export function WorkflowCard({ workflow, onPress }: WorkflowCardProps) {
   const router = useRouter();
   const { spacing, fontSize, moderateScale } = useResponsive();
   const [optimistic, setOptimistic] = useState<Workflow>(workflow);
-  const polling = useWorkflowPolling();
 
   // Sync prop into local state when the parent re-fetches the row. We only
   // hard-replace when the id changes; otherwise the optimistic snapshot is
@@ -83,18 +81,10 @@ export function WorkflowCard({ workflow, onPress }: WorkflowCardProps) {
       >
         <WorkflowStepIcons steps={optimistic.steps} />
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-          {polling.status !== "idle" ? (
-            <AppStatusChip
-              status={EXECUTION_STATUS[polling.status].chipStatus}
-              label={EXECUTION_STATUS[polling.status].label}
-            />
-          ) : null}
-          <AppStatusChip
-            status={activation.chipStatus}
-            label={activation.label}
-          />
-        </View>
+        <AppStatusChip
+          status={activation.chipStatus}
+          label={activation.label}
+        />
       </View>
 
       <View>

@@ -3,7 +3,6 @@ import type { WorkflowExecution } from "@gaia/shared/api/generated";
 export type {
   WorkflowExecution,
   WorkflowExecutionResponse,
-  WorkflowStatusResponse,
 } from "@gaia/shared/api/generated";
 
 import type { TriggerConfig, WorkflowStep } from "@gaia/shared/types";
