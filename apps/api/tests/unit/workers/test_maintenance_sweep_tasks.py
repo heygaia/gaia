@@ -40,6 +40,7 @@ from app.workers.tasks.maintenance_sweep_tasks import (
     _health_check_expired,
     _is_dormant,
     _is_user_daytime,
+    _migrate_all_legacy_canvases,
     _notify_overdue,
     _register_notification,
     _send_user_dormant_digest,
@@ -587,6 +588,84 @@ class TestSendUserDormantDigest:
 # ---------------------------------------------------------------------------
 
 
+class TestMigrateAllLegacyCanvases:
+    """The cursor loop's own contract: it pages to a short page, sums every
+    page's migrated count, and stops on the empty page."""
+
+    async def test_empty_scan_returns_zero(self):
+        with (
+            patch(
+                f"{MODULE}.todo_repository.list_tracked_for_legacy_migration",
+                AsyncMock(return_value=[]),
+                create=True,
+            ),
+            patch(f"{MODULE}._migrate_legacy_canvases", AsyncMock(return_value=0)) as migrate,
+        ):
+            assert await _migrate_all_legacy_canvases() == 0
+
+        migrate.assert_not_awaited()
+
+    async def test_sums_every_page_to_a_short_page(self):
+        from app.workers.tasks.maintenance_sweep_tasks import _MIGRATION_PAGE_SIZE
+
+        full = [_doc(id=f"a{i}", updated_at=NOW) for i in range(_MIGRATION_PAGE_SIZE)]
+        short = [_doc(id="last", updated_at=NOW)]
+        finder = AsyncMock(side_effect=[full, short])
+        with (
+            patch(
+                f"{MODULE}.todo_repository.list_tracked_for_legacy_migration",
+                finder,
+                create=True,
+            ),
+            patch(f"{MODULE}._migrate_legacy_canvases", AsyncMock(return_value=2)) as migrate,
+        ):
+            assert await _migrate_all_legacy_canvases() == 4
+
+        assert migrate.await_count == 2
+        assert [c.args[0][0].id for c in migrate.await_args_list] == ["a0", "last"]
+
+    async def test_short_first_page_stops_immediately(self):
+        """A first page shorter than the size is the whole scan — the loop must
+        stop without a second fetch."""
+        finder = AsyncMock(side_effect=[[_doc(id="only", updated_at=NOW)]])
+        with (
+            patch(
+                f"{MODULE}.todo_repository.list_tracked_for_legacy_migration",
+                finder,
+                create=True,
+            ),
+            patch(f"{MODULE}._migrate_legacy_canvases", AsyncMock(return_value=1)),
+        ):
+            assert await _migrate_all_legacy_canvases() == 1
+
+        finder.assert_awaited_once()
+
+
+class TestMigrateLegacyCanvases:
+    """The per-page loop's count: each migrated todo adds one, nothing else."""
+
+    async def test_counts_each_migrated_todo(self):
+        from app.workers.tasks.maintenance_sweep_tasks import _migrate_legacy_canvases
+
+        todos = [_doc(id="a", updated_at=NOW), _doc(id="b", updated_at=NOW)]
+        with patch(
+            f"{MODULE}.tracked_todo_service.migrate_legacy_canvas",
+            AsyncMock(side_effect=[True, True]),
+        ) as migrate:
+            assert await _migrate_legacy_canvases(todos) == 2
+
+        assert migrate.await_count == 2
+
+    async def test_zero_when_nothing_migrates(self):
+        from app.workers.tasks.maintenance_sweep_tasks import _migrate_legacy_canvases
+
+        with patch(
+            f"{MODULE}.tracked_todo_service.migrate_legacy_canvas",
+            AsyncMock(return_value=False),
+        ):
+            assert await _migrate_legacy_canvases([_doc(id="a", updated_at=NOW)]) == 0
+
+
 class TestMaintenanceSweep:
     async def test_every_tracked_todo_gets_the_legacy_canvas_migration(self):
         """The one-shot split rides the sweep over ALL tracked todos — active
@@ -597,6 +676,8 @@ class TestMaintenanceSweep:
             await maintenance_sweep_tracked_todos({})
 
         assert [c.args[0].id for c in mocks["migrate"].await_args_list] == ["a", "b"]
+        # Pins the scan bound: a changed literal would widen or unbind the page.
+        mocks["list"].assert_awaited_once_with(limit=200)
 
     async def test_legacy_migration_pages_past_the_first_page(self):
         """The migration cursor walks every page to a short page, so a legacy
