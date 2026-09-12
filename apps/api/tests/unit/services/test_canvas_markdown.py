@@ -101,6 +101,13 @@ class TestSplitLegacyCanvas:
         assert "sent email" not in new_canvas
         assert section_body(new_canvas, "Learnings") == ""
 
+    def test_removed_section_leaves_one_blank_line_before_the_next_heading(self):
+        canvas = "# T\n\n## Current State\nWaiting.\n\n## Timeline\n- x\n\n## Learnings\n"
+
+        new_canvas, _ = split_legacy_canvas(canvas)
+
+        assert new_canvas == "# T\n\n## Current State\nWaiting.\n\n## Learnings\n"
+
     def test_real_learnings_are_kept(self):
         canvas = "# T\n\n## Learnings\nSarah replies in 2-3 days.\n\n## Activity Log\n- did x\n"
 

@@ -28,8 +28,8 @@ from app.models.notification.notification_models import (
 )
 from app.models.todo_models import TodoDocument, TodoUpdate
 from app.models.user_models import AuthenticatedUser
-from app.services.notification_service import notification_service
 from app.services.canvas_markdown import section_body
+from app.services.notification_service import notification_service
 from app.services.todo_canvas_storage import read_activity, read_canvas
 from app.services.tracked_todo_service import tracked_todo_service
 from app.services.user_service import get_user_by_id

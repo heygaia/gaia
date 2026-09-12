@@ -42,7 +42,12 @@ def _remove_section(text: str, heading: str) -> tuple[str, str | None]:
         return text, None
     heading_start, body_start, section_end = span
     body = text[body_start:section_end].strip()
-    return text[:heading_start].rstrip("\n") + text[section_end:], body
+    before = text[:heading_start].rstrip("\n")
+    after = text[section_end:]
+    # Keep one blank line between the previous section and the next heading.
+    if before and after.startswith("\n## "):
+        after = "\n" + after
+    return before + after, body
 
 
 def _rescue_dated_blocks_from_learnings(text: str) -> tuple[str, list[str]]:
