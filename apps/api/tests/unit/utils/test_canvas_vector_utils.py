@@ -241,6 +241,37 @@ async def test_update_canvas_embedding_stores_new_content_when_metadata_lookup_f
     )
 
 
+async def test_update_canvas_embedding_forwards_title_and_labels() -> None:
+    """Every forwarded argument is pinned: title and labels reach the store
+    unchanged (dropping either was previously invisible)."""
+    raw_client = MagicMock()
+    raw_client.get_collection = AsyncMock(side_effect=RuntimeError("collection missing"))
+    with (
+        patch(
+            "app.utils.canvas_vector_utils.ChromaClient.get_client",
+            new_callable=AsyncMock,
+            return_value=raw_client,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.delete_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.store_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as store,
+    ):
+        await update_canvas_embedding(
+            "todo-1", "new text", "user-1", "Ship it", ["a", "b"], revision="r1"
+        )
+
+    store.assert_awaited_once_with(
+        "todo-1", "new text", "user-1", "Ship it", ["a", "b"], revision="r1"
+    )
+
+
 async def test_delete_canvas_embedding() -> None:
     collection = AsyncMock()
     with patch(
