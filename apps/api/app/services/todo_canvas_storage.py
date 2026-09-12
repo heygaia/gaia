@@ -141,25 +141,6 @@ async def append_activity(todo_id: str, user_id: str, entry: str) -> bool:
     return True
 
 
-async def read_log(todo_id: str, user_id: str) -> str | None:
-    """Return the todo's system-log body, or None when the todo does not exist."""
-    doc = await todo_repository.get(todo_id, user_id=user_id)
-    if not doc:
-        return None
-    return doc.log_content or ""
-
-
-async def write_log(todo_id: str, user_id: str, content: str) -> bool:
-    """Replace the system-log body; schedules the gaia-tasks VFS sync on success."""
-    updated = await todo_repository.update(
-        todo_id, user_id=user_id, update=TodoUpdate(log_content=content)
-    )
-    if updated is not None:
-        schedule_gaia_tasks_sync(user_id)
-        return True
-    return False
-
-
 async def append_log(todo_id: str, user_id: str, content: str) -> bool:
     """Append to the system-log body, ensuring a leading newline separator."""
     suffix = content if content.startswith("\n") else f"\n{content}"

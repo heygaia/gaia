@@ -72,7 +72,11 @@ def mock_deps():
         patch(f"{_MOD}.mark_canvas_completed", new_callable=AsyncMock) as m_mark,
         patch(f"{_MOD}.schedule_gaia_tasks_sync", new_callable=MagicMock) as m_sync,
         patch(f"{_MOD}.RedisPoolManager.get_pool", new_callable=AsyncMock) as m_pool,
-        patch(f"{_MOD}.append_activity", new_callable=AsyncMock) as m_append_activity,
+        # create=True: ``append_activity`` is imported into the service on this
+        # branch only. The regression lane runs these tests against the base
+        # revision, where the name is absent, and a fixture that errors there is
+        # not proof.
+        patch(f"{_MOD}.append_activity", new_callable=AsyncMock, create=True) as m_append_activity,
         patch(f"{_MOD}.append_log", new_callable=AsyncMock) as m_append_log,
         patch(f"{_MOD}.teardown_subscriptions", new_callable=AsyncMock) as m_teardown,
     ):
