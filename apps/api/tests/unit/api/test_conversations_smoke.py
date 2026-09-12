@@ -31,6 +31,7 @@ from app.models.conversation_models import (
     StarConversationResponse,
     UpdateDescriptionResponse,
 )
+from tests.conftest import FAKE_USER
 
 CONV_SERVICE = "app.api.v1.endpoints.conversations"
 
@@ -141,10 +142,14 @@ class TestGetConversation:
             f"{CONV_SERVICE}.get_conversation",
             new_callable=AsyncMock,
             return_value=mock_resp,
-        ):
+        ) as mock_get:
             resp = await client.get("/api/v1/conversations/conv_123")
 
         assert resp.status_code == 200
+        # The lookup is scoped to the path id AND the caller — either dropped
+        # would serve another user's conversation or nothing at all.
+        assert mock_get.await_args.args == ("conv_123", FAKE_USER)
+        assert mock_get.await_args.kwargs == {}
         body = resp.json()
         assert body["conversation_id"] == "conv_123"
         assert body["messages"] == []

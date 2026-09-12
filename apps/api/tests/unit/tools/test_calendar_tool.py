@@ -895,8 +895,13 @@ class TestDeleteEvent:
                 EXECUTE_REQUEST,
                 AUTH,
             )
-        assert proxy.call_args.args[0].method == "DELETE"
-        assert proxy.call_args.args[0].endpoint == f"{CALENDAR_API_BASE}/calendars/cal-1/events/e1"
+        assert proxy.call_args.args[0] == ProxyRequest(
+            user_id="user-42",
+            toolkit="GOOGLECALENDAR",
+            endpoint=f"{CALENDAR_API_BASE}/calendars/cal-1/events/e1",
+            method="DELETE",
+            query={"sendUpdates": "all"},
+        )
         assert out["deleted"] == [{"event_id": "e1", "calendar_id": "cal-1"}]
 
     @pytest.mark.parametrize("send_updates", ["all", "externalOnly", "none"])
@@ -980,10 +985,14 @@ class TestPatchEvent:
                 EXECUTE_REQUEST,
                 AUTH,
             )
-        assert proxy.call_args.args[0].body == {"summary": "New title"}
-        assert proxy.call_args.args[0].method == "PATCH"
-        assert proxy.call_args.args[0].endpoint == f"{CALENDAR_API_BASE}/calendars/cal-1/events/e1"
-        assert proxy.call_args.args[0].query == {"sendUpdates": "all"}
+        assert proxy.call_args.args[0] == ProxyRequest(
+            user_id="user-42",
+            toolkit="GOOGLECALENDAR",
+            endpoint=f"{CALENDAR_API_BASE}/calendars/cal-1/events/e1",
+            method="PATCH",
+            body={"summary": "New title"},
+            query={"sendUpdates": "all"},
+        )
         assert out == {"event": {"id": "e1"}}
 
     def test_all_fields_are_mapped_to_the_google_shape(self, tools) -> None:
@@ -1071,10 +1080,18 @@ class TestAddRecurrence:
             tools, AddRecurrenceInput(event_id="e1", calendar_id="cal-1", frequency="DAILY")
         )
         endpoint = f"{CALENDAR_API_BASE}/calendars/cal-1/events/e1"
-        assert [c.args[0].method for c in proxy.call_args_list] == ["GET", "PUT"]
-        assert {c.args[0].endpoint for c in proxy.call_args_list} == {endpoint}
-        assert proxy.call_args_list[1].args[0].body["recurrence"] == ["RRULE:FREQ=DAILY"]
-        assert proxy.call_args_list[1].args[0].body["summary"] == "Standup"
+        assert [c.args[0] for c in proxy.call_args_list] == [
+            ProxyRequest(
+                user_id="user-42", toolkit="GOOGLECALENDAR", endpoint=endpoint, method="GET"
+            ),
+            ProxyRequest(
+                user_id="user-42",
+                toolkit="GOOGLECALENDAR",
+                endpoint=endpoint,
+                method="PUT",
+                body={"id": "e1", "summary": "Standup", "recurrence": ["RRULE:FREQ=DAILY"]},
+            ),
+        ]
         assert out["event"] == {"id": "e1", "updated": True}
         assert out["recurrence_rule"] == "RRULE:FREQ=DAILY"
 
@@ -1317,7 +1334,18 @@ class TestCreateEvent:
                     confirm_immediately=True,
                 ),
             )
-        assert proxy.call_args.args[0].query == {"sendUpdates": "all"}
+        assert proxy.call_args.args[0] == ProxyRequest(
+            user_id="user-42",
+            toolkit="GOOGLECALENDAR",
+            endpoint=f"{CALENDAR_API_BASE}/calendars/primary/events",
+            method="POST",
+            body={
+                "summary": "X",
+                "start": {"dateTime": "2026-01-15T10:00:00"},
+                "end": {"dateTime": "2026-01-15T10:30:00"},
+            },
+            query={"sendUpdates": "all"},
+        )
 
     # -- confirm_immediately path ------------------------------------------
 

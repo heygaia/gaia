@@ -229,6 +229,33 @@ class TestGetUnreadCount:
         assert result["unreadCount"] == 12
         assert result["is_estimate"] is True
 
+    def test_query_mode_sends_two_one_result_list_calls_through_the_users_proxy(self, mock_proxy):
+        tools = _register_and_get_tools()
+        mock_proxy.side_effect = [{"resultSizeEstimate": 50}, {"resultSizeEstimate": 12}]
+        tools["GET_UNREAD_COUNT"](
+            request=GetUnreadCountInput(query="from:boss"),
+            execute_request=MagicMock(),
+            auth_credentials=AUTH_CREDS,
+        )
+        assert [call.args[0] for call in mock_proxy.call_args_list] == [
+            ProxyRequest(
+                user_id="user_test_123",
+                toolkit="GMAIL",
+                endpoint="https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                method="GET",
+                body=None,
+                query={"maxResults": 1, "includeSpamTrash": "false", "q": "from:boss"},
+            ),
+            ProxyRequest(
+                user_id="user_test_123",
+                toolkit="GMAIL",
+                endpoint="https://gmail.googleapis.com/gmail/v1/users/me/messages",
+                method="GET",
+                body=None,
+                query={"maxResults": 1, "includeSpamTrash": "false", "q": "from:boss is:unread"},
+            ),
+        ]
+
 
 # ---------------------------------------------------------------------------
 # GET_CONTACT_LIST

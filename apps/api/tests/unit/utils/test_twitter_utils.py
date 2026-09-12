@@ -4,6 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
+from app.services.composio.proxy_client import ProxyRequest
 from app.utils.errors import AppError
 from app.utils.twitter_utils import (
     TWITTER_API_BASE,
@@ -30,9 +31,12 @@ class TestGetMyUserId:
     def test_returns_id_from_data(self, mock_proxy):
         mock_proxy.return_value = {"data": {"id": "12345"}}
         assert get_my_user_id(USER_ID) == "12345"
-        request = mock_proxy.call_args.args[0]
-        assert request.toolkit == "TWITTER"
-        assert request.endpoint.endswith("/users/me")
+        assert mock_proxy.call_args.args[0] == ProxyRequest(
+            user_id=USER_ID,
+            toolkit="TWITTER",
+            endpoint=f"{TWITTER_API_BASE}/users/me",
+            method="GET",
+        )
 
     def test_returns_none_on_missing_data(self, mock_proxy):
         mock_proxy.return_value = {}
