@@ -271,6 +271,16 @@ class TestSplitLegacyCanvas:
 
         assert new_canvas == "# T \n\n## B\n2\n"
 
+    def test_trailing_non_newline_whitespace_chars_are_preserved(self):
+        """Only the newline is stripped: a trailing space or X before it stays
+        (rstrip with a multi-char set would eat them)."""
+        assert (
+            split_legacy_canvas("# T X\n\n## Timeline\n- a\n\n## B\n2\n")[0] == "# T X\n\n## B\n2\n"
+        )
+        assert (
+            split_legacy_canvas("# T\t\n\n## Timeline\n- a\n\n## B\n2\n")[0] == "# T\t\n\n## B\n2\n"
+        )
+
     def test_section_between_content_keeps_blank_line_before_the_next_heading(self):
         """A removed section with content both before and after — pins the
         `before and after.startswith("\\n## ")` blank-line branch."""

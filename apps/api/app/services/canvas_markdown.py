@@ -145,7 +145,8 @@ def split_legacy_canvas(canvas: str) -> tuple[str, str | None]:
         timeline_dated, timeline_undated = _extract_entries(timeline)
         dated.extend(timeline_dated)
         undated.extend(timeline_undated)
-    merged = [entry for _, entry in sorted(dated, key=lambda item: item[0])] + undated
+    merged = [entry for _, entry in sorted(dated, key=lambda item: item[0])]
+    merged.extend(undated)
     if not text.endswith("\n"):
         text += "\n"
     return text, "\n\n".join(merged) if merged else None
