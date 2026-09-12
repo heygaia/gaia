@@ -52,8 +52,7 @@ class ErrorEnvelope(BaseModel):
     def from_http_detail(cls, detail: object) -> "ErrorEnvelope":
         """``HTTPException.detail`` is a string, or a mapping carrying ``message``."""
         if isinstance(detail, Mapping):
-            fields = dict(detail)
-            return cls(message=fields.pop("message"), **fields)
+            return cls.model_validate(dict(detail))
         return cls(message=str(detail))
 
 

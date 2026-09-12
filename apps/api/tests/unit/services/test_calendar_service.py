@@ -14,6 +14,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from fastapi import HTTPException
 import pytest
 
+from app.constants.error_codes import INTEGRATION_NOT_CONNECTED
 from app.models.calendar_models import (
     CalendarEventDisplay,
     CalendarPreferencesDocument,
@@ -195,6 +196,22 @@ class TestListCalendars:
             await list_calendars(USER_ID)
         assert exc.value.status_code == 500
         assert "boom" in str(exc.value.detail)
+
+    async def test_a_disconnected_integration_is_the_structured_reconnect_detail(self, mock_proxy):
+        mock_proxy.side_effect = AppError(
+            message="Google Calendar is not connected",
+            status_code=403,
+            meta={"code": INTEGRATION_NOT_CONNECTED, "toolkit": "googlecalendar"},
+        )
+        with pytest.raises(HTTPException) as exc:
+            await list_calendars(USER_ID)
+        assert exc.value.status_code == 403
+        assert exc.value.detail == {
+            "type": "integration",
+            "code": INTEGRATION_NOT_CONNECTED,
+            "toolkit": "googlecalendar",
+            "message": "Reconnect Google Calendar to load your events.",
+        }
 
 
 class TestGetCalendarMetadataMap:

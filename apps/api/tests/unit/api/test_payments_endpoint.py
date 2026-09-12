@@ -464,17 +464,21 @@ class TestCancelSubscription:
                 ),
             }
         )
-        with patch(
-            "app.services.payments.payment_service.payment_service.cancel_subscription",
-            new_callable=AsyncMock,
-            return_value=mock_status,
-        ) as mock_cancel:
-            with patch("app.api.v1.endpoints.payments.capture_context_event") as mock_capture:
-                response = await client.post(SUBSCRIPTIONS_CANCEL_URL)
+        with (
+            patch(
+                "app.services.payments.payment_service.payment_service.cancel_subscription",
+                new_callable=AsyncMock,
+                return_value=mock_status,
+            ) as mock_cancel,
+            patch("app.api.v1.endpoints.payments.capture_context_event") as mock_capture,
+            patch("app.api.v1.endpoints.payments.log") as mock_log,
+        ):
+            response = await client.post(SUBSCRIPTIONS_CANCEL_URL)
 
         assert response.status_code == 200
         mock_capture.assert_called_once_with(AnalyticsEvents.SUBSCRIPTION_CANCELLATION_REQUESTED)
         mock_cancel.assert_awaited_once_with("507f1f77bcf86cd799439011")
+        mock_log.set.assert_any_call(payment={"subscription_id": "sub_xyz789", "status": "active"})
 
     async def test_cancel_subscription_service_error_returns_500(self, client: AsyncClient):
         with patch(

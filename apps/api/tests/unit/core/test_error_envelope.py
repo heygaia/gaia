@@ -76,6 +76,10 @@ def app() -> FastAPI:
     async def _validate(payload: _Payload) -> _Payload:
         return payload
 
+    @router.get("/not-modified")
+    async def _not_modified() -> None:
+        raise HTTPException(status_code=304, headers={"ETag": '"v1"'})
+
     @router.get("/boom")
     async def _boom() -> None:
         raise RuntimeError("boom")
@@ -128,9 +132,19 @@ class TestOneEnvelope:
         body = resp.json()
         assert resp.status_code == 422
         envelope = _envelope(body)
+        assert envelope.message == "Request validation failed"
+        assert envelope.code == "validation_error"
         assert envelope.errors is not None
         assert envelope.errors[0].loc == ["body", "count"]
         assert envelope.errors[0].type == "int_parsing"
+
+    async def test_a_bodiless_status_keeps_its_headers_and_sends_no_body(
+        self, client: AsyncClient
+    ) -> None:
+        resp = await client.get("/not-modified")
+        assert resp.status_code == 304
+        assert resp.headers["etag"] == '"v1"'
+        assert resp.content == b""
 
     async def test_unhandled_exception_is_the_envelope(self, client: AsyncClient) -> None:
         resp = await client.get("/boom")
@@ -153,3 +167,26 @@ class TestOneEnvelope:
         ]
         assert stray == [], f"routes still documenting FastAPI's own 422 body: {stray}"
         assert "HTTPValidationError" not in schema["components"]["schemas"]
+
+    def test_the_health_router_documents_the_envelope_too(self, app: FastAPI) -> None:
+        responses = app.openapi()["paths"]["/health"]["get"]["responses"]
+        for status in ("4XX", "5XX"):
+            ref = responses[status]["content"]["application/json"]["schema"]["$ref"]
+            assert ref == "#/components/schemas/ErrorEnvelope"
+
+    def test_the_dev_router_is_mounted_under_the_api_prefix_in_development(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from app.config.settings import settings
+
+        monkeypatch.setattr(settings, "ENV", "development")
+        monkeypatch.setattr(settings, "DEV_AUTH_BYPASS_EMAIL", "dev@example.com")
+        with (
+            patch("app.core.app_factory.lifespan", _noop_lifespan),
+            patch("app.core.app_factory.configure_middleware", _cors_only_middleware),
+        ):
+            schema = create_app().openapi()
+        responses = schema["paths"]["/api/v1/dev/users"]["post"]["responses"]
+        for status in ("4XX", "5XX"):
+            ref = responses[status]["content"]["application/json"]["schema"]["$ref"]
+            assert ref == "#/components/schemas/ErrorEnvelope"

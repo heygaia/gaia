@@ -739,6 +739,7 @@ class TestRegenerateSteps:
             )
 
         assert response.status_code == 200
+        assert response.json()["message"] == "Workflow regeneration started"
 
     async def test_regenerate_steps_not_found_returns_404(self, client: AsyncClient):
         """A missing workflow is a 404, not a 500: the endpoint re-raises its own
@@ -871,7 +872,7 @@ class TestCreateWorkflowFromTodo:
             )
 
         assert response.status_code == 200
-        assert "Workflow created from todo" in response.json()["message"]
+        assert response.json()["message"] == "Workflow created from todo successfully"
 
     async def test_from_todo_missing_todo_id_returns_400(self, client: AsyncClient):
         response = await client.post(
@@ -1087,6 +1088,7 @@ class TestGetPublicWorkflow:
             response = await client.get(f"{BASE_URL}/public/wf_abc123")
 
         assert response.status_code == 200
+        assert response.json()["message"] == "Workflow retrieved successfully"
         data = response.json()["workflow"]
         assert data["id"] == "wf_abc123"
         assert data["creator"]["name"] == "Test User"
