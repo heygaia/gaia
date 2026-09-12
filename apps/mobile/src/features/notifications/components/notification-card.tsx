@@ -1,7 +1,7 @@
 import { parseRelativeDateLabel } from "@gaia/shared/utils";
 import * as Haptics from "expo-haptics";
 import { useRouter } from "expo-router";
-import { useCallback, useRef } from "react";
+import { useRef } from "react";
 import { Animated, Pressable, View } from "react-native";
 import { Swipeable } from "react-native-gesture-handler";
 import type { AnyIcon } from "@/components/icons";
@@ -96,31 +96,31 @@ export function NotificationCard({
     notification.content.actions?.filter((a) => a.type !== "redirect") ?? [];
   const hasInlineActions = inlineActions.length > 0;
 
-  const handleMarkAsRead = useCallback(() => {
+  const handleMarkAsRead = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     swipeableRef.current?.close();
     onMarkAsRead(notification.id);
-  }, [onMarkAsRead, notification.id]);
+  };
 
-  const handleDismiss = useCallback(() => {
+  const handleDismiss = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     swipeableRef.current?.close();
     onDismiss?.(notification.id);
-  }, [onDismiss, notification.id]);
+  };
 
-  const handleArchive = useCallback(() => {
+  const handleArchive = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     swipeableRef.current?.close();
     onArchive?.(notification.id);
-  }, [onArchive, notification.id]);
+  };
 
-  const handleSnooze = useCallback(() => {
+  const handleSnooze = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     swipeableRef.current?.close();
     onSnooze?.(notification.id);
-  }, [onSnooze, notification.id]);
+  };
 
-  const handleTap = useCallback(() => {
+  const handleTap = () => {
     if (isSelectMode) {
       onSelectToggle?.(notification.id);
       return;
@@ -133,124 +133,115 @@ export function NotificationCard({
       if (url.startsWith("/")) router.push(url as never);
     }
     if (isUnread) onMarkAsRead(notification.id);
-  }, [
-    notification,
-    isUnread,
-    onMarkAsRead,
-    router,
-    isSelectMode,
-    onSelectToggle,
-  ]);
+  };
 
-  const handleLongPress = useCallback(() => {
+  const handleLongPress = () => {
     void Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     onLongPress?.(notification.id);
-  }, [onLongPress, notification.id]);
+  };
 
-  const renderLeftActions = useCallback(
-    (progress: Animated.AnimatedInterpolation<number>) => {
-      const translateX = progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [-76, 0],
-      });
-      return (
-        <Animated.View
+  const renderLeftActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const translateX = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [-76, 0],
+    });
+    return (
+      <Animated.View
+        style={{
+          transform: [{ translateX }],
+          justifyContent: "center",
+          alignItems: "flex-end",
+          width: 76,
+          paddingRight: 6,
+        }}
+      >
+        <View
           style={{
-            transform: [{ translateX }],
+            width: 64,
+            height: "100%",
+            backgroundColor: "rgba(0,187,255,0.12)",
+            borderRadius: 16,
             justifyContent: "center",
-            alignItems: "flex-end",
-            width: 76,
-            paddingRight: 6,
+            alignItems: "center",
+            gap: 4,
           }}
         >
-          <View
-            style={{
-              width: 64,
-              height: "100%",
-              backgroundColor: "rgba(0,187,255,0.12)",
-              borderRadius: 16,
-              justifyContent: "center",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <AppIcon icon={CheckmarkBadge01Icon} size={18} color="#00bbff" />
-            <Text style={{ fontSize: 10, color: "#00bbff" }}>Read</Text>
-          </View>
-        </Animated.View>
-      );
-    },
-    [],
-  );
+          <AppIcon icon={CheckmarkBadge01Icon} size={18} color="#00bbff" />
+          <Text style={{ fontSize: 10, color: "#00bbff" }}>Read</Text>
+        </View>
+      </Animated.View>
+    );
+  };
 
-  const renderRightActions = useCallback(
-    (progress: Animated.AnimatedInterpolation<number>) => {
-      const hasSnooze = !!onSnooze;
-      const totalWidth = hasSnooze ? 156 : 76;
-      const translateX = progress.interpolate({
-        inputRange: [0, 1],
-        outputRange: [totalWidth, 0],
-      });
-      return (
-        <Animated.View
-          style={{
-            transform: [{ translateX }],
-            justifyContent: "center",
-            alignItems: "flex-start",
-            width: totalWidth,
-            flexDirection: "row",
-            gap: hasSnooze ? 8 : 0,
-            paddingLeft: 6,
-          }}
-        >
-          {hasSnooze && (
-            <Pressable
-              onPress={handleSnooze}
-              style={{
-                width: 64,
-                height: "100%",
-                backgroundColor: "rgba(251,191,36,0.16)",
-                borderRadius: 16,
-                justifyContent: "center",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <AppIcon icon={Timer02Icon} size={18} color="#fbbf24" />
-              <Text style={{ fontSize: 10, color: "#fbbf24" }}>Snooze</Text>
-            </Pressable>
-          )}
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+  ) => {
+    const hasSnooze = !!onSnooze;
+    const totalWidth = hasSnooze ? 156 : 76;
+    const translateX = progress.interpolate({
+      inputRange: [0, 1],
+      outputRange: [totalWidth, 0],
+    });
+    return (
+      <Animated.View
+        style={{
+          transform: [{ translateX }],
+          justifyContent: "center",
+          alignItems: "flex-start",
+          width: totalWidth,
+          flexDirection: "row",
+          gap: hasSnooze ? 8 : 0,
+          paddingLeft: 6,
+        }}
+      >
+        {hasSnooze && (
           <Pressable
-            onPress={onArchive ? handleArchive : handleDismiss}
+            onPress={handleSnooze}
             style={{
               width: 64,
               height: "100%",
-              backgroundColor: onArchive
-                ? "rgba(63,63,70,0.6)"
-                : "rgba(239,68,68,0.12)",
+              backgroundColor: "rgba(251,191,36,0.16)",
               borderRadius: 16,
               justifyContent: "center",
               alignItems: "center",
               gap: 4,
             }}
           >
-            {onArchive ? (
-              <>
-                <AppIcon icon={FolderIcon} size={18} color="#a1a1aa" />
-                <Text style={{ fontSize: 10, color: "#a1a1aa" }}>Archive</Text>
-              </>
-            ) : (
-              <>
-                <AppIcon icon={Cancel01Icon} size={18} color="#ef4444" />
-                <Text style={{ fontSize: 10, color: "#ef4444" }}>Dismiss</Text>
-              </>
-            )}
+            <AppIcon icon={Timer02Icon} size={18} color="#fbbf24" />
+            <Text style={{ fontSize: 10, color: "#fbbf24" }}>Snooze</Text>
           </Pressable>
-        </Animated.View>
-      );
-    },
-    [handleArchive, handleDismiss, handleSnooze, onArchive, onSnooze],
-  );
+        )}
+        <Pressable
+          onPress={onArchive ? handleArchive : handleDismiss}
+          style={{
+            width: 64,
+            height: "100%",
+            backgroundColor: onArchive
+              ? "rgba(63,63,70,0.6)"
+              : "rgba(239,68,68,0.12)",
+            borderRadius: 16,
+            justifyContent: "center",
+            alignItems: "center",
+            gap: 4,
+          }}
+        >
+          {onArchive ? (
+            <>
+              <AppIcon icon={FolderIcon} size={18} color="#a1a1aa" />
+              <Text style={{ fontSize: 10, color: "#a1a1aa" }}>Archive</Text>
+            </>
+          ) : (
+            <>
+              <AppIcon icon={Cancel01Icon} size={18} color="#ef4444" />
+              <Text style={{ fontSize: 10, color: "#ef4444" }}>Dismiss</Text>
+            </>
+          )}
+        </Pressable>
+      </Animated.View>
+    );
+  };
 
   // Web background tones (EnhancedNotificationCard.tsx line 100):
   //   isUnread → bg-zinc-800/70  (zinc-800 = #27272a → rgba(39,39,42,0.7))
