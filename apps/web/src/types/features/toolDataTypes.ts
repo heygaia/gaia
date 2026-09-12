@@ -118,6 +118,20 @@ export type WorkflowCreatedData = {
   activated: boolean;
 };
 
+/** A stored registry entry as the client holds it: stamped with its conversation. */
+export const fromRegistryEntries = (
+  entries: Schema<"ArtifactRegistryEntry">[],
+  sessionId: string,
+): ArtifactData[] =>
+  entries.map((entry) => ({
+    session_id: sessionId,
+    path: entry.path,
+    size_bytes: entry.size_bytes ?? 0,
+    mtime: entry.mtime ?? undefined,
+    content_type: entry.content_type,
+    body: entry.body,
+  }));
+
 export interface ArtifactData {
   /** Conversation id the artifact belongs to (used to build fetch URLs). */
   session_id: string;

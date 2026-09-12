@@ -27,7 +27,7 @@ import type { ContentCreator } from "@/types/shared/contentTypes";
  * Used in CommunityWorkflow and UseCase types
  * Note: Backend actually returns full WorkflowStepType, but we type it as optional for flexibility
  */
-export type PublicWorkflowStep = Schema<"WorkflowStep-Output">;
+export type PublicWorkflowStep = Schema<"PublicWorkflowStep">;
 
 // ============================================================================
 // WORKFLOW CONFIGURATION TYPES
@@ -45,36 +45,12 @@ export type { TriggerConfig, TriggerConfigDraft, TriggerSchema };
  * Community workflow - publicly shared workflow
  * Also used for Explore workflows (featured workflows on landing/workflows pages)
  */
-export interface CommunityWorkflow {
-  id: string;
-  slug: string; // human-readable URL slug, always present for public workflows
-  title: string;
-  description: string;
-  prompt?: string;
-  /** User-chosen icon slug (gaia-icons component name) */
-  icon?: string | null;
-  /** Hex color for the user-chosen icon */
-  icon_color?: string | null;
-  /** Set on built-in workflows GAIA provisions when an integration is connected */
-  system_workflow_key?: string | null;
-  /** Integration whose connection provisions this workflow */
-  source_integration?: string | null;
-  /** The card's real trigger — reproduced when the user adds it */
-  trigger_config?: TriggerConfig;
-  steps: PublicWorkflowStep[];
-  created_at: string;
-  creator: ContentCreator;
-  categories?: string[]; // For filtering (Students, Founders, Engineering, etc.)
-  total_executions?: number; // Run count for display
-}
+export type CommunityWorkflow = Schema<"PublicWorkflowCard">;
 
 /**
  * Response type for community/explore workflows API
  */
-export interface CommunityWorkflowsResponse {
-  workflows: CommunityWorkflow[];
-  total: number;
-}
+export type CommunityWorkflowsResponse = Schema<"PublicWorkflowsResponse">;
 
 // ============================================================================
 // USE CASE TYPES (Landing Page Content & Templates)

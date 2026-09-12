@@ -3,7 +3,7 @@
  * `paths` from `apps/api/openapi.json`, so the path, its parameters, the
  * request body and the response type all come from the API itself.
  *
- *   const me = await api.get("/api/v1/user/me");                        // UserInfo
+ *   const me = await api.get("/api/v1/user/me");           // AuthenticatedUserResponse
  *   await api.put("/api/v1/todos/{todo_id}", { path: { todo_id }, body });  // body: TodoUpdateRequest
  *   await api.get("/api/v1/todos", { query: { page: 2 } });
  *
@@ -42,7 +42,7 @@ type BodyOf<C> = C extends { "application/json": infer J }
   : C extends { "multipart/form-data": unknown }
     ? FormData
     : C extends { "application/x-www-form-urlencoded": infer F }
-      ? F | URLSearchParams
+      ? F | URLSearchParams | FormData
       : never;
 
 /** The request body: required, optional (`| undefined`), or `undefined` when the route takes none. */
