@@ -70,22 +70,20 @@ def mock_deps():
         patch(f"{_MOD}.TodoService.create_todo", new_callable=AsyncMock) as m_create,
         patch(f"{_MOD}.store_canvas_embedding", new_callable=AsyncMock) as m_store,
         patch(f"{_MOD}.mark_canvas_completed", new_callable=AsyncMock) as m_mark,
-        patch(f"{_MOD}.update_canvas_embedding", new_callable=AsyncMock) as m_update_emb,
         patch(f"{_MOD}.schedule_gaia_tasks_sync", new_callable=MagicMock) as m_sync,
         patch(f"{_MOD}.RedisPoolManager.get_pool", new_callable=AsyncMock) as m_pool,
         patch(f"{_MOD}.read_canvas", new_callable=AsyncMock) as m_read,
-        patch(f"{_MOD}.write_canvas", new_callable=AsyncMock) as m_write,
+        patch(f"{_MOD}.append_activity", new_callable=AsyncMock) as m_append_activity,
         patch(f"{_MOD}.append_log", new_callable=AsyncMock) as m_append_log,
     ):
         yield SimpleNamespace(
             create=m_create,
             store=m_store,
             mark=m_mark,
-            update_emb=m_update_emb,
             sync=m_sync,
             pool=m_pool,
             read=m_read,
-            write=m_write,
+            append_activity=m_append_activity,
             append_log=m_append_log,
         )
 
@@ -257,53 +255,31 @@ class TestGetActiveTrackedSummary:
         assert " OVERDUE(4d)" in summary.split("\n")[2]
 
 
-class TestAppendCanvasTimeline:
-    async def test_false_when_canvas_read_fails(self, mock_repo, mock_deps):
-        mock_deps.read.side_effect = RuntimeError("mongo down")
+class TestAppendActivityEntry:
+    async def test_appends_dashed_line(self, mock_repo, mock_deps):
+        mock_deps.append_activity.return_value = True
 
-        assert await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "step") is False
-        mock_deps.write.assert_not_awaited()
-
-    async def test_false_when_canvas_empty(self, mock_repo, mock_deps):
-        mock_deps.read.return_value = None
-
-        assert await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "step") is False
-
-    async def test_inserts_at_top_of_existing_timeline_section(self, mock_repo, mock_deps):
-        canvas = "# T\n\n## Timeline\n- old step\n"
-        mock_deps.read.return_value = canvas
-        mock_deps.write.return_value = True
-
-        ok = await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "new step")
+        ok = await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "2026-09-02 step")
 
         assert ok is True
-        written = mock_deps.write.await_args.args[2]
-        assert written == "# T\n\n## Timeline\n- new step\n- old step\n"
+        mock_deps.append_activity.assert_awaited_once_with(TODO_ID, USER_ID, "- 2026-09-02 step")
 
-    async def test_appends_section_when_timeline_missing(self, mock_repo, mock_deps):
-        canvas = "# T\n\n## Key Details\nnothing"
-        mock_deps.read.return_value = canvas
-        mock_deps.write.return_value = True
+    async def test_keeps_existing_dash_prefix(self, mock_repo, mock_deps):
+        mock_deps.append_activity.return_value = True
 
-        ok = await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "first step")
+        await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "- already dashed")
 
-        assert ok is True
-        written = mock_deps.write.await_args.args[2]
-        assert written == "# T\n\n## Key Details\nnothing\n\n## Timeline\n- first step\n"
+        assert mock_deps.append_activity.await_args.args[2] == "- already dashed"
 
-    async def test_adds_dash_prefix_to_plain_entry(self, mock_repo, mock_deps):
-        mock_deps.read.return_value = "# T\n\n## Timeline\n"
-        mock_deps.write.return_value = True
+    async def test_false_when_storage_reports_missing_todo(self, mock_repo, mock_deps):
+        mock_deps.append_activity.return_value = False
 
-        await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "bare entry")
+        assert await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "step") is False
 
-        assert mock_deps.write.await_args.args[2].count("- bare entry") == 1
+    async def test_false_when_storage_raises(self, mock_repo, mock_deps):
+        mock_deps.append_activity.side_effect = RuntimeError("mongo down")
 
-    async def test_false_when_write_fails(self, mock_repo, mock_deps):
-        mock_deps.read.return_value = "# T\n\n## Timeline\n"
-        mock_deps.write.side_effect = RuntimeError("write failed")
-
-        assert await TrackedTodoService.append_canvas_timeline(TODO_ID, USER_ID, "step") is False
+        assert await TrackedTodoService.append_activity_entry(TODO_ID, USER_ID, "step") is False
 
 
 class TestSystemLog:
@@ -351,37 +327,6 @@ class TestGetSignalMatchingContext:
 
         assert context.startswith("ACTIVE TRACKED TODOS")
         assert "thread: abc123" not in context
-
-
-class TestReindexCanvas:
-    async def test_false_for_missing_todo(self, mock_repo, mock_deps):
-        assert await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID) is False
-        mock_deps.update_emb.assert_not_awaited()
-
-    async def test_false_without_canvas_content(self, mock_repo, mock_deps):
-        mock_repo.get.return_value = _todo_doc(canvas_content=None)
-
-        assert await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID) is False
-
-    async def test_reindexes_with_document_content(self, mock_repo, mock_deps):
-        mock_repo.get.return_value = _todo_doc()
-        mock_deps.update_emb.return_value = True
-
-        ok = await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID)
-
-        assert ok is True
-        kwargs = mock_deps.update_emb.call_args.kwargs
-        assert kwargs["todo_id"] == TODO_ID
-        assert kwargs["user_id"] == USER_ID
-        assert kwargs["title"] == "Prepare Q3 report"
-        assert kwargs["labels"] == [GAIA_TRACKED_LABEL, "work"]
-        assert "thread: abc123" in kwargs["canvas_content"]
-
-    async def test_propagates_embedding_failure(self, mock_repo, mock_deps):
-        mock_repo.get.return_value = _todo_doc()
-        mock_deps.update_emb.return_value = False
-
-        assert await TrackedTodoService.reindex_canvas(TODO_ID, USER_ID) is False
 
 
 class TestScheduleExecution:

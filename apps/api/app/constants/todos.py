@@ -23,3 +23,8 @@ FAILED_LABEL: Final[str] = "failed"
 # Label added by the maintenance sweep to an overdue todo with no scheduled
 # follow-up, so the UI can surface it for attention.
 NEEDS_FOLLOW_UP_LABEL: Final[str] = "needs-follow-up"
+
+# How much of activity.md (from the end) a scheduled run sees in its prompt:
+# enough for the recent trail, bounded so a long-lived recurring todo does not
+# grow the prompt without limit. Older entries stay readable via the file.
+ACTIVITY_PROMPT_TAIL_CHARS: Final[int] = 4_000

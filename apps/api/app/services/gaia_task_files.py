@@ -143,9 +143,9 @@ async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | Non
     return None
 
 
-def task_folder(doc: TodoDocument) -> str:
+def task_folder(todo_id: str, title: str | None) -> str:
     """The ``<slug>-<shortid>`` folder the agent sees for this todo."""
-    return folder_name(doc.id, doc.title)
+    return folder_name(todo_id, title)
 
 
 __all__ = [
