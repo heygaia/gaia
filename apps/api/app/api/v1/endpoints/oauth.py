@@ -492,6 +492,118 @@ async def workos_callback(
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/login?error=server_error")
 
 
+def _composio_failure(redirect_path: str, error: str) -> RedirectResponse:
+    return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?oauth_error={error}")
+
+
+async def _stored_connected_account_id(state_data: dict[str, str]) -> str | None:
+    """The id minted at initiate time — the source of truth for the callback.
+
+    Composio's hosted Connect Link redirects back without the ``connectedAccountId``
+    the retired initiate() flow appended, and the parameter is documented
+    nowhere, so it cannot be relied on either way. Failing on the query string
+    alone rejected connections that had actually succeeded.
+    """
+    record = await user_integration_repository.get_for_user(
+        state_data["user_id"], state_data["integration_id"]
+    )
+    connected_account_id = record.connected_account_id if record else None
+    log.set_ns(
+        "oauth",
+        connected_account_id_source="stored_record" if connected_account_id else "missing",
+    )
+    return connected_account_id
+
+
+async def _complete_composio_connection(
+    connected_account_id: str,
+    *,
+    expected_user_id: str,
+    redirect_path: str,
+    background_tasks: BackgroundTasks,
+) -> RedirectResponse:
+    """Verify the connected account against the state token and record the connection."""
+    composio_service = get_composio_service()
+    connected_account = composio_service.get_connected_account_by_id(connected_account_id)
+    if not connected_account:
+        log.error(
+            f"{LogTag.OAUTH} Connected account not found",
+            connected_account_id=connected_account_id,
+        )
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed")
+
+    config_id = connected_account.auth_config.id
+    user_id = connected_account.user_id
+    if not user_id:
+        log.error(
+            f"{LogTag.OAUTH} User ID missing for account",
+            connected_account_id=connected_account_id,
+        )
+        return RedirectResponse(url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed")
+
+    integration_config = get_integration_by_config(config_id)
+    if not integration_config:
+        log.error(
+            f"{LogTag.OAUTH} Integration config not found",
+            auth_config_id=config_id,
+            connected_account_id=connected_account_id,
+        )
+        return _composio_failure(redirect_path, "failed")
+
+    log.set(user={"id": str(user_id)})
+    log.set_ns(
+        "oauth",
+        provider=integration_config.provider,
+        integration_id=integration_config.id,
+    )
+
+    # Verify user_id matches the state token (security check)
+    if str(user_id) != expected_user_id:
+        log.error(
+            f"{LogTag.OAUTH} User ID mismatch between state and account",
+            state_user_id=expected_user_id,
+            account_user_id=str(user_id),
+            connected_account_id=connected_account_id,
+        )
+        return _composio_failure(redirect_path, "user_mismatch")
+
+    await handle_oauth_connection(
+        user_id=str(user_id),
+        integration_config=integration_config,
+        background_tasks=background_tasks,
+        connected_account_id=connected_account_id,
+    )
+    log.audit(
+        "integration connected",
+        actor=str(user_id),
+        resource=integration_config.id,
+        provider=integration_config.provider,
+    )
+    # capture_event, not capture_context_event: Composio redirects the
+    # browser here without a WorkOS session, so the PostHog context
+    # middleware has nobody to identify. The user id is the one the state
+    # token was validated against — pass it explicitly or the connection
+    # event lands on an anonymous profile.
+    capture_event(
+        str(user_id),
+        AnalyticsEvents.INTEGRATION_CONNECTED,
+        {
+            "integration_id": integration_config.id,
+            "provider": integration_config.provider,
+        },
+    )
+    log.info(
+        f"{LogTag.OAUTH} Composio connection successful",
+        user_id=str(user_id),
+        integration_id=integration_config.id,
+        connected_account_id=connected_account_id,
+    )
+    # Add success parameter and integration name to URL
+    separator = "?" if "?" not in redirect_path else "&"
+    redirect_url = f"{settings.FRONTEND_URL}/{redirect_path}{separator}oauth_success=true&integration={integration_config.id}"
+    return RedirectResponse(url=redirect_url)
+
+
 @router.get("/composio/callback", response_class=RedirectResponse)
 async def composio_callback(
     status: str,
@@ -513,6 +625,7 @@ async def composio_callback(
     Returns:
         RedirectResponse: Redirects user to frontend with appropriate status
     """
+    log.set(operation="composio_callback", oauth={"provider": "composio", "status": status})
     # Validate and consume state token
     state_data = await validate_and_consume_oauth_state(state)
     if not state_data:
@@ -520,7 +633,6 @@ async def composio_callback(
         return RedirectResponse(url=f"{settings.FRONTEND_URL}/redirect?oauth_error=invalid_state")
 
     redirect_path = state_data["redirect_path"]
-    expected_user_id = state_data["user_id"]
 
     # Handle failed connection early
     if status != "success":
@@ -531,130 +643,28 @@ async def composio_callback(
             error=error,
             connected_account_id=connectedAccountId,
         )
-        return RedirectResponse(
-            url=f"{settings.FRONTEND_URL}{redirect_path}?oauth_error={error_type}"
-        )
+        return _composio_failure(redirect_path, error_type)
 
-    # Composio's hosted Connect Link redirects back without the `connectedAccountId`
-    # the retired initiate() flow appended, and the parameter is documented nowhere,
-    # so it cannot be relied on either way. The id is minted at initiate time and
-    # stored on the user's record then (connect_composio_integration), which is the
-    # source of truth here — failing on the query string alone rejected connections
-    # that had actually succeeded.
-    if not connectedAccountId:
-        record = await user_integration_repository.get_for_user(
-            expected_user_id, state_data["integration_id"]
-        )
-        connectedAccountId = record.connected_account_id if record else None
-        log.set_ns(
-            "oauth",
-            connected_account_id_source="stored_record" if connectedAccountId else "missing",
-        )
-
-    if not connectedAccountId:
+    connected_account_id = connectedAccountId or await _stored_connected_account_id(state_data)
+    if not connected_account_id:
         log.error(
             f"{LogTag.OAUTH} Connected account ID missing for successful connection",
             failure_reason="missing_connected_account_id",
             status=status,
         )
-        return RedirectResponse(url=f"{settings.FRONTEND_URL}{redirect_path}?oauth_error=failed")
+        return _composio_failure(redirect_path, "failed")
 
-    composio_service = get_composio_service()
     try:
-        # Retrieve connected account details
-        connected_account = composio_service.get_connected_account_by_id(connectedAccountId)
-
-        if not connected_account:
-            log.error(
-                f"{LogTag.OAUTH} Connected account not found",
-                connected_account_id=connectedAccountId,
-            )
-            return RedirectResponse(url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed")
-
-        # Extract essential information
-        config_id = connected_account.auth_config.id
-        user_id = connected_account.user_id
-
-        if not user_id:
-            log.error(
-                f"{LogTag.OAUTH} User ID missing for account",
-                connected_account_id=connectedAccountId,
-            )
-            return RedirectResponse(url=f"{settings.FRONTEND_URL}/redirect?oauth_error=failed")
-
-        # Find integration configuration by auth config ID
-        integration_config = get_integration_by_config(config_id)
-        if not integration_config:
-            log.error(
-                f"{LogTag.OAUTH} Integration config not found",
-                auth_config_id=config_id,
-                connected_account_id=connectedAccountId,
-            )
-            return RedirectResponse(
-                url=f"{settings.FRONTEND_URL}{redirect_path}?oauth_error=failed"
-            )
-
-        log.set(user={"id": str(user_id)})
-        log.set_ns(
-            "oauth",
-            provider=integration_config.provider,
-            integration_id=integration_config.id,
-        )
-
-        # Verify user_id matches the state token (security check)
-        if str(user_id) != expected_user_id:
-            log.error(
-                f"{LogTag.OAUTH} User ID mismatch between state and account",
-                state_user_id=expected_user_id,
-                account_user_id=str(user_id),
-                connected_account_id=connectedAccountId,
-            )
-            return RedirectResponse(
-                url=f"{settings.FRONTEND_URL}{redirect_path}?oauth_error=user_mismatch"
-            )
-
-        await handle_oauth_connection(
-            user_id=str(user_id),
-            integration_config=integration_config,
+        return await _complete_composio_connection(
+            connected_account_id,
+            expected_user_id=state_data["user_id"],
+            redirect_path=redirect_path,
             background_tasks=background_tasks,
-            connected_account_id=connectedAccountId,
         )
-        log.audit(
-            "integration connected",
-            actor=str(user_id),
-            resource=integration_config.id,
-            provider=integration_config.provider,
-        )
-        # capture_event, not capture_context_event: Composio redirects the
-        # browser here without a WorkOS session, so the PostHog context
-        # middleware has nobody to identify. The user id is the one the state
-        # token was validated against — pass it explicitly or the connection
-        # event lands on an anonymous profile.
-        capture_event(
-            str(user_id),
-            AnalyticsEvents.INTEGRATION_CONNECTED,
-            {
-                "integration_id": integration_config.id,
-                "provider": integration_config.provider,
-            },
-        )
-
-        # Successful connection - redirect to frontend with success indicator
-        log.info(
-            f"{LogTag.OAUTH} Composio connection successful",
-            user_id=str(user_id),
-            integration_id=integration_config.id,
-            connected_account_id=connectedAccountId,
-        )
-        # Add success parameter and integration name to URL
-        separator = "?" if "?" not in redirect_path else "&"
-        redirect_url = f"{settings.FRONTEND_URL}/{redirect_path}{separator}oauth_success=true&integration={integration_config.id}"
-        return RedirectResponse(url=redirect_url)
-
     except Exception as e:
         log.error(
             f"{LogTag.OAUTH} Unexpected error in Composio callback",
-            connected_account_id=connectedAccountId,
+            connected_account_id=connected_account_id,
             error_type=type(e).__name__,
             error=str(e),
             exc_info=True,

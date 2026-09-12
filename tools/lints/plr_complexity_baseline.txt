@@ -42,10 +42,6 @@ apps/api/app/agents/tools/integrations/urgency_tool.py	PLR0915
 apps/api/app/agents/tools/research_tool.py	PLR0915
 apps/api/app/agents/tools/todo_tools.py	PLR0912
 apps/api/app/agents/workspace/paths.py	PLR0911
-apps/api/app/api/v1/endpoints/integrations/config.py	PLR0912
-apps/api/app/api/v1/endpoints/mcp.py	PLR0912
-apps/api/app/api/v1/endpoints/mcp.py	PLR0915
-apps/api/app/api/v1/endpoints/oauth.py	PLR0911
 apps/api/app/api/v1/endpoints/todos.py	PLR0912
 apps/api/app/api/v1/endpoints/todos.py	PLR0913
 apps/api/app/core/lazy_loader.py	PLR0912
