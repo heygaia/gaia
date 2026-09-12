@@ -14,7 +14,7 @@ import {
   TriggerSettingsCard,
 } from "../components/TriggerSettingsCard";
 import { TriggerToggleRow } from "../components/TriggerToggleRow";
-import { useTriggerOptions } from "../hooks/useTriggerOptions";
+import { isTriggerOption, useTriggerOptions } from "../hooks/useTriggerOptions";
 import type { TriggerSettingsProps } from "../registry";
 import type { TriggerConfigDraft } from "../types";
 
@@ -100,7 +100,7 @@ export function SlackSettings({
         <TriggerSelectToggle
           label="Channels"
           selectProps={{
-            options: channelOptions || [],
+            options: (channelOptions ?? []).filter(isTriggerOption),
             selectedValues: selectedValues,
             onSelectionChange: (selectedIds: string[]) => {
               updateTriggerData({ channel_ids: selectedIds });

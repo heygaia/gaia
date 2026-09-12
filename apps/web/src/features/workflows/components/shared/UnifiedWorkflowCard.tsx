@@ -358,7 +358,7 @@ function deriveWorkflowCardConfig(props: UnifiedWorkflowCardProps) {
     communityWorkflow?.system_workflow_key ??
     undefined;
   const sourceTriggerConfig =
-    propTriggerConfig ?? communityWorkflow?.trigger_config;
+    propTriggerConfig ?? communityWorkflow?.trigger_config ?? undefined;
 
   return {
     title,

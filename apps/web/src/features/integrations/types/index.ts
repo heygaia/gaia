@@ -32,12 +32,7 @@ export type IntegrationCategoryValue =
   | "capabilities"
   | "other";
 
-export interface IntegrationInstructions {
-  integrationId: string;
-  content: string;
-  updatedBy: "user" | "agent";
-  updatedAt: string | null;
-}
+export type IntegrationInstructions = Schema<"IntegrationInstructionsResponse">;
 
 export interface Integration {
   id: string;
@@ -106,26 +101,12 @@ export type IntegrationContent = Schema<"IntegrationContent">;
 
 export type CommunityIntegrationCreator = Schema<"CommunityIntegrationCreator">;
 
-export interface CommunityIntegration {
-  integrationId: string;
-  slug: string;
-  name: string;
-  description: string;
-  category: string;
-  iconUrl: string | null;
-  cloneCount: number;
-  toolCount: number;
-  tools: Array<{ name: string; description: string | null }>;
-  publishedAt: string | null;
-  creator: CommunityIntegrationCreator | null;
+/** A marketplace card; `source` is set client-side to tell native from community. */
+export type CommunityIntegration = Schema<"CommunityIntegrationItem"> & {
   source?: "platform" | "custom";
-}
+};
 
-export interface CommunityIntegrationsResponse {
-  integrations: CommunityIntegration[];
-  total: number;
-  hasMore: boolean;
-}
+export type CommunityIntegrationsResponse = Schema<"CommunityListResponse">;
 
 export interface PublicIntegrationResponse extends CommunityIntegration {
   mcpConfig?: {

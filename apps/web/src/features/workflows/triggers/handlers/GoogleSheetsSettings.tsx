@@ -121,9 +121,7 @@ export function GoogleSheetsSettings({
       isConnected &&
       !!triggerSlug &&
       spreadsheetIds.length > 0,
-    spreadsheetIds.length > 0
-      ? { parent_values: spreadsheetIds.join(",") }
-      : undefined,
+    spreadsheetIds.length > 0 ? spreadsheetIds : undefined,
   );
 
   // ============ DERIVED DATA ============

@@ -11,13 +11,21 @@ import { workflowApi } from "@/features/workflows/api/workflowApi";
 
 export type TriggerOption = Schema<"TriggerOption">;
 
+/** One entry of `/triggers/options`: a flat option, or a labelled group of them. */
+export type TriggerOptionEntry = TriggerOption | Schema<"TriggerOptionGroup">;
+
+/** Narrows an entry to a flat option; handlers that only know flat lists drop groups. */
+export const isTriggerOption = (
+  entry: TriggerOptionEntry,
+): entry is TriggerOption => "value" in entry;
+
 export const useTriggerOptions = (
   integrationId: string,
   triggerSlug: string,
   fieldName: string,
   enabled: boolean = true,
-  queryParams?: Record<string, string | number | boolean>,
-  options?: Partial<UseQueryOptions<TriggerOption[], Error>>,
+  parentValues?: string[],
+  options?: Partial<UseQueryOptions<TriggerOptionEntry[], Error>>,
 ) => {
   return useQuery({
     queryKey: [
@@ -25,14 +33,14 @@ export const useTriggerOptions = (
       integrationId,
       triggerSlug,
       fieldName,
-      queryParams,
+      parentValues,
     ],
     queryFn: async () => {
       const response = await workflowApi.getTriggerOptions(
         integrationId,
         triggerSlug,
         fieldName,
-        queryParams,
+        parentValues,
       );
       return response;
     },
