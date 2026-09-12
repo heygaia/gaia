@@ -187,6 +187,16 @@ def test_the_same_body_and_meta_hash_identically() -> None:
     assert first == second
 
 
+def test_the_digest_is_pinned_to_the_nul_separated_scheme() -> None:
+    """The exact digest: separates bodies (and meta) with a NUL byte, not a
+    different delimiter. Any change to the separator re-materializes every
+    folder once; pinning the value is how that is caught."""
+    assert (
+        hash_body_with_meta("c", "l", meta={"title": "t"})
+        == "b5420a409a6295d9c9f15861a977f692722e8bfb3299195cde23a303deb914cd"
+    )
+
+
 def test_a_metadata_only_edit_still_changes_the_body_hash() -> None:
     # Renaming a task touches neither canvas nor log; if meta is left out of the
     # digest the folder keeps the old title in meta.json indefinitely.
