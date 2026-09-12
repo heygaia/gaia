@@ -24,7 +24,7 @@ def test_enum_tags_contribute_their_value_not_their_repr() -> None:
 
 
 def test_runs_of_non_alphanumerics_collapse_to_one_underscore_lowercased() -> None:
-    route = _route("List-Todos (v2)", ["Todo  Items!"])
+    route = _route("-List-Todos (v2)-", ["Todo  Items!"])
     assert api_operation_id(route) == "todo_items_list_todos_v2"
 
 

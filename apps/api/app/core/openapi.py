@@ -13,7 +13,7 @@ from fastapi.routing import APIRoute
 
 def _slug(text: str | Enum) -> str:
     raw = text.value if isinstance(text, Enum) else text
-    return re.sub(r"[^a-z0-9]+", "_", str(raw).lower()).strip("_")
+    return "_".join(re.findall(r"[a-z0-9]+", str(raw).lower()))
 
 
 def api_operation_id(route: APIRoute) -> str:

@@ -105,6 +105,11 @@ class TestPostHogContextDoesNotSwallowExceptions:
 class TestRateLimitHandler:
     """slowapi's 429 answers before any route runs, so it must be the envelope too."""
 
+    def test_configure_middleware_registers_it_for_slowapi(self) -> None:
+        app = FastAPI()
+        configure_middleware(app)
+        assert app.exception_handlers[RateLimitExceeded] is rate_limit_handler
+
     @staticmethod
     def _app_that_is_rate_limited(retry_after: int | None) -> FastAPI:
         app = FastAPI()

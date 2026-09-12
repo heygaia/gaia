@@ -334,10 +334,13 @@ class TestCreateCalendarEvent:
         request = mock_proxy.call_args.args[0]
         assert request.method == "POST"
         assert request.endpoint.endswith("/calendars/primary/events")
-        body = request.body
-        assert body["summary"] == "Sync"
-        assert body["start"]["dateTime"] == "2025-01-15T10:00:00Z"
-        assert body["end"]["dateTime"] == "2025-01-15T11:00:00Z"
+        # exclude_none: Google rejects an explicit null, so unset fields are absent.
+        assert request.body == {
+            "summary": "Sync",
+            "description": "",
+            "start": {"dateTime": "2025-01-15T10:00:00Z", "timeZone": "UTC"},
+            "end": {"dateTime": "2025-01-15T11:00:00Z", "timeZone": "UTC"},
+        }
 
     async def test_all_day_event(self, mock_proxy):
         mock_proxy.return_value = {"id": "evt"}
