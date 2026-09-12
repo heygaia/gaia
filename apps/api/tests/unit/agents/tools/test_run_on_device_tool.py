@@ -9,6 +9,8 @@ readable message instead of raising.
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
+import pytest
+
 from app.agents.tools.integration_tool import _full_disk_access_hint, run_on_device
 from app.services.mcp.device_exec import DeviceExecError
 from tests.helpers import captured_wide_event
@@ -160,6 +162,22 @@ async def test_macos_permission_denied_desktop_device_points_at_the_app():
 async def test_missing_user_id_fails_loud():
     result = await _run(config={"configurable": {}})
     assert result == "Error: User ID not found in configuration."
+
+
+@pytest.mark.parametrize("stderr", ["ls: cannot access '/x': No such file", None])
+async def test_unrelated_stderr_gets_no_privacy_hint(stderr):
+    # The TCC hint fires ONLY on the privacy marker: any other stderr (or none)
+    # must not append it, and a missing stderr must not crash the check.
+    with (
+        patch(f"{_MODULE}.list_devices_service", AsyncMock(return_value=[_device("dev-1")])),
+        patch(
+            f"{_MODULE}.run_device_command",
+            AsyncMock(return_value=_result(exit_code=1, stderr=stderr)),
+        ),
+    ):
+        result = await _run(command="ls /x")
+
+    assert "Full Disk Access" not in result
 
 
 # --- exact composed output ---------------------------------------------------
