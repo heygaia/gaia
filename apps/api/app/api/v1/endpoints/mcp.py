@@ -235,6 +235,7 @@ async def mcp_oauth_callback(
         )
         return RedirectResponse(url=callback.failure(sanitized_error_code(e)))
 
+    log.audit("mcp integration connected via oauth", actor=str(user_id), resource=integration_id)
     log.set(outcome="connected")
     log.set_ns("mcp", success=True)
     log.info(

@@ -20,7 +20,9 @@ from shared.py.wide_events import log
 
 @dataclass(frozen=True)
 class ConnectionCompleted:
+    user_id: str
     integration_id: str
+    provider: str
 
 
 @dataclass(frozen=True)
@@ -104,12 +106,6 @@ async def complete_composio_connection(
         background_tasks=background_tasks,
         connected_account_id=connected_account_id,
     )
-    log.audit(
-        "integration connected",
-        actor=str(user_id),
-        resource=integration_config.id,
-        provider=integration_config.provider,
-    )
     # capture_event, not capture_context_event: Composio redirects the
     # browser here without a WorkOS session, so the PostHog context
     # middleware has nobody to identify. The user id is the one the state
@@ -129,4 +125,8 @@ async def complete_composio_connection(
         integration_id=integration_config.id,
         connected_account_id=connected_account_id,
     )
-    return ConnectionCompleted(integration_id=integration_config.id)
+    return ConnectionCompleted(
+        user_id=str(user_id),
+        integration_id=integration_config.id,
+        provider=integration_config.provider,
+    )

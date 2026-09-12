@@ -132,7 +132,6 @@ async def complete_oauth(
             error_type=type(clear_err).__name__,
         )
     await invalidate_user_integration_caches(user_id)
-    log.audit("mcp integration connected via oauth", actor=user_id, resource=integration_id)
     capture_context_event(
         AnalyticsEvents.INTEGRATION_CONNECTED,
         {"integration_id": integration_id, "connection_method": "oauth"},
