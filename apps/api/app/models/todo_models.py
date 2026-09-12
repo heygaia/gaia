@@ -50,7 +50,7 @@ class TodoBase(BaseModel):
     workflow_id: str | None = Field(default=None, description="ID of the associated workflow")
     vfs_path: str | None = Field(
         default=None,
-        description="VFS directory for tracked todos (canvas.md + log.md)",
+        description="VFS directory for tracked todos (canvas.md, activity.md, log.md)",
     )
     scheduled_at: datetime | None = Field(
         default=None,
@@ -229,9 +229,10 @@ class TodoListResponse(BaseModel):
 
 
 class TodoCanvasResponse(BaseModel):
-    """A tracked todo's canvas markdown. Empty string when the todo has no canvas."""
+    """A tracked todo's notes: canvas.md and activity.md. Empty strings when unset."""
 
     content: str
+    activity: str
 
 
 # Search

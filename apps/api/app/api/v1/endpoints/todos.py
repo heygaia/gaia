@@ -43,7 +43,6 @@ from app.models.todo_models import (
 )
 from app.models.user_models import AuthenticatedUser
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
-from app.services.todo_canvas_storage import read_canvas
 from app.services.todos.todo_service import ProjectService, TodoService
 from app.services.tracked_todo_service import tracked_todo_service
 from app.services.workflow.service import WorkflowService
@@ -360,12 +359,12 @@ async def get_todo(
 async def get_todo_canvas(
     todo_id: str, user: Annotated[AuthenticatedUser, Depends(get_current_user)]
 ) -> TodoCanvasResponse:
-    """Return the canvas markdown for a tracked todo."""
+    """Return a tracked todo's notes: canvas.md and activity.md."""
     log.set(user={"id": user["user_id"]}, todo={"operation": "get_canvas", "id": todo_id})
-    content = await read_canvas(todo_id, user["user_id"])
-    if content is None:
+    doc = await todo_repository.get(todo_id, user_id=user["user_id"])
+    if doc is None:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Todo not found")
-    return TodoCanvasResponse(content=content)
+    return TodoCanvasResponse(content=doc.canvas_content or "", activity=doc.activity_content or "")
 
 
 @router.put("/todos/{todo_id}", response_model=TodoResponse)
