@@ -34,7 +34,7 @@ from langgraph.store.base import GetOp, PutOp, SearchOp
 import pytest
 
 from app.constants.chroma import MAX_CONCURRENT_CHROMA_WRITES
-from app.db.chroma.chroma_store import ChromaStore
+from app.db.chroma.chroma_store import ChromaBatchWriteError, ChromaStore
 from app.db.chroma.chroma_tools_store import (
     _build_put_operations,
     _compute_tool_diff,
@@ -437,10 +437,12 @@ class TestChromaStoreSearch:
         assert len(results[0]) == 2
 
     async def test_partial_failure_in_gather_does_not_block_successful_puts(self, chroma_store):
-        """_apply_put_ops uses asyncio.gather(return_exceptions=True).
+        """_apply_put_ops uses asyncio.gather(return_exceptions=True), then
+        surfaces any failure as ChromaBatchWriteError.
 
-        If one upsert task raises, the others should still complete and their
-        items should be retrievable afterwards.
+        A partial failure must not silently swallow the batch: the successful
+        upsert still completes and stays retrievable, while the failure is
+        raised so an indexing pass can't "succeed" having written zero rows.
 
         ChromaStore uses __slots__, so we patch at the class level to avoid
         the 'read-only attribute' error from patch.object on the instance.
@@ -458,7 +460,10 @@ class TestChromaStoreSearch:
                 raise RuntimeError("Simulated upsert failure")
             return await original_upsert_item(self_arg, doc_id, op, collection)
 
-        with patch.object(type(chroma_store), "_upsert_item", selective_upsert):
+        with (
+            patch.object(type(chroma_store), "_upsert_item", selective_upsert),
+            pytest.raises(ChromaBatchWriteError),
+        ):
             await chroma_store.abatch(
                 [
                     PutOp(
@@ -474,7 +479,7 @@ class TestChromaStoreSearch:
                 ]
             )
 
-        # The successful item should be present.
+        # The successful item should be present despite the surfaced failure.
         ok_results = await chroma_store.abatch([GetOp(namespace=ns, key=success_key)])
         assert ok_results[0] is not None
         assert ok_results[0].key == success_key

@@ -21,7 +21,7 @@ lane without grepping the workflow first.
 | Standing dependency + pin gates | `audit.sh` | `pnpm`, `playwright-pin`, `alert-rule-tools`, `evlog` |
 | Static hygiene over the TS/JS surface | `checks.mjs` | `file-sizes`, `components-per-file`, `types-location`, `duplication`, `evlog-map-bots` |
 | Turning a run's output into a verdict | `report.py` | `regression-proof-select`, `regression-proof-verdict`, `annotations`, `step-outcomes` |
-| Publishing what a green master produced | `release.sh` | `resolve-image-tags`, `promote-latest`, `dispatch-cli-publish`, `disable-cf-builds` |
+| Publishing what a green master produced | `release.sh` | `resolve-image-tags`, `promote-latest`, `dispatch-cli-publish`, `connect-binaries`, `disable-cf-builds` |
 | The release-metadata guards | `release.mjs` | `validate-manifest`, `verify-cli` |
 | Shipping to production | `deploy.sh` | `plan`, `stack`, `verify`, `retag`, `notify` |
 
@@ -91,7 +91,11 @@ Two rules make it safe to have in the gate at all:
   acquirer.
 
 Wiring: `pytest.sh slice` takes `XDIST_N` tokens, `mutation.sh shard` takes its
-`nproc-2` budget (and bounds `MUTMUT_MAX_CHILDREN` to match), and the nx `build`
+slice of the `nproc-2` budget — divided by `SHARD_COUNT`, which the plan emits
+as the matrix's `shards` value, so four packed shards run side by side and a
+lone one gets the whole budget (and bounds `MUTMUT_MAX_CHILDREN` to match; each
+shard claiming all of `nproc-2` serialised them on the governor and timed the
+packed ones out) — and the nx `build`
 step takes `NX_PARALLEL` via `runner.sh with-slots N -- <cmd>` (the wrapper exists
 so a scriptless lane's step stays one command line). The lib lives in the repo
 checkout and is sourced like `log.sh`; no `setup.sh` re-run is needed on the box.

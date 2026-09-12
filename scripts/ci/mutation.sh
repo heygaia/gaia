@@ -136,6 +136,9 @@ include = [
             else f"shard {number}/{len(shards)} ({len(shard)} modules)"
         ),
         "group": json.dumps(shard, separators=(",", ":")),
+        # How many shards share the box's core budget (mutation.sh shard divides
+        # nproc-2 by it). A string, like every other matrix value here.
+        "shards": str(len(shards)),
     }
     for number, shard in enumerate(shards, start=1)
 ]
@@ -206,16 +209,22 @@ for entry in entries:
 
   # This shard's CPU appetite: mutmut forks one mutant worker per child, and its
   # own default is os.cpu_count() — 16 on the box, so four shards at max-parallel
-  # would spawn 64 workers on 16 threads. Bound each shard to nproc-2 (the same
-  # budget cmd_local uses; two cores left for the OS and docker) AND take that
-  # many host tokens for the run, so the mutation shards queue against the box's
-  # physical-core budget instead of thrashing it and the test-python/build lanes.
+  # would spawn 64 workers on 16 threads. The matrix's shards SHARE nproc-2 (the
+  # budget cmd_local uses whole; two cores left for the OS and docker): each takes
+  # its slice as host tokens, so four packed shards run side by side inside the
+  # box's physical-core budget and a lone shard still gets all of it. Each shard
+  # claiming the whole budget serialised them on the governor instead — three
+  # idled up to its 600 s fail-open, then ran oversubscribed anyway, and a
+  # 22-module shard timed out at 20 min having done six of mutation work.
   # Fail-open and a no-op off the self-hosted box; MUTMUT_MAX_CHILDREN honours an
   # explicit override for the local runner.
-  local NPROC BUDGET SLOTS
+  local NPROC BUDGET SLOTS SHARDS
   NPROC="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 2)"
   BUDGET="$(( NPROC > 3 ? NPROC - 2 : 1 ))"
+  SHARDS="${SHARD_COUNT:-1}"
+  BUDGET="$(( BUDGET / SHARDS ))"; [ "$BUDGET" -ge 1 ] || BUDGET=1
   export MUTMUT_MAX_CHILDREN="${MUTMUT_MAX_CHILDREN:-$BUDGET}"
+  echo "cpu budget: $MUTMUT_MAX_CHILDREN mutmut child(ren) — $NPROC threads, nproc-2 shared by $SHARDS shard(s)"
   # Acquire tokens for the workers we will ACTUALLY spawn, not the default
   # budget: an explicit MUTMUT_MAX_CHILDREN override (e.g. a local runner) can
   # exceed BUDGET, and taking only BUDGET tokens would let the shard run more
@@ -932,6 +941,7 @@ sys.exit(proc.returncode)
   EQUIVALENT=""
   UNCHANGED=""
   LOGGING=""
+  LINTED=""
   _phase "classify survivors"
   if [ -n "$SURVIVORS" ]; then
     while IFS= read -r line; do
@@ -956,6 +966,9 @@ sys.exit(proc.returncode)
         LOGGING:*)
           LOGGING="$LOGGING
   $line" ;;
+        LINTED:*)
+          LINTED="$LINTED
+  $line" ;;
         *)
           echo "MUTATION CLASSIFIER FAILED on: $line" >&2
           echo "  exit=$CLASSIFIER_RC verdict='$VERDICT'" >&2
@@ -975,7 +988,7 @@ sys.exit(proc.returncode)
         CHANGED:*)
           NO_TESTS_CHANGED="$NO_TESTS_CHANGED
   $line" ;;
-        UNCHANGED:*|LOGGING:*|EQUIV) ;;
+        UNCHANGED:*|LOGGING:*|LINTED:*|EQUIV) ;;
         *)
           echo "MUTATION CLASSIFIER FAILED on: $line" >&2
           echo "  exit=$CLASSIFIER_RC verdict='$VERDICT'" >&2
@@ -1015,6 +1028,18 @@ sys.exit(proc.returncode)
     echo "      and a case-ONLY rewrite of a header name in an x.headers.get()" >&2
     echo "      lookup, which every .headers mapping resolves case-insensitively" >&2
     echo "      (RFC 9110 5.1); asking for a DIFFERENT header still fails." >&2
+    echo "      Two more: an argument DELETED whose value is the callee's own" >&2
+    echo "      default (BrowserConfig(headless=True) builds a byte-identical" >&2
+    echo "      object without it) — re-VALUING that same argument is reported —" >&2
+    echo "      and a lookup default feeding urlparse(...).hostname, which is None" >&2
+    echo "      for every non-URL, so \"\", None and \"XXXX\" are indistinguishable;" >&2
+    echo "      mutating the lookup's KEY there is still reported." >&2
+    echo "      And one more: a cache write's model= dropped or None'd where the" >&2
+    echo "      value at that call site IS a construction of that same class —" >&2
+    echo "      redis_cache.set dumps through TypeAdapter(model or Any), which" >&2
+    echo "      emits identical bytes for an instance it does not have to coerce." >&2
+    echo "      A dict or a variable value there is coerced, and stays reported," >&2
+    echo "      as does any mutation of that call's key or TTL." >&2
     echo "$EQUIVALENT" >&2
   fi
   if [ -n "$LOGGING" ]; then
@@ -1027,6 +1052,16 @@ sys.exit(proc.returncode)
     echo "      only for mutants on lines the PR changed, and printed before the" >&2
     echo "      verdict so an exclusion is never invisible, including on a failing run:" >&2
     echo "$LOGGING" >&2
+  fi
+  if [ -n "$LINTED" ]; then
+    LINTED_COUNT=$(printf '%s\n' "$LINTED" | grep -c . || true)
+    echo "NOTE: $LINTED_COUNT mutant(s) excluded as lint-caught — the mutation rewrites the" >&2
+    echo "      mode=\"json\" literal of a model_dump under app/agents/tools/, which the" >&2
+    echo "      tool-dump-boundary lint (python-static lane of this same gate, issue" >&2
+    echo "      #917) rejects in every other spelling, so the change cannot reach master." >&2
+    echo "      NOT an equivalence claim — whether the bytes differ depends on the model —" >&2
+    echo "      and printed before the verdict so the exclusion is never invisible:" >&2
+    echo "$LINTED" >&2
   fi
   if [ -n "$REAL_SURVIVORS" ]; then
     echo "MUTATION FAILED — the suite would not notice if this code were wrong:" >&2

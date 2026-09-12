@@ -45,6 +45,7 @@ from app.models.payment_models import PlanType
 from app.models.stream_events import (
     MessageBoundaryPayload,
     ModelFallbackFrame,
+    ReasoningPayload,
     ToolOutputPayload,
 )
 from app.services.mcp.mcp_resource_fetcher import fetch_mcp_ui_resource
@@ -58,6 +59,7 @@ from app.utils.agent_utils import (
 from app.utils.general_utils import clip_text
 from app.utils.message_breaks import append_message_bubble
 from app.utils.multimodal import extract_text_content, has_media_blocks
+from app.utils.reasoning import extract_reasoning_delta
 from shared.py.wide_events import log
 
 
@@ -1197,6 +1199,21 @@ async def _stream_messages(
 
     # Stream AI response content (only from comms_agent to avoid duplication)
     if chunk and isinstance(chunk, (AIMessage, AIMessageChunk)):
+        # Comms thinking, streamed like the executor's. Without this the user
+        # watches a frozen UI whenever comms reasons before replying — a
+        # reasoning model can spend seconds and hundreds of tokens composing one
+        # sentence, and none of it was visible. No subagent_id: this is the root
+        # turn, which the client renders as a top-level thinking block.
+        if is_comms:
+            reasoning_delta = extract_reasoning_delta(chunk)
+            if reasoning_delta:
+                yield format_sse_data(
+                    {
+                        "reasoning": ReasoningPayload(content=reasoning_delta).model_dump(
+                            exclude_none=True
+                        )
+                    }
+                )
         message_id, held_text = _held_chunk_text(chunk, is_comms, state.tool_call_message_ids)
         if held_text:
             yield format_sse_response(held_text)

@@ -11,6 +11,7 @@ behind them against un-mocked production code; this file covers the branching,
 the ordering, and the failure paths that never reach a service at all.
 """
 
+from dataclasses import dataclass
 from typing import Any
 from unittest.mock import AsyncMock, patch
 
@@ -38,26 +39,38 @@ def section(section_id: str) -> Section:
     return next(s for s in SECTIONS if s.id == section_id)
 
 
+@dataclass(frozen=True)
+class Profile:
+    """The user-identity fields a section may read, grouped so ``ctx`` stays a
+    flat builder instead of spreading them across its own argument list."""
+
+    user_name: str | None = None
+    user_timezone: str | None = None
+    user_preferences: dict[str, Any] | None = None
+    writing_style: dict[str, Any] | None = None
+
+
+_DEFAULT_PROFILE = Profile()
+
+
 def ctx(
     tier: AgentTier = AgentTier.COMMS,
     *,
-    user_id: str | None = "user1",
-    user_name: str | None = None,
-    user_timezone: str | None = None,
-    user_preferences: dict[str, Any] | None = None,
-    writing_style: dict[str, Any] | None = None,
+    profile: Profile = _DEFAULT_PROFILE,
     subagent_id: str | None = None,
     integration_id: str | None = None,
+    source: str | None = None,
 ) -> SectionContext:
     return SectionContext(
         tier=tier,
-        user_id=user_id,
-        user_name=user_name,
-        user_timezone=user_timezone,
-        user_preferences=user_preferences,
-        writing_style=writing_style,
+        user_id="user1",
+        user_name=profile.user_name,
+        user_timezone=profile.user_timezone,
+        user_preferences=profile.user_preferences,
+        writing_style=profile.writing_style,
         subagent_id=subagent_id,
         integration_id=integration_id,
+        source=source,
     )
 
 
@@ -98,6 +111,10 @@ class TestTheTableIsWellFormed:
         before the conversation begins, and a reversed or unsorted result still
         satisfies a weaker check on a short list."""
         assert [s.id for s in sections_for(AgentTier.COMMS, PromptSlot.DYNAMIC_STABLE)] == [
+            # Which messaging app comms is replying in — first, so the identity
+            # details below read as detail under it. Comms-only: the worker tiers
+            # never speak to the user.
+            "platform_banner",
             "user_identity",
             "user_prefs",
             "integrations_manifest",
@@ -174,18 +191,96 @@ class TestTheTableIsWellFormed:
 
 
 @pytest.mark.unit
+class TestPlatformBanner:
+    """The model cannot read ``configurable``, so the channel has to be said out
+    loud or comms writes web-app prose into a Telegram bubble."""
+
+    @pytest.mark.parametrize(
+        ("source", "expected_name"),
+        [
+            ("telegram", "Telegram"),
+            ("whatsapp", "WhatsApp"),
+            ("discord", "Discord"),
+            ("slack", "Slack"),
+            ("imessage", "iMessage"),
+        ],
+    )
+    async def test_it_names_the_messaging_app(self, source: str, expected_name: str) -> None:
+        rendered = await section("platform_banner").fetch(ctx(source=source))
+
+        # Exact, not a substring match: mutmut mutates a string literal by
+        # padding it, so `"their Telegram chat" in rendered` stays true against
+        # a mutated banner and proves nothing about the rest of the sentence.
+        assert rendered == (
+            f"You are chatting with the user in their {expected_name} chat right now. "
+            f"Write like a normal {expected_name} message: plain text, short, no markdown "
+            "tables or rich cards."
+        )
+
+    @pytest.mark.parametrize("source", ["web", "mobile", "workflow_system"])
+    async def test_the_rich_clients_get_no_banner(self, source: str) -> None:
+        """Telling the web app to write plain short text would be actively wrong —
+        its whole point is the cards the bots cannot render."""
+        assert await section("platform_banner").fetch(ctx(source=source)) == ""
+
+    async def test_desktop_is_told_about_its_own_tools(self) -> None:
+        """Desktop tools are retrievable only on desktop, so the capability is
+        stated only on desktop — it used to sit in the STATIC prompt, where every
+        web/bot turn read it and reasoned about whether it applied."""
+        rendered = await section("platform_banner").fetch(ctx(source="desktop"))
+
+        # Exact, not a substring match: the tool names are the payload, and a
+        # substring assert stays true against a banner whose surrounding
+        # sentence has been mangled.
+        assert rendered == (
+            "You are on the user's desktop app, so desktop tools are available "
+            "(discover them with retrieve_tools): take_screenshot, "
+            "read_clipboard/write_clipboard, open_app, open_url, list_windows. "
+            "Use take_screenshot whenever the user references what they are "
+            "currently looking at."
+        )
+        # Not the messaging-voice banner: desktop renders rich UI like the web app.
+        assert "plain text, short" not in rendered
+
+    @pytest.mark.parametrize("source", ["web", "mobile", "telegram", "workflow_system"])
+    async def test_non_desktop_never_hears_about_desktop_tools(self, source: str) -> None:
+        """The bug this fixes: naming desktop tools off-desktop made the model
+        stop and reason about a capability it cannot use."""
+        assert "take_screenshot" not in await section("platform_banner").fetch(ctx(source=source))
+
+    @pytest.mark.parametrize("source", [None, "", "not_a_real_channel"])
+    async def test_an_unknown_channel_is_silent_rather_than_guessed(
+        self, source: str | None
+    ) -> None:
+        assert await section("platform_banner").fetch(ctx(source=source)) == ""
+
+    def test_only_comms_receives_it(self) -> None:
+        """The worker tiers never address the user, so channel voice is not theirs
+        to act on — and a section they do not need still costs a fetch."""
+        assert section("platform_banner").applies_to == frozenset({AgentTier.COMMS})
+
+    def test_it_is_stable_not_volatile(self) -> None:
+        """The channel is fixed for a conversation. In MEMORY_RECALL it would sit
+        outside the cacheable prefix for no reason."""
+        assert section("platform_banner").slot is PromptSlot.DYNAMIC_STABLE
+
+
+@pytest.mark.unit
 class TestUserIdentity:
     async def test_it_states_the_name_and_the_home_zone(self) -> None:
         rendered = await section("user_identity").fetch(
-            ctx(user_name="Ada", user_timezone="Asia/Kolkata")
+            ctx(profile=Profile(user_name="Ada", user_timezone="Asia/Kolkata"))
         )
 
         assert rendered == "User Name: Ada\nUser Timezone: Asia/Kolkata"
 
     async def test_a_missing_field_is_omitted_rather_than_rendered_blank(self) -> None:
-        assert await section("user_identity").fetch(ctx(user_name="Ada")) == "User Name: Ada"
         assert (
-            await section("user_identity").fetch(ctx(user_timezone="Asia/Kolkata"))
+            await section("user_identity").fetch(ctx(profile=Profile(user_name="Ada")))
+            == "User Name: Ada"
+        )
+        assert (
+            await section("user_identity").fetch(ctx(profile=Profile(user_timezone="Asia/Kolkata")))
             == "User Timezone: Asia/Kolkata"
         )
 
@@ -196,7 +291,7 @@ class TestUserIdentity:
         """Only the static home zone belongs here. A minute-ticking byte in this
         block would reset the cache boundary on every call."""
         rendered = await section("user_identity").fetch(
-            ctx(user_name="Ada", user_timezone="Asia/Kolkata")
+            ctx(profile=Profile(user_name="Ada", user_timezone="Asia/Kolkata"))
         )
 
         assert ":" not in rendered.replace("User Name:", "").replace("User Timezone:", "")
@@ -209,7 +304,9 @@ class TestUserPreferences:
             "app.agents.context.sections.format_user_preferences_for_agent",
             return_value="- Prefers short answers",
         ):
-            rendered = await section("user_prefs").fetch(ctx(user_preferences={"tone": "short"}))
+            rendered = await section("user_prefs").fetch(
+                ctx(profile=Profile(user_preferences={"tone": "short"}))
+            )
 
         assert rendered == "User Preferences:\n- Prefers short answers"
 
@@ -218,7 +315,9 @@ class TestUserPreferences:
             "app.agents.context.sections.format_user_preferences_for_agent",
             return_value="- Writes in lowercase",
         ):
-            rendered = await section("user_prefs").fetch(ctx(writing_style={"case": "lower"}))
+            rendered = await section("user_prefs").fetch(
+                ctx(profile=Profile(writing_style={"case": "lower"}))
+            )
 
         assert rendered == "User Preferences:\n- Writes in lowercase"
 
@@ -230,7 +329,11 @@ class TestUserPreferences:
             "app.agents.context.sections.format_user_preferences_for_agent", return_value="- x"
         ) as formatter:
             await section("user_prefs").fetch(
-                ctx(user_preferences={"tone": "formal"}, writing_style={"case": "lower"})
+                ctx(
+                    profile=Profile(
+                        user_preferences={"tone": "formal"}, writing_style={"case": "lower"}
+                    )
+                )
             )
 
         formatter.assert_called_once_with({"tone": "formal"}, writing_style={"case": "lower"})
@@ -241,7 +344,7 @@ class TestUserPreferences:
         with patch(
             "app.agents.context.sections.format_user_preferences_for_agent", return_value="- x"
         ) as formatter:
-            await section("user_prefs").fetch(ctx(writing_style={"case": "lower"}))
+            await section("user_prefs").fetch(ctx(profile=Profile(writing_style={"case": "lower"})))
 
         formatter.assert_called_once_with({}, writing_style={"case": "lower"})
 
@@ -254,7 +357,12 @@ class TestUserPreferences:
         with patch(
             "app.agents.context.sections.format_user_preferences_for_agent", return_value=""
         ):
-            assert await section("user_prefs").fetch(ctx(user_preferences={"tone": "short"})) == ""
+            assert (
+                await section("user_prefs").fetch(
+                    ctx(profile=Profile(user_preferences={"tone": "short"}))
+                )
+                == ""
+            )
 
 
 @pytest.mark.unit

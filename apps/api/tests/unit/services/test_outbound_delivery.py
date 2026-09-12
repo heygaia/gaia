@@ -301,6 +301,7 @@ class TestPublishOutboundFile:
         assert envelope["attachment"] == {
             "conversation_id": "conv-1",
             "path": "artifacts/report.pdf",
+            "url": None,
             "filename": "report.pdf",
             "content_type": "application/pdf",
             "caption": "here you go",
@@ -351,9 +352,10 @@ class TestNotifyAccountLinked:
         assert "Your WhatsApp account is now linked to GAIA." in envelope["text"]
         assert "Your Whatsapp account" not in envelope["text"]
 
-    async def test_imessage_fallback_uses_capitalized_name(self) -> None:
-        """iMessage has no entry in PLATFORM_DISPLAY_NAMES — the fallback
-        ``source.value.capitalize()`` must be used rather than ``None``."""
+    async def test_imessage_uses_cased_display_name(self) -> None:
+        """iMessage's brand casing is ``iMessage``, not the ``.capitalize()``
+        fallback ``Imessage`` — ``ConversationSource.display_name`` names it
+        explicitly, so the confirmation copy must use the cased form."""
         publisher = AsyncMock()
         with (
             patch.object(
@@ -370,7 +372,8 @@ class TestNotifyAccountLinked:
 
         assert result is od.OutboundResult.PUBLISHED
         envelope = json.loads(publisher.publish_outbound.await_args.args[1])
-        assert "Your Imessage account is now linked to GAIA." in envelope["text"]
+        assert "Your iMessage account is now linked to GAIA." in envelope["text"]
+        assert "Your Imessage account" not in envelope["text"]
         assert "Your None account" not in envelope["text"]
 
     async def test_a_non_bot_platform_is_skipped(self) -> None:

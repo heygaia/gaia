@@ -1,5 +1,6 @@
 """Shared fixtures for unit tests."""
 
+from collections.abc import Iterator
 from unittest.mock import AsyncMock, MagicMock, patch
 
 from langchain_core.language_models.fake_chat_models import (
@@ -7,8 +8,24 @@ from langchain_core.language_models.fake_chat_models import (
 )
 import pytest
 
+from app.agents.core.background import session as background_session
 from tests.factories import make_config, make_state, make_user
 from tests.helpers import create_fake_llm, create_fake_llm_with_tool_calls
+
+
+@pytest.fixture(autouse=True)
+def _fresh_background_session_registry() -> Iterator[None]:
+    """Stream sessions and abandoned marks are process-global; none may leak between tests.
+
+    Both stores are reset together: clearing only ``_sessions`` left ``_abandoned``
+    behind, so whether a later test's delivery was skipped depended on whether a
+    ``create_session`` for the same stream id happened to run in between.
+    """
+    background_session._sessions.clear()
+    background_session._abandoned.clear()
+    yield
+    background_session._sessions.clear()
+    background_session._abandoned.clear()
 
 
 @pytest.fixture

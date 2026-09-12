@@ -184,6 +184,7 @@ class TestFeatureLimits:
         "integration_publish",
         "integration_clone",
         "imessage_registration",
+        "browser_task",
         "account_platform_connect",
     ]
 
