@@ -99,6 +99,17 @@ export function buildConfigFromFlags(opts: AddOptions): ServerConfig {
     if (!opts.url) throw new Error("--url is required for --type url");
     assertLoopbackUrl(opts.url);
     const headers = parsePairs(opts.header, ":", "--header");
+    if (
+      Object.keys(headers).length > 0 &&
+      new URL(opts.url).protocol === "http:"
+    ) {
+      // No prompt possible here: warn loudly instead of silently persisting
+      // secrets that travel unencrypted (the interactive wizard confirms).
+      console.warn(
+        "warning: --header values travel unencrypted over local HTTP — " +
+          "prefer an https: URL for credential headers",
+      );
+    }
     return {
       type: "url",
       key: keyFromName(opts.name),

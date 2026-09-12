@@ -1,6 +1,7 @@
 """Unit tests for warm_device_servers — the warm-connect that makes a device's
 MCP tools discoverable after registration."""
 
+import asyncio
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, patch
 
@@ -143,3 +144,34 @@ async def test_server_keys_filter_limits_the_warmup():
 
     recorded = [c.args[0] for c in record.await_args_list]
     assert recorded == ["int-b"]
+
+
+@pytest.mark.asyncio
+async def test_servers_warm_concurrently_not_serially():
+    # A's connect blocks until B's connect has STARTED: only overlapping
+    # execution lets both succeed. A serial loop would time A out and report
+    # warmed=1 failed=1.
+    b_started = asyncio.Event()
+
+    async def connect(integration_id: str):
+        if integration_id == "int-a":
+            await asyncio.wait_for(b_started.wait(), 5)
+        else:
+            b_started.set()
+        return []
+
+    device = SimpleNamespace(user_id="u1")
+    client = AsyncMock()
+    client.ensure_connected = AsyncMock(side_effect=connect)
+    with (
+        patch(f"{_MODULE}.get_active_device", AsyncMock(return_value=device)),
+        patch(
+            f"{_MODULE}.list_device_servers",
+            AsyncMock(return_value={"dev": [_server("int-a", "a"), _server("int-b", "b")]}),
+        ),
+        patch(f"{_MODULE}.get_mcp_client", AsyncMock(return_value=client)),
+        patch(f"{_MODULE}.record_device_server_sync", new=AsyncMock()),
+    ):
+        result = await warm_device_servers({}, "dev")
+
+    assert result == "warmed=2 failed=0"

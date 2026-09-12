@@ -209,6 +209,26 @@ async def test_duplicate_not_connected_shows_connect_card(seams):
     seams.mcp_client.probe_connection.assert_not_awaited()
 
 
+async def test_trailing_slash_url_probed_and_stored_verbatim(seams):
+    # Normalization is for dedup only: the probe and the persisted record keep
+    # the exact path the vendor docs gave — some servers distinguish /mcp from
+    # /mcp/ — while the idempotency lookup uses the normalized form.
+    raw = "https://mcp.sentry.dev/mcp/"
+    seams.mcp_client.probe_connection.return_value = {}
+    seams.create_connect.return_value = (
+        _integration(),
+        {"status": "connected", "tools_count": 0},
+    )
+
+    await _run(server_url=raw)
+
+    seams.mcp_client.probe_connection.assert_awaited_once_with(raw)
+    seams.repo.find_custom_by_server_url.assert_awaited_once_with(
+        "https://mcp.sentry.dev/mcp", "u1"
+    )
+    assert seams.create_connect.await_args.args[1].server_url == raw
+
+
 # Distinct id/name/short_name so each match isolates exactly one branch of the
 # `id or name or short_name` test — no single field can stand in for another.
 _CATALOG = [SimpleNamespace(id="gh-id", name="GitHub Name", short_name="ghs")]

@@ -171,6 +171,22 @@ async function buildUrlConfig(): Promise<ServerConfig> {
   // Fail before naming: a url server must point at this machine.
   assertLoopbackUrl(url);
   const headers = await collectHeaders();
+  if (Object.keys(headers).length > 0 && new URL(url).protocol === "http:") {
+    // Loopback isolates the traffic from the network but not from other
+    // local processes — sending secrets over it must be an explicit choice.
+    console.info(
+      "\nHeads up: these headers travel unencrypted over local HTTP. " +
+        "Anyone else on this machine (or the receiving server's logs) can read them.",
+    );
+    if (
+      !(await confirm(
+        "Send these headers over unencrypted HTTP anyway?",
+        false,
+      ))
+    ) {
+      throw new Error("aborted — use an https: URL or drop the headers");
+    }
+  }
   const { name, key } = await askName(suggestNameFromUrl(url));
   return {
     type: "url",

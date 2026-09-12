@@ -21,6 +21,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.constants.device_bridge import (
     DEVICE_HEARTBEAT_INTERVAL_SECONDS,
     DEVICE_HEARTBEAT_TIMEOUT_SECONDS,
+    DEVICE_RELAY_READY_TIMEOUT_SECONDS,
     FRAME_EXEC_EXIT,
     FRAME_EXEC_STDERR,
     FRAME_EXEC_STDOUT,
@@ -94,6 +95,25 @@ async def device_ws(websocket: WebSocket) -> None:
     # that immediately precedes every dial; presence lives in Redis, so no
     # second Postgres write here.
     await mark_online(device_id)
+
+    # The down relay must hold its subscription before any worker is asked to
+    # publish at this device: Redis drops pub/sub frames with no subscriber,
+    # which surfaces as a warmup open-timeout and leaves tools undiscoverable
+    # until the next reconnect. Bounded — a socket must never fail on warmup.
+    subscribed = asyncio.Event()
+    state = {"last_recv": time.monotonic()}
+    tasks = [
+        asyncio.create_task(_down_relay(websocket, device_id, subscribed)),
+        asyncio.create_task(_heartbeat(websocket, device_id, state)),
+    ]
+    try:
+        async with asyncio.timeout(DEVICE_RELAY_READY_TIMEOUT_SECONDS):
+            await subscribed.wait()
+    except TimeoutError:
+        log.warning(
+            f"{LogTag.API} Down relay not subscribed before warmup",
+            device_id=device_id,
+        )
     # A device coming online re-drives warm-connect for all its servers, so tools
     # a registration couldn't index (Redis down, or the device was offline) get
     # indexed now. Best-effort — a socket must never fail on the warmup enqueue.
@@ -107,11 +127,6 @@ async def device_ws(websocket: WebSocket) -> None:
             error_type=type(e).__name__,
         )
 
-    state = {"last_recv": time.monotonic()}
-    tasks = [
-        asyncio.create_task(_down_relay(websocket, device_id)),
-        asyncio.create_task(_heartbeat(websocket, device_id, state)),
-    ]
     try:
         await _receive_loop(websocket, device_id, user_id, state)
     # evlog-map-disable-next-line error-handling -- normal websocket disconnect; info-level is correct
@@ -197,12 +212,22 @@ async def _receive_loop(
         # Unknown frame types are informational; ignore quietly.
 
 
-async def _down_relay(websocket: WebSocket, device_id: str) -> None:
-    """Subscribe to this device's down channel and write frames to the socket."""
+async def _down_relay(
+    websocket: WebSocket, device_id: str, subscribed: asyncio.Event | None = None
+) -> None:
+    """Subscribe to this device's down channel and write frames to the socket.
+
+    Signals ``subscribed`` once the subscription holds, so the connect handler
+    can enqueue warmup only after a worker's open frame has someone to land on.
+    """
     if not redis_cache.redis:
+        if subscribed is not None:
+            subscribed.set()
         return
     pubsub = redis_cache.redis.pubsub()
     await pubsub.subscribe(down_channel(device_id))
+    if subscribed is not None:
+        subscribed.set()
     try:
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)

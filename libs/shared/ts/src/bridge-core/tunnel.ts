@@ -6,13 +6,8 @@
 import { randomInt } from "node:crypto";
 import type { JSONRPCMessage } from "@modelcontextprotocol/sdk/types.js";
 import WebSocket from "ws";
-import { ApiError, exchangeToken } from "./api.js";
-import {
-  loadConfig,
-  loadCredentials,
-  removeServer,
-  saveCredentials,
-} from "./config.js";
+import { ApiError } from "./api.js";
+import { loadConfig, removeServer } from "./config.js";
 import type { Credentials } from "./config.types.js";
 import {
   FRAME,
@@ -22,6 +17,7 @@ import {
 } from "./constants.js";
 import { bridgeLogger } from "./env.js";
 import { runDeviceExec } from "./exec.js";
+import { rotateCredentials } from "./rotation-lock.js";
 import { openServerSession, type ServerSession } from "./servers.js";
 
 interface Frame {
@@ -85,21 +81,15 @@ export class Tunnel {
   }
 
   private async connectOnce(): Promise<void> {
-    // Reload the refresh token from disk before every exchange. Another process
-    // (e.g. `gaia bridge add`) may have rotated it; using our in-memory copy would
-    // present a stale token and trip reuse-detection, revoking the device.
-    const stored = loadCredentials();
-    if (!stored?.refreshToken) {
-      throw new ApiError("not paired — run: gaia bridge login", 401);
-    }
-    const token = await exchangeToken(stored.apiUrl, stored.refreshToken);
-    // Persist the rotated refresh credential immediately — the old one is dead.
-    this.creds = { ...stored, refreshToken: token.refresh_token };
-    saveCredentials(this.creds);
+    // Rotation is an interprocess-mutexed triple (load → exchange → save): a
+    // concurrent `gaia bridge add` in another process must not exchange the
+    // same refresh token, or the loser trips reuse-detection and revokes us.
+    const { creds, accessToken } = await rotateCredentials();
+    this.creds = creds;
 
     const wsUrl = `${this.creds.apiUrl.replace(/^http/, "ws")}/api/v1/ws/device`;
     const ws = new WebSocket(wsUrl, {
-      headers: { authorization: `Bearer ${token.access_token}` },
+      headers: { authorization: `Bearer ${accessToken}` },
     });
     this.ws = ws;
 

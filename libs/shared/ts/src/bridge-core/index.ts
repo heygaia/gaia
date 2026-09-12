@@ -69,6 +69,12 @@ export {
   deregisterConfiguredServer,
   registerConfiguredServers,
 } from "./register.js";
+export { rotateCredentials, withRotationLock } from "./rotation-lock.js";
 export type { ServerSession } from "./servers.js";
-export { assertLoopbackUrl, openServerSession, testServer } from "./servers.js";
+export {
+  assertLoopbackUrl,
+  guardedFetch,
+  openServerSession,
+  testServer,
+} from "./servers.js";
 export { Tunnel } from "./tunnel.js";

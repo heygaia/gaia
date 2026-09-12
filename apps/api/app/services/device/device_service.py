@@ -10,6 +10,7 @@ each time) for short-lived connect JWTs.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import secrets
 from urllib.parse import quote
 import uuid
@@ -24,6 +25,8 @@ from app.constants.device_bridge import (
     DEVICE_REFRESH_RETRY_PREFIX,
     DEVICE_TRANSPORT,
     DEVICE_USER_CODE_PREFIX,
+    DEVICE_WARMUP_COALESCE_PREFIX,
+    DEVICE_WARMUP_COALESCE_SECONDS,
     FRAME_SERVER_REMOVE,
     MAX_ACTIVE_DEVICES_PER_USER,
     PAIRING_POLL_INTERVAL_SECONDS,
@@ -37,6 +40,7 @@ from app.constants.log_tags import LogTag
 from app.db.postgresql import get_db_session
 from app.db.redis import get_and_delete_cache, get_cache, redis_cache, set_cache
 from app.db.repositories.integrations import integration_repository
+from app.helpers.integration_helpers import dedup_server_url_key
 from app.helpers.mcp_helpers import get_frontend_url
 from app.models.device import (
     Device,
@@ -438,6 +442,9 @@ async def _create_server_integration(
     user_id: str, device_id: str, server_key: str, display_name: str, integration_id: str
 ) -> None:
     device_name = await _device_display_name(device_id)
+    # Synthetic device:// URL, so the dedup key is total — but compute it through
+    # the same canonical helper as every other custom integration.
+    device_url = _device_server_url(device_id, server_key)
     integration = Integration(
         integration_id=integration_id,
         name=display_name,
@@ -458,7 +465,8 @@ async def _create_server_integration(
         display_priority=0,
         is_featured=False,
         mcp_config=MCPConfig(
-            server_url=_device_server_url(device_id, server_key),
+            server_url=device_url,
+            server_url_normalized=dedup_server_url_key(device_url),
             requires_auth=False,
             auth_type="none",
             transport=DEVICE_TRANSPORT,
@@ -624,9 +632,31 @@ async def record_device_server_sync(integration_id: str, *, error: str | None = 
 async def enqueue_device_server_warmup(
     device_id: str, server_keys: list[str] | None = None
 ) -> None:
-    """Queue a background warm-connect so a device's MCP tools become discoverable."""
+    """Queue a background warm-connect so a device's MCP tools become discoverable.
+
+    Bursts collapse into one job: N registrations plus the online transition for
+    one server share a deterministic ARQ ``_job_id``. Repeats of identical work
+    past the job record's life (ARQ frees it on completion — ``keep_result=0``)
+    are skipped by a short-TTL SETNX marker instead. Best-effort like every
+    other enqueue on this path: a Redis outage raises, and the caller falls back
+    to the next connect re-driving the warmup.
+    """
+    scope = ",".join(sorted(server_keys)) if server_keys else "all"
+    work_key = hashlib.sha256(scope.encode()).hexdigest()
+    marker = f"{DEVICE_WARMUP_COALESCE_PREFIX}{device_id}:{work_key}"
+    claimed = await redis_cache.client.set(
+        marker, "1", nx=True, ex=DEVICE_WARMUP_COALESCE_SECONDS
+    )
+    if not claimed:
+        return
     pool = await RedisPoolManager.get_pool()
-    await enqueue_worker_job(pool, "warm_device_servers", device_id, server_keys)
+    await enqueue_worker_job(
+        pool,
+        "warm_device_servers",
+        device_id,
+        server_keys,
+        _job_id=f"device-warmup:{device_id}:{work_key}",
+    )
 
 
 async def _device_server_integration_ids(session: AsyncSession, device_id: str) -> list[str]:

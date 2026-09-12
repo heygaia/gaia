@@ -5,6 +5,7 @@ from typing import Any, cast
 import uuid
 
 from mcp_use.client.exceptions import OAuthAuthenticationError
+from pymongo.errors import DuplicateKeyError
 from sqlalchemy import delete
 
 from app.constants.device_bridge import DEVICE_CATEGORY
@@ -15,6 +16,7 @@ from app.db.postgresql import get_db_session
 from app.db.redis import delete_cache, delete_cache_by_pattern
 from app.db.repositories.integrations import integration_repository
 from app.db.repositories.user_integrations import user_integration_repository
+from app.helpers.integration_helpers import dedup_server_url_key
 from app.helpers.mcp_helpers import get_api_base_url
 from app.models.db_oauth import MCPCredential
 from app.models.integration_models import (
@@ -46,7 +48,13 @@ async def create_custom_integration(
     request: CreateCustomIntegrationRequest,
     icon_url: str | None = None,
 ) -> Integration:
-    """Create a custom MCP integration."""
+    """Create a custom MCP integration.
+
+    The stored ``server_url`` keeps the exact user-provided path (some servers
+    distinguish ``/mcp`` from ``/mcp/``); dedup runs on the normalized key. Two
+    concurrent creates for the same URL both pass the caller's pre-check — the
+    per-creator unique index rejects the loser, which then returns the winner.
+    """
     log.set(integration={"provider": request.name, "action": "create_custom_integration"})
     # uuid4 collision probability is negligible (~10^-36); no orphan check needed.
     integration_id = str(uuid.uuid4())
@@ -65,6 +73,7 @@ async def create_custom_integration(
         is_featured=False,
         mcp_config=MCPConfig(
             server_url=request.server_url,
+            server_url_normalized=dedup_server_url_key(request.server_url),
             requires_auth=request.requires_auth,
             auth_type=request.auth_type,
         ),
@@ -73,7 +82,20 @@ async def create_custom_integration(
         clone_count=0,
     )
 
-    await integration_repository.create(integration)
+    try:
+        await integration_repository.create(integration)
+    except DuplicateKeyError:
+        winner = await integration_repository.find_custom_by_server_url(
+            request.server_url, user_id
+        )
+        if winner is None:
+            raise
+        log.info(
+            f"{LogTag.INTEGRATION} Custom integration create raced; reusing winner",
+            user_id=user_id,
+            integration_id=winner.integration_id,
+        )
+        return winner
 
     try:
         await add_user_integration(user_id, integration_id, initial_status="created")
@@ -104,6 +126,9 @@ async def _build_updated_mcp_config(
     if request.server_url is not None:
         old_server_url = doc.mcp_config.server_url if doc.mcp_config else ""
         config_changes["server_url"] = request.server_url
+        # The dedup key tracks the URL: a path edit must re-key, or the row
+        # keeps matching (and colliding on) its old address.
+        config_changes["server_url_normalized"] = dedup_server_url_key(request.server_url)
 
         # Clean up old ChromaDB namespace when server_url changes
         if old_server_url and old_server_url != request.server_url:

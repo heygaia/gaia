@@ -46,6 +46,23 @@ def normalize_server_url(url: str) -> str:
     )
 
 
+def dedup_server_url_key(url: str | None) -> str | None:
+    """Normalized dedup key for a custom MCP server URL, or None when unusable.
+
+    None (rather than raising) means "no dedup protection": the caller still
+    persists and connects with the original URL, which fails loudly on its own
+    if the URL is genuinely bad. Empty keys are also None — a blank key would
+    collide across every unusable URL under the per-creator unique index.
+    """
+    if not url or not url.strip():
+        return None
+    try:
+        key = normalize_server_url(url)
+    except ValueError:
+        return None
+    return key or None
+
+
 def build_search_patterns(query: str) -> list[str]:
     """Split a query into individual lowercase words for flexible matching.
 

@@ -78,6 +78,19 @@ DEVICE_HEARTBEAT_TIMEOUT_SECONDS: Final[float] = 75.0
 # How long a worker waits for the device to open a proxied MCP session before
 # giving up (the local server may be slow to spawn / the device offline).
 MCP_SESSION_OPEN_TIMEOUT_SECONDS: Final[float] = 30.0
+
+# --- Device server warmup coalescing ---
+# Repeat warmups for identical work inside this window collapse instead of
+# queueing: a registration storm plus the online transition otherwise each
+# enqueue an overlapping job, and their unconditional status writes race. A
+# failed warmup suppresses retry for at most this long; the next connect
+# re-drives it, so recovery is bounded by reconnects, not by this TTL.
+DEVICE_WARMUP_COALESCE_SECONDS: Final[int] = 60
+DEVICE_WARMUP_COALESCE_PREFIX: Final[str] = "device:warmup:"
+# How long the online WS handler waits for the down-relay subscription before
+# enqueueing warmup anyway. Subscribe is one Redis RTT; the socket must never
+# fail if it stalls, but an unsubscribed relay drops the worker's open frame.
+DEVICE_RELAY_READY_TIMEOUT_SECONDS: Final[float] = 5.0
 # Per JSON-RPC round trip through the tunnel (tool call, list_tools, initialize).
 MCP_SESSION_CALL_TIMEOUT_SECONDS: Final[float] = 120.0
 

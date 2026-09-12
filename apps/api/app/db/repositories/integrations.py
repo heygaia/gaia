@@ -12,7 +12,7 @@ import re
 
 from app.constants.cache import REPO_GLOBAL_SCOPE
 from app.db.repositories.base import MongoRepository
-from app.helpers.integration_helpers import generate_integration_slug
+from app.helpers.integration_helpers import dedup_server_url_key, generate_integration_slug
 from app.models.integration_models import (
     Integration,
     IntegrationTool,
@@ -79,13 +79,23 @@ class IntegrationsRepository(MongoRepository[Integration, IntegrationUpdate]):
     async def find_custom_by_server_url(
         self, server_url: str, created_by: str
     ) -> Integration | None:
-        """A user's custom integration at this exact (normalized) server URL.
+        """A user's custom integration at this server URL (normalization-insensitive).
 
-        The idempotency check that stops the agent re-adding the same MCP server on
-        a retry. Callers must pass an already-normalized URL (helpers.normalize_server_url).
+        Matches on the stored ``mcp_config.server_url_normalized`` dedup key, so
+        ``https://host/mcp/`` finds a server stored as ``https://host/mcp`` (and
+        vice versa) regardless of which creation path wrote the row. The input is
+        normalized here — callers pass the URL as they have it. An unusable URL
+        matches nothing (rather than raising out of a finder).
         """
+        key = dedup_server_url_key(server_url)
+        if key is None:
+            return None
         return await self._find_one(
-            {"source": "custom", "created_by": created_by, "mcp_config.server_url": server_url}
+            {
+                "source": "custom",
+                "created_by": created_by,
+                "mcp_config.server_url_normalized": key,
+            }
         )
 
     async def delete_custom(self, integration_id: str, created_by: str) -> bool:

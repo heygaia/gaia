@@ -415,7 +415,7 @@ async def _reuse_existing_custom_server(existing: Integration, user_id: str) -> 
 
 
 async def _create_and_report_custom_server(
-    user_id: str, name: str, normalized_url: str, probe: McpProbeResult, mcp_client: MCPClient
+    user_id: str, name: str, server_url: str, probe: McpProbeResult, mcp_client: MCPClient
 ) -> str:
     """Create the custom integration from a successful probe and report the outcome.
 
@@ -432,7 +432,7 @@ async def _create_and_report_custom_server(
             user_id,
             CreateCustomIntegrationRequest(
                 name=name,
-                server_url=normalized_url,
+                server_url=server_url,
                 requires_auth=True,
                 auth_type="bearer",
             ),
@@ -446,7 +446,7 @@ async def _create_and_report_custom_server(
         user_id,
         CreateCustomIntegrationRequest(
             name=name,
-            server_url=normalized_url,
+            server_url=server_url,
             requires_auth=requires_auth,
             auth_type=resolved_type,
         ),
@@ -495,14 +495,15 @@ async def add_custom_mcp_server(
         if existing:
             return await _reuse_existing_custom_server(existing, user_id)
 
-        # Probe once to classify auth. A bearer server needs a secret we must never
-        # take through chat, so it is created and handed to the secure UI card.
-        probe = await mcp_client.probe_connection(normalized_url)
+        # Probe and persist the exact user-provided URL: normalization is for
+        # dedup only, and some servers distinguish /mcp from /mcp/.
+        original_url = server_url.strip()
+        probe = await mcp_client.probe_connection(original_url)
         if probe.get("error"):
             return f"❌ Couldn't reach that MCP server: {probe['error']}"
 
         return await _create_and_report_custom_server(
-            user_id, name, normalized_url, probe, mcp_client
+            user_id, name, original_url, probe, mcp_client
         )
     except Exception as e:
         log.error(f"{LogTag.TOOL} Error adding custom MCP server", error_type=type(e).__name__)

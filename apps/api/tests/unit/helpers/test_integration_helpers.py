@@ -2,7 +2,11 @@
 
 import pytest
 
-from app.helpers.integration_helpers import generate_integration_slug, normalize_server_url
+from app.helpers.integration_helpers import (
+    dedup_server_url_key,
+    generate_integration_slug,
+    normalize_server_url,
+)
 
 
 @pytest.mark.parametrize(
@@ -31,6 +35,25 @@ def test_normalize_server_url_dedupes_case_and_slash_variants():
     a = normalize_server_url("https://MCP.Sentry.dev/mcp/")
     b = normalize_server_url("https://mcp.sentry.dev/mcp")
     assert a == b
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("https://mcp.sentry.dev/mcp", "https://mcp.sentry.dev/mcp"),
+        ("https://mcp.sentry.dev/mcp/", "https://mcp.sentry.dev/mcp"),
+        ("HTTPS://MCP.Sentry.DEV/McP", "https://mcp.sentry.dev/McP"),
+    ],
+)
+def test_dedup_server_url_key_matches_normalize(raw, expected):
+    assert dedup_server_url_key(raw) == expected
+
+
+@pytest.mark.parametrize("raw", [None, "", "   "])
+def test_dedup_server_url_key_blank_is_none(raw):
+    """Blank keys are None, never "": an empty key would collide across every
+    unusable URL under the per-creator unique index."""
+    assert dedup_server_url_key(raw) is None
 
 
 @pytest.mark.parametrize(

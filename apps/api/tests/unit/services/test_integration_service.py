@@ -19,6 +19,7 @@ from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
 
+from pymongo.errors import DuplicateKeyError
 import pytest
 
 from app.agents.core.integration_capabilities import (
@@ -1353,6 +1354,65 @@ class TestCreateCustomIntegration:
         result = await create_custom_integration(USER_ID, request)
         assert result.is_public is True
 
+    @patch(
+        "app.services.integrations.custom_crud.add_user_integration",
+        new_callable=AsyncMock,
+    )
+    @patch("app.services.integrations.custom_crud.integration_repository")
+    async def test_create_stores_original_url_with_normalized_dedup_key(
+        self, mock_repo, mock_add_user
+    ):
+        # The connection must use the exact path (some servers distinguish
+        # /mcp from /mcp/); dedup runs on the normalized key beside it.
+        mock_repo.create = AsyncMock()
+        mock_add_user.return_value = MagicMock()
+
+        request = CreateCustomIntegrationRequest(
+            name="Slash MCP", server_url="https://MCP.Example.com/mcp/"
+        )
+
+        result = await create_custom_integration(USER_ID, request)
+
+        assert result.mcp_config is not None
+        assert result.mcp_config.server_url == "https://MCP.Example.com/mcp/"
+        assert result.mcp_config.server_url_normalized == "https://mcp.example.com/mcp"
+
+    @patch(
+        "app.services.integrations.custom_crud.add_user_integration",
+        new_callable=AsyncMock,
+    )
+    @patch("app.services.integrations.custom_crud.integration_repository")
+    async def test_create_race_returns_winner(self, mock_repo, mock_add_user):
+        # Both racers pass the pre-check; the unique index rejects the loser,
+        # which returns the winner instead of surfacing a 500.
+        mock_repo.create = AsyncMock(side_effect=DuplicateKeyError("dup key"))
+        winner = _make_custom_integration(integration_id="int-winner")
+        mock_repo.find_custom_by_server_url = AsyncMock(return_value=winner)
+
+        request = CreateCustomIntegrationRequest(name="Raced MCP", server_url=SERVER_URL)
+
+        result = await create_custom_integration(USER_ID, request)
+
+        assert result.integration_id == "int-winner"
+        mock_repo.find_custom_by_server_url.assert_awaited_once_with(SERVER_URL, USER_ID)
+        mock_add_user.assert_not_awaited()
+
+    @patch(
+        "app.services.integrations.custom_crud.add_user_integration",
+        new_callable=AsyncMock,
+    )
+    @patch("app.services.integrations.custom_crud.integration_repository")
+    async def test_create_race_without_winner_raises(self, mock_repo, mock_add_user):
+        # A duplicate-key error the re-lookup cannot explain (e.g. an
+        # integration_id collision) must stay loud, not turn into a None.
+        mock_repo.create = AsyncMock(side_effect=DuplicateKeyError("dup key"))
+        mock_repo.find_custom_by_server_url = AsyncMock(return_value=None)
+
+        request = CreateCustomIntegrationRequest(name="Raced MCP", server_url=SERVER_URL)
+
+        with pytest.raises(DuplicateKeyError):
+            await create_custom_integration(USER_ID, request)
+
 
 class TestUpdateCustomIntegration:
     @patch("app.services.integrations.custom_crud.user_integration_repository")
@@ -1414,6 +1474,29 @@ class TestUpdateCustomIntegration:
         await update_custom_integration(USER_ID, CUSTOM_INTEGRATION_ID, request)
 
         mock_chroma_cleanup.assert_not_awaited()
+
+    @patch(
+        "app.services.integrations.custom_crud.cleanup_integration_chroma_data",
+        new_callable=AsyncMock,
+    )
+    @patch("app.services.integrations.custom_crud.integration_repository")
+    async def test_update_server_url_rekeys_dedup_key(self, mock_repo, mock_chroma_cleanup):
+        # The dedup key tracks the URL: after a path edit the row must match
+        # (and collide on) its new address, not the old one.
+        mock_repo.get_custom_for_user = AsyncMock(
+            return_value=_make_custom_integration(server_url="https://old-server.com/mcp")
+        )
+        mock_repo.update = AsyncMock(
+            return_value=_make_custom_integration(server_url="https://new-server.com/mcp/")
+        )
+
+        request = UpdateCustomIntegrationRequest(server_url="https://new-server.com/mcp/")
+        await update_custom_integration(USER_ID, CUSTOM_INTEGRATION_ID, request)
+
+        update = mock_repo.update.await_args.args[1]
+        assert update.mcp_config is not None
+        assert update.mcp_config.server_url == "https://new-server.com/mcp/"
+        assert update.mcp_config.server_url_normalized == "https://new-server.com/mcp"
 
     @patch(
         "app.services.integrations.custom_crud.cleanup_integration_chroma_data",

@@ -9,6 +9,7 @@ the only fakes — every function's real branching and string-building runs.
 
 import contextlib
 from datetime import datetime
+import hashlib
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -476,6 +477,11 @@ class TestRecordDeviceServerSync:
 
 
 class TestEnqueueWarmup:
+    def _redis(self, claimed: bool = True):
+        cache = Mock()
+        cache.client.set = AsyncMock(return_value=claimed)
+        return cache
+
     async def test_enqueues_warm_job_with_args(self) -> None:
         pool = object()
         enqueue_mock = AsyncMock()
@@ -484,9 +490,17 @@ class TestEnqueueWarmup:
         with (
             patch.object(device_service, "RedisPoolManager", rpm),
             patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis()),
         ):
             await device_service.enqueue_device_server_warmup("dev1", ["fs"])
-        enqueue_mock.assert_awaited_once_with(pool, "warm_device_servers", "dev1", ["fs"])
+        work = hashlib.sha256(b"fs").hexdigest()
+        enqueue_mock.assert_awaited_once_with(
+            pool,
+            "warm_device_servers",
+            "dev1",
+            ["fs"],
+            _job_id=f"device-warmup:dev1:{work}",
+        )
 
     async def test_defaults_server_keys_to_none(self) -> None:
         pool = object()
@@ -496,9 +510,70 @@ class TestEnqueueWarmup:
         with (
             patch.object(device_service, "RedisPoolManager", rpm),
             patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis()),
         ):
             await device_service.enqueue_device_server_warmup("dev1")
-        enqueue_mock.assert_awaited_once_with(pool, "warm_device_servers", "dev1", None)
+        work = hashlib.sha256(b"all").hexdigest()
+        enqueue_mock.assert_awaited_once_with(
+            pool, "warm_device_servers", "dev1", None, _job_id=f"device-warmup:dev1:{work}"
+        )
+
+    async def test_burst_shares_one_job_id_regardless_of_key_order(self) -> None:
+        # Registration storms enqueue the same set repeatedly — one deterministic
+        # id lets ARQ collapse the burst instead of running overlapping jobs.
+        pool = object()
+        enqueue_mock = AsyncMock()
+        rpm = Mock()
+        rpm.get_pool = AsyncMock(return_value=pool)
+        with (
+            patch.object(device_service, "RedisPoolManager", rpm),
+            patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis()),
+        ):
+            await device_service.enqueue_device_server_warmup("dev1", ["b", "a"])
+            await device_service.enqueue_device_server_warmup("dev1", ["a", "b"])
+        ids = {c.kwargs["_job_id"] for c in enqueue_mock.await_args_list}
+        assert len(ids) == 1
+
+    async def test_repeat_within_window_skips_enqueue(self) -> None:
+        # The job record is freed on completion (keep_result=0), so spaced
+        # repeats are coalesced by the SETNX marker, not the job id.
+        enqueue_mock = AsyncMock()
+        rpm = Mock()
+        with (
+            patch.object(device_service, "RedisPoolManager", rpm),
+            patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis(claimed=False)),
+        ):
+            await device_service.enqueue_device_server_warmup("dev1", ["fs"])
+        enqueue_mock.assert_not_awaited()
+        rpm.get_pool.assert_not_called()
+
+    async def test_scoped_and_full_warmups_do_not_coalesce(self) -> None:
+        # Different work sets are different markers: a registration's scoped
+        # warmup must not be swallowed by a recent full-device warmup.
+        enqueue_mock = AsyncMock()
+        rpm = Mock()
+        rpm.get_pool = AsyncMock(return_value=object())
+        with (
+            patch.object(device_service, "RedisPoolManager", rpm),
+            patch.object(device_service, "enqueue_worker_job", enqueue_mock),
+            patch.object(device_service, "redis_cache", self._redis()),
+        ):
+            await device_service.enqueue_device_server_warmup("dev1", ["fs"])
+            await device_service.enqueue_device_server_warmup("dev1")
+        assert enqueue_mock.await_count == 2
+
+    async def test_redis_outage_propagates_to_best_effort_caller(self) -> None:
+        # Callers treat enqueue as best-effort (endpoint try/except) — an
+        # outage must raise here, never silently skip the warmup.
+        cache = Mock()
+        cache.client.set = AsyncMock(side_effect=ConnectionError("redis down"))
+        with (
+            patch.object(device_service, "redis_cache", cache),
+            pytest.raises(ConnectionError, match="redis down"),
+        ):
+            await device_service.enqueue_device_server_warmup("dev1", ["fs"])
 
 
 class TestTeardownRevokedDevice:
