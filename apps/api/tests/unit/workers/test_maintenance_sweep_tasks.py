@@ -665,6 +665,43 @@ class TestMigrateLegacyCanvases:
         ):
             assert await _migrate_legacy_canvases([_doc(id="a", updated_at=NOW)]) == 0
 
+    async def test_a_failing_todo_is_logged_and_skipped(self):
+        """One todo raising must not abort the batch, and the failure is logged
+        with the todo id and the error — pins the whole log call."""
+        from app.workers.tasks.maintenance_sweep_tasks import _migrate_legacy_canvases
+
+        with (
+            patch(
+                f"{MODULE}.tracked_todo_service.migrate_legacy_canvas",
+                AsyncMock(side_effect=RuntimeError("boom")),
+            ),
+            patch(f"{MODULE}.log") as mock_log,
+        ):
+            assert await _migrate_legacy_canvases([_doc(id="a", updated_at=NOW)]) == 0
+
+        mock_log.warning.assert_called_once_with(
+            "maintenance_sweep.legacy_canvas_migration_failed",
+            todo_id="a",
+            error_type="RuntimeError",
+            error="boom",
+        )
+
+    async def test_a_failing_todo_does_not_stop_later_todos(self):
+        from app.workers.tasks.maintenance_sweep_tasks import _migrate_legacy_canvases
+
+        with patch(
+            f"{MODULE}.tracked_todo_service.migrate_legacy_canvas",
+            AsyncMock(side_effect=[RuntimeError("boom"), True]),
+        ) as migrate:
+            assert (
+                await _migrate_legacy_canvases(
+                    [_doc(id="a", updated_at=NOW), _doc(id="b", updated_at=NOW)]
+                )
+                == 1
+            )
+
+        assert migrate.await_count == 2
+
 
 class TestMaintenanceSweep:
     async def test_every_tracked_todo_gets_the_legacy_canvas_migration(self):
