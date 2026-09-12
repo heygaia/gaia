@@ -1752,6 +1752,11 @@ class TestDeleteCustomIntegration:
         # would delete someone else's row or nothing at all.
         mock_repo.delete_custom.assert_awaited_once_with(CUSTOM_INTEGRATION_ID, USER_ID)
         mock_repo.get_custom.assert_awaited_once_with(CUSTOM_INTEGRATION_ID)
+        # Affected-user fan-out is keyed by THIS integration — a None lookup
+        # would unlink nobody (or everybody, depending on the backend).
+        mock_user_int_collection.user_ids_with_integration.assert_awaited_once_with(
+            CUSTOM_INTEGRATION_ID
+        )
         mock_remove_user.assert_awaited_once_with(USER_ID, CUSTOM_INTEGRATION_ID)
         # Private: the marketplace store is untouched, but the tools cache for
         # every user is still busted.
