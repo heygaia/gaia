@@ -424,13 +424,31 @@ def _device_server_url(device_id: str, server_key: str) -> str:
     return f"device://{device_id}/{server_key}"
 
 
+async def _device_display_name(device_id: str) -> str:
+    """The paired device's name, for user- and agent-facing text. Falls back to a
+    generic phrase if the row is gone (self-heal races)."""
+    async with get_db_session() as session:
+        name = (
+            await session.execute(select(Device.name).where(Device.id == device_id))
+        ).scalar_one_or_none()
+    return name or "this device"
+
+
 async def _create_server_integration(
     user_id: str, device_id: str, server_key: str, display_name: str, integration_id: str
 ) -> None:
+    device_name = await _device_display_name(device_id)
     integration = Integration(
         integration_id=integration_id,
         name=display_name,
-        description=f"Local MCP server on your device ({server_key})",
+        # The subagent's discovery description inherits this, so it is where the
+        # agent learns the server is hosted on the user's own machine (and reaches
+        # it via these tools, not run_on_device). Names the device so it lines up
+        # with the connected-devices manifest.
+        description=(
+            f'MCP server hosted on your device "{device_name}" — its tools run '
+            f"locally on that machine, not the cloud sandbox."
+        ),
         category=DEVICE_CATEGORY,
         managed_by="mcp",
         source="custom",
