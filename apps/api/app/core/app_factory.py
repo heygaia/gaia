@@ -172,7 +172,7 @@ def create_app() -> FastAPI:
         if not is_body_allowed_for_status_code(exc.status_code):
             return Response(status_code=exc.status_code, headers=exc.headers)
         return error_response(
-            exc.status_code, ErrorEnvelope.from_http_detail(exc.detail), headers=exc.headers
+            exc.status_code, ErrorEnvelope.from_http_exception(exc), headers=exc.headers
         )
 
     @app.exception_handler(Exception)

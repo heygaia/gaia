@@ -19,6 +19,7 @@ from app.api.v1.dependencies.oauth_dependencies import get_current_user
 from app.db.repositories.conversations import conversation_repository
 from app.decorators import tiered_rate_limit
 from app.models.user_models import AuthenticatedUser
+from app.schemas.errors import error_responses
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.storage import (
     ArtifactInfo,
@@ -142,11 +143,13 @@ async def list_session_artifacts(
 @router.get(
     "/{conv_id}/artifacts/{path:path}",
     response_class=FileResponse,
-    responses={
-        400: {"description": "Invalid path"},
-        404: {"description": "File not found"},
-        503: {"description": "Workspace storage offline"},
-    },
+    responses=error_responses(
+        {
+            400: "Invalid path",
+            404: "File not found",
+            503: "Workspace storage offline",
+        }
+    ),
 )
 @tiered_rate_limit("session_files")
 async def get_artifact_file(
@@ -181,11 +184,13 @@ async def list_uploads(
 @router.get(
     "/{conv_id}/uploads/{path:path}",
     response_class=FileResponse,
-    responses={
-        400: {"description": "Invalid path"},
-        404: {"description": "File not found"},
-        503: {"description": "Workspace storage offline"},
-    },
+    responses=error_responses(
+        {
+            400: "Invalid path",
+            404: "File not found",
+            503: "Workspace storage offline",
+        }
+    ),
 )
 @tiered_rate_limit("session_files")
 async def get_upload_file(
@@ -201,11 +206,13 @@ async def get_upload_file(
 @router.post(
     "/{conv_id}/pin",
     status_code=status.HTTP_201_CREATED,
-    responses={
-        400: {"description": "Invalid path"},
-        404: {"description": "Artifact not found"},
-        503: {"description": "Workspace storage offline"},
-    },
+    responses=error_responses(
+        {
+            400: "Invalid path",
+            404: "Artifact not found",
+            503: "Workspace storage offline",
+        }
+    ),
 )
 @tiered_rate_limit("session_files")
 async def pin_artifact(

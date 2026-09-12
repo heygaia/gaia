@@ -98,7 +98,7 @@ class EntitlementMiddleware(BaseHTTPMiddleware):
         generic handler does keeps that contract byte-identical whether a 402
         comes from here or from an imperative in-handler gate.
         """
-        return error_response(exc.status_code, ErrorEnvelope.from_http_detail(exc.detail))
+        return error_response(exc.status_code, ErrorEnvelope.from_http_exception(exc))
 
     @staticmethod
     def _entitlement_unavailable() -> JSONResponse:

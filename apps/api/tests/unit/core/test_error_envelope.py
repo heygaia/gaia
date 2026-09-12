@@ -20,7 +20,7 @@ import pytest
 
 from app.core.app_factory import create_app
 from app.schemas.errors import ERROR_RESPONSES, ErrorEnvelope
-from app.utils.errors import create_error
+from app.utils.errors import AppError, create_error
 
 
 @asynccontextmanager
@@ -70,6 +70,22 @@ def app() -> FastAPI:
                 "toolkit": "gmail",
             },
             headers={"X-Reason": "integration"},
+        )
+
+    @router.get("/http-structured-no-message")
+    async def _http_structured_no_message() -> None:
+        raise HTTPException(status_code=403, detail={"code": "x", "toolkit": "gmail"})
+
+    @router.get("/http-non-str-code")
+    async def _http_non_str_code() -> None:
+        raise HTTPException(status_code=409, detail={"code": 409, "message": "Already linked"})
+
+    @router.get("/app-error-meta-message")
+    async def _app_error_meta_message() -> None:
+        raise AppError(
+            message="Payment failed",
+            status_code=402,
+            meta={"message": "stale copy", "code": 402, "message_id": "m1"},
         )
 
     @router.post("/validate")
@@ -126,6 +142,27 @@ class TestOneEnvelope:
         assert body["message"] == "Connect Gmail"
         assert body["toolkit"] == "gmail"
         assert resp.headers["x-reason"] == "integration", "exc.headers must survive the rewrite"
+
+    async def test_structured_detail_without_message_keeps_its_status(
+        self, client: AsyncClient
+    ) -> None:
+        """A mapping detail with no ``message`` renders under the status phrase, never as a 500."""
+        resp = await client.get("/http-structured-no-message")
+        body = resp.json()
+        assert resp.status_code == 403
+        assert _envelope(body).message == "Forbidden"
+        assert body["code"] == "x"
+        assert body["toolkit"] == "gmail"
+
+    async def test_a_non_string_code_is_dropped_not_a_500(self, client: AsyncClient) -> None:
+        resp = await client.get("/http-non-str-code")
+        assert resp.status_code == 409
+        assert resp.json() == {"message": "Already linked"}
+
+    async def test_app_error_message_wins_over_meta_and_bad_code(self, client: AsyncClient) -> None:
+        resp = await client.get("/app-error-meta-message")
+        assert resp.status_code == 402
+        assert resp.json() == {"message": "Payment failed", "message_id": "m1"}
 
     async def test_validation_failure_is_the_envelope(self, client: AsyncClient) -> None:
         resp = await client.post("/validate", json={"count": "many"})

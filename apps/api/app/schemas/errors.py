@@ -8,10 +8,12 @@ through ``error_response``. Clients narrow on ``code`` and display
 """
 
 from collections.abc import Mapping
+from http import HTTPStatus
 from typing import Any
 
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.utils.errors import AppError
 
@@ -46,14 +48,27 @@ class ErrorEnvelope(BaseModel):
             context["why"] = exc.why
         if exc.fix:
             context["fix"] = exc.fix
-        return cls(message=exc.message, **context)
+        return cls._from_context(context, exc.message)
 
     @classmethod
-    def from_http_detail(cls, detail: object) -> "ErrorEnvelope":
-        """``HTTPException.detail`` is a string, or a mapping carrying ``message``."""
-        if isinstance(detail, Mapping):
-            return cls.model_validate(dict(detail))
-        return cls(message=str(detail))
+    def from_http_exception(cls, exc: StarletteHTTPException) -> "ErrorEnvelope":
+        """``detail`` is a string, or a mapping; one without a string ``message``
+        renders under the status phrase, Starlette's own default for a missing detail."""
+        if not isinstance(exc.detail, Mapping):
+            return cls._from_context({}, str(exc.detail))
+        message = exc.detail.get("message")
+        if not isinstance(message, str):
+            message = HTTPStatus(exc.status_code).phrase
+        return cls._from_context(exc.detail, message)
+
+    @classmethod
+    def _from_context(cls, context: Mapping[str, Any], message: str) -> "ErrorEnvelope":
+        fields = {**context, "message": message}
+        # Clients narrow on a string code (web `getErrorCode`); anything else
+        # is not one, so it is dropped rather than failing the error response.
+        if not isinstance(fields.get("code"), str | None):
+            del fields["code"]
+        return cls.model_validate(fields)
 
 
 def error_response(
@@ -81,4 +96,24 @@ ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
     422: {"model": ErrorEnvelope},
     "4XX": {"model": ErrorEnvelope},
     "5XX": {"model": ErrorEnvelope},
+}
+
+
+def error_responses(descriptions: Mapping[int, str]) -> dict[int | str, dict[str, Any]]:
+    """Route-level ``responses=`` that describe a status without losing the envelope as its body."""
+    return {
+        code: {"model": ErrorEnvelope, "description": text} for code, text in descriptions.items()
+    }
+
+
+# FastAPI documents a response ``model`` under the route's ``response_class``
+# media type, so a ``text/html`` route has to spell out that its error bodies
+# are still the JSON envelope (registered as a component by every other route).
+_JSON_ENVELOPE_CONTENT: dict[str, Any] = {
+    "content": {"application/json": {"schema": {"$ref": "#/components/schemas/ErrorEnvelope"}}}
+}
+HTML_ROUTE_ERROR_RESPONSES: dict[int | str, dict[str, Any]] = {
+    422: _JSON_ENVELOPE_CONTENT,
+    "4XX": _JSON_ENVELOPE_CONTENT,
+    "5XX": _JSON_ENVELOPE_CONTENT,
 }

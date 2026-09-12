@@ -21,6 +21,7 @@ from app.models.workflow_models import (
     PublicWorkflowsResponse,
     public_workflow_steps,
 )
+from app.schemas.errors import error_responses
 from app.schemas.integrations.requests import ConnectIntegrationRequest
 from app.schemas.integrations.responses import (
     AddIntegrationResponse,
@@ -287,9 +288,11 @@ async def search_integrations(q: str) -> SearchIntegrationsResponse:
 
 @router.get(
     "/public/{identifier}/workflows",
-    responses={
-        500: {"description": "Failed to fetch related workflows"},
-    },
+    responses=error_responses(
+        {
+            500: "Failed to fetch related workflows",
+        }
+    ),
 )
 async def get_related_workflows(
     identifier: str,
