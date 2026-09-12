@@ -342,8 +342,9 @@ class TodoDocument(UserScopedDocument):
     expires_at: datetime | None = None
     references: list[str] = Field(default_factory=list)
     completed_at: datetime | None = None
-    # Canvas + log bodies for tracked todos live on the document itself.
+    # Canvas + activity + log bodies for tracked todos live on the document itself.
     canvas_content: str | None = None
+    activity_content: str | None = None
     log_content: str | None = None
     # Sender of the email an onboarding-seeded todo was extracted from.
     source_email: str | None = None
@@ -375,6 +376,7 @@ class TodoUpdate(BaseModel):
     references: list[str] | None = None
     completed_at: datetime | None = None
     canvas_content: str | None = None
+    activity_content: str | None = None
     log_content: str | None = None
 
 
