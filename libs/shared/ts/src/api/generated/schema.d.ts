@@ -5428,76 +5428,6 @@ export interface components {
             success_message?: string | null;
         };
         /**
-         * DeviceTokenRequest
-         * @description Request model for registering a device token
-         */
-        app__models__device_token_models__DeviceTokenRequest: {
-            /**
-             * Device Id
-             * @description Optional device identifier
-             */
-            device_id?: string | null;
-            /** @description Device platform (ios or android) */
-            platform: components["schemas"]["PlatformType"];
-            /**
-             * Token
-             * @description Expo push token
-             */
-            token: string;
-        };
-        /**
-         * DeviceTokenResponse
-         * @description Response model for device token operations
-         */
-        app__models__device_token_models__DeviceTokenResponse: {
-            /**
-             * Message
-             * @description Response message
-             */
-            message: string;
-            /**
-             * Success
-             * @description Operation success status
-             */
-            success: boolean;
-        };
-        /**
-         * SubscriptionStatus
-         * @description Subscription status with clear definitions.
-         * @enum {string}
-         */
-        app__models__payment_models__SubscriptionStatus: "pending" | "active" | "on_hold" | "cancelled" | "failed" | "expired";
-        /**
-         * SubscriptionStatus
-         * @enum {string}
-         */
-        app__models__trigger_subscription_models__SubscriptionStatus: "active" | "paused";
-        /**
-         * DeviceTokenRequest
-         * @description Daemon exchanges its refresh credential for a short-lived connect JWT.
-         */
-        app__schemas__device__requests__DeviceTokenRequest: {
-            /** Refresh Token */
-            refresh_token: string;
-        };
-        /**
-         * DeviceTokenResponse
-         * @description Short-lived connect JWT plus the rotated refresh credential.
-         */
-        app__schemas__device__responses__DeviceTokenResponse: {
-            /** Access Token */
-            access_token: string;
-            /** Expires In */
-            expires_in: number;
-            /** Refresh Token */
-            refresh_token: string;
-            /**
-             * Token Type
-             * @default Bearer
-             */
-            token_type?: string;
-        };
-        /**
          * ApplyLabelRequest
          * @description Request model for applying or removing labels from messages.
          */
@@ -6710,7 +6640,7 @@ export interface components {
              */
             is_unread?: boolean | null;
             /** Messages */
-            messages?: components["schemas"]["MessageModel-Output"][];
+            messages?: components["schemas"]["MessageModelOutput"][];
             source?: components["schemas"]["ConversationSource"] | null;
             /** Starred */
             starred?: boolean | null;
@@ -6747,7 +6677,7 @@ export interface components {
         ConversationMessageHit: {
             /** Conversation Id */
             conversation_id: string;
-            message: components["schemas"]["MessageModel-Output"];
+            message: components["schemas"]["MessageModelOutput"];
         };
         /**
          * ConversationModel
@@ -6846,7 +6776,7 @@ export interface components {
             /** Is Unread */
             is_unread: boolean | null;
             /** Messages */
-            messages: components["schemas"]["MessageModel-Output"][];
+            messages: components["schemas"]["MessageModelOutput"][];
             /** Starred */
             starred: boolean | null;
             system_purpose: components["schemas"]["SystemPurpose"] | null;
@@ -7163,7 +7093,7 @@ export interface components {
              * Steps
              * @description Optional pre-existing steps (e.g., from explore/community workflows). If provided, step generation will be skipped.
              */
-            steps?: components["schemas"]["WorkflowStep-Input"][] | null;
+            steps?: components["schemas"]["WorkflowStepInput"][] | null;
             /**
              * System Workflow Key
              * @description Stable key linking to the original definition in code.
@@ -7422,6 +7352,31 @@ export interface components {
             status: string;
             /** Tools Synced At */
             tools_synced_at?: string | null;
+        };
+        /**
+         * DeviceTokenRequest
+         * @description Daemon exchanges its refresh credential for a short-lived connect JWT.
+         */
+        DeviceTokenRequest: {
+            /** Refresh Token */
+            refresh_token: string;
+        };
+        /**
+         * DeviceTokenResponse
+         * @description Short-lived connect JWT plus the rotated refresh credential.
+         */
+        DeviceTokenResponse: {
+            /** Access Token */
+            access_token: string;
+            /** Expires In */
+            expires_in: number;
+            /** Refresh Token */
+            refresh_token: string;
+            /**
+             * Token Type
+             * @default Bearer
+             */
+            token_type: string;
         };
         /**
          * DisconnectPlatformResponse
@@ -9603,7 +9558,7 @@ export interface components {
          * MessageModel
          * @description A single chat message with its content, attachments and tool data.
          */
-        "MessageModel-Input": {
+        MessageModelInput: {
             /** Date */
             date?: string | null;
             /** Disclaimer */
@@ -9642,7 +9597,7 @@ export interface components {
             response: string;
             /** Selectedtool */
             selectedTool?: string | null;
-            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Input"] | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowDataInput"] | null;
             /** Subtype */
             subtype?: string | null;
             /** Tool Data */
@@ -9656,7 +9611,7 @@ export interface components {
          * MessageModel
          * @description A single chat message with its content, attachments and tool data.
          */
-        "MessageModel-Output": {
+        MessageModelOutput: {
             /** Date */
             date?: string | null;
             /** Disclaimer */
@@ -9695,7 +9650,7 @@ export interface components {
             response: string;
             /** Selectedtool */
             selectedTool?: string | null;
-            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Output"] | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowDataOutput"] | null;
             /** Subtype */
             subtype?: string | null;
             /** Tool Data */
@@ -9747,7 +9702,7 @@ export interface components {
             selectedCalendarEvent?: components["schemas"]["SelectedCalendarEventData"] | null;
             /** Selectedtool */
             selectedTool?: string | null;
-            selectedWorkflow?: components["schemas"]["SelectedWorkflowData-Input"] | null;
+            selectedWorkflow?: components["schemas"]["SelectedWorkflowDataInput"] | null;
             /** Toolcategory */
             toolCategory?: string | null;
             /** Turn Id */
@@ -9770,7 +9725,7 @@ export interface components {
         MessageSearchResult: {
             /** Conversation Id */
             conversation_id: string;
-            message: components["schemas"]["MessageModel-Output"];
+            message: components["schemas"]["MessageModelOutput"];
             /** Snippet */
             snippet: string;
         };
@@ -10639,7 +10594,7 @@ export interface components {
             /** Id */
             id: string;
             /** Steps */
-            steps: components["schemas"]["WorkflowStep-Output"][];
+            steps: components["schemas"]["WorkflowStepOutput"][];
             /** Title */
             title: string;
         };
@@ -10836,16 +10791,19 @@ export interface components {
          * PollPairingResponse
          * @description Result of a pairing poll.
          *
-         *     ``status`` is ``pending`` (keep polling), ``approved`` (``refresh_token`` set),
-         *     or ``denied`` / ``expired`` (stop).
+         *     ``status`` is ``pending`` (keep polling), ``approved`` (``device_id`` and
+         *     ``refresh_token`` set) or ``expired`` (stop).
          */
         PollPairingResponse: {
             /** Device Id */
-            device_id?: string | null;
+            device_id: string | null;
             /** Refresh Token */
-            refresh_token?: string | null;
-            /** Status */
-            status: string;
+            refresh_token: string | null;
+            /**
+             * Status
+             * @enum {string}
+             */
+            status: "pending" | "approved" | "expired";
         };
         /**
          * Priority
@@ -11148,6 +11106,40 @@ export interface components {
              * @description ID of the published workflow
              */
             workflow_id: string;
+        };
+        /**
+         * PushTokenRequest
+         * @description Request model for registering a device token
+         */
+        PushTokenRequest: {
+            /**
+             * Device Id
+             * @description Optional device identifier
+             */
+            device_id?: string | null;
+            /** @description Device platform (ios or android) */
+            platform: components["schemas"]["PlatformType"];
+            /**
+             * Token
+             * @description Expo push token
+             */
+            token: string;
+        };
+        /**
+         * PushTokenResponse
+         * @description Response model for device token operations
+         */
+        PushTokenResponse: {
+            /**
+             * Message
+             * @description Response message
+             */
+            message: string;
+            /**
+             * Success
+             * @description Operation success status
+             */
+            success: boolean;
         };
         /**
          * RecordedCall
@@ -11633,7 +11625,7 @@ export interface components {
          * SelectedWorkflowData
          * @description Workflow the user attached to a message for execution.
          */
-        "SelectedWorkflowData-Input": {
+        SelectedWorkflowDataInput: {
             /** Description */
             description: string;
             /** Id */
@@ -11641,7 +11633,7 @@ export interface components {
             /** Prompt */
             prompt?: string | null;
             /** Steps */
-            steps: components["schemas"]["WorkflowStep-Input"][];
+            steps: components["schemas"]["WorkflowStepInput"][];
             /** Title */
             title: string;
         };
@@ -11649,7 +11641,7 @@ export interface components {
          * SelectedWorkflowData
          * @description Workflow the user attached to a message for execution.
          */
-        "SelectedWorkflowData-Output": {
+        SelectedWorkflowDataOutput: {
             /** Description */
             description: string;
             /** Id */
@@ -11657,7 +11649,7 @@ export interface components {
             /** Prompt */
             prompt?: string | null;
             /** Steps */
-            steps: components["schemas"]["WorkflowStep-Output"][];
+            steps: components["schemas"]["WorkflowStepOutput"][];
             /** Title */
             title: string;
         };
@@ -12204,8 +12196,19 @@ export interface components {
          * @enum {string}
          */
         SubscriptionResolution: "trigger_id" | "account";
+        /**
+         * SubscriptionStatus
+         * @description Subscription status with clear definitions.
+         * @enum {string}
+         */
+        SubscriptionStatus: "pending" | "active" | "on_hold" | "cancelled" | "failed" | "expired";
+        /** SubtaskCreateRequest */
+        SubtaskCreateRequest: {
+            /** Title */
+            title: string;
+        };
         /** SubTask */
-        "SubTask-Input": {
+        SubTaskInput: {
             /**
              * Completed
              * @description Whether the subtask is completed
@@ -12230,7 +12233,7 @@ export interface components {
             title: string;
         };
         /** SubTask */
-        "SubTask-Output": {
+        SubTaskOutput: {
             /**
              * Completed
              * @description Whether the subtask is completed
@@ -12252,11 +12255,6 @@ export interface components {
              * Title
              * @description Title of the subtask
              */
-            title: string;
-        };
-        /** SubtaskCreateRequest */
-        SubtaskCreateRequest: {
-            /** Title */
             title: string;
         };
         /** SubtaskUpdateRequest */
@@ -12690,7 +12688,7 @@ export interface components {
              * Subtasks
              * @description List of subtasks
              */
-            subtasks?: components["schemas"]["SubTask-Input"][];
+            subtasks?: components["schemas"]["SubTaskInput"][];
             /**
              * Title
              * @description Title of the todo item
@@ -12799,7 +12797,7 @@ export interface components {
              * Subtasks
              * @description List of subtasks
              */
-            subtasks: components["schemas"]["SubTask-Output"][];
+            subtasks: components["schemas"]["SubTaskOutput"][];
             /**
              * Title
              * @description Title of the todo item
@@ -12900,7 +12898,7 @@ export interface components {
             /** Scheduled At */
             scheduled_at?: string | null;
             /** Subtasks */
-            subtasks?: components["schemas"]["SubTask-Input"][] | null;
+            subtasks?: components["schemas"]["SubTaskInput"][] | null;
             /** Title */
             title?: string | null;
             /** Vfs Path */
@@ -13215,7 +13213,7 @@ export interface components {
             match?: components["schemas"]["ConditionMatch"];
             resolution: components["schemas"]["SubscriptionResolution"];
             /** @default active */
-            status?: components["schemas"]["app__models__trigger_subscription_models__SubscriptionStatus"];
+            status?: components["schemas"]["TriggerSubscriptionStatus"];
             /**
              * Trigger Data
              * @description Registration-time knobs the payload cannot express (a calendar's minutes_before_start). Persisted so a resync rebuilds the trigger with the user's original config instead of resetting to defaults.
@@ -13226,6 +13224,11 @@ export interface components {
             /** Trigger Name */
             trigger_name: string;
         };
+        /**
+         * TriggerSubscriptionStatus
+         * @enum {string}
+         */
+        TriggerSubscriptionStatus: "active" | "paused";
         /**
          * TriggerType
          * @description What caused a run.
@@ -13421,7 +13424,7 @@ export interface components {
             /** Conversation Id */
             conversation_id: string;
             /** Messages */
-            messages: components["schemas"]["MessageModel-Input"][];
+            messages: components["schemas"]["MessageModelInput"][];
         };
         /**
          * UpdateMessagesResponse
@@ -13531,7 +13534,7 @@ export interface components {
             /** Prompt */
             prompt?: string | null;
             /** Steps */
-            steps?: components["schemas"]["WorkflowStep-Input"][] | null;
+            steps?: components["schemas"]["WorkflowStepInput"][] | null;
             /** Title */
             title?: string | null;
             trigger_config?: components["schemas"]["TriggerConfig"] | null;
@@ -13655,7 +13658,7 @@ export interface components {
             /** @description Legacy field - check current_plan */
             plan_type: components["schemas"]["PlanType"] | null;
             /** @description Legacy field - check subscription */
-            status: components["schemas"]["app__models__payment_models__SubscriptionStatus"] | null;
+            status: components["schemas"]["SubscriptionStatus"] | null;
             /** @description Current subscription */
             subscription: components["schemas"]["SubscriptionDocument"] | null;
             /**
@@ -14048,7 +14051,7 @@ export interface components {
          * WorkflowStep
          * @description A single step in a workflow.
          */
-        "WorkflowStep-Input": {
+        WorkflowStepInput: {
             /**
              * Category
              * @description Category for routing (e.g., gmail, notion, todos, reminders)
@@ -14076,7 +14079,7 @@ export interface components {
          * WorkflowStep
          * @description A single step in a workflow.
          */
-        "WorkflowStep-Output": {
+        WorkflowStepOutput: {
             /**
              * Category
              * @description Category for routing (e.g., gmail, notion, todos, reminders)
@@ -14283,7 +14286,7 @@ export interface components {
              * Steps
              * @description List of workflow steps to execute
              */
-            steps: components["schemas"]["WorkflowStep-Output"][];
+            steps: components["schemas"]["WorkflowStepOutput"][];
             /**
              * Stop After
              * @description Stop executing after this date (optional)
@@ -14372,6 +14375,485 @@ export interface components {
     headers: never;
     pathItems: never;
 }
+export type ActionConfig = components['schemas']['ActionConfig'];
+export type ActionStyle = components['schemas']['ActionStyle'];
+export type ActionType = components['schemas']['ActionType'];
+export type ActivityDay = components['schemas']['ActivityDay'];
+export type AddIntegrationResponse = components['schemas']['AddIntegrationResponse'];
+export type AddUserIntegrationRequest = components['schemas']['AddUserIntegrationRequest'];
+export type AddUserIntegrationResponse = components['schemas']['AddUserIntegrationResponse'];
+export type AgentType = components['schemas']['AgentType'];
+export type ApiCallConfig = components['schemas']['ApiCallConfig'];
+export type ApplyLabelRequest = components['schemas']['ApplyLabelRequest'];
+export type ApprovalDecisionRequest = components['schemas']['ApprovalDecisionRequest'];
+export type ApprovalDecisionResponse = components['schemas']['ApprovalDecisionResponse'];
+export type ApprovePairingRequest = components['schemas']['ApprovePairingRequest'];
+export type ArchiveEmailsResponse = components['schemas']['ArchiveEmailsResponse'];
+export type ArtifactInfo = components['schemas']['ArtifactInfo'];
+export type ArtifactRegistryEntry = components['schemas']['ArtifactRegistryEntry'];
+export type AsanaTaskTriggerConfig = components['schemas']['AsanaTaskTriggerConfig'];
+export type AuthenticatedUserResponse = components['schemas']['AuthenticatedUserResponse'];
+export type AuthorDetails = components['schemas']['AuthorDetails'];
+export type BatchApprovalDecisionRequest = components['schemas']['BatchApprovalDecisionRequest'];
+export type BatchApprovalDecisionResponse = components['schemas']['BatchApprovalDecisionResponse'];
+export type BatchDecisionItem = components['schemas']['BatchDecisionItem'];
+export type BatchDecisionOutcome = components['schemas']['BatchDecisionOutcome'];
+export type BatchEventCreateFailure = components['schemas']['BatchEventCreateFailure'];
+export type BatchEventCreateRequest = components['schemas']['BatchEventCreateRequest'];
+export type BatchEventCreateResponse = components['schemas']['BatchEventCreateResponse'];
+export type BatchEventDeleteRequest = components['schemas']['BatchEventDeleteRequest'];
+export type BatchEventDeleteResponse = components['schemas']['BatchEventDeleteResponse'];
+export type BatchEventDeleteSuccess = components['schemas']['BatchEventDeleteSuccess'];
+export type BatchEventFailure = components['schemas']['BatchEventFailure'];
+export type BatchEventUpdateRequest = components['schemas']['BatchEventUpdateRequest'];
+export type BatchEventUpdateResponse = components['schemas']['BatchEventUpdateResponse'];
+export type BatchSyncRequest = components['schemas']['BatchSyncRequest'];
+export type BatchSyncResponse = components['schemas']['BatchSyncResponse'];
+export type BlogCountResponse = components['schemas']['BlogCountResponse'];
+export type BlogPost = components['schemas']['BlogPost'];
+export type Body_bot_transcribe_bot_audio = components['schemas']['Body_bot_transcribe_bot_audio'];
+export type Body_file_upload_file_endpoint = components['schemas']['Body_file_upload_file_endpoint'];
+export type Body_image_image_to_text = components['schemas']['Body_image_image_to_text'];
+export type Body_notification_unregister_device_token = components['schemas']['Body_notification_unregister_device_token'];
+export type Body_support_submit_support_request_with_attachments = components['schemas']['Body_support_submit_support_request_with_attachments'];
+export type Body_user_update_holo_card_colors = components['schemas']['Body_user_update_holo_card_colors'];
+export type Body_user_update_me = components['schemas']['Body_user_update_me'];
+export type Body_user_update_user_name = components['schemas']['Body_user_update_user_name'];
+export type Body_user_update_user_timezone = components['schemas']['Body_user_update_user_timezone'];
+export type BotAuthStatusResponse = components['schemas']['BotAuthStatusResponse'];
+export type BotChatRequest = components['schemas']['BotChatRequest'];
+export type BotSettingsResponse = components['schemas']['BotSettingsResponse'];
+export type BudgetWindow = components['schemas']['BudgetWindow'];
+export type BuiltinSkillInfo = components['schemas']['BuiltinSkillInfo'];
+export type BuiltinSkillsResponse = components['schemas']['BuiltinSkillsResponse'];
+export type BulkActionRequest = components['schemas']['BulkActionRequest'];
+export type BulkActions = components['schemas']['BulkActions'];
+export type BulkActionSummary = components['schemas']['BulkActionSummary'];
+export type BulkEmailImportanceSummariesResponse = components['schemas']['BulkEmailImportanceSummariesResponse'];
+export type BulkMoveRequest = components['schemas']['BulkMoveRequest'];
+export type BulkOperationResponse = components['schemas']['BulkOperationResponse'];
+export type BulkUpdateRequest = components['schemas']['BulkUpdateRequest'];
+export type CalendarEventCreatedConfig = components['schemas']['CalendarEventCreatedConfig'];
+export type CalendarEventPageResponse = components['schemas']['CalendarEventPageResponse'];
+export type CalendarEventsQueryRequest = components['schemas']['CalendarEventsQueryRequest'];
+export type CalendarEventsResponse = components['schemas']['CalendarEventsResponse'];
+export type CalendarEventStartingSoonConfig = components['schemas']['CalendarEventStartingSoonConfig'];
+export type CalendarListResponse = components['schemas']['CalendarListResponse'];
+export type CalendarPreferencesResponse = components['schemas']['CalendarPreferencesResponse'];
+export type CalendarPreferencesUpdateRequest = components['schemas']['CalendarPreferencesUpdateRequest'];
+export type CalendarPreferencesUpdateResponse = components['schemas']['CalendarPreferencesUpdateResponse'];
+export type CancelStreamResponse = components['schemas']['CancelStreamResponse'];
+export type ChannelConfig = components['schemas']['ChannelConfig'];
+export type ChannelDeliveryStatus = components['schemas']['ChannelDeliveryStatus'];
+export type ChannelPreferences = components['schemas']['ChannelPreferences'];
+export type ChannelPreferencesUpdate = components['schemas']['ChannelPreferencesUpdate'];
+export type ChannelPriorityList = components['schemas']['ChannelPriorityList'];
+export type CheckoutSource = components['schemas']['CheckoutSource'];
+export type CommunityIntegrationCreator = components['schemas']['CommunityIntegrationCreator'];
+export type CommunityIntegrationItem = components['schemas']['CommunityIntegrationItem'];
+export type CommunityListResponse = components['schemas']['CommunityListResponse'];
+export type ComposedEmailOutput = components['schemas']['ComposedEmailOutput'];
+export type ComposioWebhookAckResponse = components['schemas']['ComposioWebhookAckResponse'];
+export type ConditionMatch = components['schemas']['ConditionMatch'];
+export type ConditionOperator = components['schemas']['ConditionOperator'];
+export type ConnectIntegrationRequest = components['schemas']['ConnectIntegrationRequest'];
+export type ConnectIntegrationResponse = components['schemas']['ConnectIntegrationResponse'];
+export type ConversationActionResponse = components['schemas']['ConversationActionResponse'];
+export type ConversationDescriptionHit = components['schemas']['ConversationDescriptionHit'];
+export type ConversationDocument = components['schemas']['ConversationDocument'];
+export type ConversationListResponse = components['schemas']['ConversationListResponse'];
+export type ConversationMessageHit = components['schemas']['ConversationMessageHit'];
+export type ConversationModel = components['schemas']['ConversationModel'];
+export type ConversationSource = components['schemas']['ConversationSource'];
+export type ConversationSummary = components['schemas']['ConversationSummary'];
+export type ConversationSyncItem = components['schemas']['ConversationSyncItem'];
+export type ConversationSyncRow = components['schemas']['ConversationSyncRow'];
+export type CreateCheckoutSessionRequest = components['schemas']['CreateCheckoutSessionRequest'];
+export type CreateConversationResponse = components['schemas']['CreateConversationResponse'];
+export type CreateCustomIntegrationRequest = components['schemas']['CreateCustomIntegrationRequest'];
+export type CreateCustomIntegrationResponse = components['schemas']['CreateCustomIntegrationResponse'];
+export type CreateLinkTokenRequest = components['schemas']['CreateLinkTokenRequest'];
+export type CreateLinkTokenResponse = components['schemas']['CreateLinkTokenResponse'];
+export type CreateMemoryRequest = components['schemas']['CreateMemoryRequest'];
+export type CreateMemoryResponse = components['schemas']['CreateMemoryResponse'];
+export type CreateReminderRequest = components['schemas']['CreateReminderRequest'];
+export type CreateSubscriptionRequest = components['schemas']['CreateSubscriptionRequest'];
+export type CreateSubscriptionResponse = components['schemas']['CreateSubscriptionResponse'];
+export type CreateWorkflowFromTodoRequest = components['schemas']['CreateWorkflowFromTodoRequest'];
+export type CreateWorkflowRequest = components['schemas']['CreateWorkflowRequest'];
+export type CronValidationResponse = components['schemas']['CronValidationResponse'];
+export type CustomIntegrationConnectionResult = components['schemas']['CustomIntegrationConnectionResult'];
+export type DeactivationReason = components['schemas']['DeactivationReason'];
+export type DegradedHealthResponse = components['schemas']['DegradedHealthResponse'];
+export type DeleteAllConversationsResponse = components['schemas']['DeleteAllConversationsResponse'];
+export type DeleteMemoryResponse = components['schemas']['DeleteMemoryResponse'];
+export type DesktopReleaseAsset = components['schemas']['DesktopReleaseAsset'];
+export type DesktopReleaseResponse = components['schemas']['DesktopReleaseResponse'];
+export type DesktopToolResultRequest = components['schemas']['DesktopToolResultRequest'];
+export type DesktopToolResultResponse = components['schemas']['DesktopToolResultResponse'];
+export type DeviceListResponse = components['schemas']['DeviceListResponse'];
+export type DevicePairApproveResponse = components['schemas']['DevicePairApproveResponse'];
+export type DeviceResponse = components['schemas']['DeviceResponse'];
+export type DeviceRevokeResponse = components['schemas']['DeviceRevokeResponse'];
+export type DeviceServerResponse = components['schemas']['DeviceServerResponse'];
+export type DeviceTokenRequest = components['schemas']['DeviceTokenRequest'];
+export type DeviceTokenResponse = components['schemas']['DeviceTokenResponse'];
+export type DisconnectPlatformResponse = components['schemas']['DisconnectPlatformResponse'];
+export type DiscoveredSkillInfo = components['schemas']['DiscoveredSkillInfo'];
+export type DiscoverSkillsResponse = components['schemas']['DiscoverSkillsResponse'];
+export type DodoWebhookAckResponse = components['schemas']['DodoWebhookAckResponse'];
+export type DraftMutationResponse = components['schemas']['DraftMutationResponse'];
+export type DraftRequest = components['schemas']['DraftRequest'];
+export type EmailActionRequest = components['schemas']['EmailActionRequest'];
+export type EmailImportanceSummariesResponse = components['schemas']['EmailImportanceSummariesResponse'];
+export type EmailImportanceSummaryResponse = components['schemas']['EmailImportanceSummaryResponse'];
+export type EmailReadStatusRequest = components['schemas']['EmailReadStatusRequest'];
+export type EmailRequest = components['schemas']['EmailRequest'];
+export type EmailSearchResponse = components['schemas']['EmailSearchResponse'];
+export type ErrorEnvelope = components['schemas']['ErrorEnvelope'];
+export type EventCreateRequest = components['schemas']['EventCreateRequest'];
+export type EventDeleteRequest = components['schemas']['EventDeleteRequest'];
+export type EventDeleteResponse = components['schemas']['EventDeleteResponse'];
+export type EventUpdateRequest = components['schemas']['EventUpdateRequest'];
+export type FeaturePeriodUsage = components['schemas']['FeaturePeriodUsage'];
+export type FeatureUpgrade = components['schemas']['FeatureUpgrade'];
+export type FeatureUsageSummary = components['schemas']['FeatureUsageSummary'];
+export type FileData = components['schemas']['FileData'];
+export type FileDeletedResponse = components['schemas']['FileDeletedResponse'];
+export type FileDocument = components['schemas']['FileDocument'];
+export type FirstStep = components['schemas']['FirstStep'];
+export type FirstStepKey = components['schemas']['FirstStepKey'];
+export type FirstStepsCollapseRequest = components['schemas']['FirstStepsCollapseRequest'];
+export type FirstStepsResponse = components['schemas']['FirstStepsResponse'];
+export type FirstStepsState = components['schemas']['FirstStepsState'];
+export type GenerateWorkflowPromptRequest = components['schemas']['GenerateWorkflowPromptRequest'];
+export type GenerateWorkflowPromptResponse = components['schemas']['GenerateWorkflowPromptResponse'];
+export type GetPlatformLinksResponse = components['schemas']['GetPlatformLinksResponse'];
+export type GitHubCommitEventConfig = components['schemas']['GitHubCommitEventConfig'];
+export type GitHubIssueAddedConfig = components['schemas']['GitHubIssueAddedConfig'];
+export type GitHubPrEventConfig = components['schemas']['GitHubPrEventConfig'];
+export type GitHubStarAddedConfig = components['schemas']['GitHubStarAddedConfig'];
+export type GmailDeletionResponse = components['schemas']['GmailDeletionResponse'];
+export type GmailDraftResource = components['schemas']['GmailDraftResource'];
+export type GmailDraftsResponse = components['schemas']['GmailDraftsResponse'];
+export type GmailLabelResource = components['schemas']['GmailLabelResource'];
+export type GmailLabelsResponse = components['schemas']['GmailLabelsResponse'];
+export type GmailMessageResponse = components['schemas']['GmailMessageResponse'];
+export type GmailMessagesResponse = components['schemas']['GmailMessagesResponse'];
+export type GmailMessageSummary = components['schemas']['GmailMessageSummary'];
+export type GmailNewMessageConfig = components['schemas']['GmailNewMessageConfig'];
+export type GmailPollInboxConfig = components['schemas']['GmailPollInboxConfig'];
+export type GmailThreadResponse = components['schemas']['GmailThreadResponse'];
+export type GoogleCalendarEventDateTime = components['schemas']['GoogleCalendarEventDateTime'];
+export type GoogleCalendarEventResource = components['schemas']['GoogleCalendarEventResource'];
+export type GoogleCalendarListEntry = components['schemas']['GoogleCalendarListEntry'];
+export type GoogleDocsDocumentDeletedConfig = components['schemas']['GoogleDocsDocumentDeletedConfig'];
+export type GoogleDocsDocumentUpdatedConfig = components['schemas']['GoogleDocsDocumentUpdatedConfig'];
+export type GoogleDocsNewDocumentConfig = components['schemas']['GoogleDocsNewDocumentConfig'];
+export type GoogleSheetsNewRowConfig = components['schemas']['GoogleSheetsNewRowConfig'];
+export type GoogleSheetsNewSheetConfig = components['schemas']['GoogleSheetsNewSheetConfig'];
+export type HealthResponse = components['schemas']['HealthResponse'];
+export type HILPreferencesResponse = components['schemas']['HILPreferencesResponse'];
+export type HistoryFeatureUsage = components['schemas']['HistoryFeatureUsage'];
+export type HistoryUsagePeriod = components['schemas']['HistoryUsagePeriod'];
+export type ImageData = components['schemas']['ImageData'];
+export type ImageToTextResponse = components['schemas']['ImageToTextResponse'];
+export type InitiatePlatformConnectRequest = components['schemas']['InitiatePlatformConnectRequest'];
+export type InitiatePlatformConnectResponse = components['schemas']['InitiatePlatformConnectResponse'];
+export type InstructionsEditor = components['schemas']['InstructionsEditor'];
+export type IntegrationConfigItem = components['schemas']['IntegrationConfigItem'];
+export type IntegrationContent = components['schemas']['IntegrationContent'];
+export type IntegrationFAQ = components['schemas']['IntegrationFAQ'];
+export type IntegrationHowItWorksStep = components['schemas']['IntegrationHowItWorksStep'];
+export type IntegrationInfo = components['schemas']['IntegrationInfo'];
+export type IntegrationInstructionsResponse = components['schemas']['IntegrationInstructionsResponse'];
+export type IntegrationRef = components['schemas']['IntegrationRef'];
+export type IntegrationResponse = components['schemas']['IntegrationResponse'];
+export type IntegrationsConfigResponse = components['schemas']['IntegrationsConfigResponse'];
+export type IntegrationSuccessResponse = components['schemas']['IntegrationSuccessResponse'];
+export type IntegrationTool = components['schemas']['IntegrationTool'];
+export type IntegrationToolsResponse = components['schemas']['IntegrationToolsResponse'];
+export type LabelRequest = components['schemas']['LabelRequest'];
+export type LinearCommentAddedConfig = components['schemas']['LinearCommentAddedConfig'];
+export type LinearIssueCreatedConfig = components['schemas']['LinearIssueCreatedConfig'];
+export type LinearIssueUpdatedConfig = components['schemas']['LinearIssueUpdatedConfig'];
+export type LinkedUsersResponse = components['schemas']['LinkedUsersResponse'];
+export type LinkPlatformRequest = components['schemas']['LinkPlatformRequest'];
+export type LinkPlatformResponse = components['schemas']['LinkPlatformResponse'];
+export type LinkTokenInfoResponse = components['schemas']['LinkTokenInfoResponse'];
+export type LogoutResponse = components['schemas']['LogoutResponse'];
+export type MarkAsReadResponse = components['schemas']['MarkAsReadResponse'];
+export type MarkAsUnreadResponse = components['schemas']['MarkAsUnreadResponse'];
+export type MarketplaceResponse = components['schemas']['MarketplaceResponse'];
+export type MCPConfigDetail = components['schemas']['MCPConfigDetail'];
+export type MCPConnectionTestResponse = components['schemas']['MCPConnectionTestResponse'];
+export type MCPProxyPromptsListRequest = components['schemas']['MCPProxyPromptsListRequest'];
+export type MCPProxyPromptsListResponse = components['schemas']['MCPProxyPromptsListResponse'];
+export type MCPProxyResourceReadRequest = components['schemas']['MCPProxyResourceReadRequest'];
+export type MCPProxyResourceReadResponse = components['schemas']['MCPProxyResourceReadResponse'];
+export type MCPProxyResourcesListRequest = components['schemas']['MCPProxyResourcesListRequest'];
+export type MCPProxyResourcesListResponse = components['schemas']['MCPProxyResourcesListResponse'];
+export type MCPProxyResourceTemplatesListRequest = components['schemas']['MCPProxyResourceTemplatesListRequest'];
+export type MCPProxyResourceTemplatesListResponse = components['schemas']['MCPProxyResourceTemplatesListResponse'];
+export type MCPProxyToolCallRequest = components['schemas']['MCPProxyToolCallRequest'];
+export type MCPProxyToolCallResponse = components['schemas']['MCPProxyToolCallResponse'];
+export type MemoryDocType = components['schemas']['MemoryDocType'];
+export type MemoryDocument = components['schemas']['MemoryDocument'];
+export type MemoryDocumentPreview = components['schemas']['MemoryDocumentPreview'];
+export type MemoryDocumentsResponse = components['schemas']['MemoryDocumentsResponse'];
+export type MemoryEntityRef = components['schemas']['MemoryEntityRef'];
+export type MemoryEntityType = components['schemas']['MemoryEntityType'];
+export type MemoryEntry = components['schemas']['MemoryEntry'];
+export type MemoryEpisode = components['schemas']['MemoryEpisode'];
+export type MemoryEpisodeEntry = components['schemas']['MemoryEpisodeEntry'];
+export type MemoryEpisodesResponse = components['schemas']['MemoryEpisodesResponse'];
+export type MemoryGraphEdge = components['schemas']['MemoryGraphEdge'];
+export type MemoryGraphNode = components['schemas']['MemoryGraphNode'];
+export type MemoryGraphResponse = components['schemas']['MemoryGraphResponse'];
+export type MemoryKind = components['schemas']['MemoryKind'];
+export type MemoryListResponse = components['schemas']['MemoryListResponse'];
+export type MemoryOverviewResponse = components['schemas']['MemoryOverviewResponse'];
+export type MemoryRelationType = components['schemas']['MemoryRelationType'];
+export type MemorySearchResult = components['schemas']['MemorySearchResult'];
+export type MemorySourceType = components['schemas']['MemorySourceType'];
+export type MemoryTreeNode = components['schemas']['MemoryTreeNode'];
+export type MemoryTreeResponse = components['schemas']['MemoryTreeResponse'];
+export type MessageDict = components['schemas']['MessageDict'];
+export type MessageFeedbackRequest = components['schemas']['MessageFeedbackRequest'];
+export type MessageFeedbackResponse = components['schemas']['MessageFeedbackResponse'];
+export type MessageModelInput = components['schemas']['MessageModelInput'];
+export type MessageModelOutput = components['schemas']['MessageModelOutput'];
+export type MessageRequest = components['schemas']['MessageRequest'];
+export type MessageRequestWithHistory = components['schemas']['MessageRequestWithHistory'];
+export type MessageSearchResult = components['schemas']['MessageSearchResult'];
+export type MintPlatformLinkCodeResponse = components['schemas']['MintPlatformLinkCodeResponse'];
+export type MobileLoginUrlResponse = components['schemas']['MobileLoginUrlResponse'];
+export type ModalConfig = components['schemas']['ModalConfig'];
+export type ModifyLabelsResponse = components['schemas']['ModifyLabelsResponse'];
+export type MoveToInboxResponse = components['schemas']['MoveToInboxResponse'];
+export type MultiURLResponse = components['schemas']['MultiURLResponse'];
+export type MyIntegrationItem = components['schemas']['MyIntegrationItem'];
+export type MyIntegrationsResponse = components['schemas']['MyIntegrationsResponse'];
+export type NoteModel = components['schemas']['NoteModel'];
+export type NoteResponse = components['schemas']['NoteResponse'];
+export type NoteSearchResult = components['schemas']['NoteSearchResult'];
+export type NotificationAction = components['schemas']['NotificationAction'];
+export type NotificationActionView = components['schemas']['NotificationActionView'];
+export type NotificationChannelView = components['schemas']['NotificationChannelView'];
+export type NotificationContent = components['schemas']['NotificationContent'];
+export type NotificationContentView = components['schemas']['NotificationContentView'];
+export type NotificationRecord = components['schemas']['NotificationRecord'];
+export type NotificationRequest = components['schemas']['NotificationRequest'];
+export type NotificationResponse_BulkActionSummary_ = components['schemas']['NotificationResponse_BulkActionSummary_'];
+export type NotificationResponse_dict_str__Any__ = components['schemas']['NotificationResponse_dict_str__Any__'];
+export type NotificationResponse_NotificationRecord_ = components['schemas']['NotificationResponse_NotificationRecord_'];
+export type NotificationResponse_NotificationView_ = components['schemas']['NotificationResponse_NotificationView_'];
+export type NotificationSourceEnum = components['schemas']['NotificationSourceEnum'];
+export type NotificationStatus = components['schemas']['NotificationStatus'];
+export type NotificationType = components['schemas']['NotificationType'];
+export type NotificationView = components['schemas']['NotificationView'];
+export type NotionAllPageEventsConfig = components['schemas']['NotionAllPageEventsConfig'];
+export type NotionNewPageInDbConfig = components['schemas']['NotionNewPageInDbConfig'];
+export type NotionPageContentUpdatedConfig = components['schemas']['NotionPageContentUpdatedConfig'];
+export type NotionPageUpdatedConfig = components['schemas']['NotionPageUpdatedConfig'];
+export type OAuthClientMetadataResponse = components['schemas']['OAuthClientMetadataResponse'];
+export type OnboardingNeed = components['schemas']['OnboardingNeed'];
+export type OnboardingPhase = components['schemas']['OnboardingPhase'];
+export type OnboardingPhaseUpdateRequest = components['schemas']['OnboardingPhaseUpdateRequest'];
+export type OnboardingPhaseUpdateResponse = components['schemas']['OnboardingPhaseUpdateResponse'];
+export type OnboardingPreferences = components['schemas']['OnboardingPreferences'];
+export type OnboardingRequest = components['schemas']['OnboardingRequest'];
+export type OnboardingResetResponse = components['schemas']['OnboardingResetResponse'];
+export type OnboardingResponse = components['schemas']['OnboardingResponse'];
+export type OnboardingStatusResponse = components['schemas']['OnboardingStatusResponse'];
+export type PaginatedNotificationsResponse = components['schemas']['PaginatedNotificationsResponse'];
+export type PaginationMeta = components['schemas']['PaginationMeta'];
+export type PaymentVerificationResponse = components['schemas']['PaymentVerificationResponse'];
+export type PersistedTriageSummary = components['schemas']['PersistedTriageSummary'];
+export type PersonalizationResponse = components['schemas']['PersonalizationResponse'];
+export type PersonalizationTodo = components['schemas']['PersonalizationTodo'];
+export type PersonalizationWorkflow = components['schemas']['PersonalizationWorkflow'];
+export type PersonalizationWritingStyle = components['schemas']['PersonalizationWritingStyle'];
+export type PinMessageResponse = components['schemas']['PinMessageResponse'];
+export type PinnedMessagesResponse = components['schemas']['PinnedMessagesResponse'];
+export type PinnedUpdate = components['schemas']['PinnedUpdate'];
+export type PinRequest = components['schemas']['PinRequest'];
+export type PinResponse = components['schemas']['PinResponse'];
+export type PlanDuration = components['schemas']['PlanDuration'];
+export type PlanResponse = components['schemas']['PlanResponse'];
+export type PlanType = components['schemas']['PlanType'];
+export type PlatformLinkEntry = components['schemas']['PlatformLinkEntry'];
+export type PlatformType = components['schemas']['PlatformType'];
+export type PollPairingRequest = components['schemas']['PollPairingRequest'];
+export type PollPairingResponse = components['schemas']['PollPairingResponse'];
+export type Priority = components['schemas']['Priority'];
+export type ProjectCreate = components['schemas']['ProjectCreate'];
+export type ProjectResponse = components['schemas']['ProjectResponse'];
+export type PromptTriggerHint = components['schemas']['PromptTriggerHint'];
+export type PublicHoloCardResponse = components['schemas']['PublicHoloCardResponse'];
+export type PublicIntegrationDetailResponse = components['schemas']['PublicIntegrationDetailResponse'];
+export type PublicWorkflowCard = components['schemas']['PublicWorkflowCard'];
+export type PublicWorkflowsResponse = components['schemas']['PublicWorkflowsResponse'];
+export type PublicWorkflowStep = components['schemas']['PublicWorkflowStep'];
+export type PublishIntegrationResponse = components['schemas']['PublishIntegrationResponse'];
+export type PublishWorkflowResponse = components['schemas']['PublishWorkflowResponse'];
+export type PushTokenRequest = components['schemas']['PushTokenRequest'];
+export type PushTokenResponse = components['schemas']['PushTokenResponse'];
+export type RecordedCall = components['schemas']['RecordedCall'];
+export type RecurrenceData = components['schemas']['RecurrenceData'];
+export type RecurrenceRule = components['schemas']['RecurrenceRule'];
+export type RedeemLinkCodeRequest = components['schemas']['RedeemLinkCodeRequest'];
+export type RedeemLinkCodeResponse = components['schemas']['RedeemLinkCodeResponse'];
+export type RedirectConfig = components['schemas']['RedirectConfig'];
+export type RegenerateStepsRequest = components['schemas']['RegenerateStepsRequest'];
+export type RegenerateWritingStyleExampleResponse = components['schemas']['RegenerateWritingStyleExampleResponse'];
+export type RegisterServerRequest = components['schemas']['RegisterServerRequest'];
+export type RegisterServerResponse = components['schemas']['RegisterServerResponse'];
+export type ReminderResponse = components['schemas']['ReminderResponse'];
+export type ReplyToMessageData = components['schemas']['ReplyToMessageData'];
+export type ResetSessionRequest = components['schemas']['ResetSessionRequest'];
+export type ResetSessionResponse = components['schemas']['ResetSessionResponse'];
+export type ResetWorkflowResponse = components['schemas']['ResetWorkflowResponse'];
+export type SaveSocialProfilesResponse = components['schemas']['SaveSocialProfilesResponse'];
+export type SaveWritingStyleResponse = components['schemas']['SaveWritingStyleResponse'];
+export type ScheduledTaskStatus = components['schemas']['ScheduledTaskStatus'];
+export type SearchIntegrationItem = components['schemas']['SearchIntegrationItem'];
+export type SearchIntegrationsResponse = components['schemas']['SearchIntegrationsResponse'];
+export type SearchMode = components['schemas']['SearchMode'];
+export type SearchResultItem = components['schemas']['SearchResultItem'];
+export type SearchResultsResponse = components['schemas']['SearchResultsResponse'];
+export type SelectedCalendarEventData = components['schemas']['SelectedCalendarEventData'];
+export type SelectedWorkflowDataInput = components['schemas']['SelectedWorkflowDataInput'];
+export type SelectedWorkflowDataOutput = components['schemas']['SelectedWorkflowDataOutput'];
+export type SendDraftResponse = components['schemas']['SendDraftResponse'];
+export type SendEmailForm = components['schemas']['SendEmailForm'];
+export type SendEmailRequest = components['schemas']['SendEmailRequest'];
+export type SendEmailResponse = components['schemas']['SendEmailResponse'];
+export type SendEmailWithAttachmentsResponse = components['schemas']['SendEmailWithAttachmentsResponse'];
+export type SetToolOverrideRequest = components['schemas']['SetToolOverrideRequest'];
+export type Skill = components['schemas']['Skill'];
+export type SkillInlineCreateRequest = components['schemas']['SkillInlineCreateRequest'];
+export type SkillListResponse = components['schemas']['SkillListResponse'];
+export type SkillSource = components['schemas']['SkillSource'];
+export type SkillTarget = components['schemas']['SkillTarget'];
+export type SkillTargetsResponse = components['schemas']['SkillTargetsResponse'];
+export type SkillToggleResponse = components['schemas']['SkillToggleResponse'];
+export type SkillUpdateRequest = components['schemas']['SkillUpdateRequest'];
+export type SlackChannelCreatedConfig = components['schemas']['SlackChannelCreatedConfig'];
+export type SlackNewMessageConfig = components['schemas']['SlackNewMessageConfig'];
+export type SocialProfile = components['schemas']['SocialProfile'];
+export type SocialProfilesConfirmRequest = components['schemas']['SocialProfilesConfirmRequest'];
+export type StarConversationResponse = components['schemas']['StarConversationResponse'];
+export type StarEmailsResponse = components['schemas']['StarEmailsResponse'];
+export type StarredUpdate = components['schemas']['StarredUpdate'];
+export type StarredVoicesResponse = components['schemas']['StarredVoicesResponse'];
+export type StartPairingRequest = components['schemas']['StartPairingRequest'];
+export type StartPairingResponse = components['schemas']['StartPairingResponse'];
+export type StarVoiceRequest = components['schemas']['StarVoiceRequest'];
+export type StaticReminderPayload = components['schemas']['StaticReminderPayload'];
+export type StoredIntegrationTool = components['schemas']['StoredIntegrationTool'];
+export type SubscriptionAction = components['schemas']['SubscriptionAction'];
+export type SubscriptionCondition = components['schemas']['SubscriptionCondition'];
+export type SubscriptionDocument = components['schemas']['SubscriptionDocument'];
+export type SubscriptionResolution = components['schemas']['SubscriptionResolution'];
+export type SubscriptionStatus = components['schemas']['SubscriptionStatus'];
+export type SubtaskCreateRequest = components['schemas']['SubtaskCreateRequest'];
+export type SubTaskInput = components['schemas']['SubTaskInput'];
+export type SubTaskOutput = components['schemas']['SubTaskOutput'];
+export type SubtaskUpdateRequest = components['schemas']['SubtaskUpdateRequest'];
+export type SuggestedTrigger = components['schemas']['SuggestedTrigger'];
+export type SupportAttachment = components['schemas']['SupportAttachment'];
+export type SupportRateLimits = components['schemas']['SupportRateLimits'];
+export type SupportRateLimitStatusResponse = components['schemas']['SupportRateLimitStatusResponse'];
+export type SupportRateLimitWindow = components['schemas']['SupportRateLimitWindow'];
+export type SupportRequestCreate = components['schemas']['SupportRequestCreate'];
+export type SupportRequestListResponse = components['schemas']['SupportRequestListResponse'];
+export type SupportRequestPagination = components['schemas']['SupportRequestPagination'];
+export type SupportRequestPriority = components['schemas']['SupportRequestPriority'];
+export type SupportRequestResponse = components['schemas']['SupportRequestResponse'];
+export type SupportRequestStatus = components['schemas']['SupportRequestStatus'];
+export type SupportRequestSubmissionResponse = components['schemas']['SupportRequestSubmissionResponse'];
+export type SupportRequestType = components['schemas']['SupportRequestType'];
+export type SystemPurpose = components['schemas']['SystemPurpose'];
+export type TodoCanvasResponse = components['schemas']['TodoCanvasResponse'];
+export type TodoCounts = components['schemas']['TodoCounts'];
+export type TodoistNewTaskCreatedConfig = components['schemas']['TodoistNewTaskCreatedConfig'];
+export type TodoLabelCount = components['schemas']['TodoLabelCount'];
+export type TodoListResponse = components['schemas']['TodoListResponse'];
+export type TodoModel = components['schemas']['TodoModel'];
+export type TodoResponse = components['schemas']['TodoResponse'];
+export type TodoStats = components['schemas']['TodoStats'];
+export type TodoUpdateRequest = components['schemas']['TodoUpdateRequest'];
+export type TodoWorkflowGenerationResponse = components['schemas']['TodoWorkflowGenerationResponse'];
+export type TodoWorkflowGenerationStatus = components['schemas']['TodoWorkflowGenerationStatus'];
+export type TodoWorkflowStatus = components['schemas']['TodoWorkflowStatus'];
+export type TodoWorkflowStatusResponse = components['schemas']['TodoWorkflowStatusResponse'];
+export type ToolDataEntry = components['schemas']['ToolDataEntry'];
+export type ToolInfo = components['schemas']['ToolInfo'];
+export type ToolsCategoryResponse = components['schemas']['ToolsCategoryResponse'];
+export type ToolsListResponse = components['schemas']['ToolsListResponse'];
+export type TranscribeAudioResponse = components['schemas']['TranscribeAudioResponse'];
+export type TrashEmailsResponse = components['schemas']['TrashEmailsResponse'];
+export type TriageEmailSummary = components['schemas']['TriageEmailSummary'];
+export type TriggerConfig = components['schemas']['TriggerConfig'];
+export type TriggerConfigFieldSchema = components['schemas']['TriggerConfigFieldSchema'];
+export type TriggerOption = components['schemas']['TriggerOption'];
+export type TriggerOptionGroup = components['schemas']['TriggerOptionGroup'];
+export type TriggerOptionsResponse = components['schemas']['TriggerOptionsResponse'];
+export type TriggerSubscription = components['schemas']['TriggerSubscription'];
+export type TriggerSubscriptionStatus = components['schemas']['TriggerSubscriptionStatus'];
+export type TriggerType = components['schemas']['TriggerType'];
+export type UnlinkAccountResponse = components['schemas']['UnlinkAccountResponse'];
+export type UnpublishIntegrationResponse = components['schemas']['UnpublishIntegrationResponse'];
+export type UnstarEmailsResponse = components['schemas']['UnstarEmailsResponse'];
+export type UntrashEmailsResponse = components['schemas']['UntrashEmailsResponse'];
+export type UpdateCustomIntegrationRequest = components['schemas']['UpdateCustomIntegrationRequest'];
+export type UpdateDescriptionRequest = components['schemas']['UpdateDescriptionRequest'];
+export type UpdateDescriptionResponse = components['schemas']['UpdateDescriptionResponse'];
+export type UpdateDocumentRequest = components['schemas']['UpdateDocumentRequest'];
+export type UpdateFileRequest = components['schemas']['UpdateFileRequest'];
+export type UpdateHILPreferencesRequest = components['schemas']['UpdateHILPreferencesRequest'];
+export type UpdateHoloCardColorsResponse = components['schemas']['UpdateHoloCardColorsResponse'];
+export type UpdateIntegrationInstructionsRequest = components['schemas']['UpdateIntegrationInstructionsRequest'];
+export type UpdateMemoryRequest = components['schemas']['UpdateMemoryRequest'];
+export type UpdateMessagesRequest = components['schemas']['UpdateMessagesRequest'];
+export type UpdateMessagesResponse = components['schemas']['UpdateMessagesResponse'];
+export type UpdateProjectRequest = components['schemas']['UpdateProjectRequest'];
+export type UpdateReminderRequest = components['schemas']['UpdateReminderRequest'];
+export type UpdateTimezoneResponse = components['schemas']['UpdateTimezoneResponse'];
+export type UpdateVoiceRequest = components['schemas']['UpdateVoiceRequest'];
+export type UpdateWorkflowRequest = components['schemas']['UpdateWorkflowRequest'];
+export type URLRequest = components['schemas']['URLRequest'];
+export type URLResponse = components['schemas']['URLResponse'];
+export type UsageActivityResponse = components['schemas']['UsageActivityResponse'];
+export type UsageBudget = components['schemas']['UsageBudget'];
+export type UsageHistoryEntry = components['schemas']['UsageHistoryEntry'];
+export type UsageSummary = components['schemas']['UsageSummary'];
+export type UserSubscriptionStatus = components['schemas']['UserSubscriptionStatus'];
+export type UserUpdateResponse = components['schemas']['UserUpdateResponse'];
+export type ValidationIssue = components['schemas']['ValidationIssue'];
+export type VerifyPaymentRequest = components['schemas']['VerifyPaymentRequest'];
+export type VoiceListResponse = components['schemas']['VoiceListResponse'];
+export type VoiceOption = components['schemas']['VoiceOption'];
+export type VoiceSelectionResponse = components['schemas']['VoiceSelectionResponse'];
+export type VoiceTokenResponse = components['schemas']['VoiceTokenResponse'];
+export type WebSearchResult = components['schemas']['WebSearchResult'];
+export type WorkflowCreator = components['schemas']['WorkflowCreator'];
+export type WorkflowExecution = components['schemas']['WorkflowExecution'];
+export type WorkflowExecutionRequest = components['schemas']['WorkflowExecutionRequest'];
+export type WorkflowExecutionResponse = components['schemas']['WorkflowExecutionResponse'];
+export type WorkflowExecutionsResponse = components['schemas']['WorkflowExecutionsResponse'];
+export type WorkflowListResponse = components['schemas']['WorkflowListResponse'];
+export type WorkflowMessageResponse = components['schemas']['WorkflowMessageResponse'];
+export type WorkflowResponse = components['schemas']['WorkflowResponse'];
+export type WorkflowStatusResponse = components['schemas']['WorkflowStatusResponse'];
+export type WorkflowStepInput = components['schemas']['WorkflowStepInput'];
+export type WorkflowStepOutput = components['schemas']['WorkflowStepOutput'];
+export type WorkflowTriggerResponse = components['schemas']['WorkflowTriggerResponse'];
+export type WorkflowWithIntegrations = components['schemas']['WorkflowWithIntegrations'];
+export type WritingStyleEditRequest = components['schemas']['WritingStyleEditRequest'];
+export type WritingStyleExampleBlocks = components['schemas']['WritingStyleExampleBlocks'];
+export type WritingStyleRegenerateRequest = components['schemas']['WritingStyleRegenerateRequest'];
 export type $defs = Record<string, never>;
 export interface operations {
     file_update_file_endpoint: {
@@ -17166,7 +17648,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["app__schemas__device__requests__DeviceTokenRequest"];
+                "application/json": components["schemas"]["DeviceTokenRequest"];
             };
         };
         responses: {
@@ -17194,7 +17676,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__schemas__device__responses__DeviceTokenResponse"];
+                    "application/json": components["schemas"]["DeviceTokenResponse"];
                 };
             };
             /** @description Unprocessable Entity */
@@ -21809,7 +22291,7 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["app__models__device_token_models__DeviceTokenRequest"];
+                "application/json": components["schemas"]["PushTokenRequest"];
             };
         };
         responses: {
@@ -21837,7 +22319,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__models__device_token_models__DeviceTokenResponse"];
+                    "application/json": components["schemas"]["PushTokenResponse"];
                 };
             };
             /** @description Unprocessable Entity */
@@ -21888,7 +22370,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["app__models__device_token_models__DeviceTokenResponse"];
+                    "application/json": components["schemas"]["PushTokenResponse"];
                 };
             };
             /** @description Unprocessable Entity */

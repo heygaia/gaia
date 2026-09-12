@@ -19,8 +19,8 @@ from app.constants.log_tags import LogTag
 from app.constants.notifications import EXPO_TOKEN_PATTERN, MAX_DEVICES_PER_USER
 from app.db.repositories.users import user_repository
 from app.models.device_token_models import (
-    DeviceTokenRequest,
-    DeviceTokenResponse,
+    PushTokenRequest,
+    PushTokenResponse,
 )
 from app.models.notification.notification_models import (
     ChannelPreferences,
@@ -377,11 +377,11 @@ async def bulk_actions(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/notifications/register-device", response_model=DeviceTokenResponse)
+@router.post("/notifications/register-device", response_model=PushTokenResponse)
 async def register_device_token(
-    request: DeviceTokenRequest = Body(...),
+    request: PushTokenRequest = Body(...),
     current_user: AuthenticatedUser = Depends(get_current_user),
-) -> DeviceTokenResponse:
+) -> PushTokenResponse:
     """
     Register a device token for push notifications
     """
@@ -424,7 +424,7 @@ async def register_device_token(
 
         if success:
             log.set(operation="register_device", outcome="success")
-            return DeviceTokenResponse(success=True, message="Device registered successfully")
+            return PushTokenResponse(success=True, message="Device registered successfully")
         raise HTTPException(status_code=500, detail="Failed to register device token")
 
     except HTTPException:
@@ -439,11 +439,11 @@ async def register_device_token(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/notifications/unregister-device", response_model=DeviceTokenResponse)
+@router.post("/notifications/unregister-device", response_model=PushTokenResponse)
 async def unregister_device_token(
     token: str = Body(..., embed=True),
     current_user: AuthenticatedUser = Depends(get_current_user),
-) -> DeviceTokenResponse:
+) -> PushTokenResponse:
     """
     Unregister a device token
     """
@@ -462,8 +462,8 @@ async def unregister_device_token(
 
         if success:
             log.set(operation="unregister_device", outcome="success")
-            return DeviceTokenResponse(success=True, message="Device unregistered successfully")
-        return DeviceTokenResponse(success=False, message="Device token not found")
+            return PushTokenResponse(success=True, message="Device unregistered successfully")
+        return PushTokenResponse(success=False, message="Device token not found")
 
     except HTTPException:
         raise

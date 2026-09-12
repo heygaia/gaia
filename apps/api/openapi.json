@@ -2941,7 +2941,7 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/MessageModel-Output"
+              "$ref": "#/components/schemas/MessageModelOutput"
             },
             "title": "Messages",
             "type": "array"
@@ -3046,7 +3046,7 @@
             "type": "string"
           },
           "message": {
-            "$ref": "#/components/schemas/MessageModel-Output"
+            "$ref": "#/components/schemas/MessageModelOutput"
           }
         },
         "required": [
@@ -3345,7 +3345,7 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/MessageModel-Output"
+              "$ref": "#/components/schemas/MessageModelOutput"
             },
             "title": "Messages",
             "type": "array"
@@ -3992,7 +3992,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/WorkflowStep-Input"
+                  "$ref": "#/components/schemas/WorkflowStepInput"
                 },
                 "maxItems": 10,
                 "type": "array"
@@ -4525,6 +4525,51 @@
           "status"
         ],
         "title": "DeviceServerResponse",
+        "type": "object"
+      },
+      "DeviceTokenRequest": {
+        "description": "Daemon exchanges its refresh credential for a short-lived connect JWT.",
+        "properties": {
+          "refresh_token": {
+            "minLength": 1,
+            "title": "Refresh Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "refresh_token"
+        ],
+        "title": "DeviceTokenRequest",
+        "type": "object"
+      },
+      "DeviceTokenResponse": {
+        "description": "Short-lived connect JWT plus the rotated refresh credential.",
+        "properties": {
+          "access_token": {
+            "title": "Access Token",
+            "type": "string"
+          },
+          "expires_in": {
+            "title": "Expires In",
+            "type": "integer"
+          },
+          "refresh_token": {
+            "title": "Refresh Token",
+            "type": "string"
+          },
+          "token_type": {
+            "default": "Bearer",
+            "title": "Token Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "access_token",
+          "token_type",
+          "expires_in",
+          "refresh_token"
+        ],
+        "title": "DeviceTokenResponse",
         "type": "object"
       },
       "DisconnectPlatformResponse": {
@@ -8779,7 +8824,7 @@
         "title": "MessageFeedbackResponse",
         "type": "object"
       },
-      "MessageModel-Input": {
+      "MessageModelInput": {
         "description": "A single chat message with its content, attachments and tool data.",
         "properties": {
           "date": {
@@ -8965,7 +9010,7 @@
           "selectedWorkflow": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SelectedWorkflowData-Input"
+                "$ref": "#/components/schemas/SelectedWorkflowDataInput"
               },
               {
                 "type": "null"
@@ -9020,7 +9065,7 @@
         "title": "MessageModel",
         "type": "object"
       },
-      "MessageModel-Output": {
+      "MessageModelOutput": {
         "description": "A single chat message with its content, attachments and tool data.",
         "properties": {
           "date": {
@@ -9206,7 +9251,7 @@
           "selectedWorkflow": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SelectedWorkflowData-Output"
+                "$ref": "#/components/schemas/SelectedWorkflowDataOutput"
               },
               {
                 "type": "null"
@@ -9394,7 +9439,7 @@
           "selectedWorkflow": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/SelectedWorkflowData-Input"
+                "$ref": "#/components/schemas/SelectedWorkflowDataInput"
               },
               {
                 "type": "null"
@@ -9450,7 +9495,7 @@
             "type": "string"
           },
           "message": {
-            "$ref": "#/components/schemas/MessageModel-Output"
+            "$ref": "#/components/schemas/MessageModelOutput"
           },
           "snippet": {
             "title": "Snippet",
@@ -11407,7 +11452,7 @@
           },
           "steps": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep-Output"
+              "$ref": "#/components/schemas/WorkflowStepOutput"
             },
             "title": "Steps",
             "type": "array"
@@ -11742,7 +11787,7 @@
         "type": "object"
       },
       "PollPairingResponse": {
-        "description": "Result of a pairing poll.\n\n``status`` is ``pending`` (keep polling), ``approved`` (``refresh_token`` set),\nor ``denied`` / ``expired`` (stop).",
+        "description": "Result of a pairing poll.\n\n``status`` is ``pending`` (keep polling), ``approved`` (``device_id`` and\n``refresh_token`` set) or ``expired`` (stop).",
         "properties": {
           "device_id": {
             "anyOf": [
@@ -11767,12 +11812,19 @@
             "title": "Refresh Token"
           },
           "status": {
+            "enum": [
+              "pending",
+              "approved",
+              "expired"
+            ],
             "title": "Status",
             "type": "string"
           }
         },
         "required": [
-          "status"
+          "status",
+          "device_id",
+          "refresh_token"
         ],
         "title": "PollPairingResponse",
         "type": "object"
@@ -12420,6 +12472,59 @@
           "workflow_id"
         ],
         "title": "PublishWorkflowResponse",
+        "type": "object"
+      },
+      "PushTokenRequest": {
+        "description": "Request model for registering a device token",
+        "properties": {
+          "device_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Optional device identifier",
+            "title": "Device Id"
+          },
+          "platform": {
+            "$ref": "#/components/schemas/PlatformType",
+            "description": "Device platform (ios or android)"
+          },
+          "token": {
+            "description": "Expo push token",
+            "title": "Token",
+            "type": "string"
+          }
+        },
+        "required": [
+          "token",
+          "platform"
+        ],
+        "title": "PushTokenRequest",
+        "type": "object"
+      },
+      "PushTokenResponse": {
+        "description": "Response model for device token operations",
+        "properties": {
+          "message": {
+            "description": "Response message",
+            "title": "Message",
+            "type": "string"
+          },
+          "success": {
+            "description": "Operation success status",
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "message"
+        ],
+        "title": "PushTokenResponse",
         "type": "object"
       },
       "RecordedCall": {
@@ -13370,7 +13475,7 @@
         "title": "SelectedCalendarEventData",
         "type": "object"
       },
-      "SelectedWorkflowData-Input": {
+      "SelectedWorkflowDataInput": {
         "description": "Workflow the user attached to a message for execution.",
         "properties": {
           "description": {
@@ -13394,7 +13499,7 @@
           },
           "steps": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep-Input"
+              "$ref": "#/components/schemas/WorkflowStepInput"
             },
             "title": "Steps",
             "type": "array"
@@ -13413,7 +13518,7 @@
         "title": "SelectedWorkflowData",
         "type": "object"
       },
-      "SelectedWorkflowData-Output": {
+      "SelectedWorkflowDataOutput": {
         "description": "Workflow the user attached to a message for execution.",
         "properties": {
           "description": {
@@ -13437,7 +13542,7 @@
           },
           "steps": {
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep-Output"
+              "$ref": "#/components/schemas/WorkflowStepOutput"
             },
             "title": "Steps",
             "type": "array"
@@ -14353,7 +14458,7 @@
         "title": "StoredIntegrationTool",
         "type": "object"
       },
-      "SubTask-Input": {
+      "SubTaskInput": {
         "properties": {
           "completed": {
             "default": false,
@@ -14384,7 +14489,7 @@
         "title": "SubTask",
         "type": "object"
       },
-      "SubTask-Output": {
+      "SubTaskOutput": {
         "properties": {
           "completed": {
             "default": false,
@@ -14635,6 +14740,19 @@
           "account"
         ],
         "title": "SubscriptionResolution",
+        "type": "string"
+      },
+      "SubscriptionStatus": {
+        "description": "Subscription status with clear definitions.",
+        "enum": [
+          "pending",
+          "active",
+          "on_hold",
+          "cancelled",
+          "failed",
+          "expired"
+        ],
+        "title": "SubscriptionStatus",
         "type": "string"
       },
       "SubtaskCreateRequest": {
@@ -15350,7 +15468,7 @@
           "subtasks": {
             "description": "List of subtasks",
             "items": {
-              "$ref": "#/components/schemas/SubTask-Input"
+              "$ref": "#/components/schemas/SubTaskInput"
             },
             "maxItems": 50,
             "title": "Subtasks",
@@ -15551,7 +15669,7 @@
           "subtasks": {
             "description": "List of subtasks",
             "items": {
-              "$ref": "#/components/schemas/SubTask-Output"
+              "$ref": "#/components/schemas/SubTaskOutput"
             },
             "maxItems": 50,
             "title": "Subtasks",
@@ -15826,7 +15944,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/SubTask-Input"
+                  "$ref": "#/components/schemas/SubTaskInput"
                 },
                 "type": "array"
               },
@@ -16610,7 +16728,7 @@
             "$ref": "#/components/schemas/SubscriptionResolution"
           },
           "status": {
-            "$ref": "#/components/schemas/app__models__trigger_subscription_models__SubscriptionStatus",
+            "$ref": "#/components/schemas/TriggerSubscriptionStatus",
             "default": "active"
           },
           "trigger_data": {
@@ -16631,6 +16749,14 @@
         ],
         "title": "TriggerSubscription",
         "type": "object"
+      },
+      "TriggerSubscriptionStatus": {
+        "enum": [
+          "active",
+          "paused"
+        ],
+        "title": "TriggerSubscriptionStatus",
+        "type": "string"
       },
       "TriggerType": {
         "description": "What caused a run.\n\n- MANUAL: Triggered by user action\n- SCHEDULE: Triggered by cron schedule\n- INTEGRATION: Triggered by external service (calendar, email, github, etc.)\n- SCHEDULED_TODO: A tracked todo firing on its own schedule\n- TODO_TRIGGER: A tracked todo woken by an integration event it subscribed to\n\nThe last two were bare strings written at one site and read at another, which\nis exactly the drift an enum exists to stop.",
@@ -17106,7 +17232,7 @@
           },
           "messages": {
             "items": {
-              "$ref": "#/components/schemas/MessageModel-Input"
+              "$ref": "#/components/schemas/MessageModelInput"
             },
             "title": "Messages",
             "type": "array"
@@ -17416,7 +17542,7 @@
             "anyOf": [
               {
                 "items": {
-                  "$ref": "#/components/schemas/WorkflowStep-Input"
+                  "$ref": "#/components/schemas/WorkflowStepInput"
                 },
                 "type": "array"
               },
@@ -17678,7 +17804,7 @@
           "status": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/app__models__payment_models__SubscriptionStatus"
+                "$ref": "#/components/schemas/SubscriptionStatus"
               },
               {
                 "type": "null"
@@ -18404,7 +18530,7 @@
         "title": "WorkflowStatusResponse",
         "type": "object"
       },
-      "WorkflowStep-Input": {
+      "WorkflowStepInput": {
         "description": "A single step in a workflow.",
         "properties": {
           "category": {
@@ -18437,7 +18563,7 @@
         "title": "WorkflowStep",
         "type": "object"
       },
-      "WorkflowStep-Output": {
+      "WorkflowStepOutput": {
         "description": "A single step in a workflow.",
         "properties": {
           "category": {
@@ -18802,7 +18928,7 @@
           "steps": {
             "description": "List of workflow steps to execute",
             "items": {
-              "$ref": "#/components/schemas/WorkflowStep-Output"
+              "$ref": "#/components/schemas/WorkflowStepOutput"
             },
             "maxItems": 10,
             "title": "Steps",
@@ -18980,124 +19106,6 @@
           "edited_summary"
         ],
         "title": "WritingStyleRegenerateRequest",
-        "type": "object"
-      },
-      "app__models__device_token_models__DeviceTokenRequest": {
-        "description": "Request model for registering a device token",
-        "properties": {
-          "device_id": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "Optional device identifier",
-            "title": "Device Id"
-          },
-          "platform": {
-            "$ref": "#/components/schemas/PlatformType",
-            "description": "Device platform (ios or android)"
-          },
-          "token": {
-            "description": "Expo push token",
-            "title": "Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "token",
-          "platform"
-        ],
-        "title": "DeviceTokenRequest",
-        "type": "object"
-      },
-      "app__models__device_token_models__DeviceTokenResponse": {
-        "description": "Response model for device token operations",
-        "properties": {
-          "message": {
-            "description": "Response message",
-            "title": "Message",
-            "type": "string"
-          },
-          "success": {
-            "description": "Operation success status",
-            "title": "Success",
-            "type": "boolean"
-          }
-        },
-        "required": [
-          "success",
-          "message"
-        ],
-        "title": "DeviceTokenResponse",
-        "type": "object"
-      },
-      "app__models__payment_models__SubscriptionStatus": {
-        "description": "Subscription status with clear definitions.",
-        "enum": [
-          "pending",
-          "active",
-          "on_hold",
-          "cancelled",
-          "failed",
-          "expired"
-        ],
-        "title": "SubscriptionStatus",
-        "type": "string"
-      },
-      "app__models__trigger_subscription_models__SubscriptionStatus": {
-        "enum": [
-          "active",
-          "paused"
-        ],
-        "title": "SubscriptionStatus",
-        "type": "string"
-      },
-      "app__schemas__device__requests__DeviceTokenRequest": {
-        "description": "Daemon exchanges its refresh credential for a short-lived connect JWT.",
-        "properties": {
-          "refresh_token": {
-            "minLength": 1,
-            "title": "Refresh Token",
-            "type": "string"
-          }
-        },
-        "required": [
-          "refresh_token"
-        ],
-        "title": "DeviceTokenRequest",
-        "type": "object"
-      },
-      "app__schemas__device__responses__DeviceTokenResponse": {
-        "description": "Short-lived connect JWT plus the rotated refresh credential.",
-        "properties": {
-          "access_token": {
-            "title": "Access Token",
-            "type": "string"
-          },
-          "expires_in": {
-            "title": "Expires In",
-            "type": "integer"
-          },
-          "refresh_token": {
-            "title": "Refresh Token",
-            "type": "string"
-          },
-          "token_type": {
-            "default": "Bearer",
-            "title": "Token Type",
-            "type": "string"
-          }
-        },
-        "required": [
-          "access_token",
-          "expires_in",
-          "refresh_token"
-        ],
-        "title": "DeviceTokenResponse",
         "type": "object"
       }
     }
@@ -22527,7 +22535,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__schemas__device__requests__DeviceTokenRequest"
+                "$ref": "#/components/schemas/DeviceTokenRequest"
               }
             }
           },
@@ -22538,7 +22546,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__schemas__device__responses__DeviceTokenResponse"
+                  "$ref": "#/components/schemas/DeviceTokenResponse"
                 }
               }
             },
@@ -28529,7 +28537,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/app__models__device_token_models__DeviceTokenRequest"
+                "$ref": "#/components/schemas/PushTokenRequest"
               }
             }
           },
@@ -28540,7 +28548,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__models__device_token_models__DeviceTokenResponse"
+                  "$ref": "#/components/schemas/PushTokenResponse"
                 }
               }
             },
@@ -28602,7 +28610,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/app__models__device_token_models__DeviceTokenResponse"
+                  "$ref": "#/components/schemas/PushTokenResponse"
                 }
               }
             },
