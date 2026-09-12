@@ -293,6 +293,39 @@ class TestComputeToolDiff:
         assert len(delete) == 1
         assert delete[0] == ("ns::gone", "ns")
 
+    @pytest.mark.regression
+    def test_custom_mcp_subagent_is_never_deleted_on_reseed(self):
+        """A custom/device MCP subagent (keyed by integration_id in the subagents
+        namespace) is registered at connect time, not by the builtin re-seed, so
+        it is legitimately absent from current_tools. The seed must not delete it
+        — before the fix it did, wiping the executor's handoff target on every
+        restart so device MCP tools became unreachable and the agent fell back to
+        run_on_device."""
+        current: dict[str, dict] = {
+            "subagents::subagent:todos": {"hash": "h"},  # a builtin the seed manages
+        }
+        existing = {
+            "subagents::subagent:todos": {"hash": "h", "namespace": "subagents"},
+            # a device MCP subagent keyed by integration_id (UUID), not "subagent:"
+            "subagents::9531fa23-5120-458c-9d7c-8af9127be70e": {
+                "hash": "hx",
+                "namespace": "subagents",
+            },
+        }
+        _upsert, delete = _compute_tool_diff(current, existing)
+        deleted_keys = {key for key, _ns in delete}
+        assert "subagents::9531fa23-5120-458c-9d7c-8af9127be70e" not in deleted_keys
+
+    def test_builtin_subagent_absent_from_current_is_still_deleted(self):
+        """The preservation is scoped to custom subagents — a builtin subagent
+        that all_subagents() no longer produces must still be pruned."""
+        current: dict[str, dict] = {}
+        existing = {
+            "subagents::subagent:retired": {"hash": "h", "namespace": "subagents"},
+        }
+        _upsert, delete = _compute_tool_diff(current, existing)
+        assert ("subagents::subagent:retired", "subagents") in delete
+
 
 # ---------------------------------------------------------------------------
 # _build_put_operations
