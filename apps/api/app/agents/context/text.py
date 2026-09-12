@@ -41,6 +41,29 @@ EXECUTOR_CONNECTED_INTEGRATIONS_HEADER = (
     "listed below only where a connected account could be mistaken for it:"
 )
 
+#: Comms: knows a device exists so it delegates local/file work rather than
+#: guessing. It never touches files itself.
+CONNECTED_DEVICES_HEADER = (
+    "Connected devices (the user's own machines). For anything about the user's local "
+    "files, folders, apps, or computer, delegate to the executor:"
+)
+
+#: Executor: the crucial nudge. The device's files live on the user's real
+#: machine, reachable through the device's tools; the sandbox is a cloud
+#: container that CANNOT see them. This is what stops the executor from
+#: answering "what's in my downloads" by running `ls` in the sandbox.
+EXECUTOR_CONNECTED_DEVICES_HEADER = (
+    "CONNECTED DEVICES (the user's own machines). To read, change, or run anything on the "
+    "user's machine, use run_on_device(device_id, command) - pass the id shown in each line "
+    "below VERBATIM as device_id (never the name). Its shell runs on the user's real machine; "
+    "the sandbox shell is a cloud container that CANNOT see it, so NEVER answer a question "
+    "about the user's own files or apps by running commands in the sandbox. A device may also "
+    "expose its own MCP servers (listed after 'exposing:' on each line); to use one, work "
+    "through that server's own tools - retrieve them and hand off to its subagent - rather "
+    "than run_on_device. Use list_devices for live online status and the MCP servers a device "
+    "exposes:"
+)
+
 
 class BuiltinOverlap(NamedTuple):
     """A built-in subagent whose job a connected provider gets mistaken for."""

@@ -18,6 +18,7 @@ from app.constants.chroma import (
     TOOLS_SEED_LOCK_RENEW_SECONDS,
 )
 from app.constants.log_tags import LogTag
+from app.db.chroma import chroma_tools_store
 from app.db.chroma.chroma_tools_store import (
     _build_put_operations,
     _compute_tool_diff,
@@ -292,6 +293,97 @@ class TestComputeToolDiff:
         upsert, delete = _compute_tool_diff(current, existing)
         assert len(delete) == 1
         assert delete[0] == ("ns::gone", "ns")
+
+    @pytest.mark.regression
+    def test_custom_mcp_subagent_is_never_deleted_on_reseed(self):
+        """A custom/device MCP subagent (keyed by integration_id in the subagents
+        namespace) is registered at connect time, not by the builtin re-seed, so
+        it is legitimately absent from current_tools. The seed must not delete it
+        — before the fix it did, wiping the executor's handoff target on every
+        restart so device MCP tools became unreachable and the agent fell back to
+        run_on_device."""
+        current: dict[str, dict] = {
+            "subagents::subagent:todos": {"hash": "h"},  # a builtin the seed manages
+        }
+        existing = {
+            "subagents::subagent:todos": {"hash": "h", "namespace": "subagents"},
+            # a device MCP subagent keyed by integration_id (UUID), not "subagent:"
+            "subagents::9531fa23-5120-458c-9d7c-8af9127be70e": {
+                "hash": "hx",
+                "namespace": "subagents",
+            },
+        }
+        _upsert, delete = _compute_tool_diff(current, existing)
+        deleted_keys = {key for key, _ns in delete}
+        assert "subagents::9531fa23-5120-458c-9d7c-8af9127be70e" not in deleted_keys
+
+    def test_builtin_subagent_absent_from_current_is_still_deleted(self):
+        """The preservation is scoped to custom subagents — a builtin subagent
+        that all_subagents() no longer produces must still be pruned."""
+        current: dict[str, dict] = {}
+        existing = {
+            "subagents::subagent:retired": {"hash": "h", "namespace": "subagents"},
+        }
+        _upsert, delete = _compute_tool_diff(current, existing)
+        assert ("subagents::subagent:retired", "subagents") in delete
+
+    def test_reseed_prunes_stale_builtin_while_keeping_the_device_subagent(self):
+        """With both a stale builtin subagent and a device subagent absent from a
+        re-seed's current set, only the builtin is pruned — pins the guard against
+        deleting one but not the other (mutants on the loop's delete branch)."""
+        # The device subagent is FIRST and the stale builtin SECOND on purpose:
+        # skipping the device one must `continue` (keep scanning), not `break`
+        # (which would leave the later stale builtin un-pruned).
+        current: dict[str, dict] = {}
+        existing = {
+            "subagents::aedc0ba0-b3b6-4783-8035-d25e94c291db": {
+                "hash": "hx",
+                "namespace": "subagents",
+            },
+            "subagents::subagent:retired": {"hash": "h", "namespace": "subagents"},
+        }
+        _upsert, delete = _compute_tool_diff(current, existing)
+        deleted_keys = {key for key, _ns in delete}
+        assert deleted_keys == {"subagents::subagent:retired"}
+
+
+class TestIsDynamicSubagent:
+    """A dynamic (custom/device) MCP subagent lives in the ``subagents`` namespace
+    keyed by integration_id, NOT the builtin ``subagent:<id>`` scheme; the re-seed
+    must recognise it so it is never pruned as stale."""
+
+    def test_device_subagent_keyed_by_integration_id_is_dynamic(self):
+        assert (
+            chroma_tools_store._is_dynamic_subagent(
+                "subagents::aedc0ba0-b3b6-4783-8035-d25e94c291db", "subagents"
+            )
+            is True
+        )
+
+    def test_builtin_subagent_is_not_dynamic(self):
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::subagent:todos", "subagents")
+            is False
+        )
+
+    def test_only_the_key_after_the_first_separator_is_examined(self):
+        # split(maxsplit=1): a "subagent:" builtin whose own id contains "::" is
+        # still a builtin. A higher maxsplit would look at the tail ("tail") and
+        # wrongly call it dynamic.
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::subagent:weird::tail", "subagents")
+            is False
+        )
+
+    def test_non_subagents_namespace_is_never_dynamic(self):
+        assert chroma_tools_store._is_dynamic_subagent("gmail::search_threads", "gmail") is False
+
+    def test_builtin_prefix_must_match_from_the_start(self):
+        # A key that merely contains "subagent:" later is still dynamic.
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::mcp-subagent:foo", "subagents")
+            is True
+        )
 
 
 # ---------------------------------------------------------------------------

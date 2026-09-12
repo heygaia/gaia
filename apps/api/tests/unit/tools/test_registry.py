@@ -849,7 +849,33 @@ class TestInitializedCategoryContract:
             "suggest_integrations": False,
             "connect_integration": True,
             "check_integrations_status": False,
+            # Force-gated (always_gate), not destructive — see the always_gate test.
+            "add_custom_mcp_server": False,
+            # Read-only device catalog lookup.
+            "list_devices": False,
+            # Emits the onboarding card; no mutation.
+            "add_device": False,
+            # Force-gated (always_gate), not destructive — surfaces the approve link.
+            "approve_device_pairing": False,
+            # Runs a shell command on the user's paired machine. Deliberately
+            # NEITHER destructive NOR always_gate: the owner's explicit "yolo, no
+            # gating" call for the device — pairing the machine IS the grant. This
+            # is an RCE surface with no HIL stop; the gate is expected to be added
+            # back before this ships to production.
+            "run_on_device": False,
         }
+
+    def test_integrations_always_gate_set_is_exactly_the_two_forced_tools(
+        self, registry: ToolRegistry
+    ) -> None:
+        """``add_custom_mcp_server`` (adds an untrusted MCP server) and
+        ``approve_device_pairing`` (links a device to the account) must force a
+        HIL confirm in every mode. Dropping either from the set silently removes
+        the human gate on a security-sensitive action."""
+        gated = {
+            tool.name for tool in registry._categories["integrations"].tools if tool.always_gate
+        }
+        assert gated == {"add_custom_mcp_server", "approve_device_pairing"}
 
 
 @pytest.mark.unit

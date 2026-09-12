@@ -43,6 +43,7 @@ class DeviceServerResponse(BaseModel):
     server_key: str
     display_name: str
     integration_id: str
+    kind: str = "stdio"
     status: str
     tools_synced_at: datetime | None = None
 
@@ -74,10 +75,29 @@ class RegisterServerResponse(BaseModel):
     server_key: str
 
 
+class DeregisterServerResponse(BaseModel):
+    """Result of the daemon deregistering one of its MCP servers."""
+
+    server_key: str
+    removed: bool
+
+
 class DevicePairApproveResponse(BaseModel):
     """Result of approving a pending device pairing."""
 
     device_id: str
+    name: str
+
+
+class SelfPairResponse(BaseModel):
+    """Result of a one-call self-pair: the device plus its refresh credential.
+
+    Mirrors the approve response but also returns ``refresh_token`` inline, since
+    the caller that pairs is the same host that stores the credential.
+    """
+
+    device_id: str
+    refresh_token: str
     name: str
 
 

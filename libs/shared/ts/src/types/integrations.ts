@@ -45,6 +45,9 @@ export interface IntegrationConnectionData {
   integration_id: string;
   message: string;
   expired?: boolean;
+  // Lets the card render a header before the live catalog (/integrations/me)
+  // loads. Optional: absent on messages streamed before the field existed.
+  integration_name?: string;
 }
 
 export type IntegrationAuthType = "oauth" | "bearer" | "none";

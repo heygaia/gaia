@@ -19,6 +19,7 @@ from pymongo.errors import OperationFailure
 from app.constants.log_tags import LogTag
 from app.db.mongodb.collections import get_async_collection
 from app.db.repositories.integrations import integration_repository
+from app.helpers.integration_helpers import dedup_server_url_key
 from shared.py.wide_events import log
 
 # Mirrors pymongo's private `_IndexKeyHint` (pymongo.operations) — the shape
@@ -757,6 +758,26 @@ async def create_usage_indexes() -> None:
         raise
 
 
+# One custom server URL per creator: the atomic backstop behind the
+# application's check-then-create dedup. Extracted (not inline) so the
+# contract suite can build this exact spec on a bare collection and prove it
+# rejects logical duplicates while leaving keyless legacy rows alone.
+CUSTOM_SERVER_URL_DEDUP_KEYS: IndexKeys = [
+    ("created_by", 1),
+    ("mcp_config.server_url_normalized", 1),
+]
+CUSTOM_SERVER_URL_DEDUP_OPTIONS: dict[str, object] = {
+    "unique": True,
+    "name": "custom_url_dedup_unique",
+    # $type: string (not $exists) so explicit nulls stay out of the index too —
+    # only real keys participate, and keyless rows can never violate it.
+    "partialFilterExpression": {
+        "source": "custom",
+        "mcp_config.server_url_normalized": {"$type": "string"},
+    },
+}
+
+
 async def _create_index_safe(
     collection: AsyncIOMotorCollection[dict[str, Any]],
     keys: IndexKeys,
@@ -791,6 +812,10 @@ async def create_integration_indexes() -> None:
     - Public custom integrations for marketplace
     """
     integrations_collection = get_async_collection("integrations")
+    # The dedup backfill must land before the unique index below: a legacy row
+    # without the key is invisible to the partial filter, so backfilling first
+    # (conflict losers stay keyless) keeps the index build from ever failing.
+    await _backfill_custom_server_url_keys()
     try:
         await asyncio.gather(
             # Primary unique index on integration_id
@@ -842,6 +867,14 @@ async def create_integration_indexes() -> None:
                 sparse=True,
                 name="slug_sparse",
             ),
+            # One custom server URL per creator: the atomic backstop behind the
+            # application's check-then-create dedup (spec shared with the
+            # contract suite — see CUSTOM_SERVER_URL_DEDUP_* above).
+            _create_index_safe(
+                integrations_collection,
+                CUSTOM_SERVER_URL_DEDUP_KEYS,
+                **CUSTOM_SERVER_URL_DEDUP_OPTIONS,
+            ),
         )
 
         # Backfill slugs for existing public integrations that don't have one
@@ -854,6 +887,71 @@ async def create_integration_indexes() -> None:
             error_type=type(e).__name__,
         )
         raise
+
+
+async def _backfill_custom_server_url_keys() -> None:
+    """Populate the dedup key on custom integrations missing it.
+
+    First writer (by created_at) wins a contested key; losers stay keyless so
+    they are excluded from the partial unique index — no data loss, and the
+    index build can never fail on legacy duplicates. Keyless rows are still
+    fully functional (found by id); only URL-dedup skips them.
+    """
+    integrations_collection = get_async_collection("integrations")
+    try:
+        total_backfilled = 0
+        while True:
+            cursor = (
+                integrations_collection.find(
+                    {
+                        "source": "custom",
+                        "mcp_config.server_url_normalized": {"$exists": False},
+                    },
+                    {
+                        "integration_id": 1,
+                        "created_by": 1,
+                        "mcp_config.server_url": 1,
+                    },
+                )
+                .sort("created_at", 1)
+                .limit(500)
+            )
+            docs = await cursor.to_list(length=500)
+            if not docs:
+                break
+
+            for doc in docs:
+                raw = (doc.get("mcp_config") or {}).get("server_url") or ""
+                key = dedup_server_url_key(raw)
+                if not key:
+                    continue
+                claimed = await integrations_collection.find_one(
+                    {
+                        "source": "custom",
+                        "created_by": doc.get("created_by"),
+                        "mcp_config.server_url_normalized": key,
+                    },
+                    {"_id": 1},
+                )
+                if claimed is not None:
+                    continue
+                await integrations_collection.update_one(
+                    {"integration_id": doc["integration_id"]},
+                    {"$set": {"mcp_config.server_url_normalized": key}},
+                )
+                total_backfilled += 1
+
+        if total_backfilled:
+            log.info(
+                f"{LogTag.MONGO} Server-URL dedup-key backfill complete",
+                total_backfilled=total_backfilled,
+            )
+    except Exception as e:
+        log.warning(
+            f"{LogTag.MONGO} Server-URL dedup-key backfill failed (non-fatal)",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
 
 
 async def _backfill_integration_slugs() -> None:

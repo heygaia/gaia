@@ -225,6 +225,27 @@ async def _get_existing_tools_from_chroma(
     return existing_tools
 
 
+_SUBAGENTS_NAMESPACE = "subagents"
+# Builtin/OAuth subagents are keyed "subagent:<id>" (see _get_subagent_tools);
+# custom MCP subagents (device servers, custom remote MCP) are keyed by their
+# integration_id and registered dynamically at connect time.
+_BUILTIN_SUBAGENT_PREFIX = "subagent:"
+
+
+def _is_dynamic_subagent(composite_key: str, namespace: str) -> bool:
+    """True for a custom/device MCP subagent — registered in the "subagents"
+    namespace at connect time and keyed by integration_id, not a builtin
+    "subagent:<id>". The store re-seed rebuilds only builtins (all_subagents()),
+    so it must never treat these as stale, or every restart deletes them and the
+    executor loses its handoff target for connected custom/device MCP servers."""
+    if namespace != _SUBAGENTS_NAMESPACE:
+        return False
+    # Composite keys are "<namespace>::<name>"; take the part after the first
+    # separator (partition, not split(...)[-1], so the intent is unambiguous).
+    key = composite_key.partition("::")[2]
+    return not key.startswith(_BUILTIN_SUBAGENT_PREFIX)
+
+
 def _compute_tool_diff(
     current_tools: dict[str, IndexedToolEntry], existing_tools: dict[str, IndexedToolEntry]
 ) -> tuple[list[tuple[str, IndexedToolEntry]], list[tuple[str, str]]]:
@@ -249,8 +270,14 @@ def _compute_tool_diff(
 
     # Find deleted tools
     for existing_tool_name, existing_data in existing_tools.items():
-        if existing_tool_name not in current_tools:
-            tools_to_delete.append((existing_tool_name, existing_data["namespace"]))
+        if existing_tool_name in current_tools:
+            continue
+        # Never delete a custom/device MCP subagent: it is managed by
+        # connect/disconnect, not by this builtin re-seed, so it is legitimately
+        # absent from current_tools.
+        if _is_dynamic_subagent(existing_tool_name, existing_data["namespace"]):
+            continue
+        tools_to_delete.append((existing_tool_name, existing_data["namespace"]))
 
     return tools_to_upsert, tools_to_delete
 

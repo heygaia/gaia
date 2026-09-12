@@ -21,6 +21,11 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from app.constants.device_bridge import (
     DEVICE_HEARTBEAT_INTERVAL_SECONDS,
     DEVICE_HEARTBEAT_TIMEOUT_SECONDS,
+    DEVICE_RELAY_READY_TIMEOUT_SECONDS,
+    FRAME_EXEC_EXIT,
+    FRAME_EXEC_STDERR,
+    FRAME_EXEC_STDOUT,
+    FRAME_HELLO,
     FRAME_MCP_ERROR,
     FRAME_MCP_MSG,
     FRAME_MCP_OPENED,
@@ -37,7 +42,11 @@ from app.services.device.bridge import (
 )
 from app.services.device.connection_manager import device_connection_manager
 from app.services.device.device_auth import verify_device_token
-from app.services.device.device_service import get_active_device
+from app.services.device.device_service import (
+    enqueue_device_server_warmup,
+    get_active_device,
+    reconcile_device_servers,
+)
 from shared.py.wide_events import log
 
 router = APIRouter(prefix="/ws", tags=["Device Bridge"])
@@ -87,13 +96,39 @@ async def device_ws(websocket: WebSocket) -> None:
     # second Postgres write here.
     await mark_online(device_id)
 
+    # The down relay must hold its subscription before any worker is asked to
+    # publish at this device: Redis drops pub/sub frames with no subscriber,
+    # which surfaces as a warmup open-timeout and leaves tools undiscoverable
+    # until the next reconnect. Bounded — a socket must never fail on warmup.
+    subscribed = asyncio.Event()
     state = {"last_recv": time.monotonic()}
     tasks = [
-        asyncio.create_task(_down_relay(websocket, device_id)),
+        asyncio.create_task(_down_relay(websocket, device_id, subscribed)),
         asyncio.create_task(_heartbeat(websocket, device_id, state)),
     ]
     try:
-        await _receive_loop(websocket, device_id, state)
+        async with asyncio.timeout(DEVICE_RELAY_READY_TIMEOUT_SECONDS):
+            await subscribed.wait()
+    except TimeoutError:
+        log.warning(
+            f"{LogTag.API} Down relay not subscribed before warmup",
+            device_id=device_id,
+        )
+    # A device coming online re-drives warm-connect for all its servers, so tools
+    # a registration couldn't index (Redis down, or the device was offline) get
+    # indexed now. Best-effort — a socket must never fail on the warmup enqueue.
+    try:
+        await enqueue_device_server_warmup(device_id)
+    except Exception as e:
+        log.warning(
+            f"{LogTag.API} Failed to enqueue device warmup on connect",
+            device_id=device_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+    try:
+        await _receive_loop(websocket, device_id, user_id, state)
     # evlog-map-disable-next-line error-handling -- normal websocket disconnect; info-level is correct
     except WebSocketDisconnect:
         log.set(disconnect_reason="client_close")
@@ -123,7 +158,9 @@ async def device_ws(websocket: WebSocket) -> None:
             await websocket.close()
 
 
-async def _receive_loop(websocket: WebSocket, device_id: str, state: dict[str, float]) -> None:
+async def _receive_loop(
+    websocket: WebSocket, device_id: str, user_id: str, state: dict[str, float]
+) -> None:
     """Read frames off the socket and route upstream ones onto Redis."""
     while True:
         raw = await websocket.receive_text()
@@ -139,23 +176,58 @@ async def _receive_loop(websocket: WebSocket, device_id: str, state: dict[str, f
             # Liveness is tracked by state["last_recv"] above; presence is
             # refreshed by the 30s heartbeat — no need to write it per pong.
             continue
-        if frame_type in (FRAME_MCP_MSG, FRAME_MCP_OPENED, FRAME_MCP_ERROR):
-            # The daemon echoes the consumer pod id (from mcp.open) on every up
-            # frame; route the reply to that pod's shared up-channel, where the
-            # up-listener dispatches by "sid". No per-session subscription.
+        if frame_type in (
+            FRAME_MCP_MSG,
+            FRAME_MCP_OPENED,
+            FRAME_MCP_ERROR,
+            FRAME_EXEC_STDOUT,
+            FRAME_EXEC_STDERR,
+            FRAME_EXEC_EXIT,
+        ):
+            # The daemon echoes the consumer pod id (from mcp.open / exec.open) on
+            # every up frame; route the reply to that pod's shared up-channel, where
+            # the up-listener dispatches by "sid". No per-session subscription.
             pod = frame.get("pod")
             if isinstance(pod, str):
                 await publish_up_to_pod(pod, raw)
             continue
-        # FRAME_HELLO and unknown types are informational; ignore quietly.
+        if frame_type == FRAME_HELLO:
+            # The daemon announces its full configured server set on connect. Its
+            # local config is the source of truth, so prune any server rows it no
+            # longer exposes. Only act on an explicit list — an older daemon that
+            # omits `servers` must not wipe everything.
+            servers = frame.get("servers")
+            if isinstance(servers, list):
+                keys = [s for s in servers if isinstance(s, str)]
+                try:
+                    await reconcile_device_servers(user_id, device_id, keys)
+                except Exception as e:
+                    log.warning(
+                        f"{LogTag.API} Failed to reconcile device servers on HELLO",
+                        device_id=device_id,
+                        error=str(e),
+                        error_type=type(e).__name__,
+                    )
+            continue
+        # Unknown frame types are informational; ignore quietly.
 
 
-async def _down_relay(websocket: WebSocket, device_id: str) -> None:
-    """Subscribe to this device's down channel and write frames to the socket."""
+async def _down_relay(
+    websocket: WebSocket, device_id: str, subscribed: asyncio.Event | None = None
+) -> None:
+    """Subscribe to this device's down channel and write frames to the socket.
+
+    Signals ``subscribed`` once the subscription holds, so the connect handler
+    can enqueue warmup only after a worker's open frame has someone to land on.
+    """
     if not redis_cache.redis:
+        if subscribed is not None:
+            subscribed.set()
         return
     pubsub = redis_cache.redis.pubsub()
     await pubsub.subscribe(down_channel(device_id))
+    if subscribed is not None:
+        subscribed.set()
     try:
         while True:
             message = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)

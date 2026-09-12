@@ -19,9 +19,10 @@ directories:
   output: release/${version}
   buildResources: resources
 
-# Ad-hoc signs macOS builds when real signing is disabled — an unsigned
-# bundle seal gets the app killed by RunningBoard on macOS 26 (see script).
-afterSign: scripts/adhoc-sign.cjs
+# macOS afterSign: ad-hoc signs when real signing is disabled (an unsigned
+# bundle seal gets the app killed by RunningBoard on macOS 26), else notarizes
+# the Developer-ID-signed app when Apple credentials are present (see script).
+afterSign: scripts/mac-sign.cjs
 
 files:
   - out/**/*
@@ -85,6 +86,14 @@ mac:
           - gaia
     NSMicrophoneUsageDescription: 'GAIA listens for the "Hey GAIA" wake word so you can talk to your assistant hands-free.'
     NSAppleEventsUsageDescription: "GAIA opens apps and lists your windows when you ask it to use your computer."
+    # Per-folder usage strings for the shell commands the device bridge runs on
+    # this Mac (run_on_device). macOS shows these in the TCC prompt / Full Disk
+    # Access pane; the grant is then inherited by the shells the app spawns.
+    NSDocumentsFolderUsageDescription: "GAIA runs commands you ask for on this Mac, which may read or write files in your Documents folder."
+    NSDesktopFolderUsageDescription: "GAIA runs commands you ask for on this Mac, which may read or write files on your Desktop."
+    NSDownloadsFolderUsageDescription: "GAIA runs commands you ask for on this Mac, which may read or write files in your Downloads folder."
+    NSRemovableVolumesUsageDescription: "GAIA runs commands you ask for on this Mac, which may read or write files on removable volumes."
+    NSNetworkVolumesUsageDescription: "GAIA runs commands you ask for on this Mac, which may read or write files on network volumes."
 
 dmg:
   # Bands-gradient brand wallpaper; background@2x.png alongside it is

@@ -5,6 +5,10 @@ import type {
   ToolCallEntry as SharedToolCallEntry,
 } from "@shared/chat";
 import type {
+  DeviceApprovalRequiredData,
+  DeviceOnboardingRequiredData,
+} from "@/features/devices/types";
+import type {
   IntegrationConnectionData,
   IntegrationListStreamData,
 } from "@/features/integrations/types";
@@ -177,6 +181,8 @@ const TOOL_REGISTRY = {
   send_notification_data: null as unknown as SendNotificationData,
   integration_connection_required: null as unknown as IntegrationConnectionData,
   integration_list_data: null as unknown as IntegrationListStreamData,
+  device_onboarding_required: null as unknown as DeviceOnboardingRequiredData,
+  device_approval_required: null as unknown as DeviceApprovalRequiredData,
   tool_calls_data: null as unknown as SharedToolCallEntry[],
   subagent_group: null as unknown as SharedSubagentGroupData,
   twitter_search_data: null as unknown as TwitterSearchData,
@@ -223,6 +229,7 @@ export const GROUPED_TOOLS = new Set<ToolName>([
   "reddit_data",
   "integration_connection_required",
   "integration_list_data",
+  "device_approval_required",
   "rate_limit_data",
   "email_fetch_data",
   "email_compose_data",

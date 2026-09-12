@@ -14,7 +14,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { Components } from "react-markdown";
 import CustomAnchor from "@/features/chat/components/code-block/CustomAnchor";
 import MarkdownRenderer from "@/features/chat/components/interface/MarkdownRenderer";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { IntegrationIcon } from "@/features/integrations/components/IntegrationIcon";
 import { MentionChip } from "@/features/integrations/components/MentionChip";
 import { MentionEditor } from "@/features/integrations/components/MentionEditor";
 import type { Integration } from "@/features/integrations/types";
@@ -73,13 +73,15 @@ export const IntegrationInstructionsModal = ({
   const canMention = toolNames.length > 0;
 
   const renderMentionIcon = useCallback(
-    () =>
-      getToolCategoryIcon(
-        integration.id,
-        { size: 16, width: 16, height: 16, showBackground: false },
-        integration.iconUrl,
-      ),
-    [integration.id, integration.iconUrl],
+    () => (
+      <IntegrationIcon
+        integrationId={integration.id}
+        iconUrl={integration.iconUrl}
+        category={integration.category}
+        size={16}
+      />
+    ),
+    [integration.id, integration.iconUrl, integration.category],
   );
 
   // Preview: mentions become `mention:` links the anchor override renders as
@@ -151,11 +153,12 @@ export const IntegrationInstructionsModal = ({
       <ModalContent>
         <ModalHeader className="flex gap-3">
           <div className="flex size-11 shrink-0 items-center justify-center rounded-xl bg-zinc-800">
-            {getToolCategoryIcon(
-              integration.id,
-              { size: 26, width: 26, height: 26, showBackground: false },
-              integration.iconUrl,
-            )}
+            <IntegrationIcon
+              integrationId={integration.id}
+              iconUrl={integration.iconUrl}
+              category={integration.category}
+              size={26}
+            />
           </div>
           <div className="flex min-w-0 flex-col gap-0.5">
             <span className="text-lg font-semibold text-zinc-100">

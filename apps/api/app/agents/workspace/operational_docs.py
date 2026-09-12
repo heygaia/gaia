@@ -874,6 +874,58 @@ Per-topic details live beside the data: `account/GUIDE.md` and
 say so rather than presenting a read as live truth.
 """
 
+DEVICE_SETUP_DOC: Final[str] = """# Device Setup - connecting the user's own machine
+
+The user can connect their own computer to GAIA with the `gaia bridge` CLI, so
+GAIA can use MCP servers running on that machine and read or write files there.
+It runs over one outbound tunnel - no inbound ports.
+
+## Steps to walk the user through
+1. Install the CLI (needs Node 20+):
+     npm install -g @heygaia/cli   (or: pnpm add -g @heygaia/cli / bun add -g @heygaia/cli)
+   Works on macOS, Linux, and Windows (WSL2 recommended). Full guide: /cli/device-bridge
+2. Pair the machine:  gaia bridge login
+   It prints a short code. The user pastes that code in this chat (GAIA shows an
+   approve button that opens the trusted approval page) or approves it at
+   Settings -> Devices. Approving links the device to their account. GAIA never
+   approves a code on its own - the user confirms on the authenticated page.
+3. Expose something:  gaia bridge add  (a guided wizard)
+     - a command-run MCP server (stdio), e.g. npx -y @modelcontextprotocol/server-everything
+     - an MCP server already running at a local URL
+     - local files and folders (no MCP needed): specific folders or the entire
+       filesystem, read-only or read/write
+   Shortcut for folders:  gaia bridge fs ~/dir [--write]
+4. Keep it online:  gaia bridge up   (the device is online only while this runs)
+
+## Using a connected device
+A connected device gives you two DIFFERENT capabilities, reached two different ways:
+
+1. Its MCP servers' tools. When a device MCP server is added it is connected and
+   its tools are indexed into tool-retrieval exactly like any other integration -
+   so they surface through `retrieve_tools` (semantic search over all connected
+   tools) and you use them by handing off to that server's subagent, the SAME as
+   a cloud MCP. You do NOT shell out to an MCP server. `list_devices` shows each
+   server, its integration_id (the handoff target), and whether its tools are
+   synced yet (a server GAIA never reached has none). Indexing runs in the
+   background once the device is online, so a just-added server can take a moment
+   to appear in `retrieve_tools`.
+2. Shell + file access on the machine. Use `run_on_device(device_id, command)` to
+   run a shell command on the user's real machine - read/edit files, run a build,
+   list a directory. This is the ONLY way to touch the user's real files; the
+   cloud sandbox is a separate container that cannot see their machine, so never
+   answer a question about the user's own files by running commands in the sandbox.
+
+Both need the device online (`gaia bridge up`); `list_devices` shows live status.
+The routing is not magic: a device server's tools are addressed internally as
+`device://<device_id>/<server_key>` and every call runs on that machine over the
+one outbound tunnel.
+
+## Managing
+gaia bridge ls (status), gaia bridge rm <key> (remove a server),
+gaia bridge logout (forget local credentials). Revoke a device any time from
+Settings -> Devices.
+"""
+
 MANUAL_DOCS: Final[dict[str, ManualDoc]] = {
     doc.name: doc
     for doc in (
@@ -992,6 +1044,16 @@ MANUAL_DOCS: Final[dict[str, ManualDoc]] = {
             ),
             body=BILLING_DOC,
         ),
+        ManualDoc(
+            name="device-setup",
+            title="Device Setup: connecting the user's own machine",
+            description=(
+                "Connect the user's computer with the gaia bridge CLI: install, "
+                "pair (paste the code in chat or approve in Settings), expose MCP "
+                "servers or local files, and keep it online; how to use a device."
+            ),
+            body=DEVICE_SETUP_DOC,
+        ),
     )
 }
 
@@ -1013,6 +1075,7 @@ ManualTopic = Literal[
     "skills",
     "documents",
     "billing",
+    "device-setup",
 ]
 
 if set(get_args(ManualTopic)) != set(MANUAL_DOCS):

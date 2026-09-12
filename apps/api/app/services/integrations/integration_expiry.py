@@ -20,7 +20,10 @@ from dataclasses import dataclass
 from typing import Literal
 
 from app.config.oauth_config import get_integration_by_id
-from app.constants.integrations import INTEGRATION_STATUS_EXPIRED
+from app.constants.integrations import (
+    INTEGRATION_STATUS_EXPIRED,
+    INTEGRATION_STATUS_UPDATE_EVENT,
+)
 from app.constants.log_tags import LogTag
 from app.constants.notifications import CHANNEL_TYPE_INAPP
 from app.core.websocket_manager import websocket_manager
@@ -46,8 +49,6 @@ from shared.py.wide_events import log
 # Which detection path drove this transition — carried into the wide event so a
 # proactive expiry is distinguishable from one reconciled off a failed tool call.
 ExpiryTrigger = Literal["webhook", "tool_execution"]
-
-INTEGRATION_STATUS_UPDATE_EVENT = "integration_status_update"
 
 
 @dataclass(frozen=True)

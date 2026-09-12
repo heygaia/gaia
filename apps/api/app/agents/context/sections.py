@@ -24,6 +24,7 @@ from app.agents.context.fetchers import (
     build_active_todo_banner,
     build_agenda_and_activity_block,
     build_background_banner,
+    build_connected_devices_manifest,
     build_connected_integrations_manifest,
     build_core_memory_block,
     build_gaia_knowledge_block,
@@ -34,7 +35,9 @@ from app.agents.context.fetchers import (
 from app.agents.context.section_context import SectionContext
 from app.agents.context.slots import PromptSlot
 from app.agents.context.text import (
+    CONNECTED_DEVICES_HEADER,
     CONNECTED_INTEGRATIONS_HEADER,
+    EXECUTOR_CONNECTED_DEVICES_HEADER,
     EXECUTOR_CONNECTED_INTEGRATIONS_HEADER,
 )
 from app.agents.context.tiers import ALL_TIERS, WORKER_TIERS, AgentTier
@@ -101,6 +104,17 @@ async def _integrations_manifest(ctx: SectionContext) -> str:
         else CONNECTED_INTEGRATIONS_HEADER
     )
     return await build_connected_integrations_manifest(ctx.user_id, header=header)
+
+
+async def _connected_devices(ctx: SectionContext) -> str:
+    if not ctx.user_id:
+        return ""
+    header = (
+        EXECUTOR_CONNECTED_DEVICES_HEADER
+        if ctx.tier is AgentTier.EXECUTOR
+        else CONNECTED_DEVICES_HEADER
+    )
+    return await build_connected_devices_manifest(ctx.user_id, header=header)
 
 
 async def _provider_metadata(ctx: SectionContext) -> str:
@@ -198,6 +212,13 @@ SECTIONS: tuple[Section, ...] = (
         frozenset({AgentTier.COMMS, AgentTier.EXECUTOR}),
         40,
         _integrations_manifest,
+    ),
+    Section(
+        "connected_devices",
+        PromptSlot.DYNAMIC_STABLE,
+        frozenset({AgentTier.COMMS, AgentTier.EXECUTOR}),
+        45,
+        _connected_devices,
     ),
     Section(
         "provider_metadata",

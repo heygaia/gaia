@@ -236,6 +236,7 @@ class TestDeadAccountReconciles:
         card = writer.call_args.args[0]["integration_connection_required"]
         assert card == {
             "integration_id": "gmail",
+            "integration_name": "Gmail",
             "expired": True,
             "message": "Your Gmail connection expired. Sign in again to keep using it.",
         }

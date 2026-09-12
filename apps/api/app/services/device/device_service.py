@@ -10,11 +10,12 @@ each time) for short-lived connect JWTs.
 from __future__ import annotations
 
 from datetime import UTC, datetime
+import hashlib
 import secrets
 from urllib.parse import quote
 import uuid
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.constants.device_bridge import (
@@ -24,16 +25,22 @@ from app.constants.device_bridge import (
     DEVICE_REFRESH_RETRY_PREFIX,
     DEVICE_TRANSPORT,
     DEVICE_USER_CODE_PREFIX,
+    DEVICE_WARMUP_COALESCE_PREFIX,
+    DEVICE_WARMUP_COALESCE_SECONDS,
+    FRAME_SERVER_REMOVE,
+    MAX_ACTIVE_DEVICES_PER_USER,
     PAIRING_POLL_INTERVAL_SECONDS,
     PAIRING_TTL_SECONDS,
     REFRESH_TOKEN_RETRY_GRACE_SECONDS,
     USER_CODE_ALPHABET,
     USER_CODE_LENGTH,
+    DeviceServerKind,
 )
 from app.constants.log_tags import LogTag
 from app.db.postgresql import get_db_session
 from app.db.redis import get_and_delete_cache, get_cache, redis_cache, set_cache
 from app.db.repositories.integrations import integration_repository
+from app.helpers.integration_helpers import dedup_server_url_key
 from app.helpers.mcp_helpers import get_frontend_url
 from app.models.device import (
     Device,
@@ -44,7 +51,7 @@ from app.models.device import (
 from app.models.integration_models import Integration
 from app.models.mcp_config import MCPConfig
 from app.schemas.device.responses import PollPairingResponse, StartPairingResponse
-from app.services.device.bridge import request_revoke
+from app.services.device.bridge import request_revoke, send_down
 from app.services.device.device_auth import (
     generate_refresh_token,
     hash_refresh_token,
@@ -54,6 +61,9 @@ from app.services.integrations.user_integrations import (
     invalidate_user_integration_caches,
     remove_user_integration,
 )
+from app.utils.errors import create_error
+from app.utils.redis_utils import RedisPoolManager
+from app.workers.queue import enqueue_worker_job
 from shared.py.wide_events import log
 
 PAIRING_VERIFICATION_PATH = "/settings/devices/approve"
@@ -120,6 +130,14 @@ async def start_pairing(
     )
 
 
+def build_device_approve_url(user_code: str) -> str:
+    """The signed-in approval page URL with the pairing code prefilled - the
+    trusted surface where the user (not the agent) confirms linking the device.
+    Same shape as ``start_pairing``'s ``verification_url``."""
+    base = get_frontend_url().rstrip("/")
+    return f"{base}{PAIRING_VERIFICATION_PATH}?code={quote(user_code.strip().upper())}"
+
+
 async def lookup_pending_by_user_code(user_code: str) -> dict | None:
     """Resolve a browser-typed ``user_code`` to its pending pairing record."""
     mapping = await get_cache(_user_code_key(user_code.strip().upper()))
@@ -132,6 +150,52 @@ async def lookup_pending_by_user_code(user_code: str) -> dict | None:
     if not isinstance(record, dict) or record.get("status") != "pending":
         return None
     return {"device_code": device_code, **record}
+
+
+async def _create_device(
+    user_id: str,
+    name: str,
+    platform: str | None,
+    daemon_version: str | None,
+    client: str | None,
+) -> tuple[str, str]:
+    """Create an ACTIVE device for ``user_id`` and mint its refresh credential.
+
+    The one place a device row is inserted, shared by the browser-approval and
+    desktop self-pair flows, so the per-user active-device cap is enforced once
+    for both. Returns ``(device_id, refresh_token)``; the caller captures these
+    before the session closes rather than reading them off the expired row.
+    """
+    device_id = str(uuid.uuid4())
+    refresh_token = generate_refresh_token()
+    device = Device(
+        id=device_id,
+        user_id=user_id,
+        name=name,
+        platform=platform,
+        daemon_version=daemon_version,
+        client=client,
+        status=DeviceStatus.ACTIVE,
+        refresh_token_hash=hash_refresh_token(refresh_token),
+    )
+    async with get_db_session() as session:
+        active_count = (
+            await session.execute(
+                select(func.count())
+                .select_from(Device)
+                .where(Device.user_id == user_id, Device.status == DeviceStatus.ACTIVE)
+            )
+        ).scalar_one()
+        if active_count >= MAX_ACTIVE_DEVICES_PER_USER:
+            raise create_error(
+                message="Device limit reached",
+                why=f"You already have {MAX_ACTIVE_DEVICES_PER_USER} active devices.",
+                fix="Revoke a device you no longer use, then pair this one again.",
+                status_code=409,
+            )
+        session.add(device)
+        await session.commit()
+    return device_id, refresh_token
 
 
 async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
@@ -150,22 +214,12 @@ async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
         raise PairingError("Pairing code is invalid or expired")
 
     device_code = pending["device_code"]
-    device_id = str(uuid.uuid4())
     name = pending.get("name") or "Device"
-    refresh_token = generate_refresh_token()
-
-    device = Device(
-        id=device_id,
-        user_id=user_id,
-        name=name,
-        platform=pending.get("platform"),
-        daemon_version=pending.get("daemon_version"),
-        status=DeviceStatus.ACTIVE,
-        refresh_token_hash=hash_refresh_token(refresh_token),
+    # CLI-paired devices keep client NULL for now (client-aware tooling is a
+    # later task); only the desktop self-pair path stamps a client.
+    device_id, refresh_token = await _create_device(
+        user_id, name, pending.get("platform"), pending.get("daemon_version"), client=None
     )
-    async with get_db_session() as session:
-        session.add(device)
-        await session.commit()
 
     record = {**pending}
     record.pop("device_code", None)
@@ -178,6 +232,27 @@ async def approve_pairing(user_id: str, user_code: str) -> tuple[str, str]:
 
     log.set(device={"operation": "approve_pairing", "device_id": device_id}, user={"id": user_id})
     return device_id, name
+
+
+async def self_pair_device(
+    user_id: str,
+    name: str,
+    platform: str,
+    client: str,
+    daemon_version: str | None,
+) -> tuple[str, str]:
+    """Pair a device for an already-authenticated user in one call.
+
+    A UX collapse of the browser start→approve→poll flow for a host that already
+    holds the user's session (the desktop app): no ``user_code`` round-trip. The
+    refresh token is returned inline, since the same caller both pairs and stores
+    it. Returns ``(device_id, refresh_token)``.
+    """
+    device_id, refresh_token = await _create_device(
+        user_id, name, platform, daemon_version, client=client
+    )
+    log.set(device={"operation": "self_pair", "device_id": device_id}, user={"id": user_id})
+    return device_id, refresh_token
 
 
 async def poll_pairing(device_code: str) -> PollPairingResponse:
@@ -299,7 +374,11 @@ async def get_active_device(device_id: str) -> Device | None:
 
 
 async def register_device_server(
-    user_id: str, device_id: str, server_key: str, display_name: str
+    user_id: str,
+    device_id: str,
+    server_key: str,
+    display_name: str,
+    kind: DeviceServerKind = "stdio",
 ) -> DeviceMCPServer:
     """Register (idempotently) one MCP server a device exposes.
 
@@ -318,6 +397,7 @@ async def register_device_server(
 
         if existing is not None:
             existing.display_name = display_name
+            existing.kind = kind
             existing.status = DeviceServerStatus.CONNECTED
             existing.error_message = None
             await session.commit()
@@ -332,6 +412,7 @@ async def register_device_server(
             integration_id=integration_id,
             server_key=server_key,
             display_name=display_name,
+            kind=kind,
             status=DeviceServerStatus.CONNECTED,
         )
         session.add(server)
@@ -347,13 +428,34 @@ def _device_server_url(device_id: str, server_key: str) -> str:
     return f"device://{device_id}/{server_key}"
 
 
+async def _device_display_name(device_id: str) -> str:
+    """The paired device's name, for user- and agent-facing text. Falls back to a
+    generic phrase if the row is gone (self-heal races)."""
+    async with get_db_session() as session:
+        name = (
+            await session.execute(select(Device.name).where(Device.id == device_id))
+        ).scalar_one_or_none()
+    return name or "this device"
+
+
 async def _create_server_integration(
     user_id: str, device_id: str, server_key: str, display_name: str, integration_id: str
 ) -> None:
+    device_name = await _device_display_name(device_id)
+    # Synthetic device:// URL, so the dedup key is total — but compute it through
+    # the same canonical helper as every other custom integration.
+    device_url = _device_server_url(device_id, server_key)
     integration = Integration(
         integration_id=integration_id,
         name=display_name,
-        description=f"Local MCP server on your device ({server_key})",
+        # The subagent's discovery description inherits this, so it is where the
+        # agent learns the server is hosted on the user's own machine (and reaches
+        # it via these tools, not run_on_device). Names the device so it lines up
+        # with the connected-devices manifest.
+        description=(
+            f'MCP server hosted on your device "{device_name}" — its tools run '
+            f"locally on that machine, not the cloud sandbox."
+        ),
         category=DEVICE_CATEGORY,
         managed_by="mcp",
         source="custom",
@@ -363,7 +465,8 @@ async def _create_server_integration(
         display_priority=0,
         is_featured=False,
         mcp_config=MCPConfig(
-            server_url=_device_server_url(device_id, server_key),
+            server_url=device_url,
+            server_url_normalized=dedup_server_url_key(device_url),
             requires_auth=False,
             auth_type="none",
             transport=DEVICE_TRANSPORT,
@@ -390,6 +493,98 @@ async def _ensure_server_integration(user_id: str, server: DeviceMCPServer) -> N
         )
 
 
+async def _remove_server_cloud_mirror(user_id: str, integration_id: str) -> None:
+    """Drop a device server's cloud-side mirror: the Mongo integration doc, the
+    user link, and the integration caches. The Postgres row is deleted by callers."""
+    await integration_repository.delete(integration_id)
+    await remove_user_integration(user_id, integration_id)
+    await invalidate_user_integration_caches(user_id)
+
+
+async def _send_server_remove(device_id: str, server_key: str) -> None:
+    """Tell the daemon to drop a server from its local config (best-effort).
+
+    Delivered only if the device is online; on a miss the HELLO reconcile on the
+    next connect is the backstop, unless the daemon still has it configured.
+    """
+    try:
+        await send_down(device_id, {"t": FRAME_SERVER_REMOVE, "key": server_key})
+    except Exception as e:
+        log.warning(
+            f"{LogTag.API} Failed to send server-remove to device",
+            device_id=device_id,
+            server_key=server_key,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+
+async def deregister_device_server(
+    user_id: str, device_id: str, server_key: str, *, notify_device: bool
+) -> bool:
+    """Fully remove one device MCP server — Postgres row + cloud mirror. Deleting
+    the Postgres row is what stops ``_ensure_server_integration`` from resurrecting
+    the doc. Returns False if the server was already gone."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(
+                    DeviceMCPServer.device_id == device_id,
+                    DeviceMCPServer.server_key == server_key,
+                )
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            return False
+        integration_id = server.integration_id
+        await session.delete(server)
+        await session.commit()
+
+    await _remove_server_cloud_mirror(user_id, integration_id)
+    if notify_device:
+        await _send_server_remove(device_id, server_key)
+    return True
+
+
+async def deregister_device_server_for_integration(
+    integration_id: str, *, notify_device: bool
+) -> bool:
+    """Delete the Postgres server row behind an integration (its Mongo mirror is
+    torn down by the integration-delete path that calls this). Used when a device
+    integration is deleted from the integrations page. Returns False if not a
+    device server."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(DeviceMCPServer.integration_id == integration_id)
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            return False
+        device_id, server_key = server.device_id, server.server_key
+        await session.delete(server)
+        await session.commit()
+
+    if notify_device:
+        await _send_server_remove(device_id, server_key)
+    return True
+
+
+async def reconcile_device_servers(user_id: str, device_id: str, reported_keys: list[str]) -> None:
+    """Prune server rows the daemon no longer exposes — the device's local config is
+    the source of truth. Driven by the HELLO frame the daemon sends on connect."""
+    reported = set(reported_keys)
+    servers = (await list_device_servers([device_id])).get(device_id, [])
+    stale = [s for s in servers if s.server_key not in reported]
+    for server in stale:
+        await deregister_device_server(user_id, device_id, server.server_key, notify_device=False)
+    if stale:
+        log.set(
+            device={"operation": "reconcile_servers", "device_id": device_id},
+            pruned=len(stale),
+        )
+
+
 async def list_devices(user_id: str) -> list[Device]:
     async with get_db_session() as session:
         result = await session.execute(
@@ -413,6 +608,55 @@ async def list_device_servers(device_ids: list[str]) -> dict[str, list[DeviceMCP
         return grouped
 
 
+async def record_device_server_sync(integration_id: str, *, error: str | None = None) -> None:
+    """Stamp a device server's warm-connect outcome (connected+synced, or an error)."""
+    async with get_db_session() as session:
+        server = (
+            await session.execute(
+                select(DeviceMCPServer).where(DeviceMCPServer.integration_id == integration_id)
+            )
+        ).scalar_one_or_none()
+        if server is None:
+            # Revoked mid-warmup — nothing to record.
+            return
+        if error is None:
+            server.status = DeviceServerStatus.CONNECTED
+            server.error_message = None
+            server.tools_synced_at = datetime.now(UTC)
+        else:
+            server.status = DeviceServerStatus.ERROR
+            server.error_message = error[:2000]
+        await session.commit()
+
+
+async def enqueue_device_server_warmup(
+    device_id: str, server_keys: list[str] | None = None
+) -> None:
+    """Queue a background warm-connect so a device's MCP tools become discoverable.
+
+    Bursts collapse into one job: N registrations plus the online transition for
+    one server share a deterministic ARQ ``_job_id``. Repeats of identical work
+    past the job record's life (ARQ frees it on completion — ``keep_result=0``)
+    are skipped by a short-TTL SETNX marker instead. Best-effort like every
+    other enqueue on this path: a Redis outage raises, and the caller falls back
+    to the next connect re-driving the warmup.
+    """
+    scope = ",".join(sorted(server_keys)) if server_keys is not None else "all"
+    work_key = hashlib.sha256(scope.encode()).hexdigest()
+    marker = f"{DEVICE_WARMUP_COALESCE_PREFIX}{device_id}:{work_key}"
+    claimed = await redis_cache.client.set(marker, "1", nx=True, ex=DEVICE_WARMUP_COALESCE_SECONDS)
+    if not claimed:
+        return
+    pool = await RedisPoolManager.get_pool()
+    await enqueue_worker_job(
+        pool,
+        "warm_device_servers",
+        device_id,
+        server_keys,
+        _job_id=f"device-warmup:{device_id}:{work_key}",
+    )
+
+
 async def _device_server_integration_ids(session: AsyncSession, device_id: str) -> list[str]:
     """Integration ids of every MCP server a device exposes (for revoke teardown)."""
     return list(
@@ -432,6 +676,11 @@ async def _teardown_revoked_device(
     for integration_id in integration_ids:
         await integration_repository.delete(integration_id)
         await remove_user_integration(user_id, integration_id)
+    # Drop the device's server rows too, so a revoked device leaves nothing
+    # dangling behind (the FK cascade only fires on a hard device delete).
+    async with get_db_session() as session:
+        await session.execute(delete(DeviceMCPServer).where(DeviceMCPServer.device_id == device_id))
+        await session.commit()
     await request_revoke(device_id)
 
 

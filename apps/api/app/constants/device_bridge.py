@@ -6,7 +6,12 @@ device connect-token lifetime, and the Redis routing channels that let any worke
 reach the pod that owns a device's socket.
 """
 
-from typing import Final
+from typing import Final, Literal
+
+# The kind of thing a `server_key` resolves to on the device — the daemon's
+# ServerConfig.type. The cloud stores it for display/agent context only; it never
+# learns the underlying command or URL.
+DeviceServerKind = Literal["stdio", "url", "filesystem"]
 
 # --- Device connect token (short-lived JWT the daemon presents on the WS upgrade) ---
 # Distinct audience so a device token can never be replayed against the chat-stream
@@ -23,6 +28,12 @@ USER_CODE_LENGTH: Final[int] = 8  # e.g. "GAIA-7F3K" without the prefix/dash
 USER_CODE_ALPHABET: Final[str] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"
 PAIRING_TTL_SECONDS: Final[int] = 15 * 60  # user has 15 min to approve
 PAIRING_POLL_INTERVAL_SECONDS: Final[int] = 5  # RFC 8628 poll cadence hint
+
+# Upper bound on ACTIVE devices one user may hold at once. Bounds credential
+# sprawl (each device holds a long-lived refresh token) and abuse of the
+# one-call self-pair path. Enforced in the shared device-creation path, so both
+# the browser-approval and desktop self-pair flows reject creation past it.
+MAX_ACTIVE_DEVICES_PER_USER: Final[int] = 20
 
 # --- Device refresh credential (long-lived, rotates on every token exchange) ---
 REFRESH_TOKEN_BYTES: Final[int] = 32  # 256-bit opaque refresh token
@@ -67,8 +78,31 @@ DEVICE_HEARTBEAT_TIMEOUT_SECONDS: Final[float] = 75.0
 # How long a worker waits for the device to open a proxied MCP session before
 # giving up (the local server may be slow to spawn / the device offline).
 MCP_SESSION_OPEN_TIMEOUT_SECONDS: Final[float] = 30.0
+
+# --- Device server warmup coalescing ---
+# Repeat warmups for identical work inside this window collapse instead of
+# queueing: a registration storm plus the online transition otherwise each
+# enqueue an overlapping job, and their unconditional status writes race. A
+# failed warmup suppresses retry for at most this long; the next connect
+# re-drives it, so recovery is bounded by reconnects, not by this TTL.
+DEVICE_WARMUP_COALESCE_SECONDS: Final[int] = 60
+DEVICE_WARMUP_COALESCE_PREFIX: Final[str] = "device:warmup:"
+# How long the online WS handler waits for the down-relay subscription before
+# enqueueing warmup anyway. Subscribe is one Redis RTT; the socket must never
+# fail if it stalls, but an unsubscribed relay drops the worker's open frame.
+DEVICE_RELAY_READY_TIMEOUT_SECONDS: Final[float] = 5.0
 # Per JSON-RPC round trip through the tunnel (tool call, list_tools, initialize).
 MCP_SESSION_CALL_TIMEOUT_SECONDS: Final[float] = 120.0
+
+# --- exec-over-bridge session (run_on_device) ---
+# Hard ceiling on a single device command; the daemon kills the process here.
+# Kept below the generic per-tool guard (TOOL_EXECUTION_TIMEOUT_SECONDS = 120s in
+# constants/llm.py) so the cloud collector (this + a short grace) returns its own
+# partial-output result BEFORE that guard fires with a generic timeout message.
+DEVICE_EXEC_TIMEOUT_SECONDS: Final[float] = 90.0
+# Total captured output (stdout+stderr) per exec before the daemon truncates and
+# stops streaming — bounds a runaway command from flooding the tunnel.
+DEVICE_EXEC_MAX_OUTPUT_BYTES: Final[int] = 1_000_000
 
 # --- Bridge frame types (WS envelope ``t`` field) ---
 # cloud -> device
@@ -77,11 +111,31 @@ FRAME_MCP_OPEN: Final[str] = "mcp.open"
 FRAME_MCP_CLOSE: Final[str] = "mcp.close"
 FRAME_MCP_MSG: Final[str] = "mcp.msg"
 FRAME_REVOKE: Final[str] = "revoke"
+FRAME_SERVER_REMOVE: Final[str] = "server.remove"  # drop one server from the daemon's local config
 # device -> cloud
 FRAME_PONG: Final[str] = "pong"
 FRAME_HELLO: Final[str] = "hello"  # daemon announces its exposed servers on connect
 FRAME_MCP_OPENED: Final[str] = "mcp.opened"
 FRAME_MCP_ERROR: Final[str] = "mcp.error"
+# exec-over-bridge (run_on_device): cloud -> device open, device -> cloud stream.
+FRAME_EXEC_OPEN: Final[str] = "exec.open"
+FRAME_EXEC_STDOUT: Final[str] = "exec.stdout"
+FRAME_EXEC_STDERR: Final[str] = "exec.stderr"
+FRAME_EXEC_EXIT: Final[str] = "exec.exit"
+
+# --- Chat-driven onboarding copy (surfaced by the add_device tool's card) ---
+# Global install commands for the `@heygaia/cli` package. MUST match
+# CLI_INSTALL_COMMANDS in libs/shared/ts/src/cli/command-manifest.ts.
+CLI_INSTALL_COMMANDS: Final[dict[str, str]] = {
+    "npm": "npm install -g @heygaia/cli",
+    "pnpm": "pnpm add -g @heygaia/cli",
+    "bun": "bun add -g @heygaia/cli",
+}
+# The commands the user runs after installing.
+DEVICE_PAIR_COMMAND: Final[str] = "gaia bridge login"
+DEVICE_UP_COMMAND: Final[str] = "gaia bridge up"
+# Public setup guide (Mintlify) GAIA links to and can fetch to troubleshoot.
+DEVICE_BRIDGE_DOCS_URL: Final[str] = "https://docs.heygaia.io/cli/device-bridge"
 
 # Integration category for device-tunnel MCP servers. They keep managed_by="mcp"
 # (they ARE MCP servers, just reached over the tunnel); the transport marker below

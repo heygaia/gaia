@@ -6,7 +6,9 @@ oauth_service.py and integration_service.py.
 """
 
 from app.constants.cache import USER_INTEGRATION_CACHE_PATTERNS
+from app.constants.integrations import INTEGRATION_STATUS_UPDATE_EVENT
 from app.constants.log_tags import LogTag
+from app.core.websocket_manager import websocket_manager
 from app.db.repositories.user_integrations import user_integration_repository
 from app.decorators.caching import CacheInvalidator
 from app.models.integration_models import UserIntegrationStatus
@@ -59,6 +61,26 @@ async def update_user_integration_status(
         if status == "connected":
             # Reflect the new connected set in the user's workspace VFS.
             schedule_user_integrations_sync(user_id)
+            # Push the live transition so an open integrations page or chat connect
+            # card flips to "Connected" without a reload (mirrors the expiry push).
+            # Best-effort: the status is already persisted, and a client that
+            # misses the push still catches up on its next catalog read, so a
+            # broadcast failure (Redis down) must not fail the connection.
+            try:
+                await websocket_manager.broadcast_to_user(
+                    user_id=user_id,
+                    message={
+                        "type": INTEGRATION_STATUS_UPDATE_EVENT,
+                        "data": {"integration_id": integration_id, "status": status},
+                    },
+                )
+            except Exception as e:
+                log.warning(
+                    f"{LogTag.INTEGRATION} Failed to broadcast connected status",
+                    integration_id=integration_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                )
         return True
 
     return False

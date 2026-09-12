@@ -12,6 +12,14 @@ export interface IntegrationCategory {
 }
 
 /**
+ * Category the backend stamps on device-hosted MCP server integrations
+ * (mirrors DEVICE_CATEGORY in apps/api/app/constants/device_bridge.py). Kept
+ * off the browse taxonomy above — device servers are user-specific, not
+ * marketplace entries — but used to pick their fallback icon.
+ */
+export const DEVICE_INTEGRATION_CATEGORY = "device";
+
+/**
  * Browse taxonomy for the marketplace filter chips.
  */
 export const INTEGRATION_CATEGORIES: IntegrationCategory[] = [

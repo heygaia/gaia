@@ -5,8 +5,10 @@ from typing import Any, cast
 import uuid
 
 from mcp_use.client.exceptions import OAuthAuthenticationError
+from pymongo.errors import DuplicateKeyError
 from sqlalchemy import delete
 
+from app.constants.device_bridge import DEVICE_CATEGORY
 from app.constants.log_tags import LogTag
 from app.db.chroma.chroma_cleanup import cleanup_integration_chroma_data
 from app.db.chroma.public_integrations_store import remove_public_integration
@@ -14,6 +16,7 @@ from app.db.postgresql import get_db_session
 from app.db.redis import delete_cache, delete_cache_by_pattern
 from app.db.repositories.integrations import integration_repository
 from app.db.repositories.user_integrations import user_integration_repository
+from app.helpers.integration_helpers import dedup_server_url_key
 from app.helpers.mcp_helpers import get_api_base_url
 from app.models.db_oauth import MCPCredential
 from app.models.integration_models import (
@@ -23,6 +26,9 @@ from app.models.integration_models import (
     UpdateCustomIntegrationRequest,
 )
 from app.models.mcp_config import MCPConfig
+from app.services.device.device_service import (
+    deregister_device_server_for_integration,
+)
 from app.services.integrations.user_integration_status import (
     update_user_integration_status,
 )
@@ -42,7 +48,13 @@ async def create_custom_integration(
     request: CreateCustomIntegrationRequest,
     icon_url: str | None = None,
 ) -> Integration:
-    """Create a custom MCP integration."""
+    """Create a custom MCP integration.
+
+    The stored ``server_url`` keeps the exact user-provided path (some servers
+    distinguish ``/mcp`` from ``/mcp/``); dedup runs on the normalized key. Two
+    concurrent creates for the same URL both pass the caller's pre-check — the
+    per-creator unique index rejects the loser, which then returns the winner.
+    """
     log.set(integration={"provider": request.name, "action": "create_custom_integration"})
     # uuid4 collision probability is negligible (~10^-36); no orphan check needed.
     integration_id = str(uuid.uuid4())
@@ -61,6 +73,7 @@ async def create_custom_integration(
         is_featured=False,
         mcp_config=MCPConfig(
             server_url=request.server_url,
+            server_url_normalized=dedup_server_url_key(request.server_url),
             requires_auth=request.requires_auth,
             auth_type=request.auth_type,
         ),
@@ -69,7 +82,18 @@ async def create_custom_integration(
         clone_count=0,
     )
 
-    await integration_repository.create(integration)
+    try:
+        await integration_repository.create(integration)
+    except DuplicateKeyError:
+        winner = await integration_repository.find_custom_by_server_url(request.server_url, user_id)
+        if winner is None:
+            raise
+        log.info(
+            f"{LogTag.INTEGRATION} Custom integration create raced; reusing winner",
+            user_id=user_id,
+            integration_id=winner.integration_id,
+        )
+        return winner
 
     try:
         await add_user_integration(user_id, integration_id, initial_status="created")
@@ -84,6 +108,48 @@ async def create_custom_integration(
         raise
 
     return integration
+
+
+async def _build_updated_mcp_config(
+    request: UpdateCustomIntegrationRequest,
+    doc: Integration,
+    integration_id: str,
+    user_id: str,
+) -> MCPConfig | None:
+    """Merge server_url/auth changes onto the existing MCP config, or None if unchanged."""
+    if not any([request.server_url, request.requires_auth, request.auth_type]):
+        return None
+
+    config_changes: dict[str, object] = {}
+    if request.server_url is not None:
+        old_server_url = doc.mcp_config.server_url if doc.mcp_config else ""
+        config_changes["server_url"] = request.server_url
+        # The dedup key tracks the URL: a path edit must re-key, or the row
+        # keeps matching (and colliding on) its old address.
+        config_changes["server_url_normalized"] = dedup_server_url_key(request.server_url)
+
+        # Clean up old ChromaDB namespace when server_url changes
+        if old_server_url and old_server_url != request.server_url:
+            try:
+                await cleanup_integration_chroma_data(integration_id, old_server_url)
+            except Exception as e:
+                log.warning(
+                    f"{LogTag.INTEGRATION} Failed to clean old namespace for",
+                    integration_id=integration_id,
+                    error=str(e),
+                    error_type=type(e).__name__,
+                    user_id=user_id,
+                )
+
+    if request.requires_auth is not None:
+        config_changes["requires_auth"] = request.requires_auth
+    if request.auth_type is not None:
+        config_changes["auth_type"] = request.auth_type
+    return (
+        doc.mcp_config.model_copy(update=config_changes)
+        if doc.mcp_config
+        else MCPConfig.model_validate(config_changes)
+    )
 
 
 async def update_custom_integration(
@@ -106,34 +172,9 @@ async def update_custom_integration(
     if request.is_public is not None:
         changes["is_public"] = request.is_public
 
-    if any([request.server_url, request.requires_auth, request.auth_type]):
-        config_changes: dict[str, object] = {}
-        if request.server_url is not None:
-            old_server_url = doc.mcp_config.server_url if doc.mcp_config else ""
-            config_changes["server_url"] = request.server_url
-
-            # Clean up old ChromaDB namespace when server_url changes
-            if old_server_url and old_server_url != request.server_url:
-                try:
-                    await cleanup_integration_chroma_data(integration_id, old_server_url)
-                except Exception as e:
-                    log.warning(
-                        f"{LogTag.INTEGRATION} Failed to clean old namespace for",
-                        integration_id=integration_id,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                        user_id=user_id,
-                    )
-
-        if request.requires_auth is not None:
-            config_changes["requires_auth"] = request.requires_auth
-        if request.auth_type is not None:
-            config_changes["auth_type"] = request.auth_type
-        changes["mcp_config"] = (
-            doc.mcp_config.model_copy(update=config_changes)
-            if doc.mcp_config
-            else MCPConfig.model_validate(config_changes)
-        )
+    mcp_config = await _build_updated_mcp_config(request, doc, integration_id, user_id)
+    if mcp_config is not None:
+        changes["mcp_config"] = mcp_config
 
     update = IntegrationUpdate.model_validate(changes)
     updated = await integration_repository.update(integration_id, update)
@@ -151,6 +192,108 @@ async def update_custom_integration(
     return updated
 
 
+async def _delete_owned_integration(doc: Integration, user_id: str, integration_id: str) -> bool:
+    """Creator-side delete: drop the catalog row and cascade every cleanup."""
+    if doc.is_public:
+        try:
+            await remove_public_integration(integration_id)
+        except Exception as e:
+            log.warning(
+                f"{LogTag.INTEGRATION} Failed to remove from public integrations",
+                error=str(e),
+                error_type=type(e).__name__,
+                user_id=user_id,
+                integration_id=integration_id,
+            )
+        # Drop the deleted integration from the cached community marketplace list.
+        await delete_cache_by_pattern("marketplace:community:*")
+
+    deleted = await integration_repository.delete_custom(integration_id, user_id)
+    if not deleted:
+        return False
+
+    # A device MCP server has an authoritative Postgres row that the Mongo
+    # delete above leaves behind (and which would resurrect the doc on the
+    # daemon's next register). Drop it and tell the device to forget it.
+    if doc.category == DEVICE_CATEGORY:
+        await deregister_device_server_for_integration(integration_id, notify_device=True)
+
+    affected_user_ids = await user_integration_repository.user_ids_with_integration(integration_id)
+
+    # Remove each user's link through the canonical mutator so the row
+    # delete and its cache invalidation stay coupled per user.
+    for affected_user_id in affected_user_ids:
+        try:
+            await remove_user_integration(affected_user_id, integration_id)
+        except Exception as e:
+            log.debug(
+                f"{LogTag.INTEGRATION} Failed to remove integration for user",
+                affected_user_id=affected_user_id,
+                error=str(e),
+                error_type=type(e).__name__,
+            )
+
+    try:
+        async with get_db_session() as session:
+            await session.execute(
+                delete(MCPCredential).where(MCPCredential.integration_id == integration_id)
+            )
+            await session.commit()
+    except Exception as e:
+        log.warning(
+            f"{LogTag.INTEGRATION} Failed to delete MCP credentials",
+            error=str(e),
+            error_type=type(e).__name__,
+            user_id=user_id,
+            integration_id=integration_id,
+        )
+
+    try:
+        await delete_cache("mcp:tools:all")
+    except Exception as e:
+        log.debug(
+            f"{LogTag.INTEGRATION} Cache deletion for mcp:tools:all failed",
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+    try:
+        server_url = doc.mcp_config.server_url if doc.mcp_config else ""
+        await cleanup_integration_chroma_data(integration_id, server_url)
+    except Exception as e:
+        log.debug(
+            f"{LogTag.INTEGRATION} Chroma store deletion failed for",
+            integration_id=integration_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+
+    return True
+
+
+async def _unlink_member(user_id: str, integration_id: str) -> bool:
+    """Non-creator delete: unlink this user and drop their per-user credentials."""
+    if not await remove_user_integration(user_id, integration_id):
+        return False
+    try:
+        async with get_db_session() as session:
+            await session.execute(
+                delete(MCPCredential).where(
+                    MCPCredential.integration_id == integration_id,
+                    MCPCredential.user_id == user_id,
+                )
+            )
+            await session.commit()
+    except Exception as e:
+        log.debug(
+            f"{LogTag.INTEGRATION} MCP credential deletion failed for",
+            integration_id=integration_id,
+            error=str(e),
+            error_type=type(e).__name__,
+        )
+    return True
+
+
 async def delete_custom_integration(user_id: str, integration_id: str) -> bool:
     """Delete or remove a custom integration based on ownership."""
     log.set(integration={"provider": integration_id, "action": "delete_custom_integration"})
@@ -163,100 +306,9 @@ async def delete_custom_integration(user_id: str, integration_id: str) -> bool:
         # (see app/decorators/caching.py); cast back to the real contract.
         return cast(bool, await remove_user_integration(user_id, integration_id))
 
-    is_creator = doc.created_by == user_id
-
-    if is_creator:
-        if doc.is_public:
-            try:
-                await remove_public_integration(integration_id)
-            except Exception as e:
-                log.warning(
-                    f"{LogTag.INTEGRATION} Failed to remove from public integrations",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    user_id=user_id,
-                    integration_id=integration_id,
-                )
-            # Drop the deleted integration from the cached community marketplace list.
-            await delete_cache_by_pattern("marketplace:community:*")
-
-        deleted = await integration_repository.delete_custom(integration_id, user_id)
-
-        if deleted:
-            affected_user_ids = await user_integration_repository.user_ids_with_integration(
-                integration_id
-            )
-
-            # Remove each user's link through the canonical mutator so the row
-            # delete and its cache invalidation stay coupled per user.
-            for affected_user_id in affected_user_ids:
-                try:
-                    await remove_user_integration(affected_user_id, integration_id)
-                except Exception as e:
-                    log.debug(
-                        f"{LogTag.INTEGRATION} Failed to remove integration for user",
-                        affected_user_id=affected_user_id,
-                        error=str(e),
-                        error_type=type(e).__name__,
-                    )
-
-            try:
-                async with get_db_session() as session:
-                    await session.execute(
-                        delete(MCPCredential).where(MCPCredential.integration_id == integration_id)
-                    )
-                    await session.commit()
-            except Exception as e:
-                log.warning(
-                    f"{LogTag.INTEGRATION} Failed to delete MCP credentials",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                    user_id=user_id,
-                    integration_id=integration_id,
-                )
-
-            try:
-                await delete_cache("mcp:tools:all")
-            except Exception as e:
-                log.debug(
-                    f"{LogTag.INTEGRATION} Cache deletion for mcp:tools:all failed",
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-
-            try:
-                server_url = doc.mcp_config.server_url if doc.mcp_config else ""
-                await cleanup_integration_chroma_data(integration_id, server_url)
-            except Exception as e:
-                log.debug(
-                    f"{LogTag.INTEGRATION} Chroma store deletion failed for",
-                    integration_id=integration_id,
-                    error=str(e),
-                    error_type=type(e).__name__,
-                )
-
-            return True
-        return False
-    if await remove_user_integration(user_id, integration_id):
-        try:
-            async with get_db_session() as session:
-                await session.execute(
-                    delete(MCPCredential).where(
-                        MCPCredential.integration_id == integration_id,
-                        MCPCredential.user_id == user_id,
-                    )
-                )
-                await session.commit()
-        except Exception as e:
-            log.debug(
-                f"{LogTag.INTEGRATION} MCP credential deletion failed for",
-                integration_id=integration_id,
-                error=str(e),
-                error_type=type(e).__name__,
-            )
-
-        return True
-    return False
+    if doc.created_by == user_id:
+        return await _delete_owned_integration(doc, user_id, integration_id)
+    return await _unlink_member(user_id, integration_id)
 
 
 async def create_and_connect_custom_integration(

@@ -133,6 +133,12 @@ class MCPConfig(BaseModel):
     """Configuration for MCP (Model Context Protocol) integration."""
 
     server_url: str
+    # Canonical dedup key for the URL above (helpers.dedup_server_url_key):
+    # scheme/host lowercased, fragment dropped, trailing slash stripped — while
+    # server_url keeps the exact user-provided path for the connection itself
+    # (some servers distinguish /mcp from /mcp/). Uniquely indexed per creator
+    # (partial index, custom source only); absent on legacy docs until backfilled.
+    server_url_normalized: str | None = None
     requires_auth: bool = False
     auth_type: Literal["none", "oauth", "bearer"] | None = None
     transport: str | None = None

@@ -6,6 +6,7 @@ fabricated data, and on partial persistence failures. Only the LLM client, the
 todo/workflow services and the repositories are faked.
 """
 
+from itertools import chain, repeat
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -892,7 +893,10 @@ class TestWaitForEarlyPhase:
         # The caller proceeds with whatever is persisted rather than hanging.
         pending = MagicMock()
         pending.onboarding = {}
-        clock = iter([0.0] + [1000.0] * 10)
+        # Inexhaustible: the loop calls monotonic() once per poll, and a fixed
+        # list raises StopIteration (surfaced as RuntimeError in a coroutine)
+        # if the loop runs even once more than the list allows — flaky under load.
+        clock = chain([0.0], repeat(1000.0))
 
         with (
             patch(f"{MODULE}.user_repository") as repo,
@@ -905,7 +909,10 @@ class TestWaitForEarlyPhase:
     async def test_a_user_with_no_onboarding_subdoc_is_tolerated(self) -> None:
         user = MagicMock()
         user.onboarding = None
-        clock = iter([0.0] + [1000.0] * 10)
+        # Inexhaustible: the loop calls monotonic() once per poll, and a fixed
+        # list raises StopIteration (surfaced as RuntimeError in a coroutine)
+        # if the loop runs even once more than the list allows — flaky under load.
+        clock = chain([0.0], repeat(1000.0))
 
         with (
             patch(f"{MODULE}.user_repository") as repo,

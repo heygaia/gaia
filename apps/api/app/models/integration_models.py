@@ -226,13 +226,15 @@ class CreateCustomIntegrationRequest(BaseModel):
     """Request to create a custom MCP integration."""
 
     name: str = Field(..., min_length=1, max_length=100)
-    description: str | None = Field(None, max_length=500)
+    # default= (not positional) so mypy's pydantic plugin treats these as
+    # optional at construction — callers may omit them.
+    description: str | None = Field(default=None, max_length=500)
     category: str = Field(default="custom")
     server_url: str = Field(..., description="MCP server URL")
-    requires_auth: bool = Field(False)
-    auth_type: Literal["none", "oauth", "bearer"] | None = Field(None)
-    is_public: bool = Field(False)
-    bearer_token: str | None = Field(None)
+    requires_auth: bool = Field(default=False)
+    auth_type: Literal["none", "oauth", "bearer"] | None = Field(default=None)
+    is_public: bool = Field(default=False)
+    bearer_token: str | None = Field(default=None)
 
 
 class UpdateCustomIntegrationRequest(BaseModel):

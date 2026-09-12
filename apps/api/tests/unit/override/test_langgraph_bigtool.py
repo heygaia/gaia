@@ -10,6 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
 from langchain_core.messages import AIMessage, AnyMessage, HumanMessage, ToolMessage
 from langchain_core.runnables import RunnableConfig
 from langchain_core.tools import BaseTool, StructuredTool, tool
+from langchain_openrouter import ChatOpenRouter
 from langgraph._internal._runnable import RunnableCallable
 from langgraph.graph import END, StateGraph
 from langgraph.store.base import BaseStore
@@ -94,6 +95,39 @@ def _make_llm() -> MagicMock:
     bound.ainvoke = AsyncMock(return_value=AIMessage(content="hello"))
     # ainvoke_llm/invoke_llm wrap the bound model in with_llm_retry first.
     bound.with_retry.return_value = bound
+    configured.bind_tools.return_value = bound
+    llm.with_config.return_value = configured
+    return llm
+
+
+def _openrouter_wire_runnable() -> MagicMock:
+    """A tool-bound runnable ``_is_openrouter_wire`` accepts.
+
+    ``_bind_session_id`` binds the sticky key ONLY onto an OpenRouter-wire
+    client (a ``ChatOpenRouter`` whose base is unset — OpenRouter's own
+    endpoint). A plain MagicMock is not one, so binding is correctly skipped;
+    these tests are about the case where it must happen, so the double declares
+    itself as that client with the ``.bind`` call still observable.
+    """
+    runnable = MagicMock(spec=ChatOpenRouter)
+    runnable.openrouter_api_base = None
+    return runnable
+
+
+def _make_openrouter_wire_llm() -> MagicMock:
+    """Like :func:`_make_llm`, but the tool-bound runnable is OpenRouter-wire so
+    ``_bind_session_id`` actually binds the sticky key instead of (correctly)
+    skipping a non-OpenRouter endpoint."""
+    llm = MagicMock()
+    configured = MagicMock()
+    bound = MagicMock(spec=ChatOpenRouter)
+    bound.openrouter_api_base = None
+    bound.invoke.return_value = AIMessage(content="hello")
+    bound.ainvoke = AsyncMock(return_value=AIMessage(content="hello"))
+    bound.with_retry.return_value = bound
+    # Binding the session id returns a NEW runnable, and that is the one the call
+    # is actually made on — so it stays the same configured double.
+    bound.bind.return_value = bound
     configured.bind_tools.return_value = bound
     llm.with_config.return_value = configured
     return llm
@@ -900,7 +934,7 @@ class TestBindSessionId:
     """
 
     def test_a_configured_session_id_is_bound_onto_the_runnable(self) -> None:
-        llm = MagicMock()
+        llm = _openrouter_wire_runnable()
         bound = _bind_session_id(
             llm, {"provider": LLMProviderName.OPENROUTER, "session_id": "conv-1"}
         )
@@ -926,7 +960,10 @@ class TestBindSessionId:
 
     @pytest.mark.parametrize("provider", [LLMProviderName.OPENROUTER, LLMProviderName.CUSTOM])
     def test_a_sticky_provider_gets_the_key(self, provider: LLMProviderName) -> None:
-        llm = MagicMock()
+        # A CUSTOM provider pointed at OpenRouter's own endpoint is still
+        # OpenRouter-wire, so the sticky key binds; the negative (custom aimed at
+        # api.openai.com) is covered in test_llm_client.py.
+        llm = _openrouter_wire_runnable()
         _bind_session_id(llm, {"provider": provider, "session_id": "conv-1"})
 
         llm.bind.assert_called_once_with(session_id="conv-1")
@@ -940,11 +977,8 @@ class TestBindSessionId:
         call site is caught rather than only the helper being right in isolation.
         """
 
-        llm = _make_llm()
+        llm = _make_openrouter_wire_llm()
         bound = llm.with_config.return_value.bind_tools.return_value
-        # Binding the session id returns a NEW runnable, and that is the one the
-        # call is actually made on — so it has to stay the configured double.
-        bound.bind.return_value = bound
         builder = create_agent(
             llm,
             _make_tool_registry(dummy_tool_a),
@@ -966,9 +1000,8 @@ class TestBindSessionId:
         exists so a fix applied to only one of them is caught here rather than
         as an unexplained cache gap on whichever lane still runs sync."""
 
-        llm = _make_llm()
+        llm = _make_openrouter_wire_llm()
         bound = llm.with_config.return_value.bind_tools.return_value
-        bound.bind.return_value = bound
         builder = create_agent(
             llm,
             _make_tool_registry(dummy_tool_a),
@@ -1016,7 +1049,7 @@ class TestBindSessionId:
 
         keys = []
         for agent in ("comms_agent", "executor_agent", "gmail_agent"):
-            llm = MagicMock()
+            llm = _openrouter_wire_runnable()
             _bind_session_id(
                 llm, {"provider": LLMProviderName.OPENROUTER, "session_id": "conv-1"}, agent
             )
@@ -1029,7 +1062,7 @@ class TestBindSessionId:
         """The agent name narrows the key, it must not replace the conversation:
         two users' comms agents must never land in one chain."""
 
-        first, second = MagicMock(), MagicMock()
+        first, second = _openrouter_wire_runnable(), _openrouter_wire_runnable()
         _bind_session_id(
             first, {"provider": LLMProviderName.OPENROUTER, "session_id": "conv-1"}, "comms_agent"
         )

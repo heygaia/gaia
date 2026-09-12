@@ -7,7 +7,7 @@ import { Tooltip } from "@heroui/tooltip";
 import { InternetIcon, PuzzleIcon } from "@icons";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IntegrationSidebar } from "@/components/layout/sidebar/right-variants/IntegrationSidebar";
-import { getToolCategoryIcon } from "@/features/chat/utils/toolIcons";
+import { IntegrationIcon } from "@/features/integrations/components/IntegrationIcon";
 import { useIntegrations } from "@/features/integrations/hooks/useIntegrations";
 import type { Integration } from "@/features/integrations/types";
 import { useIntegrationModalStore } from "@/stores/integrationModalStore";
@@ -148,16 +148,11 @@ export default function IntegrationsSidebar() {
           size="sm"
           startContent={
             <div className="relative">
-              {getToolCategoryIcon(
-                integration.id,
-                {
-                  size: 18,
-                  width: 18,
-                  height: 18,
-                  showBackground: false,
-                },
-                integration.iconUrl,
-              )}
+              <IntegrationIcon
+                integrationId={integration.id}
+                iconUrl={integration.iconUrl}
+                size={18}
+              />
             </div>
           }
         >

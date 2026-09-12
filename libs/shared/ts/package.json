@@ -9,6 +9,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./analytics": "./src/analytics/index.ts",
+    "./bridge-core": "./src/bridge-core/index.ts",
+    "./bridge-core/*": "./src/bridge-core/*.ts",
     "./bots": "./src/bots/index.ts",
     "./chat": "./src/chat/index.ts",
     "./cli": "./src/cli/index.ts",
@@ -50,6 +52,7 @@
   "dependencies": {
     "@hono/node-server": "^1.19.14",
     "@infisical/sdk": "^4.0.6",
+    "@modelcontextprotocol/sdk": "^1.29.0",
     "amqplib": "^0.10.9",
     "axios": "^1.18.1",
     "dotenv": "^16.6.1",
@@ -57,12 +60,14 @@
     "posthog-node": "^5.51.4",
     "slackify-markdown": "^5.0.0",
     "string-similarity": "^4.0.4",
+    "ws": "^8.21.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/amqplib": "^0.10.8",
     "@types/node": "^24.13.3",
     "@types/string-similarity": "^4.0.2",
+    "@types/ws": "^8.18.1",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10",
     "zustand": "^5.0.14"

@@ -28,12 +28,17 @@ import { electronApp, optimizer } from "@electron-toolkit/utils";
 import { app, globalShortcut } from "electron";
 import { applyPersistedAppIcon } from "./app-icon";
 import { checkForUpdatesAfterDelay, setupAutoUpdater } from "./auto-updater";
+import { getBridgeHost } from "./bridge/host";
+import { applyLaunchAtLogin, launchedHidden } from "./bridge/launch-at-login";
+import { registerBridgeLogoutHook } from "./bridge/logout-hook";
+import { createBridgeTray } from "./bridge/tray";
 import { handleDeepLink } from "./deep-link";
 import { registerIpcHandlers } from "./ipc";
 import { registerPopupShortcut } from "./popup-shortcut";
 import { registerLinuxDevProtocol, registerProtocol } from "./protocol";
 import { startNextServer, stopNextServer } from "./server";
 import { fixSessionCookies } from "./session";
+import { getDesktopSettings } from "./settings";
 import {
   createAssistantPopup,
   destroyAssistantPopup,
@@ -74,6 +79,10 @@ let serverStarted = false;
 /** Whether the hidden background surfaces have been created. */
 let backgroundSurfacesCreated = false;
 
+/** Whether the visible surfaces (splash, Next server, main window) have been
+ * booted. A `--hidden` login launch defers this until the user opens GAIA. */
+let mainSurfaceBooted = false;
+
 /** Grace period before the splash is force-swapped if the renderer never
  * signals ready (covers server start + page load + hydration). */
 const FALLBACK_SHOW_TIMEOUT_MS = 10_000;
@@ -97,6 +106,87 @@ function createBackgroundSurfaces(): void {
     backgroundSurfacesCreated = true;
   } catch (err) {
     console.error("[Main] Failed to create background surfaces:", err);
+  }
+}
+
+/**
+ * Boot the visible surfaces — splash, embedded Next.js server, main window,
+ * popup shortcut, and the splash→main fallback. Idempotent: the normal launch
+ * calls it at `ready`, while a `--hidden` login launch defers it until the user
+ * opens GAIA from the tray.
+ */
+function bootMainSurface(): void {
+  if (mainSurfaceBooted) return;
+  mainSurfaceBooted = true;
+
+  const isProduction =
+    process.env["NODE_ENV"] === "production" || app.isPackaged;
+
+  // A hidden launch may have hidden the Dock — restore it now that a window
+  // is coming.
+  if (process.platform === "darwin") app.dock?.show();
+
+  createSplashWindow();
+  applyPersistedAppIcon();
+
+  if (isProduction) {
+    startNextServer()
+      .then(() => {
+        serverStarted = true;
+        console.log("[Main] Next.js server started");
+      })
+      .catch((error) => {
+        console.error("[Main] Failed to start Next.js server:", error);
+        serverStarted = true; // allow window to attempt loading for error recovery
+      });
+  }
+
+  createMainWindow(() => serverStarted).catch(console.error);
+
+  // Safe before the popup windows exist — toggling is a guarded no-op until
+  // createBackgroundSurfaces() runs.
+  registerPopupShortcut();
+
+  setTimeout(() => {
+    if (isSplashAlive()) {
+      console.log("[Main] Fallback: showing main window after timeout");
+      const pendingUrl = showMainWindow();
+      if (pendingUrl) handleDeepLink(pendingUrl, getMainWindow());
+    }
+    createBackgroundSurfaces();
+  }, FALLBACK_SHOW_TIMEOUT_MS);
+}
+
+/**
+ * Bring the main window to the foreground, booting the visible surfaces first
+ * if a `--hidden` launch never created them. Used by the tray's "Open GAIA"
+ * and by macOS Dock `activate`.
+ */
+function openMainSurface(): void {
+  const win = getMainWindow();
+  if (win && !win.isDestroyed()) {
+    // Still booting behind the splash — let the normal ready flow show it.
+    if (!isMainWindowShown()) return;
+    if (process.platform === "darwin") app.dock?.show();
+    if (win.isMinimized()) win.restore();
+    win.show();
+    win.focus();
+    return;
+  }
+  bootMainSurface();
+}
+
+/** If this Mac is paired and auto-start is on, bring the tunnel up on launch so
+ * the device comes back online without a manual toggle. */
+async function maybeAutoStartBridge(): Promise<void> {
+  if (!getDesktopSettings().bridgeAutoStart) return;
+  const host = getBridgeHost();
+  host.configureStateDir();
+  if (!host.status().paired) return;
+  try {
+    await host.start();
+  } catch (err) {
+    console.error("[Main] Bridge auto-start failed:", err);
   }
 }
 
@@ -142,13 +232,7 @@ if (!gotTheLock) {
 
     electronApp.setAppUserModelId("io.heygaia.desktop");
 
-    // STEP 1 — Splash screen (first thing the user sees), with the
-    // persisted custom Dock icon applied before anything else renders
-    // so the Dock is correct from the very first frame.
-    createSplashWindow();
-    applyPersistedAppIcon();
-
-    // STEP 2 — Non-blocking setup
+    // Non-blocking setup (runs in every launch mode, hidden included).
     if (isProduction) {
       setupAutoUpdater();
       checkForUpdatesAfterDelay();
@@ -166,51 +250,29 @@ if (!gotTheLock) {
 
     fixSessionCookies();
 
-    // STEP 3 — Server + window creation in PARALLEL
-    if (isProduction) {
-      startNextServer()
-        .then(() => {
-          serverStarted = true;
-          console.log("[Main] Next.js server started");
-        })
-        .catch((error) => {
-          console.error("[Main] Failed to start Next.js server:", error);
-          serverStarted = true; // allow window to attempt loading for error recovery
-        });
+    // Watch the session cookie so signing out tears down the bridge device (R5),
+    // and reconcile the stored binding against the current session on launch.
+    registerBridgeLogoutHook();
+
+    // Always-on bridge surfaces: the tray, the login item mirrored from the
+    // stored preference, and (when paired + enabled) an auto-started tunnel —
+    // all independent of whether a window is shown.
+    createBridgeTray(openMainSurface);
+    applyLaunchAtLogin(getDesktopSettings().launchAtLogin);
+    void maybeAutoStartBridge();
+
+    // A `--hidden` login launch stays tray-only: no splash, no window, no Next
+    // server, and (macOS) no Dock icon until the user opens GAIA.
+    if (launchedHidden()) {
+      if (process.platform === "darwin") app.dock?.hide();
+    } else {
+      bootMainSurface();
     }
 
-    createMainWindow(() => serverStarted).catch(console.error);
-
-    // The shortcut is safe to register before the popup windows exist —
-    // toggling is a guarded no-op until createBackgroundSurfaces() runs.
-    registerPopupShortcut();
-
-    // STEP 4 — Fallback timeout (10 s covers server + load + hydration)
-    setTimeout(() => {
-      if (isSplashAlive()) {
-        console.log("[Main] Fallback: showing main window after timeout");
-        const pendingUrl = showMainWindow();
-        if (pendingUrl) handleDeepLink(pendingUrl, getMainWindow());
-      }
-      createBackgroundSurfaces();
-    }, FALLBACK_SHOW_TIMEOUT_MS);
-
-    // macOS: Dock icon clicked. The hidden background surfaces (popup,
-    // wake listener) always exist, so "no windows left" never happens —
-    // act on the main window itself: refocus it when shown, re-create it
-    // when closed, and leave it alone while it is still booting behind
-    // the splash.
-    app.on("activate", () => {
-      const win = getMainWindow();
-      if (win && !win.isDestroyed()) {
-        if (!isMainWindowShown()) return;
-        if (win.isMinimized()) win.restore();
-        win.show();
-        win.focus();
-        return;
-      }
-      createMainWindow(() => serverStarted).catch(console.error);
-    });
+    // macOS Dock click / relaunch: open (or re-create) the main window. The
+    // hidden background surfaces mean "no windows left" never happens, so this
+    // acts on the main window itself.
+    app.on("activate", openMainSurface);
 
     // Check for deep link in launch args (Windows/Linux cold start)
     const deepLinkArg = process.argv.find((arg) => arg.startsWith("gaia://"));
@@ -235,6 +297,10 @@ if (!gotTheLock) {
   app.on("before-quit", () => {
     destroyAssistantPopup();
     destroyWakeListenerWindow();
+    // Drop the device offline so the backend sees a clean disconnect.
+    getBridgeHost()
+      .stop()
+      .catch((err) => console.error("[Main] Bridge stop on quit failed:", err));
     stopNextServer().catch(console.error);
   });
 }

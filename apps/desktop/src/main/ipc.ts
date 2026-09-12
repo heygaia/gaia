@@ -12,16 +12,19 @@ import type {
   DesktopPermissionPane,
   DesktopSettingsSnapshot,
   DesktopToolRequest,
+  ProtectedFolder,
 } from "@gaia/shared/desktop-tools";
 import { app, ipcMain, shell } from "electron";
 import { IPC } from "../ipc-channels";
 import { listAppIcons, setAppIcon } from "./app-icon";
+import { registerBridgeIpcHandlers } from "./bridge/ipc";
 import { updatePopupShortcut } from "./popup-shortcut";
 import { getDesktopSettings } from "./settings";
 import { dispatchDesktopTool } from "./tools";
 import {
   getPermissionStatus,
   openPermissionSettings,
+  requestFolderAccess,
   requestPermission,
 } from "./tools/permissions";
 import {
@@ -103,6 +106,11 @@ export function registerIpcHandlers(onWindowReady: () => void): void {
     },
   );
 
+  ipcMain.handle(
+    IPC.desktopToolRequestFolderAccess,
+    (_event, folder: ProtectedFolder) => requestFolderAccess(folder),
+  );
+
   // Screen Recording grants only apply after relaunch — TCC keeps the
   // running process's old verdict, so the settings page offers a restart.
   ipcMain.on(IPC.desktopAppRelaunch, () => {
@@ -126,4 +134,9 @@ export function registerIpcHandlers(onWindowReady: () => void): void {
   ipcMain.handle(IPC.desktopSettingsSetIcon, (_event, id: string) =>
     setAppIcon(String(id)),
   );
+
+  // Device bridge: pair/status/start/stop + server management, and the
+  // main→renderer status push. Configures the host state dir up front so the
+  // reads work immediately (no tunnel auto-start — Phase 4 owns launch policy).
+  registerBridgeIpcHandlers();
 }

@@ -504,6 +504,10 @@ class TestBuildExecutorGraph:
                 "decline_playbook",
                 "read_playbook",
                 "disable_playbook",
+                "add_device",
+                "approve_device_pairing",
+                "list_devices",
+                "run_on_device",
             ]
 
     async def test_executor_tool_registry_includes_handoff(self):
