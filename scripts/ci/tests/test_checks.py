@@ -292,6 +292,42 @@ def test_an_alias_onto_the_generated_type_is_not_a_twin(tmp_path: Path) -> None:
     assert process.returncode == 0, process.stdout
 
 
+def test_an_untyped_api_service_call_in_web_feature_code_fails(tmp_path: Path) -> None:
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/features/todo/api/todoApi.ts",
+        'import { apiService } from "@/lib/api/service";\n'
+        'export const list = () => apiService.get<{ id: string }[]>("/todos");\n',
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 1, f"an untyped apiService call passed\n{process.stdout}"
+    assert "apps/web/src/features/todo/api/todoApi.ts:1,2" in process.stdout
+    assert '"@/lib/api/typed"' in process.stdout
+
+
+def test_the_api_layer_itself_may_use_api_service(tmp_path: Path) -> None:
+    # lib/api owns the request engine (the typed client and the shared todo
+    # adapter are built on it); tests may mock it.
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/lib/api/typed.ts",
+        'import { apiService } from "./service";\nexport const api = apiService;\n',
+    )
+    _add_text(
+        repo,
+        "apps/web/src/__tests__/todo.test.ts",
+        'vi.mock("@/lib/api/service", () => ({ apiService: {} }));\n',
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 0, process.stdout
+
+
 def test_an_import_list_entry_is_not_a_declaration(tmp_path: Path) -> None:
     # `  type TodoResponse,` inside a multi-line `import type {...}` is a use,
     # not a declaration — the first version of the regex flagged it.
