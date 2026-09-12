@@ -88,12 +88,14 @@ async def generate_unique_workflow_slug(title: str, exclude_id: str | None = Non
 
 
 async def ensure_public_workflow_slug(workflow: WorkflowDocument) -> None:
-    """Lazily backfill a slug on a legacy public workflow that's missing one.
+    """Lazily backfill a slug on a legacy listed workflow that's missing one.
 
-    Mutates ``workflow.slug`` in place. No-op when the workflow is private or
-    already has a slug. Persists the new slug via the repository.
+    Mutates ``workflow.slug`` in place. No-op when the workflow is on no public
+    list (neither published nor explore) or already has a slug. Persists the
+    new slug via the repository; every public card carries a slug, so running
+    out of retries raises rather than handing the list a slug-less row.
     """
-    if not workflow.is_public or workflow.slug:
+    if not (workflow.is_public or workflow.is_explore) or workflow.slug:
         return
 
     for _ in range(_SLUG_MAX_RETRIES):
@@ -110,6 +112,9 @@ async def ensure_public_workflow_slug(workflow: WorkflowDocument) -> None:
             return
         except DuplicateKeyError:
             continue
+    raise RuntimeError(
+        f"Failed to backfill a slug for workflow {workflow.id} after {_SLUG_MAX_RETRIES} retries"
+    )
 
 
 class WorkflowService:

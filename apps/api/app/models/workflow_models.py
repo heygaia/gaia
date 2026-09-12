@@ -259,6 +259,10 @@ class Workflow(BaseScheduledTask, ResponseModel):
         default=False,
         description="Whether this workflow is published to the community marketplace",
     )
+    is_explore: bool = Field(
+        default=False,
+        description="Whether this is a curated explore card (seeded, listed ahead of community)",
+    )
     slug: str | None = Field(
         default=None,
         description="Human-readable URL slug derived from title. Unique among public workflows.",
