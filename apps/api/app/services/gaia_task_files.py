@@ -22,6 +22,7 @@ from app.services.storage._vfs_common import INDEX_FILENAME, meta_body
 from app.services.storage.gaia_tasks_vfs import GAIA_TASKS_DIRNAME, render_index
 from app.services.todo_canvas_storage import write_activity, write_canvas
 from app.services.tracked_todo_service import tracked_todo_service
+from shared.py.wide_events import log
 
 
 class GaiaTaskFile(StrEnum):
@@ -52,6 +53,15 @@ GaiaTaskPath = RootFile | TaskFile
 
 class GaiaTaskPathError(ValueError):
     """A gaia-tasks path that names a todo we cannot resolve to exactly one doc."""
+
+
+class NoteConflictError(Exception):
+    """A note write lost a revision race against a concurrent writer.
+
+    Raised by write_file when the todo still exists but its revision moved
+    since the caller resolved it. Callers holding a re-appliable patch should
+    re-resolve and retry; full-body writers should report and stop.
+    """
 
 
 async def resolve(rel: str, user_id: str) -> GaiaTaskPath | None:
@@ -138,14 +148,27 @@ async def write_file(ref: GaiaTaskPath, user_id: str, content: str) -> str | Non
     if refusal is not None or not isinstance(ref, TaskFile):
         return refusal
     writer = write_canvas if ref.filename is GaiaTaskFile.CANVAS else write_activity
-    if not await writer(ref.todo.id, user_id, content):
-        return f"Error: tracked todo {ref.todo.id} no longer exists."
-    await tracked_todo_service.system_log(
-        todo_id=ref.todo.id,
-        user_id=user_id,
-        event_type="CANVAS_UPDATED",
-        details=f"Agent wrote {ref.filename.value} ({len(content)} chars)",
-    )
+    if not await writer(ref.todo.id, user_id, content, expected_updated_at=ref.todo.updated_at):
+        # The guarded write matched nothing: either the todo is gone or a
+        # concurrent writer moved the revision. Re-read to tell them apart.
+        if await todo_repository.get(ref.todo.id, user_id=user_id) is None:
+            return f"Error: tracked todo {ref.todo.id} no longer exists."
+        raise NoteConflictError(ref.todo.id)
+    try:
+        await tracked_todo_service.system_log(
+            todo_id=ref.todo.id,
+            user_id=user_id,
+            event_type="CANVAS_UPDATED",
+            details=f"Agent wrote {ref.filename.value} ({len(content)} chars)",
+        )
+    except Exception as e:
+        log.warning(
+            "gaia task audit log failed",
+            error_type=type(e).__name__,
+            todo_id=ref.todo.id,
+            user_id=user_id,
+            exc_info=True,
+        )
     return None
 
 
@@ -153,6 +176,7 @@ __all__ = [
     "GaiaTaskFile",
     "GaiaTaskPath",
     "GaiaTaskPathError",
+    "NoteConflictError",
     "RootFile",
     "TaskFile",
     "read_file",

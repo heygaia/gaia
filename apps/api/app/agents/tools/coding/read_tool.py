@@ -95,12 +95,17 @@ async def _read_special(
     # the sandbox, and never pay a sandbox resume.
     try:
         task_ref = await gaia_task_files.resolve(target.rel, target.user_id)
+        if task_ref is not None:
+            log.set(read_via="todo_document")
+            body = await gaia_task_files.read_file(task_ref, target.user_id)
+            return _format_text_read(
+                target.abs_path, body, page.offset, page.limit, target.session_id
+            )
     except gaia_task_files.GaiaTaskPathError as e:
         return f"Error: {e}"
-    if task_ref is not None:
-        log.set(read_via="todo_document")
-        body = await gaia_task_files.read_file(task_ref, target.user_id)
-        return _format_text_read(target.abs_path, body, page.offset, page.limit, target.session_id)
+    except Exception as e:
+        log.error("read task file failed", error_type=type(e).__name__, exc_info=True)
+        return f"Error reading todo notes: {e}"
     return None
 
 

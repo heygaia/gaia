@@ -133,10 +133,12 @@ class TrackedTodoService:
         # canvas.md a recall doc from the first write by splitting it here.
         canvas_content, moved_activity = split_legacy_canvas(canvas_content)
         now = datetime.now(UTC)
-        # activity.md always starts with a creation marker: an `edit` that appends
-        # needs a last line to anchor on, and models reach for edit before write.
+        # Moved legacy entries predate this todo's creation, so they come first
+        # (oldest-first, like the migration). The creation marker stays last:
+        # an `edit` that appends needs a last line to anchor on, and models
+        # reach for edit before write.
         activity_content = "\n\n".join(
-            p for p in (f"- {now.isoformat()} ▶ tracked todo created", moved_activity) if p
+            p for p in (moved_activity, f"- {now.isoformat()} ▶ tracked todo created") if p
         )
         log_content = (
             f"# System Log: {title}\n\n"
@@ -270,16 +272,39 @@ class TrackedTodoService:
 
         Legacy canvases carried `## Activity Log` / `## Timeline` inside the
         canvas (and append mode stranded dated entries under `## Learnings`).
-        Those move to `activity_content`; existing activity stays first.
+        Those move to `activity_content`; moved legacy entries come first
+        because they predate anything written to activity.md post-deploy.
         """
         if not doc.canvas_content:
             return False
         canvas, moved = split_legacy_canvas(doc.canvas_content)
         if canvas == doc.canvas_content:
             return False
-        parts = [p for p in (doc.activity_content, moved) if p]
+        parts = [p for p in (moved, doc.activity_content) if p]
+        if await write_canvas_and_activity(
+            doc.id,
+            doc.user_id,
+            canvas=canvas,
+            activity="\n\n".join(parts),
+            expected_updated_at=doc.updated_at,
+        ):
+            return True
+        # Lost a revision race (or the snapshot went stale): re-read once and
+        # retry against fresh content. A concurrent agent write wins over the
+        # migration, so a second mismatch just skips until the next sweep.
+        fresh = await todo_repository.get(doc.id, user_id=doc.user_id)
+        if fresh is None or not fresh.canvas_content:
+            return False
+        canvas, moved = split_legacy_canvas(fresh.canvas_content)
+        if canvas == fresh.canvas_content:
+            return False
+        parts = [p for p in (moved, fresh.activity_content) if p]
         return await write_canvas_and_activity(
-            doc.id, doc.user_id, canvas=canvas, activity="\n\n".join(parts)
+            fresh.id,
+            fresh.user_id,
+            canvas=canvas,
+            activity="\n\n".join(parts),
+            expected_updated_at=fresh.updated_at,
         )
 
     @staticmethod

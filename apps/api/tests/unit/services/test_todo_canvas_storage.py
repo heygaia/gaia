@@ -1,9 +1,10 @@
 """Unit tests for todo_canvas_storage (Mongo-backed canvas/log read/write/append).
 
 The storage primitives funnel every read and write through the todos
-repository — atomicity here means: each append reads the current value, then
-writes back the full concatenated content in one update (no partial writes),
-and a write only succeeds when the repository confirms the update matched.
+repository — appends are one atomic server-side concatenation
+(``append_text_field``), so concurrent writers cannot lose each other's
+entries, and a write only succeeds when the repository confirms the update
+matched.
 """
 
 from collections.abc import Coroutine
@@ -51,6 +52,8 @@ def mock_repo():
     with patch(f"{_MOD}.todo_repository") as m:
         m.get = AsyncMock(return_value=None)
         m.update = AsyncMock(return_value=None)
+        m.replace_note_fields = AsyncMock(return_value=None)
+        m.append_text_field = AsyncMock(return_value=None)
         yield m
 
 
@@ -108,19 +111,39 @@ class TestReadCanvas:
 
 class TestWriteCanvas:
     async def test_writes_and_triggers_sync(self, mock_repo, mock_sync):
-        mock_repo.update.return_value = _todo_doc()
+        mock_repo.replace_note_fields.return_value = _todo_doc()
 
         ok = await write_canvas(TODO_ID, USER_ID, "new content")
 
         assert ok is True
-        update = mock_repo.update.await_args.kwargs["update"]
+        update = mock_repo.replace_note_fields.await_args.kwargs["update"]
         assert update.canvas_content == "new content"
         mock_sync.assert_called_once_with(USER_ID)
 
     async def test_false_when_update_matches_nothing(self, mock_repo, mock_sync):
-        mock_repo.update.return_value = None
+        mock_repo.replace_note_fields.return_value = None
 
         assert await write_canvas(TODO_ID, USER_ID, "new content") is False
+        mock_sync.assert_not_called()
+
+    @pytest.mark.regression
+    async def test_passes_expected_updated_at(self, mock_repo, mock_sync) -> None:
+        expected = datetime.now(UTC)
+        mock_repo.replace_note_fields.return_value = _todo_doc()
+
+        ok = await write_canvas(TODO_ID, USER_ID, "new", expected_updated_at=expected)
+
+        assert ok is True
+        kwargs = mock_repo.replace_note_fields.await_args.kwargs
+        assert kwargs["update"].canvas_content == "new"
+        assert kwargs["expected_updated_at"] == expected
+
+    async def test_false_on_revision_mismatch(self, mock_repo, mock_sync) -> None:
+        mock_repo.replace_note_fields.return_value = None
+
+        ok = await write_canvas(TODO_ID, USER_ID, "new", expected_updated_at=datetime.now(UTC))
+
+        assert ok is False
         mock_sync.assert_not_called()
 
 
@@ -134,72 +157,68 @@ class TestActivity:
         assert await read_activity(TODO_ID, USER_ID) == ""
 
     async def test_write_and_triggers_sync(self, mock_repo, mock_sync, captured_reindex):
-        mock_repo.update.return_value = _todo_doc()
+        mock_repo.replace_note_fields.return_value = _todo_doc()
 
         ok = await write_activity(TODO_ID, USER_ID, "- 2026-09-02 did a thing")
 
         assert ok is True
-        update = mock_repo.update.await_args.kwargs["update"]
+        update = mock_repo.replace_note_fields.await_args.kwargs["update"]
         assert update.activity_content == "- 2026-09-02 did a thing"
         mock_sync.assert_called_once_with(USER_ID)
 
     async def test_write_false_when_update_matches_nothing(self, mock_repo, mock_sync):
-        mock_repo.update.return_value = None
+        mock_repo.replace_note_fields.return_value = None
 
         assert await write_activity(TODO_ID, USER_ID, "entry") is False
         mock_sync.assert_not_called()
 
+    @pytest.mark.regression
     async def test_append_false_for_missing_todo(self, mock_repo):
+        mock_repo.append_text_field.return_value = None
+
         assert await append_activity(TODO_ID, USER_ID, "entry") is False
 
-    async def test_append_lands_at_end(self, mock_repo, mock_sync, captured_reindex):
-        """Chronological log: a new entry always goes after existing ones."""
-        mock_repo.get.return_value = _todo_doc(activity_content="- old entry")
-        mock_repo.update.return_value = _todo_doc()
+    @pytest.mark.regression
+    async def test_append_concatenates_atomically(self, mock_repo, mock_sync, captured_reindex):
+        """One server-side append: the suffix goes to the repo, sync+reindex follow."""
+        scheduled, _ = captured_reindex
+        mock_repo.append_text_field.return_value = _todo_doc(activity_content="- old\n- new")
 
-        ok = await append_activity(TODO_ID, USER_ID, "- new entry")
+        ok = await append_activity(TODO_ID, USER_ID, "- new")
 
         assert ok is True
-        update = mock_repo.update.await_args.kwargs["update"]
-        assert update.activity_content == "- old entry\n- new entry"
+        kwargs = mock_repo.append_text_field.await_args.kwargs
+        assert kwargs["field"] == "activity_content"
+        assert kwargs["suffix"] == "\n- new"
+        mock_sync.assert_called_once_with(USER_ID)
+        assert [name for name, _ in scheduled] == ["canvas_reindex"]
 
-    async def test_append_round_trip_accumulates(self, mock_repo, mock_sync, captured_reindex):
-        activity = "- a"
-        mock_repo.update.return_value = _todo_doc()
+    async def test_append_keeps_leading_newline_entry_as_is(self, mock_repo, mock_sync):
+        mock_repo.append_text_field.return_value = _todo_doc()
 
-        async def fake_get(todo_id: str, **kwargs: object) -> TodoDocument | None:
-            return _todo_doc(activity_content=activity)
+        await append_activity(TODO_ID, USER_ID, "\n- new")
 
-        async def fake_update(todo_id: str, **kwargs: object) -> TodoDocument:
-            nonlocal activity
-            activity = kwargs["update"].activity_content
-            return _todo_doc(activity_content=activity)
-
-        mock_repo.get = fake_get
-        mock_repo.update = fake_update
-
-        await append_activity(TODO_ID, USER_ID, "- b")
-        await append_activity(TODO_ID, USER_ID, "- c")
-
-        assert activity == "- a\n- b\n- c"
+        assert mock_repo.append_text_field.await_args.kwargs["suffix"] == "\n- new"
 
 
 class TestWriteCanvasAndActivity:
     async def test_sets_both_fields_in_one_update(self, mock_repo, mock_sync, captured_reindex):
         scheduled, embed = captured_reindex
-        mock_repo.update.return_value = _todo_doc(canvas_content="c", activity_content="a")
+        mock_repo.replace_note_fields.return_value = _todo_doc(
+            canvas_content="c", activity_content="a"
+        )
 
         ok = await write_canvas_and_activity(TODO_ID, USER_ID, canvas="c", activity="a")
 
         assert ok is True
-        mock_repo.update.assert_awaited_once()
-        update = mock_repo.update.await_args.kwargs["update"]
+        mock_repo.replace_note_fields.assert_awaited_once()
+        update = mock_repo.replace_note_fields.await_args.kwargs["update"]
         assert (update.canvas_content, update.activity_content) == ("c", "a")
         mock_sync.assert_called_once_with(USER_ID)
         assert [name for name, _ in scheduled] == ["canvas_reindex"]
 
     async def test_false_when_update_matches_nothing(self, mock_repo, mock_sync):
-        mock_repo.update.return_value = None
+        mock_repo.replace_note_fields.return_value = None
 
         assert await write_canvas_and_activity(TODO_ID, USER_ID, canvas="c", activity="a") is False
         mock_sync.assert_not_called()
@@ -210,9 +229,8 @@ class TestReindexOnWrite:
         self, mock_repo, mock_sync, captured_reindex
     ):
         scheduled, embed = captured_reindex
-        mock_repo.update.return_value = _todo_doc(
-            canvas_content="canvas body", activity_content="activity body"
-        )
+        updated = _todo_doc(canvas_content="canvas body", activity_content="activity body")
+        mock_repo.replace_note_fields.return_value = updated
 
         await write_canvas(TODO_ID, USER_ID, "canvas body")
 
@@ -220,10 +238,11 @@ class TestReindexOnWrite:
         await scheduled.pop()[1]
         embed.assert_awaited_once()
         assert embed.await_args.kwargs["canvas_content"] == "canvas body\n\nactivity body"
+        assert embed.await_args.kwargs["revision"] == updated.updated_at.isoformat()
 
     async def test_write_activity_reindexes(self, mock_repo, mock_sync, captured_reindex):
         scheduled, embed = captured_reindex
-        mock_repo.update.return_value = _todo_doc(
+        mock_repo.replace_note_fields.return_value = _todo_doc(
             canvas_content="canvas body", activity_content="- entry"
         )
 
@@ -237,7 +256,7 @@ class TestReindexOnWrite:
         self, mock_repo, mock_sync, captured_reindex
     ):
         scheduled, embed = captured_reindex
-        mock_repo.update.return_value = None
+        mock_repo.replace_note_fields.return_value = None
 
         await write_canvas(TODO_ID, USER_ID, "content")
 
@@ -253,6 +272,38 @@ class TestReindexOnWrite:
 
         assert scheduled == []
         embed.assert_not_awaited()
+
+
+class TestClearDeletesEmbedding:
+    @pytest.mark.regression
+    async def test_clearing_canvas_and_activity_deletes_embedding(
+        self, mock_repo, mock_sync
+    ) -> None:
+        """Clearing both bodies must remove the stale index entry, not orphan it."""
+        scheduled: list[tuple[str, Coroutine[Any, Any, Any]]] = []
+
+        def fake_spawn(name: str, coro: Coroutine[Any, Any, Any]) -> None:
+            scheduled.append((name, coro))
+
+        with (
+            patch(f"{_MOD}.spawn_logged_task", side_effect=fake_spawn),
+            patch(f"{_MOD}.update_canvas_embedding", new_callable=AsyncMock) as embed,
+            patch(f"{_MOD}.delete_canvas_embedding", new_callable=AsyncMock, create=True) as delete,
+        ):
+            try:
+                mock_repo.replace_note_fields.return_value = _todo_doc(
+                    id=TODO_ID, canvas_content="", activity_content=""
+                )
+                ok = await write_canvas_and_activity(TODO_ID, USER_ID, canvas="", activity="")
+
+                assert ok is True
+                assert [name for name, _ in scheduled] == ["canvas_reindex_delete"]
+                await scheduled[0][1]
+                delete.assert_awaited_once_with(TODO_ID)
+                embed.assert_not_awaited()
+            finally:
+                for _, coro in scheduled:
+                    coro.close()
 
 
 class TestReadLog:
@@ -281,12 +332,20 @@ class TestWriteLog:
 
 
 class TestAppendLog:
+    @pytest.mark.regression
     async def test_false_for_missing_todo(self, mock_repo):
+        mock_repo.append_text_field.return_value = None
+
         assert await append_log(TODO_ID, USER_ID, "entry") is False
 
-    async def test_appends_with_newline_separator(self, mock_repo, mock_sync):
-        mock_repo.get.return_value = _todo_doc(log_content="audit v1")
-        mock_repo.update.return_value = _todo_doc()
+    @pytest.mark.regression
+    async def test_appends_with_newline_separator(self, mock_repo, mock_sync, captured_reindex):
+        scheduled, _ = captured_reindex
+        mock_repo.append_text_field.return_value = _todo_doc()
 
         assert await append_log(TODO_ID, USER_ID, "audit v2") is True
-        assert mock_repo.update.await_args.kwargs["update"].log_content == "audit v1\naudit v2"
+        kwargs = mock_repo.append_text_field.await_args.kwargs
+        assert kwargs["field"] == "log_content"
+        assert kwargs["suffix"] == "\naudit v2"
+        mock_sync.assert_called_once_with(USER_ID)
+        assert scheduled == []

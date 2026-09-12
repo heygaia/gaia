@@ -123,7 +123,9 @@ class TestWrite:
         )
 
         assert out.startswith("Wrote")
-        canvas.assert_awaited_once_with(TODO_ID, "user-1", "# new")
+        canvas.assert_awaited_once_with(
+            TODO_ID, "user-1", "# new", expected_updated_at=_doc().updated_at
+        )
         activity.assert_not_awaited()
         w.assert_not_called()
 
@@ -135,7 +137,9 @@ class TestWrite:
             config=CONFIG,
         )
 
-        activity.assert_awaited_once_with(TODO_ID, "user-1", "- x")
+        activity.assert_awaited_once_with(
+            TODO_ID, "user-1", "- x", expected_updated_at=_doc().updated_at
+        )
 
     async def test_log_write_is_refused(self, repo, writers, no_sandbox):
         canvas, activity = writers
@@ -164,6 +168,21 @@ class TestWrite:
         )
 
         assert out.startswith("Error:") and "no tracked todo" in out
+
+    async def test_concurrent_write_reports_cleanly_without_retry(self, repo, writers, no_sandbox):
+        canvas, _ = writers
+        canvas.return_value = False
+        repo.get.return_value = _doc()
+        _, w, _, _ = no_sandbox
+
+        out = await write_tool.write.ainvoke(
+            {"path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md", "content": "# new"},
+            config=CONFIG,
+        )
+
+        assert "concurrently" in out
+        canvas.assert_awaited_once()
+        w.assert_not_called()
 
 
 @pytest.mark.unit
@@ -249,3 +268,167 @@ class TestEdit:
         )
 
         assert out.startswith("Error:") and "system-written" in out
+
+    async def test_edit_retries_a_lost_revision_race(self, repo, writers, no_sandbox):
+        canvas, _ = writers
+        canvas.side_effect = [False, True]
+        repo.get.return_value = _doc()
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md",
+                "old_string": "Waiting on Rahul.",
+                "new_string": "Rahul replied.",
+            },
+            config=CONFIG,
+        )
+
+        assert out.startswith("Edited")
+        assert canvas.await_count == 2
+        e.assert_not_called()
+
+    async def test_edit_gives_up_after_repeated_conflicts(self, repo, writers, no_sandbox):
+        canvas, _ = writers
+        canvas.return_value = False
+        repo.get.return_value = _doc()
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md",
+                "old_string": "Waiting on Rahul.",
+                "new_string": "Rahul replied.",
+            },
+            config=CONFIG,
+        )
+
+        assert "concurrently" in out
+        assert canvas.await_count == 3
+        e.assert_not_called()
+
+
+@pytest.mark.unit
+class TestUnexpectedFailuresStayInsideTheTool:
+    async def test_read_resolve_failure_returns_stable_error(self, repo, no_sandbox):
+        repo.find_tracked_by_short_id.side_effect = RuntimeError("mongo down")
+        _, _, _, host_read = no_sandbox
+
+        out = await read_tool.read.ainvoke(
+            {"path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md"}, config=CONFIG
+        )
+
+        assert out == "Error reading todo notes: mongo down"
+        host_read.assert_not_called()
+
+    async def test_write_resolve_failure_returns_stable_error(self, repo, writers, no_sandbox):
+        repo.find_tracked_by_short_id.side_effect = RuntimeError("mongo down")
+        _, w, _, _ = no_sandbox
+
+        out = await write_tool.write.ainvoke(
+            {"path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md", "content": "x"},
+            config=CONFIG,
+        )
+
+        assert out == "Error writing todo notes: mongo down"
+        w.assert_not_called()
+
+    async def test_edit_resolve_failure_returns_stable_error(self, repo, writers, no_sandbox):
+        repo.find_tracked_by_short_id.side_effect = RuntimeError("mongo down")
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md",
+                "old_string": "a",
+                "new_string": "b",
+            },
+            config=CONFIG,
+        )
+
+        assert out == "Error editing todo notes: mongo down"
+        e.assert_not_called()
+
+    async def test_write_mongo_failure_returns_stable_error(self, repo, writers, no_sandbox):
+        canvas, _ = writers
+        canvas.side_effect = RuntimeError("mongo down")
+        _, w, _, _ = no_sandbox
+
+        out = await write_tool.write.ainvoke(
+            {"path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md", "content": "x"},
+            config=CONFIG,
+        )
+
+        assert out == "Error writing todo notes: mongo down"
+        w.assert_not_called()
+
+    async def test_edit_mongo_failure_returns_stable_error(self, repo, writers, no_sandbox):
+        canvas, _ = writers
+        canvas.side_effect = RuntimeError("mongo down")
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": f"/workspace/gaia-tasks/{FOLDER}/canvas.md",
+                "old_string": "Waiting on Rahul.",
+                "new_string": "done",
+            },
+            config=CONFIG,
+        )
+
+        assert out == "Error editing todo notes: mongo down"
+        e.assert_not_called()
+
+
+@pytest.mark.unit
+class TestProjectionGuard:
+    async def test_write_to_unknown_task_file_is_a_routing_error(self, repo, writers, no_sandbox):
+        _, w, _, _ = no_sandbox
+
+        out = await write_tool.write.ainvoke(
+            {"path": "/workspace/gaia-tasks/random.txt", "content": "x"}, config=CONFIG
+        )
+
+        assert "not an editable notes file" in out and "canvas.md" in out
+        w.assert_not_called()
+
+    async def test_write_to_nested_task_path_is_a_routing_error(self, repo, writers, no_sandbox):
+        _, w, _, _ = no_sandbox
+
+        out = await write_tool.write.ainvoke(
+            {"path": f"/workspace/gaia-tasks/{FOLDER}/sub/canvas.md", "content": "x"},
+            config=CONFIG,
+        )
+
+        assert "not an editable notes file" in out
+        w.assert_not_called()
+
+    async def test_edit_to_unknown_task_file_is_a_routing_error(self, repo, writers, no_sandbox):
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": "/workspace/gaia-tasks/random.txt",
+                "old_string": "a",
+                "new_string": "b",
+            },
+            config=CONFIG,
+        )
+
+        assert "not an editable notes file" in out and "canvas.md" in out
+        e.assert_not_called()
+
+    async def test_edit_to_nested_task_path_is_a_routing_error(self, repo, writers, no_sandbox):
+        _, _, e, _ = no_sandbox
+
+        out = await edit_tool.edit.ainvoke(
+            {
+                "path": f"/workspace/gaia-tasks/{FOLDER}/sub/canvas.md",
+                "old_string": "a",
+                "new_string": "b",
+            },
+            config=CONFIG,
+        )
+
+        assert "not an editable notes file" in out
+        e.assert_not_called()

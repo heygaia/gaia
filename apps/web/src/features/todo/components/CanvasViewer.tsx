@@ -3,7 +3,7 @@
 import { Spinner } from "@heroui/spinner";
 import { ActivityIcon, CanvasIcon } from "@icons";
 import type React from "react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import MarkdownViewerModal from "@/components/common/MarkdownViewerModal";
 import { getTodoCanvas, type TodoNotes } from "@/features/todo/api/todoApi";
 
@@ -39,21 +39,40 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({ todoId, todoTitle }) => {
   const [notes, setNotes] = useState<TodoNotes | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [hasError, setHasError] = useState(false);
+  // The sidebar keeps this component mounted across todo selections, so a
+  // fetch started for todo A can resolve after todo B is selected. Only the
+  // latest request may touch state.
+  const requestId = useRef(0);
 
   const handleOpen = async (file: NotesFile) => {
     setOpenFile(file);
     // Always refetch on open so the viewer never shows a stale or wrong todo's
     // notes (the sidebar keeps this component mounted across selections).
+    const current = todoId;
+    const myRequest = ++requestId.current;
+    const isCurrent = () => requestId.current === myRequest;
     setIsLoading(true);
     setHasError(false);
     try {
-      setNotes(await getTodoCanvas(todoId));
+      const fetched = await getTodoCanvas(current);
+      if (isCurrent()) setNotes(fetched);
     } catch {
-      setHasError(true);
+      if (isCurrent()) setHasError(true);
     } finally {
-      setIsLoading(false);
+      if (isCurrent()) setIsLoading(false);
     }
   };
+
+  // A fetch started for the previous todo must never populate this one:
+  // invalidate in-flight requests and drop their state on selection change.
+  // The next open refetches (see handleOpen), so this fails safe to empty
+  // rather than showing the wrong todo's notes under the new title.
+  useEffect(() => {
+    requestId.current += 1;
+    setNotes(null);
+    setIsLoading(false);
+    setHasError(false);
+  }, [todoId]);
 
   const open = FILES.find((f) => f.name === openFile);
 

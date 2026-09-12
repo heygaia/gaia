@@ -12,6 +12,7 @@ from app.models.todo_models import TodoDocument
 from app.services.gaia_task_files import (
     GaiaTaskFile,
     GaiaTaskPathError,
+    NoteConflictError,
     RootFile,
     TaskFile,
     read_file,
@@ -160,20 +161,26 @@ class TestWriteFile:
 
     async def test_canvas_write_goes_to_mongo_and_audits(self, writers):
         canvas, activity, syslog = writers
+        doc = _doc()
 
-        result = await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "# new")
+        result = await write_file(TaskFile(doc, GaiaTaskFile.CANVAS), USER_ID, "# new")
 
         assert result is None
-        canvas.assert_awaited_once_with(TODO_ID, USER_ID, "# new")
+        canvas.assert_awaited_once_with(
+            TODO_ID, USER_ID, "# new", expected_updated_at=doc.updated_at
+        )
         activity.assert_not_awaited()
         assert syslog.await_args.kwargs["event_type"] == "CANVAS_UPDATED"
         assert "canvas.md" in syslog.await_args.kwargs["details"]
 
     async def test_activity_write_goes_to_mongo(self, writers):
         canvas, activity, syslog = writers
+        doc = _doc()
 
-        assert await write_file(TaskFile(_doc(), GaiaTaskFile.ACTIVITY), USER_ID, "- x") is None
-        activity.assert_awaited_once_with(TODO_ID, USER_ID, "- x")
+        assert await write_file(TaskFile(doc, GaiaTaskFile.ACTIVITY), USER_ID, "- x") is None
+        activity.assert_awaited_once_with(
+            TODO_ID, USER_ID, "- x", expected_updated_at=doc.updated_at
+        )
         canvas.assert_not_awaited()
         assert "activity.md" in syslog.await_args.kwargs["details"]
 
@@ -195,11 +202,33 @@ class TestWriteFile:
 
         assert refusal is not None and "generated" in refusal
 
-    async def test_vanished_todo_is_an_error(self, writers):
+    async def test_vanished_todo_is_an_error(self, writers, mock_repo):
         canvas, _, syslog = writers
         canvas.return_value = False
+        mock_repo.get.return_value = None
 
         refusal = await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "x")
 
         assert refusal is not None and "no longer exists" in refusal
         syslog.assert_not_awaited()
+
+    async def test_concurrent_write_raises_for_retry(self, writers, mock_repo):
+        canvas, _, syslog = writers
+        canvas.return_value = False
+        mock_repo.get.return_value = _doc()
+
+        with pytest.raises(NoteConflictError):
+            await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "x")
+
+        syslog.assert_not_awaited()
+
+    async def test_audit_failure_still_succeeds(self, writers):
+        canvas, _, syslog = writers
+        syslog.side_effect = RuntimeError("audit down")
+
+        with patch(f"{_MOD}.log") as mock_log:
+            result = await write_file(TaskFile(_doc(), GaiaTaskFile.CANVAS), USER_ID, "# new")
+
+        assert result is None
+        canvas.assert_awaited_once()
+        mock_log.warning.assert_called_once()

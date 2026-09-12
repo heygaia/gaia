@@ -7,6 +7,8 @@ fail-loud error path (returns False, never raises).
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
 from app.utils.canvas_vector_utils import (
     COLLECTION_NAME,
     delete_canvas_embedding,
@@ -69,6 +71,112 @@ async def test_update_canvas_embedding_reindexes() -> None:
     assert ok is True
     delete.assert_awaited_once_with("todo-1")
     store.assert_awaited_once()
+
+
+def _revision_collection(revision: str | None) -> MagicMock:
+    collection = MagicMock()
+    collection.get = AsyncMock(
+        return_value={
+            "ids": ["canvas_todo-1"],
+            "metadatas": [{"completed": False, "revision": revision}],
+        }
+    )
+    return collection
+
+
+@pytest.mark.regression
+async def test_update_skips_write_when_newer_revision_stored() -> None:
+    """An older reindex finishing last must not clobber a newer embedding."""
+    raw_client = MagicMock()
+    raw_client.get_collection = AsyncMock(
+        return_value=_revision_collection("2026-09-12T12:00:00+00:00")
+    )
+    with (
+        patch(
+            "app.utils.canvas_vector_utils.ChromaClient.get_client",
+            new_callable=AsyncMock,
+            return_value=raw_client,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.delete_canvas_embedding",
+            new_callable=AsyncMock,
+        ) as delete,
+        patch(
+            "app.utils.canvas_vector_utils.store_canvas_embedding",
+            new_callable=AsyncMock,
+        ) as store,
+    ):
+        ok = await update_canvas_embedding(
+            "todo-1", "stale text", "user-1", revision="2026-09-12T11:00:00+00:00"
+        )
+
+    assert ok is True
+    delete.assert_not_awaited()
+    store.assert_not_awaited()
+
+
+@pytest.mark.regression
+async def test_update_skips_write_when_equal_revision_stored() -> None:
+    """A retried reindex for the same write is already satisfied — skip it."""
+    raw_client = MagicMock()
+    raw_client.get_collection = AsyncMock(
+        return_value=_revision_collection("2026-09-12T12:00:00+00:00")
+    )
+    with (
+        patch(
+            "app.utils.canvas_vector_utils.ChromaClient.get_client",
+            new_callable=AsyncMock,
+            return_value=raw_client,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.delete_canvas_embedding",
+            new_callable=AsyncMock,
+        ) as delete,
+        patch(
+            "app.utils.canvas_vector_utils.store_canvas_embedding",
+            new_callable=AsyncMock,
+        ) as store,
+    ):
+        ok = await update_canvas_embedding(
+            "todo-1", "same text", "user-1", revision="2026-09-12T12:00:00+00:00"
+        )
+
+    assert ok is True
+    delete.assert_not_awaited()
+    store.assert_not_awaited()
+
+
+@pytest.mark.regression
+async def test_update_writes_when_revision_newer_and_stores_it() -> None:
+    raw_client = MagicMock()
+    raw_client.get_collection = AsyncMock(
+        return_value=_revision_collection("2026-09-12T12:00:00+00:00")
+    )
+    with (
+        patch(
+            "app.utils.canvas_vector_utils.ChromaClient.get_client",
+            new_callable=AsyncMock,
+            return_value=raw_client,
+        ),
+        patch(
+            "app.utils.canvas_vector_utils.delete_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as delete,
+        patch(
+            "app.utils.canvas_vector_utils.store_canvas_embedding",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as store,
+    ):
+        ok = await update_canvas_embedding(
+            "todo-1", "new text", "user-1", revision="2026-09-12T13:00:00+00:00"
+        )
+
+    assert ok is True
+    delete.assert_awaited_once_with("todo-1")
+    store.assert_awaited_once()
+    assert store.await_args.kwargs["revision"] == "2026-09-12T13:00:00+00:00"
 
 
 async def test_delete_canvas_embedding() -> None:

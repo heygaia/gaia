@@ -24,11 +24,15 @@ from app.decorators import with_doc, with_rate_limiting
 from app.services import gaia_task_files
 from app.services.sandbox import SandboxAcquisitionError, acquire_sandbox
 from app.services.storage import FsOps, fs_timer
+from app.services.storage.gaia_tasks_vfs import GAIA_TASKS_DIRNAME
 from app.templates.docstrings.coding_tools_docs import EDIT_TOOL
 from shared.py.wide_events import log
 
 MAX_FILE_BYTES = 5 * 1024 * 1024  # 5 MB
 MAX_PATCH_BYTES = 2 * 1024 * 1024
+# Re-applying a patch to fresh content is cheap and safe; beyond this the
+# notes are churning under the agent and it should re-read and decide.
+_EDIT_MAX_ATTEMPTS = 3
 
 
 @dataclass(frozen=True)
@@ -174,15 +178,32 @@ async def _maybe_edit_task_file(rel: str, target: EditTarget, patch: EditPatch) 
     """Edit the todo document when ``rel`` names a tracked-todo file.
 
     Returns the tool result when handled (including the resolve error), else
-    None so the caller falls through to the sandbox path.
+    None so the caller falls through to the sandbox path. A patch is
+    re-appliable, so a lost revision race re-resolves and retries instead of
+    failing the edit.
     """
     try:
         task_ref = await gaia_task_files.resolve(rel, target.user_id)
+        if task_ref is None:
+            if rel == GAIA_TASKS_DIRNAME or rel.startswith(GAIA_TASKS_DIRNAME + "/"):
+                return (
+                    f"Error: {rel} is not an editable notes file. Only canvas.md and "
+                    "activity.md under /workspace/gaia-tasks/<todo>/ can be edited."
+                )
+            return None
+        for _ in range(_EDIT_MAX_ATTEMPTS):
+            try:
+                return await _edit_task_file(task_ref, target, patch)
+            except gaia_task_files.NoteConflictError:
+                task_ref = await gaia_task_files.resolve(rel, target.user_id)
+                if task_ref is None:
+                    return "Error: tracked todo no longer exists."
+        return "Error: notes changed concurrently; read the file again and retry the edit."
     except gaia_task_files.GaiaTaskPathError as e:
         return f"Error: {e}"
-    if task_ref is None:
-        return None
-    return await _edit_task_file(task_ref, target, patch)
+    except Exception as e:
+        log.error("edit task file failed", error_type=type(e).__name__, exc_info=True)
+        return f"Error editing todo notes: {e}"
 
 
 async def _edit_task_file(

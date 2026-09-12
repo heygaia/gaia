@@ -116,6 +116,22 @@ class TestSplitLegacyCanvas:
         assert section_body(new_canvas, "Learnings") == "Sarah replies in 2-3 days."
         assert activity == "- did x"
 
+    def test_interleaved_dates_merge_chronologically_across_sources(self):
+        """Activity Log / Learnings / Timeline entries interleave by date, not by source."""
+        canvas = (
+            "# T\n\n## Key Details\nk\n\n"
+            "## Activity Log\n- 2026-08-22T10:00:00+00:00 activity late\n\n"
+            "## Learnings\nReal learning.\n\n### 2026-08-20\n- rescued early\n\n"
+            "## Timeline\n- 2026-08-21T10:00:00+00:00 timeline middle\n"
+        )
+
+        new_canvas, activity = split_legacy_canvas(canvas)
+
+        assert activity is not None
+        assert activity.index("rescued early") < activity.index("timeline middle")
+        assert activity.index("timeline middle") < activity.index("activity late")
+        assert section_body(new_canvas, "Learnings") == "Real learning."
+
     def test_idempotent(self):
         once, activity = split_legacy_canvas(LEGACY)
 
