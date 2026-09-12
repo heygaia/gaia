@@ -167,7 +167,7 @@ async def search_notifications(
         # Get notifications for searching
         notifications = await notification_service.get_user_notifications(
             user_id,
-            filters=NotificationListFilters(status=status, limit=100, offset=0),
+            filters=NotificationListFilters(status=status, limit=100),
         )
 
         # Simple text search

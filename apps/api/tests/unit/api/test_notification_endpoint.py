@@ -146,6 +146,7 @@ class TestGetNotifications:
         mock_get.side_effect = Exception("db error")
         response = await client.get(NOTIF_BASE)
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to get notifications"
 
     async def test_get_notifications_unauthed(self, unauthed_client: AsyncClient):
         response = await unauthed_client.get(NOTIF_BASE)
@@ -191,6 +192,7 @@ class TestGetChannelPreferences:
         mock_fetch.side_effect = Exception("db fail")
         response = await client.get(f"{NOTIF_BASE}/preferences/channels")
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to get channel preferences"
 
 
 # ---------------------------------------------------------------------------
@@ -252,6 +254,7 @@ class TestUpdateChannelPreferences:
             json={"telegram": True},
         )
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to update channel preferences"
 
 
 class TestNotificationAnalytics:
@@ -337,6 +340,7 @@ class TestExecuteAction:
         mock_exec.side_effect = Exception("boom")
         response = await client.post(f"{NOTIF_BASE}/n1/actions/a1/execute")
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to execute action"
 
 
 # ---------------------------------------------------------------------------
@@ -377,6 +381,7 @@ class TestMarkAsRead:
         mock_mark.side_effect = Exception("boom")
         response = await client.post(f"{NOTIF_BASE}/n1/read")
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to mark notification as read"
 
 
 # ---------------------------------------------------------------------------
@@ -599,6 +604,24 @@ class TestRegisterDevice:
             },
         )
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to register device token"
+
+    @patch("app.api.v1.endpoints.notification.get_device_token_service")
+    async def test_register_device_exception(
+        self, mock_svc_factory: MagicMock, client: AsyncClient
+    ):
+        svc = AsyncMock()
+        svc.get_user_device_count.side_effect = Exception("boom")
+        mock_svc_factory.return_value = svc
+        response = await client.post(
+            f"{NOTIF_BASE}/register-device",
+            json={
+                "token": "ExponentPushToken[abc123]",
+                "platform": "ios",
+            },
+        )
+        assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to register device token"
 
 
 # ---------------------------------------------------------------------------
@@ -647,6 +670,7 @@ class TestUnregisterDevice:
             json={"token": "ExponentPushToken[abc123]"},
         )
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to unregister device token"
 
 
 # ---------------------------------------------------------------------------
@@ -687,6 +711,7 @@ class TestGetNotification:
         mock_get.side_effect = Exception("boom")
         response = await client.get(f"{NOTIF_BASE}/n1")
         assert response.status_code == 500
+        assert response.json()["detail"] == "Failed to get notification"
 
     async def test_get_notification_unauthed(self, unauthed_client: AsyncClient):
         response = await unauthed_client.get(f"{NOTIF_BASE}/n1")
