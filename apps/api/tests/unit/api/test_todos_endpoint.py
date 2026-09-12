@@ -4,19 +4,27 @@ Covers the MAX_PAGE_NUMBER page bound on the todo list endpoint, the
 happy path with the service faked, and analytics captures on mutations.
 """
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, patch
 
 from httpx import AsyncClient
 import pytest
 
+from app.api.v1.endpoints.todos import (
+    _resolve_todo_date_range,
+    _todo_filters_applied,
+    _todo_search_params,
+)
 from app.constants.general import MAX_PAGE_NUMBER
 from app.models.todo_models import (
     BulkOperationResponse,
     BulkUpdateRequest,
     PaginationMeta,
+    Priority,
+    SearchMode,
     SubTask,
     TodoDocument,
+    TodoListQuery,
     TodoListResponse,
     TodoResponse,
     TodoUpdateRequest,
@@ -143,6 +151,80 @@ class TestTodoAnalytics:
             AnalyticsEvents.TODO_TOGGLED,
             {"is_subtask": True, "completed": True},
         )
+
+
+class TestListQueryHelpers:
+    """The list endpoint's extracted helpers, tested directly so the filter
+    label set and date-range resolution are pinned exactly."""
+
+    def test_no_filters_applied(self):
+        assert _todo_filters_applied(TodoListQuery()) == []
+
+    def test_every_filter_applied(self):
+        query = TodoListQuery(
+            q="launch",
+            project_id="p1",
+            completed=False,
+            priority=Priority.HIGH,
+            labels=["work"],
+            due_today=True,
+            due_after=datetime(2026, 1, 1, tzinfo=UTC),
+        )
+
+        assert _todo_filters_applied(query) == [
+            "query",
+            "project",
+            "completed",
+            "priority",
+            "labels",
+            "due_today",
+            "date_range",
+        ]
+
+    def test_due_this_week_only(self):
+        assert _todo_filters_applied(TodoListQuery(due_this_week=True)) == ["due_this_week"]
+
+    def test_date_range_from_due_before_only(self):
+        query = TodoListQuery(due_before=datetime(2026, 1, 1, tzinfo=UTC))
+
+        assert _todo_filters_applied(query) == ["date_range"]
+
+    def test_due_today_is_the_utc_day_bounds(self):
+        start, end = _resolve_todo_date_range(TodoListQuery(due_today=True))
+
+        today = datetime.now(UTC).date()
+        assert start == datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
+        assert end == datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+
+    def test_due_this_week_is_a_seven_day_window(self):
+        start, end = _resolve_todo_date_range(TodoListQuery(due_this_week=True))
+
+        assert start is not None and end is not None
+        assert end - start == timedelta(days=7)
+
+    def test_explicit_range_passes_through(self):
+        after = datetime(2026, 1, 1, tzinfo=UTC)
+        before = datetime(2026, 2, 1, tzinfo=UTC)
+
+        assert _resolve_todo_date_range(TodoListQuery(due_after=after, due_before=before)) == (
+            after,
+            before,
+        )
+
+    def test_no_date_filter_is_none(self):
+        assert _resolve_todo_date_range(TodoListQuery()) == (None, None)
+
+    def test_search_params_maps_the_window_even_when_the_query_has_its_own(self):
+        query = TodoListQuery(
+            q="x", mode=SearchMode.TEXT, due_after=datetime(2026, 1, 1, tzinfo=UTC)
+        )
+
+        params = _todo_search_params(query, None, None)
+
+        assert params.q == "x"
+        assert params.mode == SearchMode.TEXT
+        assert params.due_date_start is None
+        assert params.due_date_end is None
 
 
 class TestTodoCanvas:
