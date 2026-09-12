@@ -19,11 +19,13 @@ from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import Priority, TodoDocument, TodoModel, TodoResponse, TodoUpdate
 from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
+from app.services.canvas_markdown import split_legacy_canvas
 from app.services.todo_canvas_storage import (
     append_log,
     build_vfs_label,
     read_canvas,
     write_canvas,
+    write_canvas_and_activity,
 )
 from app.services.todos.todo_service import TodoService
 from app.utils.canvas_vector_utils import (
@@ -322,6 +324,24 @@ class TrackedTodoService:
         ]
         return "ACTIVE TRACKED TODOS (check if incoming signal relates to any):\n" + "\n".join(
             lines
+        )
+
+    @staticmethod
+    async def migrate_legacy_canvas(doc: TodoDocument) -> bool:
+        """One-shot split of a pre-activity.md canvas. Returns True when it wrote.
+
+        Legacy canvases carried `## Activity Log` / `## Timeline` inside the
+        canvas (and append mode stranded dated entries under `## Learnings`).
+        Those move to `activity_content`; existing activity stays first.
+        """
+        if not doc.canvas_content:
+            return False
+        canvas, moved = split_legacy_canvas(doc.canvas_content)
+        if canvas == doc.canvas_content:
+            return False
+        parts = [p for p in (doc.activity_content, moved) if p]
+        return await write_canvas_and_activity(
+            doc.id, doc.user_id, canvas=canvas, activity="\n\n".join(parts)
         )
 
     @staticmethod

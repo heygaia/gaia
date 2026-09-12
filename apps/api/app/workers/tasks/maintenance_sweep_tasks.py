@@ -71,7 +71,9 @@ async def maintenance_sweep_tracked_todos(_ctx: dict[str, Any]) -> str:
 
     pool = await RedisPoolManager.get_pool()
 
-    expired, overdue, dormant = await _classify_tracked_todos(pool, now)
+    todos = await todo_repository.list_active_tracked_all_users(limit=200)
+    migrated = await _migrate_legacy_canvases(todos)
+    expired, overdue, dormant = await _classify_tracked_todos(pool, now, todos)
 
     # Track health-check calls per user to cap LLM usage per sweep
     health_checks_used: dict[str, int] = {}
@@ -95,6 +97,7 @@ async def maintenance_sweep_tracked_todos(_ctx: dict[str, Any]) -> str:
         f"digest_items:{len(needs_attention_todos)}"
     )
     log.set(
+        migrated_canvases=migrated,
         archived=archived,
         notified_expired=notified_expired,
         notified_overdue=notified_overdue,
@@ -112,16 +115,31 @@ async def maintenance_sweep_tracked_todos(_ctx: dict[str, Any]) -> str:
     return summary
 
 
+async def _migrate_legacy_canvases(todos: list[TodoDocument]) -> int:
+    """Offer every scanned todo to the one-shot canvas → activity split."""
+    migrated = 0
+    for todo in todos:
+        try:
+            if await tracked_todo_service.migrate_legacy_canvas(todo):
+                migrated += 1
+        except Exception as exc:
+            log.warning(
+                "maintenance_sweep.legacy_canvas_migration_failed",
+                todo_id=todo.id,
+                error_type=type(exc).__name__,
+                error=str(exc),
+            )
+    return migrated
+
+
 async def _classify_tracked_todos(
-    pool: ArqRedis, now: datetime
+    pool: ArqRedis, now: datetime, todos: list[TodoDocument]
 ) -> tuple[list[TodoDocument], list[TodoDocument], list[TodoDocument]]:
-    """Scan active tracked todos and bucket them into expired/overdue/dormant tiers.
+    """Bucket active tracked todos into expired/overdue/dormant tiers.
 
     Todos still inside their notification backoff are skipped. Each tier is capped
     at 20 entries per sweep.
     """
-    todos = await todo_repository.list_active_tracked_all_users(limit=200)
-
     expired: list[TodoDocument] = []
     overdue: list[TodoDocument] = []
     dormant: list[TodoDocument] = []

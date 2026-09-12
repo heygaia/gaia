@@ -21,6 +21,7 @@ from app.services.todo_canvas_storage import (
     read_log,
     write_activity,
     write_canvas,
+    write_canvas_and_activity,
     write_log,
 )
 
@@ -179,6 +180,27 @@ class TestActivity:
         await append_activity(TODO_ID, USER_ID, "- c")
 
         assert activity == "- a\n- b\n- c"
+
+
+class TestWriteCanvasAndActivity:
+    async def test_sets_both_fields_in_one_update(self, mock_repo, mock_sync, captured_reindex):
+        scheduled, embed = captured_reindex
+        mock_repo.update.return_value = _todo_doc(canvas_content="c", activity_content="a")
+
+        ok = await write_canvas_and_activity(TODO_ID, USER_ID, canvas="c", activity="a")
+
+        assert ok is True
+        mock_repo.update.assert_awaited_once()
+        update = mock_repo.update.await_args.kwargs["update"]
+        assert (update.canvas_content, update.activity_content) == ("c", "a")
+        mock_sync.assert_called_once_with(USER_ID)
+        assert [name for name, _ in scheduled] == ["canvas_reindex"]
+
+    async def test_false_when_update_matches_nothing(self, mock_repo, mock_sync):
+        mock_repo.update.return_value = None
+
+        assert await write_canvas_and_activity(TODO_ID, USER_ID, canvas="c", activity="a") is False
+        mock_sync.assert_not_called()
 
 
 class TestReindexOnWrite:

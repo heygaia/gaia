@@ -96,6 +96,7 @@ def _sweep_patches(**overrides) -> tuple[MagicMock, dict[str, AsyncMock], list]:
         "system_log": AsyncMock(),
         "add_labels": AsyncMock(),
         "notify": AsyncMock(),
+        "migrate": AsyncMock(return_value=False),
     }
     patches = [
         patch(f"{MODULE}.todo_repository.list_active_tracked_all_users", mocks["list"]),
@@ -108,6 +109,7 @@ def _sweep_patches(**overrides) -> tuple[MagicMock, dict[str, AsyncMock], list]:
         patch(f"{MODULE}.tracked_todo_service.system_log", mocks["system_log"]),
         patch(f"{MODULE}.todo_repository.add_labels", mocks["add_labels"]),
         patch(f"{MODULE}.notification_service.create_notification", mocks["notify"]),
+        patch(f"{MODULE}.tracked_todo_service.migrate_legacy_canvas", mocks["migrate"]),
     ]
     return pool, mocks, patches
 
@@ -198,11 +200,7 @@ class TestIsDormant:
 
 class TestClassifyTrackedTodos:
     async def _classify(self, pool: MagicMock, todos: list[TodoDocument]):
-        with patch(
-            f"{MODULE}.todo_repository.list_active_tracked_all_users",
-            AsyncMock(return_value=todos),
-        ):
-            return await _classify_tracked_todos(pool, NOW)
+        return await _classify_tracked_todos(pool, NOW, todos)
 
     async def test_buckets_expired_overdue_and_dormant(self):
         pool = _pool()
@@ -590,6 +588,23 @@ class TestSendUserDormantDigest:
 
 
 class TestMaintenanceSweep:
+    async def test_every_scanned_todo_gets_the_legacy_canvas_migration(self):
+        """The one-shot split of legacy canvases rides the sweep: each active
+        tracked todo is offered to the migration, cooldown or not."""
+        todos = [_doc(id="a", updated_at=NOW), _doc(id="b", updated_at=NOW)]
+        with _sweep(list=todos) as (pool, mocks):
+            pool.exists = AsyncMock(return_value=1)
+            await maintenance_sweep_tracked_todos({})
+
+        assert [c.args[0].id for c in mocks["migrate"].await_args_list] == ["a", "b"]
+
+    async def test_migration_failure_does_not_abort_the_sweep(self):
+        with _sweep(list=[_doc(id="a", updated_at=NOW)]) as (_pool, mocks):
+            mocks["migrate"].side_effect = RuntimeError("mongo hiccup")
+            summary = await maintenance_sweep_tracked_todos({})
+
+        assert summary.startswith("archived:0")
+
     async def test_expired_todo_archived_by_the_health_check(self):
         with _sweep(
             list=[_doc(id="exp-1", expires_at=datetime.now(UTC) - timedelta(hours=1))],
@@ -636,6 +651,10 @@ class TestMaintenanceSweep:
         """Pin the operator-visible summary format with the processing steps faked."""
         with (
             patch(f"{MODULE}.RedisPoolManager.get_pool", AsyncMock(return_value=_pool())),
+            patch(
+                f"{MODULE}.todo_repository.list_active_tracked_all_users",
+                AsyncMock(return_value=[]),
+            ),
             patch(f"{MODULE}._classify_tracked_todos", AsyncMock(return_value=([], [], []))),
             patch(f"{MODULE}._process_expired", AsyncMock(return_value=(3, 2))),
             patch(f"{MODULE}._process_overdue", AsyncMock(return_value=4)),

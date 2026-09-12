@@ -71,6 +71,22 @@ async def write_canvas(todo_id: str, user_id: str, content: str) -> bool:
     return False
 
 
+async def write_canvas_and_activity(
+    todo_id: str, user_id: str, *, canvas: str, activity: str
+) -> bool:
+    """Replace both bodies in one update (the legacy-canvas migration path)."""
+    updated = await todo_repository.update(
+        todo_id,
+        user_id=user_id,
+        update=TodoUpdate(canvas_content=canvas, activity_content=activity),
+    )
+    if updated is not None:
+        schedule_gaia_tasks_sync(user_id)
+        _schedule_reindex(updated)
+        return True
+    return False
+
+
 async def read_activity(todo_id: str, user_id: str) -> str | None:
     """Return the todo's activity body, or None when the todo does not exist."""
     doc = await todo_repository.get(todo_id, user_id=user_id)

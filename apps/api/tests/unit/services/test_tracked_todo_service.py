@@ -443,3 +443,49 @@ class TestSingleton:
 
     def test_priority_default_is_none(self):
         assert Priority.NONE.value == "none"
+
+
+class TestMigrateLegacyCanvas:
+    LEGACY = (
+        "# T\n\n## Key Details\nk\n\n## Activity Log\n- did x\n\n"
+        "## Timeline\n- 2026-01-02T00:00:00+00:00 second\n- 2026-01-01T00:00:00+00:00 first\n\n"
+        "## Learnings\n"
+    )
+
+    async def test_legacy_canvas_is_split_into_both_fields(self):
+        doc = _todo_doc(canvas_content=self.LEGACY, activity_content=None)
+        with patch(
+            f"{_MOD}.write_canvas_and_activity", new_callable=AsyncMock, return_value=True
+        ) as write:
+            assert await TrackedTodoService.migrate_legacy_canvas(doc) is True
+
+        kwargs = write.await_args.kwargs
+        assert "## Activity Log" not in kwargs["canvas"]
+        assert "## Timeline" not in kwargs["canvas"]
+        assert kwargs["activity"].index("first") < kwargs["activity"].index("second")
+        assert "did x" in kwargs["activity"]
+
+    async def test_existing_activity_is_preserved_ahead_of_moved_entries(self):
+        doc = _todo_doc(canvas_content=self.LEGACY, activity_content="- already here")
+        with patch(
+            f"{_MOD}.write_canvas_and_activity", new_callable=AsyncMock, return_value=True
+        ) as write:
+            await TrackedTodoService.migrate_legacy_canvas(doc)
+
+        activity = write.await_args.kwargs["activity"]
+        assert activity.startswith("- already here")
+        assert "did x" in activity
+
+    async def test_clean_canvas_is_not_touched(self):
+        doc = _todo_doc(canvas_content="# T\n\n## Key Details\nk\n\n## Learnings\n")
+        with patch(f"{_MOD}.write_canvas_and_activity", new_callable=AsyncMock) as write:
+            assert await TrackedTodoService.migrate_legacy_canvas(doc) is False
+
+        write.assert_not_awaited()
+
+    async def test_empty_canvas_is_not_touched(self):
+        doc = _todo_doc(canvas_content=None)
+        with patch(f"{_MOD}.write_canvas_and_activity", new_callable=AsyncMock) as write:
+            assert await TrackedTodoService.migrate_legacy_canvas(doc) is False
+
+        write.assert_not_awaited()

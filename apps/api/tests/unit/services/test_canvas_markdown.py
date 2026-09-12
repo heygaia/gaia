@@ -1,0 +1,126 @@
+"""Unit tests for canvas_markdown — section extraction and the legacy split."""
+
+import pytest
+
+from app.services.canvas_markdown import section_body, split_legacy_canvas
+
+LEGACY = """# Fix the thing
+
+## Key Details
+- Thread: 18f3a2b
+- Email: rahul@example.com
+
+## Current State
+Waiting on reply.
+
+## Activity Log
+### 2026-08-20
+- **Gmail agent**: sent email. Tools: GMAIL_SEND.
+
+## Timeline
+- 2026-08-21T09:00:00+00:00 ✓ scheduled run finished
+- 2026-08-20T09:00:00+00:00 ▶ scheduled run started
+
+## Context
+Some accumulated context.
+
+## Learnings
+"""
+
+
+class TestSectionBody:
+    def test_returns_body_up_to_next_heading(self):
+        assert section_body(LEGACY, "Current State") == "Waiting on reply."
+
+    def test_none_when_missing(self):
+        assert section_body(LEGACY, "Nope") is None
+
+    def test_exact_heading_only(self):
+        """'Current' must not match inside '## Current State'."""
+        assert section_body(LEGACY, "Current") is None
+
+    def test_first_line_heading(self):
+        assert section_body("## Key Details\nx\n", "Key Details") == "x"
+
+    def test_last_section_runs_to_end(self):
+        assert section_body("## A\n1\n\n## B\n2\n3\n", "B") == "2\n3"
+
+
+class TestSplitLegacyCanvas:
+    def test_moves_activity_and_timeline_out(self):
+        canvas, activity = split_legacy_canvas(LEGACY)
+
+        assert "## Activity Log" not in canvas
+        assert "## Timeline" not in canvas
+        assert "## Key Details" in canvas
+        assert "## Context" in canvas
+        assert "## Learnings" in canvas
+        assert activity is not None
+        assert "sent email" in activity
+        assert "scheduled run finished" in activity
+
+    def test_timeline_reordered_chronologically(self):
+        """Legacy Timeline inserted newest-first; activity.md is oldest-first."""
+        _, activity = split_legacy_canvas(LEGACY)
+
+        assert activity is not None
+        assert activity.index("run started") < activity.index("run finished")
+
+    def test_activity_precedes_timeline_entries(self):
+        _, activity = split_legacy_canvas(LEGACY)
+
+        assert activity is not None
+        assert activity.index("sent email") < activity.index("run started")
+
+    def test_none_when_nothing_to_move(self):
+        canvas = "# T\n\n## Key Details\nx\n\n## Learnings\n"
+
+        assert split_legacy_canvas(canvas) == (canvas, None)
+
+    def test_empty_legacy_sections_are_dropped_without_activity(self):
+        canvas = "# T\n\n## Activity Log\n\n## Timeline\n\n## Learnings\n"
+
+        new_canvas, activity = split_legacy_canvas(canvas)
+
+        assert activity is None
+        assert "## Activity Log" not in new_canvas
+        assert "## Timeline" not in new_canvas
+
+    def test_entries_appended_after_learnings_are_rescued(self):
+        """The production symptom: append mode dumped activity under Learnings."""
+        canvas = (
+            "# T\n\n## Key Details\nx\n\n## Learnings\n\n"
+            "### 2026-08-20\n- **Gmail agent**: sent email.\n"
+            "### 2026-08-21\n- **Slack agent**: posted update.\n"
+        )
+
+        new_canvas, activity = split_legacy_canvas(canvas)
+
+        assert activity is not None
+        assert "sent email" in activity and "posted update" in activity
+        assert "sent email" not in new_canvas
+        assert section_body(new_canvas, "Learnings") == ""
+
+    def test_real_learnings_are_kept(self):
+        canvas = "# T\n\n## Learnings\nSarah replies in 2-3 days.\n\n## Activity Log\n- did x\n"
+
+        new_canvas, activity = split_legacy_canvas(canvas)
+
+        assert section_body(new_canvas, "Learnings") == "Sarah replies in 2-3 days."
+        assert activity == "- did x"
+
+    def test_idempotent(self):
+        once, activity = split_legacy_canvas(LEGACY)
+
+        assert split_legacy_canvas(once) == (once, None)
+        assert activity is not None
+
+
+@pytest.mark.parametrize("heading", ["Activity Log", "Timeline"])
+def test_split_removes_each_legacy_section_alone(heading: str):
+    canvas = f"# T\n\n## Key Details\nk\n\n## {heading}\n- entry\n\n## Learnings\n"
+
+    new_canvas, activity = split_legacy_canvas(canvas)
+
+    assert f"## {heading}" not in new_canvas
+    assert activity == "- entry"
