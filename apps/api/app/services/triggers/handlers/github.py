@@ -70,14 +70,13 @@ class GitHubTriggerHandler(TriggerHandler):
         user_id: str,
         integration_id: str,
         parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        **kwargs: str,
+        page: int = 1,
+        search: str = "",
     ) -> list[TriggerOption]:
         """Get dynamic options for GitHub trigger config fields."""
         composio_service = get_composio_service()
 
-        # Get pagination params if provided
-        page = int(kwargs.get("page", 1))
-        search_query = kwargs.get("search", "").strip()
+        search_query = search.strip()
 
         # Use LangChain wrapper pattern
         tool = composio_service.get_tool(

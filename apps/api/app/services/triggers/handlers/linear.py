@@ -63,7 +63,8 @@ class LinearTriggerHandler(TriggerHandler):
         user_id: str,
         integration_id: str,
         parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        **kwargs: str,
+        page: int = 1,  # noqa: ARG002 -- framework contract
+        search: str = "",
     ) -> list[TriggerOption]:
         """Get dynamic options for Linear trigger config fields."""
         composio_service = get_composio_service()
@@ -92,7 +93,7 @@ class LinearTriggerHandler(TriggerHandler):
             teams = data.get_teams()
 
             # Filter by search string if provided
-            search_term = kwargs.get("search", "").lower()
+            search_term = search.lower()
             options = []
 
             for team in teams:

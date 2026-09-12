@@ -299,7 +299,8 @@ class SlackTriggerHandler(TriggerHandler):
         user_id: str,
         integration_id: str,
         parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        **_kwargs: str,
+        page: int = 1,  # noqa: ARG002 -- framework contract
+        search: str = "",  # noqa: ARG002 -- framework contract
     ) -> list[TriggerOption]:
         """Get dynamic options for Slack trigger config fields."""
         if trigger_name == "slack_new_message" and field_name == "channel_ids":

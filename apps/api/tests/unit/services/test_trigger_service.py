@@ -1430,6 +1430,26 @@ class TestGitHubTriggerHandler:
         assert len(result) == 1
         assert result[0].value == "owner/special-repo"
 
+    @patch("app.services.triggers.handlers.github.get_composio_service")
+    async def test_get_config_options_requests_the_given_page(self, mock_get_composio):
+        mock_tool = MagicMock()
+        mock_tool.invoke = MagicMock(return_value={"successful": True, "data": [], "error": None})
+        mock_composio = MagicMock()
+        mock_composio.get_tool = MagicMock(return_value=mock_tool)
+        mock_get_composio.return_value = mock_composio
+
+        handler = GitHubTriggerHandler()
+        await handler.get_config_options(
+            trigger_name="github_commit_event",
+            field_name="repos",
+            user_id=USER_ID,
+            integration_id="github",
+            page=3,
+        )
+        params = mock_tool.invoke.call_args.args[0]
+        assert params["page"] == 3
+        assert params["per_page"] == 100
+
     def test_singleton_instance_exists(self):
         assert github_trigger_handler is not None
         assert isinstance(github_trigger_handler, GitHubTriggerHandler)

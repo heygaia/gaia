@@ -15,6 +15,12 @@ import type {
 // Re-export types for convenience
 export type { CommunityWorkflow, CreateWorkflowRequest, Workflow };
 
+export interface TriggerOptionsQuery {
+  parentValues?: string[];
+  page?: number;
+  search?: string;
+}
+
 export const workflowApi = {
   // Create a new workflow
   createWorkflow: (request: CreateWorkflowRequest) =>
@@ -192,12 +198,13 @@ export const workflowApi = {
 
   // Get dynamic options for trigger configuration field; `parentValues` are
   // the ids of the parent selection for cascading fields (sheets of a
-  // spreadsheet), sent comma-separated as the route reads them.
+  // spreadsheet), sent comma-separated as the route reads them. `page` and
+  // `search` are honoured by the handlers that page/filter (GitHub repos).
   getTriggerOptions: async (
     integrationId: string,
     triggerSlug: string,
     fieldName: string,
-    parentValues?: string[],
+    { parentValues, page, search }: TriggerOptionsQuery = {},
   ) => {
     const response = await api.get("/api/v1/triggers/options", {
       query: {
@@ -205,6 +212,8 @@ export const workflowApi = {
         trigger_slug: triggerSlug,
         field_name: fieldName,
         parent_values: parentValues?.join(","),
+        page,
+        search,
       },
       errorMessage: "Failed to fetch trigger options",
       silent: true, // Fail silently if options not available

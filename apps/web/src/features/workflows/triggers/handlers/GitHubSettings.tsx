@@ -1,12 +1,13 @@
 /**
  * GitHub Trigger Settings
  *
- * UI configuration for GitHub triggers: repository selection, or manual
- * owner/repo entry.
+ * UI configuration for GitHub triggers: repository selection with infinite
+ * scroll, or manual owner/repo entry.
  */
 
 "use client";
 
+import { Button } from "@heroui/button";
 import { Select, SelectItem } from "@heroui/select";
 import { useState } from "react";
 
@@ -17,7 +18,11 @@ import {
   TriggerSettingsCard,
 } from "../components/TriggerSettingsCard";
 import { TriggerTagInput } from "../components/TriggerTagInput";
-import { isTriggerOption, useTriggerOptions } from "../hooks/useTriggerOptions";
+import { useInfiniteTriggerOptions } from "../hooks/useInfiniteTriggerOptions";
+import {
+  isTriggerOption,
+  type TriggerOption,
+} from "../hooks/useTriggerOptions";
 import type { TriggerSettingsProps } from "../registry";
 import type { TriggerConfigDraft } from "../types";
 
@@ -30,6 +35,15 @@ export interface GitHubConfig extends TriggerConfigDraft {
   trigger_name?: string;
   trigger_data?: GitHubTriggerData;
 }
+
+/** A repository, or the trailing "Loading more..." row while a page is fetched. */
+type RepoItem = TriggerOption & { isLoader?: boolean };
+
+const LOADER_ITEM: RepoItem = {
+  value: "loading-more",
+  label: "Loading more...",
+  isLoader: true,
+};
 
 // Accepts "owner/repo" with valid GitHub name segments.
 function isValidRepo(value: string): boolean {
@@ -56,15 +70,17 @@ export function GitHubSettings({
 
   const triggerSlug = config.trigger_name || "";
 
-  const { data, isLoading } = useTriggerOptions(
-    integrationId,
-    triggerSlug,
-    "repo",
-    isConnected && !!triggerSlug && !useManualInput,
-  );
+  const { data, fetchNextPage, hasNextPage, isFetchingNextPage, isLoading } =
+    useInfiniteTriggerOptions(
+      integrationId,
+      triggerSlug,
+      "repo",
+      isConnected && !!triggerSlug && !useManualInput,
+    );
 
-  // The API answers with the whole repository list; it does not page it.
-  const repoOptions = (data ?? []).filter(isTriggerOption);
+  const repoOptions: RepoItem[] = (data?.pages ?? [])
+    .flat()
+    .filter(isTriggerOption);
 
   const updateTriggerData = (updates: Partial<GitHubTriggerData>) => {
     const currentTriggerData = triggerData || {
@@ -89,6 +105,18 @@ export function GitHubSettings({
     updateTriggerData({
       repos: selectedKeys,
     });
+  };
+
+  // Fetch the next page once the listbox is scrolled to its bottom.
+  const attachScrollLoader = (listbox: HTMLElement | null) => {
+    if (!listbox) return;
+    listbox.onscroll = () => {
+      const bottom =
+        listbox.scrollHeight - listbox.scrollTop === listbox.clientHeight;
+      if (bottom && hasNextPage && !isFetchingNextPage) {
+        fetchNextPage();
+      }
+    };
   };
 
   if (!isConnected) {
@@ -116,10 +144,13 @@ export function GitHubSettings({
               selectedKeys={new Set(currentSelectedKeys)}
               onSelectionChange={handleSelectionChange}
               isLoading={isLoading}
+              scrollRef={attachScrollLoader}
               className="w-full"
-              items={repoOptions}
+              items={hasNextPage ? [...repoOptions, LOADER_ITEM] : repoOptions}
               renderValue={(items) => {
-                const count = items.length;
+                const count = items.filter(
+                  (item) => item.key !== LOADER_ITEM.value,
+                ).length;
                 if (count === 0) return "Select repositories";
                 if (count === 1) return items[0]?.textValue || "1 repository";
                 return `${count} repositories selected`;
@@ -140,11 +171,35 @@ export function GitHubSettings({
               }
             >
               {(item) => (
-                <SelectItem key={item.value} textValue={item.label}>
-                  {item.label}
+                <SelectItem
+                  key={item.value}
+                  textValue={item.label}
+                  isReadOnly={item.isLoader}
+                  className={item.isLoader ? "h-unit-8" : ""}
+                >
+                  {item.isLoader ? (
+                    <div className="flex justify-center w-full">
+                      <span className="text-xs text-zinc-500">
+                        {item.label}
+                      </span>
+                    </div>
+                  ) : (
+                    item.label
+                  )}
                 </SelectItem>
               )}
             </Select>
+            {hasNextPage && !isLoading && (
+              <Button
+                size="sm"
+                variant="light"
+                className="w-full text-xs"
+                onPress={() => fetchNextPage()}
+                isLoading={isFetchingNextPage}
+              >
+                Load more repositories
+              </Button>
+            )}
           </div>
         ) : (
           <TriggerTagInput

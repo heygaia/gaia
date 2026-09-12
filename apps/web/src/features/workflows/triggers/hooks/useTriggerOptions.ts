@@ -41,7 +41,7 @@ export const useTriggerOptions = (
         integrationId,
         triggerSlug,
         fieldName,
-        parentValues,
+        { parentValues },
       );
       return response;
     },

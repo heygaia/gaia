@@ -69,7 +69,8 @@ class NotionTriggerHandler(TriggerHandler):
         user_id: str,
         integration_id: str,
         parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        **kwargs: str,
+        page: int = 1,  # noqa: ARG002 -- framework contract
+        search: str = "",
     ) -> list[TriggerOption]:
         """Get dynamic options for Notion trigger config fields."""
         try:
@@ -100,7 +101,7 @@ class NotionTriggerHandler(TriggerHandler):
             input_model = NotionFetchDataInput(
                 fetch_type=fetch_type,
                 page_size=100,
-                query=kwargs.get("search"),
+                query=search or None,
             )
 
             log.debug(

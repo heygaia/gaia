@@ -64,7 +64,8 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
         user_id: str,
         integration_id: str,
         parent_ids: list[str] | None = None,
-        **_kwargs: str,
+        page: int = 1,  # noqa: ARG002 -- framework contract
+        search: str = "",  # noqa: ARG002 -- framework contract
     ) -> Sequence[TriggerOption | TriggerOptionGroup]:
         """Get dynamic options for Google Sheets trigger config fields.
 

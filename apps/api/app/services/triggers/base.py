@@ -312,7 +312,8 @@ class TriggerHandler(ABC):
         user_id: str,  # noqa: ARG002 -- framework contract
         integration_id: str,  # noqa: ARG002 -- framework contract
         parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        **_kwargs: str,
+        page: int = 1,  # noqa: ARG002 -- framework contract
+        search: str = "",  # noqa: ARG002 -- framework contract
     ) -> Sequence[TriggerOption | TriggerOptionGroup]:
         """Get dynamic options for a trigger configuration field.
 
@@ -331,6 +332,8 @@ class TriggerHandler(ABC):
             user_id: The user ID
             integration_id: The integration ID (e.g., 'slack')
             parent_ids: Parent IDs for cascading options (e.g., workspace IDs)
+            page: Page of options to return, for handlers that page
+            search: Substring to filter options by, for handlers that search
 
         Returns:
             Flat options, or ``TriggerOptionGroup``s for cascading dropdowns.
