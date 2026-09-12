@@ -27,7 +27,7 @@ from app.schemas.errors import ErrorEnvelope, error_response
 from shared.py.wide_events import log as wide_log
 
 
-async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded) -> JSONResponse:
     """Handle rate limit exceeded exceptions."""
     wide_log.warning(
         "rate_limit_exceeded",
@@ -42,7 +42,7 @@ async def rate_limit_handler(request: Request, exc: Exception) -> JSONResponse:
         429,
         ErrorEnvelope.model_validate(
             {
-                "message": str(exc),
+                "message": exc.detail,
                 "code": "rate_limit_exceeded",
                 "retry_after": getattr(exc, "retry_after", None),
             }
@@ -62,7 +62,10 @@ def configure_middleware(app: FastAPI) -> None:
     app.state.limiter = limiter
 
     # Exception handler for rate limiting
-    app.add_exception_handler(RateLimitExceeded, rate_limit_handler)
+    # The decorator form, as in app_factory: add_exception_handler is typed
+    # Callable[[Request, Exception], ...], which rejects a handler that names
+    # the exception it is registered for.
+    app.exception_handler(RateLimitExceeded)(rate_limit_handler)
 
     # Middleware stack, innermost → outermost (add order == inner first).
     # LoggingMiddleware is deliberately the OUTERMOST app middleware: it owns
