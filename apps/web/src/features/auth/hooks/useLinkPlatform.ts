@@ -11,7 +11,7 @@ import {
 } from "@/config/botPlatforms";
 import { useAuth } from "@/features/auth/hooks/useAuth";
 import { getErrorFix, getErrorMessage } from "@/lib/api/errors";
-import { apiService } from "@/lib/api/service";
+import { api } from "@/lib/api/typed";
 import { toast } from "@/lib/toast";
 
 /** Copy for a failure the backend did not describe itself. */
@@ -65,8 +65,8 @@ export function useLinkPlatform(platform: string | null, token: string | null) {
   const [isLinked, setIsLinked] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [accountInfo, setAccountInfo] = useState<{
-    username?: string;
-    displayName?: string;
+    username?: string | null;
+    displayName?: string | null;
   } | null>(null);
 
   // The persisted query cache restores asynchronously, so every auth decision
@@ -83,15 +83,12 @@ export function useLinkPlatform(platform: string | null, token: string | null) {
 
   useEffect(() => {
     if (token) {
-      apiService
-        .get(`/bot/link-token-info/${encodeURIComponent(token)}`, {
+      api
+        .get("/api/v1/bot/link-token-info/{token}", {
+          path: { token },
           silent: true,
         })
-        .then((data) => {
-          const { username, display_name } = data as {
-            username?: string;
-            display_name?: string;
-          };
+        .then(({ username, display_name }) => {
           setAccountInfo({
             username,
             displayName: display_name,
@@ -108,14 +105,15 @@ export function useLinkPlatform(platform: string | null, token: string | null) {
   useLinkConfetti(isLinked);
 
   const handleLink = async () => {
+    if (!platform || !token) return;
     setIsLinking(true);
     setError(null);
     try {
-      await apiService.post(
-        `/platform-links/${platform}`,
-        { token },
-        { silent: true },
-      );
+      await api.post("/api/v1/platform-links/{platform}", {
+        path: { platform },
+        body: { token },
+        silent: true,
+      });
       setIsLinked(true);
       toast.success("Account linked successfully!");
     } catch (err: unknown) {

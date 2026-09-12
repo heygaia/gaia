@@ -1,35 +1,24 @@
 import type { Schema } from "@shared/api/generated";
-import { apiService } from "@/lib/api/service";
+import { api } from "@/lib/api/typed";
 
 export type VoiceOption = Schema<"VoiceOption">;
 
 export type VoiceListResponse = Schema<"VoiceListResponse">;
 
 export const voiceApi = {
-  getVoices: async (): Promise<VoiceListResponse> => {
-    return apiService.get<VoiceListResponse>("/voice/voices", {
-      errorMessage: "Failed to load voices",
-    });
-  },
+  getVoices: () =>
+    api.get("/api/v1/voice/voices", { errorMessage: "Failed to load voices" }),
 
-  selectVoice: async (
-    voiceId: string,
-  ): Promise<{ selected_voice_id: string }> => {
-    return apiService.put(
-      "/voice/voices/selected",
-      { voice_id: voiceId },
-      { errorMessage: "Failed to update voice" },
-    );
-  },
+  selectVoice: (voiceId: string) =>
+    api.put("/api/v1/voice/voices/selected", {
+      body: { voice_id: voiceId },
+      errorMessage: "Failed to update voice",
+    }),
 
-  starVoice: async (
-    voiceId: string,
-    starred: boolean,
-  ): Promise<{ starred_voice_ids: string[] }> => {
-    return apiService.put(
-      `/voice/voices/${voiceId}/star`,
-      { starred },
-      { errorMessage: "Failed to update starred voices" },
-    );
-  },
+  starVoice: (voiceId: string, starred: boolean) =>
+    api.put("/api/v1/voice/voices/{voice_id}/star", {
+      path: { voice_id: voiceId },
+      body: { starred },
+      errorMessage: "Failed to update starred voices",
+    }),
 };
