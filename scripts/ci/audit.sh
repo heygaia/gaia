@@ -20,8 +20,8 @@
 #                     entries; 2 the audit itself could not run.
 #   playwright-pin    none.
 #   alert-rule-tools  RUNNER_TEMP (required), GITHUB_PATH.
-#   evlog             GITHUB_BASE_REF (required), RUNNER_TEMP; needs a
-#                     fetch-depth: 0 checkout.
+#   evlog             GITHUB_BASE_REF (optional; falls back to NX_BASE/master
+#                     locally), RUNNER_TEMP; needs a fetch-depth: 0 checkout.
 set -euo pipefail
 
 # shellcheck source=scripts/ci/lib/log.sh
@@ -179,7 +179,12 @@ cmd_alert_rule_tools() {
 
 cmd_evlog() {
 
-  BASE_SHA=$(git merge-base "origin/$GITHUB_BASE_REF" HEAD)
+  # CI sets GITHUB_BASE_REF; local runs (`mise ci:local`) do not. Mirror
+  # changes.sh's fallback (NX_BASE, then master) so the lane is runnable
+  # locally instead of dying on an unbound variable under `set -u`.
+  BASE_REF="${GITHUB_BASE_REF:-${NX_BASE#origin/}}"
+  BASE_REF="${BASE_REF:-master}"
+  BASE_SHA=$(git merge-base "origin/$BASE_REF" HEAD)
   # Scratch lives under the job's own temp dir, never a fixed /tmp name: /tmp
   # is sticky and shared by every user on a self-hosted box, so a file left
   # behind by another runner user is unwritable (EACCES) for this one.
