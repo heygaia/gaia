@@ -604,7 +604,7 @@ class PublicWorkflowCard(ResponseModel):
     id: str
     title: str
     description: str
-    slug: str | None = None
+    slug: str
     prompt: str
     icon: str | None = None
     icon_color: str | None = None

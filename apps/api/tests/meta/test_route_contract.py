@@ -16,6 +16,8 @@ import typing
 from typing import Any
 
 from fastapi import FastAPI
+from fastapi.datastructures import DefaultPlaceholder
+from fastapi.responses import JSONResponse
 from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from pydantic import BaseModel
 import pytest
@@ -67,6 +69,18 @@ def _is_typed_body(model: Any) -> bool:
     return False
 
 
+def _declares_its_response_class(route: APIRoute) -> bool:
+    """A stream/file/redirect/HTML route names its Response class on the decorator.
+
+    Without ``response_class=`` FastAPI documents the body as an empty JSON
+    object; a JSON response class is not an answer either — that body needs a
+    model.
+    """
+    if isinstance(route.response_class, DefaultPlaceholder):
+        return False
+    return not issubclass(route.response_class, JSONResponse)
+
+
 def test_every_route_declares_its_response_body(routes: list[RouteContext]) -> None:
     """A route without a response model documents its body as ``{}``."""
     undeclared = [
@@ -75,12 +89,13 @@ def test_every_route_declares_its_response_body(routes: list[RouteContext]) -> N
         if (route := ctx.original_route)
         and isinstance(route, APIRoute)
         and route.response_model is None
-        and not _returns_response_subclass(route)
+        and not (_returns_response_subclass(route) and _declares_its_response_class(route))
         and route.status_code != status.HTTP_204_NO_CONTENT
     ]
     assert undeclared == [], (
-        "routes with no response model — annotate the return type with a Pydantic model, "
-        "or return a Response subclass for streams/files/redirects:\n  " + "\n  ".join(undeclared)
+        "routes with no response model — annotate the return type with a Pydantic model; "
+        "a stream/file/redirect/HTML route returns that Response subclass AND sets "
+        "response_class= to it on the decorator:\n  " + "\n  ".join(undeclared)
     )
 
 

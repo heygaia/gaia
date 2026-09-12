@@ -35,6 +35,7 @@ from app.services.integrations.integration_connection_service import (
 )
 from app.services.integrations.user_integrations import add_user_integration
 from app.services.mcp.mcp_tools_service import get_integration_tools
+from app.services.workflow.service import ensure_public_workflow_slug
 from app.utils.creator import format_creator
 from shared.py.wide_events import log
 
@@ -311,6 +312,8 @@ async def get_related_workflows(
         )
         total = await workflow_repository.count_public_by_step_category(identifier)
 
+        for row in rows:
+            await ensure_public_workflow_slug(row)
         formatted_workflows = [
             PublicWorkflowCard(
                 id=row.id,

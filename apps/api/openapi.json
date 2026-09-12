@@ -480,6 +480,66 @@
         "title": "ArtifactInfo",
         "type": "object"
       },
+      "ArtifactRegistryEntry": {
+        "description": "One element of ``ConversationDocument.artifacts``.\n\n``app.services.chat.artifacts_registry`` owns every write of this shape; the\nconversation document stores it and mirrors it verbatim to the client.\n``mtime`` is a Unix timestamp, matching what every publisher in\n:mod:`app.services.artifact_events` stamps. ``body`` is present only for\nsmall textual artifacts inlined at write time.",
+        "properties": {
+          "body": {
+            "title": "Body",
+            "type": "string"
+          },
+          "content_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Content Type"
+          },
+          "mtime": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mtime"
+          },
+          "path": {
+            "title": "Path",
+            "type": "string"
+          },
+          "size_bytes": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Size Bytes"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "path",
+          "size_bytes",
+          "mtime",
+          "content_type",
+          "updated_at",
+          "body"
+        ],
+        "title": "ArtifactRegistryEntry",
+        "type": "object"
+      },
       "AsanaTaskTriggerConfig": {
         "description": "Config for asana_task_trigger (Composio ASANA_TASK_CREATED).",
         "properties": {
@@ -1220,6 +1280,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "conversations"
+        ],
         "title": "BatchSyncResponse",
         "type": "object"
       },
@@ -2156,6 +2219,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "items"
+        ],
         "title": "CalendarListResponse",
         "type": "object"
       },
@@ -2808,6 +2874,133 @@
         "title": "ConversationDescriptionHit",
         "type": "object"
       },
+      "ConversationDocument": {
+        "additionalProperties": true,
+        "description": "A conversation and its embedded message history as stored in MongoDB.\n\n``extra=\"allow\"`` preserves stray/legacy top-level fields (e.g. ``artifacts``,\n``metadata``) so a full-document read returns them verbatim, matching the\npre-repository behaviour.",
+        "properties": {
+          "artifacts": {
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRegistryEntry"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "conversation_id": {
+            "title": "Conversation Id",
+            "type": "string"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "description": {
+            "default": "New Chat",
+            "title": "Description",
+            "type": "string"
+          },
+          "id": {
+            "default": "",
+            "title": "Id",
+            "type": "string"
+          },
+          "is_onboarding_demo": {
+            "default": false,
+            "title": "Is Onboarding Demo",
+            "type": "boolean"
+          },
+          "is_system_generated": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": false,
+            "title": "Is System Generated"
+          },
+          "is_unread": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": false,
+            "title": "Is Unread"
+          },
+          "messages": {
+            "items": {
+              "$ref": "#/components/schemas/MessageModel-Output"
+            },
+            "title": "Messages",
+            "type": "array"
+          },
+          "source": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConversationSource"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "starred": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Starred"
+          },
+          "system_purpose": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SystemPurpose"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          },
+          "user_id": {
+            "title": "User Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "user_id",
+          "conversation_id"
+        ],
+        "title": "ConversationDocument",
+        "type": "object"
+      },
       "ConversationListResponse": {
         "description": "One page of the conversation list: every starred conversation followed by\nthe requested page of the non-starred ones.",
         "properties": {
@@ -3050,7 +3243,15 @@
         },
         "required": [
           "conversation_id",
-          "user_id"
+          "user_id",
+          "description",
+          "starred",
+          "is_system_generated",
+          "system_purpose",
+          "is_unread",
+          "source",
+          "createdAt",
+          "updatedAt"
         ],
         "title": "ConversationSummary",
         "type": "object"
@@ -3096,8 +3297,7 @@
           },
           "artifacts": {
             "items": {
-              "additionalProperties": true,
-              "type": "object"
+              "$ref": "#/components/schemas/ArtifactRegistryEntry"
             },
             "title": "Artifacts",
             "type": "array"
@@ -3186,7 +3386,16 @@
         },
         "required": [
           "conversation_id",
-          "description"
+          "description",
+          "starred",
+          "is_system_generated",
+          "system_purpose",
+          "is_unread",
+          "createdAt",
+          "updatedAt",
+          "messages",
+          "artifacts",
+          "active_stream_id"
         ],
         "title": "ConversationSyncRow",
         "type": "object"
@@ -4822,8 +5031,15 @@
             "type": "string"
           },
           "end": {
-            "title": "End time in ISO format or date for all-day events",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End time in ISO format or date for all-day events"
           },
           "is_all_day": {
             "default": false,
@@ -4842,8 +5058,15 @@
             "title": "Recurrence rules for creating a recurring event"
           },
           "start": {
-            "title": "Start time in ISO format or date for all-day events",
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start time in ISO format or date for all-day events"
           },
           "summary": {
             "title": "Event Summary",
@@ -4862,9 +5085,7 @@
           }
         },
         "required": [
-          "summary",
-          "start",
-          "end"
+          "summary"
         ],
         "title": "EventCreateRequest",
         "type": "object"
@@ -5813,7 +6034,19 @@
           }
         },
         "required": [
-          "id"
+          "id",
+          "threadId",
+          "from",
+          "to",
+          "cc",
+          "replyTo",
+          "subject",
+          "time",
+          "snippet",
+          "body",
+          "isThread",
+          "is_unread",
+          "labelIds"
         ],
         "title": "GmailMessageSummary",
         "type": "object"
@@ -5905,7 +6138,7 @@
         "title": "GmailThreadResponse",
         "type": "object"
       },
-      "GoogleCalendarEventDateTime-Input": {
+      "GoogleCalendarEventDateTime": {
         "additionalProperties": true,
         "description": "The ``start``/``end`` object of a Google Calendar ``events`` resource.\n\nAn event carries either ``date`` (all-day) or ``dateTime`` + ``timeZone``; both\nare declared optional so a single type covers both.",
         "properties": {
@@ -5946,16 +6179,171 @@
         "title": "GoogleCalendarEventDateTime",
         "type": "object"
       },
-      "GoogleCalendarEventDateTime-Output": {
-        "additionalProperties": true,
-        "type": "object"
-      },
       "GoogleCalendarEventResource": {
         "additionalProperties": true,
+        "description": "A single Google Calendar ``events`` resource, forwarded to the client verbatim.\n\nOnly the fields GAIA itself reads (filtering, sorting, display) or injects\n(``calendarId``/``calendarTitle``) are declared. Google owns the rest of this\nschema and varies it by event type, so everything else passes through untouched\nrather than guessing at a structure that would silently drop fields the web\nclient reads.",
+        "properties": {
+          "calendarId": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendarid"
+          },
+          "calendarTitle": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calendartitle"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "end": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoogleCalendarEventDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "eventType": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eventtype"
+          },
+          "id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Id"
+          },
+          "recurrence": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Recurrence"
+          },
+          "start": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/GoogleCalendarEventDateTime"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "title": "GoogleCalendarEventResource",
         "type": "object"
       },
       "GoogleCalendarListEntry": {
         "additionalProperties": true,
+        "description": "One entry of Google's ``calendarList.list`` payload, forwarded to the client\nverbatim.\n\nDeclared: the fields the service and the web calendar picker read. Everything\nelse Google sends rides through as extras and is projected into\n``CalendarSummary`` where it is needed.",
+        "properties": {
+          "backgroundColor": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Backgroundcolor"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "primary": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Primary"
+          },
+          "summary": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Summary"
+          }
+        },
+        "required": [
+          "id"
+        ],
+        "title": "GoogleCalendarListEntry",
         "type": "object"
       },
       "GoogleDocsDocumentDeletedConfig": {
@@ -7073,6 +7461,28 @@
           }
         },
         "title": "LinkedUsersResponse",
+        "type": "object"
+      },
+      "LogoutResponse": {
+        "description": "``POST /user/logout``: where the client sends the browser next.",
+        "properties": {
+          "logout_url": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Identity-provider logout URL to redirect to",
+            "title": "Logout Url"
+          }
+        },
+        "required": [
+          "logout_url"
+        ],
+        "title": "LogoutResponse",
         "type": "object"
       },
       "MCPConfigDetail": {
@@ -11110,6 +11520,9 @@
             "type": "array"
           }
         },
+        "required": [
+          "results"
+        ],
         "title": "PinnedMessagesResponse",
         "type": "object"
       },
@@ -11816,15 +12229,8 @@
             "type": "string"
           },
           "slug": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Slug"
+            "title": "Slug",
+            "type": "string"
           },
           "source_integration": {
             "anyOf": [
@@ -12928,7 +13334,7 @@
             "type": "string"
           },
           "end": {
-            "$ref": "#/components/schemas/GoogleCalendarEventDateTime-Input"
+            "$ref": "#/components/schemas/GoogleCalendarEventDateTime"
           },
           "id": {
             "title": "Id",
@@ -12947,7 +13353,7 @@
             "title": "Isallday"
           },
           "start": {
-            "$ref": "#/components/schemas/GoogleCalendarEventDateTime-Input"
+            "$ref": "#/components/schemas/GoogleCalendarEventDateTime"
           },
           "summary": {
             "title": "Summary",
@@ -19352,11 +19758,6 @@
         },
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "422": {
@@ -20859,11 +21260,6 @@
         },
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "422": {
@@ -21220,7 +21616,7 @@
         ]
       },
       "get": {
-        "description": "Retrieve a specific conversation by its ID.",
+        "description": "Retrieve a specific conversation by its ID.\n\nThe stored document itself: ``ConversationDocument`` is ``extra=\"allow\"``,\nso stray/legacy top-level fields the row carries still reach the client\nverbatim, while the declared fields give the schema its shape.",
         "operationId": "conversations_get_conversation_endpoint",
         "parameters": [
           {
@@ -21237,7 +21633,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/ConversationDocument"
+                }
               }
             },
             "description": "Successful Response"
@@ -24420,11 +24818,6 @@
         },
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "422": {
@@ -24703,12 +25096,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -26128,12 +26516,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -28341,15 +28724,17 @@
         "responses": {
           "200": {
             "content": {
-              "application/json": {
-                "schema": {}
+              "text/html": {
+                "schema": {
+                  "type": "string"
+                }
               }
             },
             "description": "Successful Response"
           },
           "422": {
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28359,7 +28744,7 @@
           },
           "4XX": {
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28369,7 +28754,7 @@
           },
           "5XX": {
             "content": {
-              "application/json": {
+              "text/html": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28832,12 +29217,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -28882,12 +29262,7 @@
         "description": "Start the WorkOS SSO authentication flow for desktop app.\nUses gaia:// protocol for callback redirect.\n\nReturns:\n    RedirectResponse: Redirects the user to the WorkOS SSO authorization URL",
         "operationId": "oauth_login_workos_desktop",
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -29036,12 +29411,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -29104,12 +29474,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -29188,12 +29553,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -30284,12 +30644,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -30384,12 +30739,7 @@
           }
         ],
         "responses": {
-          "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
+          "307": {
             "description": "Successful Response"
           },
           "422": {
@@ -31757,11 +32107,6 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "400": {
@@ -31982,11 +32327,6 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "400": {
@@ -32823,11 +33163,6 @@
         ],
         "responses": {
           "200": {
-            "content": {
-              "application/json": {
-                "schema": {}
-              }
-            },
             "description": "Successful Response"
           },
           "422": {
@@ -35597,7 +35932,9 @@
           "200": {
             "content": {
               "application/json": {
-                "schema": {}
+                "schema": {
+                  "$ref": "#/components/schemas/LogoutResponse"
+                }
               }
             },
             "description": "Successful Response"

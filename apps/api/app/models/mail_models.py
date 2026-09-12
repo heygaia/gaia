@@ -5,6 +5,7 @@ from fastapi import UploadFile
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from app.db.repositories.base import UserScopedDocument
+from app.schemas.common import ResponseModel
 
 
 class EmailRequest(BaseModel):
@@ -220,7 +221,7 @@ class GmailMessageResource(BaseModel):
     id: str
 
 
-class GmailMessageSummary(BaseModel):
+class GmailMessageSummary(ResponseModel):
     """One message as ``transform_gmail_message`` shapes it for the web client.
 
     The declared fields are the derived ones every consumer reads; the raw

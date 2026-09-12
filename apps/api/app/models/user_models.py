@@ -319,6 +319,12 @@ class OnboardingRequest(BaseModel):
         return v
 
 
+class LogoutResponse(ResponseModel):
+    """``POST /user/logout``: where the client sends the browser next."""
+
+    logout_url: str | None = Field(None, description="Identity-provider logout URL to redirect to")
+
+
 class OnboardingResponse(ResponseModel):
     success: bool = Field(..., description="Whether onboarding was successful")
     message: str = Field(..., description=_RESPONSE_MESSAGE_DESC)

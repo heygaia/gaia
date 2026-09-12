@@ -141,6 +141,7 @@ async def list_session_artifacts(
 
 @router.get(
     "/{conv_id}/artifacts/{path:path}",
+    response_class=FileResponse,
     responses={
         400: {"description": "Invalid path"},
         404: {"description": "File not found"},
@@ -179,6 +180,7 @@ async def list_uploads(
 
 @router.get(
     "/{conv_id}/uploads/{path:path}",
+    response_class=FileResponse,
     responses={
         400: {"description": "Invalid path"},
         404: {"description": "File not found"},

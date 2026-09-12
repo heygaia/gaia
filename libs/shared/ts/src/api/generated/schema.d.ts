@@ -618,6 +618,10 @@ export interface paths {
         /**
          * Get Conversation Endpoint
          * @description Retrieve a specific conversation by its ID.
+         *
+         *     The stored document itself: ``ConversationDocument`` is ``extra="allow"``,
+         *     so stray/legacy top-level fields the row carries still reach the client
+         *     verbatim, while the declared fields give the schema its shape.
          */
         get: operations["conversations_get_conversation_endpoint"];
         put?: never;
@@ -5566,6 +5570,30 @@ export interface components {
             size_bytes: number;
         };
         /**
+         * ArtifactRegistryEntry
+         * @description One element of ``ConversationDocument.artifacts``.
+         *
+         *     ``app.services.chat.artifacts_registry`` owns every write of this shape; the
+         *     conversation document stores it and mirrors it verbatim to the client.
+         *     ``mtime`` is a Unix timestamp, matching what every publisher in
+         *     :mod:`app.services.artifact_events` stamps. ``body`` is present only for
+         *     small textual artifacts inlined at write time.
+         */
+        ArtifactRegistryEntry: {
+            /** Body */
+            body: string;
+            /** Content Type */
+            content_type: string | null;
+            /** Mtime */
+            mtime: number | null;
+            /** Path */
+            path: string;
+            /** Size Bytes */
+            size_bytes: number | null;
+            /** Updated At */
+            updated_at: string;
+        };
+        /**
          * AsanaTaskTriggerConfig
          * @description Config for asana_task_trigger (Composio ASANA_TASK_CREATED).
          */
@@ -5843,7 +5871,7 @@ export interface components {
          */
         BatchSyncResponse: {
             /** Conversations */
-            conversations?: components["schemas"]["ConversationSyncRow"][];
+            conversations: components["schemas"]["ConversationSyncRow"][];
         };
         /**
          * BlogCountResponse
@@ -6325,7 +6353,7 @@ export interface components {
          */
         CalendarListResponse: {
             /** Items */
-            items?: components["schemas"]["GoogleCalendarListEntry"][];
+            items: components["schemas"]["GoogleCalendarListEntry"][];
         } & {
             [key: string]: unknown;
         };
@@ -6642,6 +6670,59 @@ export interface components {
             description?: string | null;
         };
         /**
+         * ConversationDocument
+         * @description A conversation and its embedded message history as stored in MongoDB.
+         *
+         *     ``extra="allow"`` preserves stray/legacy top-level fields (e.g. ``artifacts``,
+         *     ``metadata``) so a full-document read returns them verbatim, matching the
+         *     pre-repository behaviour.
+         */
+        ConversationDocument: {
+            /** Artifacts */
+            artifacts?: components["schemas"]["ArtifactRegistryEntry"][];
+            /** Conversation Id */
+            conversation_id: string;
+            /** Createdat */
+            createdAt?: string | null;
+            /**
+             * Description
+             * @default New Chat
+             */
+            description?: string;
+            /**
+             * Id
+             * @default
+             */
+            id?: string;
+            /**
+             * Is Onboarding Demo
+             * @default false
+             */
+            is_onboarding_demo?: boolean;
+            /**
+             * Is System Generated
+             * @default false
+             */
+            is_system_generated?: boolean | null;
+            /**
+             * Is Unread
+             * @default false
+             */
+            is_unread?: boolean | null;
+            /** Messages */
+            messages?: components["schemas"]["MessageModel-Output"][];
+            source?: components["schemas"]["ConversationSource"] | null;
+            /** Starred */
+            starred?: boolean | null;
+            system_purpose?: components["schemas"]["SystemPurpose"] | null;
+            /** Updatedat */
+            updatedAt?: string | null;
+            /** User Id */
+            user_id: string;
+        } & {
+            [key: string]: unknown;
+        };
+        /**
          * ConversationListResponse
          * @description One page of the conversation list: every starred conversation followed by
          *     the requested page of the non-starred ones.
@@ -6713,19 +6794,19 @@ export interface components {
             /** Conversation Id */
             conversation_id: string;
             /** Createdat */
-            createdAt?: string | null;
+            createdAt: string | null;
             /** Description */
-            description?: string | null;
+            description: string | null;
             /** Is System Generated */
-            is_system_generated?: boolean | null;
+            is_system_generated: boolean | null;
             /** Is Unread */
-            is_unread?: boolean | null;
-            source?: components["schemas"]["ConversationSource"] | null;
+            is_unread: boolean | null;
+            source: components["schemas"]["ConversationSource"] | null;
             /** Starred */
-            starred?: boolean | null;
-            system_purpose?: components["schemas"]["SystemPurpose"] | null;
+            starred: boolean | null;
+            system_purpose: components["schemas"]["SystemPurpose"] | null;
             /** Updatedat */
-            updatedAt?: string | null;
+            updatedAt: string | null;
             /** User Id */
             user_id: string;
         } & {
@@ -6751,28 +6832,26 @@ export interface components {
          */
         ConversationSyncRow: {
             /** Active Stream Id */
-            active_stream_id?: string | null;
+            active_stream_id: string | null;
             /** Artifacts */
-            artifacts?: {
-                [key: string]: unknown;
-            }[];
+            artifacts: components["schemas"]["ArtifactRegistryEntry"][];
             /** Conversation Id */
             conversation_id: string;
             /** Createdat */
-            createdAt?: string | null;
+            createdAt: string | null;
             /** Description */
             description: string;
             /** Is System Generated */
-            is_system_generated?: boolean | null;
+            is_system_generated: boolean | null;
             /** Is Unread */
-            is_unread?: boolean | null;
+            is_unread: boolean | null;
             /** Messages */
-            messages?: components["schemas"]["MessageModel-Output"][];
+            messages: components["schemas"]["MessageModel-Output"][];
             /** Starred */
-            starred?: boolean | null;
-            system_purpose?: components["schemas"]["SystemPurpose"] | null;
+            starred: boolean | null;
+            system_purpose: components["schemas"]["SystemPurpose"] | null;
             /** Updatedat */
-            updatedAt?: string | null;
+            updatedAt: string | null;
         };
         /**
          * CreateCheckoutSessionRequest
@@ -7589,7 +7668,7 @@ export interface components {
              */
             description?: string;
             /** End time in ISO format or date for all-day events */
-            end: string;
+            end?: string | null;
             /**
              * Is All Day Event
              * @default false
@@ -7598,7 +7677,7 @@ export interface components {
             /** Recurrence rules for creating a recurring event */
             recurrence?: components["schemas"]["RecurrenceData"] | null;
             /** Start time in ISO format or date for all-day events */
-            start: string;
+            start?: string | null;
             /** Event Summary */
             summary: string;
             /** Timezone for the event (e.g., 'America/Los_Angeles', 'UTC') */
@@ -8037,61 +8116,61 @@ export interface components {
              * Body
              * @default
              */
-            body?: string;
+            body: string;
             /**
              * Cc
              * @default
              */
-            cc?: string;
+            cc: string;
             /**
              * From
              * @default
              */
-            from?: string;
+            from: string;
             /** Id */
             id: string;
             /**
              * Is Unread
              * @default false
              */
-            is_unread?: boolean;
+            is_unread: boolean;
             /**
              * Isthread
              * @default false
              */
-            isThread?: boolean;
+            isThread: boolean;
             /** Labelids */
-            labelIds?: string[];
+            labelIds: string[];
             /**
              * Replyto
              * @default
              */
-            replyTo?: string;
+            replyTo: string;
             /**
              * Snippet
              * @default
              */
-            snippet?: string;
+            snippet: string;
             /**
              * Subject
              * @default
              */
-            subject?: string;
+            subject: string;
             /**
              * Threadid
              * @default
              */
-            threadId?: string;
+            threadId: string;
             /**
              * Time
              * @default
              */
-            time?: string;
+            time: string;
             /**
              * To
              * @default
              */
-            to?: string;
+            to: string;
         } & {
             [key: string]: unknown;
         };
@@ -8151,7 +8230,7 @@ export interface components {
          *     An event carries either ``date`` (all-day) or ``dateTime`` + ``timeZone``; both
          *     are declared optional so a single type covers both.
          */
-        "GoogleCalendarEventDateTime-Input": {
+        GoogleCalendarEventDateTime: {
             /** Date */
             date?: string | null;
             /** Datetime */
@@ -8161,13 +8240,57 @@ export interface components {
         } & {
             [key: string]: unknown;
         };
-        "GoogleCalendarEventDateTime-Output": {
-            [key: string]: unknown;
-        };
+        /**
+         * GoogleCalendarEventResource
+         * @description A single Google Calendar ``events`` resource, forwarded to the client verbatim.
+         *
+         *     Only the fields GAIA itself reads (filtering, sorting, display) or injects
+         *     (``calendarId``/``calendarTitle``) are declared. Google owns the rest of this
+         *     schema and varies it by event type, so everything else passes through untouched
+         *     rather than guessing at a structure that would silently drop fields the web
+         *     client reads.
+         */
         GoogleCalendarEventResource: {
+            /** Calendarid */
+            calendarId?: string | null;
+            /** Calendartitle */
+            calendarTitle?: string | null;
+            /** Description */
+            description?: string | null;
+            end?: components["schemas"]["GoogleCalendarEventDateTime"] | null;
+            /** Eventtype */
+            eventType?: string | null;
+            /** Id */
+            id?: string | null;
+            /** Recurrence */
+            recurrence?: string[] | null;
+            start?: components["schemas"]["GoogleCalendarEventDateTime"] | null;
+            /** Summary */
+            summary?: string | null;
+        } & {
             [key: string]: unknown;
         };
+        /**
+         * GoogleCalendarListEntry
+         * @description One entry of Google's ``calendarList.list`` payload, forwarded to the client
+         *     verbatim.
+         *
+         *     Declared: the fields the service and the web calendar picker read. Everything
+         *     else Google sends rides through as extras and is projected into
+         *     ``CalendarSummary`` where it is needed.
+         */
         GoogleCalendarListEntry: {
+            /** Backgroundcolor */
+            backgroundColor?: string | null;
+            /** Description */
+            description?: string | null;
+            /** Id */
+            id: string;
+            /** Primary */
+            primary?: boolean | null;
+            /** Summary */
+            summary?: string | null;
+        } & {
             [key: string]: unknown;
         };
         /**
@@ -8764,6 +8887,17 @@ export interface components {
              * @description Username on the platform
              */
             username: string | null;
+        };
+        /**
+         * LogoutResponse
+         * @description ``POST /user/logout``: where the client sends the browser next.
+         */
+        LogoutResponse: {
+            /**
+             * Logout Url
+             * @description Identity-provider logout URL to redirect to
+             */
+            logout_url: string | null;
         };
         /** MarkAsReadResponse */
         MarkAsReadResponse: {
@@ -10531,7 +10665,7 @@ export interface components {
          */
         PinnedMessagesResponse: {
             /** Results */
-            results?: components["schemas"]["ConversationMessageHit"][];
+            results: components["schemas"]["ConversationMessageHit"][];
         };
         /**
          * PinnedUpdate
@@ -10936,7 +11070,7 @@ export interface components {
             /** Prompt */
             prompt: string;
             /** Slug */
-            slug: string | null;
+            slug: string;
             /** Source Integration */
             source_integration: string | null;
             /** Steps */
@@ -11483,7 +11617,7 @@ export interface components {
             calendarTitle?: string | null;
             /** Description */
             description: string;
-            end: components["schemas"]["GoogleCalendarEventDateTime-Input"];
+            end: components["schemas"]["GoogleCalendarEventDateTime"];
             /** Id */
             id: string;
             /**
@@ -11491,7 +11625,7 @@ export interface components {
              * @default false
              */
             isAllDay?: boolean | null;
-            start: components["schemas"]["GoogleCalendarEventDateTime-Input"];
+            start: components["schemas"]["GoogleCalendarEventDateTime"];
             /** Summary */
             summary: string;
         };
@@ -14835,9 +14969,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -16004,9 +16136,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -16204,7 +16334,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["ConversationDocument"];
                 };
             };
             /** @description Unprocessable Entity */
@@ -18694,9 +18824,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -18988,13 +19116,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -19980,13 +20106,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -21844,7 +21968,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "text/html": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Server Error */
@@ -21853,7 +21977,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "text/html": components["schemas"]["ErrorEnvelope"];
                 };
             };
             /** @description Successful Response */
@@ -21862,7 +21986,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "text/html": string;
                 };
             };
             /** @description Unprocessable Entity */
@@ -21871,7 +21995,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["ErrorEnvelope"];
+                    "text/html": components["schemas"]["ErrorEnvelope"];
                 };
             };
         };
@@ -22052,13 +22176,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -22099,13 +22221,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -22198,13 +22318,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -22247,13 +22365,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -22297,13 +22413,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -23180,13 +23294,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -23231,13 +23343,11 @@ export interface operations {
                 };
             };
             /** @description Successful Response */
-            200: {
+            307: {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -24282,9 +24392,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Invalid path */
             400: {
@@ -24476,9 +24584,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Invalid path */
             400: {
@@ -25098,9 +25204,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": unknown;
-                };
+                content?: never;
             };
             /** @description Unprocessable Entity */
             422: {
@@ -27088,7 +27192,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": unknown;
+                    "application/json": components["schemas"]["LogoutResponse"];
                 };
             };
             /** @description Unprocessable Entity */
