@@ -17,7 +17,7 @@ from datetime import UTC, datetime, timedelta
 from app.agents.workspace.system_docs import GAIA_TASKS_GUIDE_MD
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import TodoDocument
-from app.services._vfs_scheduler import make_scheduler, run_hashed_sync
+from app.services._vfs_scheduler import HashedSyncSpec, make_scheduler, run_hashed_sync
 from app.services.storage.gaia_tasks_vfs import (
     GaiaTaskProjection,
     gaia_tasks_marker_path,
@@ -38,13 +38,15 @@ async def sync_user_gaia_tasks(user_id: str) -> int:
     """
     return await run_hashed_sync(
         user_id,
-        fs_op=FsOps.SYNC_GAIA_TASKS_VFS,
-        fetch_fn=fetch_active_projections,
-        per_doc_sig_fn=per_doc_signature,
-        materialize_fn=materialize_gaia_tasks,
-        guide_md=GAIA_TASKS_GUIDE_MD,
-        catalog_marker_path_fn=gaia_tasks_marker_path,
-        log_name="gaia_tasks_vfs",
+        HashedSyncSpec[GaiaTaskProjection](
+            fs_op=FsOps.SYNC_GAIA_TASKS_VFS,
+            fetch_fn=fetch_active_projections,
+            per_doc_sig_fn=per_doc_signature,
+            materialize_fn=materialize_gaia_tasks,
+            guide_md=GAIA_TASKS_GUIDE_MD,
+            catalog_marker_path_fn=gaia_tasks_marker_path,
+            log_name="gaia_tasks_vfs",
+        ),
     )
 
 

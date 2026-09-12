@@ -14,8 +14,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 
-from bson import ObjectId
-
 from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import TodoDocument
@@ -83,7 +81,7 @@ async def resolve(rel: str, user_id: str) -> GaiaTaskPath | None:
 
 
 async def _resolve_folder(folder: str, user_id: str) -> TodoDocument:
-    if ObjectId.is_valid(folder):
+    if todo_repository.is_valid_id(folder):
         doc = await todo_repository.get(folder, user_id=user_id)
         if doc is None:
             raise GaiaTaskPathError(f"no tracked todo with id {folder}")

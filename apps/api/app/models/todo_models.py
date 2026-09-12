@@ -4,6 +4,7 @@ from typing import Annotated
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.constants.general import MAX_PAGE_NUMBER
 from app.db.repositories.base import UserScopedDocument
 from app.models.trigger_subscription_models import TriggerSubscription
 from app.models.workflow_models import WorkflowWithIntegrations
@@ -261,6 +262,35 @@ class TodoSearchParams(BaseModel):
     page: int = Field(default=1, ge=1)
     per_page: int = Field(default=50, ge=1, le=100)
     include_stats: bool = Field(default=False)
+
+
+class TodoListQuery(BaseModel):
+    """Flattened query params for ``GET /todos`` (bound via ``Depends()``).
+
+    Bound as a dependency, not ``Query()``: FastAPI does not flatten
+    query-models through ``include_router``, so a ``Query()``-bound model
+    422s every request expecting a JSON body. ``Depends()`` binds each
+    field as its own flattened query param (same wire as the individual
+    ``Query()`` params it replaces).
+    """
+
+    q: str | None = Field(default=None, description="Search query")
+    mode: SearchMode = Field(
+        default=SearchMode.HYBRID, description="Search mode: text, semantic, or hybrid"
+    )
+    project_id: str | None = None
+    completed: bool | None = None
+    priority: Priority | None = None
+    has_due_date: bool | None = None
+    overdue: bool | None = None
+    labels: list[str] | None = None
+    due_after: datetime | None = Field(default=None, description="Due date after this date")
+    due_before: datetime | None = Field(default=None, description="Due date before this date")
+    due_today: bool = Field(default=False, description="Only todos due today")
+    due_this_week: bool = Field(default=False, description="Only todos due this week")
+    page: int = Field(default=1, ge=1, le=MAX_PAGE_NUMBER)
+    per_page: int = Field(default=50, ge=1, le=100)
+    include_stats: bool = Field(default=False, description="Include statistics in response")
 
 
 # Bulk operations

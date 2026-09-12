@@ -4,6 +4,7 @@ coding tools use so canvas.md / activity.md live on the todo doc, not on disk.""
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
+from bson import ObjectId
 import pytest
 
 from app.constants.todos import GAIA_TRACKED_LABEL
@@ -52,6 +53,7 @@ def mock_repo():
         m.get = AsyncMock(return_value=None)
         m.find_tracked_by_short_id = AsyncMock(return_value=[])
         m.list_active_gaia_tracked_since = AsyncMock(return_value=[])
+        m.is_valid_id = ObjectId.is_valid
         yield m
 
 

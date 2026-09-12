@@ -9,6 +9,7 @@ dev, where the disk projection does not exist.
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, patch
 
+from bson import ObjectId
 import pytest
 
 from app.agents.tools.coding import edit_tool, read_tool, write_tool
@@ -42,6 +43,7 @@ def repo():
     with patch(f"{_FILES}.todo_repository") as m:
         m.get = AsyncMock(return_value=None)
         m.find_tracked_by_short_id = AsyncMock(return_value=[_doc()])
+        m.is_valid_id = ObjectId.is_valid
         yield m
 
 

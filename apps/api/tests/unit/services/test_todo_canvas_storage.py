@@ -6,7 +6,9 @@ writes back the full concatenated content in one update (no partial writes),
 and a write only succeeds when the repository confirms the update matched.
 """
 
+from collections.abc import Coroutine
 from datetime import UTC, datetime
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -62,9 +64,9 @@ def mock_sync():
 def captured_reindex():
     """Capture the fire-and-forget reindex: patched spawn collects coroutines so
     tests can await them deterministically; the embedding call itself is mocked."""
-    scheduled: list[tuple[str, object]] = []
+    scheduled: list[tuple[str, Coroutine[Any, Any, Any]]] = []
 
-    def fake_spawn(name: str, coro: object) -> None:
+    def fake_spawn(name: str, coro: Coroutine[Any, Any, Any]) -> None:
         scheduled.append((name, coro))
 
     with (
@@ -73,7 +75,7 @@ def captured_reindex():
     ):
         yield scheduled, embed
         for _, coro in scheduled:
-            coro.close()  # type: ignore[attr-defined]
+            coro.close()
 
 
 class TestBuildVfsLabel:

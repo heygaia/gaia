@@ -11,6 +11,7 @@ mutations go through the base ``_apply_ops`` seam; bulk writes go through
 from datetime import UTC, datetime, timedelta
 import re
 
+from bson import ObjectId
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.constants.cache import TODO_CACHE_PREFIX
@@ -80,6 +81,10 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
     cache_policy = CachePolicy(prefix=TODO_CACHE_PREFIX)
 
     # ------------------------------------------------------------------ reads
+
+    def is_valid_id(self, todo_id: str) -> bool:
+        """Whether ``todo_id`` is a well-formed Mongo identity for this collection."""
+        return ObjectId.is_valid(todo_id)
 
     async def get_by_id(self, todo_id: str) -> TodoDocument | None:
         """Fetch a todo by id with no user scoping — for the system executor,

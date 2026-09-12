@@ -29,6 +29,36 @@ from shared.py.wide_events import log
 MAX_CONTENT_BYTES = 5 * 1024 * 1024  # 5 MB
 
 
+def _refuse_write(role: MountRole, rel: str) -> str | None:
+    if role == MountRole.USER_UPLOADED:
+        return (
+            "Error: user-uploaded/ is read-only. Copy the file to scratch "
+            "first: cp user-uploaded/<name> scratch/"
+        )
+    # account/** holds projections of real settings — refuse with the tool
+    # that performs the mutation instead of touching the filesystem.
+    return account_mutation_refusal(rel)
+
+
+async def _write_task_file(
+    task_ref: gaia_task_files.GaiaTaskPath,
+    user_id: str,
+    content: str,
+    abs_path: str,
+    size: int,
+    session_id: str | None,
+) -> str:
+    refusal = await gaia_task_files.write_file(task_ref, user_id, content)
+    if refusal is not None:
+        return refusal
+    log.set(write_via="todo_document")
+    safe_emit(
+        {"file_data": {"operation": "write", "path": abs_path, "size_bytes": size}},
+        session_id=session_id,
+    )
+    return f"Wrote {size} bytes to {abs_path}"
+
+
 @tool
 @with_rate_limiting("workspace_write")
 @with_doc(WRITE_TOOL)
@@ -48,18 +78,9 @@ async def write(
     except ValueError as e:
         return f"Error: {e}"
 
-    if role == MountRole.USER_UPLOADED:
-        return (
-            "Error: user-uploaded/ is read-only. Copy the file to scratch "
-            "first: cp user-uploaded/<name> scratch/"
-        )
-
-    # account/** holds projections of real settings — refuse with the tool
-    # that performs the mutation instead of touching the filesystem.
     rel = posixpath.relpath(abs_path, WORKSPACE_ROOT)
-    refusal = account_mutation_refusal(rel)
-    if refusal is not None:
-        return refusal
+    if (preamble_refusal := _refuse_write(role, rel)) is not None:
+        return preamble_refusal
 
     encoded = content.encode("utf-8")
     if len(encoded) > MAX_CONTENT_BYTES:
@@ -73,15 +94,9 @@ async def write(
     except gaia_task_files.GaiaTaskPathError as e:
         return f"Error: {e}"
     if task_ref is not None:
-        refusal = await gaia_task_files.write_file(task_ref, user_id, content)
-        if refusal is not None:
-            return refusal
-        log.set(write_via="todo_document")
-        safe_emit(
-            {"file_data": {"operation": "write", "path": abs_path, "size_bytes": len(encoded)}},
-            session_id=session_id,
+        return await _write_task_file(
+            task_ref, user_id, content, abs_path, len(encoded), session_id
         )
-        return f"Wrote {len(encoded)} bytes to {abs_path}"
 
     try:
         async with fs_timer(FsOps.TOOL_WRITE), acquire_sandbox(user_id) as sbx:
