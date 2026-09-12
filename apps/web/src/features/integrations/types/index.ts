@@ -10,7 +10,6 @@
 import type {
   CommunityIntegrationItem,
   CommunityListResponse,
-  CreateCustomIntegrationResponse,
   IntegrationContent,
   IntegrationInstructionsResponse,
 } from "@shared/api/generated";

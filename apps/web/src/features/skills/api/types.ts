@@ -1,8 +1,6 @@
 // Skill types mirror the backend's flat snake_case schema
 // (apps/api/app/agents/skills/models.py). Responses are not camelized.
 
-import type { Skill } from "@shared/api/generated";
-
 export type {
   BuiltinSkillInfo,
   Skill,

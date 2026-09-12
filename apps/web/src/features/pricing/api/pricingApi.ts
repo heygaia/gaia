@@ -1,5 +1,4 @@
 import type {
-  CheckoutSource,
   CreateCheckoutSessionRequest,
   CreateSubscriptionRequest,
   CreateSubscriptionResponse,
@@ -11,9 +10,6 @@ import type {
 
 export type {
   CheckoutSource,
-  CreateCheckoutSessionRequest,
-  CreateSubscriptionRequest,
-  CreateSubscriptionResponse,
   PaymentVerificationResponse,
   UserSubscriptionStatus,
 } from "@shared/api/generated";
