@@ -5,6 +5,7 @@ import { toast } from "@/lib/toast";
 import { NotificationsAPI } from "@/services/api/notifications";
 import { useNotificationStore } from "@/stores/notificationStore";
 import {
+  type MarkAllReadSummary,
   type NotificationRecord,
   NotificationStatus,
   type UseNotificationsOptions,
@@ -19,7 +20,13 @@ interface UseNotificationsReturn {
   archiveNotification: (id: string) => Promise<void>;
   bulkMarkAsRead: (ids: string[]) => Promise<void>;
   bulkArchive: (ids: string[]) => Promise<void>;
+  markAllAsRead: (channelType?: string) => Promise<void>;
   unreadCount: number;
+  /** True when the shared store hit its fetch cap, so `unreadCount` may
+   * undercount — an older delivered notification could exist past the loaded
+   * page. Callers gating "is there anything to mark read" must OR this in
+   * rather than trust `unreadCount === 0` alone. */
+  hasMoreUnseen: boolean;
   addNotification: (notification: NotificationRecord) => void;
   updateNotification: (notification: NotificationRecord) => void;
 }
@@ -97,8 +104,6 @@ export function useNotifications(
         }
 
         await NotificationsAPI.markAsRead(id);
-        await fetchNotifications(true);
-        toast.success("Notification marked as read");
       } catch (error) {
         await fetchNotifications(true);
         toast.error("Failed to mark notification as read");
@@ -138,6 +143,41 @@ export function useNotifications(
         await fetchNotifications(true);
         toast.error("Failed to mark notifications as read");
         console.error("Error bulk marking notifications as read:", error);
+      }
+    },
+    [fetchNotifications, setNotifications],
+  );
+
+  const markAllAsRead = useCallback(
+    async (channelTypeFilter?: string) => {
+      const prev = useNotificationStore.getState().notifications;
+      setNotifications(
+        prev.map((n) => {
+          if (n.status !== NotificationStatus.DELIVERED) return n;
+          if (
+            channelTypeFilter &&
+            !n.channels?.some((c) => c.channel_type === channelTypeFilter)
+          ) {
+            return n;
+          }
+          return {
+            ...n,
+            status: NotificationStatus.READ,
+            read_at: new Date().toISOString(),
+          };
+        }),
+      );
+      try {
+        const response =
+          await NotificationsAPI.markAllAsRead(channelTypeFilter);
+        const summary = response.data as MarkAllReadSummary | undefined;
+        toast.success(
+          `Marked ${summary?.updated_count ?? 0} notifications as read`,
+        );
+      } catch (error) {
+        await fetchNotifications(true);
+        toast.error("Failed to mark all notifications as read");
+        console.error("Error marking all notifications as read:", error);
       }
     },
     [fetchNotifications, setNotifications],
@@ -185,6 +225,11 @@ export function useNotifications(
     [allNotifications],
   );
 
+  // The shared fetch is capped at NOTIFICATION_PAGE_SIZE — if it came back
+  // full, an older, still-unread notification may exist beyond what's loaded.
+  const hasMoreUnseen =
+    (allNotifications ?? []).length >= NOTIFICATION_PAGE_SIZE;
+
   // Initial fetch — skipped if store is already populated
   useEffect(() => {
     fetchNotifications();
@@ -199,7 +244,9 @@ export function useNotifications(
     archiveNotification,
     bulkMarkAsRead,
     bulkArchive,
+    markAllAsRead,
     unreadCount,
+    hasMoreUnseen,
     addNotification,
     updateNotification,
   };

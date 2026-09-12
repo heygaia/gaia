@@ -15,6 +15,7 @@ from app.models.notification.notification_models import (
     ChannelDeliveryStatus,
     NotificationAction,
     NotificationContent,
+    NotificationListFilters,
     NotificationRecord,
     NotificationRequest,
     NotificationSourceEnum,
@@ -829,13 +830,11 @@ class TestGetNotifications:
         assert results[1].id == "n-2"
 
     async def test_get_user_notifications_passes_filters(self) -> None:
-        """All filter parameters are forwarded to storage."""
+        """The filters object is forwarded to storage unchanged."""
         storage = AsyncMock()
         storage.get_user_notifications.return_value = []
         orch = NotificationOrchestrator(storage=storage)
-
-        await orch.get_user_notifications(
-            "user-1",
+        filters = NotificationListFilters(
             status=NotificationStatus.DELIVERED,
             limit=10,
             offset=5,
@@ -844,15 +843,9 @@ class TestGetNotifications:
             source=NotificationSourceEnum.AI_REMINDER,
         )
 
-        storage.get_user_notifications.assert_awaited_once_with(
-            "user-1",
-            NotificationStatus.DELIVERED,
-            10,
-            5,
-            "inapp",
-            NotificationType.WARNING,
-            NotificationSourceEnum.AI_REMINDER,
-        )
+        await orch.get_user_notifications("user-1", filters=filters)
+
+        storage.get_user_notifications.assert_awaited_once_with("user-1", filters=filters)
 
     async def test_get_notification_returns_serialized(self) -> None:
         """get_notification returns a NotificationView for a found record."""

@@ -11,6 +11,7 @@ from app.models.notification.notification_models import (
     BulkActions,
     ChannelConfig,
     NotificationContent,
+    NotificationListFilters,
     NotificationRequest,
     NotificationSourceEnum,
     NotificationStatus,
@@ -119,12 +120,14 @@ async def get_notifications(
 
         # Get notifications with all filters
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            notification_type=notification_type,
-            source=source,
-            limit=limit,
-            offset=offset,
+            user_id,
+            filters=NotificationListFilters(
+                status=status,
+                notification_type=notification_type,
+                source=source,
+                limit=limit,
+                offset=offset,
+            ),
         )
 
         # The stream/tool payload must stay JSON-shaped (see ToolData.data), so the
@@ -163,10 +166,8 @@ async def search_notifications(
 
         # Get notifications for searching
         notifications = await notification_service.get_user_notifications(
-            user_id=user_id,
-            status=status,
-            limit=100,
-            offset=0,
+            user_id,
+            filters=NotificationListFilters(status=status, limit=100),
         )
 
         # Simple text search
