@@ -8,7 +8,7 @@ from bson import ObjectId
 import pytest
 
 from app.constants.todos import GAIA_TRACKED_LABEL
-from app.models.todo_models import TodoDocument
+from app.models.todo_models import Priority, TodoDocument
 from app.services.gaia_task_files import (
     GaiaTaskFile,
     GaiaTaskPathError,
@@ -19,6 +19,7 @@ from app.services.gaia_task_files import (
     resolve,
     write_file,
 )
+from app.services.gaia_tasks_fs import project_gaia_task
 
 _MOD = "app.services.gaia_task_files"
 USER_ID = "507f1f77bcf86cd799439011"
@@ -232,3 +233,37 @@ class TestWriteFile:
         assert result is None
         canvas.assert_awaited_once()
         mock_log.warning.assert_called_once()
+
+
+class TestProjectGaiaTask:
+    """`project_gaia_task` shapes the on-disk projection; every field the agent
+    reads must map across exactly."""
+
+    def test_maps_notes_and_meta(self):
+        doc = _doc(
+            id="t1",
+            title="Ship it",
+            canvas_content="# c",
+            activity_content="- a",
+            log_content="## l",
+            labels=[GAIA_TRACKED_LABEL],
+            priority=Priority.HIGH,
+            completed=True,
+        )
+
+        projection = project_gaia_task(doc)
+
+        assert projection["id"] == "t1"
+        assert projection["canvas"] == "# c"
+        assert projection["activity"] == "- a"
+        assert projection["log"] == "## l"
+        assert projection["meta"]["title"] == "Ship it"
+        assert projection["meta"]["completed"] is True
+        assert projection["meta"]["priority"] == "high"
+        assert projection["meta"]["labels"] == [GAIA_TRACKED_LABEL]
+
+    def test_unset_bodies_read_as_empty_strings(self):
+        projection = project_gaia_task(_doc(canvas_content=None, activity_content=None))
+
+        assert projection["canvas"] == ""
+        assert projection["activity"] == ""
