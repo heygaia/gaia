@@ -168,6 +168,14 @@ class TestSplitLegacyCanvas:
         assert dated == []
         assert undated == ["### nope", "tail one", "tail two"]
 
+    def test_undated_dated_block_keeps_the_block_text(self):
+        """A `### `-headed block whose date does not parse is kept verbatim in
+        the undated list (not dropped, not `None`)."""
+        dated, undated = _extract_entries("### 2026-13-99\n- nonsense")
+
+        assert dated == []
+        assert undated == ["### 2026-13-99\n- nonsense"]
+
     def test_naive_timestamps_are_tagged_utc(self):
         """A timeline line with no offset is assumed UTC; an aware one is kept
         as-is. Pins the `stamp.tzinfo is None` branch and the `.replace` tz."""
@@ -214,15 +222,37 @@ class TestSplitLegacyCanvas:
         ]
         assert undated == ["note"]
 
-    def test_all_dated_entries_drop_the_undated_list(self):
-        """Dates out of source order get sorted oldest-first, and when every
-        entry is dated the result is exactly the sorted list. Pins the sort key
-        and the `merged if merged else None` tail."""
+    def test_dated_entries_merge_chronologically_across_sections(self):
+        """Entries from two sections arrive out of order and with labels whose
+        alphabetical order is the reverse of their date order, so the output
+        pins the date sort key (not the entry text) — and that the sort runs."""
         _, activity = split_legacy_canvas(
-            "## Activity Log\n- 2026-08-22T10:00:00+00:00 late\n- 2026-08-20T10:00:00+00:00 early\n"
+            "## Activity Log\n"
+            "- 2026-08-24T10:00:00+00:00 alpha\n"
+            "- 2026-08-22T10:00:00+00:00 zulu\n"
+            "- 2026-08-20T10:00:00+00:00 mike\n\n"
+            "## Timeline\n"
+            "- 2026-08-23T10:00:00+00:00 yankee\n"
+            "- 2026-08-21T10:00:00+00:00 xray\n"
         )
 
-        assert activity == ("- 2026-08-20T10:00:00+00:00 early\n\n- 2026-08-22T10:00:00+00:00 late")
+        assert activity == (
+            "- 2026-08-20T10:00:00+00:00 mike\n\n"
+            "- 2026-08-21T10:00:00+00:00 xray\n\n"
+            "- 2026-08-22T10:00:00+00:00 zulu\n\n"
+            "- 2026-08-23T10:00:00+00:00 yankee\n\n"
+            "- 2026-08-24T10:00:00+00:00 alpha"
+        )
+
+    def test_same_timestamp_entries_keep_source_order(self):
+        """Two entries with the same date must stay in source order (stable
+        sort on the timestamp); a sort on the entry text would swap them, and
+        sorting with no key would raise."""
+        _, activity = split_legacy_canvas(
+            "## Activity Log\n- 2026-08-20T10:00:00+00:00 zulu\n- 2026-08-20T10:00:00+00:00 alpha\n"
+        )
+
+        assert activity == ("- 2026-08-20T10:00:00+00:00 zulu\n\n- 2026-08-20T10:00:00+00:00 alpha")
 
     def test_section_between_content_keeps_blank_line_before_the_next_heading(self):
         """A removed section with content both before and after — pins the
