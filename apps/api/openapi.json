@@ -18771,6 +18771,12 @@
             "title": "Integration Ids",
             "type": "array"
           },
+          "is_explore": {
+            "default": false,
+            "description": "Whether this is a curated explore card (seeded, listed ahead of community)",
+            "title": "Is Explore",
+            "type": "boolean"
+          },
           "is_public": {
             "default": false,
             "description": "Whether this workflow is published to the community marketplace",
@@ -19021,6 +19027,7 @@
           "notify_on_completion",
           "last_executed_at",
           "is_public",
+          "is_explore",
           "slug",
           "created_by",
           "current_step_index",
@@ -20019,9 +20026,23 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Code expired or already used"
           },
           "409": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Platform account linked to another GAIA user"
           },
           "422": {
@@ -20035,6 +20056,13 @@
             "description": "Unprocessable Entity"
           },
           "429": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Platform requires a plan the user does not have"
           },
           "4XX": {
@@ -20242,15 +20270,43 @@
             "description": "Successful Response"
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Account not linked."
           },
           "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Subscription required."
           },
           "413": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Audio exceeds the maximum allowed size."
           },
           "415": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Unsupported audio format."
           },
           "422": {
@@ -20274,6 +20330,13 @@
             "description": "Client Error"
           },
           "502": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Transcription provider failed."
           },
           "5XX": {
@@ -24418,6 +24481,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Gmail rejected the send, or the send failed upstream"
           },
           "5XX": {
@@ -25847,6 +25917,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to fetch related workflows"
           },
           "5XX": {
@@ -26174,6 +26251,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to fetch integration instructions"
           },
           "5XX": {
@@ -26228,9 +26312,23 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid integration_id"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Integration not found in workspace"
           },
           "422": {
@@ -26254,6 +26352,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to update integration instructions"
           },
           "5XX": {
@@ -27327,6 +27432,13 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid date range (start after end, or range exceeds limit)"
           },
           "422": {
@@ -27631,6 +27743,13 @@
             "description": "Successful Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Memory not found"
           },
           "422": {
@@ -27706,6 +27825,13 @@
             "description": "Successful Response"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Memory not found or already superseded"
           },
           "422": {
@@ -28679,9 +28805,19 @@
             },
             "description": "Successful Response"
           },
-          "422": {
+          "400": {
             "content": {
               "text/html": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "description": "Invalid unsubscribe token"
+          },
+          "422": {
+            "content": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28691,7 +28827,7 @@
           },
           "4XX": {
             "content": {
-              "text/html": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28701,7 +28837,7 @@
           },
           "5XX": {
             "content": {
-              "text/html": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28740,9 +28876,12 @@
             },
             "description": "Successful Response"
           },
+          "400": {
+            "description": "Invalid unsubscribe token"
+          },
           "422": {
             "content": {
-              "text/html": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28752,7 +28891,7 @@
           },
           "4XX": {
             "content": {
-              "text/html": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -28762,7 +28901,7 @@
           },
           "5XX": {
             "content": {
-              "text/html": {
+              "application/json": {
                 "schema": {
                   "$ref": "#/components/schemas/ErrorEnvelope"
                 }
@@ -29889,6 +30028,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to reset onboarding"
           },
           "5XX": {
@@ -29954,6 +30100,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to save social profiles"
           },
           "5XX": {
@@ -30071,6 +30224,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to save writing style"
           },
           "5XX": {
@@ -30116,6 +30276,13 @@
             "description": "Successful Response"
           },
           "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Subscription required"
           },
           "422": {
@@ -30139,6 +30306,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Failed to regenerate writing style example"
           },
           "5XX": {
@@ -31062,6 +31236,13 @@
             "description": "Successful Response"
           },
           "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "iMessage requires an E.164 phone number in the body."
           },
           "4XX": {
@@ -32118,9 +32299,23 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid path"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "File not found"
           },
           "422": {
@@ -32144,6 +32339,13 @@
             "description": "Client Error"
           },
           "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Workspace storage offline"
           },
           "5XX": {
@@ -32199,9 +32401,23 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid path"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Artifact not found"
           },
           "422": {
@@ -32225,6 +32441,13 @@
             "description": "Client Error"
           },
           "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Workspace storage offline"
           },
           "5XX": {
@@ -32338,9 +32561,23 @@
             "description": "Successful Response"
           },
           "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid path"
           },
           "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "File not found"
           },
           "422": {
@@ -32364,6 +32601,13 @@
             "description": "Client Error"
           },
           "503": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Workspace storage offline"
           },
           "5XX": {
@@ -34924,9 +35168,23 @@
             "description": "Successful Response"
           },
           "401": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Invalid or missing user id"
           },
           "402": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Subscription required"
           },
           "422": {
@@ -34950,6 +35208,13 @@
             "description": "Client Error"
           },
           "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorEnvelope"
+                }
+              }
+            },
             "description": "Token generation failed"
           },
           "5XX": {
@@ -35142,7 +35407,7 @@
     },
     "/api/v1/triggers/options": {
       "get": {
-        "description": "Get dynamic options for a trigger configuration field.\nPasses any additional query parameters to the handler.\n\nArgs:\n    request: FastAPI request object (to extract additional query params)\n    integration_id: The integration ID (e.g., 'slack', 'trello')\n    trigger_slug: The trigger slug (e.g., 'slack_new_message')\n    field_name: The config field name (e.g., 'channel_id'), optional\n    parent_values: Comma-separated parent IDs for cascading options (e.g., 'workspace1,workspace2')",
+        "description": "Get dynamic options for a trigger configuration field.\n\nArgs:\n    integration_id: The integration ID (e.g., 'slack', 'trello')\n    trigger_slug: The trigger slug (e.g., 'slack_new_message')\n    field_name: The config field name (e.g., 'channel_id'), optional\n    parent_values: Comma-separated parent IDs for cascading options (e.g., 'workspace1,workspace2')\n    page: Page of options to return; handlers that do not page ignore it\n    search: Substring to filter options by; handlers that do not search ignore it",
         "operationId": "triggers_get_trigger_options",
         "parameters": [
           {
@@ -35180,6 +35445,32 @@
             "schema": {
               "default": "",
               "title": "Parent Values",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Page number (starting from 1), for paged handlers",
+            "in": "query",
+            "name": "page",
+            "required": false,
+            "schema": {
+              "default": 1,
+              "description": "Page number (starting from 1), for paged handlers",
+              "maximum": 2147483647,
+              "minimum": 1,
+              "title": "Page",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Filter options by label substring",
+            "in": "query",
+            "name": "search",
+            "required": false,
+            "schema": {
+              "default": "",
+              "description": "Filter options by label substring",
+              "title": "Search",
               "type": "string"
             }
           }

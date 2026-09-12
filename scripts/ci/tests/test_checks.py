@@ -260,7 +260,7 @@ def test_a_hand_written_twin_of_a_schema_type_fails(tmp_path: Path) -> None:
 
     assert process.returncode == 1, f"a hand-written TodoResponse passed\n{process.stdout}"
     assert "apps/web/src/features/todo/types.ts: TodoResponse" in process.stdout
-    assert "Schema<'TodoResponse'>" in process.stdout
+    assert 'import type { TodoResponse } from "@gaia/shared/api/generated"' in process.stdout
 
 
 def test_a_type_that_is_not_a_schema_name_is_fine(tmp_path: Path) -> None:
@@ -277,19 +277,48 @@ def test_a_type_that_is_not_a_schema_name_is_fine(tmp_path: Path) -> None:
 
 
 def test_an_alias_onto_the_generated_type_is_not_a_twin(tmp_path: Path) -> None:
-    # `type X = Schema<"X">` names the generated type for a feature's consumers;
-    # it has no fields of its own, so it cannot drift.
+    # `type Todo = TodoResponse` names the generated type for a feature's
+    # consumers; it has no fields of its own, so it cannot drift.
     repo = _schema_repo(tmp_path)
     _add_text(
         repo,
         "apps/web/src/features/todo/types.ts",
-        'import type { Schema } from "@shared/api/generated";\n'
-        'export type TodoResponse = Schema<"TodoResponse">;\n',
+        'import type { TodoResponse } from "@shared/api/generated";\n'
+        "export type TodoResponse = TodoResponse;\n",
     )
 
     process = _run(repo, "api-schema-types")
 
     assert process.returncode == 0, process.stdout
+
+
+def test_an_alias_of_an_imported_generated_binding_is_not_a_twin(tmp_path: Path) -> None:
+    # A type-plus-const pair needs a local alias of a renamed import.
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/features/todo/types.ts",
+        'import type { TodoResponse as TodoRow } from "@shared/api/generated";\n'
+        "export type TodoResponse = TodoRow;\n"
+        'export const TodoResponse = { id: "" } as const satisfies TodoRow;\n',
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 0, process.stdout
+
+
+def test_an_alias_of_a_hand_written_type_is_a_twin(tmp_path: Path) -> None:
+    repo = _schema_repo(tmp_path)
+    _add_text(
+        repo,
+        "apps/web/src/features/todo/types.ts",
+        "interface TodoRow { id: string }\nexport type TodoResponse = TodoRow;\n",
+    )
+
+    process = _run(repo, "api-schema-types")
+
+    assert process.returncode == 1, process.stdout
 
 
 def test_an_untyped_api_service_call_in_web_feature_code_fails(tmp_path: Path) -> None:

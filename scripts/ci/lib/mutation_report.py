@@ -849,7 +849,17 @@ def _copy_api_tree(api_root: Path, destination: Path) -> None:
             shutil.copy(source, destination / name)
 
 
-def _run_tests(python: str, cwd: Path, testfiles: list[str], addopts: str) -> int:
+def _run_tests(
+    python: str, cwd: Path, testfiles: list[str], addopts: str, pycache: Path
+) -> int:
+    """One pytest run over the scratch tree, with its bytecode cache under ``pycache``.
+
+    The mutated and the reverted source can share a size and a whole-second
+    mtime — the two things a ``.pyc`` header is validated against — so a
+    cache written by the mutated run would serve the mutated bytecode to the
+    baseline run and report INCONCLUSIVE. Each run therefore gets its own
+    ``PYTHONPYCACHEPREFIX`` tree instead of the in-tree ``__pycache__``.
+    """
     command = [
         python,
         "-m",
@@ -861,7 +871,8 @@ def _run_tests(python: str, cwd: Path, testfiles: list[str], addopts: str) -> in
         "-q",
     ]
     print(f"  $ {' '.join(command)}")
-    return subprocess.run(command, cwd=cwd, check=False).returncode
+    env = {**os.environ, "PYTHONPYCACHEPREFIX": str(pycache)}
+    return subprocess.run(command, cwd=cwd, env=env, check=False).returncode
 
 
 def _replay_one(
@@ -884,12 +895,16 @@ def _replay_one(
         patched, line = apply_hunk(original, survivor.diff, survivor.line)
         target.write_text("\n".join(patched) + "\n")
         print(f"  applied {survivor.change} at {verdict.module}:{line} (scratch copy only)")
-        rc = _run_tests(args.python, workdir, testfiles, args.addopts)
+        rc = _run_tests(
+            args.python, workdir, testfiles, args.addopts, Path(scratch) / "pycache-mutated"
+        )
         if rc == 0:
             return "SURVIVED", "the tests pass with the mutation applied — the gap is real"
         target.write_text("\n".join(original) + "\n")
         print("  tests failed with the mutation — re-running unpatched to prove they are green")
-        baseline = _run_tests(args.python, workdir, testfiles, args.addopts)
+        baseline = _run_tests(
+            args.python, workdir, testfiles, args.addopts, Path(scratch) / "pycache-baseline"
+        )
     if baseline == 0:
         return "KILLED", "the tests fail with the mutation and pass without it"
     return "INCONCLUSIVE", "the tests fail WITHOUT the mutation too — fix the suite first"
