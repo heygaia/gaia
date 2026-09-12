@@ -22,6 +22,7 @@ from typing import Any
 import pytest
 
 from app.services.storage._vfs_common import (
+    READONLY_DIR_MODE,
     READONLY_MODE,
     RW_MODE,
     SHORTID_LEN,
@@ -406,6 +407,18 @@ def test_read_only_bodies_nested_several_levels_deep_are_removed(tmp_path: Path)
     deep = tmp_path / "tree" / "a" / "b"
     deep.mkdir(parents=True)
     write_readonly_body(deep / "log.md", "x")
+    remove_tree(tmp_path / "tree")
+    assert not (tmp_path / "tree").exists()
+
+
+def test_a_read_only_child_directory_is_made_writable_and_removed(tmp_path: Path) -> None:
+    """A 0555 child folder cannot be emptied without first chmod-ing it back to
+    writable; the pre-pass is what lets rmtree descend. Pin it with an actual
+    read-only child (the other tests only nest 0755 `mkdir` dirs)."""
+    sub = tmp_path / "tree" / "sub"
+    sub.mkdir(parents=True)
+    write_readonly_body(sub / "canvas.md", "x")
+    sub.chmod(READONLY_DIR_MODE)
     remove_tree(tmp_path / "tree")
     assert not (tmp_path / "tree").exists()
 

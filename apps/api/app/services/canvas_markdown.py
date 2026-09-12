@@ -96,7 +96,7 @@ def _extract_entries(body: str) -> tuple[list[tuple[datetime, str]], list[str]]:
     dated: list[tuple[datetime, str]] = []
     undated: list[str] = []
     remainder: list[str] = []
-    pos = 0
+    pos = 0  # pragma: no mutate — used only as a slice start; None == 0 there
     for match in _DATED_BLOCK_RE.finditer(body):
         remainder.append(body[pos : match.start()])
         block = match.group(1).strip()

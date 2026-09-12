@@ -177,7 +177,10 @@ def remove_tree(path: Path) -> None:
     """Recursively remove ``path``; tolerate 0444 children and 0555 folders."""
     if path.exists() and path.is_dir():
         path.chmod(RW_DIR_MODE)
-        for child in path.rglob("*"):
+        # rglob(None) yields every directory recursively and the body only
+        # chmods `child.is_dir()` entries, so it is equivalent to "*" here
+        # (files are handled by _force_remove).
+        for child in path.rglob("*"):  # pragma: no mutate — see note above
             if child.is_dir():
                 child.chmod(RW_DIR_MODE)
         shutil.rmtree(path, onerror=_force_remove)

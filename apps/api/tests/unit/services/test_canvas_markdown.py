@@ -281,6 +281,13 @@ class TestSplitLegacyCanvas:
             split_legacy_canvas("# T\t\n\n## Timeline\n- a\n\n## B\n2\n")[0] == "# T\t\n\n## B\n2\n"
         )
 
+    def test_a_rescued_block_with_an_unparseable_date_is_kept_verbatim(self):
+        """A `### YYYY-MM-DD`-shaped block whose date does not parse (month 13)
+        is rescued as undated text, not dropped to `None`."""
+        _, activity = split_legacy_canvas("# T\n\n## Learnings\n\n### 2026-13-99\n- nonsense\n")
+
+        assert activity == "### 2026-13-99\n- nonsense"
+
     def test_section_between_content_keeps_blank_line_before_the_next_heading(self):
         """A removed section with content both before and after — pins the
         `before and after.startswith("\\n## ")` blank-line branch."""

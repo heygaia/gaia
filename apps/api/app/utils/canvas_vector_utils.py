@@ -80,7 +80,9 @@ async def update_canvas_embedding(
     """Re-index canvas content after update, preserving completed status."""
     # Preserve completed metadata before deleting the old embedding
     was_completed = False
-    stored_revision: str | None = None
+    # Only read via `is not None` then a string `>=`; a failed read yields "" and
+    # "" >= any real revision is False, so the same branch is taken as with None.
+    stored_revision: str | None = None  # pragma: no mutate — None and "" are equivalent here
     try:
         raw_client = await ChromaClient.get_client()
         collection = await raw_client.get_collection(COLLECTION_NAME)
