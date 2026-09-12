@@ -1,8 +1,9 @@
 // Device pairing flow, reusable by both `gaia bridge login` and the add wizard.
 
 import { hostname, platform } from "node:os";
+import type { PollPairingResponse } from "@gaia/shared/api/generated";
 import { CLI_VERSION } from "../../lib/version.js";
-import { type PollPairingResponse, pollPairing, startPairing } from "./api.js";
+import { pollPairing, startPairing } from "./api.js";
 import {
   apiUrlFromEnvOrCreds,
   loadCredentials,
@@ -37,7 +38,7 @@ export async function runLogin(
       poll = await pollPairing(apiUrl, started.device_code);
     } catch (e) {
       // A transient network/HTTP blip mid-window must not abort pairing —
-      // keep polling until the deadline. Only denied/expired/timeout stop us.
+      // keep polling until the deadline. Only expired/timeout stop us.
       console.error(
         `[gaia bridge] poll failed, retrying: ${e instanceof Error ? e.message : e}`,
       );
@@ -52,8 +53,8 @@ export async function runLogin(
       console.info(`\nPaired as "${name}".\n`);
       return;
     }
-    if (poll.status === "denied" || poll.status === "expired") {
-      throw new Error(`pairing ${poll.status}`);
+    if (poll.status === "expired") {
+      throw new Error("pairing expired");
     }
   }
   throw new Error("pairing timed out");

@@ -19,8 +19,8 @@ from app.constants.log_tags import LogTag
 from app.constants.notifications import EXPO_TOKEN_PATTERN, MAX_DEVICES_PER_USER
 from app.db.repositories.users import user_repository
 from app.models.device_token_models import (
-    DeviceTokenRequest,
-    DeviceTokenResponse,
+    PushTokenRequest,
+    PushTokenResponse,
 )
 from app.models.notification.notification_models import (
     ChannelPreferences,
@@ -37,6 +37,7 @@ from app.models.notification.request_models import (
     PaginatedNotificationsResponse,
 )
 from app.models.user_models import AuthenticatedUser
+from app.schemas.errors import HTML_ROUTE_ERROR_RESPONSES
 from app.services.account_fs import schedule_account_sync
 from app.services.analytics_service import AnalyticsEvents, capture_context_event
 from app.services.device_token_service import get_device_token_service
@@ -54,7 +55,17 @@ _UNSUBSCRIBE_INVALID_HTML = (
 )
 
 
-@router.get("/notifications/unsubscribe", response_class=HTMLResponse)
+@router.get(
+    "/notifications/unsubscribe",
+    response_class=HTMLResponse,
+    responses={
+        **HTML_ROUTE_ERROR_RESPONSES,
+        400: {
+            "description": "Invalid unsubscribe token",
+            "content": {"text/html": {"schema": {"type": "string"}}},
+        },
+    },
+)
 async def unsubscribe_confirmation(token: Annotated[str, Query()]) -> HTMLResponse:
     """Unsubscribe confirmation page — no login required. Renders a confirm
     button that POSTs to the same URL, so a GET (mail-client link scanner,
@@ -76,7 +87,11 @@ async def unsubscribe_confirmation(token: Annotated[str, Query()]) -> HTMLRespon
     return HTMLResponse(content=form)
 
 
-@router.post("/notifications/unsubscribe")
+@router.post(
+    "/notifications/unsubscribe",
+    response_class=HTMLResponse,
+    responses={**HTML_ROUTE_ERROR_RESPONSES, 400: {"description": "Invalid unsubscribe token"}},
+)
 async def unsubscribe_from_emails(token: Annotated[str, Query()]) -> Response:
     """RFC 8058 one-click unsubscribe target (List-Unsubscribe-Post). Mail
     clients POST here; the response must be a blank 200."""
@@ -377,11 +392,11 @@ async def bulk_actions(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/notifications/register-device", response_model=DeviceTokenResponse)
+@router.post("/notifications/register-device", response_model=PushTokenResponse)
 async def register_device_token(
-    request: DeviceTokenRequest = Body(...),
+    request: PushTokenRequest = Body(...),
     current_user: AuthenticatedUser = Depends(get_current_user),
-) -> DeviceTokenResponse:
+) -> PushTokenResponse:
     """
     Register a device token for push notifications
     """
@@ -424,7 +439,7 @@ async def register_device_token(
 
         if success:
             log.set(operation="register_device", outcome="success")
-            return DeviceTokenResponse(success=True, message="Device registered successfully")
+            return PushTokenResponse(success=True, message="Device registered successfully")
         raise HTTPException(status_code=500, detail="Failed to register device token")
 
     except HTTPException:
@@ -439,11 +454,11 @@ async def register_device_token(
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 
-@router.post("/notifications/unregister-device", response_model=DeviceTokenResponse)
+@router.post("/notifications/unregister-device", response_model=PushTokenResponse)
 async def unregister_device_token(
     token: str = Body(..., embed=True),
     current_user: AuthenticatedUser = Depends(get_current_user),
-) -> DeviceTokenResponse:
+) -> PushTokenResponse:
     """
     Unregister a device token
     """
@@ -462,8 +477,8 @@ async def unregister_device_token(
 
         if success:
             log.set(operation="unregister_device", outcome="success")
-            return DeviceTokenResponse(success=True, message="Device unregistered successfully")
-        return DeviceTokenResponse(success=False, message="Device token not found")
+            return PushTokenResponse(success=True, message="Device unregistered successfully")
+        return PushTokenResponse(success=False, message="Device token not found")
 
     except HTTPException:
         raise

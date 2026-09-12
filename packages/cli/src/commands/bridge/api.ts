@@ -1,5 +1,12 @@
 // Thin HTTP client for the device-bridge REST endpoints.
 
+import type {
+  DeviceTokenResponse,
+  ErrorEnvelope,
+  PollPairingResponse,
+  StartPairingResponse,
+} from "@gaia/shared/api/generated";
+
 export class ApiError extends Error {
   constructor(
     message: string,
@@ -8,27 +15,6 @@ export class ApiError extends Error {
     super(message);
     this.name = "ApiError";
   }
-}
-
-export interface StartPairingResponse {
-  device_code: string;
-  user_code: string;
-  verification_url: string;
-  expires_in: number;
-  interval: number;
-}
-
-export interface PollPairingResponse {
-  status: "pending" | "approved" | "denied" | "expired";
-  device_id: string | null;
-  refresh_token: string | null;
-}
-
-export interface DeviceTokenResponse {
-  access_token: string;
-  token_type: string;
-  expires_in: number;
-  refresh_token: string;
 }
 
 async function post<T>(
@@ -46,14 +32,14 @@ async function post<T>(
     body: JSON.stringify(body),
   });
   if (!res.ok) {
-    let detail = `${res.status} ${res.statusText}`;
+    let message = `${res.status} ${res.statusText}`;
     try {
-      const data = (await res.json()) as { detail?: string };
-      if (data.detail) detail = data.detail;
+      const envelope = (await res.json()) as ErrorEnvelope;
+      if (envelope.message) message = envelope.message;
     } catch {
       // non-JSON error body; keep the status line
     }
-    throw new ApiError(detail, res.status);
+    throw new ApiError(message, res.status);
   }
   return (await res.json()) as T;
 }

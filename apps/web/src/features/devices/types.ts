@@ -17,12 +17,3 @@ export interface Device {
   created_at: string;
   servers: DeviceServer[];
 }
-
-export interface DeviceListResponse {
-  devices: Device[];
-}
-
-export interface ApproveDeviceResponse {
-  device_id: string;
-  name: string;
-}

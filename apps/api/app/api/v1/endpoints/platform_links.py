@@ -17,6 +17,7 @@ from app.models.platform_models import (
     MintPlatformLinkCodeResponse,
 )
 from app.models.user_models import AuthenticatedUser
+from app.schemas.errors import error_responses
 from app.services.account_fs import schedule_account_sync
 from app.services.onboarding.first_message import compose_first_message
 from app.services.onboarding.onboarding_service import get_user_onboarding_status
@@ -228,7 +229,7 @@ async def disconnect_platform(
 
 @router.post(
     "/{platform}/connect",
-    responses={422: {"description": "iMessage requires an E.164 phone number in the body."}},
+    responses=error_responses({422: "iMessage requires an E.164 phone number in the body."}),
 )
 async def initiate_platform_connect(
     platform: str,

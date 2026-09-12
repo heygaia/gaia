@@ -864,6 +864,42 @@ def test_replay_reports_a_mutant_the_suite_kills(tmp_path: Path) -> None:
     assert "pass without it" in result.stdout
 
 
+def test_replay_baseline_never_runs_the_mutated_bytecode(tmp_path: Path) -> None:
+    """A `+ → -` mutation keeps the file size, and on a fast runner the revert
+    lands in the same second — the two things a .pyc header is validated
+    against — so an in-tree __pycache__ from the mutated run would make the
+    baseline run fail too and report INCONCLUSIVE. Pinning the mtime makes the
+    collision certain rather than timing-dependent."""
+    root = _synthetic_repo(tmp_path)
+    same_second = tmp_path / "python-with-pinned-mtime"
+    same_second.write_text(
+        f"#!{sys.executable}\n"
+        "import os, subprocess, sys\n"
+        "os.utime('app/calc.py', (1_700_000_000, 1_700_000_000))\n"
+        "sys.exit(subprocess.call([sys.executable, *sys.argv[1:]]))\n"
+    )
+    same_second.chmod(0o755)
+    record = _calc_record(root, "app.calc.x_total__mutmut_1", KILLED_DIFF, "a + b → a - b", 2)
+
+    result = _run(
+        [
+            "replay",
+            str(record),
+            "app.calc.x_total__mutmut_1",
+            "--repo-root",
+            str(root),
+            "--api-root",
+            str(root / "apps" / "api"),
+            "--python",
+            str(same_second),
+            "--addopts=--strict-markers",
+        ]
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "KILLED" in result.stdout, result.stdout
+
+
 def test_replay_reports_a_mutant_the_suite_misses(tmp_path: Path) -> None:
     root = _synthetic_repo(tmp_path)
     record = _calc_record(root, "app.calc.x_label__mutmut_1", SURVIVING_DIFF, "name → None", 6)

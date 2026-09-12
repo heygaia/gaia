@@ -18,7 +18,7 @@ from app.models.composio_schemas import (
     GoogleSheetsSearchSpreadsheetsData,
     GoogleSheetsSearchSpreadsheetsInput,
 )
-from app.models.trigger_config import TriggerOption, TriggerOptionGroup
+from app.models.trigger_config import TriggerOption, TriggerOptionGroup, TriggerOptionsQuery
 from app.models.trigger_configs import (
     GoogleSheetsNewRowConfig,
     GoogleSheetsNewSheetConfig,
@@ -58,13 +58,7 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
         return self.SUPPORTED_EVENTS
 
     async def get_config_options(
-        self,
-        trigger_name: str,  # noqa: ARG002 -- framework contract
-        field_name: str,
-        user_id: str,
-        integration_id: str,
-        parent_ids: list[str] | None = None,
-        **_kwargs: str,
+        self, query: TriggerOptionsQuery
     ) -> Sequence[TriggerOption | TriggerOptionGroup]:
         """Get dynamic options for Google Sheets trigger config fields.
 
@@ -75,14 +69,16 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
             composio_service = get_composio_service()
 
             # Get spreadsheets list
-            if field_name == "spreadsheet_ids":
+            if query.field_name == "spreadsheet_ids":
                 # Use LangChain wrapper pattern
                 tool = composio_service.get_tool(
                     "GOOGLESHEETS_SEARCH_SPREADSHEETS",
-                    user_id=user_id,
+                    user_id=query.user_id,
                 )
                 if not tool:
-                    log.error(f"{LogTag.TRIGGER} Google Sheets search spreadsheets tool not found")
+                    log.error(
+                        f"{LogTag.TRIGGER} Google Sheets query.search spreadsheets tool not found"
+                    )
                     return []
 
                 # Invoke tool with typed input
@@ -103,8 +99,8 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
                     log.error(
                         f"{LogTag.TRIGGER} Google Sheets API error",
                         error=result["error"],
-                        user_id=user_id,
-                        integration_id=integration_id,
+                        user_id=query.user_id,
+                        integration_id=query.integration_id,
                     )
                     return []
 
@@ -135,10 +131,10 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
                 return options
 
             # Get sheets grouped by spreadsheet (cascading)
-            if field_name == "sheet_names" and parent_ids:
+            if query.field_name == "sheet_names" and query.parent_ids:
                 tool = composio_service.get_tool(
                     "GOOGLESHEETS_GET_SHEET_NAMES",
-                    user_id=user_id,
+                    user_id=query.user_id,
                 )
                 if not tool:
                     log.error(f"{LogTag.TRIGGER} Google Sheets get sheet names tool not found")
@@ -181,7 +177,7 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
 
                 # Run all fetches in parallel
                 results = await asyncio.gather(
-                    *[fetch_sheets_for_spreadsheet(sid) for sid in parent_ids],
+                    *[fetch_sheets_for_spreadsheet(sid) for sid in query.parent_ids],
                     return_exceptions=True,
                 )
 
@@ -199,11 +195,11 @@ class GoogleSheetsTriggerHandler(TriggerHandler):
         except Exception as e:
             log.error(
                 f"{LogTag.TRIGGER} Failed to get Google Sheets options for",
-                field_name=field_name,
+                field_name=query.field_name,
                 error=str(e),
                 error_type=type(e).__name__,
-                user_id=user_id,
-                integration_id=integration_id,
+                user_id=query.user_id,
+                integration_id=query.integration_id,
             )
             return []
 

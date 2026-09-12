@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.trigger_config import TriggerOptionsQuery
 from app.services.triggers.handlers.notion import NotionTriggerHandler
 
 # ---------------------------------------------------------------------------
@@ -72,7 +73,12 @@ class TestGetConfigOptions:
             mock_cls.model_validate.return_value = mock_data
 
             result = await handler.get_config_options(
-                "notion_new_page_in_db", "database_id", "u1", "notion"
+                TriggerOptionsQuery(
+                    trigger_name="notion_new_page_in_db",
+                    field_name="database_id",
+                    user_id="u1",
+                    integration_id="notion",
+                )
             )
 
         assert len(result) == 1
@@ -101,7 +107,12 @@ class TestGetConfigOptions:
         with patch("app.services.triggers.handlers.notion.NotionFetchDataData") as mock_cls:
             mock_cls.model_validate.return_value = mock_data
             result = await handler.get_config_options(
-                "notion_page_updated", "page_id", "u1", "notion"
+                TriggerOptionsQuery(
+                    trigger_name="notion_page_updated",
+                    field_name="page_id",
+                    user_id="u1",
+                    integration_id="notion",
+                )
             )
 
         assert result[0].value == "pg1"
@@ -124,7 +135,12 @@ class TestGetConfigOptions:
         with patch("app.services.triggers.handlers.notion.NotionFetchDataData") as mock_cls:
             mock_cls.model_validate.return_value = mock_data
             result = await handler.get_config_options(
-                "notion_all_page_events", "something_else", "u1", "notion"
+                TriggerOptionsQuery(
+                    trigger_name="notion_all_page_events",
+                    field_name="something_else",
+                    user_id="u1",
+                    integration_id="notion",
+                )
             )
 
         assert result == []
@@ -139,7 +155,12 @@ class TestGetConfigOptions:
         mock_get_svc.return_value = svc
 
         result = await handler.get_config_options(
-            "notion_new_page_in_db", "database_id", "u1", "notion"
+            TriggerOptionsQuery(
+                trigger_name="notion_new_page_in_db",
+                field_name="database_id",
+                user_id="u1",
+                integration_id="notion",
+            )
         )
         assert result == []
 
@@ -156,7 +177,12 @@ class TestGetConfigOptions:
         mock_get_svc.return_value = svc
 
         result = await handler.get_config_options(
-            "notion_new_page_in_db", "database_id", "u1", "notion"
+            TriggerOptionsQuery(
+                trigger_name="notion_new_page_in_db",
+                field_name="database_id",
+                user_id="u1",
+                integration_id="notion",
+            )
         )
         assert result == []
 
@@ -167,7 +193,12 @@ class TestGetConfigOptions:
 
         mock_get_svc.side_effect = RuntimeError("fail")
         result = await handler.get_config_options(
-            "notion_new_page_in_db", "database_id", "u1", "notion"
+            TriggerOptionsQuery(
+                trigger_name="notion_new_page_in_db",
+                field_name="database_id",
+                user_id="u1",
+                integration_id="notion",
+            )
         )
         assert result == []
 
@@ -197,7 +228,12 @@ class TestGetConfigOptions:
         with patch("app.services.triggers.handlers.notion.NotionFetchDataData") as mock_cls:
             mock_cls.model_validate.return_value = mock_data
             result = await handler.get_config_options(
-                "notion_new_page_in_db", "database_id", "u1", "notion"
+                TriggerOptionsQuery(
+                    trigger_name="notion_new_page_in_db",
+                    field_name="database_id",
+                    user_id="u1",
+                    integration_id="notion",
+                )
             )
 
         assert len(result) == 1
