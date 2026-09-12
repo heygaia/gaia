@@ -8,21 +8,36 @@ path the tool's recorded result lacks, an unresolvable ``$steps`` / ``$trigger``
 """
 
 from datetime import datetime
+import re
 from zoneinfo import ZoneInfo
 
 import pytest
 
-from app.models.workflow_execution_models import RECORD_CUT_MARKER, RecordedCall
+from app.constants.agents import TOOL_RESULT_NOTE_SEPARATOR
+from app.models.playbook_models import (
+    AskKind,
+    AskSlot,
+    LocatedAsk,
+    PlaybookAskAnswer,
+    PlaybookAskFill,
+    TimeSlot,
+    ask_slot_key,
+)
+from app.models.workflow_execution_models import RECORD_CUT_MARKER, RecordedCall, parse_result
 from app.services.workflow.playbook.evaluator import (
+    AskAnswers,
     PlaceholderError,
     PlaybookUser,
     RunContext,
     StepResult,
+    _render_time_slot,
     _resolve_time,
+    fill_ask_slots,
     last_run_index,
     resolve_args,
     resolve_value,
 )
+from app.services.workflow.playbook.placeholders import PLACEHOLDER_TOKEN
 
 NOW = datetime(2026, 3, 14, 9, 30, tzinfo=ZoneInfo("Europe/Berlin"))
 
@@ -44,6 +59,22 @@ def _context(
         last_run=last_run or {},
         asks=asks or {},
     )
+
+
+def _answers(written: dict[str, str]) -> AskAnswers:
+    """The answers table as one ask call would have left it, keyed as listed."""
+    asked = [
+        LocatedAsk(key=key, slot=AskSlot.model_validate({"$ask": "x"}), kind=AskKind.TEXT)
+        for key in written
+    ]
+    answers = AskAnswers()
+    answers.record(
+        PlaybookAskFill(
+            asks=[PlaybookAskAnswer(name=key, text=text) for key, text in written.items()]
+        ),
+        asked,
+    )
+    return answers
 
 
 def _assert_actionable(error: PlaceholderError, token: str) -> None:
@@ -78,17 +109,106 @@ def test_time_offsets_move_forward_and_back() -> None:
     assert resolve_value("$now - 2h", context) == "2026-03-14T07:30:00+01:00"
 
 
+def _time(token: str) -> re.Match[str]:
+    match = PLACEHOLDER_TOKEN.fullmatch(token)
+    assert match is not None, token
+    return match
+
+
 def test_a_time_offset_is_applied_only_when_both_halves_are_present() -> None:
-    """Called directly, because the grammar can only ever hand this function an
-    amount and a unit together — the offset group in the token regex is all or
-    nothing. The guard is what keeps that a grammar detail: with half an offset
-    it resolves to the plain moment, where reading either half alone would index
-    the unit table with ``None`` or call ``int(None)`` and stop the run partway
-    through building a tool argument.
-    """
-    assert _resolve_time("today", "+", None, "d", NOW) == "2026-03-14"
-    assert _resolve_time("today", "+", "1", None, NOW) == "2026-03-14"
-    assert _resolve_time("today", "+", "1", "d", NOW) == "2026-03-15"
+    """The offset group in the token regex is all or nothing, so half an offset
+    never reaches the resolver; the guard keeps that a grammar detail."""
+    assert _resolve_time(_time("$today"), NOW) == "2026-03-14"
+    assert _resolve_time(_time("$today + 1d"), NOW) == "2026-03-15"
+
+
+def test_a_clock_is_exact_to_the_second_whatever_the_worker_clock_read() -> None:
+    context = _context(now=NOW.replace(second=41, microsecond=624690))
+    assert resolve_value("$today 09:00", context) == "2026-03-14T09:00:00+01:00"
+    assert resolve_value("$now + 1h 17:45", context) == "2026-03-14T17:45:00+01:00"
+
+
+def test_a_time_slot_layout_may_carry_the_words_around_the_date() -> None:
+    slot = {"$time": "$today + 1d", "format": "Plan for %B %d, %Y"}
+    assert resolve_value(slot, _context()) == "Plan for March 15, 2026"
+
+
+def test_a_clock_in_a_time_slot_lands_on_the_exact_second() -> None:
+    context = _context(now=NOW.replace(second=41, microsecond=624690))
+    slot = {"$time": "$now 17:45", "format": "%H:%M:%S.%f"}
+    assert resolve_value(slot, context) == "17:45:00.000000"
+
+
+def test_a_field_the_current_element_lacks_is_refused_naming_the_element() -> None:
+    context = RunContext(
+        user=PlaybookUser(email="ada@example.com", name="Ada", timezone="Europe/Berlin"),
+        now=NOW,
+        trigger={},
+        steps={},
+        last_run={},
+        asks={},
+        item={"id": "m1"},
+    )
+    with pytest.raises(PlaceholderError) as caught:
+        resolve_value("$item.email", context)
+    assert caught.value.message == "$item.email is not in the current for_each element"
+    assert caught.value.why == (
+        "the value the playbook expects to read is absent from what actually came back"
+    )
+    assert caught.value.fix == "re-author the playbook against a run that produced this shape"
+
+
+def test_a_field_of_the_current_element_is_read_from_it() -> None:
+    context = RunContext(
+        user=PlaybookUser(email="ada@example.com", name="Ada", timezone="Europe/Berlin"),
+        now=NOW,
+        trigger={},
+        steps={},
+        last_run={},
+        asks={},
+        item={"id": "m1", "title": "Renew passport"},
+    )
+    assert resolve_value("$item.title", context) == "Renew passport"
+    assert resolve_value("$item", context) == {"id": "m1", "title": "Renew passport"}
+
+
+def test_item_outside_a_for_each_is_refused_with_the_fix() -> None:
+    with pytest.raises(PlaceholderError) as caught:
+        resolve_value("$item", _context())
+    assert caught.value.message == "$item is only meaningful inside a for_each step"
+    assert caught.value.why == (
+        "this step does not repeat, so there is no element for $item to address"
+    )
+    assert caught.value.fix == (
+        "give the step a for_each, or address the value through $steps.<id>.<field>"
+    )
+
+
+def test_a_time_slot_that_is_not_a_time_is_refused_with_the_grammar() -> None:
+    slot = TimeSlot.model_construct(placeholder="tomorrow", format="%Y-%m-%d")
+    with pytest.raises(PlaceholderError) as caught:
+        _render_time_slot(slot, NOW)
+    assert caught.value.message == "tomorrow is not a time placeholder"
+    assert caught.value.why == "$time takes $now or $today with an optional offset and clock"
+    assert caught.value.fix == "write the time as $today + 1d 09:00 or similar"
+
+
+def test_a_clock_makes_a_date_an_instant() -> None:
+    """Seen live: "tomorrow at nine" had no spelling, so the model wrote prose
+    around $today + 1d and the tool refused the sentence."""
+    context = _context()
+    assert resolve_value("$today + 1d 09:00", context) == "2026-03-15T09:00:00+01:00"
+    assert resolve_value("$now 18:30", context) == "2026-03-14T18:30:00+01:00"
+    assert resolve_value("$today - 1d 00:05", context) == "2026-03-13T00:05:00+01:00"
+
+
+def test_a_time_slot_renders_in_the_layout_the_tool_took() -> None:
+    """The reminder tool takes YYYY-MM-DD HH:MM:SS; the authoring run sent it
+    that, so the replay renders the same moment the same way."""
+    context = _context()
+    slot = {"$time": "$today + 1d 09:00", "format": "%Y-%m-%d %H:%M:%S"}
+    assert resolve_value(slot, context) == "2026-03-15 09:00:00"
+    assert resolve_value({"scheduled_at": slot}, context) == {"scheduled_at": "2026-03-15 09:00:00"}
 
 
 def test_user_fields_resolve_from_the_profile() -> None:
@@ -111,9 +231,16 @@ def test_steps_resolve_by_id_and_by_file() -> None:
     assert resolve_value("$steps.inbox.file", context) == "/workspace/inbox.json"
 
 
-def test_ask_resolves_the_text_the_model_wrote() -> None:
-    context = _context(asks={"body": "Here is your morning digest."})
-    assert resolve_value("$ask.body", context) == "Here is your morning digest."
+def test_fill_ask_slots_substitutes_the_text_the_model_wrote_by_key() -> None:
+    """A slot is addressed by its step and its argument path, and comes out as
+    the plain text the ask call wrote. Substituting under any other key would
+    leave the slot's dict standing where a tool argument belongs."""
+    filled = fill_ask_slots(
+        {"to": "a@b.com", "subject": {"$ask": "Write a subject line"}},
+        _answers({"mail.subject": "Here is your morning digest."}),
+        key_prefix="mail",
+    )
+    assert filled == {"to": "a@b.com", "subject": "Here is your morning digest."}
 
 
 def test_last_run_resolves_a_cursor_from_the_previous_run() -> None:
@@ -330,14 +457,117 @@ def test_unknown_user_field_is_rejected_and_names_the_real_ones() -> None:
     assert caught.value.fix == "address one of those fields"
 
 
-def test_missing_ask_names_the_placeholder() -> None:
-    """An ask the model never wrote must stop the run by name, not send an empty string."""
+def _asked(key: str, kind: AskKind) -> LocatedAsk:
+    return LocatedAsk(key=key, slot=AskSlot.model_validate({"$ask": "x"}), kind=kind)
+
+
+def test_an_answer_to_a_slot_that_was_not_asked_is_refused() -> None:
     with pytest.raises(PlaceholderError) as caught:
-        resolve_value("$ask.body", _context(asks={"subject": "hi"}))
-    _assert_actionable(caught.value, "$ask.body")
-    assert caught.value.message == "$ask.body was never written"
-    assert caught.value.why == "the run's one model call produced no text for that ask"
-    assert caught.value.fix == "declare the ask in the playbook, or stop addressing it"
+        AskAnswers().record(
+            PlaybookAskFill(asks=[PlaybookAskAnswer(name="mail.cc", text="x")]),
+            [_asked("mail.body", AskKind.TEXT)],
+        )
+    assert caught.value.message == "mail.cc is not a slot this step asked for"
+    assert caught.value.why == "the ask call answered a slot that was not listed"
+    assert caught.value.fix == "answer exactly the slots listed, keyed as they are listed"
+
+
+def test_an_answer_of_the_wrong_kind_is_refused_naming_both_kinds() -> None:
+    with pytest.raises(PlaceholderError) as caught:
+        AskAnswers().record(
+            PlaybookAskFill(asks=[PlaybookAskAnswer(name="mails.$for_each", text="a, b")]),
+            [_asked("mails.$for_each", AskKind.ITEMS)],
+        )
+    assert caught.value.message == "mails.$for_each was answered with text, not items"
+    assert caught.value.why == "a for_each source takes items and an argument slot takes text"
+    assert caught.value.fix == "answer mails.$for_each with items"
+
+
+def test_unwritten_names_only_the_slots_neither_table_holds() -> None:
+    answers = AskAnswers()
+    answers.record(
+        PlaybookAskFill(
+            asks=[
+                PlaybookAskAnswer(name="mail.body", text="hi"),
+                PlaybookAskAnswer(name="mails.$for_each", items=["a"]),
+            ]
+        ),
+        [_asked("mail.body", AskKind.TEXT), _asked("mails.$for_each", AskKind.ITEMS)],
+    )
+    asked = [
+        _asked("mail.body", AskKind.TEXT),
+        _asked("mails.$for_each", AskKind.ITEMS),
+        _asked("mail.subject", AskKind.TEXT),
+    ]
+    assert answers.unwritten(asked) == ["mail.subject"]
+
+
+def test_items_of_a_for_each_slot_never_written_stop_the_run_by_its_key() -> None:
+    with pytest.raises(PlaceholderError) as caught:
+        AskAnswers().items("mails.$for_each")
+    assert caught.value.message == "mails.$for_each was never written"
+    assert caught.value.why == "the run's ask call produced no items for that for_each slot"
+    assert caught.value.fix == (
+        "answer the for_each slot with items, keyed exactly as the slot is listed"
+    )
+
+
+def test_a_slot_the_ask_call_never_wrote_stops_the_run_by_its_key() -> None:
+    """A slot the model never wrote must stop the run naming the key it was
+    listed under, not send the slot's dict or an empty string to the tool."""
+    with pytest.raises(PlaceholderError) as caught:
+        fill_ask_slots(
+            {"subject": {"$ask": "Write a subject line"}},
+            _answers({"mail.body": "hi"}),
+            key_prefix="mail",
+        )
+    _assert_actionable(caught.value, "mail.subject")
+    assert caught.value.message == "mail.subject was never written"
+    assert caught.value.why == "the run's ask call produced no text for that slot"
+    assert caught.value.fix == (
+        "write one entry per slot listed, keyed exactly as the slot is listed"
+    )
+
+
+def test_fill_ask_slots_reaches_a_slot_nested_in_a_list_inside_a_dict() -> None:
+    """Slots hide wherever an argument nests, and the key spells the whole path.
+
+    Filling only top-level arguments would leave the raw ``{"$ask": ...}`` dict
+    inside a structured payload, and the tool would receive it as data.
+    """
+    args = {"message": {"blocks": [{"text": {"$ask": "Write the digest body"}}]}}
+    key = ask_slot_key("send", ("message", "blocks", 0, "text"))
+    assert key == "send.message.blocks.0.text"
+
+    filled = fill_ask_slots(args, _answers({key: "Three meetings today."}), key_prefix="send")
+
+    assert filled == {"message": {"blocks": [{"text": "Three meetings today."}]}}
+
+
+def test_a_slot_that_reached_resolution_unfilled_stops_the_run() -> None:
+    """``fill_ask_slots`` runs before ``resolve_args`` and leaves none behind, so
+    a slot met here means the step was resolved without being filled. Passing
+    the slot's dict through would send a tool ``{"$ask": ...}`` as an argument."""
+    with pytest.raises(PlaceholderError) as caught:
+        resolve_value({"$ask": "Write a subject line"}, _context())
+    _assert_actionable(caught.value, "$ask")
+    assert caught.value.message == "an $ask slot was not filled before resolution"
+    # The whole triple: this is a bug in the run's own order, and the two lines
+    # that say which order was skipped are the only thing pointing at it.
+    assert caught.value.why == (
+        "the run resolved this step's arguments without first filling its ask slots"
+    )
+    assert caught.value.fix == "fill the step's ask slots before resolving its arguments"
+
+
+def test_dollar_ask_in_a_string_is_literal_text_not_a_placeholder() -> None:
+    """``$ask`` left the placeholder vocabulary when asks moved inline: a slot is
+    a value, not a reference into a table. Resolving ``$ask.body`` as a token
+    again would either raise on a perfectly good literal or substitute text
+    where the author wrote characters."""
+    context = _context(asks={"mail.body": "Here is your digest."})
+    assert resolve_value("$ask.body", context) == "$ask.body"
+    assert resolve_value("Sent $ask.body today", context) == "Sent $ask.body today"
 
 
 def test_a_step_placeholder_with_no_field_resolves_to_the_whole_result() -> None:
@@ -457,3 +687,18 @@ class TestACutRecordedValueIsNotReplayed:
         assert caught.value.message == (
             "url: the recorded value was cut when it was stored and cannot be replayed"
         )
+
+
+@pytest.mark.unit
+class TestParseResultWithAnAppendedNote:
+    def test_the_leading_document_is_the_result(self) -> None:
+        text = (
+            '{"todos": []}' + TOOL_RESULT_NOTE_SEPARATOR + "[Loop guard: reuse the earlier result.]"
+        )
+        assert parse_result(text) == {"todos": []}
+
+    def test_prose_that_happens_to_start_with_a_number_stays_prose(self) -> None:
+        assert parse_result("3 items found") == "3 items found"
+
+    def test_a_document_followed_by_anything_but_a_note_stays_text(self) -> None:
+        assert parse_result('{"a": 1} trailing') == '{"a": 1} trailing'

@@ -33,6 +33,7 @@ from app.agents.tools.core.tool_runtime_config import (
 from app.agents.tools.executor_tool import call_executor, cancel_executor
 from app.agents.tools.todo_tools import create_todo_pre_model_hook, create_todo_tools
 from app.agents.tools.wait_for_subagents_tool import wait_for_subagents as wait_for_subagents_tool
+from app.agents.tools.webpage_tool import fetch_webpages, web_search_tool
 from app.constants.general import WAIT_FOR_SUBAGENTS_NAME
 from app.constants.log_tags import LogTag
 from app.core.lazy_loader import MissingKeyStrategy, lazy_provider
@@ -115,6 +116,9 @@ async def build_executor_graph(
                 "complete_tracked_todo",
                 "search_todo_context",
                 "list_tracked_todos",
+                "list_trigger_fields",
+                "subscribe_todo_to_trigger",
+                "unsubscribe_todo_from_trigger",
                 "save_learned_skill",
                 # Bound statically, not left to retrieve_tools: the <playbook_check>
                 # and heal briefs name these directly, so a run whose semantic
@@ -189,6 +193,8 @@ async def build_comms_graph(
     tool_registry = {
         "call_executor": call_executor,
         "cancel_executor": cancel_executor,
+        web_search_tool.name: web_search_tool,
+        fetch_webpages.name: fetch_webpages,
         **{memory_tool.name: memory_tool for memory_tool in memory_tools.tools},
     }
     store = await get_tools_store()
@@ -205,6 +211,8 @@ async def build_comms_graph(
             initial_tool_ids=[
                 "call_executor",
                 "cancel_executor",
+                web_search_tool.name,
+                fetch_webpages.name,
                 *[memory_tool.name for memory_tool in memory_tools.tools],
             ],
         ),

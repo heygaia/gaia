@@ -167,6 +167,16 @@ def get_workflow_id(config: RunnableConfig) -> str:
     return workflow_id
 
 
+def get_stream_id(config: RunnableConfig) -> str:
+    """The run this tool call belongs to. Raises when the config carries none."""
+    stream_id: str | None = agent_configurable(config).get("stream_id")
+    if not stream_id:
+        raise WorkflowConfigError(
+            "No stream id in this run's config: cannot tell which run this is."
+        )
+    return stream_id
+
+
 def get_thread_id(config: RunnableConfig) -> str | None:
     """Extract thread_id from config."""
     thread_id: str | None = agent_configurable(config).get("thread_id")
@@ -217,12 +227,13 @@ async def create_workflow_directly(
             timezone=user_timezone,
         )
 
-        workflow_description = draft.prompt or draft.description
-
+        # The two fields are not interchangeable: description is the one-line card
+        # copy, prompt is what the executor reads as the run's goal. Collapsing
+        # them put the whole numbered instruction blob on the card.
         request = CreateWorkflowRequest(
             title=draft.title,
-            description=workflow_description,
-            prompt=workflow_description or draft.title,
+            description=draft.description or draft.title,
+            prompt=draft.prompt or draft.description or draft.title,
             trigger_config=trigger_config,
             steps=None,
             generate_immediately=True,

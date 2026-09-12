@@ -29,6 +29,7 @@ from app.models.workflow_models import (
     WorkflowUpdate,
     WorkflowWithIntegrations,
 )
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.services.workflow.integration_requirements import (
     build_integration_refs,
     compute_integration_refs,
@@ -160,7 +161,7 @@ class WorkflowService:
 
         trigger_ids = await TriggerService.register_triggers(
             user_id=user_id,
-            workflow_id=workflow_id,
+            owner_id=workflow_id,
             trigger_name=trigger_name,
             trigger_config=trigger_config,
             raise_on_failure=True,
@@ -541,11 +542,8 @@ class WorkflowService:
             ]
 
             # Enrich all workflows with integration fields in one status call.
-            # Deferred import: oauth_service → provisioner → service is circular.
             if workflows:
-                from app.services.oauth import oauth_service  # noqa: PLC0415 -- oauth
-
-                status_map = await oauth_service.get_all_integrations_status(user_id)
+                status_map = await get_all_integrations_status(user_id)
                 for workflow in workflows:
                     required = compute_required_integrations(
                         workflow.steps, workflow.trigger_config
@@ -1062,9 +1060,11 @@ class WorkflowService:
         user_timezone: str | None = None,
         *,
         reason: DeactivationReason | None = None,
+        blocked_on_integrations: list[str] | None = None,
     ) -> Workflow | None:
         """Deactivate a workflow (disable its trigger). ``reason`` marks a system
-        pause; a user switching the workflow off passes none."""
+        pause; a user switching the workflow off passes none. A pause on
+        integrations a run found missing records them in the same write."""
         try:
             workflow = await WorkflowService.get_workflow(workflow_id, user_id)
             if not workflow:
@@ -1096,7 +1096,9 @@ class WorkflowService:
                     )
 
             # Update trigger to disabled and clear trigger IDs
-            deactivated = await workflow_repository.deactivate(workflow_id, user_id, reason=reason)
+            deactivated = await workflow_repository.deactivate(
+                workflow_id, user_id, reason=reason, blocked_on_integrations=blocked_on_integrations
+            )
 
             if deactivated is None:
                 return None

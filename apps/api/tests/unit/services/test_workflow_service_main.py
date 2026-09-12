@@ -46,6 +46,7 @@ from app.db.repositories.workflows import UNSET
 from app.models.scheduler_models import ScheduledTaskStatus
 from app.models.workflow_models import (
     CreateWorkflowRequest,
+    DeactivationReason,
     GeneratedPromptOutput,
     GeneratedStep,
     GeneratedWorkflow,
@@ -629,7 +630,7 @@ class TestListWorkflows:
     @pytest.fixture(autouse=True)
     def mock_integrations_status(self):
         with patch(
-            "app.services.oauth.oauth_service.get_all_integrations_status",
+            "app.services.workflow.service.get_all_integrations_status",
             new_callable=AsyncMock,
             return_value={},
         ):
@@ -664,7 +665,7 @@ class TestListWorkflows:
         mock_list.return_value = [_make_workflow_doc(workflow)]
 
         with patch(
-            "app.services.oauth.oauth_service.get_all_integrations_status",
+            "app.services.workflow.service.get_all_integrations_status",
             new_callable=AsyncMock,
         ) as mock_status:
             mock_status.return_value = {"gmail": True}
@@ -1272,6 +1273,35 @@ class TestDeactivateWorkflow:
 
         result = await WorkflowService.deactivate_workflow(WORKFLOW_ID, USER_ID)
         assert result is not None
+        mock_deactivate.assert_awaited_once_with(
+            WORKFLOW_ID, USER_ID, reason=None, blocked_on_integrations=None
+        )
+
+    @patch(
+        "app.services.workflow.service.WorkflowService.get_workflow",
+        new_callable=AsyncMock,
+    )
+    @patch(f"{_REPO}.deactivate", new_callable=AsyncMock)
+    async def test_a_system_pause_hands_its_reason_and_blockers_to_the_one_write(
+        self, mock_deactivate, mock_get
+    ):
+        wf = _make_workflow(activated=True)
+        mock_get.side_effect = [wf, _make_workflow(activated=False)]
+        mock_deactivate.return_value = _make_workflow_doc(_make_workflow(activated=False))
+
+        await WorkflowService.deactivate_workflow(
+            WORKFLOW_ID,
+            USER_ID,
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github"],
+        )
+
+        mock_deactivate.assert_awaited_once_with(
+            WORKFLOW_ID,
+            USER_ID,
+            reason=DeactivationReason.INTEGRATION_NEVER_CONNECTED,
+            blocked_on_integrations=["github"],
+        )
 
     @patch(
         "app.services.workflow.service.WorkflowService.get_workflow",
@@ -2332,48 +2362,12 @@ class TestTriggerService:
         result = await TriggerService.get_all_workflow_triggers()
         assert result == []
 
-    # Reference counting (the Mongo $ne/trigger-id query) is the repository's
-    # contract (tests/contracts/test_workflows_repository.py::test_count_trigger_references).
-    # Here we verify the service's safe-to-delete filtering over that count.
-    @patch("app.services.workflow.trigger_service.workflow_repository")
-    async def test_get_triggers_safe_to_delete_all_safe(self, mock_repo):
-        mock_repo.count_trigger_references = AsyncMock(return_value=0)
-
-        safe = await TriggerService.get_triggers_safe_to_delete(["t1", "t2"])
-        assert safe == ["t1", "t2"]
-
-    @patch("app.services.workflow.trigger_service.workflow_repository")
-    async def test_get_triggers_safe_to_delete_none_safe(self, mock_repo):
-        mock_repo.count_trigger_references = AsyncMock(return_value=2)
-
-        safe = await TriggerService.get_triggers_safe_to_delete(["t1"])
-        assert safe == []
-
-    @patch("app.services.workflow.trigger_service.workflow_repository")
-    async def test_get_triggers_safe_to_delete_partial(self, mock_repo):
-        # t1 has references, t2 does not
-        mock_repo.count_trigger_references = AsyncMock(side_effect=[1, 0])
-
-        safe = await TriggerService.get_triggers_safe_to_delete(["t1", "t2"])
-        assert safe == ["t2"]
-
-    @patch("app.services.workflow.trigger_service.workflow_repository")
-    async def test_get_triggers_safe_to_delete_with_excluding_workflow_id(self, mock_repo):
-        mock_repo.count_trigger_references = AsyncMock(return_value=0)
-
-        await TriggerService.get_triggers_safe_to_delete(["t1"], excluding_workflow_id="wf_123")
-
-        mock_repo.count_trigger_references.assert_awaited_once_with(
-            "t1", excluding_workflow_id="wf_123"
-        )
-
-    @patch("app.services.workflow.trigger_service.workflow_repository")
-    async def test_get_triggers_safe_to_delete_error_skips(self, mock_repo):
-        """On error, trigger should not be included in safe-to-delete list."""
-        mock_repo.count_trigger_references = AsyncMock(side_effect=Exception("DB error"))
-
-        safe = await TriggerService.get_triggers_safe_to_delete(["t1"])
-        assert safe == []
+    # Safe-to-delete filtering moved to
+    # tests/unit/services/workflow/test_trigger_service_refcount.py when the count
+    # became a sum over workflows AND todos: patching only workflow_repository here
+    # left the todo count hitting the real repository, so three of these five passed
+    # vacuously (the unpatched call raised, and the except branch returned the
+    # empty list the test expected).
 
     @patch("app.services.workflow.trigger_service.get_handler_by_name")
     async def test_register_triggers_no_handler(self, mock_get_handler):
@@ -2406,6 +2400,12 @@ class TestTriggerService:
             USER_ID, WORKFLOW_ID, "calendar_event", trigger
         )
         assert result == ["tid_1", "tid_2"]
+        # The handler must receive user_id, owner_id, trigger_name and trigger_config
+        # in exactly that positional order — dropping, nulling, or shuffling any of
+        # them hands the provider the wrong owner or a null config.
+        mock_handler.register.assert_awaited_once_with(
+            USER_ID, WORKFLOW_ID, "calendar_event", trigger
+        )
 
     @patch("app.services.workflow.trigger_service.get_handler_by_name")
     async def test_register_triggers_empty_result_raise_on_failure(self, mock_get_handler):

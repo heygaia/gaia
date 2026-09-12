@@ -163,6 +163,22 @@ export class NotificationsAPI {
   }
 
   /**
+   * Mark every delivered notification as read, server-side — not just the
+   * caller's currently-loaded page.
+   */
+  static async markAllAsRead(
+    channelType?: string,
+  ): Promise<NotificationResponse> {
+    const params = channelType
+      ? `?channel_type=${encodeURIComponent(channelType)}`
+      : "";
+    const response = await apiauth.post<NotificationResponse>(
+      `${NotificationsAPI.BASE_URL}/mark-all-read${params}`,
+    );
+    return response.data;
+  }
+
+  /**
    * Get notification channel preferences (telegram, discord, whatsapp, slack)
    */
   static async getChannelPreferences(): Promise<

@@ -20,17 +20,17 @@ from datetime import UTC, datetime
 from app.constants.todos import GAIA_TRACKED_LABEL
 from app.db.repositories.todos import todo_repository
 from app.models.todo_models import Priority, TodoDocument, TodoModel, TodoResponse, TodoUpdate
-from app.services.canvas_markdown import section_body, split_legacy_canvas
+from app.services.canvas_markdown import split_legacy_canvas
 from app.services.gaia_tasks_fs import schedule_gaia_tasks_sync
 from app.services.storage._vfs_common import folder_name
 from app.services.todo_canvas_storage import (
     append_activity,
     append_log,
     build_vfs_label,
-    read_canvas,
     write_canvas_and_activity,
 )
 from app.services.todos.todo_service import TodoService
+from app.services.triggers.subscription_service import teardown_subscriptions
 from app.utils.canvas_vector_utils import mark_canvas_completed, store_canvas_embedding
 from app.utils.redis_utils import RedisPoolManager
 from app.workers.queue import enqueue_worker_job
@@ -72,32 +72,6 @@ def _format_due_string(due_date: datetime | None, now: datetime) -> str:
     return f" due({days_until}d)"
 
 
-_KEY_DETAILS_MAX_LINES = 5
-
-
-async def _extract_canvas_key_details(doc: TodoDocument, user_id: str) -> str:
-    """Pull the Key Details section text from a tracked todo's canvas (empty on miss)."""
-    try:
-        canvas = await read_canvas(doc.id, user_id)
-    except Exception as e:
-        log.warning("tracked_todo.canvas_read_failed", todo_id=doc.id, error=str(e))
-        return ""
-    if not canvas:
-        return ""
-    return section_body(canvas, "Key Details") or ""
-
-
-def _format_signal_entry(doc: TodoDocument, key_details: str) -> str:
-    """Render one tracked todo as a signal-matching context bullet (+ indented key details)."""
-    labels = [lbl for lbl in doc.labels if lbl != GAIA_TRACKED_LABEL]
-    labels_str = f" [{', '.join(labels)}]" if labels else ""
-    entry = f'- "{doc.title}"{labels_str} (ID: {doc.id})'
-    if key_details:
-        for dl in key_details.split("\n")[:_KEY_DETAILS_MAX_LINES]:
-            entry += f"\n    {dl.strip()}"
-    return entry
-
-
 def _format_tracked_todo_line(doc: TodoDocument, now: datetime, active_todo_id: str | None) -> str:
     """Format one tracked-todo doc as a context-injection summary line."""
     age_days = (now - (doc.created_at or now)).days
@@ -129,6 +103,7 @@ class TrackedTodoService:
         priority: Priority = Priority.NONE,
         labels: list[str] | None = None,
         initial_canvas: str | None = None,
+        source_conversation_id: str | None = None,
     ) -> TodoResponse:
         """Create a todo with VFS canvas and ChromaDB indexing.
 
@@ -166,7 +141,10 @@ class TrackedTodoService:
             todo_id,
             user_id=user_id,
             update=TodoUpdate(
-                vfs_path=vfs_path, canvas_content=canvas_content, log_content=log_content
+                vfs_path=vfs_path,
+                canvas_content=canvas_content,
+                log_content=log_content,
+                source_conversation_id=source_conversation_id,
             ),
         )
 
@@ -223,6 +201,10 @@ class TrackedTodoService:
 
         await mark_canvas_completed(todo_id)
 
+        # A completed todo must stop watching. Teardown lives here rather than at
+        # the callers (tool, sweep, worker) so no completion path can forget it.
+        await teardown_subscriptions(todo_id, user_id, reason="completed")
+
         log.info("tracked_todo.completed", todo_id=todo_id, user_id=user_id, summary=summary)
         schedule_gaia_tasks_sync(user_id)
         return True
@@ -271,25 +253,6 @@ class TrackedTodoService:
             todo_id,
             user_id,
             f"\n## {now.isoformat()} [{event_type}]\n- {details}\n",
-        )
-
-    @staticmethod
-    async def get_signal_matching_context(user_id: str) -> str:
-        """Compact tracked todos summary optimized for signal matching.
-
-        Includes key IDs (thread_ids, email addresses, event_ids) so the
-        agent can match incoming signals to relevant todos.
-        """
-        docs = await todo_repository.list_active_tracked(user_id, limit=15)
-        if not docs:
-            return ""
-
-        lines = [
-            _format_signal_entry(doc, await _extract_canvas_key_details(doc, user_id))
-            for doc in docs
-        ]
-        return "ACTIVE TRACKED TODOS (check if incoming signal relates to any):\n" + "\n".join(
-            lines
         )
 
     @staticmethod

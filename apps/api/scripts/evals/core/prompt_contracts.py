@@ -47,7 +47,6 @@ PROMPT_SOURCES: dict[str, tuple[str, str]] = {
     "openui": ("app.agents.prompts.openui_prompts", "OPENUI_SURFACE_POLICY"),
     "subagent_base": ("app.agents.prompts.subagent_prompts", "BASE_SUBAGENT_PROMPT"),
     "subagent_gmail": ("app.agents.prompts.subagent_prompts", "GMAIL_AGENT_SYSTEM_PROMPT"),
-    "subagent_reminders": ("app.agents.prompts.subagent_prompts", "REMINDER_AGENT_SYSTEM_PROMPT"),
     "memory_extraction": ("app.agents.prompts.memory_prompts", "BASE_MEMORY_EXTRACTION_PROMPT"),
 }
 
@@ -100,7 +99,7 @@ CLAUSES: tuple[Clause, ...] = (
     Clause(
         name="delegate_every_real_ask",
         source="comms",
-        starts_at="1. DELEGATE EVERY REAL ASK:",
+        starts_at="1. DELEGATE EVERY REAL ASK (except open-web lookups):",
         ends_before="2. YOU ARE THE USER'S ONLY WINDOW:",
         governs="when a turn must go through call_executor instead of being answered directly",
         depends_on=(
@@ -403,13 +402,6 @@ CLAUSES: tuple[Clause, ...] = (
         ends_before="## WHAT MAKES A GOOD EMAIL",
         governs="every email goes through the real compose card, never plain text or OpenUI",
         depends_on=("data/capability/gmail.yaml", "suites/hil.py"),
-    ),
-    Clause(
-        name="delete_requires_consent",
-        source="subagent_reminders",
-        starts_at="- NEVER use delete_reminder_tool without explicit user consent",
-        governs="destructive reminder tools need explicit consent",
-        depends_on=("gate:no_forbidden_tools", "data/capability/reminders.yaml"),
     ),
     # -- memory extraction --------------------------------------------------
     Clause(

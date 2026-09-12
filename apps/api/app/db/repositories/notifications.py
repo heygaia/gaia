@@ -5,9 +5,13 @@ on it. Updates are free-form field patches (an action result may set arbitrary
 fields), so they go through ``update_fields`` rather than a rigid update model.
 """
 
+from datetime import UTC, datetime
+
 from app.constants.cache import REPO_GLOBAL_SCOPE
+from app.db.mongodb.collections import get_async_collection
 from app.db.repositories.base import MongoRepository
 from app.models.notification.notification_models import (
+    NotificationListFilters,
     NotificationRecord,
     NotificationSourceEnum,
     NotificationStatus,
@@ -45,18 +49,14 @@ class NotificationRepository(MongoRepository[NotificationRecord, NotificationUpd
         self,
         user_id: str,
         *,
-        status: NotificationStatus | None = None,
-        channel_type: str | None = None,
-        notification_type: NotificationType | None = None,
-        source: NotificationSourceEnum | None = None,
-        limit: int = 50,
-        offset: int = 0,
+        filters: NotificationListFilters | None = None,
     ) -> list[NotificationRecord]:
+        f = filters or NotificationListFilters()
         return await self._find(
-            self._user_filter(user_id, status, channel_type, notification_type, source),
+            self._user_filter(user_id, f.status, f.channel_type, f.notification_type, f.source),
             sort=[("created_at", -1)],
-            limit=limit,
-            skip=offset,
+            limit=f.limit,
+            skip=f.offset,
         )
 
     async def count_for_user(
@@ -67,6 +67,23 @@ class NotificationRepository(MongoRepository[NotificationRecord, NotificationUpd
         channel_type: str | None = None,
     ) -> int:
         return await self._count(self._user_filter(user_id, status, channel_type, None, None))
+
+    async def mark_all_read_for_user(self, user_id: str, *, channel_type: str | None = None) -> int:
+        """Mark every DELIVERED notification for a user as READ in one write.
+
+        The base only exposes single-document raw-update seams, and this one
+        has to touch an unbounded set the caller cannot enumerate, so it issues
+        its own ``update_many``. That makes this module a second holder of the
+        collection accessor, so the contract fixture swaps it here too.
+        ``cache_policy`` is ``None`` here, so there is no entity cache or
+        generation counter to refresh. Returns the number updated.
+        """
+        filter_ = self._user_filter(user_id, NotificationStatus.DELIVERED, channel_type, None, None)
+        result = await get_async_collection(self.collection_name).update_many(
+            filter_,
+            {"$set": {"status": NotificationStatus.READ.value, "read_at": datetime.now(UTC)}},
+        )
+        return int(result.modified_count)
 
     def _user_filter(
         self,

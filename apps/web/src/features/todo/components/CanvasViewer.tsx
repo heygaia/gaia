@@ -42,8 +42,8 @@ const CanvasViewer: React.FC<CanvasViewerProps> = ({ todoId, todoTitle }) => {
 
   const handleOpen = async (file: NotesFile) => {
     setOpenFile(file);
-    // One fetch serves both files; a failed read is retried by reopening.
-    if (notes !== null) return;
+    // Always refetch on open so the viewer never shows a stale or wrong todo's
+    // notes (the sidebar keeps this component mounted across selections).
     setIsLoading(true);
     setHasError(false);
     try {

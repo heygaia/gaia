@@ -5,6 +5,7 @@ from typing import Annotated
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.db.repositories.base import UserScopedDocument
+from app.models.trigger_subscription_models import TriggerSubscription
 from app.models.workflow_models import WorkflowWithIntegrations
 
 
@@ -118,6 +119,10 @@ class TodoResponse(TodoBase):
     workflow_categories: list[str] = Field(
         default_factory=list,
         description="Tool categories from linked workflow steps for icon display",
+    )
+    trigger_subscriptions: list[TriggerSubscription] = Field(
+        default_factory=list,
+        description="Read-only; subscriptions are written by trigger registration, not by clients",
     )
 
     @classmethod
@@ -347,8 +352,12 @@ class TodoDocument(UserScopedDocument):
     canvas_content: str | None = None
     activity_content: str | None = None
     log_content: str | None = None
+    trigger_subscriptions: list[TriggerSubscription] = Field(default_factory=list)
     # Sender of the email an onboarding-seeded todo was extracted from.
     source_email: str | None = None
+    # The chat that created this tracked todo, captured at creation. None for todos
+    # created outside a chat (onboarding/REST).
+    source_conversation_id: str | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
 
@@ -379,6 +388,8 @@ class TodoUpdate(BaseModel):
     canvas_content: str | None = None
     activity_content: str | None = None
     log_content: str | None = None
+    source_conversation_id: str | None = None
+    trigger_subscriptions: list[TriggerSubscription] | None = None
 
 
 class ProjectDocument(UserScopedDocument):
