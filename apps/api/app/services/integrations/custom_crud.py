@@ -85,9 +85,7 @@ async def create_custom_integration(
     try:
         await integration_repository.create(integration)
     except DuplicateKeyError:
-        winner = await integration_repository.find_custom_by_server_url(
-            request.server_url, user_id
-        )
+        winner = await integration_repository.find_custom_by_server_url(request.server_url, user_id)
         if winner is None:
             raise
         log.info(

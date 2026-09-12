@@ -33,9 +33,7 @@ def _row(server_url: str, normalized: str | None) -> dict[str, Any]:
 
 async def _find(collection: MagicMock, url: str) -> Any:
     repo = IntegrationsRepository()
-    with patch(
-        "app.db.repositories.base.get_async_collection", return_value=collection
-    ):
+    with patch("app.db.repositories.base.get_async_collection", return_value=collection):
         return await repo.find_custom_by_server_url(url, USER_ID)
 
 

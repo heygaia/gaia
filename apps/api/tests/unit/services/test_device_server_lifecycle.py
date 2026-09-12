@@ -483,9 +483,9 @@ class TestRecordDeviceServerSync:
         seen: list[object] = []
         real_datetime = datetime
 
-        class SpyDateTime(real_datetime):  # type: ignore[no-redef]
+        class SpyDateTime(real_datetime):
             @classmethod
-            def now(cls, tz=None):  # type: ignore[override]
+            def now(cls, tz=None):
                 seen.append(tz)
                 return real_datetime.now(tz)
 

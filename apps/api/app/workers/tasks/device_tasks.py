@@ -14,9 +14,7 @@ from app.services.mcp.mcp_client import MCPClient, get_mcp_client
 from shared.py.wide_events import log
 
 
-async def _warm_one_server(
-    client: MCPClient, device_id: str, server: DeviceMCPServer
-) -> bool:
+async def _warm_one_server(client: MCPClient, device_id: str, server: DeviceMCPServer) -> bool:
     """Warm-connect one server, containing every failure on its own row.
 
     Returns True on success. A failure records the error on the server's row
@@ -29,9 +27,7 @@ async def _warm_one_server(
     except Exception as e:
         # One server failing must not stop the others; the failure is recorded
         # on its row, not swallowed.
-        await record_device_server_sync(
-            server.integration_id, error=f"{type(e).__name__}: {e}"
-        )
+        await record_device_server_sync(server.integration_id, error=f"{type(e).__name__}: {e}")
         log.warning(
             f"{LogTag.MCP} Device server warm-connect failed",
             device_id=device_id,

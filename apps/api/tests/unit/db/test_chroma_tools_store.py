@@ -354,25 +354,36 @@ class TestIsDynamicSubagent:
 
     def test_device_subagent_keyed_by_integration_id_is_dynamic(self):
         assert (
-            chroma_tools_store._is_dynamic_subagent("subagents::aedc0ba0-b3b6-4783-8035-d25e94c291db", "subagents")
+            chroma_tools_store._is_dynamic_subagent(
+                "subagents::aedc0ba0-b3b6-4783-8035-d25e94c291db", "subagents"
+            )
             is True
         )
 
     def test_builtin_subagent_is_not_dynamic(self):
-        assert chroma_tools_store._is_dynamic_subagent("subagents::subagent:todos", "subagents") is False
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::subagent:todos", "subagents")
+            is False
+        )
 
     def test_only_the_key_after_the_first_separator_is_examined(self):
         # split(maxsplit=1): a "subagent:" builtin whose own id contains "::" is
         # still a builtin. A higher maxsplit would look at the tail ("tail") and
         # wrongly call it dynamic.
-        assert chroma_tools_store._is_dynamic_subagent("subagents::subagent:weird::tail", "subagents") is False
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::subagent:weird::tail", "subagents")
+            is False
+        )
 
     def test_non_subagents_namespace_is_never_dynamic(self):
         assert chroma_tools_store._is_dynamic_subagent("gmail::search_threads", "gmail") is False
 
     def test_builtin_prefix_must_match_from_the_start(self):
         # A key that merely contains "subagent:" later is still dynamic.
-        assert chroma_tools_store._is_dynamic_subagent("subagents::mcp-subagent:foo", "subagents") is True
+        assert (
+            chroma_tools_store._is_dynamic_subagent("subagents::mcp-subagent:foo", "subagents")
+            is True
+        )
 
 
 # ---------------------------------------------------------------------------

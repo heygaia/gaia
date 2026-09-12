@@ -644,9 +644,7 @@ async def enqueue_device_server_warmup(
     scope = ",".join(sorted(server_keys)) if server_keys is not None else "all"
     work_key = hashlib.sha256(scope.encode()).hexdigest()
     marker = f"{DEVICE_WARMUP_COALESCE_PREFIX}{device_id}:{work_key}"
-    claimed = await redis_cache.client.set(
-        marker, "1", nx=True, ex=DEVICE_WARMUP_COALESCE_SECONDS
-    )
+    claimed = await redis_cache.client.set(marker, "1", nx=True, ex=DEVICE_WARMUP_COALESCE_SECONDS)
     if not claimed:
         return
     pool = await RedisPoolManager.get_pool()

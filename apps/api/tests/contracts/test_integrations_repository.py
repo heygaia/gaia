@@ -452,9 +452,7 @@ class TestCustomServerUrlDedup:
             )
         )
 
-    async def test_keyless_legacy_rows_do_not_violate_the_index(
-        self, repo, raw_collection
-    ) -> None:
+    async def test_keyless_legacy_rows_do_not_violate_the_index(self, repo, raw_collection) -> None:
         # Rows the backfill left keyless (conflicts) are excluded by the partial
         # filter: they coexist and stay writable without tripping the index.
         await raw_collection.create_index(

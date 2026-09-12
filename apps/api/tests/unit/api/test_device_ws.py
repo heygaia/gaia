@@ -35,7 +35,9 @@ def _manager() -> MagicMock:
 
 async def _run_handler(ws: MagicMock, relay, enqueue) -> None:
     with (
-        patch.object(ws_module, "verify_device_token", return_value={"device_id": "d1", "user_id": "u1"}),
+        patch.object(
+            ws_module, "verify_device_token", return_value={"device_id": "d1", "user_id": "u1"}
+        ),
         patch.object(ws_module, "get_active_device", AsyncMock(return_value=object())),
         patch.object(ws_module, "mark_online", AsyncMock()),
         patch.object(ws_module, "mark_offline", AsyncMock()),
