@@ -488,6 +488,7 @@ class TestRedeemLinkCode:
             ),
             patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
             patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+            patch("app.api.v1.endpoints.bot_links.log") as mock_log,
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
@@ -497,6 +498,9 @@ class TestRedeemLinkCode:
             "delivered": False,
             "first_contact": BUBBLES,
         }
+        # The wide event is how "did the greeting go out" gets answered in
+        # Loki; it must carry the real verdict, not a placeholder.
+        mock_log.set.assert_any_call(outcome="success", is_new_link=True, delivered=False)
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_a_delivered_first_contact_is_not_handed_back_as_well(
@@ -522,11 +526,13 @@ class TestRedeemLinkCode:
             ),
             patch(f"{COMPLETION_MODULE}.schedule_account_sync", MagicMock()),
             patch(f"{COMPLETION_MODULE}.capture_event", MagicMock()),
+            patch("app.api.v1.endpoints.bot_links.log") as mock_log,
         ):
             response = await client.post(f"{BOT_BASE}/redeem-link-code", json=REDEEM_BODY)
 
         assert response.status_code == 200
         assert response.json() == {"linked": True, "delivered": True, "first_contact": []}
+        mock_log.set.assert_any_call(outcome="success", is_new_link=True, delivered=True)
 
     @patch("app.api.v1.endpoints.bot_links.require_bot_api_key", new_callable=AsyncMock)
     async def test_the_message_the_user_sent_is_the_one_persisted(

@@ -74,9 +74,16 @@ def hung_esp_call():
     return _hang
 
 
-def _stamped(mock_stamp: AsyncMock) -> list[SignupDelivery]:
-    """Every delivery stamped across all calls, flattened."""
-    return [delivery for call in mock_stamp.await_args_list for delivery in call.args[1]]
+def _stamps(mock_stamp: AsyncMock) -> list[tuple[str, SignupDelivery]]:
+    """Every ``(user, delivery)`` pair stamped across all calls, flattened.
+
+    The row being stamped matters as much as the delivery: a stamp written
+    against the wrong user retires a debt that was never paid, and the real
+    user stays unstamped and keeps coming back through the sweep forever.
+    """
+    return [
+        (call.args[0], delivery) for call in mock_stamp.await_args_list for delivery in call.args[1]
+    ]
 
 
 class _DedupingPool:
@@ -137,8 +144,11 @@ class TestDeliverSignupEmails:
         Without it a re-run double-sends and the sweep keeps re-selecting."""
         await deliver_signup_emails({}, USER_ID)
 
-        assert sorted(_stamped(mock_stamp)) == sorted(
-            [SignupDelivery.WELCOME_EMAIL, SignupDelivery.MARKETING_CONTACT]
+        assert sorted(_stamps(mock_stamp)) == sorted(
+            [
+                (USER_ID, SignupDelivery.WELCOME_EMAIL),
+                (USER_ID, SignupDelivery.MARKETING_CONTACT),
+            ]
         )
 
     async def test_an_already_stamped_delivery_is_not_repeated(
@@ -152,7 +162,7 @@ class TestDeliverSignupEmails:
 
         mock_send_welcome_email.assert_not_awaited()
         mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=USER_ID)
-        assert _stamped(mock_stamp) == [SignupDelivery.MARKETING_CONTACT]
+        assert _stamps(mock_stamp) == [(USER_ID, SignupDelivery.MARKETING_CONTACT)]
 
     async def test_a_fully_delivered_signup_does_no_work_at_all(
         self, mock_stamp, mock_send_welcome_email, mock_add_marketing_contact
@@ -160,20 +170,35 @@ class TestDeliverSignupEmails:
         now = datetime.now(UTC)
         settled = _user(welcome_email_sent_at=now, marketing_contact_added_at=now)
         with patch(f"{MODULE}.user_repository.get", AsyncMock(return_value=settled)):
-            await deliver_signup_emails({}, USER_ID)
+            async with captured_wide_event() as event:
+                await deliver_signup_emails({}, USER_ID)
 
         mock_send_welcome_email.assert_not_awaited()
         mock_add_marketing_contact.assert_not_awaited()
         mock_stamp.assert_not_awaited()
+        # A run that did nothing has to say so. Without the flag the event is
+        # indistinguishable from one where both deliveries went out, and the
+        # job's whole idempotency claim becomes unobservable in production.
+        assert event["skipped"] is True
 
     async def test_a_deleted_user_is_skipped_rather_than_mailed(
         self, mock_stamp, mock_send_welcome_email, mock_add_marketing_contact
     ):
-        with patch(f"{MODULE}.user_repository.get", AsyncMock(return_value=None)):
-            await deliver_signup_emails({}, USER_ID)
+        mock_get = AsyncMock(return_value=None)
+        with patch(f"{MODULE}.user_repository.get", mock_get):
+            async with captured_wide_event() as event:
+                await deliver_signup_emails({}, USER_ID)
 
         mock_send_welcome_email.assert_not_awaited()
         mock_add_marketing_contact.assert_not_awaited()
+        # The row is fetched by the id the job was queued with — fetching any
+        # other row decides this user's deliveries from someone else's stamps.
+        mock_get.assert_awaited_once_with(USER_ID)
+        # Every field the job records hangs off this attribution. Unset, the
+        # run is unattributable and a user's lost welcome email cannot be found
+        # in the logs at all, which is the only place it is visible.
+        assert event["user"] == {"id": USER_ID}
+        assert event["skipped"] is True
 
     async def test_the_two_esp_calls_run_concurrently(
         self, stored_user, mock_stamp, mock_send_welcome_email, mock_add_marketing_contact
@@ -277,7 +302,7 @@ class TestDeliverSignupEmails:
             }
         ]
         mock_add_marketing_contact.assert_awaited_once_with("bob@test.com", "Bob", user_id=USER_ID)
-        assert _stamped(mock_stamp) == [SignupDelivery.MARKETING_CONTACT]
+        assert _stamps(mock_stamp) == [(USER_ID, SignupDelivery.MARKETING_CONTACT)]
 
     async def test_a_marketing_contact_failure_is_recorded_and_leaves_no_stamp(
         self, stored_user, mock_stamp, mock_send_welcome_email, mock_add_marketing_contact
@@ -299,7 +324,7 @@ class TestDeliverSignupEmails:
             }
         ]
         mock_send_welcome_email.assert_awaited_once_with("bob@test.com", "Bob", user_id=USER_ID)
-        assert _stamped(mock_stamp) == [SignupDelivery.WELCOME_EMAIL]
+        assert _stamps(mock_stamp) == [(USER_ID, SignupDelivery.WELCOME_EMAIL)]
 
     async def test_a_cancelled_delivery_does_not_strand_the_other_one(
         self, stored_user, mock_stamp, mock_send_welcome_email, mock_add_marketing_contact

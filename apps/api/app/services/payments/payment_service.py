@@ -5,6 +5,7 @@ Clean, simple, and maintainable.
 
 import asyncio
 from datetime import UTC, datetime
+from enum import StrEnum
 from typing import Any, Literal
 
 from dodopayments import DodoPayments, NotFoundError
@@ -58,6 +59,18 @@ from app.services.payments.subscription_events import (
     resolve_subscription_owner,
 )
 from shared.py.wide_events import log
+
+
+class CheckoutScanOutcome(StrEnum):
+    """Why a verify found no subscription behind the user's checkout sessions.
+
+    Only ``MISS`` — every session answered, none paid — is cached; the other
+    two are exactly what the client's next retry should ask about again.
+    """
+
+    MISS = "miss"
+    CACHED_MISS = "cached_miss"
+    INCONCLUSIVE = "inconclusive"
 
 
 def _is_free_plan(name: str, amount: int) -> bool:
@@ -452,13 +465,25 @@ class DodoPaymentService:
         """
         miss_key = f"{CHECKOUT_SCAN_MISS_CACHE_PREFIX}{user_id}"
         if await redis_cache.get(miss_key):
-            log.set_ns("payment", checkout_scan="cached_miss")
+            log.set_ns("payment", checkout_scan=CheckoutScanOutcome.CACHED_MISS.value)
             return None
 
         sessions = await checkout_session_repository.list_recent_for_user(
             user_id, limit=CHECKOUT_SESSION_SCAN_LIMIT
         )
-        conclusive = True
+        found = await self._scan_checkout_sessions(user_id, sessions)
+        if isinstance(found, SubscriptionDocument):
+            return found
+        log.set_ns("payment", checkout_scan=found.value)
+        if found is CheckoutScanOutcome.MISS:
+            await redis_cache.set(miss_key, True, ttl=CHECKOUT_SCAN_MISS_TTL)
+        return None
+
+    async def _scan_checkout_sessions(
+        self, user_id: str, sessions: list[CheckoutSessionDocument]
+    ) -> SubscriptionDocument | CheckoutScanOutcome:
+        """The activated subscription behind the first paid session, or why not."""
+        outcome = CheckoutScanOutcome.MISS
         for checkout in sessions:
             try:
                 subscription = await self._subscription_behind_checkout(checkout)
@@ -470,18 +495,15 @@ class DodoPaymentService:
                     user_id=user_id,
                     session_id=checkout.session_id,
                 )
-                conclusive = False
+                outcome = CheckoutScanOutcome.INCONCLUSIVE
                 continue
             if subscription is None:
                 continue
             activated = await self._activate_verified_subscription(user_id, subscription)
             if activated:
                 return activated
-            conclusive = False
-
-        if conclusive:
-            await redis_cache.set(miss_key, True, ttl=CHECKOUT_SCAN_MISS_TTL)
-        return None
+            outcome = CheckoutScanOutcome.INCONCLUSIVE
+        return outcome
 
     async def verify_payment_completion(
         self, user_id: str, subscription_id: str | None = None

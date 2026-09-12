@@ -34,6 +34,14 @@
         "files": ["libs/shared/ts/src/bots/consumer/outbound-consumer.ts"],
         "rules": ["react-doctor/async-await-in-loop"]
       },
+      // Same guarantee for the first-contact fallback in link-codes.ts: when
+      // the outbound queue refused the greeting, the bot sends its bubbles
+      // itself, and they are a conversation the user reads top to bottom —
+      // fanning them out would deliver "here is how to start" before "hi".
+      {
+        "files": ["libs/shared/ts/src/bots/link-codes.ts"],
+        "rules": ["react-doctor/async-await-in-loop"]
+      },
       // The wake-word controller's lifetime is managed imperatively (start()
       // creates it, stop() disposes it), not by an effect, so the three
       // listeners are attached in start() and released by detachListeners().
