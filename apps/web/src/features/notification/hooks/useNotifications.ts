@@ -99,7 +99,6 @@ export function useNotifications(
         }
 
         await NotificationsAPI.markAsRead(id);
-        toast.success("Notification marked as read");
       } catch (error) {
         await fetchNotifications(true);
         toast.error("Failed to mark notification as read");
