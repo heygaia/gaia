@@ -137,6 +137,34 @@ class TestGetNotifications:
         "app.api.v1.endpoints.notification.notification_service.get_user_notifications",
         new_callable=AsyncMock,
     )
+    async def test_get_notifications_forwards_filters(
+        self,
+        mock_get: AsyncMock,
+        mock_count: AsyncMock,
+        client: AsyncClient,
+    ):
+        """Query params reach get_user_notifications as the matching filter fields."""
+        mock_get.return_value = []
+        mock_count.return_value = 0
+        response = await client.get(f"{NOTIF_BASE}?status=read&channel_type=email&limit=7&offset=3")
+        assert response.status_code == 200
+
+        call = mock_get.await_args
+        assert call.args[0] == FAKE_USER_ID
+        filters = call.kwargs["filters"]
+        assert filters.status == NotificationStatus.READ
+        assert filters.channel_type == "email"
+        assert filters.limit == 7
+        assert filters.offset == 3
+
+    @patch(
+        "app.api.v1.endpoints.notification.notification_service.get_user_notifications_count",
+        new_callable=AsyncMock,
+    )
+    @patch(
+        "app.api.v1.endpoints.notification.notification_service.get_user_notifications",
+        new_callable=AsyncMock,
+    )
     async def test_get_notifications_service_error(
         self,
         mock_get: AsyncMock,
