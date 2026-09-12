@@ -131,9 +131,7 @@ async def test_enqueue_failure_is_logged_with_its_cause_and_not_fatal():
     with patch.object(ws_module, "DEVICE_RELAY_READY_TIMEOUT_SECONDS", 0.01):
         async with captured_wide_event() as event:
             # Must not raise: the connect handler keeps the socket alive.
-            await asyncio.wait_for(
-                _run_handler(_socket(), fake_relay, failing_enqueue), 10
-            )
+            await asyncio.wait_for(_run_handler(_socket(), fake_relay, failing_enqueue), 10)
 
     assert enqueued.is_set()
     (warning,) = event["warnings"]
