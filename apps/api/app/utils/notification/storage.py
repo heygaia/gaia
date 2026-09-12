@@ -3,10 +3,9 @@ from collections.abc import Mapping
 from app.constants.log_tags import LogTag
 from app.db.repositories.notifications import notification_repository
 from app.models.notification.notification_models import (
+    NotificationListFilters,
     NotificationRecord,
-    NotificationSourceEnum,
     NotificationStatus,
-    NotificationType,
 )
 from shared.py.wide_events import log
 
@@ -39,23 +38,11 @@ class MongoDBNotificationStorage:
     async def get_user_notifications(
         self,
         user_id: str,
-        status: NotificationStatus | None = None,
-        limit: int = 50,
-        offset: int = 0,
-        channel_type: str | None = None,
-        notification_type: NotificationType | None = None,
-        source: NotificationSourceEnum | None = None,
+        *,
+        filters: NotificationListFilters | None = None,
     ) -> list[NotificationRecord]:
         """Get user's notifications with optional filtering"""
-        return await notification_repository.list_for_user(
-            user_id,
-            status=status,
-            channel_type=channel_type,
-            notification_type=notification_type,
-            source=source,
-            limit=limit,
-            offset=offset,
-        )
+        return await notification_repository.list_for_user(user_id, filters=filters)
 
     async def get_notification_count(
         self,
@@ -66,4 +53,10 @@ class MongoDBNotificationStorage:
         """Get count of notifications for a user with optional status filtering"""
         return await notification_repository.count_for_user(
             user_id, status=status, channel_type=channel_type
+        )
+
+    async def mark_all_read(self, user_id: str, channel_type: str | None = None) -> int:
+        """Mark every delivered notification for a user as read. Returns the count updated."""
+        return await notification_repository.mark_all_read_for_user(
+            user_id, channel_type=channel_type
         )

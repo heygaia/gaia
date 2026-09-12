@@ -52,7 +52,6 @@ apps/api/app/core/lazy_loader.py	PLR0913
 apps/api/app/db/chroma/chroma_store.py	PLR0912
 apps/api/app/db/repositories/base.py	PLR0913
 apps/api/app/db/repositories/e2b_sandboxes.py	PLR0913
-apps/api/app/db/repositories/notifications.py	PLR0913
 apps/api/app/db/repositories/users.py	PLR0913
 apps/api/app/memory/extraction.py	PLR0913
 apps/api/app/memory/ingestion.py	PLR0913
@@ -72,7 +71,6 @@ apps/api/app/services/mcp/langchain_adapter.py	PLR0912
 apps/api/app/services/mcp/resilient_adapter.py	PLR0912
 apps/api/app/services/mcp/resilient_adapter.py	PLR0915
 apps/api/app/services/mcp/token_management.py	PLR0912
-apps/api/app/services/notification_service.py	PLR0913
 apps/api/app/services/onboarding/first_message_service.py	PLR0913
 apps/api/app/services/onboarding/post_onboarding_service.py	PLR0913
 apps/api/app/services/onboarding/social_profile_service.py	PLR0912
@@ -88,8 +86,6 @@ apps/api/app/utils/composio_hooks/reddit_hooks.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0912
 apps/api/app/utils/crawl4ai_utils.py	PLR0913
 apps/api/app/utils/linkedin_utils.py	PLR0913
-apps/api/app/utils/notification/orchestrator.py	PLR0913
-apps/api/app/utils/notification/storage.py	PLR0913
 apps/api/app/utils/notion_md.py	PLR0911
 apps/api/app/utils/notion_md.py	PLR0912
 apps/api/app/utils/notion_md.py	PLR0915
@@ -148,7 +144,6 @@ scripts/dev/gaia_verify.py	PLR0915
 scripts/dev/pr_comments.py	PLR0912
 scripts/dev/pr_comments.py	PLR0915
 scripts/dev/tests/test_pr_comments.py	PLR0915
-scripts/test/mutation_classify.py	PLR0912
 scripts/test/mutmut_decorated_patch.py	PLR0911
 scripts/test/mutmut_decorated_patch.py	PLR0912
 tools/evlog_map/__main__.py	PLR0912

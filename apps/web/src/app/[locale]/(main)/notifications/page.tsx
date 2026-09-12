@@ -7,12 +7,12 @@ import { NotificationConnectBanner } from "@/features/notification/components/No
 import { NotificationsList } from "@/features/notification/components/NotificationsList";
 import { useNotifications } from "@/features/notification/hooks/useNotifications";
 import { useHeader } from "@/hooks/layout/useHeader";
-import { toast } from "@/lib/toast";
-import { NotificationsAPI } from "@/services/api/notifications";
 import {
   type ModalConfig,
   NotificationStatus,
 } from "@/types/features/notificationTypes";
+
+const INAPP_CHANNEL = "inapp";
 
 export default function NotificationsPage() {
   const [modalConfig, setModalConfig] = useState<ModalConfig | null>(null);
@@ -24,42 +24,24 @@ export default function NotificationsPage() {
     notifications: unreadNotifications,
     loading: unreadLoading,
     refetch: refreshNotifications,
+    markAsRead,
+    markAllAsRead,
+    hasMoreUnseen,
   } = useNotifications({
     status: NotificationStatus.DELIVERED,
     limit: 100,
-    channel_type: "inapp",
+    channel_type: INAPP_CHANNEL,
   });
+
+  // The loaded page can undercount unread notifications, so a button gated on
+  // it alone could hide even though an older delivered notification exists.
+  const canMarkAllAsRead = unreadNotifications.length > 0 || hasMoreUnseen;
 
   const { notifications: allNotifications, loading: allLoading } =
     useNotifications({
       limit: 100,
-      channel_type: "inapp",
+      channel_type: INAPP_CHANNEL,
     });
-
-  const handleMarkAsRead = async (notificationId: string) => {
-    try {
-      await NotificationsAPI.markAsRead(notificationId);
-      await refreshNotifications();
-    } catch (error) {
-      console.error("Error marking notification as read:", error);
-    }
-  };
-
-  const handleBulkMarkAsRead = useCallback(
-    async (notificationIds: string[]) => {
-      try {
-        if (notificationIds.length === 0) {
-          toast.error("No events to mark as read");
-          return;
-        }
-        await NotificationsAPI.bulkMarkAsRead(notificationIds);
-        await refreshNotifications();
-      } catch (error) {
-        console.error("Error marking notification as read:", error);
-      }
-    },
-    [refreshNotifications],
-  );
 
   // Handle modal opening from notification actions
   const handleModalOpen = (config: ModalConfig) => {
@@ -78,8 +60,9 @@ export default function NotificationsPage() {
   };
 
   const handleMarkAllAsRead = useCallback(async () => {
-    await handleBulkMarkAsRead(unreadNotifications.map((n) => n.id));
-  }, [unreadNotifications, handleBulkMarkAsRead]);
+    if (!canMarkAllAsRead) return;
+    await markAllAsRead(INAPP_CHANNEL);
+  }, [canMarkAllAsRead, markAllAsRead]);
 
   // Keep a ref so the header's onMarkAllAsRead always calls the latest version
   // without adding handleMarkAllAsRead to the setHeader effect's dep array
@@ -96,6 +79,7 @@ export default function NotificationsPage() {
         selectedTab={selectedTab}
         onTabChange={setSelectedTab}
         unreadCount={unreadNotifications.length}
+        showMarkAllAsRead={canMarkAllAsRead}
         onMarkAllAsRead={() => handleMarkAllAsReadRef.current()}
       />,
     );
@@ -103,12 +87,14 @@ export default function NotificationsPage() {
     return () => {
       setHeader(null);
     };
-  }, [selectedTab, unreadNotifications.length, setHeader]);
+  }, [selectedTab, unreadNotifications.length, canMarkAllAsRead, setHeader]);
 
   return (
     <div className="flex h-full w-full flex-col overflow-hidden bg-primary-bg">
-      <div className="max-h-[calc(100vh-120px)] overflow-y-auto px-6 pt-6">
+      <div className="shrink-0 px-6 pt-6">
         <NotificationConnectBanner variant="full" />
+      </div>
+      <div className="min-h-0 flex-1 overflow-y-auto px-6 pb-6">
         {selectedTab === "unread" ? (
           <NotificationsList
             notifications={unreadNotifications}
@@ -116,7 +102,7 @@ export default function NotificationsPage() {
             emptyMessage="No unread notifications"
             emptyDescription="All caught up! You're up to date with everything."
             onRefresh={refreshNotifications}
-            onMarkAsRead={handleMarkAsRead}
+            onMarkAsRead={markAsRead}
             onModalOpen={handleModalOpen}
           />
         ) : (
@@ -126,7 +112,7 @@ export default function NotificationsPage() {
             emptyMessage="No notifications yet"
             emptyDescription="Notifications will appear here when you receive them."
             onRefresh={refreshNotifications}
-            onMarkAsRead={handleMarkAsRead}
+            onMarkAsRead={markAsRead}
             onModalOpen={handleModalOpen}
           />
         )}

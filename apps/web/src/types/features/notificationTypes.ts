@@ -398,10 +398,14 @@ export interface BulkActionRequest {
   action: BulkActions;
 }
 
+export interface MarkAllReadSummary {
+  updated_count: number;
+}
+
 export interface NotificationResponse {
   success: boolean;
   message: string;
-  data?: ActionResultData | NotificationRecord; // Allow both types
+  data?: ActionResultData | NotificationRecord | MarkAllReadSummary; // Allow both types
 }
 
 export interface PaginatedNotificationsResponse {

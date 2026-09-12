@@ -27,7 +27,6 @@ overrides:
   immutable@>=5.0.0 <5.1.5: 5.1.5
   path-to-regexp@>=8.0.0 <8.4.0: 8.4.0
   express-rate-limit@>=8.0.0 <8.2.2: 8.2.2
-  next@<16.3.3: 16.3.3
   maplibre-gl@<=6.4.0: 6.4.1
   '@xmldom/xmldom@<0.8.15': 0.8.15
   '@xmldom/xmldom@>=0.9.0 <0.9.12': 0.9.12

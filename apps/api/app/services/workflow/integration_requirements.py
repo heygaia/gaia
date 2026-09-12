@@ -1,8 +1,9 @@
 """Compute which integrations a workflow requires and which are missing."""
 
+from collections.abc import Sequence
 from functools import lru_cache
 
-from app.config.oauth_config import OAUTH_INTEGRATIONS
+from app.config.oauth_config import OAUTH_INTEGRATIONS, get_integration_by_id
 from app.constants.integrations import MANAGED_BY_INTERNAL
 from app.models.workflow_models import (
     IntegrationRef,
@@ -10,6 +11,7 @@ from app.models.workflow_models import (
     TriggerType,
     WorkflowStep,
 )
+from app.services.integrations.integration_status import get_all_integrations_status
 from app.utils.trigger_utils import get_integration_for_trigger
 
 
@@ -89,11 +91,33 @@ async def compute_missing_integrations(
     """Return IntegrationRef objects for required integrations not yet connected."""
     if not required:
         return []
-    # Deferred to avoid circular import: oauth_service → provisioner → service → here
-    from app.services.oauth.oauth_service import get_all_integrations_status
 
     status_map = await get_all_integrations_status(user_id)
     return build_integration_refs(required, status_map)[1]
+
+
+async def confirm_disconnected(user_id: str, integration_ids: Sequence[str]) -> list[str]:
+    """The subset of ``integration_ids`` the user genuinely has not connected.
+
+    Unlike everything else in this module, the ids here do not come from the
+    workflow's declared steps — they come from a run reporting what it actually
+    found, and a run is a model. It can name an integration that does not exist,
+    or one that is connected and failed for some unrelated reason. Either would
+    pause a working workflow, so the claim is checked against real connection
+    status first: the run proposes, this disposes.
+
+    Unknown ids are dropped rather than reported missing. An id GAIA has no
+    integration for cannot be the thing the user needs to go and connect.
+    """
+    if not integration_ids:
+        return []
+
+    status_map = await get_all_integrations_status(user_id)
+    return [
+        integration_id
+        for integration_id in dict.fromkeys(integration_ids)
+        if get_integration_by_id(integration_id) is not None and not status_map.get(integration_id)
+    ]
 
 
 async def compute_integration_refs(
@@ -106,8 +130,6 @@ async def compute_integration_refs(
     required = compute_required_integrations(steps, trigger_config)
     if not required:
         return [], []
-    # Deferred to avoid circular import: oauth_service → provisioner → service → here
-    from app.services.oauth.oauth_service import get_all_integrations_status
 
     status_map = await get_all_integrations_status(user_id)
     return build_integration_refs(required, status_map)

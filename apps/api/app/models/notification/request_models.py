@@ -22,6 +22,12 @@ class BulkActionSummary(BaseModel):
     total: int
 
 
+class MarkAllReadSummary(BaseModel):
+    """Outcome of marking every delivered notification for a user as read."""
+
+    updated_count: int
+
+
 class NotificationResponse(BaseModel, Generic[DataT]):
     """The ``{success, message, data}`` envelope every notification mutation returns.
 
