@@ -107,9 +107,7 @@ def hash_body_with_meta(*bodies: str, meta: dict[str, Any]) -> str:
     """
     h = hashlib.sha256()
     for body in bodies:
-        h.update(
-            body.encode("utf-8")
-        )  # pragma: no mutate — codec names are case-insensitive (UTF-8 == utf-8)
+        h.update(body.encode("utf-8"))  # pragma: no mutate — codec names are case-insensitive
         h.update(b"\x00")
     h.update(json.dumps(meta, sort_keys=True, default=str).encode("utf-8"))
     return h.hexdigest()
