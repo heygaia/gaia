@@ -177,27 +177,27 @@ def test_moving_text_from_the_canvas_into_the_log_changes_the_body_hash() -> Non
     # identical: the agent moves a line from canvas.md to log.md, the hash does
     # not move, and neither file is ever rewritten.
     meta: dict[str, Any] = {"title": "t"}
-    assert hash_body_with_meta("ab", "", meta) != hash_body_with_meta("a", "b", meta)
+    assert hash_body_with_meta("ab", "", meta=meta) != hash_body_with_meta("a", "b", meta=meta)
 
 
 def test_the_same_body_and_meta_hash_identically() -> None:
     meta: dict[str, Any] = {"title": "t"}
-    first = hash_body_with_meta("c", "l", meta)
-    second = hash_body_with_meta("c", "l", meta)
+    first = hash_body_with_meta("c", "l", meta=meta)
+    second = hash_body_with_meta("c", "l", meta=meta)
     assert first == second
 
 
 def test_a_metadata_only_edit_still_changes_the_body_hash() -> None:
     # Renaming a task touches neither canvas nor log; if meta is left out of the
     # digest the folder keeps the old title in meta.json indefinitely.
-    assert hash_body_with_meta("c", "l", {"title": "old"}) != hash_body_with_meta(
-        "c", "l", {"title": "new"}
+    assert hash_body_with_meta("c", "l", meta={"title": "old"}) != hash_body_with_meta(
+        "c", "l", meta={"title": "new"}
     )
 
 
 def test_the_body_hash_of_an_empty_task_is_still_stable() -> None:
-    first = hash_body_with_meta("", "", {})
-    second = hash_body_with_meta("", "", {})
+    first = hash_body_with_meta("", "", meta={})
+    second = hash_body_with_meta("", "", meta={})
     assert first == second
 
 

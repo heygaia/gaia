@@ -347,3 +347,26 @@ class TestCrossDomainDeletes:
         assert {t.title for t in listed} == {"ob1", "ob2"}
         assert await repo.delete_onboarding_todos("u1") == 2
         assert await repo.list_onboarding_todos("u1", limit=10) == []
+
+
+class TestTrackedShortIdFinder:
+    """``find_tracked_by_short_id`` backs ``<slug>-<shortid>`` folder resolution."""
+
+    async def test_matches_object_id_suffix_for_tracked_todos_only(self, repo, make_doc):
+        tracked = await repo.create(make_doc(user_id="u1", labels=[GAIA_TRACKED_LABEL]))
+        plain = await repo.create(make_doc(user_id="u1", labels=[]))
+
+        assert [
+            t.id for t in await repo.find_tracked_by_short_id("u1", short_id=tracked.id[-8:])
+        ] == [tracked.id]
+        assert await repo.find_tracked_by_short_id("u1", short_id=plain.id[-8:]) == []
+
+    async def test_is_user_scoped(self, repo, make_doc):
+        mine = await repo.create(make_doc(user_id="u1", labels=[GAIA_TRACKED_LABEL]))
+
+        assert await repo.find_tracked_by_short_id("u2", short_id=mine.id[-8:]) == []
+
+    async def test_regex_metacharacters_in_short_id_are_literal(self, repo, make_doc):
+        await repo.create(make_doc(user_id="u1", labels=[GAIA_TRACKED_LABEL]))
+
+        assert await repo.find_tracked_by_short_id("u1", short_id=".{8}") == []

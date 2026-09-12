@@ -47,10 +47,17 @@ def task(
     title: str | None = "Ship the release",
     *,
     canvas: str = "# canvas\n",
+    activity: str = "- 2026-01-01T00:00:00+00:00 started\n",
     log: str = "- did a thing\n",
     **meta: Any,
 ) -> GaiaTaskProjection:
-    return {"id": doc_id, "canvas": canvas, "log": log, "meta": {"title": title, **meta}}
+    return {
+        "id": doc_id,
+        "canvas": canvas,
+        "activity": activity,
+        "log": log,
+        "meta": {"title": title, **meta},
+    }
 
 
 def folders(root: Path) -> set[str]:
@@ -137,14 +144,19 @@ def test_syncing_gaia_tasks_does_not_delete_the_users_live_todos_projection(
 # ── materialize: layout and content ──────────────────────────────────
 
 
-def test_a_task_is_projected_as_canvas_log_and_meta_in_a_slug_shortid_folder(
+def test_a_task_is_projected_as_canvas_activity_log_and_meta_in_a_slug_shortid_folder(
     tmp_path: Path,
 ) -> None:
-    materialize_gaia_tasks(tmp_path, [task(ID_A, "Ship the release", canvas="C", log="L")], GUIDE)
+    materialize_gaia_tasks(
+        tmp_path,
+        [task(ID_A, "Ship the release", canvas="C", activity="A", log="L")],
+        GUIDE,
+    )
 
     folder = tmp_path / gtv.GAIA_TASKS_DIRNAME / "ship-the-release-00000001"
     assert folder.is_dir()
     assert folder.joinpath("canvas.md").read_text() == "C"
+    assert folder.joinpath("activity.md").read_text() == "A"
     assert folder.joinpath("log.md").read_text() == "L"
     assert '"title": "Ship the release"' in folder.joinpath("meta.json").read_text()
 
@@ -155,7 +167,7 @@ def test_projected_bodies_are_read_only_so_a_raw_edit_cannot_silently_desync_the
     materialize_gaia_tasks(tmp_path, [task(ID_A)], GUIDE)
 
     folder = tmp_path / gtv.GAIA_TASKS_DIRNAME / "ship-the-release-00000001"
-    for name in ("canvas.md", "log.md", "meta.json"):
+    for name in ("canvas.md", "activity.md", "log.md", "meta.json"):
         assert folder.joinpath(name).stat().st_mode & 0o777 == 0o444, name
 
 
@@ -304,9 +316,13 @@ def test_re_running_a_sync_with_unchanged_tasks_rewrites_nothing(tmp_path: Path)
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("canvas", "# rewritten\n"), ("log", "- newer entry\n")],
+    [
+        ("canvas", "# rewritten\n"),
+        ("activity", "- 2026-01-02T00:00:00+00:00 finished\n"),
+        ("log", "- newer entry\n"),
+    ],
 )
-def test_editing_only_the_canvas_or_only_the_log_still_rewrites_the_body(
+def test_editing_only_one_body_still_rewrites_the_folder(
     tmp_path: Path, field: str, value: str
 ) -> None:
     # The folder name is unchanged by a body edit, so the hash gate is the only
@@ -317,8 +333,9 @@ def test_editing_only_the_canvas_or_only_the_log_still_rewrites_the_body(
     written = materialize_gaia_tasks(tmp_path, [task(ID_A, "Alpha", **{field: value})], GUIDE)
 
     assert written == 1
-    filename = "canvas.md" if field == "canvas" else "log.md"
-    assert (tmp_path / gtv.GAIA_TASKS_DIRNAME / "alpha-00000001" / filename).read_text() == value
+    assert (
+        tmp_path / gtv.GAIA_TASKS_DIRNAME / "alpha-00000001" / f"{field}.md"
+    ).read_text() == value
 
 
 def test_completing_a_task_rewrites_its_meta_even_though_nothing_else_changed(

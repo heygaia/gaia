@@ -9,6 +9,7 @@ mutations go through the base ``_apply_ops`` seam; bulk writes go through
 """
 
 from datetime import UTC, datetime, timedelta
+import re
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -326,6 +327,22 @@ class TodosRepository(UserScopedRepository[TodoDocument, TodoUpdate]):
                     {"completed": {"$ne": True}},
                     {"completed_at": {"$gte": completed_since}},
                 ],
+            }
+        )
+
+    async def find_tracked_by_short_id(self, user_id: str, *, short_id: str) -> list[TodoDocument]:
+        """A user's tracked todos whose ObjectId ends with ``short_id`` — the
+        ``<slug>-<shortid>`` folder name under ``/workspace/gaia-tasks/``."""
+        return await self._find(
+            {
+                "user_id": user_id,
+                "labels": GAIA_TRACKED_LABEL,
+                "$expr": {
+                    "$regexMatch": {
+                        "input": {"$toString": "$_id"},
+                        "regex": f"{re.escape(short_id)}$",
+                    }
+                },
             }
         )
 
