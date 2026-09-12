@@ -5,11 +5,17 @@ Provides endpoints for fetching available trigger schemas
 that can be used in workflow configuration.
 """
 
+from typing import Annotated
+
 from fastapi import APIRouter, Depends, HTTPException, Query
 
 from app.api.v1.dependencies.oauth_dependencies import get_current_user
-from app.constants.general import MAX_PAGE_NUMBER
-from app.models.trigger_config import TriggerOptionsResponse, WorkflowTriggerResponse
+from app.models.trigger_config import (
+    TriggerOptionsParams,
+    TriggerOptionsQuery,
+    TriggerOptionsResponse,
+    WorkflowTriggerResponse,
+)
 from app.models.user_models import AuthenticatedUser
 from app.services.triggers import get_handler_by_name
 from app.services.workflow.trigger_service import TriggerService
@@ -37,49 +43,30 @@ async def get_trigger_schemas(
 
 @router.get("/options")
 async def get_trigger_options(
-    integration_id: str,
-    trigger_slug: str,
-    field_name: str = "",
-    parent_values: str = "",
-    page: int = Query(
-        1, ge=1, le=MAX_PAGE_NUMBER, description="Page number (starting from 1), for paged handlers"
-    ),
-    search: str = Query("", description="Filter options by label substring"),
+    params: Annotated[TriggerOptionsParams, Query()],
     current_user: AuthenticatedUser = Depends(get_current_user),
 ) -> TriggerOptionsResponse:
-    """
-    Get dynamic options for a trigger configuration field.
-
-    Args:
-        integration_id: The integration ID (e.g., 'slack', 'trello')
-        trigger_slug: The trigger slug (e.g., 'slack_new_message')
-        field_name: The config field name (e.g., 'channel_id'), optional
-        parent_values: Comma-separated parent IDs for cascading options (e.g., 'workspace1,workspace2')
-        page: Page of options to return; handlers that do not page ignore it
-        search: Substring to filter options by; handlers that do not search ignore it
-    """
+    """Dynamic options for a trigger configuration field; handlers that do not
+    page or search ignore ``page`` and ``search``."""
     log.set(
         operation="get_trigger_options",
-        trigger_type=trigger_slug,
-        integration_name=integration_id,
+        trigger_type=params.trigger_slug,
+        integration_name=params.integration_id,
     )
-    handler = get_handler_by_name(trigger_slug)
+    handler = get_handler_by_name(params.trigger_slug)
     if not handler:
         raise HTTPException(status_code=404, detail="Handler not found for trigger")
 
-    # Parse parent values
-    parent_ids = (
-        [v.strip() for v in parent_values.split(",") if v.strip()] if parent_values else None
-    )
-
     options = await handler.get_config_options(
-        trigger_slug,
-        field_name,
-        current_user["user_id"],
-        integration_id,
-        parent_ids,
-        page=page,
-        search=search,
+        TriggerOptionsQuery(
+            trigger_name=params.trigger_slug,
+            field_name=params.field_name,
+            user_id=current_user["user_id"],
+            integration_id=params.integration_id,
+            parent_ids=params.parent_ids,
+            page=params.page,
+            search=params.search,
+        )
     )
 
     log.set(result_count=len(options))

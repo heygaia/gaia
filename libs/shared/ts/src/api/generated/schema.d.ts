@@ -4523,15 +4523,8 @@ export interface paths {
         };
         /**
          * Get Trigger Options
-         * @description Get dynamic options for a trigger configuration field.
-         *
-         *     Args:
-         *         integration_id: The integration ID (e.g., 'slack', 'trello')
-         *         trigger_slug: The trigger slug (e.g., 'slack_new_message')
-         *         field_name: The config field name (e.g., 'channel_id'), optional
-         *         parent_values: Comma-separated parent IDs for cascading options (e.g., 'workspace1,workspace2')
-         *         page: Page of options to return; handlers that do not page ignore it
-         *         search: Substring to filter options by; handlers that do not search ignore it
+         * @description Dynamic options for a trigger configuration field; handlers that do not
+         *     page or search ignore ``page`` and ``search``.
          */
         get: operations["triggers_get_trigger_options"];
         put?: never;
@@ -27139,13 +27132,17 @@ export interface operations {
     triggers_get_trigger_options: {
         parameters: {
             query: {
+                /** @description The config field name (e.g., 'channel_id') */
                 field_name?: string;
+                /** @description The integration ID (e.g., 'slack', 'trello') */
                 integration_id: string;
                 /** @description Page number (starting from 1), for paged handlers */
                 page?: number;
+                /** @description Comma-separated parent IDs for cascading options (e.g., 'ws1,ws2') */
                 parent_values?: string;
                 /** @description Filter options by label substring */
                 search?: string;
+                /** @description The trigger slug (e.g., 'slack_new_message') */
                 trigger_slug: string;
             };
             header?: never;

@@ -10,7 +10,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from httpx import AsyncClient
 
 from app.constants.general import MAX_PAGE_NUMBER
-from app.models.trigger_config import TriggerOption
+from app.models.trigger_config import TriggerOption, TriggerOptionsQuery
 from tests.conftest import FAKE_USER
 
 TRIGGERS_ENDPOINT = "app.api.v1.endpoints.triggers"
@@ -35,7 +35,15 @@ class TestGetTriggerOptions:
         assert resp.status_code == 200
         assert resp.json() == {"options": [{"value": "owner/repo", "label": "owner/repo"}]}
         handler.get_config_options.assert_awaited_once_with(
-            "github_commit_event", "repo", USER_ID, "github", None, page=3, search="repo"
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repo",
+                user_id=USER_ID,
+                integration_id="github",
+                parent_ids=None,
+                page=3,
+                search="repo",
+            )
         )
 
     async def test_page_and_search_default_when_omitted(self, client: AsyncClient) -> None:
@@ -45,13 +53,15 @@ class TestGetTriggerOptions:
 
         assert resp.status_code == 200
         handler.get_config_options.assert_awaited_once_with(
-            "github_commit_event",
-            "repo",
-            USER_ID,
-            "github",
-            ["sheet-1", "sheet-2"],
-            page=1,
-            search="",
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repo",
+                user_id=USER_ID,
+                integration_id="github",
+                parent_ids=["sheet-1", "sheet-2"],
+                page=1,
+                search="",
+            )
         )
 
     async def test_page_below_one_returns_422(self, client: AsyncClient) -> None:

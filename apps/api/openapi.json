@@ -35407,43 +35407,51 @@
     },
     "/api/v1/triggers/options": {
       "get": {
-        "description": "Get dynamic options for a trigger configuration field.\n\nArgs:\n    integration_id: The integration ID (e.g., 'slack', 'trello')\n    trigger_slug: The trigger slug (e.g., 'slack_new_message')\n    field_name: The config field name (e.g., 'channel_id'), optional\n    parent_values: Comma-separated parent IDs for cascading options (e.g., 'workspace1,workspace2')\n    page: Page of options to return; handlers that do not page ignore it\n    search: Substring to filter options by; handlers that do not search ignore it",
+        "description": "Dynamic options for a trigger configuration field; handlers that do not\npage or search ignore ``page`` and ``search``.",
         "operationId": "triggers_get_trigger_options",
         "parameters": [
           {
+            "description": "The integration ID (e.g., 'slack', 'trello')",
             "in": "query",
             "name": "integration_id",
             "required": true,
             "schema": {
+              "description": "The integration ID (e.g., 'slack', 'trello')",
               "title": "Integration Id",
               "type": "string"
             }
           },
           {
+            "description": "The trigger slug (e.g., 'slack_new_message')",
             "in": "query",
             "name": "trigger_slug",
             "required": true,
             "schema": {
+              "description": "The trigger slug (e.g., 'slack_new_message')",
               "title": "Trigger Slug",
               "type": "string"
             }
           },
           {
+            "description": "The config field name (e.g., 'channel_id')",
             "in": "query",
             "name": "field_name",
             "required": false,
             "schema": {
               "default": "",
+              "description": "The config field name (e.g., 'channel_id')",
               "title": "Field Name",
               "type": "string"
             }
           },
           {
+            "description": "Comma-separated parent IDs for cascading options (e.g., 'ws1,ws2')",
             "in": "query",
             "name": "parent_values",
             "required": false,
             "schema": {
               "default": "",
+              "description": "Comma-separated parent IDs for cascading options (e.g., 'ws1,ws2')",
               "title": "Parent Values",
               "type": "string"
             }

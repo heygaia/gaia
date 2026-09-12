@@ -14,7 +14,7 @@ from app.models.composio_schemas import (
     LinearGetAllTeamsData,
     LinearIssueCreatedPayload,
 )
-from app.models.trigger_config import TriggerOption
+from app.models.trigger_config import TriggerOption, TriggerOptionsQuery
 from app.models.trigger_configs import (
     LinearCommentAddedConfig,
     LinearIssueCreatedConfig,
@@ -56,21 +56,12 @@ class LinearTriggerHandler(TriggerHandler):
     def event_types(self) -> set[str]:
         return self.SUPPORTED_EVENTS
 
-    async def get_config_options(
-        self,
-        trigger_name: str,  # noqa: ARG002 -- framework contract
-        field_name: str,
-        user_id: str,
-        integration_id: str,
-        parent_ids: list[str] | None = None,  # noqa: ARG002 -- framework contract
-        page: int = 1,  # noqa: ARG002 -- framework contract
-        search: str = "",
-    ) -> list[TriggerOption]:
+    async def get_config_options(self, query: TriggerOptionsQuery) -> list[TriggerOption]:
         """Get dynamic options for Linear trigger config fields."""
         composio_service = get_composio_service()
 
-        if field_name == "team_id":
-            tool = composio_service.get_tool("LINEAR_GET_ALL_LINEAR_TEAMS", user_id=user_id)
+        if query.field_name == "team_id":
+            tool = composio_service.get_tool("LINEAR_GET_ALL_LINEAR_TEAMS", user_id=query.user_id)
             if not tool:
                 log.error(f"{LogTag.TRIGGER} Linear get all teams tool not found")
                 return []
@@ -83,8 +74,8 @@ class LinearTriggerHandler(TriggerHandler):
                 log.error(
                     f"{LogTag.TRIGGER} Linear API error",
                     error=result["error"],
-                    user_id=user_id,
-                    integration_id=integration_id,
+                    user_id=query.user_id,
+                    integration_id=query.integration_id,
                 )
                 return []
 
@@ -92,8 +83,8 @@ class LinearTriggerHandler(TriggerHandler):
             data = LinearGetAllTeamsData.model_validate(result["data"])
             teams = data.get_teams()
 
-            # Filter by search string if provided
-            search_term = search.lower()
+            # Filter by query.search string if provided
+            search_term = query.search.lower()
             options = []
 
             for team in teams:

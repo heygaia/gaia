@@ -18,6 +18,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.trigger_config import TriggerOptionsQuery
+
 # ---------------------------------------------------------------------------
 # Break the circular import chain BEFORE importing any app.services.triggers
 # modules.
@@ -497,10 +499,12 @@ class TestTriggerHandlerBase:
     async def test_get_config_options_returns_empty_by_default(self):
         handler = _ConcreteTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="test_trigger",
-            field_name="some_field",
-            user_id=USER_ID,
-            integration_id="test",
+            TriggerOptionsQuery(
+                trigger_name="test_trigger",
+                field_name="some_field",
+                user_id=USER_ID,
+                integration_id="test",
+            )
         )
         assert result == []
 
@@ -1031,10 +1035,12 @@ class TestSlackTriggerHandler:
 
         handler = SlackTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="slack_new_message",
-            field_name="channel_ids",
-            user_id=USER_ID,
-            integration_id="slack",
+            TriggerOptionsQuery(
+                trigger_name="slack_new_message",
+                field_name="channel_ids",
+                user_id=USER_ID,
+                integration_id="slack",
+            )
         )
         assert len(result) >= 1
         assert result[0].value == "C001"
@@ -1047,10 +1053,12 @@ class TestSlackTriggerHandler:
 
         handler = SlackTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="slack_new_message",
-            field_name="channel_ids",
-            user_id=USER_ID,
-            integration_id="slack",
+            TriggerOptionsQuery(
+                trigger_name="slack_new_message",
+                field_name="channel_ids",
+                user_id=USER_ID,
+                integration_id="slack",
+            )
         )
         assert result == []
 
@@ -1070,20 +1078,24 @@ class TestSlackTriggerHandler:
 
         handler = SlackTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="slack_new_message",
-            field_name="channel_ids",
-            user_id=USER_ID,
-            integration_id="slack",
+            TriggerOptionsQuery(
+                trigger_name="slack_new_message",
+                field_name="channel_ids",
+                user_id=USER_ID,
+                integration_id="slack",
+            )
         )
         assert result == []
 
     async def test_get_config_options_unknown_field(self):
         handler = SlackTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="slack_new_message",
-            field_name="unknown_field",
-            user_id=USER_ID,
-            integration_id="slack",
+            TriggerOptionsQuery(
+                trigger_name="slack_new_message",
+                field_name="unknown_field",
+                user_id=USER_ID,
+                integration_id="slack",
+            )
         )
         assert result == []
 
@@ -1093,10 +1105,12 @@ class TestSlackTriggerHandler:
 
         handler = SlackTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="slack_new_message",
-            field_name="channel_ids",
-            user_id=USER_ID,
-            integration_id="slack",
+            TriggerOptionsQuery(
+                trigger_name="slack_new_message",
+                field_name="channel_ids",
+                user_id=USER_ID,
+                integration_id="slack",
+            )
         )
         assert result == []
 
@@ -1356,10 +1370,12 @@ class TestGitHubTriggerHandler:
 
         handler = GitHubTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="github_commit_event",
-            field_name="repos",
-            user_id=USER_ID,
-            integration_id="github",
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repos",
+                user_id=USER_ID,
+                integration_id="github",
+            )
         )
         assert len(result) == 2
         assert result[0].value == "owner/repo1"
@@ -1372,10 +1388,12 @@ class TestGitHubTriggerHandler:
 
         handler = GitHubTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="github_commit_event",
-            field_name="repos",
-            user_id=USER_ID,
-            integration_id="github",
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repos",
+                user_id=USER_ID,
+                integration_id="github",
+            )
         )
         assert result == []
 
@@ -1395,10 +1413,12 @@ class TestGitHubTriggerHandler:
 
         handler = GitHubTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="github_commit_event",
-            field_name="repos",
-            user_id=USER_ID,
-            integration_id="github",
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repos",
+                user_id=USER_ID,
+                integration_id="github",
+            )
         )
         assert result == []
 
@@ -1421,11 +1441,13 @@ class TestGitHubTriggerHandler:
 
         handler = GitHubTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="github_commit_event",
-            field_name="repos",
-            user_id=USER_ID,
-            integration_id="github",
-            search="special",
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repos",
+                user_id=USER_ID,
+                integration_id="github",
+                search="special",
+            )
         )
         assert len(result) == 1
         assert result[0].value == "owner/special-repo"
@@ -1440,11 +1462,13 @@ class TestGitHubTriggerHandler:
 
         handler = GitHubTriggerHandler()
         await handler.get_config_options(
-            trigger_name="github_commit_event",
-            field_name="repos",
-            user_id=USER_ID,
-            integration_id="github",
-            page=3,
+            TriggerOptionsQuery(
+                trigger_name="github_commit_event",
+                field_name="repos",
+                user_id=USER_ID,
+                integration_id="github",
+                page=3,
+            )
         )
         params = mock_tool.invoke.call_args.args[0]
         assert params["page"] == 3
@@ -1918,10 +1942,12 @@ class TestLinearTriggerHandler:
 
         handler = LinearTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="linear_issue_created",
-            field_name="team_id",
-            user_id=USER_ID,
-            integration_id="linear",
+            TriggerOptionsQuery(
+                trigger_name="linear_issue_created",
+                field_name="team_id",
+                user_id=USER_ID,
+                integration_id="linear",
+            )
         )
         assert len(result) == 2
         assert result[0].value == "team_1"
@@ -1948,11 +1974,13 @@ class TestLinearTriggerHandler:
 
         handler = LinearTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="linear_issue_created",
-            field_name="team_id",
-            user_id=USER_ID,
-            integration_id="linear",
-            search="design",
+            TriggerOptionsQuery(
+                trigger_name="linear_issue_created",
+                field_name="team_id",
+                user_id=USER_ID,
+                integration_id="linear",
+                search="design",
+            )
         )
         assert len(result) == 1
         assert result[0].label == "Design"
@@ -1965,10 +1993,12 @@ class TestLinearTriggerHandler:
 
         handler = LinearTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="linear_issue_created",
-            field_name="team_id",
-            user_id=USER_ID,
-            integration_id="linear",
+            TriggerOptionsQuery(
+                trigger_name="linear_issue_created",
+                field_name="team_id",
+                user_id=USER_ID,
+                integration_id="linear",
+            )
         )
         assert result == []
 
@@ -1988,10 +2018,12 @@ class TestLinearTriggerHandler:
 
         handler = LinearTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="linear_issue_created",
-            field_name="team_id",
-            user_id=USER_ID,
-            integration_id="linear",
+            TriggerOptionsQuery(
+                trigger_name="linear_issue_created",
+                field_name="team_id",
+                user_id=USER_ID,
+                integration_id="linear",
+            )
         )
         assert result == []
 
@@ -2002,10 +2034,12 @@ class TestLinearTriggerHandler:
 
         handler = LinearTriggerHandler()
         result = await handler.get_config_options(
-            trigger_name="linear_issue_created",
-            field_name="unknown_field",
-            user_id=USER_ID,
-            integration_id="linear",
+            TriggerOptionsQuery(
+                trigger_name="linear_issue_created",
+                field_name="unknown_field",
+                user_id=USER_ID,
+                integration_id="linear",
+            )
         )
         assert result == []
 

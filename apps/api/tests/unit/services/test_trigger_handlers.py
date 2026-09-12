@@ -7,6 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from app.models.trigger_config import TriggerOptionsQuery
+
 # ---------------------------------------------------------------------------
 # Break the circular import: triggers.__init__ -> handlers -> base ->
 # workflow.queue_service -> workflow.__init__ -> workflow.service ->
@@ -112,10 +114,12 @@ class TestGetConfigOptionsSpreadsheets:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="spreadsheet_ids",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="spreadsheet_ids",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
 
         assert len(result) == 2
@@ -130,10 +134,12 @@ class TestGetConfigOptionsSpreadsheets:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="spreadsheet_ids",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="spreadsheet_ids",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
         assert result == []
 
@@ -148,10 +154,12 @@ class TestGetConfigOptionsSpreadsheets:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="spreadsheet_ids",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="spreadsheet_ids",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
         assert result == []
 
@@ -176,20 +184,24 @@ class TestGetConfigOptionsSpreadsheets:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="spreadsheet_ids",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="spreadsheet_ids",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
         assert len(result) == 1
         assert result[0].value == "sp2"
 
     async def test_unknown_field_returns_empty(self) -> None:
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="unknown_field",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="unknown_field",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
         assert result == []
 
@@ -198,10 +210,12 @@ class TestGetConfigOptionsSpreadsheets:
         mock_get_svc.side_effect = RuntimeError("service down")
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="spreadsheet_ids",
-            user_id="user1",
-            integration_id="google_sheets",
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="spreadsheet_ids",
+                user_id="user1",
+                integration_id="google_sheets",
+            )
         )
         assert result == []
 
@@ -231,11 +245,13 @@ class TestGetConfigOptionsSheetNames:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="sheet_names",
-            user_id="user1",
-            integration_id="google_sheets",
-            parent_ids=["sp1"],
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="sheet_names",
+                user_id="user1",
+                integration_id="google_sheets",
+                parent_ids=["sp1"],
+            )
         )
 
         assert len(result) == 1
@@ -247,11 +263,13 @@ class TestGetConfigOptionsSheetNames:
         self, mock_get_svc: MagicMock
     ) -> None:
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="sheet_names",
-            user_id="user1",
-            integration_id="google_sheets",
-            parent_ids=None,
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="sheet_names",
+                user_id="user1",
+                integration_id="google_sheets",
+                parent_ids=None,
+            )
         )
         assert result == []
 
@@ -262,11 +280,13 @@ class TestGetConfigOptionsSheetNames:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="sheet_names",
-            user_id="user1",
-            integration_id="google_sheets",
-            parent_ids=["sp1"],
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="sheet_names",
+                user_id="user1",
+                integration_id="google_sheets",
+                parent_ids=["sp1"],
+            )
         )
         assert result == []
 
@@ -285,11 +305,13 @@ class TestGetConfigOptionsSheetNames:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="sheet_names",
-            user_id="user1",
-            integration_id="google_sheets",
-            parent_ids=["sp1"],
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="sheet_names",
+                user_id="user1",
+                integration_id="google_sheets",
+                parent_ids=["sp1"],
+            )
         )
         assert result == []
 
@@ -320,11 +342,13 @@ class TestGetConfigOptionsSheetNames:
         mock_get_svc.return_value = mock_svc
 
         result = await self.handler.get_config_options(
-            trigger_name="google_sheets_new_row",
-            field_name="sheet_names",
-            user_id="user1",
-            integration_id="google_sheets",
-            parent_ids=["sp1", "sp2"],
+            TriggerOptionsQuery(
+                trigger_name="google_sheets_new_row",
+                field_name="sheet_names",
+                user_id="user1",
+                integration_id="google_sheets",
+                parent_ids=["sp1", "sp2"],
+            )
         )
 
         assert len(result) == 2
