@@ -195,12 +195,16 @@ class TestListQueryHelpers:
         today = datetime.now(UTC).date()
         assert start == datetime.combine(today, datetime.min.time()).replace(tzinfo=UTC)
         assert end == datetime.combine(today, datetime.max.time()).replace(tzinfo=UTC)
+        # Aware UTC, not a naive local datetime — the bounds are timezone-tagged.
+        assert start is not None and start.tzinfo is UTC
+        assert end is not None and end.tzinfo is UTC
 
     def test_due_this_week_is_a_seven_day_window(self):
         start, end = _resolve_todo_date_range(TodoListQuery(due_this_week=True))
 
         assert start is not None and end is not None
         assert end - start == timedelta(days=7)
+        assert start.tzinfo is UTC and end.tzinfo is UTC
 
     def test_explicit_range_passes_through(self):
         after = datetime(2026, 1, 1, tzinfo=UTC)
@@ -214,17 +218,38 @@ class TestListQueryHelpers:
     def test_no_date_filter_is_none(self):
         assert _resolve_todo_date_range(TodoListQuery()) == (None, None)
 
-    def test_search_params_maps_the_window_even_when_the_query_has_its_own(self):
+    def test_search_params_maps_every_field(self):
+        after = datetime(2026, 1, 1, tzinfo=UTC)
+        before = datetime(2026, 2, 1, tzinfo=UTC)
         query = TodoListQuery(
-            q="x", mode=SearchMode.TEXT, due_after=datetime(2026, 1, 1, tzinfo=UTC)
+            q="x",
+            mode=SearchMode.TEXT,
+            project_id="p1",
+            completed=True,
+            priority=Priority.HIGH,
+            has_due_date=True,
+            overdue=True,
+            labels=["work"],
+            page=3,
+            per_page=25,
+            include_stats=True,
         )
 
-        params = _todo_search_params(query, None, None)
+        params = _todo_search_params(query, after, before)
 
         assert params.q == "x"
         assert params.mode == SearchMode.TEXT
-        assert params.due_date_start is None
-        assert params.due_date_end is None
+        assert params.project_id == "p1"
+        assert params.completed is True
+        assert params.priority == Priority.HIGH
+        assert params.has_due_date is True
+        assert params.overdue is True
+        assert params.labels == ["work"]
+        assert params.page == 3
+        assert params.per_page == 25
+        assert params.include_stats is True
+        assert params.due_date_start == after
+        assert params.due_date_end == before
 
 
 class TestTodoCanvas:
